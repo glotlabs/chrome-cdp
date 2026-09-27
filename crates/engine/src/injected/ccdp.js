@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: b856c785ec1f3dfc
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 8d8065276673589b
 "use strict";
 (() => {
   // src/dom.ts
@@ -1401,12 +1401,12 @@ ${inner}
     const hidden2 = invisible(el);
     if (hidden2) return { check: "visible", why: hidden2 };
     await frame();
-    const before = rect(el);
+    const before2 = rect(el);
     await frame();
     const after = rect(el);
     if (!el.isConnected) return { check: "attached", why: "it was removed from the page" };
-    if (before.some((v, i) => v !== after[i])) {
-      const moved = before[0] !== after[0] || before[1] !== after[1];
+    if (before2.some((v, i) => v !== after[i])) {
+      const moved = before2[0] !== after[0] || before2[1] !== after[1];
       return { check: "stable", why: moved ? "it is still moving" : "it is still changing size" };
     }
     if (needs.enabled || needs.editable) {
@@ -1668,6 +1668,34 @@ ${inner}
     return false;
   }
 
+  // src/report.ts
+  var before = null;
+  var actedOn = [];
+  function formOf(el) {
+    if (!el) return null;
+    const owner = el.form;
+    return owner instanceof HTMLFormElement ? owner : el.closest("form");
+  }
+  function focusMark() {
+    const el = focused();
+    before = { el, form: formOf(el) };
+    actedOn = [];
+  }
+  function acted(el) {
+    if (before) actedOn.push(el);
+    return describe(el);
+  }
+  function focusMoved() {
+    const mark = before;
+    before = null;
+    const el = focused();
+    if (!mark || !el || el === mark.el || el instanceof HTMLIFrameElement) return null;
+    for (const a of actedOn) {
+      if (a === el || contains(a, el) || a instanceof HTMLLabelElement && a.control === el) return null;
+    }
+    return formOf(el) === mark.form ? null : el;
+  }
+
   // src/index.ts
   var api = {
     version: 1,
@@ -1694,7 +1722,10 @@ ${inner}
     fieldValue,
     selectOptions,
     checkState,
-    reaches
+    reaches,
+    focusMark,
+    acted,
+    focusMoved
   };
   if (!globalThis.__ccdp) globalThis.__ccdp = api;
 })();

@@ -4,7 +4,8 @@
 // page scripts cannot reach or change it. It holds the locator engine,
 // the DOM walker, what the read commands (4.5) take from elements, the
 // actionability checks (5.1), what mouse actions ask the page (5.2), and
-// what keyboard and form actions ask it (5.3).
+// what keyboard and form actions ask it (5.3), and where focus went for
+// the post-action report (5.5).
 // Built into `ccdp.js` by `cargo xtask build-js`; the engine embeds that
 // file.
 
@@ -15,6 +16,7 @@ import { contains, visible } from './dom';
 import { checkActionable, covering } from './actionable';
 import { draggable, scrollSettled, scrollState } from './pointer';
 import { caretToEnd, checkState, fieldValue, fillPrepare, focused, hasFocus, reaches, selectOptions } from './form';
+import { acted, focusMark, focusMoved } from './report';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -47,6 +49,9 @@ const api = {
   selectOptions,
   checkState,
   reaches,
+  focusMark,
+  acted,
+  focusMoved,
 };
 
 if (!globalThis.__ccdp) globalThis.__ccdp = api;
