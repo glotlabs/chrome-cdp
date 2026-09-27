@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Beacons</title>
+<h1>Beacons</h1>
+<p>Sends an analytics beacon every 100 ms, forever, like tracking scripts
+do. Network idle does not wait for beacons.</p>
+<script>
+  let n = 0;
+  setInterval(() => navigator.sendBeacon(`/wait/beacon?n=${n++}&status=204`, 'x'), 100);
+</script>

@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WebSocket</title>
+<h1>WebSocket</h1>
+<p id="state">connecting</p>
+<p>Keeps a WebSocket to <code>/ws</code> open and sends a message every
+100 ms. Network idle does not wait for WebSockets.</p>
+<script>
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  let echoes = 0;
+  ws.onopen = () => {
+    document.getElementById('state').textContent = 'open';
+    setInterval(() => ws.send('ping'), 100);
+  };
+  ws.onmessage = () => { window.echoes = ++echoes; };
+</script>

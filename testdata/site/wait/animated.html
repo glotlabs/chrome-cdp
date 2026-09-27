@@ -1,0 +1,11 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Animated</title>
+<h1>Animated</h1>
+<p id="clock">0</p>
+<script>
+  // Changes the DOM every 50 ms, forever: the settle stops waiting for a
+  // quiet DOM after 3 s.
+  let n = 0;
+  setInterval(() => { document.getElementById('clock').textContent = String(++n); }, 50);
+</script>

@@ -28,6 +28,8 @@
 //! - `/redirect?to=<path>&n=<hops>` redirects (302) `n` times (default 1)
 //!   and then to `to`.
 //! - Sends `Cache-Control: no-store`, so a reload always hits the server.
+//! - `/ws` is a WebSocket that echoes every message (for pages that keep
+//!   one open).
 //!
 //! Add pages under `testdata/site` (and dynamic routes in [`respond`]) as
 //! milestones need them, rather than starting another server.
@@ -39,9 +41,13 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use bytes::Bytes;
+use futures_util::{SinkExt as _, StreamExt as _};
 use http_body_util::Full;
 use hyper::body::Incoming;
-use hyper::header::{CACHE_CONTROL, CONTENT_TYPE, HeaderValue, LOCATION};
+use hyper::header::{
+    CACHE_CONTROL, CONNECTION, CONTENT_TYPE, HeaderValue, LOCATION, SEC_WEBSOCKET_ACCEPT,
+    SEC_WEBSOCKET_KEY, UPGRADE,
+};
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
@@ -49,6 +55,9 @@ use hyper_util::rt::TokioIo;
 use rustls::pki_types::pem::PemObject as _;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio_rustls::TlsAcceptor;
+use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
+use tokio_tungstenite::tungstenite::protocol::Role;
 
 /// The site's files: `testdata/site` in the repository.
 pub fn site_dir() -> PathBuf {
@@ -202,9 +211,14 @@ async fn serve_connection<S>(stream: S, site: Arc<Site>, origin: Arc<str>)
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
-    let service = service_fn(move |req| {
+    let service = service_fn(move |mut req: Request<Incoming>| {
         let (site, origin) = (site.clone(), origin.clone());
-        async move { Ok::<_, Infallible>(respond(&site, &origin, &req).await) }
+        async move {
+            if req.uri().path() == "/ws" {
+                return Ok::<_, Infallible>(websocket(&mut req));
+            }
+            Ok::<_, Infallible>(respond(&site, &origin, &req).await)
+        }
     });
     // Errors here are clients going away mid-response.
     let _ = http1::Builder::new()
@@ -272,6 +286,44 @@ async fn respond(site: &Site, origin: &str, req: &Request<Incoming>) -> Response
     };
     if let Some(status) = status {
         *response.status_mut() = status;
+    }
+    response
+}
+
+/// `/ws`: accepts the WebSocket upgrade and echoes every message until the
+/// page closes it.
+fn websocket(req: &mut Request<Incoming>) -> Response<Full<Bytes>> {
+    let Some(key) = req.headers().get(SEC_WEBSOCKET_KEY) else {
+        return response(
+            StatusCode::BAD_REQUEST,
+            "text/plain; charset=utf-8",
+            Bytes::from_static(b"/ws needs a WebSocket upgrade\n"),
+        );
+    };
+    let accept = derive_accept_key(key.as_bytes());
+    let upgrade = hyper::upgrade::on(req);
+    tokio::spawn(async move {
+        let Ok(upgraded) = upgrade.await else {
+            return;
+        };
+        let mut ws =
+            WebSocketStream::from_raw_socket(TokioIo::new(upgraded), Role::Server, None).await;
+        while let Some(Ok(message)) = ws.next().await {
+            if (message.is_text() || message.is_binary()) && ws.send(message).await.is_err() {
+                break;
+            }
+        }
+    });
+    let mut response = response(
+        StatusCode::SWITCHING_PROTOCOLS,
+        "text/plain; charset=utf-8",
+        Bytes::new(),
+    );
+    let headers = response.headers_mut();
+    headers.insert(UPGRADE, HeaderValue::from_static("websocket"));
+    headers.insert(CONNECTION, HeaderValue::from_static("Upgrade"));
+    if let Ok(accept) = HeaderValue::from_str(&accept) {
+        headers.insert(SEC_WEBSOCKET_ACCEPT, accept);
     }
     response
 }

@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Lazy</title>
+<p id="loading">Loading…</p>
+<button id="go" disabled>Go</button>
+<div id="banner">We use cookies</div>
+<div id="later" hidden><h2>Later</h2></div>
+<main id="main"></main>
+<button id="save" onclick="save()">Save</button>
+<p id="saved"></p>
+<script>
+  // What a slow app does: after ?after= ms (default 500) the content
+  // shows up, the spinner goes, the button enables, the banner hides, a
+  // global is set and the URL changes with pushState.
+  const after = Number(new URLSearchParams(location.search).get('after') || 500);
+  setTimeout(() => {
+    document.getElementById('loading').remove();
+    document.getElementById('main').innerHTML = '<h1 id="welcome">Welcome,   Ada</h1>';
+    document.getElementById('go').disabled = false;
+    document.getElementById('banner').style.display = 'none';
+    document.getElementById('later').hidden = false;
+    window.appReady = { user: 'Ada' };
+    history.pushState({}, '', '?view=done');
+  }, after);
+  // `Save` posts to a slow API.
+  async function save() {
+    const response = await fetch('/wait/api/save?status=201&delay=200', { method: 'POST' });
+    document.getElementById('saved').textContent = `saved (${response.status})`;
+  }
+</script>

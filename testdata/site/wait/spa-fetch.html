@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SPA: loading</title>
+<main id="app"><p>Loading…</p></main>
+<script>
+  // Renders only after the load event, from data fetched then (slowly),
+  // like a single-page app: `goto`'s default settle waits for it.
+  window.addEventListener('load', async () => {
+    const response = await fetch('/wait/data.json?delay=300');
+    const data = await response.json();
+    setTimeout(() => {
+      document.getElementById('app').innerHTML =
+        `<h1>${data.title}</h1><ul>${data.items.map((i) => `<li>${i}</li>`).join('')}</ul>`;
+      document.title = `SPA: ${data.title}`;
+    }, 50);
+  });
+</script>

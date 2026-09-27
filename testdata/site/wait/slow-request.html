@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Slow request</title>
+<h1>Slow request</h1>
+<p>Fetches <code>/wait/slow.json?delay=</code> (?ms=, default 5000) after
+the load event, so the network is busy that long.</p>
+<script>
+  const ms = new URLSearchParams(location.search).get('ms') || '5000';
+  window.addEventListener('load', () => fetch(`/wait/slow.json?delay=${ms}`));
+</script>
