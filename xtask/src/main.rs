@@ -23,6 +23,7 @@ tasks:
   dist [--target T]   build the release binary into dist/ and check its size
   gen-cdp [--check]   regenerate CDP types from the vendored protocol JSON
   fixtures            serve testdata/site on two local origins (--port, --port-b)
+                      and an HTTPS one with a self-signed certificate
 ";
 
 type Result<T = ()> = std::result::Result<T, String>;
