@@ -1,0 +1,11 @@
+$ chrome-cdp uncheck '#standard'
+exit: 2
+--- stderr
+error: e1 radio "Standard" cannot be unchecked: check another radio button of its group
+  hint: chrome-cdp snapshot -i   (lists its group)
+
+$ chrome-cdp uncheck '#standard' --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"e1 radio \"Standard\" cannot be unchecked: check another radio button of its group","hint":"chrome-cdp snapshot -i   (lists its group)"}}
+

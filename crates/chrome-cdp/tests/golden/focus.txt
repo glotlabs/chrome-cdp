@@ -1,0 +1,15 @@
+$ chrome-cdp focus '#btn'
+exit: 0
+--- stdout
+focused e1 button "Button"
+
+$ chrome-cdp focus '#btn' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"action":"focus","element":{"name":"Button","ref":"e1","role":"button","tag":"button"},"locator":"#btn","tab":"t1"}}
+
+$ chrome-cdp focus '#btn' -q
+exit: 0
+--- stdout
+e1
+

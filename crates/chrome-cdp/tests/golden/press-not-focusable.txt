@@ -1,0 +1,11 @@
+$ chrome-cdp press Enter --in '#plain'
+exit: 1
+--- stderr
+error: e1 div "Plain text" cannot take focus, so keys would not go to it
+  hint: chrome-cdp click e1   (its page may take keys after a click)
+
+$ chrome-cdp press Enter --in '#plain' --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotEnabled","message":"e1 div \"Plain text\" cannot take focus, so keys would not go to it","hint":"chrome-cdp click e1   (its page may take keys after a click)","details":{"check":"focus","element":{"name":"Plain text","ref":"e1","role":"generic","tag":"div"}}}}
+

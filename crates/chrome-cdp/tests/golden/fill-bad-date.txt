@@ -1,0 +1,11 @@
+$ chrome-cdp fill '#birthday' tomorrow
+exit: 2
+--- stderr
+error: e1 textbox "Birthday" cannot hold that text: it is an <input type=date>, which takes a value like 2026-09-27, not "tomorrow"
+  hint: chrome-cdp fill '#birthday' 2026-09-27
+
+$ chrome-cdp fill '#birthday' tomorrow --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"e1 textbox \"Birthday\" cannot hold that text: it is an <input type=date>, which takes a value like 2026-09-27, not \"tomorrow\"","hint":"chrome-cdp fill '#birthday' 2026-09-27","details":{"locator":"#birthday","why":"it is an <input type=date>, which takes a value like 2026-09-27, not \"tomorrow\""}}}
+

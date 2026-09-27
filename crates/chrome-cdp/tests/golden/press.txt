@@ -1,0 +1,15 @@
+$ chrome-cdp press Enter --in '#field'
+exit: 0
+--- stdout
+pressed Enter in e1 textbox "Field"
+
+$ chrome-cdp press Enter --in '#field' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"action":"press","element":{"name":"Field","ref":"e1","role":"textbox","tag":"input"},"keys":["Enter"],"tab":"t1"}}
+
+$ chrome-cdp press Enter --in '#field' -q
+exit: 0
+--- stdout
+Enter
+

@@ -1,0 +1,15 @@
+$ chrome-cdp blur '#btn'
+exit: 0
+--- stdout
+e1 button "Button" did not have focus
+
+$ chrome-cdp blur '#btn' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"action":"blur","element":{"name":"Button","ref":"e1","role":"button","tag":"button"},"locator":"#btn","tab":"t1"}}
+
+$ chrome-cdp blur '#btn' -q
+exit: 0
+--- stdout
+e1
+

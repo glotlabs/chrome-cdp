@@ -1,0 +1,15 @@
+$ chrome-cdp check '#offers'
+exit: 0
+--- stdout
+checked e1 checkbox "Send offers" by its label e2 label "Send offers"
+
+$ chrome-cdp check '#offers' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"changed":false,"checked":true,"element":{"name":"Send offers","ref":"e1","role":"checkbox","tag":"input"},"locator":"#offers","tab":"t1"}}
+
+$ chrome-cdp check '#offers' -q
+exit: 0
+--- stdout
+e1
+

@@ -1,0 +1,12 @@
+$ chrome-cdp fill '#locked' x --timeout 1s
+exit: 1
+--- stderr
+error: #locked is read-only: it has the readonly attribute
+  waited: 1s
+  hint: chrome-cdp snapshot   (shows the page's fields)
+
+$ chrome-cdp fill '#locked' x --timeout 1s --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotEnabled","message":"#locked is read-only: it has the readonly attribute","hint":"chrome-cdp snapshot   (shows the page's fields)","notes":[{"label":"waited","text":"1s"}],"details":{"check":"editable","locator":"#locked","timeout_ms":1000,"why":"it has the readonly attribute"}}}
+

@@ -1,0 +1,13 @@
+$ chrome-cdp select '#choice' purple --timeout 1s
+exit: 1
+--- stderr
+error: no option of e1 combobox "Colour choice" has the value or label "purple"
+  options: "Pick one", "Red" (r), "Green" (g), "Blue" (b) disabled
+  waited: 1s
+  hint: chrome-cdp select '#choice' Red
+
+$ chrome-cdp select '#choice' purple --timeout 1s --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"no option of e1 combobox \"Colour choice\" has the value or label \"purple\"","hint":"chrome-cdp select '#choice' Red","notes":[{"label":"options","text":"\"Pick one\", \"Red\" (r), \"Green\" (g), \"Blue\" (b) disabled"},{"label":"waited","text":"1s"}],"details":{"locator":"#choice","missing":"purple","options":[{"label":"Pick one","value":""},{"label":"Red","value":"r"},{"label":"Green","value":"g"},{"label":"Blue","value":"b"}]}}}
+

@@ -1,0 +1,11 @@
+$ chrome-cdp press Control+Nope
+exit: 2
+--- stderr
+error: unknown key `Nope`; name keys like Enter, Tab, ArrowDown, F1, a or A, and hold them together with + (Control+A, Mod+Shift+Z)
+  hint: chrome-cdp press 'Control+A Backspace'
+
+$ chrome-cdp press Control+Nope --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"unknown key `Nope`; name keys like Enter, Tab, ArrowDown, F1, a or A, and hold them together with + (Control+A, Mod+Shift+Z)","hint":"chrome-cdp press 'Control+A Backspace'"}}
+

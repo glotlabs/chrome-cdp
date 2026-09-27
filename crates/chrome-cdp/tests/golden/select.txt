@@ -1,0 +1,15 @@
+$ chrome-cdp select '#choice' Green
+exit: 0
+--- stdout
+selected "Green" in e1 combobox "Colour choice"
+
+$ chrome-cdp select '#choice' Green --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"element":{"name":"Colour choice","ref":"e1","role":"combobox","tag":"select"},"locator":"#choice","selected":[{"label":"Green","value":"g"}],"tab":"t1"}}
+
+$ chrome-cdp select '#choice' Green -q
+exit: 0
+--- stdout
+g
+

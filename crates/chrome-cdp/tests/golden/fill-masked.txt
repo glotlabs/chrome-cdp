@@ -1,0 +1,19 @@
+$ chrome-cdp fill '#code' 123456
+exit: 0
+--- stdout
+filled e1 textbox "Code"
+--- stderr
+warning: the field holds "1234", not the text filled (a mask, a length limit, or the page changed it)
+
+$ chrome-cdp fill '#code' 123456 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"element":{"name":"Code","ref":"e1","role":"textbox","tag":"input"},"locator":"#code","tab":"t1","value":"1234"},"warnings":["the field holds \"1234\", not the text filled (a mask, a length limit, or the page changed it)"]}
+
+$ chrome-cdp fill '#code' 123456 -q
+exit: 0
+--- stdout
+e1
+--- stderr
+warning: the field holds "1234", not the text filled (a mask, a length limit, or the page changed it)
+

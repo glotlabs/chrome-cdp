@@ -1,0 +1,11 @@
+$ chrome-cdp fill '#plain' x
+exit: 1
+--- stderr
+error: #plain cannot take text: it is not an input, textarea or contenteditable element
+  hint: chrome-cdp snapshot -i   (lists the page's text fields)
+
+$ chrome-cdp fill '#plain' x --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotEnabled","message":"#plain cannot take text: it is not an input, textarea or contenteditable element","hint":"chrome-cdp snapshot -i   (lists the page's text fields)","details":{"check":"editable","locator":"#plain","why":"it is not an input, textarea or contenteditable element"}}}
+

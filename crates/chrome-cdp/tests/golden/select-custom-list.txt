@@ -1,0 +1,11 @@
+$ chrome-cdp select '#combo' Apple
+exit: 1
+--- stderr
+error: e1 combobox "Fruit" is not a <select>
+  hint: chrome-cdp click e1   (opens the list; then chrome-cdp click 'role=option[name="Apple"]')
+
+$ chrome-cdp select '#combo' Apple --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotEnabled","message":"e1 combobox \"Fruit\" is not a <select>","hint":"chrome-cdp click e1   (opens the list; then chrome-cdp click 'role=option[name=\"Apple\"]')","details":{"check":"select","locator":"#combo","role":"combobox"}}}
+

@@ -1,0 +1,11 @@
+$ chrome-cdp check '#stubborn' --timeout 1s
+exit: 1
+--- stderr
+error: clicking e1 checkbox "Stubborn" did not check it
+  hint: chrome-cdp snapshot   (the page may ignore or undo the click)
+
+$ chrome-cdp check '#stubborn' --timeout 1s --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotEnabled","message":"clicking e1 checkbox \"Stubborn\" did not check it","hint":"chrome-cdp snapshot   (the page may ignore or undo the click)","details":{"check":"checked","locator":"#stubborn"}}}
+

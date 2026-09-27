@@ -1,0 +1,15 @@
+$ chrome-cdp fill '#email' ada@example.com
+exit: 0
+--- stdout
+filled e1 textbox "Email"
+
+$ chrome-cdp fill '#email' ada@example.com --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"element":{"name":"Email","ref":"e1","role":"textbox","tag":"input"},"locator":"#email","tab":"t1","value":"ada@example.com"}}
+
+$ chrome-cdp fill '#email' ada@example.com -q
+exit: 0
+--- stdout
+e1
+
