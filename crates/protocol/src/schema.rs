@@ -616,6 +616,10 @@ pub struct SnapshotData {
     /// Without one, `nodes` is the whole page, all marked `added`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diff: Option<bool>,
+    /// `--diff`: the main frame loaded a new document since the earlier
+    /// snapshot, so its nodes were compared by place, not by identity.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub new_page: bool,
     /// The top-level nodes. With `--diff`, only the changed nodes and
     /// their ancestors (each with `change`).
     pub nodes: Vec<SnapshotNode>,

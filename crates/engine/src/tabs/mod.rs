@@ -1224,7 +1224,7 @@ fn frame_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event:
             };
             if !gone.is_empty() {
                 let main = gone.iter().any(|id| id == frames.root());
-                tab.snapshot.refs.navigated(&gone, main);
+                tab.snapshot.navigated(&gone, main);
             }
         }),
         page::NavigatedWithinDocument::NAME => {

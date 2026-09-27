@@ -91,7 +91,8 @@ them), text is cut at 200 characters (`--text-limit`) and the output at
 20,000 (`--max-chars`). `-i` keeps only what has a ref, with the landmarks,
 tables and rows around it; `--scope e12` (or any locator, e.g.
 `--scope frame=payment`) and `--depth 3` show a part; `--diff` shows what changed since the tab's last
-snapshot (`+` added, `-` removed, `~` changed). The same page gives the same
+snapshot (`+` added, `-` removed, `~` changed; after a page load it says
+the nodes were compared by place). The same page gives the same
 output. It reads Chrome's own accessibility tree; `--engine dom` uses
 chrome-cdp's DOM walker instead.
 

@@ -393,6 +393,10 @@
           "description": "The engine that read the page: `ax` (Chrome's accessibility tree)\nor `dom` (chrome-cdp's own DOM walker).",
           "type": "string"
         },
+        "new_page": {
+          "description": "`--diff`: the main frame loaded a new document since the earlier\nsnapshot, so its nodes were compared by place, not by identity.",
+          "type": "boolean"
+        },
         "nodes": {
           "description": "The top-level nodes. With `--diff`, only the changed nodes and\ntheir ancestors (each with `change`).",
           "items": {

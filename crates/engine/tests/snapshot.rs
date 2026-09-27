@@ -583,6 +583,31 @@ async fn diff_shows_what_changed() {
     assert_eq!(form.change, None);
     assert_eq!(form.children[0].change.as_deref(), Some("changed"));
     assert_eq!(form.children[0].was.as_deref(), Some("unchecked"));
+    assert!(!data.new_page);
+
+    // After a reload the nodes are new: the diff says it matched by place.
+    goto(&engine, &site.url("/snapshot/login.html")).await;
+    let reloaded = snapshot(&engine, diff(())).await;
+    let mut lines = reloaded.text.lines().skip(1);
+    assert_eq!(
+        lines.next(),
+        Some("(a new page since the last snapshot; its nodes are compared by place)"),
+        "{}",
+        reloaded.text
+    );
+    assert!(
+        reloaded.text.contains("+     - alert \"Invalid password\""),
+        "{}",
+        reloaded.text
+    );
+    let data: SnapshotData = serde_json::from_value(reloaded.data.clone()).unwrap();
+    assert!(data.new_page);
+    // Only the first diff after the load says so.
+    let again = snapshot(&engine, diff(())).await;
+    assert_eq!(
+        again.text.lines().nth(1),
+        Some("(no changes since the last snapshot)")
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

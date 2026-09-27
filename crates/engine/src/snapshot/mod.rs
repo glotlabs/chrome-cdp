@@ -117,6 +117,17 @@ pub(crate) struct Memory {
     pub(crate) refs: Refs,
     /// The last snapshot's tree as the engine read it, for `--diff`.
     last: Option<Vec<Node>>,
+    /// The main frame loaded a new document since `last` was read.
+    new_page: bool,
+}
+
+impl Memory {
+    /// Frames `frames` loaded new documents; `main` if one is the main
+    /// frame.
+    pub(crate) fn navigated(&mut self, frames: &[String], main: bool) {
+        self.refs.navigated(frames, main);
+        self.new_page |= main;
+    }
 }
 
 impl SnapshotEngine {
@@ -196,7 +207,7 @@ impl Engine {
         // A frame that loads a new document while the page is read would
         // leave refs on nodes that are gone: read it again.
         let mut attempts = 0;
-        let (capture, shown, before) = loop {
+        let (capture, shown, before, new_page) = loop {
             attempts += 1;
             let generation = running
                 .tabs
@@ -234,17 +245,19 @@ impl Engine {
                 }
                 prune::assign_refs(&mut shown, &mut memory.refs, view.all_refs);
                 let before = memory.last.replace(capture.nodes.clone());
-                Some(before.map(|old| {
+                let new_page = std::mem::take(&mut memory.new_page) && before.is_some();
+                let before = before.map(|old| {
                     let mut old =
                         prune::shape(scoped(scope_key.as_ref(), &old).unwrap_or_default(), &view);
                     prune::lookup_refs(&mut old, &memory.refs);
                     old
-                }))
+                });
+                Some((before, new_page))
             });
             match assigned {
+                Some(Some((before, new_page))) => break (capture, shown, before, new_page),
                 Some(None) => {}
-                Some(Some(before)) => break (capture, shown, before),
-                None => break (capture, shown, None),
+                None => break (capture, shown, None, false),
             }
         };
 
@@ -262,7 +275,14 @@ impl Engine {
             };
             if !compared {
                 text.push_str("\n(no earlier snapshot of this tab; all of it is new)");
-            } else if changes.is_empty() {
+            } else if new_page {
+                // Nodes of a new document never match the old ones by key,
+                // so the diff matches them by place.
+                text.push_str(
+                    "\n(a new page since the last snapshot; its nodes are compared by place)",
+                );
+            }
+            if compared && changes.is_empty() {
                 text.push_str("\n(no changes since the last snapshot)");
             }
             render::diff_text(&changes, &mut text);
@@ -280,6 +300,7 @@ impl Engine {
             title: capture.title,
             engine: engine.as_str().to_owned(),
             diff,
+            new_page: new_page && req.diff,
             nodes,
         };
         let more = "--interactive, --scope <ref> or --max-chars 0 for all of it";
