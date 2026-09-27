@@ -7,8 +7,8 @@ and errors that say what to run next.
 
 **Status:** early development. Sessions (`open`, `connect`, `status`,
 `sessions`, `close`), tabs (`tabs`, `tab`), navigation (`goto`, `back`,
-`forward`, `reload`), `wait`, raw CDP calls, `install`/`uninstall` and
-`schema` work so far:
+`forward`, `reload`), `wait`, dialogs (`dialog`), `downloads`, raw CDP calls,
+`install`/`uninstall` and `schema` work so far:
 
 ```sh
 chrome-cdp install                    # Chrome for Testing, if there is no Chrome
@@ -70,9 +70,27 @@ optionally `--in <locator>`), the URL (`--url /dashboard`, a glob or
 `/regex/`), `--load`, `--idle` (network idle, not counting WebSockets,
 beacons and requests open over 10 s), `--settle`, a JavaScript expression
 (`--fn 'window.app.ready'`), or a request or response since the previous
-command (`--response '**/api/save' --status 200`). On timeout (exit 3) it says
-what it saw instead: how many elements matched, the requests still in flight,
-the URL, the last value, and the page.
+command (`--response '**/api/save' --status 200`), or a download since the
+previous command (`--download`). On timeout (exit 3) it says what it saw
+instead: how many elements matched, the requests still in flight, the URL,
+the last value, and the page.
+
+JavaScript dialogs never hang a command. By default an `alert` and a
+`beforeunload` ("leave the page?") are accepted and mentioned in the output;
+a `confirm` or `prompt` stays open, and the command that ran into it returns
+at once with exit code 5: `dialog open in tab t1: confirm "Delete item?"`.
+`dialog accept [text]` or `dialog dismiss` answers it; `tabs` shows open
+dialogs. `open --dialogs accept|dismiss|manual` changes the policy for the
+session (`manual`: every dialog waits for `dialog`).
+
+Downloads go to the session's `downloads` directory, named as the server
+suggests (`report (1).pdf` if the name is taken). `goto` to a file waits for
+it and prints `downloaded: report.pdf (12KB) → /path/report.pdf`, a command
+that starts one says so, `wait --download` waits for one to finish, and
+`downloads` lists them. A tab whose page crashed fails commands with exit
+code 4 until `reload` (or `goto`) loads it again. `open --http-credentials
+user:password` (or `-` to read them from stdin) answers HTTP basic and digest
+authentication.
 
 It finds Chrome by itself: `--chrome <path>`, then `$CHROME_CDP_CHROME`, then
 browsers installed in the chrome-cdp cache (`~/.cache/chrome-cdp`, or
