@@ -1,7 +1,8 @@
 //! Command-line definitions (clap derive).
 //!
-//! Global flags follow plan 08 §4: each has a `CHROME_CDP_*` env var and may
-//! appear before or after the subcommand. Plan 02 onwards add the real
+//! Global flags follow plan 08 §4: each has a `CHROME_CDP_*` env var, may
+//! appear before or after the subcommand, and (for `--session` and
+//! `--timeout`) may default from the config files (see `config`). Plan 02 onwards add the real
 //! commands to [`Command`].
 
 use std::path::PathBuf;
@@ -83,6 +84,11 @@ pub(crate) struct GlobalArgs {
     /// (e.g. cdp=trace) overrides it.
     #[arg(short, long, global = true, action = ArgAction::Count)]
     pub(crate) verbose: u8,
+
+    /// `base_url` from the config files, for relative URLs (`goto /login`).
+    #[arg(skip)]
+    #[allow(dead_code)] // Read by plan 03's `goto`.
+    pub(crate) base_url: Option<String>,
 }
 
 impl GlobalArgs {

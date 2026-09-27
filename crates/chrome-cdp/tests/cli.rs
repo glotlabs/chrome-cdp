@@ -27,7 +27,16 @@ fn chrome_path() -> Option<PathBuf> {
     }
 }
 
-/// The binary with a clean `CHROME_CDP_*` environment.
+/// An empty `XDG_CONFIG_HOME`, so no user config applies. It must exist and
+/// be writable: Chrome keeps its crash reports there and dies without it.
+fn empty_config_home() -> PathBuf {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("empty-config-home");
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// The binary with a clean `CHROME_CDP_*` environment and no config files
+/// (an empty user config dir; run from the temp dir, away from the repo).
 fn cli() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_chrome-cdp"));
     for (key, _) in std::env::vars_os() {
@@ -35,7 +44,10 @@ fn cli() -> Command {
             cmd.env_remove(key);
         }
     }
-    cmd.stdin(Stdio::null());
+    cmd.env("XDG_CONFIG_HOME", empty_config_home())
+        .env_remove("NO_COLOR")
+        .current_dir(std::env::temp_dir())
+        .stdin(Stdio::null());
     cmd
 }
 
@@ -172,6 +184,70 @@ fn global_flags_have_env_vars() {
     // A usage error found through the env var is still JSON.
     let out = run(cli().arg("--bogus").env("CHROME_CDP_JSON", "1"));
     assert_eq!(json_out(&out)["error"]["kind"], json!("BadArgs"));
+}
+
+#[test]
+fn config_files_set_defaults_below_env_and_flags() {
+    let dir = tempfile::tempdir().unwrap();
+    let chrome = fake_chrome(&dir, "exec sleep 30");
+    let project = dir.path().join("app/src");
+    std::fs::create_dir_all(&project).unwrap();
+    let user = dir.path().join("xdg/chrome-cdp");
+    std::fs::create_dir_all(&user).unwrap();
+    std::fs::write(user.join("config.toml"), "timeout = \"200ms\"\n").unwrap();
+    let timeout_message = |cmd: &mut Command| {
+        let out = run(cmd
+            .current_dir(&project)
+            .env("XDG_CONFIG_HOME", dir.path().join("xdg")));
+        assert_eq!(code(&out), 3);
+        json_out(&out)["error"]["message"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let call = || direct_cdp(&chrome, &["Browser.getVersion", "--json"]);
+
+    // The user config applies…
+    assert_eq!(
+        timeout_message(&mut call()),
+        "Chrome started but did not answer within 200ms"
+    );
+    // …the nearest project config (found walking up) beats it…
+    std::fs::write(
+        dir.path().join("app/.chrome-cdp.toml"),
+        "timeout = \"300ms\"\n",
+    )
+    .unwrap();
+    assert!(timeout_message(&mut call()).ends_with("within 300ms"));
+    // …the env var beats both, and the flag beats the env var.
+    assert!(timeout_message(call().env("CHROME_CDP_TIMEOUT", "400ms")).ends_with("within 400ms"));
+    assert!(
+        timeout_message(
+            call()
+                .env("CHROME_CDP_TIMEOUT", "400ms")
+                .args(["--timeout", "250ms"])
+        )
+        .ends_with("within 250ms")
+    );
+}
+
+#[test]
+fn bad_config_is_a_usage_error_naming_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join(".chrome-cdp.toml");
+    std::fs::write(&file, "sesion = \"shop\"\n").unwrap();
+    let out = run(cli().arg("-V").current_dir(dir.path()));
+    assert_eq!(code(&out), 2);
+    assert!(stdout(&out).is_empty());
+    assert_eq!(
+        stderr(&out),
+        format!(
+            "error: config {f}: unknown field `sesion`, expected one of `session`, `timeout`, \
+             `base_url`\n  hint: fix or remove the key in {f}; known keys: session, timeout, \
+             base_url\n",
+            f = file.display()
+        )
+    );
 }
 
 #[test]

@@ -7,11 +7,12 @@
 
 use std::process::ExitCode;
 
-use clap::Parser as _;
 use clap::error::ErrorKind as ClapErrorKind;
+use clap::{CommandFactory as _, FromArgMatches as _};
 use protocol::{ErrorInfo, ErrorKind, Mode, Output};
 
 mod cli;
+mod config;
 mod direct;
 mod errors;
 mod log;
@@ -22,13 +23,17 @@ mod version;
 use cli::{Cli, Command, DirectCommand};
 
 fn main() -> ExitCode {
-    let cli = match Cli::try_parse() {
-        Ok(cli) => cli,
+    let parsed = Cli::command()
+        .try_get_matches()
+        .and_then(|m| Cli::from_arg_matches(&m).map(|cli| (cli, m)));
+    let (mut cli, matches) = match parsed {
+        Ok(parsed) => parsed,
         Err(e) => return ExitCode::from(usage_error(&e)),
     };
     log::init(cli.global.verbose);
     let mode = cli.global.mode();
-    ExitCode::from(output::print(mode, run(cli)))
+    let result = config::apply(&mut cli.global, &matches).and_then(|()| run(cli));
+    ExitCode::from(output::print(mode, result))
 }
 
 fn run(cli: Cli) -> Result<Output, ErrorInfo> {
