@@ -393,3 +393,35 @@ fn an_interrupted_command_leaves_the_session_running() {
     assert_eq!(code(&sandbox.run(&["cdp", "Browser.getVersion"])), 0);
     assert_eq!(status(&sandbox, "default")["state"], json!("running"));
 }
+
+#[test]
+fn uninstall_refuses_a_browser_in_use() {
+    let Some(chrome) = chrome_path() else { return };
+    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        return; // The install id below is linux64's.
+    }
+    // An install cache holding (a link to) the test Chrome.
+    let sandbox = Sandbox::new();
+    let cache = sandbox.dir.path().join("cache");
+    let id = "stable-154.0.0.0-linux64";
+    let install = cache.join("browsers").join(id);
+    std::fs::create_dir_all(install.join("chrome-linux64")).unwrap();
+    std::os::unix::fs::symlink(&chrome, install.join("chrome-linux64/chrome")).unwrap();
+    std::fs::write(install.join("INSTALLATION_COMPLETE"), "").unwrap();
+    let cli = |args: &[&str]| run(sandbox.cli().args(args).env("CHROME_CDP_CACHE", &cache));
+
+    assert_eq!(code(&cli(&["open", "--session", "shop"])), 0);
+    let out = cli(&["uninstall", id]);
+    assert_eq!(code(&out), 2);
+    assert_eq!(
+        stderr(&out),
+        format!(
+            "error: session shop is using {id}\n  \
+             hint: chrome-cdp close --session shop   (then uninstall it)\n"
+        )
+    );
+    assert!(install.is_dir());
+    assert_eq!(code(&cli(&["close", "--session", "shop"])), 0);
+    assert_eq!(code(&cli(&["uninstall", id])), 0);
+    assert!(!install.exists());
+}

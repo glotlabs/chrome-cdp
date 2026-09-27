@@ -55,7 +55,11 @@ pub(crate) fn install(args: &InstallArgs, timeout: Duration) -> Result<Output, E
 
 /// Runs `uninstall`.
 pub(crate) fn uninstall(args: &UninstallArgs) -> Result<Output, ErrorInfo> {
-    let dir = browser::uninstall(&Host::current(), &args.id).map_err(|e| e.to_error_info())?;
+    let host = Host::current();
+    if let Some(cache) = browser::cache_dir(&host) {
+        check_unused(&cache.join("browsers").join(&args.id), &args.id)?;
+    }
+    let dir = browser::uninstall(&host, &args.id).map_err(|e| e.to_error_info())?;
     let dir = dir.display().to_string();
     let text = format!("removed {} ({dir})", args.id);
     let data = UninstallData {
@@ -63,6 +67,24 @@ pub(crate) fn uninstall(args: &UninstallArgs) -> Result<Output, ErrorInfo> {
         dir: dir.clone(),
     };
     Ok(Output::typed(&data, text).quiet(dir))
+}
+
+/// Refuses to remove a browser a running session launched: its files
+/// would vanish under it.
+fn check_unused(dir: &Path, id: &str) -> Result<(), ErrorInfo> {
+    let env = daemon::paths::Env::current();
+    for paths in daemon::client::live_sessions(&env) {
+        let meta = daemon::meta::Meta::read(&paths.meta);
+        let path = meta.and_then(|m| m.browser).and_then(|b| b.path);
+        if path.is_some_and(|p| Path::new(&p).starts_with(dir)) {
+            return Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("session {} is using {id}", paths.name),
+            )
+            .hint(Hint::run(Cmd::new("close").session(&paths.name)).why("then uninstall it")));
+        }
+    }
+    Ok(())
 }
 
 /// Finds the Chrome to launch. With `auto_install`, a machine with none
