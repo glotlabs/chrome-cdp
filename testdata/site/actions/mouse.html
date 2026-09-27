@@ -13,7 +13,9 @@
      one per line: type, target id, button, buttons, detail (click count),
      modifiers held, and whether it was trusted. -->
 <p class="bar"><button id="go">Go</button><button id="off" disabled>Off</button><span
-  id="menu" tabindex="0">Menu</span><span id="tip">Tooltip</span></p>
+  id="menu" tabindex="0">Menu</span><span id="tip">Tooltip</span><button
+  id="ask" onclick="document.getElementById('answer').textContent = confirm('Sure?')">Ask</button></p>
+<p id="answer"></p>
 <pre id="events"></pre>
 <div id="pad"></div>
 <script>
