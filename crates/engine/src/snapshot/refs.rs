@@ -55,6 +55,8 @@ pub(crate) struct Refs {
     stale: HashSet<u32>,
     /// Same-document navigations per frame, for [`RefEntry::route`].
     routes: HashMap<String, u32>,
+    /// Counts the documents loaded, in any frame.
+    generation: u64,
 }
 
 impl Refs {
@@ -113,6 +115,7 @@ impl Refs {
     /// Frames `frames` loaded new documents; `main` if one is the main
     /// frame, which drops every ref. Their refs become stale.
     pub(crate) fn navigated(&mut self, frames: &[String], main: bool) {
+        self.generation += 1;
         if main {
             self.cleared = self.last;
             self.by_key.clear();
@@ -136,6 +139,13 @@ impl Refs {
         for frame in frames {
             self.routes.remove(frame);
         }
+    }
+
+    /// Changes whenever a frame loads a new document: a snapshot read
+    /// across a change may hold nodes of a document that is gone, which
+    /// must not get refs.
+    pub(crate) fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// Frame `frame` navigated within its document.
@@ -202,7 +212,9 @@ mod tests {
         let mut refs = Refs::default();
         refs.assign(&key(10), "button", "Save");
         refs.assign(&in_frame("G", 3), "link", "Pay");
+        let generation = refs.generation();
         refs.navigated(&["F".into()], true);
+        assert_ne!(refs.generation(), generation);
         assert_eq!(refs.lookup(1), Lookup::StalePage);
         assert_eq!(refs.lookup(2), Lookup::StalePage);
         assert_eq!(refs.get(&key(10)), None);

@@ -180,7 +180,16 @@ impl Engine {
                 (Some(key), note)
             }
         };
-        let capture = {
+        // A frame that loads a new document while the page is read would
+        // leave refs on nodes that are gone: read it again.
+        let mut attempts = 0;
+        let (capture, shown, before) = loop {
+            attempts += 1;
+            let generation = running
+                .tabs
+                .snapshot_memory(page.id, |m| m.refs.generation())
+                .unwrap_or_default();
+            let frames = running.tabs.frame_sources(page.id);
             let read = async {
                 match engine {
                     SnapshotEngine::Ax => {
@@ -201,30 +210,30 @@ impl Engine {
                     }
                 }
             };
-            self.unless_blocked(&running, &page, mark, read).await?
-        };
-        let scoped = |nodes: &[Node]| -> Option<Vec<Node>> {
-            match &scope_key {
-                None => Some(nodes.to_vec()),
-                Some(key) => prune::find(nodes, key).map(|n| vec![n]),
-            }
-        };
-        let Some(current) = scoped(&capture.nodes) else {
-            return Err(self.scope_gone(&req, &page));
-        };
-        let mut shown = prune::shape(current, &view);
-        let before = running
-            .tabs
-            .snapshot_memory(page.id, |memory| {
+            let capture = self.unless_blocked(&running, &page, mark, read).await?;
+            let Some(current) = scoped(scope_key.as_ref(), &capture.nodes) else {
+                return Err(self.scope_gone(&req, &page));
+            };
+            let mut shown = prune::shape(current, &view);
+            let assigned = running.tabs.snapshot_memory(page.id, |memory| {
+                if memory.refs.generation() != generation && attempts < READ_ATTEMPTS {
+                    return None;
+                }
                 prune::assign_refs(&mut shown, &mut memory.refs, view.all_refs);
                 let before = memory.last.replace(capture.nodes.clone());
-                before.map(|old| {
-                    let mut old = prune::shape(scoped(&old).unwrap_or_default(), &view);
+                Some(before.map(|old| {
+                    let mut old =
+                        prune::shape(scoped(scope_key.as_ref(), &old).unwrap_or_default(), &view);
                     prune::lookup_refs(&mut old, &memory.refs);
                     old
-                })
-            })
-            .flatten();
+                }))
+            });
+            match assigned {
+                Some(None) => {}
+                Some(Some(before)) => break (capture, shown, before),
+                None => break (capture, shown, None),
+            }
+        };
 
         let tab = tab_name(page.id);
         let mut text = format!(
@@ -332,15 +341,16 @@ impl Engine {
                     ));
                 };
                 let params = cdp_dom::DescribeNodeParams {
-                    object_id: Some(object_id),
+                    object_id: Some(object_id.clone()),
                     ..cdp_dom::DescribeNodeParams::default()
                 };
-                let described = main
+                let described = main.session.with_timeout(timeout).call(params).await;
+                let _ = main
                     .session
                     .with_timeout(timeout)
-                    .call(params)
-                    .await
-                    .map_err(|e| from_cdp(&e, &self.session))?;
+                    .call(runtime::ReleaseObjectParams { object_id })
+                    .await;
+                let described = described.map_err(|e| from_cdp(&e, &self.session))?;
                 let key = NodeKey {
                     frame: main.info.id.clone(),
                     backend: described.node.backend_node_id,
@@ -364,6 +374,20 @@ impl Engine {
             Hint::run(Cmd::new("snapshot").session(&self.session))
                 .why("shows what the page has now"),
         )
+    }
+}
+
+/// How often `snapshot` reads a page that keeps loading new documents
+/// before it gives refs anyway (a redirect loop; refs on nodes that went
+/// then resolve as if a re-render had replaced them).
+const READ_ATTEMPTS: u32 = 3;
+
+/// `nodes`, or the subtree of the `--scope` node (`None` if it is not in
+/// them).
+fn scoped(scope: Option<&NodeKey>, nodes: &[Node]) -> Option<Vec<Node>> {
+    match scope {
+        None => Some(nodes.to_vec()),
+        Some(key) => prune::find(nodes, key).map(|n| vec![n]),
     }
 }
 
