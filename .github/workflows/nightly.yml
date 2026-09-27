@@ -22,9 +22,8 @@ jobs:
           - ubuntu-24.04-arm   # linux-arm64
           - macos-latest       # mac-arm64
           - macos-15-intel     # mac-x64
+    # The default cache dir (under $HOME): a fresh runner has none.
     runs-on: ${{ matrix.os }}
-    env:
-      CHROME_CDP_CACHE: ${{ runner.temp }}/chrome-cdp-cache
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install
