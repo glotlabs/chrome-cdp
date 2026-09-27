@@ -376,6 +376,53 @@ pub struct DownloadsRequest {
     pub max_chars: usize,
 }
 
+/// Which engine reads the page for `snapshot` (`--engine`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SnapshotEngine {
+    /// Chrome's accessibility tree (`Accessibility.getFullAXTree`).
+    Ax,
+    /// chrome-cdp's DOM walker, injected into its isolated world.
+    Dom,
+}
+
+/// `snapshot`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SnapshotRequest {
+    /// `--tab`: the tab to read; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// `--interactive`: only nodes with refs and their landmarks.
+    #[serde(default)]
+    pub interactive: bool,
+    /// `--scope`: only the subtree of this ref or CSS/XPath locator.
+    #[serde(default)]
+    pub scope: Option<String>,
+    /// `--depth`: how many levels to show.
+    #[serde(default)]
+    pub depth: Option<u32>,
+    /// `--diff`: only what changed since the tab's last snapshot.
+    #[serde(default)]
+    pub diff: bool,
+    /// `--all-refs`: a ref on every node, not only actionable ones.
+    #[serde(default)]
+    pub all_refs: bool,
+    /// `--all`: do not collapse long lists.
+    #[serde(default)]
+    pub all: bool,
+    /// `--text-limit`: longest text or name shown (0 = no limit).
+    pub text_limit: usize,
+    /// `--no-text`: leave text out (a skeleton).
+    #[serde(default)]
+    pub no_text: bool,
+    /// `--engine`; the default engine if `None`.
+    #[serde(default)]
+    pub engine: Option<SnapshotEngine>,
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
 /// Milliseconds from a request as a duration, at least 1 ms.
 pub(crate) fn millis(ms: u64) -> Duration {
     Duration::from_millis(ms.max(1))

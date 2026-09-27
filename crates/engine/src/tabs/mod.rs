@@ -47,6 +47,7 @@ use self::downloads::Download;
 use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
 use crate::network::{Exchange, Idle, InFlight, Network};
 use crate::request::{DialogPolicy, HttpCredentials};
+use crate::snapshot::{FrameSource, Memory as SnapshotMemory};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 use tokio::sync::watch;
 use tokio::task::AbortHandle;
@@ -225,6 +226,8 @@ struct Tab {
     /// When its page crashed (in the event sequence), until it is loaded
     /// again.
     crashed: Option<u64>,
+    /// Its refs and last snapshot.
+    snapshot: SnapshotMemory,
 }
 
 /// A page or iframe session.
@@ -620,6 +623,38 @@ impl Tabs {
             .get(&id)
             .map(|t| t.frames.list())
             .unwrap_or_default()
+    }
+
+    /// Tab `id`'s frames, parents before their children, each with the
+    /// session that owns it (an OOPIF has its own).
+    pub(crate) fn frame_sources(&self, id: u32) -> Vec<FrameSource> {
+        let state = self.shared.lock();
+        let Some(tab) = state.tabs.get(&id) else {
+            return Vec::new();
+        };
+        tab.frames
+            .list()
+            .into_iter()
+            .filter_map(|info| {
+                let owner = tab.frames.owner(&info.id)?;
+                let session = state.hosts.get(owner)?.session.clone();
+                Some(FrameSource { info, session })
+            })
+            .collect()
+    }
+
+    /// Runs `f` on tab `id`'s snapshot memory (refs and last snapshot);
+    /// `None` if the tab is gone.
+    pub(crate) fn snapshot_memory<R>(
+        &self,
+        id: u32,
+        f: impl FnOnce(&mut SnapshotMemory) -> R,
+    ) -> Option<R> {
+        self.shared
+            .lock()
+            .tabs
+            .get_mut(&id)
+            .map(|tab| f(&mut tab.snapshot))
     }
 
     /// The frame of tab `id` that `query` names (see
@@ -1267,6 +1302,7 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
                 event_marks: (0, 0),
                 dialog: None,
                 crashed: None,
+                snapshot: SnapshotMemory::default(),
             },
         );
         Some(id)

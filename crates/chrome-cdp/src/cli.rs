@@ -308,6 +308,23 @@ Examples:
   chrome-cdp wait --download")]
     Wait(WaitCmdArgs),
 
+    /// Show the page as an accessibility tree, with refs (e12) to act on.
+    #[command(after_help = "\
+One node per line, two spaces per level:
+  - role \"name\" [ref] (hN) value=\"…\" states… → href
+Refs go on what can be acted on (controls, links, clickable elements,
+scrollable boxes, iframes); a node keeps its ref while it stays in the
+page. Hidden content is left out, lists longer than 30 collapse, and text
+is cut at --text-limit. Needs a running session.
+
+Examples:
+  chrome-cdp snapshot
+  chrome-cdp snapshot -i                  # only what can be acted on
+  chrome-cdp snapshot --scope e12         # one part of the page
+  chrome-cdp snapshot --scope '#results' --depth 3
+  chrome-cdp snapshot --diff              # what changed since the last one")]
+    Snapshot(SnapshotArgs),
+
     /// Answer the JavaScript dialog (confirm, prompt, …) the page waits on.
     #[command(
         subcommand_required = true,
@@ -523,6 +540,69 @@ pub(crate) struct DialogAcceptArgs {
 
 #[derive(Debug, Args)]
 pub(crate) struct DialogDismissArgs {}
+
+#[derive(Debug, Args)]
+pub(crate) struct SnapshotArgs {
+    /// Only nodes with refs and the landmarks around them (much smaller).
+    #[arg(short, long)]
+    pub(crate) interactive: bool,
+
+    /// Only this part of the page: a ref (e12) or a CSS/XPath locator.
+    #[arg(long, value_name = "LOCATOR")]
+    pub(crate) scope: Option<String>,
+
+    /// Show this many levels; deeper nodes are counted, not shown.
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
+    pub(crate) depth: Option<u32>,
+
+    /// Only what changed since this tab's last snapshot: + added,
+    /// - removed, ~ changed, with the nodes around them for context.
+    #[arg(long)]
+    pub(crate) diff: bool,
+
+    /// A ref on every node, not only on those an agent acts on.
+    #[arg(long)]
+    pub(crate) all_refs: bool,
+
+    /// Do not collapse long lists.
+    #[arg(long)]
+    pub(crate) all: bool,
+
+    /// Cut text and names after this many characters (0 = no limit).
+    #[arg(long, default_value_t = 200, value_name = "N")]
+    pub(crate) text_limit: usize,
+
+    /// Leave text out: the page's skeleton.
+    #[arg(long)]
+    pub(crate) no_text: bool,
+
+    /// How to read the page: ax (Chrome's accessibility tree, the
+    /// default) or dom (chrome-cdp's DOM walker).
+    #[arg(long, value_enum, value_name = "ENGINE")]
+    pub(crate) engine: Option<SnapshotEngineArg>,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+/// `snapshot --engine`.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum SnapshotEngineArg {
+    /// Chrome's accessibility tree.
+    Ax,
+    /// chrome-cdp's DOM walker.
+    Dom,
+}
+
+impl SnapshotEngineArg {
+    pub(crate) fn to_engine(self) -> engine::SnapshotEngine {
+        match self {
+            Self::Ax => engine::SnapshotEngine::Ax,
+            Self::Dom => engine::SnapshotEngine::Dom,
+        }
+    }
+}
 
 #[derive(Debug, Args)]
 pub(crate) struct DownloadsArgs {

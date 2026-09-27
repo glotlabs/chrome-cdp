@@ -2,7 +2,8 @@
 //! `close`, `status`, `sessions` and `cdp`; the tab commands (plan 03,
 //! milestone 3.1): `tabs`, `tab <id>`, `tab new` and `tab close`; and
 //! navigation (milestone 3.3): `goto`, `back`, `forward` and `reload`;
-//! `wait` (milestone 3.4); and `dialog` and `downloads` (milestone 3.5).
+//! `wait` (milestone 3.4); `dialog` and `downloads` (milestone 3.5); and
+//! `snapshot` (plan 04).
 //!
 //! Each one finds the session's daemon (starting it when the command needs
 //! a browser), sends one call, and returns the daemon's `Output` or
@@ -18,8 +19,8 @@ use daemon::paths::{Env, SessionPaths, check_name};
 use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
     CdpRequest, ConnectRequest, DialogRequest, DownloadsRequest, ElementState, HttpCredentials,
-    NavigateRequest, Navigation, OpenRequest, TabCloseRequest, TabNewRequest, TabSelectRequest,
-    TabsRequest, WaitFor, WaitRequest,
+    NavigateRequest, Navigation, OpenRequest, SnapshotRequest, TabCloseRequest, TabNewRequest,
+    TabSelectRequest, TabsRequest, WaitFor, WaitRequest,
 };
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
@@ -29,8 +30,8 @@ use tokio::runtime::Runtime;
 use crate::cli::{
     CdpArgs, CloseArgs, ConnectArgs, DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs,
     ElementStateArg, GlobalArgs, GotoArgs, HistoryArgs, IdleArgs, OpenArgs, ReloadArgs,
-    SessionsArgs, StatusArgs, TabArgs, TabCommand, TabsArgs, WAIT_TIMEOUT, WaitCmdArgs,
-    parse_duration,
+    SessionsArgs, SnapshotArgs, StatusArgs, TabArgs, TabCommand, TabsArgs, WAIT_TIMEOUT,
+    WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -488,6 +489,30 @@ pub(crate) fn wait(args: &WaitCmdArgs, global: &GlobalArgs) -> Result<Output, Er
     let wait = ctx.timeout + delay + QUICK;
     ctx.runtime
         .block_on(client.call_output(rpc::WAIT, &request, wait))
+}
+
+/// `snapshot`: needs a running session.
+pub(crate) fn snapshot(args: &SnapshotArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let request = SnapshotRequest {
+        tab: ctx.tab.clone(),
+        interactive: args.interactive,
+        scope: args.scope.clone(),
+        depth: args.depth,
+        diff: args.diff,
+        all_refs: args.all_refs,
+        all: args.all,
+        text_limit: args.text_limit,
+        no_text: args.no_text,
+        engine: args.engine.map(crate::cli::SnapshotEngineArg::to_engine),
+        timeout_ms: millis(ctx.timeout),
+        max_chars: args.max_chars,
+    };
+    engine::check_snapshot(&request)?;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::SNAPSHOT, &request, ctx.timeout + QUICK))
 }
 
 /// `dialog accept [text]` and `dialog dismiss`: need a running session.

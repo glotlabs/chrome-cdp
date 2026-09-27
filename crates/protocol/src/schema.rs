@@ -151,6 +151,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         summary: "the session's downloads, oldest first",
         schema: || schema_for!(Envelope<DownloadsData>),
     },
+    CommandSchema {
+        name: "snapshot",
+        summary: "the page's accessibility tree, with refs on what can be acted on",
+        schema: || schema_for!(Envelope<SnapshotData>),
+    },
 ];
 
 /// The registry entry for `name` (`"tab close"`), if any.
@@ -553,6 +558,81 @@ pub struct DownloadsData {
     pub dir: String,
     /// Every download of the session, oldest first.
     pub downloads: Vec<DownloadInfo>,
+}
+
+/// `data` of `chrome-cdp snapshot --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SnapshotData {
+    /// The tab, e.g. `t1`.
+    pub tab: String,
+    /// The main frame's URL.
+    pub url: String,
+    /// The document title.
+    pub title: String,
+    /// The engine that read the page: `ax` (Chrome's accessibility tree)
+    /// or `dom` (chrome-cdp's own DOM walker).
+    pub engine: String,
+    /// `--diff`: whether an earlier snapshot of the tab was compared.
+    /// Without one, `nodes` is the whole page, all marked `added`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff: Option<bool>,
+    /// The top-level nodes. With `--diff`, only the changed nodes and
+    /// their ancestors (each with `change`).
+    pub nodes: Vec<SnapshotNode>,
+}
+
+/// One node of a snapshot, as one text line shows it:
+/// `role "name" [ref] (hN) value="…" states… → href`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SnapshotNode {
+    /// The ARIA role (`button`, `link`, `heading`, …), `text` for text,
+    /// `clickable` for an element that only looks and acts like a button,
+    /// or `iframe`. With `more`, the role of the nodes left out.
+    pub role: String,
+    /// The accessible name, or the text of a `text` node (or of a node
+    /// whose only content is that text).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    /// The ref commands take (`e12`); only on nodes an agent can act on,
+    /// unless `--all-refs`.
+    #[serde(rename = "ref", default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
+    /// A heading's level (1-6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<u32>,
+    /// The value of a text box, combobox, slider or spin button. Never
+    /// set for password fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    /// A password field (its value is never shown).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub password: bool,
+    /// States that carry information, in this order: `checked`,
+    /// `unchecked`, `mixed`, `expanded`, `collapsed`, `selected`,
+    /// `disabled`, `readonly`, `required`, `invalid`, `focused`, `pressed`,
+    /// `scrollable`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub states: Vec<String>,
+    /// A link's target; relative (`/pricing`) when on the frame's origin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub href: Option<String>,
+    /// How many more nodes of `role` the list has past this point (they
+    /// are left out; `--all` shows them).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub more: Option<u32>,
+    /// How many nodes below this one `--depth` left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub below: Option<u32>,
+    /// `--diff`: `added`, `removed` or `changed`; absent on the unchanged
+    /// ancestors shown for context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change: Option<String>,
+    /// `--diff`, `changed`: the parts of the line that changed, as they
+    /// were (`unchecked`, `"Old name"`, `value="old"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub was: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<SnapshotNode>,
 }
 
 /// `data` of `chrome-cdp tabs --json`.

@@ -332,6 +332,10 @@ impl Daemon {
                 Ok(p) => output(self.engine.dialog(p).await),
                 Err(e) => Err(e),
             },
+            rpc::SNAPSHOT => match params(req.params) {
+                Ok(p) => output(self.engine.snapshot(p).await),
+                Err(e) => Err(e),
+            },
             rpc::DOWNLOADS => match params(req.params) {
                 Ok(p) => output(self.engine.downloads(p)),
                 Err(e) => Err(e),

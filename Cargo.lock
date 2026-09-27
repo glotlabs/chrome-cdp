@@ -396,6 +396,7 @@ dependencies = [
  "browser",
  "cdp",
  "fixtures",
+ "futures-util",
  "protocol",
  "regex",
  "serde",

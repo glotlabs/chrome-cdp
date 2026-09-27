@@ -16,9 +16,9 @@
 //! for their settle. Milestone 3.5 handles what else can happen to a
 //! page: JavaScript dialogs (`dialog`, and `interrupt` for the commands
 //! they stall), downloads (`downloads`), crashes, and HTTP
-//! authentication. Later plans add modules
-//! next to `tabs` and `navigate`: `page`, `snapshot`, `locator`, `input`,
-//! `observe`, `emulate`, `route`.
+//! authentication. Plan 04 adds `snapshot` (milestones 4.1 and 4.3: two
+//! engines, one output format, refs). Later plans add modules next to
+//! `tabs` and `navigate`: `page`, `input`, `observe`, `emulate`, `route`.
 
 mod dialog;
 mod downloads;
@@ -32,6 +32,7 @@ mod network;
 mod pattern;
 mod raw;
 mod request;
+mod snapshot;
 mod tabs;
 mod wait;
 
@@ -55,9 +56,11 @@ pub use locator::{Locator, parse_locator};
 pub use navigate::normalize_url;
 pub use request::{
     CdpRequest, ConnectRequest, DialogPolicy, DialogRequest, DownloadsRequest, ElementState,
-    HttpCredentials, NavigateRequest, Navigation, OpenRequest, TabCloseRequest, TabNewRequest,
-    TabSelectRequest, TabsRequest, Target, WaitFor, WaitRequest, WaitUntil,
+    HttpCredentials, NavigateRequest, Navigation, OpenRequest, SnapshotEngine, SnapshotRequest,
+    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target, WaitFor, WaitRequest,
+    WaitUntil,
 };
+pub use snapshot::{DEFAULT_ENGINE, check_snapshot};
 pub use tabs::commands::TabClosed;
 pub use tabs::parse_tab_id;
 pub use wait::check_condition;
