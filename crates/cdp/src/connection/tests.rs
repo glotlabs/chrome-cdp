@@ -171,6 +171,13 @@ async fn detaching_ends_the_session_streams() {
     peer.send_json(&json!({"method": "Target.detachedFromTarget", "params": {"sessionId": "S1", "targetId": "T1"}}));
     assert_eq!(detached.next().await.unwrap().session_id, "S1");
     assert!(events.next().await.is_none());
+    // Listening after the detach gets a stream that has already ended.
+    let mut late = conn.session("S1").events();
+    assert!(late.next().await.is_none());
+    // Other sessions are not affected.
+    let mut other = conn.session("S2").events();
+    peer.send_json(&json!({"method": "Page.loadEventFired", "params": {}, "sessionId": "S2"}));
+    assert_eq!(other.next().await.unwrap().method, "Page.loadEventFired");
 }
 
 #[tokio::test]

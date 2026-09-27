@@ -11,9 +11,10 @@
 //! [`CdpError::Disconnected`], every event stream ends, and later calls fail
 //! immediately. Nothing waits forever.
 
+use std::collections::VecDeque;
 use std::fmt;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -95,10 +96,17 @@ struct Shared {
     /// Event channels by session id (`""` for the browser session). Created
     /// when someone listens; removed when the session detaches.
     sessions: DashMap<String, broadcast::Sender<Arc<RawEvent>>>,
+    /// Sessions that detached lately, oldest first, so a listener that
+    /// comes too late gets a stream that has already ended instead of one
+    /// no event will ever reach.
+    detached: Mutex<VecDeque<String>>,
     /// `Some(reason)` once the connection has closed.
     closed: watch::Sender<Option<Arc<str>>>,
     event_buffer: usize,
 }
+
+/// How many detached session ids [`Shared::detached`] remembers.
+const DETACHED_MEMORY: usize = 512;
 
 /// What the reader hands a pending call.
 type Response = std::result::Result<Value, ResponseError>;
@@ -127,6 +135,7 @@ impl Connection {
         let shared = Arc::new(Shared {
             pending: DashMap::new(),
             sessions: DashMap::new(),
+            detached: Mutex::default(),
             closed: watch::Sender::new(None),
             event_buffer: options.event_buffer.max(1),
         });
@@ -342,11 +351,26 @@ impl Shared {
             .or_insert_with(|| broadcast::channel(self.event_buffer).0)
             .subscribe();
         // Same ordering argument as for pending calls: if the connection
-        // closed meanwhile, `close` may have missed our channel.
-        if self.closed_reason().is_some() {
+        // closed or the session detached meanwhile, `close` or `dispatch`
+        // may have missed our channel. Removing it drops the sender, which
+        // ends the stream.
+        if self.closed_reason().is_some() || (!key.is_empty() && self.was_detached(key)) {
             self.sessions.remove(key);
         }
         rx
+    }
+
+    fn was_detached(&self, session_id: &str) -> bool {
+        let detached = self.detached.lock().unwrap_or_else(PoisonError::into_inner);
+        detached.iter().any(|id| id == session_id)
+    }
+
+    fn remember_detached(&self, session_id: &str) {
+        let mut detached = self.detached.lock().unwrap_or_else(PoisonError::into_inner);
+        if detached.len() == DETACHED_MEMORY {
+            detached.pop_front();
+        }
+        detached.push_back(session_id.to_owned());
     }
 
     fn dispatch(&self, frame: &[u8]) {
@@ -399,6 +423,7 @@ impl Shared {
             }
             // The session is gone: end its listeners' streams.
             if let Some(session_id) = detached {
+                self.remember_detached(&session_id);
                 self.sessions.remove(&session_id);
             }
         } else {
