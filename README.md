@@ -86,9 +86,19 @@ them), text is cut at 200 characters (`--text-limit`) and the output at
 20,000 (`--max-chars`). `-i` keeps only what has a ref, with the landmarks,
 tables and rows around it; `--scope e12` (or a CSS/XPath locator) and
 `--depth 3` show a part; `--diff` shows what changed since the tab's last
-snapshot (`+` added, `-` removed, `~` changed). A node keeps its ref while it
-stays in the page, and the same page gives the same output. It reads Chrome's
-own accessibility tree; `--engine dom` uses chrome-cdp's DOM walker instead.
+snapshot (`+` added, `-` removed, `~` changed). The same page gives the same
+output. It reads Chrome's own accessibility tree; `--engine dom` uses
+chrome-cdp's DOM walker instead.
+
+A node keeps its ref while it stays in the page, also when the page
+re-renders around it, and a ref number is never given to another node. When
+the page (or an iframe) loads a new document, its refs go stale: using one
+fails with `RefStale`. When a re-render replaced the node, the ref moves to
+the one element of its frame with the same role and name and says so
+(`warning: e6 re-resolved by role+name`); with none, or several, it fails
+with `RefDetached` and what it was (`was: button "Save"`). `--strict-refs`
+(or `CHROME_CDP_STRICT_REFS=1`) turns the role+name fallback off, and so does
+a route change (`pushState`) for refs shown before it.
 
 JavaScript dialogs never hang a command. By default an `alert` and a
 `beforeunload` ("leave the page?") are accepted and mentioned in the output;

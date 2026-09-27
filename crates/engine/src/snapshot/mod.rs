@@ -1,4 +1,4 @@
-//! `snapshot` (plan 04, milestones 4.1 and 4.3): the page as a compact,
+//! `snapshot` (plan 04, milestones 4.1 to 4.3): the page as a compact,
 //! deterministic accessibility tree, with a ref (`e12`) on everything an
 //! agent can act on.
 //!
@@ -9,7 +9,8 @@
 //! rendering ([`prune`], [`render`]) are shared.
 //!
 //! Each tab keeps its refs ([`refs`]) and the tree of its last snapshot
-//! (for `--diff`) in [`Memory`].
+//! (for `--diff`) in [`Memory`]; [`resolve`] turns a ref back into its
+//! element for every command that takes one.
 
 mod ax;
 mod dom;

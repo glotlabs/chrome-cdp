@@ -1,6 +1,6 @@
 # Plan 04 — Snapshot, refs & locators
 
-Status: IN PROGRESS (4.1 and 4.3 done)
+Status: IN PROGRESS (4.1-4.3 done)
 Depends on: 03
 
 ## Goal
@@ -180,7 +180,7 @@ One grammar, used everywhere (`<loc>` in all plans):
       Playwright MCP's `browser_snapshot` for the same pages, with no loss of
       actionable elements (audited list).
 - [ ] p95 snapshot latency meets the targets in 4.3.
-- [ ] Refs survive re-renders where the DOM node is preserved, and stale refs
+- [x] Refs survive re-renders where the DOM node is preserved, and stale refs
       never hit the wrong element (fuzz test: random DOM mutations + random ref
       use → either the correct element or an explicit error).
 
@@ -203,3 +203,13 @@ One grammar, used everywhere (`<loc>` in all plans):
 - 4.1: `--max-chars` (default 20,000) cuts the text at a line boundary and ends with `… snapshot truncated: N more chars (M lines); use --interactive, --scope <ref> or --max-chars 0 for all of it`; `--json` is bounded by plan 08's rules.
 - 4.1: Until the locator engine (4.4), `--scope` takes a ref, or a CSS/XPath locator (first match in the main frame). Refs have only what 4.1 needs: a per-tab registry keyed by (frame, backendNodeId) with a monotonic counter, so a node keeps its ref and numbers are never reused. Invalidation, `RefStale`/`RefDetached` and the role+name fallback are 4.2.
 - 4.1: `snapshot` fails at once with `DialogOpen` (exit 5) while a dialog blocks the page, like `wait`.
+- 4.2: A same-document navigation (`pushState`, `#fragment`) does not clear refs, though plan 03 counted it as one for ref invalidation: SPA route changes keep most nodes (the nav bar, the layout), and a ref names its node, so a kept node is still the right element and a replaced one fails. It turns the role+name fallback off for refs last shown before it, since after a route change a look-alike is likely another view's element. A later snapshot turns it on again for the refs it shows.
+- 4.2: An iframe that loads a new document drops its own refs and its subframes' (`RefStale`, "from an earlier document of its frame"), not only the main frame's navigation: its backend ids name nodes of a document that is gone. A navigation counts when the frame's loader id changes, so a repeated `frameNavigated` for the same document keeps refs. A back/forward cache restore of the main frame is a new document too (its refs were cleared when it was left).
+- 4.2: A number the tab never gave is `NotFound` ("tab t1 has no ref e99"), not `RefStale`; stale is only for numbers given before a navigation, which the registry tells apart from the counter (everything up to the counter's value at the last page load is stale).
+- 4.2: A ref resolves with `DOM.resolveNode` (backend id → object in chrome-cdp's isolated world of its frame), then `isConnected && getRootNode({composed: true}) === document`: a node of an earlier document stays connected to that document, and closed shadow roots still reach the document through their host. An unknown backend id and a node from another document are both "gone".
+- 4.2: The fallback reads the ref's frame alone with engine A and prunes it like a full snapshot, without collapsing lists or cutting names, and takes the one node with the same role and name (a name the snapshot cut at `--text-limit` matches by its start). Hidden elements are not candidates. With exactly one, the ref is pointed at it for later commands too; with none or several it is `RefDetached`, with `was: role "name"` and, for several, how many (details: `ref`, `role`, `name`, `matches`). The frame id is left out of details: it differs per run.
+- 4.2: The "note: e6 re-resolved by role+name" is an output warning (stderr in text form, `warnings` in JSON): `Output` has no separate note channel, and it must not mix into stdout.
+- 4.2: `--strict-refs` (with `CHROME_CDP_STRICT_REFS`) is a flag of the commands that take refs, only `snapshot --scope` today, not a global flag: plan 08 does not add flags that some commands would ignore. Actions (plan 05) and the locator engine (4.4) add it where refs are accepted.
+- 4.2: `Engine::resolve_ref` is the one way in for everything that takes a ref (it returns a handle in the isolated world); `Engine::call_on_ref` calls a function on the element, the building block for plan 05's actions and plan 06's `eval --in`. `find` (4.5) gives refs through the same `Refs::assign`.
+- 4.2: The re-render fixture (`testdata/site/refs/rerender.html`) is a small keyed renderer that reconciles the way React does (same key, same node; `remount` replaces all), not React itself: the fixtures stay offline and dependency-free. The fuzz test (`fuzz_refs_hit_their_element_or_fail` in `crates/engine/tests/refs.rs`, 40 rounds, `REFS_FUZZ_SEED` picks another run) removes, replaces with look-alikes, renames, moves, adds and hides elements, with a reload and a route change every ten rounds; every ref must hit its own element, the only shown look-alike after its own is gone (never under `--strict-refs` or after a route change), or fail as stale/detached, and one whose element is still in the page must hit it. Ten seeds passed.
+- 4.2: The golden tests gained a `SessionAfter` fixture (setup commands before the case) for the stale, detached and ambiguous ref errors.
