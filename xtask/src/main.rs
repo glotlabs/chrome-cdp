@@ -18,7 +18,8 @@ const USAGE: &str = "\
 usage: cargo xtask <task> [args]
 
 tasks:
-  ci                  run cargo fmt --check, clippy -D warnings and tests
+  ci                  run cargo fmt --check, gen-cdp --check, clippy -D warnings
+                      and tests
   dist [--target T]   build the release binary into dist/ and check its size
   gen-cdp [--check]   regenerate CDP types from the vendored protocol JSON
   fixtures            manage the fixture site in testdata/site
@@ -55,6 +56,7 @@ fn main() -> ExitCode {
 fn ci(args: &[String]) -> Result {
     no_args("ci", args)?;
     cargo(["fmt", "--all", "--check"])?;
+    gen_cdp(&["--check".to_owned()])?;
     cargo([
         "clippy",
         "--workspace",
@@ -65,7 +67,6 @@ fn ci(args: &[String]) -> Result {
         "warnings",
     ])?;
     cargo(["test", "--workspace", "--locked"])?;
-    // Milestone 1.2 adds: gen-cdp --check (generated code must not drift).
     Ok(())
 }
 
@@ -110,13 +111,16 @@ fn dist(args: &[String]) -> Result {
     Ok(())
 }
 
+/// Runs the `cdp-gen` binary. It needs serde, so it lives in its own crate
+/// and xtask stays std-only.
 fn gen_cdp(args: &[String]) -> Result {
+    let mut run = vec!["run", "--quiet", "--locked", "--package", "cdp-gen", "--"];
     match args {
         [] => {}
-        [flag] if flag == "--check" => {}
+        [flag] if flag == "--check" => run.push("--check"),
         _ => return Err("usage: cargo xtask gen-cdp [--check]".into()),
     }
-    Err("gen-cdp is not implemented yet (plan 01, milestone 1.2)".into())
+    cargo(run)
 }
 
 fn fixtures(args: &[String]) -> Result {

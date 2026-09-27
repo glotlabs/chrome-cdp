@@ -10,7 +10,8 @@ and errors that say what to run next.
 ## Development
 
 ```sh
-cargo xtask ci      # fmt --check, clippy -D warnings, tests
+cargo xtask ci      # fmt --check, gen-cdp --check, clippy -D warnings, tests
+cargo xtask gen-cdp # regenerate CDP types (crates/cdp/protocol/README.md)
 cargo xtask dist    # release binary in dist/ (size budget: 15 MB)
 cargo deny check    # licenses and advisories
 ```

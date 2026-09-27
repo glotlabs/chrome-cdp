@@ -1,6 +1,6 @@
 # Plan 01 — Foundation & CDP client
 
-Status: IN PROGRESS (1.1 done)
+Status: IN PROGRESS (1.1-1.2 done)
 Depends on: 00-overview (read first), 08 §2–§4 (output conventions)
 
 ## Goal
@@ -121,3 +121,13 @@ _(append here)_
 - 1.1: No-`unwrap`/`expect` is enforced with `clippy::unwrap_used`/`expect_used` (warn, `-D warnings` in `xtask ci`); `clippy.toml` allows them in tests. `main` must opt out explicitly with `#[allow]`.
 - 1.1: Library crates also warn on `print_stdout`/`print_stderr` so only the binary writes to stdout (plan 08 §2); the binary and xtask opt out.
 - 1.1: `xtask` is std-only so `cargo xtask ci` starts fast. CI runs `cargo xtask ci` itself, so local and CI checks cannot diverge. `gen-cdp` and `fixtures` are placeholders that exit non-zero until milestone 1.2 and the fixture server exist.
+- 1.2: Protocol pinned to Chromium r1687809 (devtools-protocol tag `v0.0.1687809`), the last roll at or below Chrome 154.0.8037.57's branch position 1689415. Compared with Chrome 154's live `/json/protocol`, the only difference is one `Audits` enum value.
+- 1.2: The generator is a `cdp-gen` binary that `cargo xtask gen-cdp` runs via `cargo run`, so xtask stays std-only. It pipes its output through `rustfmt` with the workspace `rustfmt.toml`, so `cargo fmt --check` accepts the generated code.
+- 1.2: The allow-list is `crates/cdp/protocol/domains.txt` (one line per domain). `Domain: a, b` generates a subset: CSS = enable, disable, getComputedStyleForNode, and rule-usage tracking (plan 06 coverage); Overlay = enable, disable, highlightNode, hideHighlight.
+- 1.2: Types that listed domains take from unlisted domains (today Debugger and DOMDebugger) are generated as types-only modules instead of falling back to `serde_json::Value`.
+- 1.2: Modules are snake_case (`cdp::domains::page::LoadEventFired`), not `Page::LoadEventFired` as the 1.3 sketch writes.
+- 1.2: If an enum already has an `unknown` value, that variant carries `#[serde(other)]`, so there is no second `Unknown`. The catch-all is always the last variant, because serde requires it.
+- 1.2: By-value recursive fields are boxed (`Option<Box<StackTrace>>`). An event whose name collides with a type gets an `Event` suffix (none do today). Params structs get `new(required...)`, or `Default` when every field is optional.
+- 1.2: `integer` → `i64`, `number` → `f64`, an `object` with no properties → `serde_json::Map`. Named primitive types are `pub type` aliases, not newtypes, to keep the generated code small.
+- 1.2: The generated code is 22 modules and 21.9k lines. The `cdp` crate builds in about 9 s (debug or release, 4 cores).
+- 1.2: The drift check also runs as a `cdp-gen` unit test, so plain `cargo test` catches stale generated code as well as `cargo xtask ci`.
