@@ -12,7 +12,7 @@
 //!    `~/Applications`.
 //!
 //! [`locate`] only looks at the filesystem; [`discover`] also reads the
-//! version and collects warnings (too old, snap confinement).
+//! version and collects warnings (too old, version unknown).
 
 use std::path::{Path, PathBuf};
 
@@ -82,8 +82,7 @@ pub struct Chrome {
     /// `None` when it could not be read (a warning says why).
     pub version: Option<ChromeVersion>,
     /// A snap package: its confinement blocks profiles under `/tmp` and in
-    /// hidden directories, so launch (milestone 2.3) must put the profile
-    /// elsewhere.
+    /// hidden directories, so launch puts them under `~/snap/<snap>/common`.
     pub snap: bool,
     /// `chrome-headless-shell`, which cannot run headed.
     pub headless_shell: bool,
@@ -217,13 +216,6 @@ pub fn discover(explicit: Option<&Path>, host: &Host) -> Result<Chrome, Discover
         chrome.warnings.push(format!(
             "{v} at {} is older than Chrome {MIN_CHROME_MAJOR}, the oldest chrome-cdp supports; \
              some commands may fail",
-            chrome.path.display()
-        ));
-    }
-    if chrome.snap {
-        chrome.warnings.push(format!(
-            "{} is a snap package: its confinement blocks browser profiles under /tmp and in \
-             hidden directories; a non-snap Chrome avoids this",
             chrome.path.display()
         ));
     }
