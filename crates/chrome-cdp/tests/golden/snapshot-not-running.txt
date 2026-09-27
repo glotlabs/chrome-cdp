@@ -1,0 +1,11 @@
+$ chrome-cdp snapshot
+exit: 4
+--- stderr
+error: session default is not running
+  hint: chrome-cdp open
+
+$ chrome-cdp snapshot --json
+exit: 4
+--- stdout
+{"ok":false,"error":{"kind":"DaemonUnavailable","message":"session default is not running","hint":"chrome-cdp open"}}
+

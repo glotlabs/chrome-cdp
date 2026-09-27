@@ -134,7 +134,11 @@ enum Scope {
 fn parse_scope(text: &str) -> Result<Scope, ErrorInfo> {
     match parse_ref(text) {
         Some(number) => Ok(Scope::Ref(number)),
-        None => parse_locator(text).map(Scope::Locator),
+        None => parse_locator(text).map(Scope::Locator).map_err(|e| {
+            e.hint(Hint::text(
+                "use a ref from the snapshot (e12), css=<selector> or xpath=<expression>",
+            ))
+        }),
     }
 }
 

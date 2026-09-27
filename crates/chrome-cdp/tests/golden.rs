@@ -34,6 +34,8 @@ enum Fixture {
     FreshSession,
     /// Like `FreshSession`, but `default` is opened before each mode.
     SessionPerMode,
+    /// Like `Session`, with the fixture site's page at this path loaded.
+    SessionAt(&'static str),
     /// An empty session sandbox, with no Chrome.
     NoSessions,
     /// `{chrome}` is a stand-in that dies like a Chrome without a sandbox.
@@ -446,6 +448,36 @@ const CASES: &[Case] = &[
         fixture: Fixture::Session,
     },
     Case {
+        name: "snapshot",
+        args: &["snapshot"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/snapshot/login.html"),
+    },
+    Case {
+        name: "snapshot-scope-interactive",
+        args: &["snapshot", "--scope", "css=form", "-i"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/snapshot/login.html"),
+    },
+    Case {
+        name: "snapshot-scope-missing",
+        args: &["snapshot", "--scope", "#nothing"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/snapshot/login.html"),
+    },
+    Case {
+        name: "snapshot-bad-scope",
+        args: &["snapshot", "--scope", "role=button"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
+        name: "snapshot-not-running",
+        args: &["snapshot"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
         name: "goto-dialog-open",
         args: &[
             "goto",
@@ -624,13 +656,21 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
     let mut sandbox = None;
     let chrome = match case.fixture {
         Fixture::None => None,
-        Fixture::Session | Fixture::FreshSession | Fixture::SessionPerMode => {
+        Fixture::Session
+        | Fixture::FreshSession
+        | Fixture::SessionPerMode
+        | Fixture::SessionAt(_) => {
             let chrome = chrome_path()?;
             norm = norm.with(&chrome, "<chrome>");
             let sb = Sandbox::with_chrome(&chrome);
             norm = norm.with(sb.dir.path(), "<sandbox>");
             if case.fixture == Fixture::Session {
                 let out = sb.cli().arg("open").output().unwrap();
+                assert!(out.status.success(), "{out:?}");
+            }
+            if let Fixture::SessionAt(path) = case.fixture {
+                let url = format!("{}{path}", Fixtures::shared().a());
+                let out = sb.cli().args(["open", &url]).output().unwrap();
                 assert!(out.status.success(), "{out:?}");
             }
             sandbox = Some(sb);

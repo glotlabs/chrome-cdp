@@ -1,0 +1,25 @@
+$ chrome-cdp snapshot --scope css=form -i
+exit: 0
+--- stdout
+page t1 "Sign in – Acme" <site>/snapshot/login.html
+- form "Login"
+  - textbox "Email" [e1] required
+  - textbox "Password" [e2] (password)
+  - checkbox "Remember me" [e3] unchecked
+  - button "Sign in" [e4]
+
+$ chrome-cdp snapshot --scope css=form -i --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"engine":"ax","nodes":[{"children":[{"name":"Email","ref":"e1","role":"textbox","states":["required"]},{"name":"Password","password":true,"ref":"e2","role":"textbox"},{"name":"Remember me","ref":"e3","role":"checkbox","states":["unchecked"]},{"name":"Sign in","ref":"e4","role":"button"}],"name":"Login","role":"form"}],"tab":"t1","title":"Sign in – Acme","url":"<site>/snapshot/login.html"}}
+
+$ chrome-cdp snapshot --scope css=form -i -q
+exit: 0
+--- stdout
+page t1 "Sign in – Acme" <site>/snapshot/login.html
+- form "Login"
+  - textbox "Email" [e1] required
+  - textbox "Password" [e2] (password)
+  - checkbox "Remember me" [e3] unchecked
+  - button "Sign in" [e4]
+
