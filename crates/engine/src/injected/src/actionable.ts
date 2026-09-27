@@ -88,6 +88,8 @@ function readOnly(el: Element): { why: string; final?: boolean } | null {
   if (name === 'input') {
     const type = (el as HTMLInputElement).type;
     if (NOT_TEXT.has(type)) return { why: `it is an <input type=${type}>, which takes no text`, final: true };
+  } else if (name === 'select') {
+    return { why: 'it is a <select>: choose its options with select', final: true };
   } else if (name !== 'textarea' && !(el as HTMLElement).isContentEditable) {
     const role = roleOf(el);
     if (role !== 'textbox' && role !== 'searchbox' && role !== 'combobox' && role !== 'spinbutton') {

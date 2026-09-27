@@ -47,6 +47,9 @@ struct Prepared {
     set: bool,
     error: Option<String>,
     example: Option<String>,
+    /// It is a `<select>`.
+    #[serde(default)]
+    select: bool,
 }
 
 /// What `fieldValue` answers.
@@ -177,6 +180,12 @@ impl Actor<'_> {
         let prepared: Prepared = serde_json::from_value(value).unwrap_or_default();
         if let Some(why) = prepared.error {
             let hint = match prepared.example {
+                _ if prepared.select => Hint::run(
+                    Cmd::new("select")
+                        .arg(locator)
+                        .arg(text)
+                        .session(self.session()),
+                ),
                 Some(example) => Hint::run(
                     Cmd::new("fill")
                         .arg(locator)

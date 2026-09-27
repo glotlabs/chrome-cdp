@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 313c62ae61f82e1c
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: b856c785ec1f3dfc
 "use strict";
 (() => {
   // src/dom.ts
@@ -1374,6 +1374,8 @@ ${inner}
     if (name === "input") {
       const type = el.type;
       if (NOT_TEXT.has(type)) return { why: `it is an <input type=${type}>, which takes no text`, final: true };
+    } else if (name === "select") {
+      return { why: "it is a <select>: choose its options with select", final: true };
     } else if (name !== "textarea" && !el.isContentEditable) {
       const role = roleOf(el);
       if (role !== "textbox" && role !== "searchbox" && role !== "combobox" && role !== "spinbutton") {
@@ -1572,6 +1574,9 @@ ${inner}
       el.focus();
       el.select();
       return { set: false };
+    }
+    if (el instanceof HTMLSelectElement) {
+      return { error: "it is a <select>, whose options select chooses", select: true };
     }
     if (el instanceof HTMLTextAreaElement) {
       el.focus();

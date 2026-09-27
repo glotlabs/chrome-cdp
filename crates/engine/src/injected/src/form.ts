@@ -73,7 +73,10 @@ const fire = (el: Element) => {
  * dispatched; `{set: false}` once `el` has focus and its content is
  * selected, so inserted text replaces it; `{error}` when it cannot hold
  * `value`. */
-export function fillPrepare(el: Element, value: string): { set?: boolean; error?: string; example?: string } {
+export function fillPrepare(
+  el: Element,
+  value: string,
+): { set?: boolean; error?: string; example?: string; select?: boolean } {
   if (el instanceof HTMLInputElement) {
     const type = el.type.toLowerCase();
     if (!TYPE_INTO.has(type) && !SET_VALUE.has(type)) {
@@ -100,6 +103,9 @@ export function fillPrepare(el: Element, value: string): { set?: boolean; error?
     el.focus();
     el.select();
     return { set: false };
+  }
+  if (el instanceof HTMLSelectElement) {
+    return { error: 'it is a <select>, whose options select chooses', select: true };
   }
   if (el instanceof HTMLTextAreaElement) {
     el.focus();

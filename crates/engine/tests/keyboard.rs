@@ -503,6 +503,25 @@ async fn fills_fields_of_every_kind() {
         err.message,
         "#remember cannot take text: it is an <input type=checkbox>, which takes no text"
     );
+    let err = fails(&engine, fill("#choice", "Red")).await;
+    assert_eq!(
+        err.message,
+        "#choice cannot take text: it is a <select>: choose its options with select"
+    );
+    let err = fails(
+        &engine,
+        Action::Fill {
+            locator: "#choice".to_owned(),
+            text: "Red".to_owned(),
+            force: true,
+        },
+    )
+    .await;
+    assert_eq!(err.kind, ErrorKind::BadArgs);
+    assert_eq!(
+        err.hint.as_deref(),
+        Some("chrome-cdp select '#choice' Red --session keys-fill")
+    );
 
     // A contenteditable element.
     goto(&engine, &site.url("/actions/keyboard.html")).await;
