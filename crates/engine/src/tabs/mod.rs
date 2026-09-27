@@ -764,9 +764,13 @@ fn frame_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event:
     let decoded = match method {
         page::FrameAttached::NAME => decode::<page::FrameAttached>(event)
             .map(|e| frames.attached(session_id, &e.frame_id, &e.parent_frame_id)),
-        page::FrameNavigated::NAME => {
-            decode::<page::FrameNavigated>(event).map(|e| frames.navigated(session_id, &e.frame))
-        }
+        page::FrameNavigated::NAME => decode::<page::FrameNavigated>(event).map(|e| {
+            if e.r#type == page::NavigationType::BackForwardCacheRestore {
+                frames.restored(session_id, &e.frame);
+            } else {
+                frames.navigated(session_id, &e.frame);
+            }
+        }),
         page::NavigatedWithinDocument::NAME => decode::<page::NavigatedWithinDocument>(event)
             .map(|e| frames.navigated_within_document(&e.frame_id, &e.url)),
         page::FrameDetached::NAME => decode::<page::FrameDetached>(event).map(|e| {

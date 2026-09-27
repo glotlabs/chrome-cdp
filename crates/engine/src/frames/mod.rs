@@ -18,7 +18,7 @@
 
 pub(crate) mod commands;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 use cdp::domains::{page, runtime};
 use serde::{Deserialize, Serialize};
@@ -83,7 +83,16 @@ pub(crate) struct FrameTree {
     frames: HashMap<String, Frame>,
     /// Orders siblings by when they were first seen.
     seq: u64,
+    /// The main frame's document (loader id).
+    root_loader: String,
+    /// The subframes of the main frame's earlier documents, by loader id,
+    /// newest last: a document restored from the back/forward cache gets
+    /// them back, as Chrome does not announce them again.
+    cached: VecDeque<(String, Vec<(String, Frame)>)>,
 }
+
+/// How many earlier documents' subframes a tab keeps.
+const CACHED_DOCUMENTS: usize = 8;
 
 #[derive(Debug)]
 struct Frame {
@@ -106,6 +115,8 @@ impl FrameTree {
             root_session: session.to_owned(),
             frames: HashMap::new(),
             seq: 0,
+            root_loader: String::new(),
+            cached: VecDeque::new(),
         };
         tree.entry(root, session);
         tree
@@ -141,6 +152,9 @@ impl FrameTree {
             }
             self.root.clone_from(&frame.id);
         }
+        if frame.id == self.root && self.root_loader.is_empty() {
+            self.root_loader.clone_from(&frame.loader_id);
+        }
         let known = self.frames.contains_key(&frame.id);
         let entry = self.entry(&frame.id, session);
         if entry.parent.is_none() {
@@ -171,16 +185,18 @@ impl FrameTree {
     /// session owns it now. The old document's frames are gone (Chrome
     /// does not always say so); the new one's attach after this event.
     pub(crate) fn navigated(&mut self, session: &str, nav: &page::Frame) {
-        let children: Vec<String> = self
-            .frames
-            .iter()
-            .filter(|(_, f)| f.parent.as_deref() == Some(&nav.id))
-            .map(|(id, _)| id.clone())
-            .collect();
-        for child in children {
-            self.remove(&child);
-        }
+        let children = self.take_children(&nav.id);
         let is_root = nav.id == self.root;
+        if is_root && nav.loader_id != self.root_loader {
+            let old = std::mem::replace(&mut self.root_loader, nav.loader_id.clone());
+            if !old.is_empty() {
+                self.cached.retain(|(loader, _)| *loader != old);
+                self.cached.push_back((old, children));
+                if self.cached.len() > CACHED_DOCUMENTS {
+                    self.cached.pop_front();
+                }
+            }
+        }
         let frame = self.entry(&nav.id, session);
         session.clone_into(&mut frame.session);
         if !is_root && nav.parent_id.is_some() {
@@ -188,6 +204,63 @@ impl FrameTree {
         }
         frame.name = nav.name.clone().unwrap_or_default();
         frame.url = full_url(nav);
+    }
+
+    /// `Page.frameNavigated` with type `BackForwardCacheRestore`: an
+    /// earlier document of the main frame is back, with the subframes it
+    /// had. Frames its sessions announced again meanwhile keep what they
+    /// reported; the rest come back from when the document was left.
+    pub(crate) fn restored(&mut self, session: &str, nav: &page::Frame) {
+        if nav.id != self.root {
+            self.navigated(session, nav);
+            return;
+        }
+        let cached = self
+            .cached
+            .iter()
+            .position(|(loader, _)| *loader == nav.loader_id)
+            .and_then(|i| self.cached.remove(i))
+            .map(|(_, frames)| frames)
+            .unwrap_or_default();
+        self.navigated(session, nav);
+        for (id, frame) in cached {
+            match self.frames.get_mut(&id) {
+                Some(again) => {
+                    again.seq = frame.seq;
+                    if again.parent.is_none() {
+                        again.parent = frame.parent;
+                    }
+                    if again.url.is_empty() {
+                        again.name = frame.name;
+                        again.url = frame.url;
+                    }
+                }
+                None => {
+                    self.frames.insert(id, frame);
+                }
+            }
+        }
+    }
+
+    /// Removes the subframes of frame `id` and returns them.
+    fn take_children(&mut self, id: &str) -> Vec<(String, Frame)> {
+        let mut taken = Vec::new();
+        let mut parents = vec![id.to_owned()];
+        while let Some(parent) = parents.pop() {
+            let children: Vec<String> = self
+                .frames
+                .iter()
+                .filter(|(child, f)| f.parent.as_deref() == Some(&parent) && **child != self.root)
+                .map(|(child, _)| child.clone())
+                .collect();
+            for child in children {
+                if let Some(frame) = self.frames.remove(&child) {
+                    parents.push(child.clone());
+                    taken.push((child, frame));
+                }
+            }
+        }
+        taken
     }
 
     /// `Page.navigatedWithinDocument`: a new URL, the same document.
@@ -386,8 +459,12 @@ impl FrameTree {
     }
 }
 
-/// A frame's URL with its fragment.
+/// A frame's URL with its fragment; for Chrome's error page, the URL that
+/// failed to load (as the address bar shows it).
 fn full_url(frame: &page::Frame) -> String {
+    if let Some(unreachable) = &frame.unreachable_url {
+        return unreachable.clone();
+    }
     match &frame.url_fragment {
         Some(fragment) if !frame.url.contains('#') => format!("{}{fragment}", frame.url),
         _ => frame.url.clone(),
@@ -534,6 +611,47 @@ mod tests {
             },
         );
         assert_eq!(tree.context("T", World::Isolated).unwrap().id, 9);
+    }
+
+    #[test]
+    fn a_document_back_from_the_cache_gets_its_frames_back() {
+        let at = |loader: &str, url: &str| {
+            let mut nav = frame("T", None, "", url);
+            nav.loader_id = loader.into();
+            nav
+        };
+        let mut tree = tree();
+        tree.context_created("s1", &context(5, "A", true, ""));
+        tree.navigated("s1", &at("L2", "http://a.test/next"));
+        tree.attached("s1", "D", "T");
+        assert_eq!(ids(&tree), [("T".into(), 0), ("D".into(), 1)]);
+        // Chrome announces the cross-site frame `B` again, but not `A`.
+        tree.restored("s1", &at("L", "http://a.test/"));
+        tree.navigated("s2", &frame("B", Some("T"), "", "http://b.test/ad.html"));
+        assert_eq!(
+            ids(&tree),
+            [
+                ("T".into(), 0),
+                ("A".into(), 1),
+                ("C".into(), 2),
+                ("B".into(), 1)
+            ]
+        );
+        assert_eq!(tree.find("pay").unwrap().id, "A");
+        assert_eq!(tree.context("A", World::Main).unwrap().id, 5);
+        assert_eq!(tree.owner("B"), Some("s2"));
+        // And forward again: `D` is back.
+        tree.restored("s1", &at("L2", "http://a.test/next"));
+        assert_eq!(ids(&tree), [("T".into(), 0), ("D".into(), 1)]);
+    }
+
+    #[test]
+    fn an_error_page_has_the_url_that_failed() {
+        let mut tree = FrameTree::new("T", "s1");
+        let mut nav = frame("T", None, "", "chrome-error://chromewebdata/");
+        nav.unreachable_url = Some("http://localhost:3000/".into());
+        tree.navigated("s1", &nav);
+        assert_eq!(tree.list()[0].url, "http://localhost:3000/");
     }
 
     #[test]
