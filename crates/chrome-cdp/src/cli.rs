@@ -175,7 +175,7 @@ pub(crate) struct InstallArgs {
     /// List the installed browsers and each channel's current version.
     #[arg(
         long,
-        conflicts_with_all = ["version", "headless_shell", "force", "with_deps"]
+        conflicts_with_all = ["channel", "version", "headless_shell", "force", "with_deps"]
     )]
     pub(crate) list: bool,
 }

@@ -394,3 +394,72 @@ fn list(host: &Host, timeout: Duration) -> Result<Output, ErrorInfo> {
     let output = Output::typed(&data, text.trim_end()).quiet(quiet);
     Ok(warnings.into_iter().fold(output, Output::warning))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use browser::{CannotRun, DepsFix, Distro, Installation, Product};
+    use protocol::{Cmd, ErrorKind};
+
+    use super::cannot_run;
+
+    fn installation() -> Installation {
+        Installation {
+            id: "stable-154.0.8037.57-linux64".into(),
+            channel: "stable".into(),
+            version: "154.0.8037.57".into(),
+            platform: "linux64".into(),
+            product: Product::HeadlessShell,
+            dir: PathBuf::from("/c/browsers/stable-154.0.8037.57-linux64"),
+            executable: PathBuf::from("/c/shell"),
+            downloaded: None,
+            warnings: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn missing_libraries_hint_at_with_deps() {
+        let noble = Distro::parse("ID=ubuntu\nID_LIKE=debian\nVERSION_ID=\"24.04\"\n");
+        let cannot = CannotRun {
+            reason: "`--version` printed nothing".into(),
+            fix: Some(DepsFix::new(
+                Some(&noble),
+                vec!["libnss3.so".into(), "libasound.so.2".into()],
+            )),
+        };
+        let again = Cmd::new("install").switch("headless-shell");
+        let info = cannot_run(&installation(), &cannot, &again, false);
+        assert_eq!(info.kind, ErrorKind::LaunchFailed);
+        assert_eq!(
+            info.to_text(),
+            "error: chrome-headless-shell 154.0.8037.57 is installed but cannot start: \
+             `--version` printed nothing\n  \
+             path: /c/shell\n  \
+             missing: libnss3.so, libasound.so.2\n  \
+             hint: chrome-cdp install --headless-shell --with-deps   (runs sudo apt-get install \
+             -y libasound2t64 libnss3), or run sudo apt-get install -y libasound2t64 libnss3\n"
+        );
+        let tried = cannot_run(&installation(), &cannot, &again, true);
+        assert!(
+            tried
+                .to_text()
+                .contains("hint: `sudo apt-get install -y libasound2t64 libnss3` did not"),
+            "{tried}"
+        );
+    }
+
+    #[test]
+    fn other_failures_say_how_to_see_why() {
+        let cannot = CannotRun {
+            reason: "cannot run it: Exec format error".into(),
+            fix: None,
+        };
+        let info = cannot_run(&installation(), &cannot, &Cmd::new("install"), false);
+        assert!(
+            info.to_text()
+                .ends_with("  hint: run it to see why: /c/shell --version\n"),
+            "{info}"
+        );
+    }
+}
