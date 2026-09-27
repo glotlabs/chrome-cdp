@@ -36,9 +36,16 @@ pub struct OpenRequest {
     /// Close a running browser first, so the given options apply.
     #[serde(default)]
     pub restart: bool,
-    /// A URL to load in the current page (see [`crate::normalize_url`]).
+    /// A URL to load in the active tab (see [`crate::normalize_url`]).
     #[serde(default)]
     pub url: Option<String>,
+    /// `--tab`: load `url` in this tab instead.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// `--follow-popups`: whether popups become the active tab; `None`
+    /// keeps the session's setting (off at first).
+    #[serde(default)]
+    pub follow_popups: Option<bool>,
     /// Bounds the launch and the page load.
     pub timeout_ms: u64,
 }
@@ -58,7 +65,7 @@ pub struct ConnectRequest {
 pub enum Target {
     /// The browser session (`Browser.*`, `Target.*`, …).
     Browser,
-    /// The current page (`Page.*`, `Runtime.*`, `DOM.*`, …).
+    /// The active tab, or `--tab` (`Page.*`, `Runtime.*`, `DOM.*`, …).
     Page,
 }
 
@@ -70,12 +77,53 @@ pub struct CdpRequest {
     /// The params object.
     #[serde(default)]
     pub params: Map<String, Value>,
-    /// The browser or the current page.
+    /// The browser or a tab.
     pub target: Target,
+    /// `--tab`: the tab for [`Target::Page`]; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
     /// Bounds the call.
     pub timeout_ms: u64,
     /// The output budget (0 = none).
     pub max_chars: usize,
+}
+
+/// `tabs`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TabsRequest {
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
+/// `tab new [url]`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TabNewRequest {
+    /// A URL to load in the new tab (see [`crate::normalize_url`]).
+    #[serde(default)]
+    pub url: Option<String>,
+    /// Bounds opening the tab and loading the page.
+    pub timeout_ms: u64,
+}
+
+/// `tab <id>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TabSelectRequest {
+    /// `t2` or `2`.
+    pub tab: String,
+    pub timeout_ms: u64,
+}
+
+/// `tab close [id]`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TabCloseRequest {
+    /// The tab to close; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// On the last tab, close the session instead of leaving a blank tab.
+    #[serde(default)]
+    pub close_browser: bool,
+    pub timeout_ms: u64,
 }
 
 /// Milliseconds from a request as a duration, at least 1 ms.

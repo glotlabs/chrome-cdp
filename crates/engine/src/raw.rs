@@ -19,9 +19,11 @@ impl Engine {
             method,
             params,
             target,
+            tab,
             max_chars,
             ..
         } = req;
+        let mark = running.tabs.mark();
         let params = Value::Object(params);
         let result = match target {
             Target::Browser => {
@@ -33,7 +35,7 @@ impl Engine {
                     .await
             }
             Target::Page => {
-                let page = self.page(&running).await?;
+                let page = self.page(&running, tab.as_deref(), timeout).await?;
                 let _tab = self.tabs.lock(&page.target_id).await;
                 page.session
                     .with_timeout(timeout)
@@ -44,9 +46,10 @@ impl Engine {
         let value = result.map_err(|e| self.cdp_error(&e, &method, target))?;
         let pretty = serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string());
         let compact = value.to_string();
-        Ok(Output::new(value, pretty)
+        let output = Output::new(value, pretty)
             .quiet(compact)
-            .limit(max_chars, "--max-chars 0 for all of it"))
+            .limit(max_chars, "--max-chars 0 for all of it");
+        Ok(self.report_opened(&running, mark, output).await)
     }
 
     fn cdp_error(&self, e: &CdpError, method: &str, target: Target) -> ErrorInfo {

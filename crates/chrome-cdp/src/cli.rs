@@ -80,6 +80,11 @@ pub(crate) struct GlobalArgs {
     )]
     pub(crate) timeout: Duration,
 
+    /// The tab page commands act on, e.g. t2 (see `chrome-cdp tabs`).
+    /// Default: the active tab.
+    #[arg(long, global = true, env = "CHROME_CDP_TAB", value_name = "ID")]
+    pub(crate) tab: Option<String>,
+
     /// Log to stderr: -v info, -vv debug, -vvv trace. CHROME_CDP_LOG
     /// (e.g. cdp=trace) overrides it.
     #[arg(short, long, global = true, action = ArgAction::Count)]
@@ -149,7 +154,8 @@ Examples:
   chrome-cdp open --headed                          # with a window
   chrome-cdp open --profile work https://app.test   # keeps logins
   chrome-cdp open --session shop http://localhost:3000
-  chrome-cdp open --restart --chrome-arg=--window-size=1280,800")]
+  chrome-cdp open --restart --chrome-arg=--window-size=1280,800
+  chrome-cdp open --follow-popups                   # popups become the active tab")]
     Open(OpenArgs),
 
     /// Attach the session to a browser that is already running.
@@ -186,6 +192,30 @@ Examples:
   chrome-cdp sessions -q          # one name per line")]
     Sessions(SessionsArgs),
 
+    /// List the session's tabs; `*` marks the active one.
+    #[command(after_help = "\
+Tabs have short ids (t1, t2, …) in the order they opened, never reused.
+Commands act on the active tab unless --tab names another. A popup opens a
+new tab but does not become active (unless `open --follow-popups`).
+
+Examples:
+  chrome-cdp tabs
+  chrome-cdp tabs -q              # one id per line")]
+    Tabs(TabsArgs),
+
+    /// Switch to a tab, or open or close one.
+    #[command(
+        args_conflicts_with_subcommands = true,
+        arg_required_else_help = true,
+        after_help = "\
+Examples:
+  chrome-cdp tab t2                        # make t2 the active tab
+  chrome-cdp tab new https://example.com   # open a tab and switch to it
+  chrome-cdp tab close                     # close the active tab
+  chrome-cdp tab close t3"
+    )]
+    Tab(TabArgs),
+
     /// Make one raw CDP call on the session's browser or current page.
     #[command(after_help = "\
 Starts the session's browser first if it has none.
@@ -195,7 +225,8 @@ Examples:
   chrome-cdp cdp Browser.getVersion
   chrome-cdp cdp --target page Runtime.evaluate '{\"expression\":\"1+1\"}'
   echo '{\"expression\":\"1+1\"}' | chrome-cdp cdp --target page Runtime.evaluate -
-  chrome-cdp cdp Target.getTargets --session shop")]
+  chrome-cdp cdp Target.getTargets --session shop
+  chrome-cdp cdp --target page --tab t2 Page.reload")]
     Cdp(CdpArgs),
 
     /// The session daemon; other commands start it.
@@ -284,6 +315,11 @@ pub(crate) struct OpenArgs {
     #[arg(long)]
     pub(crate) restart: bool,
 
+    /// Make popups (window.open, target=_blank) the active tab as they
+    /// open. The session keeps this setting.
+    #[arg(long)]
+    pub(crate) follow_popups: bool,
+
     #[command(flatten)]
     pub(crate) idle: IdleArgs,
 }
@@ -342,7 +378,7 @@ pub(crate) struct CdpArgs {
     #[arg(value_name = "JSON")]
     pub(crate) params: Option<String>,
 
-    /// Send the call to the browser, or to the current page.
+    /// Send the call to the browser, or to the active tab (or --tab).
     #[arg(long, value_enum, default_value_t = Target::Browser)]
     pub(crate) target: Target,
 
@@ -350,6 +386,66 @@ pub(crate) struct CdpArgs {
     /// long strings and arrays in `data` are shortened instead.
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct TabsArgs {
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct TabArgs {
+    #[command(subcommand)]
+    pub(crate) command: Option<TabCommand>,
+
+    /// The tab to make active, e.g. t2.
+    #[arg(value_name = "ID")]
+    pub(crate) id: Option<String>,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum TabCommand {
+    /// Open a tab, make it active, and optionally load a URL in it.
+    #[command(after_help = "\
+Starts the session's browser first if it has none.
+
+Examples:
+  chrome-cdp tab new
+  chrome-cdp tab new https://example.com
+  chrome-cdp tab new localhost:3000/login -q     # prints just the new id")]
+    New(TabNewArgs),
+
+    /// Close a tab (default: the active one).
+    #[command(after_help = "\
+Closing the last tab leaves a blank one, so the session keeps its browser;
+--close-browser closes the session instead.
+
+Examples:
+  chrome-cdp tab close
+  chrome-cdp tab close t3
+  chrome-cdp tab close --close-browser     # on the last tab: close the session")]
+    Close(TabCloseArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct TabNewArgs {
+    /// A URL to load; without a scheme, https:// (or http:// for
+    /// localhost) is added.
+    #[arg(value_name = "URL")]
+    pub(crate) url: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct TabCloseArgs {
+    /// The tab to close, e.g. t3. Default: --tab, else the active tab.
+    #[arg(value_name = "ID")]
+    pub(crate) id: Option<String>,
+
+    /// If it is the last tab, close the session and its browser too.
+    #[arg(long)]
+    pub(crate) close_browser: bool,
 }
 
 #[derive(Debug, Args)]
@@ -418,7 +514,7 @@ impl LaunchArgs {
 pub(crate) enum Target {
     /// The browser session (Browser.*, Target.*, …).
     Browser,
-    /// The current page (Page.*, Runtime.*, DOM.*, …).
+    /// The active tab, or --tab (Page.*, Runtime.*, DOM.*, …).
     Page,
 }
 
@@ -518,6 +614,7 @@ mod tests {
     /// browsers the user installed.)
     /// `open`, `connect` and `close` print a line or two; `sessions` grows
     /// only with the sessions the user started.
+    /// `tab`, `tab new` and `tab close` describe one or two tabs.
     const FIXED_SIZE: &[&str] = &[
         "schema",
         "install",
@@ -526,6 +623,9 @@ mod tests {
         "connect",
         "close",
         "sessions",
+        "tab",
+        "tab new",
+        "tab close",
     ];
 
     /// The plan 08 checklist: every command has an example in its help, a
@@ -541,10 +641,13 @@ mod tests {
                 .filter(|s| s.get_name() != "help" && !s.get_name().starts_with("__"))
             {
                 let name = format!("{path} {}", sub.get_name()).trim().to_owned();
+                // A command with subcommands that also takes arguments
+                // (`tab <id>`) is a command of its own too.
+                if !sub.has_subcommands() || sub.get_positionals().next().is_some() {
+                    out.push((name.clone(), sub.clone()));
+                }
                 if sub.has_subcommands() {
                     leaves(sub, &name, out);
-                } else {
-                    out.push((name, sub.clone()));
                 }
             }
         }

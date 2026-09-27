@@ -294,6 +294,54 @@ const CASES: &[Case] = &[
         modes: ERR,
         fixture: Fixture::Session,
     },
+    Case {
+        name: "tabs",
+        args: &["tabs"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "tabs-not-running",
+        args: &["tabs"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
+        name: "tab-select",
+        args: &["tab", "t1"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "tab-unknown",
+        args: &["tab", "t9"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "tab-bad-id",
+        args: &["tab", "first"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
+        name: "tab-new",
+        args: &["tab", "new", "data:text/html,<title>Two</title>"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "tab-close-last",
+        args: &["tab", "close"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "tab-close-browser",
+        args: &["tab", "close", "--close-browser"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
 ];
 
 fn golden_dir() -> PathBuf {

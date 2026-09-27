@@ -1,14 +1,9 @@
-//! Pages: the current page, and one async mutex per tab so two commands
-//! never interleave their steps on the same page (plan 02, milestone 2.4).
-//!
-//! Plan 03 replaces the "current page" rule here with a real tab manager
-//! (`tabs`, `tab <n>`, `--tab`); the per-tab locks stay.
+//! One async mutex per tab, so two commands never interleave their steps
+//! on the same page (plan 02, milestone 2.4).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use cdp::domains::target;
-use cdp::{Connection, Session};
 use tokio::sync::OwnedMutexGuard;
 
 /// One async mutex per target id. Commands that act on a page hold its
@@ -27,55 +22,6 @@ impl TabLocks {
         };
         mutex.lock_owned().await
     }
-}
-
-/// An attached page.
-#[derive(Debug, Clone)]
-pub(crate) struct Page {
-    pub(crate) target_id: String,
-    pub(crate) session: Session,
-}
-
-/// The page commands act on: the one used last if it is still open, else
-/// the first open page, else a new `about:blank` one.
-pub(crate) async fn current_page(conn: &Connection, slot: &mut Option<Page>) -> cdp::Result<Page> {
-    let targets = conn
-        .browser()
-        .call(target::GetTargetsParams::default())
-        .await?
-        .target_infos;
-    let mut pages = targets.iter().filter(|t| t.r#type == "page");
-    if let Some(page) = slot.as_ref()
-        && targets
-            .iter()
-            .any(|t| t.r#type == "page" && t.target_id == page.target_id)
-    {
-        return Ok(page.clone());
-    }
-    let target_id = match pages.next() {
-        Some(t) => t.target_id.clone(),
-        None => {
-            conn.browser()
-                .call(target::CreateTargetParams::new("about:blank".into()))
-                .await?
-                .target_id
-        }
-    };
-    let session = conn.attach(target_id.clone()).await?;
-    let page = Page { target_id, session };
-    *slot = Some(page.clone());
-    Ok(page)
-}
-
-/// How many pages are open.
-pub(crate) async fn count(conn: &Connection) -> cdp::Result<u32> {
-    let targets = conn
-        .browser()
-        .call(target::GetTargetsParams::default())
-        .await?
-        .target_infos;
-    let pages = targets.iter().filter(|t| t.r#type == "page").count();
-    Ok(u32::try_from(pages).unwrap_or(u32::MAX))
 }
 
 #[cfg(test)]

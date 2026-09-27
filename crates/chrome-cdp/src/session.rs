@@ -1,5 +1,6 @@
 //! The session commands (plan 02, milestone 2.4): `open`, `connect`,
-//! `close`, `status`, `sessions` and `cdp`.
+//! `close`, `status`, `sessions` and `cdp`; and the tab commands (plan 03,
+//! milestone 3.1): `tabs`, `tab <id>`, `tab new` and `tab close`.
 //!
 //! Each one finds the session's daemon (starting it when the command needs
 //! a browser), sends one call, and returns the daemon's `Output` or
@@ -13,7 +14,10 @@ use daemon::client::{self, Session};
 use daemon::meta::Meta;
 use daemon::paths::{Env, SessionPaths, check_name};
 use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
-use engine::{CdpRequest, ConnectRequest, OpenRequest};
+use engine::{
+    CdpRequest, ConnectRequest, OpenRequest, TabCloseRequest, TabNewRequest, TabSelectRequest,
+    TabsRequest,
+};
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use serde_json::{Map, Value, json};
@@ -21,6 +25,7 @@ use tokio::runtime::Runtime;
 
 use crate::cli::{
     CdpArgs, CloseArgs, ConnectArgs, GlobalArgs, IdleArgs, OpenArgs, SessionsArgs, StatusArgs,
+    TabArgs, TabCommand, TabsArgs,
 };
 use crate::{input, version};
 
@@ -34,6 +39,8 @@ struct Ctx {
     build: String,
     runtime: Runtime,
     timeout: Duration,
+    /// `--tab`.
+    tab: Option<String>,
 }
 
 impl Ctx {
@@ -56,6 +63,7 @@ impl Ctx {
             build: version::build_id(),
             runtime,
             timeout: global.timeout,
+            tab: global.tab.clone(),
         })
     }
 
@@ -109,6 +117,7 @@ fn with_warnings_as_notes(info: ErrorInfo, warnings: &[String]) -> ErrorInfo {
 /// `open [url]`.
 pub(crate) fn open(args: &OpenArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     let url = args.url.as_deref().map(engine::normalize_url).transpose()?;
+    check_tab(global.tab.as_deref())?;
     let launch = &args.launch;
     browser::launch::flags::check_extra(&launch.chrome_args)?;
     if let Some(name) = &launch.profile {
@@ -129,6 +138,7 @@ fn open_in(
     args: &OpenArgs,
     url: Option<String>,
 ) -> Result<Output, ErrorInfo> {
+    let tab = ctx.tab.clone();
     let launch = &args.launch;
     // Find (and maybe install) Chrome here, where the progress bar can
     // show, unless the session already runs one that `open` will reuse.
@@ -154,6 +164,8 @@ fn open_in(
         chrome_args: launch.chrome_args.clone(),
         restart: args.restart,
         url,
+        tab,
+        follow_popups: args.follow_popups.then_some(true),
         timeout_ms: millis(ctx.timeout),
     };
     if let Some(previous) = session.replaced.as_ref().and_then(|m| m.launch.as_ref()) {
@@ -219,22 +231,14 @@ pub(crate) fn cdp(args: &CdpArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
     // Check everything that needs no browser before starting one.
     check_method(&args.method)?;
     let params = parse_params(args.params.as_deref())?;
+    check_tab(global.tab.as_deref())?;
     let ctx = Ctx::new(global)?;
-    let mut session = ctx.start()?;
-    let mut warnings = Vec::new();
-    if session.client.hello.state == SessionState::Idle {
-        match auto_open(&ctx, &mut session) {
-            Ok(opened) => warnings = opened,
-            Err(info) => {
-                ctx.abandon(&mut session);
-                return Err(info);
-            }
-        }
-    }
+    let (mut session, warnings) = with_browser(&ctx)?;
     let request = CdpRequest {
         method: args.method.clone(),
         params,
         target: args.target.to_engine(),
+        tab: ctx.tab.clone(),
         timeout_ms: millis(ctx.timeout),
         max_chars: args.max_chars,
     };
@@ -243,6 +247,113 @@ pub(crate) fn cdp(args: &CdpArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
         .runtime
         .block_on(session.client.call_output(rpc::CDP, &request, wait))?;
     Ok(warnings.into_iter().fold(output, Output::warning))
+}
+
+/// The session's daemon, started with a browser (as `open` would) if it
+/// has none, and the warnings that start gave.
+fn with_browser(ctx: &Ctx) -> Result<(Session, Vec<String>), ErrorInfo> {
+    let mut session = ctx.start()?;
+    let mut warnings = Vec::new();
+    if session.client.hello.state == SessionState::Idle {
+        match auto_open(ctx, &mut session) {
+            Ok(opened) => warnings = opened,
+            Err(info) => {
+                ctx.abandon(&mut session);
+                return Err(info);
+            }
+        }
+    }
+    Ok((session, warnings))
+}
+
+/// The running session's daemon; tab commands other than `tab new` need
+/// one and do not start it.
+fn running_session(ctx: &Ctx) -> Result<daemon::client::Client, ErrorInfo> {
+    ctx.runtime
+        .block_on(client::connect(&ctx.paths, &ctx.build))?
+        .ok_or_else(|| {
+            ErrorInfo::new(
+                ErrorKind::DaemonUnavailable,
+                format!("session {} is not running", ctx.session()),
+            )
+            .hint(Hint::run(Cmd::new("open").session(ctx.session())))
+        })
+}
+
+/// Checks a `--tab` before any daemon starts.
+fn check_tab(tab: Option<&str>) -> Result<(), ErrorInfo> {
+    tab.map(engine::parse_tab_id).transpose().map(|_| ())
+}
+
+/// `tabs`.
+pub(crate) fn tabs(args: &TabsArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let request = TabsRequest {
+        timeout_ms: millis(ctx.timeout),
+        max_chars: args.max_chars,
+    };
+    ctx.runtime
+        .block_on(client.call_output(rpc::TABS, &request, ctx.timeout + QUICK))
+}
+
+/// `tab <id>`, `tab new [url]` and `tab close [id]`.
+pub(crate) fn tab(args: &TabArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    match &args.command {
+        Some(TabCommand::New(new)) => {
+            let url = new.url.as_deref().map(engine::normalize_url).transpose()?;
+            let ctx = Ctx::new(global)?;
+            let (mut session, warnings) = with_browser(&ctx)?;
+            let request = TabNewRequest {
+                url,
+                timeout_ms: millis(ctx.timeout),
+            };
+            let output = ctx.runtime.block_on(session.client.call_output(
+                rpc::TAB_NEW,
+                &request,
+                ctx.long_wait(),
+            ))?;
+            Ok(warnings.into_iter().fold(output, Output::warning))
+        }
+        Some(TabCommand::Close(close)) => {
+            let tab = close.id.clone().or_else(|| global.tab.clone());
+            check_tab(tab.as_deref())?;
+            let ctx = Ctx::new(global)?;
+            let mut client = running_session(&ctx)?;
+            let request = TabCloseRequest {
+                tab,
+                close_browser: close.close_browser,
+                timeout_ms: millis(ctx.timeout),
+            };
+            let output = ctx.runtime.block_on(client.call_output(
+                rpc::TAB_CLOSE,
+                &request,
+                ctx.long_wait(),
+            ))?;
+            if output.data["session_closed"] == json!(true) {
+                // Like `close`: nothing of the session runs on return.
+                drop(client);
+                ctx.runtime.block_on(client::wait_for_exit(&ctx.paths))?;
+            }
+            Ok(output)
+        }
+        None => {
+            let Some(id) = &args.id else {
+                return Err(bad_args("tab needs a tab id or a subcommand").hint(
+                    Hint::run(Cmd::new("tabs").session(&global.session)).why("lists the ids"),
+                ));
+            };
+            check_tab(Some(id))?;
+            let ctx = Ctx::new(global)?;
+            let mut client = running_session(&ctx)?;
+            let request = TabSelectRequest {
+                tab: id.clone(),
+                timeout_ms: millis(ctx.timeout),
+            };
+            ctx.runtime
+                .block_on(client.call_output(rpc::TAB_SELECT, &request, ctx.timeout + QUICK))
+        }
+    }
 }
 
 /// Gives a session without a browser one, as `open` would (or as the

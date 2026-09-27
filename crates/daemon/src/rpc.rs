@@ -15,6 +15,10 @@ pub const CONNECT: &str = "connect";
 pub const CDP: &str = "cdp";
 pub const STATUS: &str = "status";
 pub const CLOSE: &str = "close";
+pub const TABS: &str = "tabs";
+pub const TAB_NEW: &str = "tab_new";
+pub const TAB_SELECT: &str = "tab_select";
+pub const TAB_CLOSE: &str = "tab_close";
 
 /// `hello`: the first call on every connection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

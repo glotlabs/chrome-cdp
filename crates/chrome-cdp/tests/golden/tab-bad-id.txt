@@ -1,0 +1,11 @@
+$ chrome-cdp tab first
+exit: 2
+--- stderr
+error: `first` is not a tab id; tab ids look like t1, t2, …
+  hint: chrome-cdp tabs   (lists them)
+
+$ chrome-cdp tab first --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"`first` is not a tab id; tab ids look like t1, t2, …","hint":"chrome-cdp tabs   (lists them)"}}
+

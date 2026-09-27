@@ -1,0 +1,16 @@
+$ chrome-cdp tab close
+exit: 0
+--- stdout
+closed tab t1; opened a blank tab so the session stays (chrome-cdp tab close --close-browser closes the browser)
+active tab: t2 about:blank "about:blank"
+
+$ chrome-cdp tab close --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"active":{"active":true,"id":"t2","title":"about:blank","url":"about:blank"},"closed":"t1","opened_blank":true,"session_closed":false}}
+
+$ chrome-cdp tab close -q
+exit: 0
+--- stdout
+t2
+

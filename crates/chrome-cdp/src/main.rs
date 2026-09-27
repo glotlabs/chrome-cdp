@@ -66,6 +66,8 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Status(args)) => session::status(&args, &cli.global),
         Some(Command::Sessions(args)) => session::sessions(&args, &cli.global),
         Some(Command::Cdp(args)) => session::cdp(&args, &cli.global),
+        Some(Command::Tabs(args)) => session::tabs(&args, &cli.global),
+        Some(Command::Tab(args)) => session::tab(&args, &cli.global),
         // Handled in `main`.
         Some(Command::Daemon(_)) => Ok(Output::new(serde_json::Value::Null, "")),
     }

@@ -1,0 +1,13 @@
+$ chrome-cdp tab close --close-browser
+exit: 0
+--- stdout
+closed tab t1 and session default
+
+$ chrome-cdp tab close --close-browser --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"closed":"t1","opened_blank":false,"session_closed":true}}
+
+$ chrome-cdp tab close --close-browser -q
+exit: 0
+

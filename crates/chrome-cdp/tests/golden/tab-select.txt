@@ -1,0 +1,15 @@
+$ chrome-cdp tab t1
+exit: 0
+--- stdout
+switched to tab t1 about:blank "about:blank"
+
+$ chrome-cdp tab t1 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"tab":{"active":true,"id":"t1","title":"about:blank","url":"about:blank"}}}
+
+$ chrome-cdp tab t1 -q
+exit: 0
+--- stdout
+t1
+

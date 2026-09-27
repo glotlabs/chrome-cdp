@@ -297,20 +297,39 @@ impl Daemon {
                 Err(e) => Err(e),
             },
             rpc::STATUS => match params::<StatusParams>(req.params) {
-                Ok(p) => Ok(json!(output::status(&self.status(p).await))),
+                Ok(p) => Ok(json!(output::status(&self.status(&p)))),
                 Err(e) => Err(e),
             },
             rpc::CLOSE => {
                 exit = true;
-                let closed = self.engine.close().await;
-                *lock_ignoring_poison(&self.opened_with) = Opened::default();
-                self.write_meta();
-                Ok(json!(ClosedSession {
-                    session: self.paths.name.clone(),
-                    was_running: true,
-                    browser: closed.as_str().into(),
-                }))
+                Ok(json!(self.close_session().await))
             }
+            rpc::TABS => match params(req.params) {
+                Ok(p) => output(self.engine.tabs(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::TAB_NEW => match params(req.params) {
+                Ok(p) => output(self.engine.tab_new(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::TAB_SELECT => match params(req.params) {
+                Ok(p) => output(self.engine.tab_select(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::TAB_CLOSE => match params(req.params) {
+                Ok(p) => match self.engine.tab_close(p).await {
+                    Ok(closed) => {
+                        if closed.close_session {
+                            // `tab close --close-browser` on the last tab.
+                            exit = true;
+                            self.close_session().await;
+                        }
+                        output(Ok(closed.output))
+                    }
+                    Err(info) => output(Err(info)),
+                },
+                Err(e) => Err(e),
+            },
             other => Err(RpcError::new(
                 RpcError::METHOD_NOT_FOUND,
                 format!("no method `{other}`"),
@@ -323,12 +342,25 @@ impl Daemon {
         (response, exit)
     }
 
+    /// Closes the browser; the daemon exits after answering.
+    async fn close_session(&self) -> ClosedSession {
+        let closed = self.engine.close().await;
+        *lock_ignoring_poison(&self.opened_with) = Opened::default();
+        self.write_meta();
+        ClosedSession {
+            session: self.paths.name.clone(),
+            was_running: true,
+            browser: closed.as_str().into(),
+        }
+    }
+
     async fn open(&self, params: Value) -> Result<Value, RpcError> {
         let p: OpenParams = self::params(params)?;
         self.set_idle_timeout(p.idle_timeout_ms);
         let record = OpenRequest {
             chrome: None,
             url: None,
+            tab: None,
             restart: false,
             ..p.request.clone()
         };
@@ -363,8 +395,8 @@ impl Daemon {
         output(result.map(|o| output::opened(&o)))
     }
 
-    async fn status(&self, p: StatusParams) -> StatusData {
-        let st = self.engine.status().await;
+    fn status(&self, p: &StatusParams) -> StatusData {
+        let st = self.engine.status();
         StatusData {
             session: self.paths.name.clone(),
             state: st.state,

@@ -1,0 +1,15 @@
+$ chrome-cdp tab new 'data:text/html,<title>Two</title>'
+exit: 0
+--- stdout
+opened tab t2 data:text/html,<title>Two</title> "Two"
+
+$ chrome-cdp tab new 'data:text/html,<title>Two</title>' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"tab":{"active":true,"id":"t2","title":"Two","url":"data:text/html,<title>Two</title>"}}}
+
+$ chrome-cdp tab new 'data:text/html,<title>Two</title>' -q
+exit: 0
+--- stdout
+t2
+

@@ -5,9 +5,11 @@
 //! Milestone 2.4 gives it the session's browser: [`Engine`] launches Chrome
 //! (`open`) or attaches to one (`connect`), records why it went away if it
 //! crashes, makes raw CDP calls (`cdp`), and serialises page commands with a
-//! per-tab async mutex. Later plans add modules next to `tabs` and
-//! `navigate`: `page`, `snapshot`, `locator`, `input`, `observe`,
-//! `emulate`, `route`.
+//! per-tab async mutex. Milestone 3.1 adds the target & tab manager
+//! (`tabs`): every target is auto-attached and set up before it runs, and
+//! page commands act on the active tab or `--tab`. Later plans add modules
+//! next to `tabs` and `navigate`: `page`, `snapshot`, `locator`, `input`,
+//! `observe`, `emulate`, `route`.
 
 mod endpoint;
 mod errors;
@@ -32,10 +34,15 @@ use tokio::sync::Notify;
 pub use endpoint::{Endpoint, parse_endpoint};
 pub use errors::from_cdp;
 pub use navigate::normalize_url;
-pub use request::{CdpRequest, ConnectRequest, OpenRequest, Target};
+pub use request::{
+    CdpRequest, ConnectRequest, OpenRequest, TabCloseRequest, TabNewRequest, TabSelectRequest,
+    TabsRequest, Target,
+};
+pub use tabs::commands::TabClosed;
+pub use tabs::parse_tab_id;
 
 use request::millis;
-use tabs::{Page, TabLocks};
+use tabs::{Settings, TabLocks, Tabs};
 
 /// One session's browser and everything the commands keep between calls.
 #[derive(Debug)]
@@ -48,6 +55,8 @@ pub struct Engine {
     state: Mutex<State>,
     generation: AtomicU64,
     tabs: TabLocks,
+    /// What every new target gets before it runs; kept across browsers.
+    settings: Arc<Settings>,
 }
 
 #[derive(Debug)]
@@ -71,7 +80,7 @@ struct Running {
     info: BrowserInfo,
     spec: Spec,
     started: Instant,
-    page: tokio::sync::Mutex<Option<Page>>,
+    tabs: Tabs,
     /// The browser we launched; `None` when connected (or once closing).
     launched: Mutex<Option<Launched>>,
     /// Stops the crash watcher before a deliberate close.
@@ -141,6 +150,7 @@ impl Engine {
             state: Mutex::new(State::Empty),
             generation: AtomicU64::new(0),
             tabs: TabLocks::default(),
+            settings: Arc::default(),
         })
     }
 
@@ -190,7 +200,11 @@ impl Engine {
     /// request, then loads `url`.
     pub async fn open(self: &Arc<Self>, req: OpenRequest) -> Result<Opened, ErrorInfo> {
         let timeout = millis(req.timeout_ms);
+        let tab = req.tab.as_deref().map(parse_tab_id).transpose()?;
         let _lifecycle = self.lifecycle.lock().await;
+        if let Some(follow) = req.follow_popups {
+            self.settings.set_follow_popups(follow);
+        }
         let mut warnings = Vec::new();
         let current = match &*self.lock_state() {
             State::Running(running) => Some(running.clone()),
@@ -213,7 +227,8 @@ impl Engine {
         };
         let page = match &req.url {
             Some(url) => {
-                let page = self.page(&running).await?;
+                let tab = tab.map(tabs::tab_name);
+                let page = self.page(&running, tab.as_deref(), timeout).await?;
                 let _tab = self.tabs.lock(&page.target_id).await;
                 Some(navigate::open_url(&page.session, url, timeout, &self.session).await?)
             }
@@ -278,7 +293,22 @@ impl Engine {
             args: req.chrome_args.clone(),
         };
         let conn = launched.connection().clone();
-        Ok(self.install(conn, info, spec, Some(launched)))
+        let running = self.install(conn, info, spec, Some(launched));
+        self.init_tabs(running, millis(req.timeout_ms)).await
+    }
+
+    /// Starts managing a new browser's tabs; closes it if that fails.
+    async fn init_tabs(
+        &self,
+        running: Arc<Running>,
+        timeout: Duration,
+    ) -> Result<Arc<Running>, ErrorInfo> {
+        if let Err(e) = running.tabs.init(timeout).await {
+            let info = from_cdp(&e, &self.session);
+            self.shut_down(running).await;
+            return Err(info);
+        }
+        Ok(running)
     }
 
     /// `connect`: attaches the session to a running browser.
@@ -369,6 +399,7 @@ impl Engine {
             endpoint: req.endpoint.clone(),
         };
         let running = self.install(conn, info, spec, None);
+        let running = self.init_tabs(running, timeout).await?;
         Ok(Opened {
             data: OpenData {
                 session: self.session.clone(),
@@ -396,7 +427,7 @@ impl Engine {
             info,
             spec,
             started: Instant::now(),
-            page: tokio::sync::Mutex::new(None),
+            tabs: Tabs::start(&conn, self.settings.clone()),
             launched: Mutex::new(launched),
             stop: stop.clone(),
         });
@@ -530,35 +561,41 @@ impl Engine {
         .details(serde_json::json!({ "differences": differences, "running": running.info })))
     }
 
-    /// The current page of `running`.
-    async fn page(&self, running: &Running) -> Result<Page, ErrorInfo> {
-        let mut slot = running.page.lock().await;
-        tabs::current_page(&running.conn, &mut slot)
-            .await
-            .map_err(|e| from_cdp(&e, &self.session))
+    /// Adds a script that runs before any of a document's own, in every
+    /// tab, popup and frame from now on, including those of a browser
+    /// started later. Plan 07's init scripts build on it.
+    pub async fn add_init_script(&self, source: &str, timeout: Duration) -> Result<(), ErrorInfo> {
+        let running = match &*self.lock_state() {
+            State::Running(running) => Some(running.clone()),
+            State::Crashed(_) | State::Empty => None,
+        };
+        if let Some(running) = running {
+            running
+                .tabs
+                .add_init_script(source, timeout)
+                .await
+                .map_err(|e| from_cdp(&e, &self.session))
+        } else {
+            self.settings.add_init_script(source);
+            Ok(())
+        }
     }
 
     /// `status`: the browser and its tabs. Takes no tab lock.
-    pub async fn status(&self) -> EngineStatus {
+    pub fn status(&self) -> EngineStatus {
         let state = match &*self.lock_state() {
             State::Running(running) => Ok(running.clone()),
             State::Crashed(crash) => Err(Some((**crash).clone())),
             State::Empty => Err(None),
         };
         match state {
-            Ok(running) => {
-                let tabs = tokio::time::timeout(Duration::from_secs(2), tabs::count(&running.conn))
-                    .await
-                    .ok()
-                    .and_then(Result::ok);
-                EngineStatus {
-                    state: SessionState::Running,
-                    browser: Some(running.info.clone()),
-                    crash: None,
-                    tabs,
-                    uptime: Some(running.started.elapsed()),
-                }
-            }
+            Ok(running) => EngineStatus {
+                state: SessionState::Running,
+                browser: Some(running.info.clone()),
+                crash: None,
+                tabs: Some(running.tabs.count()),
+                uptime: Some(running.started.elapsed()),
+            },
             Err(Some(crash)) => EngineStatus {
                 state: SessionState::Crashed,
                 browser: Some(crash.info),

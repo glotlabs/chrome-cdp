@@ -1,0 +1,12 @@
+$ chrome-cdp tab t9
+exit: 1
+--- stderr
+error: no tab t9 in session default
+  open tabs: t1
+  hint: chrome-cdp tabs   (lists them)
+
+$ chrome-cdp tab t9 --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"no tab t9 in session default","hint":"chrome-cdp tabs   (lists them)","notes":[{"label":"open tabs","text":"t1"}],"details":{"open":["t1"],"tab":"t9"}}}
+
