@@ -40,6 +40,12 @@ that opened it says `opened tab t3`; `open --follow-popups` makes popups
 active instead. Every new tab, frame and worker is set up before it runs any
 script.
 
+Each tab's frames are tracked, cross-site (out-of-process) iframes included.
+`cdp --frame <name|url-part|id>` sends a call to one:
+`chrome-cdp cdp --frame checkout Runtime.evaluate '{"expression":"location.href"}'`
+runs in that iframe's page, whichever process it lives in. chrome-cdp's own
+scripts run in an isolated world in each frame, out of the page's reach.
+
 It finds Chrome by itself: `--chrome <path>`, then `$CHROME_CDP_CHROME`, then
 browsers installed in the chrome-cdp cache (`~/.cache/chrome-cdp`, or
 `~/Library/Caches/chrome-cdp` on macOS; `$CHROME_CDP_CACHE` overrides it),

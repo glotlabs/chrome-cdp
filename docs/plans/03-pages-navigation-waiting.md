@@ -1,6 +1,6 @@
 # Plan 03 — Pages, navigation & waiting
 
-Status: IN PROGRESS (3.1 done)
+Status: IN PROGRESS (3.1-3.2 done)
 Depends on: 02
 
 ## Goal
@@ -143,7 +143,7 @@ download, and a basic-auth route.
       no extra wait, 50 runs in a row.
 - [ ] Every navigation error type maps to a distinct `details.reason` and
       hint (all exit 1, `NavigationFailed`, per plan 08 §3).
-- [ ] Cross-origin iframes are attached and addressable.
+- [x] Cross-origin iframes are attached and addressable.
 
 ## Decisions log
 
@@ -157,3 +157,8 @@ _(append here)_
 - 3.1: `tabs`, `tab <id>` and `tab close` need a running session and do not start one (`DaemonUnavailable`, hint `chrome-cdp open`); `tab new` starts one like `cdp` does. `tab` with no id or subcommand prints its help. The plan 08 checklist test now also checks a command that has both subcommands and positionals (`tab`).
 - 3.1: `Engine::add_init_script` applies a script to every current page and OOPIF session and to all later ones (also after a browser restart). It is the hook for plan 07's init scripts; only tests call it for now. Emulation and routes add their steps to `tabs::setup`, and 3.2 adds frame tracking there.
 - 3.1: `status` and `sessions` count tabs from the manager instead of calling `Target.getTargets`.
+- 3.2: The frame tree lives in `engine::frames` (one `FrameTree` per tab, fed by the tab's and its OOPIF sessions' `Page`/`Runtime` events in `tabs::watch_host`). Events of different sessions arrive in different tasks, so the tree tolerates their order: a `frameDetached` with reason `swap` keeps the frame, and the last session to report it navigating owns it. On `frameNavigated` the frame's old children are dropped, because Chrome does not always send `frameDetached` for them (a reload kept a stale same-site child). `Page.getFrameTree`, sent during setup, only adds frames not already known from events.
+- 3.2: The isolated world is added with `Page.addScriptToEvaluateOnNewDocument {source: "", worldName: "__chrome_cdp", runImmediately: true}` during each page/OOPIF session's paused setup, instead of calling `Page.createIsolatedWorld` after every navigation: Chrome then makes the world in every new document before page scripts run, with no race after a navigation. `createIsolatedWorld` is only a fallback for a frame that has a main world but no isolated one yet; Chrome keeps one world per name and frame, so both give the same world. Universal access is not granted.
+- 3.2: Setup now also sends `Runtime.enable` to every page and OOPIF session (needed for `executionContextCreated`). Plan 06's console capture gets its events from the same call.
+- 3.2: Frames are named by their id, else an iframe whose `name` is the query, else one whose URL contains it; the main frame only by id. Several matches are `Ambiguous` and none is `NotFound` (exit 1), and both list the tab's frames as notes and in `details.frames`. Plan 04's `frame=` locator reuses `FrameTree::find` and adds refs.
+- 3.2: The milestone has no command of its own, so two entry points make frames usable now: `Engine::evaluate(tab, frame, world, js)` (the hook for plan 06's `eval --frame --world` and plan 04's injected helpers) and `cdp --frame <name|url-part|id>`, which sends a raw call to the session that owns the frame and fills in the frame's main-world context for `Runtime.evaluate`, `callFunctionOn`, `compileScript` and `globalLexicalScopeNames` when the params name none. A call that fails with "Cannot find context with specified id" (it never ran; the frame navigated) is retried in the new context, up to 3 times; "Execution context was destroyed" is not retried, since the script may have run.
