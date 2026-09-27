@@ -1,6 +1,6 @@
 # Plan 08 — Agent UX, output contract & scripting
 
-Status: TODO (§2–§4 must be agreed before other plans implement commands)
+Status: IN PROGRESS (8.1 done)
 Depends on: 01. Cross-cutting: every plan follows §2–§4.
 
 ## Goal
@@ -172,7 +172,7 @@ Robot Framework). Treat it as a specified format from day one:
 
 ## Acceptance criteria
 
-- [ ] Every command obeys §2–§4 (a checklist test iterates all clap commands
+- [x] Every command obeys §2–§4 (a checklist test iterates all clap commands
       and asserts `--json` works, help has an example, and output is bounded).
 - [ ] A fresh Claude Code session given only `chrome-cdp skill` completes the
       plan 10 agent benchmark tasks without reading other docs.
@@ -186,3 +186,19 @@ Robot Framework). Treat it as a specified format from day one:
 _(append here)_
 - (from plan 01, milestone 1.4) The `protocol` crate already has `ErrorKind` with the §3 exit codes, `ErrorInfo` and the `Envelope`, and the binary renders all output through `output::render`. Milestone 8.1 builds on these instead of starting over. Open question left for 8.1: how `--json` output stays bounded (1.4 only bounds the text forms).
 - 8.4: MCP server mode is dropped from v1 by the maintainer. Keep the milestone text as a design note for later, but do not build it or add an `mcp` feature.
+- 8.1: The contract lives in `protocol`: `Output` (data, text, quiet, warnings, events, limit) and a pure `render(mode, result, style)` that returns stdout, stderr and the exit code. The binary only writes them. `Output` and `ErrorInfo` are serde types, so plan 02's daemon can return them over RPC and `batch` (8.2) can render each step with the same code.
+- 8.1: How `--json` stays bounded: the command's `--max-chars` budget also applies to `data` serialised as JSON. Every string is capped at the largest length that fits and ends in `…`. If strings of 200 chars still do not fit, arrays lose their tail, then strings grow back into the room left. Each cut is listed in a new envelope field, `truncated: [{path (JSON Pointer), kind, len, kept}]`, and summed up in a warning. `--max-chars 0` turns it off. Truncated JSON would be invalid, and dropping whole fields would break the schema.
+- 8.1: `-q` keeps stdout to the (cut) value and puts the `… truncated N chars` line on stderr as a warning, so `$(…)` never captures the note. Text mode keeps it as the last stdout line, as §2 says.
+- 8.1: `ErrorInfo` gains `notes`: labelled lines (`covering: …`) printed between the message and the hint, and also listed in JSON. `details` stays machine-only. Messages and hints are forced to one line.
+- 8.1: The hint builder is `Hint` + `Cmd`. `Cmd` shell-quotes arguments and adds `--session <name>` for a non-default session, so a hint pastes as is. `Hint` adds `   (why)` and `, or <alternative>`. In JSON a hint is still one string.
+- 8.1: Colour: only the `error:`/`warning:`/`hint:` labels on stderr, and only when stderr is a TTY and `NO_COLOR` is unset or empty. No command colours stdout yet; one that wants to gets a `protocol::Style`.
+- 8.1: `format::table` aligns columns and cuts the last one so no row is wider than 120 columns. `format::size` uses 1024 steps (`12KB`); `duration` and `thousands` moved from the binary into `protocol::format`.
+- 8.1: Schemas are generated with `schemars` 1.x from the data types in `protocol::schema`. Its `COMMANDS` registry backs `chrome-cdp schema [command]`, which lists the commands, or prints one envelope schema titled `chrome-cdp <command> --json`. Names are the words typed after `chrome-cdp` (`__direct cdp`, later `tab close`), and `version` stands for `--version`. Golden copies in `crates/chrome-cdp/tests/golden/schema/` make any schema change visible in review.
+- 8.1: clap's usage errors now use the §3 text form too: the first line is the message, `tip:` lines ("a similar argument exists: '--json'") become notes, and the hint is the failing subcommand's `--help`. clap's `Usage:` and "For more information" lines are dropped.
+- 8.1: Config files are TOML with the keys `session`, `timeout` and `base_url`. Precedence is flag > env var > project `.chrome-cdp.toml` (nearest, walking up) > user config > default, using clap's `value_source`. Unknown keys and bad values are `BadArgs` errors that name the file, on every command (even `--version`), so a typo never silently does nothing. `XDG_CONFIG_HOME` is honoured on macOS too when set. `base_url` is parsed and stored for plan 03's `goto`.
+- 8.1: `--tab`, `--snap` and `--no-wait-after` are not added yet. Plans 03 and 05 own their behaviour, and a flag that is accepted but ignored would mislead agents. Each plan adds its flag, with a `CHROME_CDP_*` env var, when it lands.
+- 8.1: `-` means stdin for positional text arguments through one helper (`input::text_arg`); `__direct cdp` params use it.
+- 8.1: Golden tests (`crates/chrome-cdp/tests/golden.rs`) run each case in text, `--json` and `-q` form and store exit code, stdout and stderr in `tests/golden/<case>.txt`. The version, git sha, Chrome path and temp dirs are replaced by placeholders. `UPDATE_GOLDEN=1` rewrites the files, and a test rejects stale ones. The Chrome cases follow the `CHROME_PATH` / `CHROME_CDP_REQUIRE_CHROME` rule of the other tests.
+- 8.1: The checklist test (`every_command_follows_the_output_contract`) walks every clap leaf command. It requires an `Examples:` block in the help, a schema registry entry, the global flags, and a `--max-chars`/`--limit` flag unless the command is listed as fixed-size (only `schema` today). clap's generated `help` subcommands are skipped until 8.3 replaces them.
+- 8.1: The CLI tests point `XDG_CONFIG_HOME` at an empty directory in `CARGO_TARGET_TMPDIR`. It has to exist and be writable, because Chrome keeps its crash reports there and exits at startup otherwise.
+- 8.1: The release binary grew from 1.7 MB to 2.0 MB (x86_64 Linux) with `schemars` and `toml`.
