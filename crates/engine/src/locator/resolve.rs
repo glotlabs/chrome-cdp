@@ -359,6 +359,11 @@ impl Engine {
                 note: place.note.clone(),
             });
         }
+        // Candidates get refs only if no frame loaded a new document
+        // meanwhile (their backend ids would name its nodes).
+        let generation = running
+            .tabs
+            .snapshot_memory(page.id, |m| m.refs.generation());
         let session = place.context.session.with_timeout(timeout);
         let mut params = runtime::CallFunctionOnParams::new(format!(
             "function (steps, root) {{ {GUARD} return globalThis.__ccdp.one(steps, root); }}"
@@ -397,7 +402,9 @@ impl Engine {
                 });
             }
             Err(self
-                .not_one(running, page, &place, locator, &object_id, retry)
+                .not_one(
+                    running, page, &place, locator, &object_id, retry, generation,
+                )
                 .await)
         }
         .await;
@@ -625,7 +632,9 @@ impl Engine {
     }
 
     /// The error when `locator` matched none or several elements: reads
-    /// the bundle's `{json, els}` answer and gives the candidates refs.
+    /// the bundle's `{json, els}` answer and gives the candidates refs,
+    /// unless the tab's document generation is no longer `generation`.
+    #[allow(clippy::too_many_arguments)]
     async fn not_one(
         &self,
         running: &Running,
@@ -634,6 +643,7 @@ impl Engine {
         locator: &Locator,
         object_id: &str,
         retry: Option<&(dyn Fn(&str) -> Cmd + Sync)>,
+        generation: Option<u64>,
     ) -> ErrorInfo {
         let session = &place.context.session;
         let read = async {
@@ -683,18 +693,21 @@ impl Engine {
         if not_one.count == 0 {
             return self.not_found(page, locator);
         }
-        let refs: Vec<Option<String>> = not_one
-            .candidates
-            .iter()
-            .zip(&keys)
-            .map(|(c, key)| {
-                let key = key.as_ref()?;
-                running
-                    .tabs
-                    .snapshot_memory(page.id, |m| m.refs.assign(key, &c.role, &c.name))
-                    .map(|n| format!("e{n}"))
+        let refs: Vec<Option<String>> = running
+            .tabs
+            .snapshot_memory(page.id, |m| {
+                let current = Some(m.refs.generation()) == generation;
+                not_one
+                    .candidates
+                    .iter()
+                    .zip(&keys)
+                    .map(|(c, key)| {
+                        let key = key.as_ref().filter(|_| current)?;
+                        Some(format!("e{}", m.refs.assign(key, &c.role, &c.name)))
+                    })
+                    .collect()
             })
-            .collect();
+            .unwrap_or_else(|| vec![None; not_one.candidates.len()]);
         ambiguous(locator, &not_one, &refs, retry, &self.session)
     }
 
@@ -728,13 +741,14 @@ fn ambiguous(
     } else {
         ""
     };
+    let listed = if shown.is_empty() {
+        String::new()
+    } else {
+        format!(": {}{more}", shown.join(", "))
+    };
     let mut info = ErrorInfo::new(
         ErrorKind::Ambiguous,
-        format!(
-            "{} elements match {locator}: {}{more}",
-            found.count,
-            shown.join(", ")
-        ),
+        format!("{} elements match {locator}{listed}", found.count),
     );
     let mut candidates = Vec::new();
     for (candidate, reference) in found.candidates.iter().zip(refs) {
@@ -773,6 +787,7 @@ fn ambiguous(
         (Some(retry), Some(first)) => Hint::run(retry(first).session(session))
             .why("the first one")
             .or(narrow),
+        _ if shown.is_empty() => Hint::text(narrow),
         _ => Hint::text(format!("use one of the refs, or {narrow}")),
     };
     info.hint(hint).details(json!({
@@ -867,4 +882,46 @@ fn function_value(result: runtime::CallFunctionOnReturns) -> Result<Value, Error
             .details(json!({ "exception": message })));
     }
     Ok(result.result.value.unwrap_or(Value::Null))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Candidate, NotOne, ambiguous};
+    use crate::locator::parse_locator;
+
+    fn found() -> NotOne {
+        let item = |name: &str| Candidate {
+            role: "listitem".into(),
+            name: name.into(),
+            context: None,
+            visible: true,
+        };
+        NotOne {
+            count: 2,
+            candidates: vec![item("Apples"), item("Bananas")],
+        }
+    }
+
+    #[test]
+    fn ambiguous_lists_the_candidates_refs() {
+        let locator = parse_locator(".item").unwrap();
+        let refs = [Some("e1".to_owned()), Some("e2".to_owned())];
+        let info = ambiguous(&locator, &found(), &refs, None, "default");
+        assert_eq!(info.message, "2 elements match .item: e1, e2");
+        assert_eq!(
+            info.hint.as_deref(),
+            Some("use one of the refs, or add >> nth=<index> to .item")
+        );
+    }
+
+    /// A frame loaded a new document while the candidates were read: they
+    /// get no refs, and the error does not offer any.
+    #[test]
+    fn ambiguous_without_refs_says_how_to_narrow() {
+        let locator = parse_locator(".item").unwrap();
+        let info = ambiguous(&locator, &found(), &[None, None], None, "default");
+        assert_eq!(info.message, "2 elements match .item");
+        assert_eq!(info.hint.as_deref(), Some("add >> nth=<index> to .item"));
+        assert_eq!(info.notes[0].label, "?");
+    }
 }
