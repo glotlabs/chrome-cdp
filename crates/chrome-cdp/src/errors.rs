@@ -1,10 +1,9 @@
 //! Mapping library errors to user-facing [`ErrorInfo`]s (plan 08 §3).
 
 use cdp::CdpError;
+use protocol::format;
 use protocol::{ErrorInfo, ErrorKind};
 use serde_json::json;
-
-use crate::output;
 
 /// Maps a CDP client error to its kind, message and generic hint. Commands
 /// replace the hint when they know a better next step.
@@ -36,12 +35,12 @@ pub(crate) fn from_cdp(err: &CdpError) -> ErrorInfo {
             ErrorKind::Timeout,
             format!(
                 "{method}: no response from Chrome after {}",
-                output::duration(*after)
+                format::duration(*after)
             ),
         )
         .hint(format!(
             "retry with a longer timeout, e.g. --timeout {}",
-            output::duration(*after * 2)
+            format::duration(*after * 2)
         ))
         .details(json!({ "method": method, "timeout_ms": after.as_millis() })),
         CdpError::Serialize { .. } | CdpError::Decode { .. } => {

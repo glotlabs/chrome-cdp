@@ -16,7 +16,7 @@ use std::time::Duration;
 use cdp::domains::{browser, target};
 use cdp::transport::PipeTransport;
 use cdp::{CdpError, Connection, ConnectionOptions};
-use protocol::{ErrorInfo, ErrorKind};
+use protocol::{ErrorInfo, ErrorKind, Output, format};
 use serde_json::{Map, Value, json};
 use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt as _, BufReader};
@@ -26,7 +26,6 @@ use tokio::time::timeout;
 
 use crate::cli::{DirectCdpArgs, GlobalArgs, Target};
 use crate::errors;
-use crate::output::{self, Success};
 
 /// A minimal flag set for a headless, quiet, isolated Chrome. Plan 02 owns
 /// the real list.
@@ -51,7 +50,7 @@ const EXIT_GRACE: Duration = Duration::from_secs(5);
 const STDERR_TAIL: usize = 20;
 
 /// Runs `__direct cdp`.
-pub(crate) fn cdp(args: &DirectCdpArgs, global: &GlobalArgs) -> Result<Success, ErrorInfo> {
+pub(crate) fn cdp(args: &DirectCdpArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     // Check everything that needs no browser before starting one.
     check_method(&args.method)?;
     let params = parse_params(args.params.as_deref())?;
@@ -73,13 +72,11 @@ pub(crate) fn cdp(args: &DirectCdpArgs, global: &GlobalArgs) -> Result<Success, 
         result
     })?;
 
-    let more = "--max-chars 0 for all of it, or --json";
     let pretty = serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string());
     let compact = value.to_string();
-    Ok(
-        Success::new(value, output::truncate(pretty, args.max_chars, more))
-            .quiet(output::truncate(compact, args.max_chars, more)),
-    )
+    Ok(Output::new(value, pretty)
+        .quiet(compact)
+        .limit(args.max_chars, "--max-chars 0 for all of it"))
 }
 
 fn bad_args(message: impl Into<String>) -> ErrorInfo {
@@ -292,7 +289,7 @@ impl Chrome {
             let mut info = errors::from_cdp(err);
             info.message = format!(
                 "Chrome started but did not answer within {}",
-                output::duration(*after)
+                format::duration(*after)
             );
             info
         } else {

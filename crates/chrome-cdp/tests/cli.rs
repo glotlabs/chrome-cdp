@@ -359,13 +359,12 @@ fn direct_output_is_bounded() {
     let text = stdout(&out);
     let last = text.lines().last().unwrap();
     assert!(
-        last.starts_with("… truncated ")
-            && last.ends_with("use --max-chars 0 for all of it, or --json"),
+        last.starts_with("… truncated ") && last.ends_with("use --max-chars 0 for all of it"),
         "{last}"
     );
     assert!(text.chars().count() < 20_200);
 
-    // --json is never truncated: it must stay valid JSON.
+    // --json stays valid JSON: the long string is shortened to fit.
     let out = run(&mut direct_cdp(
         &chrome,
         &[
@@ -377,8 +376,39 @@ fn direct_output_is_bounded() {
         ],
     ));
     let v = json_out(&out);
+    assert!(v["data"].to_string().chars().count() <= 20_000);
+    let value = v["data"]["result"]["value"].as_str().unwrap();
+    assert!(value.ends_with('…'));
+    assert_eq!(v["data"]["result"]["type"], json!("string"));
+    assert_eq!(
+        v["truncated"],
+        json!([{"path": "/result/value", "kind": "string", "len": 100_000,
+                "kept": value.chars().count() - 1}])
+    );
+    assert!(
+        v["warnings"][0]
+            .as_str()
+            .unwrap()
+            .ends_with("chars; use --max-chars 0 for all of it")
+    );
+
+    // --max-chars 0 turns the bound off.
+    let out = run(&mut direct_cdp(
+        &chrome,
+        &[
+            "--target",
+            "page",
+            "Runtime.evaluate",
+            r#"{"expression":"'x'.repeat(100000)","returnByValue":true}"#,
+            "--json",
+            "--max-chars",
+            "0",
+        ],
+    ));
+    let v = json_out(&out);
     assert_eq!(
         v["data"]["result"]["value"].as_str().unwrap().len(),
         100_000
     );
+    assert!(v.get("truncated").is_none());
 }

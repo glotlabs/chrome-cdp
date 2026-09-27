@@ -1,14 +1,15 @@
 //! The `chrome-cdp` binary: parses the command line, runs the command and
 //! renders its result (plan 08 §2-§4).
 //!
-//! Every command returns `Result<Success, ErrorInfo>`; [`output::render`]
-//! prints it as text, quiet or `--json` output and picks the exit code.
+//! Every command returns `Result<Output, ErrorInfo>`; [`output::print`]
+//! renders it as text, quiet or `--json` output (with the shared renderer in
+//! `protocol`) and picks the exit code.
 
 use std::process::ExitCode;
 
 use clap::Parser as _;
 use clap::error::ErrorKind as ClapErrorKind;
-use protocol::{ErrorInfo, ErrorKind};
+use protocol::{ErrorInfo, ErrorKind, Mode, Output};
 
 mod cli;
 mod direct;
@@ -18,7 +19,6 @@ mod output;
 mod version;
 
 use cli::{Cli, Command, DirectCommand};
-use output::Success;
 
 fn main() -> ExitCode {
     let cli = match Cli::try_parse() {
@@ -27,10 +27,10 @@ fn main() -> ExitCode {
     };
     log::init(cli.global.verbose);
     let mode = cli.global.mode();
-    ExitCode::from(output::render(mode, run(cli)))
+    ExitCode::from(output::print(mode, run(cli)))
 }
 
-fn run(cli: Cli) -> Result<Success, ErrorInfo> {
+fn run(cli: Cli) -> Result<Output, ErrorInfo> {
     if cli.version {
         return Ok(version::run());
     }
@@ -61,7 +61,7 @@ fn usage_error(e: &clap::Error) -> u8 {
         .unwrap_or_default()
         .trim_start_matches("error: ");
     let info = ErrorInfo::new(ErrorKind::BadArgs, message).hint("chrome-cdp --help");
-    output::render(output::Mode::Json, Err(info))
+    output::print(Mode::Json, Err(info))
 }
 
 /// Whether `--json` was asked for, from the raw arguments (clap failed to

@@ -10,7 +10,7 @@ use std::time::Duration;
 use clap::builder::BoolishValueParser;
 use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 
-use crate::output::Mode;
+use protocol::Mode;
 
 /// Drive Chrome over the DevTools Protocol from a shell. Built for AI agents.
 #[derive(Debug, Parser)]
@@ -134,7 +134,8 @@ pub(crate) struct DirectCdpArgs {
     #[arg(long, value_enum, default_value_t = Target::Browser)]
     pub(crate) target: Target,
 
-    /// Truncate text output after this many characters (0 = no limit).
+    /// Bound the output to this many characters (0 = no limit). With --json,
+    /// long strings and arrays in `data` are shortened instead.
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
 }

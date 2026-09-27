@@ -2,7 +2,7 @@
 
 use serde_json::json;
 
-use crate::output::Success;
+use protocol::Output;
 
 /// The crate version.
 pub(crate) const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -10,9 +10,9 @@ pub(crate) const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub(crate) const GIT_SHA: &str = env!("CHROME_CDP_GIT_SHA");
 
 /// The version, git commit and vendored CDP protocol revision.
-pub(crate) fn run() -> Success {
+pub(crate) fn run() -> Output {
     let protocol = cdp::domains::PROTOCOL_REVISION;
-    Success::new(
+    Output::new(
         json!({
             "version": VERSION,
             "git_sha": GIT_SHA,
