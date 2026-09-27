@@ -1,0 +1,11 @@
+$ chrome-cdp __direct cdp Browser.getVersion --chrome /nonexistent/chrome
+exit: 4
+--- stderr
+error: no Chrome at /nonexistent/chrome
+  hint: pass --chrome with the path of a Chrome or Chromium binary
+
+$ chrome-cdp __direct cdp Browser.getVersion --chrome /nonexistent/chrome --json
+exit: 4
+--- stdout
+{"ok":false,"error":{"kind":"ChromeNotFound","message":"no Chrome at /nonexistent/chrome","hint":"pass --chrome with the path of a Chrome or Chromium binary"}}
+

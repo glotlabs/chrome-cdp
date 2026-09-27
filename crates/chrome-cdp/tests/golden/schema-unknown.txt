@@ -1,0 +1,11 @@
+$ chrome-cdp schema nope
+exit: 2
+--- stderr
+error: no schema for `nope`
+  hint: chrome-cdp schema   (lists the commands that have one)
+
+$ chrome-cdp schema nope --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"no schema for `nope`","hint":"chrome-cdp schema   (lists the commands that have one)"}}
+

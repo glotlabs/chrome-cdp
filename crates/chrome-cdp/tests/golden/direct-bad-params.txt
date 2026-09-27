@@ -1,0 +1,11 @@
+$ chrome-cdp __direct cdp Runtime.evaluate '{expression:1}' --chrome /nonexistent/chrome
+exit: 2
+--- stderr
+error: params are not valid JSON: key must be a string at line 1 column 2
+  hint: quote the JSON for the shell, e.g. '{"expression":"1+1"}'
+
+$ chrome-cdp __direct cdp Runtime.evaluate '{expression:1}' --chrome /nonexistent/chrome --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"params are not valid JSON: key must be a string at line 1 column 2","hint":"quote the JSON for the shell, e.g. '{\"expression\":\"1+1\"}'"}}
+

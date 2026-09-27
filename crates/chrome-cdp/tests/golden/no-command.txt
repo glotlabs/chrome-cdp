@@ -1,0 +1,11 @@
+$ chrome-cdp 
+exit: 2
+--- stderr
+error: no command given
+  hint: chrome-cdp --help
+
+$ chrome-cdp --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"no command given","hint":"chrome-cdp --help"}}
+

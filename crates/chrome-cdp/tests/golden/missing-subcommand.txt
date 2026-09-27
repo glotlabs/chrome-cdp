@@ -1,0 +1,11 @@
+$ chrome-cdp __direct
+exit: 2
+--- stderr
+error: chrome-cdp __direct needs a subcommand
+  hint: chrome-cdp __direct --help
+
+$ chrome-cdp __direct --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"chrome-cdp __direct needs a subcommand","hint":"chrome-cdp __direct --help"}}
+

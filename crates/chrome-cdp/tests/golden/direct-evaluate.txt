@@ -1,0 +1,21 @@
+$ chrome-cdp __direct cdp --chrome <chrome> --target page Runtime.evaluate '{"expression":"6*7","returnByValue":true}'
+exit: 0
+--- stdout
+{
+  "result": {
+    "description": "42",
+    "type": "number",
+    "value": 42
+  }
+}
+
+$ chrome-cdp __direct cdp --chrome <chrome> --target page Runtime.evaluate '{"expression":"6*7","returnByValue":true}' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"result":{"description":"42","type":"number","value":42}}}
+
+$ chrome-cdp __direct cdp --chrome <chrome> --target page Runtime.evaluate '{"expression":"6*7","returnByValue":true}' -q
+exit: 0
+--- stdout
+{"result":{"description":"42","type":"number","value":42}}
+

@@ -1,0 +1,15 @@
+$ chrome-cdp -V
+exit: 0
+--- stdout
+chrome-cdp <version> (git <sha>, CDP protocol r1687809)
+
+$ chrome-cdp -V --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"git_sha":"<sha>","protocol_revision":1687809,"version":"<version>"}}
+
+$ chrome-cdp -V -q
+exit: 0
+--- stdout
+<version>
+

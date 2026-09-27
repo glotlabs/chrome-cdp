@@ -7,96 +7,14 @@
 // clippy.toml's test allowances cover `#[test]` fns, not their helpers.
 #![allow(clippy::unwrap_used, clippy::print_stderr)]
 
+mod common;
+
 use std::io::Write as _;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::path::Path;
+use std::process::{Command, Stdio};
 
+use common::{chrome_path, cli, code, direct_cdp, fake_chrome, json_out, run, stderr, stdout};
 use serde_json::{Value, json};
-
-fn chrome_path() -> Option<PathBuf> {
-    match std::env::var_os("CHROME_PATH") {
-        Some(p) if !p.is_empty() => Some(PathBuf::from(p)),
-        _ => {
-            assert!(
-                std::env::var_os("CHROME_CDP_REQUIRE_CHROME").is_none(),
-                "CHROME_CDP_REQUIRE_CHROME is set but CHROME_PATH is not"
-            );
-            eprintln!("skipping: set CHROME_PATH to run tests against a real Chrome");
-            None
-        }
-    }
-}
-
-/// An empty `XDG_CONFIG_HOME`, so no user config applies. It must exist and
-/// be writable: Chrome keeps its crash reports there and dies without it.
-fn empty_config_home() -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("empty-config-home");
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-/// The binary with a clean `CHROME_CDP_*` environment and no config files
-/// (an empty user config dir; run from the temp dir, away from the repo).
-fn cli() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_chrome-cdp"));
-    for (key, _) in std::env::vars_os() {
-        if key.to_string_lossy().starts_with("CHROME_CDP_") {
-            cmd.env_remove(key);
-        }
-    }
-    cmd.env("XDG_CONFIG_HOME", empty_config_home())
-        .env_remove("NO_COLOR")
-        .current_dir(std::env::temp_dir())
-        .stdin(Stdio::null());
-    cmd
-}
-
-fn run(cmd: &mut Command) -> Output {
-    let out = cmd.output().unwrap();
-    eprintln!(
-        "status: {}\nstdout: {}\nstderr: {}",
-        out.status,
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-    out
-}
-
-fn stdout(out: &Output) -> String {
-    String::from_utf8(out.stdout.clone()).unwrap()
-}
-
-fn stderr(out: &Output) -> String {
-    String::from_utf8(out.stderr.clone()).unwrap()
-}
-
-fn code(out: &Output) -> i32 {
-    out.status.code().unwrap()
-}
-
-/// Parses stdout as exactly one JSON object.
-fn json_out(out: &Output) -> Value {
-    let text = stdout(out);
-    assert_eq!(text.lines().count(), 1, "one line of JSON: {text}");
-    serde_json::from_str(&text).unwrap()
-}
-
-fn direct_cdp(chrome: &Path, args: &[&str]) -> Command {
-    let mut cmd = cli();
-    cmd.args(["__direct", "cdp", "--chrome"])
-        .arg(chrome)
-        .args(args);
-    cmd
-}
-
-/// A stand-in "Chrome": a shell script with the given body.
-fn fake_chrome(dir: &tempfile::TempDir, body: &str) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt as _;
-    let path = dir.path().join("chrome");
-    std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    path
-}
 
 #[test]
 fn version_names_crate_git_and_protocol() {

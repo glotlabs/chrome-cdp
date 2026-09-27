@@ -1,0 +1,11 @@
+$ chrome-cdp __direct cdp Runtime.evaluate '[1]' --chrome /nonexistent/chrome
+exit: 2
+--- stderr
+error: params must be a JSON object, not an array
+  hint: wrap them in an object, e.g. '{"expression":"1+1"}'
+
+$ chrome-cdp __direct cdp Runtime.evaluate '[1]' --chrome /nonexistent/chrome --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"params must be a JSON object, not an array","hint":"wrap them in an object, e.g. '{\"expression\":\"1+1\"}'"}}
+

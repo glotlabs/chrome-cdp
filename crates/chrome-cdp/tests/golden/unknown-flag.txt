@@ -1,0 +1,11 @@
+$ chrome-cdp --bogus
+exit: 2
+--- stderr
+error: unexpected argument '--bogus' found
+  hint: chrome-cdp --help
+
+$ chrome-cdp --bogus --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"unexpected argument '--bogus' found","hint":"chrome-cdp --help"}}
+

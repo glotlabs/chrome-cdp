@@ -1,0 +1,11 @@
+$ chrome-cdp --timeout 5000 -V
+exit: 2
+--- stderr
+error: invalid value '5000' for '--timeout <DURATION>': `5000` needs a unit; use e.g. 5000s or 5000ms
+  hint: chrome-cdp --help
+
+$ chrome-cdp --timeout 5000 -V --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"invalid value '5000' for '--timeout <DURATION>': `5000` needs a unit; use e.g. 5000s or 5000ms","hint":"chrome-cdp --help"}}
+

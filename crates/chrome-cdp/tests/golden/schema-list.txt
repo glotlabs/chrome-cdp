@@ -1,0 +1,19 @@
+$ chrome-cdp schema
+exit: 0
+--- stdout
+version       chrome-cdp --version: version, git commit and CDP protocol revision
+schema        a command's JSON Schema, or the list of commands
+__direct cdp  the raw CDP result object (temporary; plan 02's cdp returns the same)
+
+$ chrome-cdp schema --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"commands":[{"name":"version","summary":"chrome-cdp --version: version, git commit and CDP protocol revision"},{"name":"schema","summary":"a command's JSON Schema, or the list of commands"},{"name":"__direct cdp","summary":"the raw CDP result object (temporary; plan 02's cdp returns the same)"}]}}
+
+$ chrome-cdp schema -q
+exit: 0
+--- stdout
+version
+schema
+__direct cdp
+
