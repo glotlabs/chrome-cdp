@@ -332,8 +332,9 @@ impl Engine {
                         .await?;
                     note = target.note.clone();
                     frame.clone_from(&target.key.frame);
-                    // A ref to an iframe, then steps: look in its document.
-                    let inner = if rest > 0 {
+                    // A ref to an iframe, then steps (or, for `--in`, the
+                    // ref alone): look in its document.
+                    let inner = if rest > 0 || frame_only == FrameOnly::Document {
                         self.content_frame(&target.context, &target.object_id, timeout)
                             .await?
                     } else {

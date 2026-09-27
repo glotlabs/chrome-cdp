@@ -528,6 +528,20 @@ async fn wait_takes_every_locator() {
     // A ref, until its element goes.
     let snap = snapshot(&engine).await;
     let later = find_ref(&snap.nodes, "button", "Later").unwrap();
+    // An iframe's ref as --in reads its document.
+    let pay = find_ref(&snap.nodes, "iframe", "Payment").unwrap();
+    let data = wait(
+        &engine,
+        WaitFor::Text {
+            text: "Pay".into(),
+            within: Some(pay),
+            gone: false,
+        },
+        5_000,
+    )
+    .await
+    .unwrap();
+    assert_eq!(data.met, "text \"Pay\" is visible");
     wait(&engine, element(&later, ElementState::Visible), 5_000)
         .await
         .unwrap();

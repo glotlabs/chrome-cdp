@@ -22,6 +22,7 @@ use super::tree::{Node, NodeKey};
 use super::{Capture, ax};
 use crate::errors::from_cdp;
 use crate::frames::World;
+use crate::locator::LocateOptions;
 use crate::tabs::{FrameContext, Page, tab_name};
 use crate::{Engine, Running};
 
@@ -76,44 +77,18 @@ impl Engine {
         function: &str,
         timeout: Duration,
     ) -> Result<RefCall, ErrorInfo> {
-        let number = parse_ref(reference).ok_or_else(|| {
-            ErrorInfo::new(ErrorKind::BadLocator, format!("{reference} is not a ref"))
-                .hint(Hint::text("a ref is e<number>, as the snapshot shows it"))
-        })?;
-        let running = self.running()?;
-        let page = self.page(&running, tab, timeout).await?;
-        let _tab = self.tabs.lock(&page.target_id).await;
-        let target = self
-            .resolve_ref(&running, &page, number, strict, timeout)
-            .await?;
-        let mut params = runtime::CallFunctionOnParams::new(function.to_owned());
-        params.object_id = Some(target.object_id.clone());
-        params.return_by_value = Some(true);
-        params.await_promise = Some(true);
-        let result = target
-            .context
-            .session
-            .with_timeout(timeout)
-            .call(params)
-            .await
-            .map_err(|e| from_cdp(&e, &self.session));
-        let note = target.note.clone();
-        target.release();
-        let result = result?;
-        if let Some(exception) = result.exception_details {
-            let message = exception
-                .exception
-                .and_then(|e| e.description)
-                .unwrap_or(exception.text);
-            let first = message.lines().next().unwrap_or_default().to_owned();
-            return Err(ErrorInfo::new(ErrorKind::EvalError, first)
-                .hint(Hint::text("fix the function; the page is unchanged"))
-                .details(json!({ "exception": message })));
+        if parse_ref(reference).is_none() {
+            return Err(
+                ErrorInfo::new(ErrorKind::BadLocator, format!("{reference} is not a ref"))
+                    .hint(Hint::text("a ref is e<number>, as the snapshot shows it")),
+            );
         }
-        Ok(RefCall {
-            value: result.result.value.unwrap_or(Value::Null),
-            note,
-        })
+        let options = LocateOptions {
+            strict_refs: strict,
+            testid_attribute: None,
+        };
+        self.call_on_locator(tab, reference, &options, function, timeout)
+            .await
     }
 
     /// Resolves ref `number` of `page` to its element (see the module
