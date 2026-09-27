@@ -246,6 +246,46 @@ pub const COMMANDS: &[CommandSchema] = &[
         summary: "what scrolled, its new scroll position, and which ends it reached",
         schema: || schema_for!(Envelope<ScrollData>),
     },
+    CommandSchema {
+        name: "press",
+        summary: "the keys pressed and the element that had focus",
+        schema: || schema_for!(Envelope<KeysData>),
+    },
+    CommandSchema {
+        name: "type",
+        summary: "how many characters were typed and into which element",
+        schema: || schema_for!(Envelope<KeysData>),
+    },
+    CommandSchema {
+        name: "fill",
+        summary: "the field filled and the value it holds now",
+        schema: || schema_for!(Envelope<FillData>),
+    },
+    CommandSchema {
+        name: "select",
+        summary: "the <select> and the options now selected",
+        schema: || schema_for!(Envelope<SelectData>),
+    },
+    CommandSchema {
+        name: "check",
+        summary: "the checkbox, radio or switch, and whether it had to change",
+        schema: || schema_for!(Envelope<CheckData>),
+    },
+    CommandSchema {
+        name: "uncheck",
+        summary: "the checkbox or switch, and whether it had to change",
+        schema: || schema_for!(Envelope<CheckData>),
+    },
+    CommandSchema {
+        name: "focus",
+        summary: "the element that has focus now",
+        schema: || schema_for!(Envelope<FocusData>),
+    },
+    CommandSchema {
+        name: "blur",
+        summary: "the element that lost focus",
+        schema: || schema_for!(Envelope<FocusData>),
+    },
 ];
 
 /// The registry entry for `name` (`"tab close"`), if any.
@@ -986,6 +1026,90 @@ pub struct ScrollData {
     pub at_bottom: bool,
     pub at_left: bool,
     pub at_right: bool,
+}
+
+/// `data` of `chrome-cdp press` and `type --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct KeysData {
+    /// The tab acted in, e.g. `t1`.
+    pub tab: String,
+    /// `press` or `type`.
+    pub action: String,
+    /// The chords pressed, `Mod` resolved (`Control+A`, `Backspace`)
+    /// (press).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keys: Vec<String>,
+    /// How many characters were typed (type).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chars: Option<usize>,
+    /// The element that had focus when the keys went (after `--in`
+    /// focused it); absent when nothing had.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element: Option<ActedElement>,
+}
+
+/// `data` of `chrome-cdp fill --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FillData {
+    /// The tab acted in, e.g. `t1`.
+    pub tab: String,
+    /// The locator as given.
+    pub locator: String,
+    pub element: ActedElement,
+    /// What the field holds now (absent for passwords).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+}
+
+/// An option of a `<select>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SelectOption {
+    pub value: String,
+    /// Its text, whitespace collapsed.
+    pub label: String,
+}
+
+/// `data` of `chrome-cdp select --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SelectData {
+    /// The tab acted in, e.g. `t1`.
+    pub tab: String,
+    /// The locator as given.
+    pub locator: String,
+    pub element: ActedElement,
+    /// The options selected now, in the order asked for.
+    pub selected: Vec<SelectOption>,
+}
+
+/// `data` of `chrome-cdp check` and `uncheck --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CheckData {
+    /// The tab acted in, e.g. `t1`.
+    pub tab: String,
+    /// The locator as given.
+    pub locator: String,
+    /// The checkbox, radio button or switch (the control a label is
+    /// for).
+    pub element: ActedElement,
+    /// Whether it is checked now.
+    pub checked: bool,
+    /// Whether it was clicked: false when it already was as asked.
+    pub changed: bool,
+    /// The label clicked instead of a visually hidden control.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<ActedElement>,
+}
+
+/// `data` of `chrome-cdp focus` and `blur --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FocusData {
+    /// The tab acted in, e.g. `t1`.
+    pub tab: String,
+    /// `focus` or `blur`.
+    pub action: String,
+    /// The locator as given.
+    pub locator: String,
+    pub element: ActedElement,
 }
 
 /// `data` of `chrome-cdp tabs --json`.

@@ -565,6 +565,8 @@ pub enum Modifier {
     Control,
     Meta,
     Shift,
+    /// Meta when the browser runs on macOS, Control elsewhere.
+    Mod,
 }
 
 impl Modifier {
@@ -575,6 +577,7 @@ impl Modifier {
             Self::Control => "Control",
             Self::Meta => "Meta",
             Self::Shift => "Shift",
+            Self::Mod => "Mod",
         }
     }
 }
@@ -699,6 +702,50 @@ pub enum Action {
         #[serde(default)]
         force: bool,
     },
+    /// `press <keys> [--in loc]`: key chords (`Control+A Backspace`) to
+    /// what has focus (`locator`, focused first, if given).
+    Press {
+        keys: String,
+        #[serde(default)]
+        locator: Option<String>,
+    },
+    /// `type <text> [--in loc] [--delay ms]`: key presses for what the
+    /// layout types, inserted text for the rest.
+    Type {
+        text: String,
+        #[serde(default)]
+        locator: Option<String>,
+        /// Between keys.
+        #[serde(default)]
+        delay_ms: u64,
+        #[serde(default)]
+        force: bool,
+    },
+    /// `fill <loc> <text>`: replaces the field's content in one input.
+    Fill {
+        locator: String,
+        text: String,
+        #[serde(default)]
+        force: bool,
+    },
+    /// `select <loc> <value|label>...`: options of a native `<select>`.
+    Select {
+        locator: String,
+        values: Vec<String>,
+        #[serde(default)]
+        force: bool,
+    },
+    /// `check <loc>` (`checked: true`) and `uncheck <loc>`.
+    Check {
+        locator: String,
+        checked: bool,
+        #[serde(default)]
+        force: bool,
+    },
+    /// `focus <loc>`.
+    Focus { locator: String },
+    /// `blur <loc>`.
+    Blur { locator: String },
 }
 
 impl Action {
@@ -712,11 +759,21 @@ impl Action {
             Self::Mouse(_) => "mouse",
             Self::Drag { .. } => "drag",
             Self::Scroll { .. } => "scroll",
+            Self::Press { .. } => "press",
+            Self::Type { .. } => "type",
+            Self::Fill { .. } => "fill",
+            Self::Select { .. } => "select",
+            Self::Check { checked: true, .. } => "check",
+            Self::Check { .. } => "uncheck",
+            Self::Focus { .. } => "focus",
+            Self::Blur { .. } => "blur",
         }
     }
 }
 
-/// `click`, `dblclick`, `hover`, `tap`, `mouse`, `drag` and `scroll`.
+/// The input actions: `click`, `dblclick`, `hover`, `tap`, `mouse`,
+/// `drag`, `scroll`, `press`, `type`, `fill`, `select`, `check`,
+/// `uncheck`, `focus` and `blur`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActionRequest {
     pub action: Action,

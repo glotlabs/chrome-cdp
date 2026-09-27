@@ -230,6 +230,7 @@ impl Actor<'_> {
         let element = ready.element.clone();
         let note = ready.ready.target.note.clone();
         ready.release();
+        let modifiers = &self.resolve_modifiers(modifiers).await?;
         let bits = modifier_bits(modifiers);
         let mut data = PointerData {
             tab: self.tab(),
@@ -432,9 +433,10 @@ pub fn parse_modifiers(text: &str) -> Result<Vec<Modifier>, String> {
             "control" | "ctrl" => Modifier::Control,
             "meta" | "cmd" | "command" => Modifier::Meta,
             "shift" => Modifier::Shift,
+            "mod" => Modifier::Mod,
             _ => {
                 return Err(format!(
-                    "unknown modifier `{name}`; use Alt, Control, Meta or Shift"
+                    "unknown modifier `{name}`; use Alt, Control, Meta, Shift or Mod"
                 ));
             }
         };
@@ -470,7 +472,7 @@ mod tests {
         );
         assert_eq!(
             parse_modifiers("Hyper").unwrap_err(),
-            "unknown modifier `Hyper`; use Alt, Control, Meta or Shift"
+            "unknown modifier `Hyper`; use Alt, Control, Meta, Shift or Mod"
         );
     }
 

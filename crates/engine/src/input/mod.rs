@@ -6,13 +6,20 @@
 //! view, and finds the point to act at in the tab's viewport. Milestone 5.2
 //! adds the mouse and pointer actions on top ([`Engine::act`]): `click`,
 //! `dblclick`, `hover`, `tap`, `drag`, `scroll`, and the low-level `mouse`
-//! commands. Every event is real input (`Input.dispatchMouseEvent`, …) sent
-//! to the tab, so the page sees trusted events in the order a user makes
-//! them. Later milestones add keyboard and text (5.3), files (5.4) and the
-//! post-action report (5.5) as more [`Action`]s.
+//! commands. Milestone 5.3 adds the keyboard ([`keys`]: `press`, `type`)
+//! and forms (`fill`, `select`, `check`, `uncheck`, `focus`, `blur`).
+//! Every event is real input (`Input.dispatchMouseEvent`,
+//! `Input.dispatchKeyEvent`, `Input.insertText`) sent to the tab, so the
+//! page sees trusted events in the order a user makes them; only values
+//! that take no typing (a date, a `<select>`) are set in the page. Later
+//! milestones add files (5.4) and the post-action report (5.5) as more
+//! [`Action`]s.
 
 mod actionability;
 mod drag;
+mod form;
+mod keyboard;
+mod keys;
 mod mouse;
 mod scroll;
 
@@ -34,7 +41,7 @@ use crate::errors::from_cdp;
 use crate::injected::{self, GUARD};
 use crate::locator::{LocateOptions, Locator};
 use crate::request::{Action, ActionRequest, Modifier, SnapshotEngine, millis};
-use crate::snapshot::Target;
+use crate::snapshot::{NodeKey, Target};
 use crate::tabs::{Page, tab_name};
 use crate::{Engine, Running};
 
@@ -56,7 +63,12 @@ pub fn check_action(req: &ActionRequest) -> Result<(), ErrorInfo> {
                 );
             }
         }
-        Action::Hover { locator, .. } | Action::Tap { locator, .. } => {
+        Action::Hover { locator, .. }
+        | Action::Tap { locator, .. }
+        | Action::Fill { locator, .. }
+        | Action::Check { locator, .. }
+        | Action::Focus { locator }
+        | Action::Blur { locator } => {
             options.parse(locator)?;
         }
         Action::Drag {
@@ -84,6 +96,46 @@ pub fn check_action(req: &ActionRequest) -> Result<(), ErrorInfo> {
             }
         }
         Action::Mouse(op) => mouse::check(op)?,
+        Action::Press { keys, locator } => {
+            if let Some(locator) = locator {
+                options.parse(locator)?;
+            }
+            if let Err(message) = keys::parse(keys) {
+                return Err(ErrorInfo::new(
+                    ErrorKind::BadArgs,
+                    format!(
+                        "{message}; name keys like Enter, Tab, ArrowDown, F1, a or A, \
+                         and hold them together with + (Control+A, Mod+Shift+Z)"
+                    ),
+                )
+                .hint(Hint::run(Cmd::new("press").arg("Control+A Backspace"))));
+            }
+        }
+        Action::Type { text, locator, .. } => {
+            if let Some(locator) = locator {
+                options.parse(locator)?;
+            }
+            if text.is_empty() {
+                let mut example = Cmd::new("fill");
+                example = match locator {
+                    Some(locator) => example.arg(locator),
+                    None => example.raw("<locator>"),
+                };
+                return Err(ErrorInfo::new(ErrorKind::BadArgs, "nothing to type")
+                    .hint(Hint::run(example.arg("")).why("clears a field")));
+            }
+        }
+        Action::Select {
+            locator, values, ..
+        } => {
+            options.parse(locator)?;
+            if values.is_empty() {
+                return bad(
+                    "select needs an option's value or label".to_owned(),
+                    Cmd::new("select").arg(locator).raw("<value>"),
+                );
+            }
+        }
     }
     Ok(())
 }
@@ -162,6 +214,12 @@ impl Actor<'_> {
             Action::Mouse(op) => self.mouse(*op).await,
             Action::Drag { .. } => self.drag().await,
             Action::Scroll { .. } => self.scroll().await,
+            Action::Press { .. } => self.press_keys().await,
+            Action::Type { .. } => self.type_text().await,
+            Action::Fill { .. } => self.fill().await,
+            Action::Select { .. } => self.select().await,
+            Action::Check { .. } => self.check().await,
+            Action::Focus { .. } | Action::Blur { .. } => self.focus().await,
         }
     }
 
@@ -241,6 +299,21 @@ impl Actor<'_> {
                 }
             }
             Action::Mouse(_) => cmd,
+            Action::Press { keys, .. } => cmd.arg(keys).flag("in", locator),
+            Action::Type { text, delay_ms, .. } => {
+                let cmd = cmd.arg(text).flag("in", locator);
+                if *delay_ms == 0 {
+                    cmd
+                } else {
+                    cmd.flag(
+                        "delay",
+                        protocol::format::duration(Duration::from_millis(*delay_ms)),
+                    )
+                }
+            }
+            Action::Fill { text, .. } => cmd.arg(locator).arg(text),
+            Action::Select { values, .. } => values.iter().fold(cmd.arg(locator), Cmd::arg),
+            Action::Check { .. } | Action::Focus { .. } | Action::Blur { .. } => cmd.arg(locator),
         }
         .session(self.session())
     }
@@ -291,16 +364,7 @@ impl Actor<'_> {
     /// How the output names `target`: its role, name and tag, and its ref
     /// (given now if it has none).
     async fn name(&self, target: &Target) -> Result<ActedElement, ErrorInfo> {
-        #[derive(Deserialize)]
-        struct Described {
-            role: String,
-            name: String,
-            tag: String,
-        }
-        let generation = self
-            .running
-            .tabs
-            .snapshot_memory(self.page.id, |m| m.refs.generation());
+        let generation = self.generation();
         let value = self
             .call(
                 target,
@@ -314,31 +378,53 @@ impl Actor<'_> {
                 format!("describing the element: {e}"),
             )
         })?;
-        let reference = self
-            .running
+        Ok(self.acted(Some(&target.key), described, generation))
+    }
+
+    /// The tab's ref generation now: elements seen from now on get refs
+    /// only while it holds.
+    fn generation(&self) -> Option<u64> {
+        self.running
             .tabs
-            .snapshot_memory(self.page.id, |m| {
-                if let Some(number) = m.refs.get(&target.key) {
-                    return Some(number);
-                }
-                // A node of a document that is gone must not get a ref.
-                (Some(m.refs.generation()) == generation).then(|| {
-                    m.refs.assign_from(
-                        &target.key,
-                        &described.role,
-                        &described.name,
-                        SnapshotEngine::Dom,
-                    )
-                })
+            .snapshot_memory(self.page.id, |m| m.refs.generation())
+    }
+
+    /// How the output names the element `key` names, as the page
+    /// `described` it, with its ref (given now if it has none, unless a
+    /// frame loaded a new document since `generation`).
+    fn acted(
+        &self,
+        key: Option<&NodeKey>,
+        described: Described,
+        generation: Option<u64>,
+    ) -> ActedElement {
+        let reference = key
+            .and_then(|key| {
+                self.running
+                    .tabs
+                    .snapshot_memory(self.page.id, |m| {
+                        if let Some(number) = m.refs.get(key) {
+                            return Some(number);
+                        }
+                        // A node of a document that is gone must not get a ref.
+                        (Some(m.refs.generation()) == generation).then(|| {
+                            m.refs.assign_from(
+                                key,
+                                &described.role,
+                                &described.name,
+                                SnapshotEngine::Dom,
+                            )
+                        })
+                    })
+                    .flatten()
             })
-            .flatten()
             .map(|n| format!("e{n}"));
-        Ok(ActedElement {
+        ActedElement {
             reference,
             role: described.role,
             name: described.name,
             tag: described.tag,
-        })
+        }
     }
 
     /// Calls `function` (which may use `__ccdp`) on `target` with
@@ -388,6 +474,17 @@ fn returned(result: runtime::CallFunctionOnReturns) -> Result<Value, ErrorInfo> 
     Ok(result.result.value.unwrap_or(Value::Null))
 }
 
+/// An element as `__ccdp.describe` describes it.
+#[derive(Debug, Default, Deserialize)]
+struct Described {
+    #[serde(default)]
+    role: String,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    tag: String,
+}
+
 /// `e6 button "Sign in"`: how the text output names an element.
 pub(crate) fn describe(element: &ActedElement) -> String {
     let mut text = String::new();
@@ -422,7 +519,9 @@ fn modifier_bits(modifiers: &[Modifier]) -> i64 {
         .iter()
         .map(|m| match m {
             Modifier::Alt => 1,
-            Modifier::Control => 2,
+            // `Mod` is resolved by the browser's platform before; off
+            // macOS it is Control.
+            Modifier::Control | Modifier::Mod => 2,
             Modifier::Meta => 4,
             Modifier::Shift => 8,
         })

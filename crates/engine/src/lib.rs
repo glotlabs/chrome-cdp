@@ -119,6 +119,9 @@ struct Running {
     launched: Mutex<Option<Launched>>,
     /// Stops the crash watcher before a deliberate close.
     stop: Arc<Notify>,
+    /// Whether the browser runs on macOS (for `Mod` and editing
+    /// commands), once asked.
+    mac: std::sync::OnceLock<bool>,
 }
 
 /// What the running browser was started with, to compare with a later
@@ -497,6 +500,7 @@ impl Engine {
             tabs: Tabs::start(&conn, self.settings.clone()),
             launched: Mutex::new(launched),
             stop: stop.clone(),
+            mac: std::sync::OnceLock::new(),
         });
         *self.lock_state() = State::Running(running.clone());
         let engine = Arc::downgrade(self);
