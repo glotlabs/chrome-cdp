@@ -59,6 +59,9 @@ fn chrome_command(path: &PathBuf, profile: &TempDir, extra: &[&str]) -> Command 
             "about:blank",
         ])
         .args(extra)
+        // Chrome keeps a socket dir in TMPDIR, which leaks when a test kills
+        // it; keep it in the profile, which the test deletes.
+        .env("TMPDIR", profile.path())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
