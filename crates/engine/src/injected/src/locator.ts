@@ -3,7 +3,7 @@
 // either finds elements inside the current ones (`A >> B`: B inside A) or
 // filters them (`nth=`, `visible=`, `has-text=`).
 
-import { activeElement, hiddenForAria, labelsOf, level, nameOf, roleOf, shownName, statesOf, textOf } from './aria';
+import { INTERACTIVE, activeElement, hiddenForAria, labelsOf, level, nameOf, roleOf, shownName, statesOf, textOf } from './aria';
 import { css } from './css';
 import { descendants, inOrder, norm, parentOf, tag, visible } from './dom';
 import { LocatorError } from './errors';
@@ -164,7 +164,8 @@ export interface Candidate {
 
 export function describe(el: Element): Candidate {
   const role = roleOf(el) || 'generic';
-  const name = cut(shownName(el, role) || (role === 'generic' ? norm(el.textContent) : ''), 60);
+  // Without a name, what is not a control is known by its text.
+  const name = cut(shownName(el, role) || (INTERACTIVE.has(role) ? '' : norm(el.textContent)), 60);
   const out: Candidate = { role, name, tag: tag(el), visible: visible(el) };
   for (let a = parentOf(el); a; a = parentOf(a)) {
     const r = roleOf(a);

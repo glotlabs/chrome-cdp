@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 0a3f10ced2ce6b0a
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: e8e59f38b7f673b9
 "use strict";
 (() => {
   // src/dom.ts
@@ -758,7 +758,7 @@
   var cut = (s, n) => s.length > n ? s.slice(0, n - 1) + "…" : s;
   function describe(el) {
     const role = roleOf(el) || "generic";
-    const name = cut(shownName(el, role) || (role === "generic" ? norm(el.textContent) : ""), 60);
+    const name = cut(shownName(el, role) || (INTERACTIVE.has(role) ? "" : norm(el.textContent)), 60);
     const out = { role, name, tag: tag(el), visible: visible(el) };
     for (let a = parentOf(el); a; a = parentOf(a)) {
       const r = roleOf(a);
@@ -953,7 +953,7 @@
     }
     const now = el.getAttribute("aria-valuetext") ?? el.getAttribute("aria-valuenow");
     if (now !== null) return { value: now, kind: "aria" };
-    return { error: `<${tag(el)}> has no value` };
+    return { error: `it is a <${tag(el)}>, not a field` };
   }
   var DROP = /* @__PURE__ */ new Set([
     "script",

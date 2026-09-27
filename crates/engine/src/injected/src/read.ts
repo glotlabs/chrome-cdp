@@ -213,7 +213,7 @@ export function value(el: Element): Value {
   }
   const now = el.getAttribute('aria-valuetext') ?? el.getAttribute('aria-valuenow');
   if (now !== null) return { value: now, kind: 'aria' };
-  return { error: `<${tag(el)}> has no value` };
+  return { error: `it is a <${tag(el)}>, not a field` };
 }
 
 // Markdown: readability-style extraction, then conversion.
