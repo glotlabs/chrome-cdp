@@ -7,14 +7,17 @@ and errors that say what to run next.
 
 **Status:** early development. Sessions (`open`, `connect`, `status`,
 `sessions`, `close`), tabs (`tabs`, `tab`), navigation (`goto`, `back`,
-`forward`, `reload`), `wait`, `snapshot`, dialogs (`dialog`), `downloads`,
-raw CDP calls, `install`/`uninstall` and `schema` work so far:
+`forward`, `reload`), `wait`, `snapshot`, reading the page (`find`, `text`,
+`html`, `attr`, `value`, `count`, `box`, `markdown`), dialogs (`dialog`),
+`downloads`, raw CDP calls, `install`/`uninstall` and `schema` work so far:
 
 ```sh
 chrome-cdp install                    # Chrome for Testing, if there is no Chrome
 chrome-cdp open https://example.com   # starts the session's browser
 chrome-cdp goto example.com/about     # → 200 https://example.com/about "About" (412ms)
 chrome-cdp snapshot -i                # what can be acted on, with refs: button "Save" [e6]
+chrome-cdp find checkout              # - button "Checkout" [e6] (in form "Cart")
+chrome-cdp markdown                   # the article, as Markdown
 chrome-cdp wait --text 'Welcome back'  # instead of sleep
 chrome-cdp back
 chrome-cdp cdp --target page Runtime.evaluate '{"expression":"document.title"}'
@@ -115,8 +118,30 @@ Every command that names an element takes the same locators:
 
 A command that acts on one element fails with `Ambiguous` when several match,
 and lists them with new refs and where each is (`e41: button "Delete" (in row
-"Invoice 12 …")`), so the next command can use a ref. Commands that read
-(`wait`) take any number of matches.
+"Invoice 12 …")`), so the next command can use a ref. `wait`, `text` and
+`count` take any number of matches.
+
+Reading the page without a full snapshot:
+
+- `find <words> [--role r] [--limit 10]` searches roles, names, values and
+  text (every word must match; a typo in a long word is forgiven) and prints
+  the best matches as snapshot lines with refs, each with the named container
+  it is in. `-q` prints only the refs.
+- `text [loc]` prints the visible text of the page, or of every match (one
+  per line), tidied; `html [loc] [--outer] [--raw]` the HTML, pretty-printed
+  (open shadow roots included) unless `--raw`.
+- `attr <loc> <name>`, `value <loc>` (a field's current value; a select's
+  chosen value), `count <loc>` (`4 (3 visible)`) and `box <loc>`
+  (`x=24 y=310 w=120 h=36` in CSS pixels of the tab's viewport, iframes
+  included).
+- `markdown [loc]` prints the page's main content as Markdown: a single
+  `<main>` or `<article>`, else the element with the most paragraph text,
+  without navigation, sidebars, footers and form controls.
+
+`text`, `html` and `markdown` read the page without a locator, and a frame's
+document when the locator names one (`text frame=payment`). An element that
+is not there is `NotFound` (exit 1); an attribute that is not there, or an
+element that is not rendered (for `box`), prints nothing and a warning.
 
 JavaScript dialogs never hang a command. By default an `alert` and a
 `beforeunload` ("leave the page?") are accepted and mentioned in the output;
