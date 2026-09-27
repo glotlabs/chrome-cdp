@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Nested frames</title>
+<script>window.where = 'top';</script>
+<h1>Nested frames</h1>
+<p>A same-site frame with a cross-site frame inside, and a cross-site frame
+with a frame of its own site inside.</p>
+<iframe name="local" src="/frames/local.html"></iframe>
+<iframe name="remote" src="{{ORIGIN_B}}/frames/remote.html"></iframe>
