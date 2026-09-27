@@ -354,6 +354,9 @@ fn connect_attaches_and_close_only_detaches() {
     assert_eq!(browser_info["endpoint"], json!(port));
     let out = sandbox.run(&["cdp", "Browser.getVersion", "--session", "c", "-q"]);
     assert_eq!(code(&out), 0);
+    // The browser's page is the session's first tab.
+    let out = sandbox.run(&["tabs", "--session", "c", "-q"]);
+    assert_eq!(stdout(&out), "t1\n");
     // Connecting again is a no-op; launching into it is refused.
     assert_eq!(code(&sandbox.run(&["connect", &port, "--session", "c"])), 0);
     let out = sandbox.run(&["open", "--headed", "--session", "c"]);
