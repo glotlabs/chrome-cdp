@@ -1,0 +1,13 @@
+$ chrome-cdp goto '<site>/nav/slow-image.html?img_delay=20000' --timeout 1s
+exit: 3
+--- stderr
+error: <site>/nav/slow-image.html?img_delay=20000 did not reach the load event within 1s
+  reached: commit, domcontentloaded
+  page: <site>/nav/slow-image.html?img_delay=20000 "Slow image"
+  hint: chrome-cdp goto '<site>/nav/slow-image.html?img_delay=20000' --wait domcontentloaded   (does not wait for images, scripts and styles), or a longer --timeout, e.g. --timeout 2s
+
+$ chrome-cdp goto '<site>/nav/slow-image.html?img_delay=20000' --timeout 1s --json
+exit: 3
+--- stdout
+{"ok":false,"error":{"kind":"Timeout","message":"<site>/nav/slow-image.html?img_delay=20000 did not reach the load event within 1s","hint":"chrome-cdp goto '<site>/nav/slow-image.html?img_delay=20000' --wait domcontentloaded   (does not wait for images, scripts and styles), or a longer --timeout, e.g. --timeout 2s","notes":[{"label":"reached","text":"commit, domcontentloaded"},{"label":"page","text":"<site>/nav/slow-image.html?img_delay=20000 \"Slow image\""}],"details":{"page":{"title":"Slow image","url":"<site>/nav/slow-image.html?img_delay=20000"},"reached":["commit","domcontentloaded"],"url":"<site>/nav/slow-image.html?img_delay=20000","wait":"load"}}}
+

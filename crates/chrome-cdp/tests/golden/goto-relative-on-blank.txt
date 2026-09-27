@@ -1,0 +1,11 @@
+$ chrome-cdp goto /login
+exit: 2
+--- stderr
+error: cannot resolve the relative URL `/login` against the current page (about:blank)
+  hint: chrome-cdp goto http://localhost:3000/login   (a full URL), or set base_url in .chrome-cdp.toml
+
+$ chrome-cdp goto /login --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"cannot resolve the relative URL `/login` against the current page (about:blank)","hint":"chrome-cdp goto http://localhost:3000/login   (a full URL), or set base_url in .chrome-cdp.toml","details":{"base":"about:blank","url":"/login"}}}
+

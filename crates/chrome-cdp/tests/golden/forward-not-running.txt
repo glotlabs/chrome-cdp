@@ -1,0 +1,11 @@
+$ chrome-cdp forward
+exit: 4
+--- stderr
+error: session default is not running
+  hint: chrome-cdp open
+
+$ chrome-cdp forward --json
+exit: 4
+--- stdout
+{"ok":false,"error":{"kind":"DaemonUnavailable","message":"session default is not running","hint":"chrome-cdp open"}}
+

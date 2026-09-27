@@ -1,0 +1,11 @@
+$ chrome-cdp goto localhost:47/login
+exit: 1
+--- stderr
+error: connection refused on localhost:47
+  hint: is your dev server running? start it, then: chrome-cdp goto http://localhost:47/login
+
+$ chrome-cdp goto localhost:47/login --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NavigationFailed","message":"connection refused on localhost:47","hint":"is your dev server running? start it, then: chrome-cdp goto http://localhost:47/login","details":{"error":"net::ERR_CONNECTION_REFUSED","reason":"connection_refused","url":"http://localhost:47/login"}}}
+

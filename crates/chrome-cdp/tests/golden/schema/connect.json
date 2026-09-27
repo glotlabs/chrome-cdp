@@ -394,6 +394,16 @@
     "PageInfo": {
       "description": "A page, after `open <url>`.",
       "properties": {
+        "status": {
+          "description": "The HTTP status of the main document; absent for pages without one\n(`file:`, `data:`, `about:`).",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "title": {
           "description": "The document title.",
           "type": "string"

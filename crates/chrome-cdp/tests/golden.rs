@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use common::{Sandbox, chrome_path, cli, fake_chrome};
+use fixtures::Fixtures;
 use serde_json::Value;
 
 /// What a case needs before it runs.
@@ -342,6 +343,60 @@ const CASES: &[Case] = &[
         modes: ALL,
         fixture: Fixture::SessionPerMode,
     },
+    Case {
+        name: "goto",
+        args: &["goto", "{site}/redirect?to=/nav/a.html"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "goto-404",
+        args: &["goto", "{site}/nav/missing.html"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "goto-connection-refused",
+        // Nothing listens on port 47, and Chrome does not block it.
+        args: &["goto", "localhost:47/login"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "goto-relative-on-blank",
+        args: &["goto", "/login"],
+        modes: ERR,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "goto-load-timeout",
+        args: &[
+            "goto",
+            "{site}/nav/slow-image.html?img_delay=20000",
+            "--timeout",
+            "1s",
+        ],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "back-at-start",
+        args: &["back"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "reload",
+        args: &["reload"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "forward-not-running",
+        args: &["forward"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
 ];
 
 fn golden_dir() -> PathBuf {
@@ -416,6 +471,13 @@ impl Normalizer {
             ("\"pid\":", &digits, "<pid>"),
             ("\"daemon_pid\":", &digits, "<pid>"),
             ("\"uptime_ms\":", &digits, "<ms>"),
+            ("\"elapsed_ms\":", &digits, "<ms>"),
+            // A navigation's time: `"Title" (412ms)`.
+            (
+                "\" (",
+                &|c: char| c.is_ascii_digit() || matches!(c, '.' | 'm' | 's'),
+                "<ms>",
+            ),
             ("up ", &uptime, "<uptime>"),
             (
                 "/chrome-cdp-",
@@ -532,6 +594,8 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
         sandbox = Some(sb);
     }
 
+    let site = Fixtures::shared();
+    norm = norm.with(Path::new(site.a()), "<site>");
     let mut out = String::new();
     for mode in case.modes {
         let mut args: Vec<String> = case
@@ -541,6 +605,7 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
                 Some(chrome) => a.replace("{chrome}", &chrome.display().to_string()),
                 None => (*a).to_owned(),
             })
+            .map(|a| a.replace("{site}", site.a()))
             .collect();
         if !mode.is_empty() {
             args.push((*mode).to_owned());
