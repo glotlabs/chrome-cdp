@@ -65,6 +65,10 @@ const RETRY_DELAYS: [Duration; 5] = [
     Duration::from_millis(500),
 ];
 
+/// How long the look after the timeout, for refs to what covers the
+/// element, may take.
+const LAST_LOOK: Duration = Duration::from_secs(2);
+
 /// The object group of the hit test's handles.
 const GROUP: &str = "chrome-cdp-aim";
 
@@ -281,6 +285,27 @@ impl Engine {
             }
             last = Some(failure);
             tokio::time::sleep(delay).await;
+        };
+        // What covers the element gets refs only if no frame loaded a new
+        // document since the hit test: look once more, so the error can
+        // name it with a ref.
+        let failure = match failure {
+            Failure::Obscured(obscured)
+                if running
+                    .tabs
+                    .snapshot_memory(page.id, |m| m.refs.generation())
+                    != obscured.generation =>
+            {
+                match self
+                    .attempt(running, page, locator, options, checks, retry, LAST_LOOK)
+                    .await
+                {
+                    Ok(ready) => return Ok(ready),
+                    Err(Attempt::Retry(again @ Failure::Obscured(_))) => again,
+                    Err(_) => Failure::Obscured(obscured),
+                }
+            }
+            failure => failure,
         };
         Err(self.not_actionable(running, page, locator, failure, timeout, retry))
     }
