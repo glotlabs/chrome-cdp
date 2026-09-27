@@ -1,15 +1,18 @@
 //! Error kinds, exit codes and the error payload (plan 08 §3).
 
 use std::fmt;
+use std::fmt::Write as _;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use crate::style::Style;
 
 /// What went wrong, as a stable machine-readable name.
 ///
 /// The name is part of the `--json` contract (`"kind":"Timeout"`) and each
 /// kind maps to one process exit code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ErrorKind {
     // Exit 1: an action or assertion failed on the page.
     /// No element matches the locator.
@@ -59,6 +62,28 @@ pub enum ErrorKind {
 }
 
 impl ErrorKind {
+    /// Every kind, in exit-code order.
+    pub const ALL: [Self; 18] = [
+        Self::NotFound,
+        Self::Ambiguous,
+        Self::Obscured,
+        Self::NotEnabled,
+        Self::RefStale,
+        Self::RefDetached,
+        Self::ExpectFailed,
+        Self::EvalError,
+        Self::NavigationFailed,
+        Self::BadArgs,
+        Self::BadLocator,
+        Self::Timeout,
+        Self::ChromeNotFound,
+        Self::LaunchFailed,
+        Self::BrowserCrashed,
+        Self::DaemonUnavailable,
+        Self::ProtocolError,
+        Self::DialogOpen,
+    ];
+
     /// The process exit code for this kind (plan 08 §3).
     pub fn exit_code(self) -> u8 {
         match self {
@@ -91,35 +116,64 @@ impl fmt::Display for ErrorKind {
 
 /// A command failure as the user sees it: what happened, and the next
 /// command to run.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+///
+/// Build one with [`ErrorInfo::new`] and chain [`note`](Self::note),
+/// [`hint`](Self::hint) (usually from a [`Hint`](crate::Hint)) and
+/// [`details`](Self::details).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ErrorInfo {
     /// The stable error name.
     pub kind: ErrorKind,
     /// One line saying what happened.
     pub message: String,
     /// The concrete next command to try.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
+    /// Short labelled facts shown between the message and the hint in the
+    /// text form (`covering: div "We use cookies" [e88]`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<Note>,
     /// Structured context (candidates, observed URL, CDP error code, …).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub details: Option<Value>,
 }
 
+/// One labelled line of an error's text form.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Note {
+    /// A short lowercase label, e.g. `covering`.
+    pub label: String,
+    /// One line of text.
+    pub text: String,
+}
+
 impl ErrorInfo {
-    /// An error with no hint or details yet.
+    /// An error with no hint, notes or details yet. Line breaks in `message`
+    /// become spaces: the message is one line.
     pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
         Self {
             kind,
-            message: message.into(),
+            message: one_line(message.into()),
             hint: None,
+            notes: Vec::new(),
             details: None,
         }
     }
 
-    /// Sets the hint.
+    /// Sets the hint (a [`Hint`](crate::Hint), [`Cmd`](crate::Cmd) or text).
     #[must_use]
     pub fn hint(mut self, hint: impl Into<String>) -> Self {
-        self.hint = Some(hint.into());
+        self.hint = Some(one_line(hint.into()));
+        self
+    }
+
+    /// Adds a labelled line to the text form.
+    #[must_use]
+    pub fn note(mut self, label: impl Into<String>, text: impl Into<String>) -> Self {
+        self.notes.push(Note {
+            label: label.into(),
+            text: one_line(text.into()),
+        });
         self
     }
 
@@ -139,19 +193,40 @@ impl ErrorInfo {
     ///
     /// ```text
     /// error: <message>
+    ///   <label>: <note>
     ///   hint: <hint>
     /// ```
     ///
     /// Details are only in the `--json` form; commands that want them in
-    /// text put them in the message or hint.
+    /// text add notes.
     pub fn to_text(&self) -> String {
-        let mut out = format!("error: {}\n", self.message);
+        self.render_text(Style::PLAIN)
+    }
+
+    /// [`to_text`](Self::to_text) with the labels styled.
+    pub fn render_text(&self, style: Style) -> String {
+        let mut out = format!("{} {}\n", style.error("error:"), self.message);
+        for note in &self.notes {
+            let label = style.label(&format!("{}:", note.label));
+            let _ = writeln!(out, "  {label} {}", note.text);
+        }
         if let Some(hint) = &self.hint {
-            out.push_str("  hint: ");
-            out.push_str(hint);
-            out.push('\n');
+            let _ = writeln!(out, "  {} {hint}", style.hint("hint:"));
         }
         out
+    }
+}
+
+/// Joins the lines of `text` with spaces.
+fn one_line(text: String) -> String {
+    if text.contains(['\n', '\r']) {
+        text.lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    } else {
+        text
     }
 }
 
@@ -195,6 +270,55 @@ mod tests {
         );
         let bare = ErrorInfo::new(ErrorKind::Timeout, "too slow");
         assert_eq!(bare.to_text(), "error: too slow\n");
+    }
+
+    #[test]
+    fn notes_sit_between_message_and_hint() {
+        let err = ErrorInfo::new(
+            ErrorKind::Obscured,
+            "element e6 is covered by another element",
+        )
+        .note("covering", r#"div "We use cookies" [e88]"#)
+        .hint(r#"chrome-cdp click e89   (button "Accept" inside the banner)"#);
+        assert_eq!(
+            err.to_text(),
+            "error: element e6 is covered by another element\n  \
+             covering: div \"We use cookies\" [e88]\n  \
+             hint: chrome-cdp click e89   (button \"Accept\" inside the banner)\n"
+        );
+    }
+
+    #[test]
+    fn messages_are_one_line() {
+        let err = ErrorInfo::new(
+            ErrorKind::EvalError,
+            "Uncaught Error: x\n    at <anonymous>:1:7\n",
+        )
+        .hint("a\nb");
+        assert_eq!(err.message, "Uncaught Error: x at <anonymous>:1:7");
+        assert_eq!(err.hint.as_deref(), Some("a b"));
+    }
+
+    #[test]
+    fn every_kind_is_listed_once() {
+        let mut names: Vec<_> = ErrorKind::ALL.iter().map(ToString::to_string).collect();
+        names.dedup();
+        assert_eq!(names.len(), ErrorKind::ALL.len());
+        assert!(
+            ErrorKind::ALL
+                .windows(2)
+                .all(|w| w[0].exit_code() <= w[1].exit_code())
+        );
+    }
+
+    #[test]
+    fn round_trips_through_json() {
+        let err = ErrorInfo::new(ErrorKind::RefStale, "stale")
+            .note("ref", "e5")
+            .hint("chrome-cdp snapshot")
+            .details(json!({"ref": "e5"}));
+        let back: ErrorInfo = serde_json::from_value(json!(err)).unwrap();
+        assert_eq!(back, err);
     }
 
     #[test]
