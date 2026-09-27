@@ -65,9 +65,9 @@ runs in that iframe's page, whichever process it lives in. chrome-cdp's own
 scripts run in an isolated world in each frame, out of the page's reach.
 
 `wait` replaces `sleep`. It takes one condition and returns as soon as it
-holds: an element (`wait '#results'`, `wait .spinner --state hidden`; CSS or
-XPath until snapshot refs land), visible text (`--text`, `--text-gone`,
-optionally `--in <locator>`), the URL (`--url /dashboard`, a glob or
+holds: an element (`wait '#results'`, `wait .spinner --state hidden`,
+`wait e12 --state detached`; any locator, below), visible text (`--text`,
+`--text-gone`, optionally `--in <locator>`), the URL (`--url /dashboard`, a glob or
 `/regex/`), `--load`, `--idle` (network idle, not counting WebSockets,
 beacons and requests open over 10 s), `--settle`, a JavaScript expression
 (`--fn 'window.app.ready'`), or a request or response since the previous
@@ -84,8 +84,8 @@ boxes and iframes, whose content (cross-site too) is shown inside them.
 Hidden content is left out, a list is cut after 30 of a kind (`--all` shows
 them), text is cut at 200 characters (`--text-limit`) and the output at
 20,000 (`--max-chars`). `-i` keeps only what has a ref, with the landmarks,
-tables and rows around it; `--scope e12` (or a CSS/XPath locator) and
-`--depth 3` show a part; `--diff` shows what changed since the tab's last
+tables and rows around it; `--scope e12` (or any locator, e.g.
+`--scope frame=payment`) and `--depth 3` show a part; `--diff` shows what changed since the tab's last
 snapshot (`+` added, `-` removed, `~` changed). The same page gives the same
 output. It reads Chrome's own accessibility tree; `--engine dom` uses
 chrome-cdp's DOM walker instead.
@@ -99,6 +99,24 @@ the one element of its frame with the same role and name and says so
 with `RefDetached` and what it was (`was: button "Save"`). `--strict-refs`
 (or `CHROME_CDP_STRICT_REFS=1`) turns the role+name fallback off, and so does
 a route change (`pushState`) for refs shown before it.
+
+Every command that names an element takes the same locators:
+
+| Form | Finds |
+|---|---|
+| `e12`, `@e12` | the element a snapshot gave that ref |
+| `#id`, `.cls`, `[attr]`, `css=…` | CSS; a space also reaches into open shadow roots |
+| `//…`, `xpath=…` | XPath |
+| `text=Sign in`, `text="Sign in"`, `text=/sign.?in/i` | the innermost visible element with that text: a case-insensitive part, the whole text when quoted, or a regex |
+| `role=button[name="Save"]` | an ARIA role and accessible name (quoted: exact), with `[checked]`, `[disabled]`, `[expanded]`, `[level=2]`, `[pressed]`, `[selected]`, `[include-hidden]` |
+| `label=Email`, `placeholder=…`, `alt=…`, `title=…`, `testid=…` | by label, attribute, or test id (`data-testid`; `testid_attribute` in the config changes it) |
+| `A >> B` | B inside A; `>> nth=0` (`-1` is the last), `>> visible=true`, `>> has-text=…` filter |
+| `frame=payment >> #card` | inside an iframe, named by its name, a part of its URL, or its ref (`e8 >> #card` also works) |
+
+A command that acts on one element fails with `Ambiguous` when several match,
+and lists them with new refs and where each is (`e41: button "Delete" (in row
+"Invoice 12 …")`), so the next command can use a ref. Commands that read
+(`wait`) take any number of matches.
 
 JavaScript dialogs never hang a command. By default an `alert` and a
 `beforeunload` ("leave the page?") are accepted and mentioned in the output;
@@ -146,7 +164,7 @@ Every command prints its result on stdout and notes and errors on stderr,
 takes `--json` (one `{"ok":…}` object) and `-q`, and exits 0 ok, 1 action
 failed, 2 usage, 3 timeout, 4 browser/daemon, 5 dialog. `--timeout` defaults
 to 10 s for `wait` and 30 s for everything else. Defaults for
-`--session`, `--timeout` and `base_url` can live in
+`--session`, `--timeout`, `base_url` and `testid_attribute` can live in
 `~/.config/chrome-cdp/config.toml` or a project's `.chrome-cdp.toml`.
 
 ## Development
@@ -154,6 +172,7 @@ to 10 s for `wait` and 30 s for everything else. Defaults for
 ```sh
 cargo xtask ci      # fmt --check, gen-cdp --check, clippy -D warnings, tests
 cargo xtask gen-cdp # regenerate CDP types (crates/cdp/protocol/README.md)
+cargo xtask build-js # rebuild the injected helper from TypeScript (needs npx)
 cargo xtask dist    # release binary in dist/ (size budget: 15 MB)
 cargo xtask fixtures # serve testdata/site on two local origins
 cargo deny check    # licenses and advisories
@@ -171,6 +190,12 @@ serves it for poking at by hand. Command output is pinned by golden files in
 an `.expected` tree) is checked by `cargo test -p engine --test snapshot`,
 which also prints both engines' scores and output tokens; its golden outputs
 live in `crates/engine/tests/snapshots/`.
+
+chrome-cdp's in-page helper (the locator engine and the DOM walker) is
+TypeScript in `crates/engine/src/injected/src/`. `cargo xtask build-js`
+typechecks it and bundles it with esbuild into `injected/ccdp.js`, which is
+committed, so building chrome-cdp needs no Node; a test fails when the bundle
+is older than its sources.
 
 ## Docs
 
