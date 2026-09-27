@@ -8,7 +8,7 @@
 //! every iframe, to put each frame's tree under its `<iframe>`. Chrome
 //! works out roles, names and hidden nodes, so they follow the specs.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use cdp::Session;
@@ -38,6 +38,19 @@ struct DomFacts {
     scrollable: bool,
     /// `html` or `body`: never clickable or scrollable by our rules.
     document_element: bool,
+    /// The parent node's backend id.
+    parent: Option<i64>,
+    /// `aria-valuetext`, which Chrome does not always pass on.
+    valuetext: Option<String>,
+}
+
+impl DomFacts {
+    /// The clickable heuristic of 4.3: `onclick`, `tabindex >= 0`, or
+    /// where a `cursor: pointer` region starts.
+    fn clickable(&self) -> bool {
+        !self.document_element
+            && (self.onclick || self.tabindex.is_some_and(|t| t >= 0) || self.pointer_root)
+    }
 }
 
 /// Reads the tab through the AX tree. `frames` lists the tab's frames,
@@ -108,8 +121,21 @@ pub(crate) async fn capture(frames: &[FrameSource], timeout: Duration) -> cdp::R
             }
         }
     }
+    let present = frames
+        .iter()
+        .zip(&built)
+        .map(|(frame, tree)| {
+            let ids = tree
+                .iter()
+                .flatten()
+                .filter_map(|n| n.backend_dom_node_id)
+                .collect();
+            (frame.info.id.clone(), ids)
+        })
+        .collect();
     let builder = Builder {
         frames,
+        present,
         facts: &facts,
         children: &children,
         trees: &built,
@@ -150,6 +176,9 @@ fn dom_facts(snapshot: &dom_snapshot::CaptureSnapshotReturns) -> HashMap<i64, Do
                         "onclick" => f.onclick = true,
                         "tabindex" => f.tabindex = string(*value).trim().parse().ok(),
                         "type" => input_type = string(*value),
+                        "aria-valuetext" => {
+                            f.valuetext = Some(string(*value).to_owned()).filter(|v| !v.is_empty());
+                        }
                         _ => {}
                     }
                 }
@@ -179,12 +208,10 @@ fn dom_facts(snapshot: &dom_snapshot::CaptureSnapshotReturns) -> HashMap<i64, Do
             }
         }
         for i in 0..facts.len() {
-            let parent = parents
-                .get(i)
-                .and_then(|&p| usize::try_from(p).ok())
-                .and_then(|p| facts.get(p))
-                .is_some_and(|p| p.pointer);
-            facts[i].pointer_root = facts[i].pointer && !parent;
+            let parent = parents.get(i).and_then(|&p| usize::try_from(p).ok());
+            let pointer = parent.and_then(|p| facts.get(p)).is_some_and(|p| p.pointer);
+            facts[i].pointer_root = facts[i].pointer && !pointer;
+            facts[i].parent = parent.and_then(|p| backend.get(p).copied());
         }
         for (i, f) in facts.into_iter().enumerate() {
             if let Some(&id) = backend.get(i) {
@@ -197,6 +224,8 @@ fn dom_facts(snapshot: &dom_snapshot::CaptureSnapshotReturns) -> HashMap<i64, Do
 
 struct Builder<'a> {
     frames: &'a [FrameSource],
+    /// The backend ids each frame's AX tree has a node for.
+    present: HashMap<String, HashSet<i64>>,
     facts: &'a HashMap<String, HashMap<i64, DomFacts>>,
     children: &'a HashMap<(String, i64), usize>,
     trees: &'a [Option<Vec<ax::AXNode>>],
@@ -215,7 +244,7 @@ impl Builder<'_> {
         };
         let title = str_value(root.name.as_ref()).unwrap_or_default();
         let frame = &self.frames[i];
-        let children = self.children_of(root, &by_id, frame, depth);
+        let children = self.children_of(root, &by_id, frame, depth, false);
         (title, children)
     }
 
@@ -225,31 +254,113 @@ impl Builder<'_> {
         by_id: &HashMap<&str, &ax::AXNode>,
         frame: &FrameSource,
         depth: usize,
+        editable: bool,
     ) -> Vec<Node> {
         if depth > MAX_DEPTH {
             return Vec::new();
         }
-        node.child_ids
+        let children = node
+            .child_ids
             .iter()
             .flatten()
             .filter_map(|id| by_id.get(id.as_str()))
-            .filter_map(|child| self.node(child, by_id, frame, depth + 1))
-            .collect()
+            .filter_map(|child| self.node(child, by_id, frame, depth + 1, editable))
+            .collect();
+        self.restore_clickables(children, frame)
     }
 
+    /// Chrome leaves elements with no role of their own out of the tree
+    /// (a `<span>` or a `role=presentation` `<div>`), and with them the
+    /// fact that they act on clicks. Puts a clickable one back around the
+    /// text it held, found through the DOM snapshot's parents.
+    fn restore_clickables(&self, children: Vec<Node>, frame: &FrameSource) -> Vec<Node> {
+        let Some(facts) = self.facts.get(frame.session.id().unwrap_or_default()) else {
+            return children;
+        };
+        let present = |backend: i64| {
+            self.present
+                .get(&frame.info.id)
+                .is_some_and(|p| p.contains(&backend))
+        };
+        // The nearest clickable ancestor with no AX node, below the
+        // nearest one that has one.
+        let lost = |node: &Node| -> Option<i64> {
+            if !node.is_text() {
+                return None;
+            }
+            let mut current = facts.get(&node.key.as_ref()?.backend)?.parent;
+            while let Some(backend) = current {
+                if present(backend) {
+                    return None;
+                }
+                let f = facts.get(&backend)?;
+                if f.clickable() {
+                    return Some(backend);
+                }
+                current = f.parent;
+            }
+            None
+        };
+        let mut out: Vec<Node> = Vec::with_capacity(children.len());
+        let mut last: Option<i64> = None;
+        for child in children {
+            match lost(&child) {
+                Some(backend) if last == Some(backend) => {
+                    if let Some(wrapper) = out.last_mut() {
+                        wrapper.children.push(child);
+                    }
+                }
+                Some(backend) => {
+                    last = Some(backend);
+                    out.push(Node {
+                        role: "generic".to_owned(),
+                        clickable: true,
+                        inline: facts.get(&backend).is_some_and(|f| f.inline),
+                        key: Some(NodeKey {
+                            frame: frame.info.id.clone(),
+                            backend,
+                        }),
+                        children: vec![child],
+                        ..Node::default()
+                    });
+                }
+                None => {
+                    last = None;
+                    out.push(child);
+                }
+            }
+        }
+        out
+    }
+
+    /// Converts `node`; `in_editable` says it is inside an editable
+    /// element.
     fn node(
         &self,
         node: &ax::AXNode,
         by_id: &HashMap<&str, &ax::AXNode>,
         frame: &FrameSource,
         depth: usize,
+        in_editable: bool,
     ) -> Option<Node> {
         let chrome_role = str_value(node.role.as_ref()).unwrap_or_default();
-        let role = if node.ignored {
+        let editable = node.properties.iter().flatten().any(|p| {
+            p.name == ax::AXPropertyName::Editable
+                && p.value
+                    .value
+                    .as_ref()
+                    .and_then(Value::as_str)
+                    .is_some_and(|v| !v.is_empty())
+        });
+        let mut role = if node.ignored {
             NONE.to_owned()
         } else {
             role_name(&chrome_role)?
         };
+        // A contenteditable element (its editing host) is a text box.
+        if editable && !in_editable && role == "generic" {
+            "textbox".clone_into(&mut role);
+        }
         let key = node.backend_dom_node_id.map(|backend| NodeKey {
             frame: frame.info.id.clone(),
             backend,
@@ -272,10 +383,11 @@ impl Builder<'_> {
         let mut out = Node {
             role,
             name,
-            value: str_value(node.value.as_ref()),
+            value: value_text(node)
+                .or_else(|| facts.valuetext.clone())
+                .or_else(|| str_value(node.value.as_ref())),
             password: facts.password,
-            clickable: !facts.document_element
-                && (facts.onclick || facts.tabindex.is_some_and(|t| t >= 0) || facts.pointer_root),
+            clickable: facts.clickable(),
             scrollable: facts.scrollable && !facts.document_element,
             inline: facts.inline,
             key,
@@ -285,7 +397,7 @@ impl Builder<'_> {
         out.children = if out.role == IFRAME {
             self.iframe_children(node, frame, depth)
         } else {
-            self.children_of(node, by_id, frame, depth)
+            self.children_of(node, by_id, frame, depth, in_editable || editable)
         };
         Some(out)
     }
@@ -313,6 +425,9 @@ fn role_name(chrome: &str) -> Option<String> {
             "Iframe" | "IframePresentational" => IFRAME,
             "image" | "Canvas" | "SvgRoot" => "img",
             "DisclosureTriangle" => "button",
+            // Date and time inputs: filled as text; their parts are
+            // Chrome's own.
+            "Date" | "DateTime" | "InputTime" => "textbox",
             "MenuListPopup" | "RootWebArea" | "WebArea" | "" => NONE,
             "MenuListOption" => "option",
             other => return Some(other.to_ascii_lowercase()),
@@ -329,6 +444,17 @@ fn str_value(value: Option<&ax::AXValue>) -> Option<String> {
         Value::Bool(b) => Some(b.to_string()),
         _ => None,
     }
+}
+
+/// `aria-valuetext` (or a native slider's text), which says more than
+/// the number (Chrome also clamps that to the range).
+fn value_text(node: &ax::AXNode) -> Option<String> {
+    node.properties
+        .iter()
+        .flatten()
+        .find(|p| p.name == ax::AXPropertyName::Valuetext)
+        .and_then(|p| str_value(Some(&p.value)))
+        .filter(|v| !v.is_empty())
 }
 
 /// Copies the AX properties a line shows into `out`.

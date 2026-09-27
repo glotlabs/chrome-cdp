@@ -139,7 +139,9 @@ fn prune(mut node: Node, view: &View, inside: bool) -> Vec<Node> {
     if is_interactive(&node.role) || node.scrollable {
         node.reffable = true;
     }
-    let control = node.reffable && node.role != IFRAME;
+    // What is clicked inside a control or clickable is part of it; a
+    // scrollable box or an iframe only holds things.
+    let control = node.role == CLICKABLE || (is_interactive(&node.role) && node.role != IFRAME);
     node.children = if is_text_field(&node.role) {
         Vec::new()
     } else {
@@ -160,8 +162,23 @@ fn prune(mut node: Node, view: &View, inside: bool) -> Vec<Node> {
         }
     }
     if !node.name.is_empty() {
+        // A legend or caption that repeats the name.
+        if node
+            .children
+            .first()
+            .is_some_and(|c| c.is_text() && c.name == node.name)
+        {
+            node.children.remove(0);
+        }
         if name_from_content(&node.role) {
             node.children.retain(has_reffable);
+            // `cell "Edit Delete"` over its two buttons: the children say it.
+            if !node.reffable
+                && !node.children.is_empty()
+                && clean(&all_text(&node.children)) == node.name
+            {
+                node.name.clear();
+            }
         } else if let [only] = node.children.as_slice()
             && only.is_text()
             && only.name == node.name
@@ -176,6 +193,11 @@ fn prune(mut node: Node, view: &View, inside: bool) -> Vec<Node> {
         // shows it as its name.
         node.name.clone_from(&only.name);
         node.children.clear();
+    }
+    // An editable combobox's text is its value.
+    if let Some(value) = &node.value {
+        let value = clean(value);
+        node.children.retain(|c| !(c.is_text() && c.name == value));
     }
     node.name = truncate(&node.name, view.text_limit);
     node.value = if node.password || !shows_value(&node.role) {
@@ -286,12 +308,15 @@ fn all_text(nodes: &[Node]) -> String {
     parts.join(" ")
 }
 
-/// `--interactive`: reffed nodes, with the landmarks around them.
+/// `--interactive`: reffed nodes, with the landmarks around them, and the
+/// tables and rows that keep a row's controls together.
 fn interactive(nodes: Vec<Node>) -> Vec<Node> {
     let mut out = Vec::new();
     for mut node in nodes {
         let children = interactive(std::mem::take(&mut node.children));
-        if node.reffable || (is_landmark(&node.role) && !children.is_empty()) {
+        let context = is_landmark(&node.role)
+            || matches!(node.role.as_str(), "table" | "grid" | "treegrid" | "row");
+        if node.reffable || (context && !children.is_empty()) {
             node.children = children;
             out.push(node);
         } else {
@@ -315,49 +340,65 @@ fn limit_depth(nodes: &mut [Node], depth: u32) {
     }
 }
 
-/// Keeps the first [`LIST_LIMIT`] siblings of each role (text aside) and
-/// replaces the rest with one `more` placeholder. Returns whether it cut
-/// any of `nodes`; a parent that loses children gets a ref, so the hint
-/// can name it.
+/// Collapses a long list: once a role has had [`LIST_LIMIT`] siblings, the
+/// list is cut there, and what follows becomes one `more` placeholder per
+/// role (text is dropped; a few nodes of rarer roles stay). Cutting once,
+/// rather than per role, keeps mixed lists (a row's checkbox, link and
+/// buttons) together. Returns whether it cut `nodes`; a parent that loses
+/// children gets a ref, so the hint can name it.
 fn collapse(nodes: &mut Vec<Node>) -> bool {
     for node in nodes.iter_mut() {
         if collapse(&mut node.children) {
             node.reffable = true;
         }
     }
-    let mut counts: HashMap<&str, usize> = HashMap::new();
-    for node in nodes.iter() {
-        if !node.is_text() {
-            *counts.entry(node.role.as_str()).or_default() += 1;
+    let mut seen: HashMap<&str, usize> = HashMap::new();
+    let mut cut = None;
+    let mut totals: HashMap<&str, usize> = HashMap::new();
+    for node in nodes.iter().filter(|n| !n.is_text()) {
+        *totals.entry(node.role.as_str()).or_default() += 1;
+    }
+    for (i, node) in nodes.iter().enumerate() {
+        if node.is_text() {
+            continue;
+        }
+        let count = seen.entry(node.role.as_str()).or_default();
+        *count += 1;
+        if *count > LIST_LIMIT {
+            cut = Some(i);
+            break;
         }
     }
-    let over: HashMap<String, usize> = counts
+    let Some(cut) = cut else {
+        return false;
+    };
+    let over: Vec<String> = totals
         .into_iter()
         .filter(|(_, n)| *n > LIST_LIMIT)
-        .map(|(role, n)| (role.to_owned(), n - LIST_LIMIT))
+        .map(|(role, _)| role.to_owned())
         .collect();
-    if over.is_empty() {
-        return false;
-    }
-    let mut seen: HashMap<String, usize> = HashMap::new();
-    let old = std::mem::take(nodes);
-    for node in old {
-        let Some(&extra) = over.get(&node.role) else {
-            nodes.push(node);
+    let tail = nodes.split_off(cut);
+    let mut more: Vec<(String, u32)> = Vec::new();
+    let mut kept = Vec::new();
+    for node in tail {
+        if node.is_text() {
             continue;
-        };
-        let count = seen.entry(node.role.clone()).or_default();
-        *count += 1;
-        if *count <= LIST_LIMIT {
-            nodes.push(node);
-        } else if *count == LIST_LIMIT + 1 {
-            nodes.push(Node {
-                role: node.role,
-                more: Some(u32::try_from(extra).unwrap_or(u32::MAX)),
-                ..Node::default()
-            });
+        }
+        if over.contains(&node.role) {
+            match more.iter_mut().find(|(role, _)| *role == node.role) {
+                Some((_, n)) => *n += 1,
+                None => more.push((node.role, 1)),
+            }
+        } else {
+            kept.push(node);
         }
     }
+    nodes.extend(more.into_iter().map(|(role, n)| Node {
+        role,
+        more: Some(n),
+        ..Node::default()
+    }));
+    nodes.extend(kept);
     true
 }
 
@@ -588,6 +629,58 @@ mod tests {
             ..View::default()
         };
         assert_eq!(lines(&shape(page, &all)).len(), 41);
+    }
+
+    #[test]
+    fn mixed_lists_are_cut_in_one_place() {
+        let rows: Vec<Node> = (0..40)
+            .flat_map(|i| {
+                [
+                    keyed("checkbox", &format!("Select {i}"), 1000 + i, vec![]),
+                    keyed("button", "Edit", 2000 + i, vec![]),
+                    keyed("button", "Delete", 3000 + i, vec![]),
+                ]
+            })
+            .chain([keyed("searchbox", "Search", 9, vec![])])
+            .collect();
+        let shaped = shape(vec![keyed("main", "", 1, rows)], &View::default());
+        let shown = lines(&shaped);
+        // 15 rows (30 buttons) and the next checkbox, then the rest by role.
+        assert_eq!(shown.len(), 1 + 46 + 3, "{shown:#?}");
+        assert_eq!(
+            shown[47..],
+            ["  button +50", "  checkbox +24", "  searchbox \"Search\""]
+        );
+    }
+
+    #[test]
+    fn interactive_keeps_rows_together() {
+        let row = |i: i64| {
+            el(
+                "row",
+                "",
+                vec![
+                    el("cell", &format!("Invoice {i}"), vec![]),
+                    el("cell", "", vec![keyed("button", "Delete", i, vec![])]),
+                ],
+            )
+        };
+        let page = vec![el("main", "", vec![el("table", "", vec![row(1), row(2)])])];
+        let view = View {
+            interactive: true,
+            ..View::default()
+        };
+        assert_eq!(
+            lines(&shape(page, &view)),
+            [
+                "main",
+                "  table",
+                "    row",
+                "      button \"Delete\"",
+                "    row",
+                "      button \"Delete\"",
+            ]
+        );
     }
 
     #[test]

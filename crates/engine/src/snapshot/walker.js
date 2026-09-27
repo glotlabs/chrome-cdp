@@ -54,6 +54,7 @@ function (scope) {
       case 'button': return 'button';
       case 'datalist': return 'listbox';
       case 'dd': return 'definition';
+      case 'dl': return 'descriptionlist';
       case 'details': return 'group';
       case 'dfn': case 'dt': return 'term';
       case 'dialog': return 'dialog';
@@ -124,13 +125,15 @@ function (scope) {
   }
 
   // The text an element contributes to a name (accname's step 2F/2G).
-  function textOf(node, skip, depth) {
+  // A tree item's name leaves out its nested group (as Chrome does).
+  function textOf(node, skip, depth, treeitem) {
     if (depth > 30) return '';
     if (node.nodeType === Node.TEXT_NODE) return node.data;
     if (node.nodeType !== Node.ELEMENT_NODE && node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return '';
     if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node;
       if (el === skip || SKIP.has(tag(el))) return '';
+      if (treeitem && (attr(el, 'role') === 'group' || attr(el, 'role') === 'treeitem')) return '';
       const style = view.getComputedStyle(el);
       if (hidden(el, style) || style.visibility === 'hidden') return '';
       const label = attr(el, 'aria-label');
@@ -151,11 +154,11 @@ function (scope) {
       if (t === 'svg') return ' ' + svgTitle(el) + ' ';
       const block = style.display !== 'inline' && style.display !== 'contents';
       let out = '';
-      for (const child of childrenOf(el)) out += textOf(child, skip, depth + 1);
+      for (const child of childrenOf(el)) out += textOf(child, skip, depth + 1, treeitem);
       return block ? ' ' + out + ' ' : out;
     }
     let out = '';
-    for (const child of node.childNodes) out += textOf(child, skip, depth + 1);
+    for (const child of node.childNodes) out += textOf(child, skip, depth + 1, treeitem);
     return out;
   }
 
@@ -200,14 +203,10 @@ function (scope) {
       const caption = el.caption;
       if (caption) return norm(textOf(caption, null, 0));
     }
-    if (t === 'figure') {
-      const caption = Array.from(el.children).find((c) => tag(c) === 'figcaption');
-      if (caption) return norm(textOf(caption, null, 0));
-    }
     if (t === 'iframe') return norm(attr(el, 'title'));
     if (FROM_CONTENT.has(role) && role !== 'row') {
       let text = '';
-      for (const child of childrenOf(el)) text += textOf(child, null, 1);
+      for (const child of childrenOf(el)) text += textOf(child, null, 1, role === 'treeitem');
       text = norm(text);
       if (text) return text;
     }
@@ -249,6 +248,7 @@ function (scope) {
     }
     if (el.hasAttribute('aria-expanded')) s.x = ariaTrue(el, 'aria-expanded');
     else if (t === 'summary' && el.parentElement && tag(el.parentElement) === 'details') s.x = el.parentElement.open;
+    else if (t === 'select' && role === 'combobox') s.x = false;
     if (t === 'option' ? el.selected : ariaTrue(el, 'aria-selected')) s.s = 1;
     if ((el.matches && el.matches(':disabled')) || el.closest('[aria-disabled="true"]')) s.d = 1;
     if (el.readOnly || ariaTrue(el, 'aria-readonly')) s.r = 1;
@@ -275,17 +275,20 @@ function (scope) {
       || (over(style.overflowX) && el.scrollWidth - el.clientWidth > 1);
   }
 
-  function walk(node, parent, parentStyle, invisible) {
+  // `invisible`: text right here is not shown (its element is visibility:
+  // hidden). `mute`: text anywhere below is not shown: it is in a label
+  // that names its control, so the control's name says it.
+  function walk(node, parent, parentStyle, invisible, mute) {
     if (nodes.length > 200000) return;
     if (node.nodeType === Node.TEXT_NODE) {
-      if (!invisible && node.data) nodes.push({ p: parent, t: 1, n: node.data });
+      if (!invisible && !mute && node.data) nodes.push({ p: parent, t: 1, n: node.data });
       return;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
     const el = node;
     if (SKIP.has(tag(el))) return;
     if (tag(el) === 'br') {
-      if (!invisible) nodes.push({ p: parent, t: 1, n: '\n' });
+      if (!invisible && !mute) nodes.push({ p: parent, t: 1, n: '\n' });
       return;
     }
     const style = view.getComputedStyle(el);
@@ -297,7 +300,7 @@ function (scope) {
     // An element that is visibility: hidden is not shown, but a child
     // that is visible again is.
     if (!vis) {
-      for (const child of childrenOf(el)) walk(child, parent, style, true);
+      for (const child of childrenOf(el)) walk(child, parent, style, true, mute);
       return;
     }
     const n = { p: parent, r: role };
@@ -317,16 +320,20 @@ function (scope) {
     if (tag(el) !== 'html' && tag(el) !== 'body'
       && (el.hasAttribute('onclick') || tabindex >= 0 || pointerRoot)) n.c = 1;
     if (scrolls(el, style)) n.x = 1;
-    if (INTERACTIVE.has(role) || n.c || n.x || el === scope || role === 'textbox') {
+    // Long lists get a key too: their collapsed tail names them.
+    const long = el.childElementCount > 30
+      || Array.from(el.children).some((c) => c.childElementCount > 30);
+    if (INTERACTIVE.has(role) || n.c || n.x || el === scope || role === 'textbox' || long) {
       n.e = els.length;
       els.push(el);
     }
     nodes.push(n);
     if (role === 'iframe' || tag(el) === 'svg' || role === 'img') return;
-    for (const child of childrenOf(el)) walk(child, index, style, false);
+    const muted = mute || (tag(el) === 'label' && !!el.control);
+    for (const child of childrenOf(el)) walk(child, index, style, false, muted);
   }
 
-  for (const child of document.documentElement ? [document.documentElement] : []) walk(child, -1, null, false);
+  for (const child of document.documentElement ? [document.documentElement] : []) walk(child, -1, null, false, false);
   return {
     json: JSON.stringify({ title: document.title, url: location.href, nodes }),
     els,

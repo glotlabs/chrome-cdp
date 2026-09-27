@@ -28,7 +28,8 @@ use crate::{Engine, Running};
 /// The walker; called with the `--scope` element (or `null`).
 const WALKER_JS: &str = include_str!("walker.js");
 
-/// The object group the walker's results live in until they are read.
+/// The object group the walker's results live in until they are read
+/// (one per frame: frames of one process share a session).
 const GROUP: &str = "chrome-cdp-snapshot";
 
 /// One node as the walker reports it.
@@ -160,20 +161,21 @@ async fn walk(
         return Ok(None);
     };
     let session = context.session.with_timeout(timeout);
+    let group = format!("{GROUP}-{}", frame.info.id);
     // The `--scope` element, if it is in this frame.
     let mut scope_object = None;
     if let Some(key) = scope.filter(|k| k.frame == frame.info.id) {
         let params = dom::ResolveNodeParams {
             backend_node_id: Some(key.backend),
             execution_context_id: Some(context.context_id),
-            object_group: Some(GROUP.to_owned()),
+            object_group: Some(group.clone()),
             ..dom::ResolveNodeParams::default()
         };
         scope_object = session.call(params).await?.object.object_id;
     }
     let mut params = runtime::CallFunctionOnParams::new(WALKER_JS.to_owned());
     params.execution_context_id = Some(context.context_id);
-    params.object_group = Some(GROUP.to_owned());
+    params.object_group = Some(group.clone());
     params.arguments = Some(vec![runtime::CallArgument {
         value: scope_object.is_none().then_some(Value::Null),
         unserializable_value: None,
@@ -182,7 +184,7 @@ async fn walk(
     let result = session.call(params).await;
     let outcome = read_walk(&session, result).await;
     let _ = session
-        .call(runtime::ReleaseObjectGroupParams::new(GROUP.to_owned()))
+        .call(runtime::ReleaseObjectGroupParams::new(group))
         .await;
     outcome
 }
