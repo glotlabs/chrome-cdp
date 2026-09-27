@@ -7,7 +7,7 @@
 //! and the launch flags into the `browser` crate; delete this module then.
 
 use std::collections::VecDeque;
-use std::io::{self, Read as _};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -25,7 +25,7 @@ use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
 use crate::cli::{DirectCdpArgs, GlobalArgs, Target};
-use crate::errors;
+use crate::{errors, input};
 
 /// A minimal flag set for a headless, quiet, isolated Chrome. Plan 02 owns
 /// the real list.
@@ -105,17 +105,10 @@ fn check_method(method: &str) -> Result<(), ErrorInfo> {
 
 /// Parses the params argument: absent means `{}`, `-` reads stdin.
 fn parse_params(arg: Option<&str>) -> Result<Map<String, Value>, ErrorInfo> {
-    let text = match arg {
-        None => return Ok(Map::new()),
-        Some("-") => {
-            let mut buf = String::new();
-            io::stdin()
-                .read_to_string(&mut buf)
-                .map_err(|e| bad_args(format!("cannot read params from stdin: {e}")))?;
-            buf
-        }
-        Some(text) => text.to_owned(),
+    let Some(arg) = arg else {
+        return Ok(Map::new());
     };
+    let text = input::text_arg(arg, "params")?;
     let example = r#"e.g. '{"expression":"1+1"}'"#;
     match serde_json::from_str(&text) {
         Ok(Value::Object(map)) => Ok(map),

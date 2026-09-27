@@ -15,6 +15,7 @@ mod cli;
 mod config;
 mod direct;
 mod errors;
+mod input;
 mod log;
 mod output;
 mod schema;
