@@ -7,7 +7,8 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use crate::host::Host;
+use crate::host::{Host, Os};
+use crate::version;
 
 /// The distribution, from `/etc/os-release`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -264,6 +265,32 @@ fn words(head: &[&str], tail: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Why a Chrome binary cannot start.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CannotRun {
+    /// What `--version` said went wrong.
+    pub reason: String,
+    /// The missing libraries and how to install them, if `ldd` found any.
+    pub fix: Option<DepsFix>,
+}
+
+/// Checks on Linux that `binary` starts (`--version`), and if not, which
+/// shared libraries it lacks. Other systems are not checked.
+pub fn check_runs(host: &Host, binary: &Path) -> Result<(), CannotRun> {
+    if host.os != Os::Linux {
+        return Ok(());
+    }
+    let Err(reason) = version::probe(binary) else {
+        return Ok(());
+    };
+    let missing = missing_libraries(binary).unwrap_or_else(|e| {
+        tracing::debug!("{e}");
+        Vec::new()
+    });
+    let fix = (!missing.is_empty()).then(|| DepsFix::new(Distro::detect(host).as_ref(), missing));
+    Err(CannotRun { reason, fix })
+}
+
 /// The shared libraries of `binary` that the dynamic loader cannot find,
 /// according to `ldd`.
 pub fn missing_libraries(binary: &Path) -> Result<Vec<String>, String> {
@@ -309,7 +336,10 @@ pub fn chromium_package_line(distro: Option<&Distro>) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{DepsFix, Distro, chromium_package_line, parse_ldd};
+    use std::path::Path;
+
+    use super::{DepsFix, Distro, check_runs, chromium_package_line, parse_ldd};
+    use crate::host::{Arch, Host, Os};
 
     const UBUNTU_2404: &str = r#"PRETTY_NAME="Ubuntu 24.04.1 LTS"
 NAME="Ubuntu"
@@ -434,5 +464,30 @@ UBUNTU_CODENAME=noble
         );
         assert_eq!(line("ID=gentoo\n"), None);
         assert_eq!(chromium_package_line(None), None);
+    }
+
+    #[test]
+    fn checks_that_the_binary_starts() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::fake(Os::Linux, Arch::X86_64, dir.path());
+        let good = dir.path().join("good");
+        std::fs::write(&good, "#!/bin/sh\necho 'Chromium 154.0.1.2'\n").unwrap();
+        let bad = dir.path().join("bad");
+        std::fs::write(
+            &bad,
+            "#!/bin/sh\necho 'error while loading shared libraries' >&2\n",
+        )
+        .unwrap();
+        for path in [&good, &bad] {
+            use std::os::unix::fs::PermissionsExt as _;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert_eq!(check_runs(&host, &good), Ok(()));
+        let err = check_runs(&host, &bad).unwrap_err();
+        assert_eq!(err.reason, "`--version` printed nothing");
+        // A script has no ELF dependencies to report.
+        assert_eq!(err.fix, None);
+        let mac = Host::fake(Os::MacOs, Arch::Aarch64, dir.path());
+        assert_eq!(check_runs(&mac, Path::new("/nonexistent")), Ok(()));
     }
 }
