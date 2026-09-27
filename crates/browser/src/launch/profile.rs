@@ -10,6 +10,7 @@
 use std::path::{Component, Path, PathBuf};
 
 use protocol::{ErrorInfo, ErrorKind, Hint};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -18,7 +19,8 @@ use crate::host::{Host, Os};
 use crate::launch::sys;
 
 /// Which profile to launch with.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum ProfileChoice {
     /// A new temp dir, deleted on close.
     #[default]
@@ -282,6 +284,35 @@ mod tests {
     use super::{ProfileChoice, data_dir, named_profile_dir, prepare, valid_name};
     use crate::discover::{Chrome, Source};
     use crate::host::{Arch, Host, Os};
+
+    /// Sessions send the choice and the Chrome to the daemon as JSON.
+    #[test]
+    fn choice_and_chrome_round_trip_through_json() {
+        for choice in [
+            ProfileChoice::Ephemeral,
+            ProfileChoice::Named("work".into()),
+            ProfileChoice::Dir("/p".into()),
+        ] {
+            let json = serde_json::to_value(&choice).unwrap();
+            assert_eq!(
+                serde_json::from_value::<ProfileChoice>(json).unwrap(),
+                choice
+            );
+        }
+        assert_eq!(
+            serde_json::to_value(ProfileChoice::Named("w".into())).unwrap(),
+            serde_json::json!({"kind": "named", "value": "w"})
+        );
+        let mut found = chrome("/c", true);
+        found.source = Source::Installed {
+            id: "stable-1".into(),
+        };
+        found.version = crate::ChromeVersion::new("Chromium", "154.0.1.2");
+        found.warnings = vec!["dropped".into()];
+        let back: Chrome = serde_json::from_value(serde_json::to_value(&found).unwrap()).unwrap();
+        found.warnings.clear();
+        assert_eq!(back, found);
+    }
 
     fn chrome(path: &str, snap: bool) -> Chrome {
         Chrome {

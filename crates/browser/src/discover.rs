@@ -17,7 +17,7 @@
 use std::path::{Path, PathBuf};
 
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, format};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::deps::{Distro, chromium_package_line};
@@ -45,7 +45,7 @@ const MAC_APPS: &[&str] = &[
 ];
 
 /// Where the Chrome to launch came from; `status` shows it (milestone 2.4).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Source {
     /// `--chrome`.
@@ -74,7 +74,7 @@ impl Source {
 }
 
 /// The Chrome to launch.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Chrome {
     /// Absolute path of the binary.
     pub path: PathBuf,

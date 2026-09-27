@@ -192,6 +192,23 @@ pub async fn launch(
     }
 }
 
+/// Whether a process with this pid exists. The daemon's client uses it on
+/// pids recorded in a session's files.
+pub fn process_alive(pid: u32) -> bool {
+    sys::process_alive(pid)
+}
+
+/// Kills the process group `pgid` (SIGKILL). A group that is already gone
+/// is not an error; pids 0 and 1 are refused.
+pub fn kill_process_group(pgid: u32) -> io::Result<()> {
+    sys::kill_group(pgid)
+}
+
+/// The effective user id, e.g. to name a per-user directory.
+pub fn effective_uid() -> u32 {
+    sys::euid()
+}
+
 /// `--headed` needs full Chrome and (on Linux) a display.
 fn check_can_open_a_window(chrome: &Chrome, host: &Host) -> Result<(), ErrorInfo> {
     if chrome.headless_shell {

@@ -7,7 +7,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// The oldest Chrome major version chrome-cdp supports: current stable − 4
 /// (overview §3). The vendored CDP protocol is Chrome 154's (r1687809);
@@ -18,7 +18,7 @@ pub const MIN_CHROME_MAJOR: u32 = 150;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A Chrome build's name and version.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChromeVersion {
     /// E.g. `Google Chrome for Testing` or `Chromium`.
     pub product: String,
