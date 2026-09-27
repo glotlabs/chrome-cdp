@@ -552,6 +552,111 @@ Examples:
     )]
     Mouse(MouseArgs),
 
+    /// Press keys or shortcuts: Enter, Control+A, "Mod+A Backspace".
+    #[command(after_help = "\
+Keys go where focus is, as a user's do; --in focuses an element first.
+Name keys like Enter, Tab, Escape, ArrowDown, PageUp, F1, Numpad0, a or A,
+and hold them together with + (Control+Shift+Z). Mod is Meta when the
+browser runs on macOS and Control elsewhere, so Mod+A selects all on both.
+Several chords, separated by spaces, are pressed in turn. Needs a running
+session.
+
+Examples:
+  chrome-cdp press Enter
+  chrome-cdp press Tab --in e5
+  chrome-cdp press 'Mod+A Backspace' --in 'label=Search'
+  chrome-cdp press Shift+Tab")]
+    Press(PressArgs),
+
+    /// Type text key by key, as a user does (fill is faster).
+    #[command(after_help = "\
+Presses a key for each character the US layout has (keydown, keypress,
+input, keyup: every key listener runs) and inserts the rest (emoji, CJK)
+as an input method does. Types where focus is; --in focuses an element
+first (the caret goes after its text) once it takes text. Use fill to
+replace a field's content in one go. Needs a running session.
+
+Examples:
+  chrome-cdp type 'hello world' --in e5
+  chrome-cdp type 'rust' --in 'role=searchbox' --delay 50ms
+  chrome-cdp type '👍 ok'")]
+    Type(TypeArgs),
+
+    /// Replace a field's content with text, in one input event.
+    #[command(after_help = "\
+Waits until the input, textarea or contenteditable element is visible,
+enabled and editable, focuses it, selects what it holds and inserts the
+text as one trusted edit, so frameworks (React, Vue, Svelte) see it; the
+page gets change when the field loses focus. Date, time, colour and range
+inputs get the value set (2026-09-27, 13:45, #ff0000, 42). An empty text
+clears the field. Needs a running session.
+
+Examples:
+  chrome-cdp fill e5 'ada@example.com'
+  chrome-cdp fill 'label=Password' - < secret.txt
+  chrome-cdp fill '#birthday' 1990-05-17
+  chrome-cdp fill e5 ''                      # clear")]
+    Fill(FillArgs),
+
+    /// Choose options of a <select> by value or label.
+    #[command(after_help = "\
+Each value matches an option's value, else its label (then in any case);
+several values need a <select multiple>. Waits until the options are
+there, then selects them and fires input and change. For a custom
+dropdown (role=combobox or listbox without a <select>), click it, then
+click the option. Needs a running session.
+
+Examples:
+  chrome-cdp select e7 blue
+  chrome-cdp select 'label=Country' 'Norway'
+  chrome-cdp select '#toppings' cheese olives")]
+    Select(SelectArgs),
+
+    /// Check a checkbox, radio button or switch (no-op if it is already).
+    #[command(after_help = "\
+Clicks it only when it is unchecked, then makes sure it became checked.
+Custom checkboxes (role=checkbox, switch) are clicked like native ones; a
+native input styled away behind its label is checked by clicking the
+label. A label locator checks the control it labels. Needs a running
+session.
+
+Examples:
+  chrome-cdp check e9
+  chrome-cdp check 'label=Remember me'
+  chrome-cdp check 'role=radio[name=\"Express\"]'")]
+    Check(CheckArgs),
+
+    /// Uncheck a checkbox or switch (no-op if it is not checked).
+    #[command(after_help = "\
+Like check, the other way. A radio button cannot be unchecked: check
+another one of its group. Needs a running session.
+
+Examples:
+  chrome-cdp uncheck e9
+  chrome-cdp uncheck 'label=Send me offers'")]
+    Uncheck(CheckArgs),
+
+    /// Give an element focus (without clicking it).
+    #[command(after_help = "\
+Waits until the element is visible, then focuses it, so focus styles,
+focus listeners and later keys apply to it. Fails if it cannot take
+focus. Needs a running session.
+
+Examples:
+  chrome-cdp focus e5
+  chrome-cdp focus 'label=Email'")]
+    Focus(FocusArgs),
+
+    /// Take focus away from an element (blur and change fire).
+    #[command(after_help = "\
+If the element (or something in it) has focus, it loses it: the page gets
+blur, and change for a field whose value was edited. Needs a running
+session.
+
+Examples:
+  chrome-cdp blur e5")]
+    Blur(FocusArgs),
+
     /// Answer the JavaScript dialog (confirm, prompt, …) the page waits on.
     #[command(
         subcommand_required = true,
@@ -923,7 +1028,8 @@ pub(crate) struct PointerArgs {
     #[arg(value_name = "LOCATOR")]
     pub(crate) locator: String,
 
-    /// Keys held during it: Alt, Control, Meta, Shift (comma-separated).
+    /// Keys held during it: Alt, Control, Meta, Shift, or Mod (Meta on
+    /// macOS, Control elsewhere); comma-separated.
     #[arg(long, value_name = "KEYS", value_parser = parse_modifiers)]
     pub(crate) modifiers: Option<Modifiers>,
 
@@ -1121,6 +1227,106 @@ pub(crate) struct MouseWheelArgs {
     /// Vertical delta in CSS pixels.
     #[arg(value_name = "DY")]
     pub(crate) dy: f64,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct PressArgs {
+    /// Keys or chords, space-separated: Enter, Control+A, "Tab Tab Enter".
+    #[arg(value_name = "KEYS")]
+    pub(crate) keys: String,
+
+    /// Focus this element first: a ref (e12) or a locator.
+    #[arg(long = "in", value_name = "LOCATOR")]
+    pub(crate) locator: Option<String>,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct TypeArgs {
+    /// The text; `-` reads it from stdin.
+    #[arg(value_name = "TEXT", allow_hyphen_values = true)]
+    pub(crate) text: String,
+
+    /// Focus this element first: a ref (e12) or a locator.
+    #[arg(long = "in", value_name = "LOCATOR")]
+    pub(crate) locator: Option<String>,
+
+    /// Wait this long between keys (e.g. 50ms), for pages that react to
+    /// each one.
+    #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
+    pub(crate) delay: Option<Duration>,
+
+    /// Skip the checks on the --in element (visible, stable, enabled,
+    /// editable).
+    #[arg(long, requires = "locator")]
+    pub(crate) force: bool,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct FillArgs {
+    /// The field: a ref (e12) or a locator that matches one.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: String,
+
+    /// The text; `-` reads it from stdin; "" clears the field.
+    #[arg(value_name = "TEXT", allow_hyphen_values = true)]
+    pub(crate) text: String,
+
+    /// Skip the checks (visible, stable, enabled, editable).
+    #[arg(long)]
+    pub(crate) force: bool,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct SelectArgs {
+    /// The <select>: a ref (e12) or a locator that matches one.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: String,
+
+    /// Options' values or labels.
+    #[arg(value_name = "VALUE", required = true, num_args = 1..)]
+    pub(crate) values: Vec<String>,
+
+    /// Skip the checks (visible, stable, enabled).
+    #[arg(long)]
+    pub(crate) force: bool,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct CheckArgs {
+    /// The checkbox, radio button, switch, or its label: a ref (e12) or
+    /// a locator that matches one.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: String,
+
+    /// Skip the checks before the click (visible, stable, enabled, not
+    /// covered).
+    #[arg(long)]
+    pub(crate) force: bool,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct FocusArgs {
+    /// The element: a ref (e12) or a locator that matches one.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: String,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
 }
 
 #[derive(Debug, Args)]
@@ -1775,6 +1981,14 @@ mod tests {
         "tap",
         "drag",
         "scroll",
+        "press",
+        "type",
+        "fill",
+        "select",
+        "check",
+        "uncheck",
+        "focus",
+        "blur",
         "mouse move",
         "mouse down",
         "mouse up",

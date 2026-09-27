@@ -214,9 +214,92 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             false,
             &cli.global,
         ),
+        Some(Command::Press(args)) => session::act(
+            engine::Action::Press {
+                keys: args.keys.clone(),
+                locator: args.locator.clone(),
+            },
+            args.refs.strict_refs,
+            &cli.global,
+        ),
+        Some(Command::Type(args)) => session::act(
+            engine::Action::Type {
+                text: line_arg(&args.text, "TEXT")?,
+                locator: args.locator.clone(),
+                delay_ms: args
+                    .delay
+                    .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX)),
+                force: args.force,
+            },
+            args.refs.strict_refs,
+            &cli.global,
+        ),
+        Some(Command::Fill(args)) => session::act(
+            engine::Action::Fill {
+                locator: args.locator.clone(),
+                text: line_arg(&args.text, "TEXT")?,
+                force: args.force,
+            },
+            args.refs.strict_refs,
+            &cli.global,
+        ),
+        Some(Command::Select(args)) => session::act(
+            engine::Action::Select {
+                locator: args.locator.clone(),
+                values: args.values.clone(),
+                force: args.force,
+            },
+            args.refs.strict_refs,
+            &cli.global,
+        ),
+        Some(Command::Check(args)) => session::act(
+            engine::Action::Check {
+                locator: args.locator.clone(),
+                checked: true,
+                force: args.force,
+            },
+            args.refs.strict_refs,
+            &cli.global,
+        ),
+        Some(Command::Uncheck(args)) => session::act(
+            engine::Action::Check {
+                locator: args.locator.clone(),
+                checked: false,
+                force: args.force,
+            },
+            args.refs.strict_refs,
+            &cli.global,
+        ),
+        Some(Command::Focus(args)) => session::act(
+            engine::Action::Focus {
+                locator: args.locator.clone(),
+            },
+            args.refs.strict_refs,
+            &cli.global,
+        ),
+        Some(Command::Blur(args)) => session::act(
+            engine::Action::Blur {
+                locator: args.locator.clone(),
+            },
+            args.refs.strict_refs,
+            &cli.global,
+        ),
         // Handled in `main`.
         Some(Command::Daemon(_)) => Ok(Output::new(serde_json::Value::Null, "")),
     }
+}
+
+/// A text argument, or stdin for `-` without the line's end (`echo`
+/// adds one).
+fn line_arg(value: &str, what: &str) -> Result<String, ErrorInfo> {
+    let text = input::text_arg(value, what)?;
+    Ok(if value == "-" {
+        text.strip_suffix('\n')
+            .map_or(text.as_str(), |t| t.strip_suffix('\r').unwrap_or(t))
+            .to_owned()
+    } else {
+        text
+    })
 }
 
 /// Reports a clap error (or prints `--help`) and returns the exit code.
