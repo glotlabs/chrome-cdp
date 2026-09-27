@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 4b89b41dd43bc205
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 9abb18bf920543ea
 "use strict";
 (() => {
   // src/dom.ts
@@ -1443,6 +1443,67 @@ ${inner}
     return { json: JSON.stringify(out), els: [top, dismiss] };
   }
 
+  // src/pointer.ts
+  function scrollable(el) {
+    const s = getComputedStyle(el);
+    const can = (overflow) => /^(auto|scroll|overlay)$/.test(overflow);
+    return can(s.overflowY) && el.scrollHeight > el.clientHeight || can(s.overflowX) && el.scrollWidth > el.clientWidth;
+  }
+  function container(el) {
+    const root = document.scrollingElement || document.documentElement;
+    for (let a = el; a; a = parentOf(a)) {
+      if (a === root || a === document.body) return null;
+      if (scrollable(a)) return a;
+    }
+    return null;
+  }
+  function measure(c) {
+    const s = c || document.scrollingElement || document.documentElement;
+    const x = c ? c.scrollLeft : scrollX;
+    const y = c ? c.scrollTop : scrollY;
+    return {
+      x: Math.round(x),
+      y: Math.round(y),
+      maxX: Math.max(0, Math.round(s.scrollWidth - s.clientWidth)),
+      maxY: Math.max(0, Math.round(s.scrollHeight - s.clientHeight))
+    };
+  }
+  function scrollState(el) {
+    const c = container(el);
+    return { json: JSON.stringify({ ...measure(c), page: !c }), els: [c] };
+  }
+  function scrollSettled(el, from, idle, ms) {
+    const c = container(el);
+    return new Promise((resolve) => {
+      let last = measure(c);
+      let moved = false;
+      let same = 0;
+      let frames = 0;
+      const done = setTimeout(() => resolve(measure(c)), ms);
+      const tick = () => {
+        const now = measure(c);
+        if (now.x !== from.x || now.y !== from.y) moved = true;
+        same = now.x === last.x && now.y === last.y ? same + 1 : 0;
+        last = now;
+        frames += 1;
+        if (moved && same >= 2 || !moved && frames >= idle) {
+          clearTimeout(done);
+          resolve(now);
+        } else {
+          requestAnimationFrame(tick);
+        }
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+  function draggable(el) {
+    for (let a = el; a; a = parentOf(a)) {
+      if (a.getAttribute("draggable") === "false") return false;
+      if (a instanceof HTMLElement && a.draggable) return true;
+    }
+    return false;
+  }
+
   // src/index.ts
   var api = {
     version: 1,
@@ -1458,7 +1519,10 @@ ${inner}
     value,
     markdown,
     checkActionable,
-    covering
+    covering,
+    scrollState,
+    scrollSettled,
+    draggable
   };
   if (!globalThis.__ccdp) globalThis.__ccdp = api;
 })();

@@ -2,8 +2,8 @@
 // chrome-cdp's isolated world of every document (with
 // Page.addScriptToEvaluateOnNewDocument) as `globalThis.__ccdp`, where
 // page scripts cannot reach or change it. It holds the locator engine,
-// the DOM walker, what the read commands (4.5) take from elements, and
-// the actionability checks (5.1).
+// the DOM walker, what the read commands (4.5) take from elements, the
+// actionability checks (5.1), and what mouse actions ask the page (5.2).
 // Built into `ccdp.js` by `cargo xtask build-js`; the engine embeds that
 // file.
 
@@ -12,6 +12,7 @@ import { html, markdown, text, tidy, value } from './read';
 import { walk } from './walker';
 import { contains, visible } from './dom';
 import { checkActionable, covering } from './actionable';
+import { draggable, scrollSettled, scrollState } from './pointer';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -33,6 +34,9 @@ const api = {
   markdown,
   checkActionable,
   covering,
+  scrollState,
+  scrollSettled,
+  draggable,
 };
 
 if (!globalThis.__ccdp) globalThis.__ccdp = api;
