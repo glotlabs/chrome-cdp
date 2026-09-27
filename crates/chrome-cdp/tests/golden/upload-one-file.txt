@@ -1,0 +1,11 @@
+$ chrome-cdp upload '#choose-one' <files>/hello.txt <files>/notes.md
+exit: 2
+--- stderr
+error: e1 button "Choose one file" takes one file, not 2
+  hint: chrome-cdp upload '#choose-one' <file>
+
+$ chrome-cdp upload '#choose-one' <files>/hello.txt <files>/notes.md --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"e1 button \"Choose one file\" takes one file, not 2","hint":"chrome-cdp upload '#choose-one' <file>","details":{"files":2,"locator":"#choose-one"}}}
+

@@ -1,0 +1,15 @@
+$ chrome-cdp clipboard read
+exit: 0
+--- stdout
+INVITE-4821
+
+$ chrome-cdp clipboard read --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"tab":"t1","text":"INVITE-4821"}}
+
+$ chrome-cdp clipboard read -q
+exit: 0
+--- stdout
+INVITE-4821
+

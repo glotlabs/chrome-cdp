@@ -1,0 +1,13 @@
+$ chrome-cdp clipboard write hello
+exit: 0
+--- stdout
+wrote 5 characters to the clipboard
+
+$ chrome-cdp clipboard write hello --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"chars":5,"tab":"t1"}}
+
+$ chrome-cdp clipboard write hello -q
+exit: 0
+

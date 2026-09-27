@@ -22,7 +22,7 @@ mod schema;
 mod session;
 mod version;
 
-use cli::{Cli, Command};
+use cli::{Cli, ClipboardCommand, Command};
 
 fn main() -> ExitCode {
     let parsed = Cli::command()
@@ -79,6 +79,19 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Wait(args)) => session::wait(&args, &cli.global),
         Some(Command::Dialog(args)) => session::dialog(&args, &cli.global),
         Some(Command::Downloads(args)) => session::downloads(&args, &cli.global),
+        Some(Command::Clipboard(args)) => {
+            let op = match &args.command {
+                ClipboardCommand::Read(_) => engine::ClipboardOp::Read,
+                ClipboardCommand::Write(write) => engine::ClipboardOp::Write {
+                    text: line_arg(&write.text, "TEXT")?,
+                },
+            };
+            let max_chars = match &args.command {
+                ClipboardCommand::Read(read) => read.max_chars,
+                ClipboardCommand::Write(_) => 0,
+            };
+            session::clipboard(op, max_chars, &cli.global)
+        }
         Some(Command::Snapshot(args)) => session::snapshot(&args, &cli.global),
         Some(Command::Find(args)) => session::find(&args, &cli.global),
         Some(Command::Text(args)) => session::read(
@@ -280,6 +293,20 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Blur(args)) => session::act(
             engine::Action::Blur {
                 locator: args.locator.clone(),
+            },
+            args.refs.strict_refs,
+            &cli.global,
+        ),
+        Some(Command::Upload(args)) => session::act(
+            engine::Action::Upload {
+                locator: args.locator.clone(),
+                files: args
+                    .files
+                    .iter()
+                    .map(|f| input::absolute_path(f))
+                    .collect::<Result<_, _>>()?,
+                clear: args.clear,
+                force: args.force,
             },
             args.refs.strict_refs,
             &cli.global,

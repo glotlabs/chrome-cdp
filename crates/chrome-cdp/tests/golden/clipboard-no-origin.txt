@@ -1,0 +1,12 @@
+$ chrome-cdp clipboard read
+exit: 1
+--- stderr
+error: the page in tab t1 cannot use the clipboard: it has no origin
+  page: about:blank
+  hint: chrome-cdp goto <https-url>   (the clipboard works through the page)
+
+$ chrome-cdp clipboard read --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotEnabled","message":"the page in tab t1 cannot use the clipboard: it has no origin","hint":"chrome-cdp goto <https-url>   (the clipboard works through the page)","notes":[{"label":"page","text":"about:blank"}],"details":{"origin":"null","url":"about:blank"}}}
+

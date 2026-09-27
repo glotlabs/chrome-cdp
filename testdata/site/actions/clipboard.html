@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Clipboard</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  label, button { display: block; margin: 4px 8px; }
+</style>
+<!-- "Copy code" puts #code's text on the clipboard with the async
+     clipboard API; "Paste" reads it back into #pasted. The paste event of
+     #field is logged into #paste-log (what the page got to paste). -->
+<code id="code">INVITE-4821</code>
+<button id="copy">Copy code</button>
+<button id="paste">Paste</button>
+<p id="pasted"></p>
+<label>Field <input id="field"></label>
+<p id="log"></p>
+<pre id="paste-log"></pre>
+<script src="log.js"></script>
+<script>
+  document.getElementById('copy').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(document.getElementById('code').textContent);
+      document.getElementById('pasted').textContent = 'copied';
+    } catch (e) {
+      document.getElementById('pasted').textContent = `copy failed: ${e.message}`;
+    }
+  });
+  document.getElementById('paste').addEventListener('click', async () => {
+    try {
+      document.getElementById('pasted').textContent = await navigator.clipboard.readText();
+    } catch (e) {
+      document.getElementById('pasted').textContent = `paste failed: ${e.message}`;
+    }
+  });
+  document.getElementById('field').addEventListener('paste', (e) => {
+    document.getElementById('paste-log').textContent +=
+      `paste ${JSON.stringify(e.clipboardData.getData('text/plain'))}\n`;
+  });
+</script>

@@ -19,10 +19,10 @@ use daemon::meta::Meta;
 use daemon::paths::{Env, SessionPaths, check_name};
 use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
-    Action, ActionRequest, CdpRequest, ConnectRequest, DialogRequest, DownloadsRequest,
-    ElementState, FindRequest, HttpCredentials, NavigateRequest, Navigation, OpenRequest, Read,
-    ReadRequest, SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
-    WaitFor, WaitRequest,
+    Action, ActionRequest, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
+    DialogRequest, DownloadsRequest, ElementState, FindRequest, HttpCredentials, NavigateRequest,
+    Navigation, OpenRequest, Read, ReadRequest, SnapshotRequest, TabCloseRequest, TabNewRequest,
+    TabSelectRequest, TabsRequest, WaitFor, WaitRequest,
 };
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
@@ -589,6 +589,25 @@ pub(crate) fn act(
     let mut client = running_session(&ctx)?;
     ctx.runtime
         .block_on(client.call_output(rpc::ACT, &request, ctx.timeout + QUICK))
+}
+
+/// `clipboard read` and `clipboard write <text>`: need a running session.
+pub(crate) fn clipboard(
+    op: ClipboardOp,
+    max_chars: usize,
+    global: &GlobalArgs,
+) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let request = ClipboardRequest {
+        op,
+        tab: ctx.tab.clone(),
+        timeout_ms: millis(ctx.timeout),
+        max_chars,
+    };
+    ctx.runtime
+        .block_on(client.call_output(rpc::CLIPBOARD, &request, ctx.timeout + QUICK))
 }
 
 /// `dialog accept [text]` and `dialog dismiss`: need a running session.

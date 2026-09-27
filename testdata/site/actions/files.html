@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Files</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  label { display: block; margin: 4px 8px; }
+  button { margin: 4px 8px; }
+  /* A file input styled away behind a button, as most upload widgets do. */
+  .picker input { display: none; }
+</style>
+<!-- Every input and change event of a file input is logged into #files,
+     one per line: type, target id, each file as name(size), trusted. -->
+<label>Avatar <input id="avatar" type="file" accept="image/*"></label>
+<label>Attachments <input id="attachments" type="file" multiple></label>
+<label>Locked <input id="locked" type="file" disabled></label>
+<div class="picker">
+  <button id="choose">Choose files</button>
+  <input id="hidden" type="file" multiple>
+</div>
+<div class="picker">
+  <button id="choose-one">Choose one file</button>
+  <input id="hidden-one" type="file">
+</div>
+<button id="nothing">Opens nothing</button>
+<p id="log"></p>
+<pre id="files"></pre>
+<script src="log.js"></script>
+<script>
+  const out = document.getElementById('files');
+  for (const input of document.querySelectorAll('input[type=file]')) {
+    for (const type of ['input', 'change']) {
+      input.addEventListener(type, (e) => {
+        const files = [...input.files].map((f) => `${f.name}(${f.size})`).join(' ') || '-';
+        out.textContent += `${type} ${input.id} ${files} ${e.isTrusted ? 'trusted' : 'synthetic'}\n`;
+      });
+    }
+  }
+  document.getElementById('choose').addEventListener('click', () => {
+    document.getElementById('hidden').click();
+  });
+  document.getElementById('choose-one').addEventListener('click', () => {
+    document.getElementById('hidden-one').click();
+  });
+</script>

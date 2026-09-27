@@ -657,6 +657,40 @@ Examples:
   chrome-cdp blur e5")]
     Blur(FocusArgs),
 
+    /// Put files into a file input, or the file chooser a button opens.
+    #[command(after_help = "\
+A file input gets the files at once, even a hidden one (most upload
+widgets hide theirs behind a button), and the page gets input and
+change as after a user's choice; a <label> of one works too. Anything
+else is clicked like click does, and the files go to the file chooser
+that opens. Paths are relative to the current directory. --clear leaves
+the input with no files. Needs a running session.
+
+Examples:
+  chrome-cdp upload e5 ./avatar.png
+  chrome-cdp upload 'label=Attachments' a.pdf b.pdf
+  chrome-cdp upload 'role=button[name=\"Choose files\"]' report.csv
+  chrome-cdp upload e5 --clear")]
+    Upload(UploadArgs),
+
+    /// Read or write the clipboard's text, through the page.
+    #[command(
+        subcommand_required = true,
+        arg_required_else_help = true,
+        after_help = "\
+The page's clipboard API does it, as a page's own copy and paste buttons
+would: the tab's page must be on https (or http on localhost), and gets
+the clipboard permissions for the rest of the session. The clipboard is
+the browser's (the system's when headed): what a page copied can be read,
+and what is written pastes with press Mod+V.
+
+Examples:
+  chrome-cdp clipboard read
+  chrome-cdp clipboard write 'hello'
+  chrome-cdp press Mod+V --in e5"
+    )]
+    Clipboard(ClipboardArgs),
+
     /// Answer the JavaScript dialog (confirm, prompt, …) the page waits on.
     #[command(
         subcommand_required = true,
@@ -837,6 +871,72 @@ impl Dialogs {
             Self::Manual => engine::DialogPolicy::Manual,
         }
     }
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct UploadArgs {
+    /// The file input, its label, or a button that opens a file chooser:
+    /// a ref (e12) or a locator that matches one.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: String,
+
+    /// The files to upload.
+    #[arg(
+        value_name = "FILE",
+        num_args = 1..,
+        required_unless_present = "clear",
+        conflicts_with = "clear"
+    )]
+    pub(crate) files: Vec<PathBuf>,
+
+    /// Leave the input with no files.
+    #[arg(long)]
+    pub(crate) clear: bool,
+
+    /// Skip the checks (enabled; for a button also visible, stable and
+    /// not covered).
+    #[arg(long)]
+    pub(crate) force: bool,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ClipboardArgs {
+    #[command(subcommand)]
+    pub(crate) command: ClipboardCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum ClipboardCommand {
+    /// Print the text on the clipboard.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp clipboard read
+  chrome-cdp click e7 && chrome-cdp clipboard read -q   # what a Copy button copied")]
+    Read(ClipboardReadArgs),
+
+    /// Put text on the clipboard.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp clipboard write 'hello'
+  chrome-cdp clipboard write - < notes.txt")]
+    Write(ClipboardWriteArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ClipboardReadArgs {
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ClipboardWriteArgs {
+    /// The text; `-` reads it from stdin.
+    #[arg(value_name = "TEXT", allow_hyphen_values = true)]
+    pub(crate) text: String,
 }
 
 #[derive(Debug, Args)]
@@ -1989,6 +2089,8 @@ mod tests {
         "uncheck",
         "focus",
         "blur",
+        "upload",
+        "clipboard write",
         "mouse move",
         "mouse down",
         "mouse up",

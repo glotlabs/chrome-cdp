@@ -848,6 +848,62 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/actions/keyboard.html"),
     },
     Case {
+        name: "upload",
+        args: &["upload", "#avatar", "{files}/hello.txt"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/actions/files.html"),
+    },
+    Case {
+        name: "upload-chooser",
+        args: &["upload", "#choose", "{files}/hello.txt", "{files}/notes.md"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/actions/files.html"),
+    },
+    Case {
+        name: "upload-one-file",
+        args: &[
+            "upload",
+            "#choose-one",
+            "{files}/hello.txt",
+            "{files}/notes.md",
+        ],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/actions/files.html"),
+    },
+    Case {
+        name: "upload-no-chooser",
+        args: &["upload", "#nothing", "{files}/hello.txt"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/actions/files.html"),
+    },
+    Case {
+        name: "upload-missing-file",
+        args: &["upload", "#avatar", "{files}/missing.txt"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "clipboard-write",
+        args: &["clipboard", "write", "hello"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/actions/clipboard.html"),
+    },
+    Case {
+        name: "clipboard-read",
+        args: &["clipboard", "read"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/actions/clipboard.html"],
+            &["click", "#copy"],
+        ]),
+    },
+    Case {
+        name: "clipboard-no-origin",
+        args: &["clipboard", "read"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
         name: "tap-without-touch",
         args: &["tap", "#tap"],
         modes: ERR,
@@ -1114,6 +1170,8 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
 
     let site = Fixtures::shared();
     norm = norm.with(Path::new(site.a()), "<site>");
+    let files = upload_files();
+    norm = norm.with(&files, "<files>");
     let mut out = String::new();
     for mode in case.modes {
         let mut args: Vec<String> = case
@@ -1124,6 +1182,7 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
                 None => (*a).to_owned(),
             })
             .map(|a| a.replace("{site}", site.a()))
+            .map(|a| a.replace("{files}", &files.display().to_string()))
             .collect();
         if !mode.is_empty() {
             args.push((*mode).to_owned());
@@ -1163,6 +1222,14 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
         }
     }
     Some(norm.apply(&out))
+}
+
+/// The files the upload cases upload (`{files}`).
+fn upload_files() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../testdata/site/actions/upload")
+        .canonicalize()
+        .unwrap()
 }
 
 /// Quotes an argument for display the way a shell user would type it.

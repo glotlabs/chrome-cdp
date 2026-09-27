@@ -1,0 +1,12 @@
+$ chrome-cdp upload '#nothing' <files>/hello.txt
+exit: 1
+--- stderr
+error: clicking e1 button "Opens nothing" opened no file chooser, and it is not a file input
+  waited: 3s
+  hint: chrome-cdp upload 'css=input[type=file]' <file>   (the page's file input, even a hidden one)
+
+$ chrome-cdp upload '#nothing' <files>/hello.txt --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotEnabled","message":"clicking e1 button \"Opens nothing\" opened no file chooser, and it is not a file input","hint":"chrome-cdp upload 'css=input[type=file]' <file>   (the page's file input, even a hidden one)","notes":[{"label":"waited","text":"3s"}],"details":{"check":"chooser","locator":"#nothing"}}}
+

@@ -1,0 +1,11 @@
+$ chrome-cdp upload '#avatar' <files>/missing.txt
+exit: 2
+--- stderr
+error: <files>/missing.txt does not exist
+  hint: upload takes the paths of files that exist
+
+$ chrome-cdp upload '#avatar' <files>/missing.txt --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"<files>/missing.txt does not exist","hint":"upload takes the paths of files that exist","details":{"path":"<files>/missing.txt"}}}
+
