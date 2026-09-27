@@ -44,6 +44,27 @@ pub(crate) struct Watch {
     /// Whether a same-document navigation ends the wait: not when a new
     /// document is expected (the old one may still `pushState`).
     same_document_counts: bool,
+    /// A navigation to a new document started (or one committed): the
+    /// page is being left.
+    leaving: bool,
+    /// The URL the last navigation that started goes to.
+    pub(crate) started_url: Option<String>,
+    /// The main frame stopped loading after `leaving`, before a new
+    /// document committed: the navigation became a download, or got no
+    /// content (204), or was canceled.
+    stopped: bool,
+}
+
+/// How [`Watch::until_loaded`] ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Loaded {
+    /// The new document's load event fired (or it came back from the
+    /// back/forward cache).
+    Load,
+    /// The navigation ended without a new document.
+    Stopped,
+    /// The deadline passed (or the session ended) first.
+    TimedOut,
 }
 
 impl Watch {
@@ -60,6 +81,9 @@ impl Watch {
             restored: false,
             unreachable: None,
             same_document_counts: true,
+            leaving: false,
+            started_url: None,
+            stopped: false,
         }
     }
 
@@ -128,6 +152,50 @@ impl Watch {
         self.committed || self.same_document || self.restored || !self.seen().is_empty()
     }
 
+    /// Whether the main frame started to navigate to a new document (or
+    /// committed one) since the watch began.
+    pub(crate) fn leaving(&self) -> bool {
+        self.leaving || self.committed || self.restored
+    }
+
+    /// Reads the events that already arrived, without waiting.
+    pub(crate) async fn drain(&mut self) {
+        let now = Instant::now();
+        // `timeout_at` polls the stream before it looks at the clock.
+        while let Ok(Some(event)) = tokio::time::timeout_at(now, self.events.next()).await {
+            self.apply(&event);
+        }
+    }
+
+    /// Reads events until the main frame starts to leave its document
+    /// ([`Watch::leaving`]); never returns if it does not, unless the
+    /// session ends.
+    pub(crate) async fn until_leaving(&mut self) {
+        while !self.leaving() {
+            match self.events.next().await {
+                Some(event) => self.apply(&event),
+                None => return,
+            }
+        }
+    }
+
+    /// After [`Watch::leaving`]: reads events until the new document's
+    /// load event, or the navigation ends without one, or `deadline`.
+    pub(crate) async fn until_loaded(&mut self, deadline: Instant) -> Loaded {
+        loop {
+            if self.restored || (self.committed && self.reached(WaitUntil::Load)) {
+                return Loaded::Load;
+            }
+            if self.stopped && !self.committed {
+                return Loaded::Stopped;
+            }
+            match tokio::time::timeout_at(deadline, self.events.next()).await {
+                Ok(Some(event)) => self.apply(&event),
+                Ok(None) | Err(_) => return Loaded::TimedOut,
+            }
+        }
+    }
+
     /// Reads events until `wait` holds (`true`) or `deadline` passes, or
     /// the session ends (`false`).
     pub(crate) async fn until(&mut self, wait: WaitUntil, deadline: Instant) -> bool {
@@ -165,6 +233,17 @@ impl Watch {
                     && let Some(loader) = params["loaderId"].as_str()
                 {
                     self.started.insert(loader.to_owned());
+                    let kind = params["navigationType"].as_str().unwrap_or_default();
+                    if !matches!(kind, "sameDocument" | "historySameDocument") {
+                        self.leaving = true;
+                        self.stopped = false;
+                        self.started_url = params["url"].as_str().map(str::to_owned);
+                    }
+                }
+            }
+            page::FrameStoppedLoading::NAME => {
+                if self.leaving && params["frameId"].as_str() == Some(&self.frame) {
+                    self.stopped = true;
                 }
             }
             page::NavigatedWithinDocument::NAME => {

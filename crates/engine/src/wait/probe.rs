@@ -14,7 +14,7 @@ use protocol::{ErrorInfo, ErrorKind, Hint};
 use serde_json::{Value, json};
 use tokio::time::Instant;
 
-use super::{Condition, DOM_QUIET, Met, Unmet};
+use super::{Condition, Met, Unmet};
 use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::injected;
@@ -173,12 +173,13 @@ impl Engine {
         })
     }
 
-    /// Waits up to `max` for `page`'s DOM to go [`DOM_QUIET`] without a
+    /// Waits up to `max` for `page`'s DOM to go `quiet` without a
     /// change; `false` if it did not (or there was no document).
     pub(super) async fn dom_quiet(
         &self,
         running: &Running,
         page: &Page,
+        quiet: Duration,
         max: Duration,
     ) -> Result<bool, ErrorInfo> {
         if max.is_zero() {
@@ -195,7 +196,7 @@ impl Engine {
         let mut params = runtime::CallFunctionOnParams::new(QUIET_JS.to_owned());
         params.execution_context_id = Some(context.context_id);
         params.arguments = Some(vec![
-            argument(json!(u64::try_from(DOM_QUIET.as_millis()).unwrap_or(300))),
+            argument(json!(u64::try_from(quiet.as_millis()).unwrap_or(300))),
             argument(json!(u64::try_from(max.as_millis()).unwrap_or(u64::MAX))),
         ]);
         params.return_by_value = Some(true);

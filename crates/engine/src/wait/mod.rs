@@ -43,6 +43,10 @@ const DOM_QUIET_MAX: Duration = Duration::from_secs(3);
 /// the navigation still succeeds, with a warning.
 pub(crate) const NAVIGATION_SETTLE: Duration = Duration::from_secs(5);
 
+/// How long the network and the DOM must stay quiet after an action
+/// that did not navigate (see [`Engine::action_settle`]).
+const ACTION_QUIET: Duration = Duration::from_millis(150);
+
 /// How many in-flight requests an error or warning lists.
 const LISTED_REQUESTS: usize = 3;
 
@@ -563,7 +567,7 @@ impl Engine {
             }
             let left = deadline.saturating_duration_since(Instant::now());
             let dom_quiet = self
-                .dom_quiet(running, page, DOM_QUIET_MAX.min(left))
+                .dom_quiet(running, page, DOM_QUIET, DOM_QUIET_MAX.min(left))
                 .await?;
             // A request the DOM change started: wait for it too.
             let now = Instant::now();
@@ -571,6 +575,43 @@ impl Engine {
                 Ok(()) => return Ok(Ok(Settled { dom_quiet })),
                 Err(busy) if now >= deadline => return Ok(Err(busy_unmet(&busy))),
                 Err(_) => {}
+            }
+        }
+    }
+
+    /// The brief settle after an action that did not navigate (plan 05,
+    /// 5.5): waits until the requests `page` started since `since` are
+    /// done and its DOM went [`ACTION_QUIET`] without a change, up to
+    /// `deadline`; `false` if it did not. Shorter than [`Engine::settle`]:
+    /// most actions change nothing, and requests from before (a page's
+    /// polling) are not the action's.
+    pub(crate) async fn action_settle(
+        &self,
+        running: &Running,
+        page: &Page,
+        since: Instant,
+        deadline: Instant,
+    ) -> Result<bool, ErrorInfo> {
+        loop {
+            if !running
+                .tabs
+                .own_requests_done(page.id, since, ACTION_QUIET, deadline)
+                .await
+            {
+                return Ok(false);
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            let dom_quiet = self.dom_quiet(running, page, ACTION_QUIET, left).await?;
+            // A request the DOM change started: wait for it too.
+            let done = running
+                .tabs
+                .own_requests_done(page.id, since, ACTION_QUIET, Instant::now())
+                .await;
+            if done {
+                return Ok(dom_quiet);
+            }
+            if Instant::now() >= deadline {
+                return Ok(false);
             }
         }
     }
