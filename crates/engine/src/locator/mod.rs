@@ -18,4 +18,4 @@ mod resolve;
 
 pub use parse::{DEFAULT_TESTID_ATTRIBUTE, Locator, parse_locator};
 pub use resolve::LocateOptions;
-pub(crate) use resolve::{FrameOnly, Place, bad_locator};
+pub(crate) use resolve::{Called, FrameOnly, Place, Want, bad_locator};

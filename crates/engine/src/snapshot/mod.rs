@@ -10,10 +10,12 @@
 //!
 //! Each tab keeps its refs ([`refs`]) and the tree of its last snapshot
 //! (for `--diff`) in [`Memory`]; [`resolve`] turns a ref back into its
-//! element for every command that takes one.
+//! element for every command that takes one. [`find`] searches the same
+//! tree and gives refs from the same registry.
 
 mod ax;
 mod dom;
+mod find;
 mod prune;
 mod refs;
 mod render;

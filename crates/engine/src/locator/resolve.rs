@@ -126,6 +126,27 @@ struct NotOne {
     candidates: Vec<Candidate>,
 }
 
+/// How many elements [`Engine::call_on`] wants.
+#[derive(Clone, Copy)]
+pub(crate) enum Want<'a> {
+    /// Exactly one, which is `this`; else `NotFound` or `Ambiguous`, whose
+    /// hint runs `retry` with a candidate's ref when given.
+    One(Option<&'a (dyn Fn(&str) -> Cmd + Sync)>),
+    /// Every match (maybe none), as the array `this`.
+    All,
+}
+
+/// What [`Engine::call_on`] returned.
+#[derive(Debug, Clone)]
+pub(crate) struct Called {
+    /// The function's value (JSON).
+    pub(crate) value: Value,
+    /// Set when a ref was re-resolved by role and name: the note to show.
+    pub(crate) note: Option<String>,
+    /// The frame the elements are in.
+    pub(crate) frame: String,
+}
+
 impl Engine {
     /// Calls `function` with `this` set to the one element `locator`
     /// matches in tab `tab`, in chrome-cdp's isolated world, and returns
@@ -144,25 +165,21 @@ impl Engine {
         let running = self.running()?;
         let page = self.page(&running, tab, timeout).await?;
         let _tab = self.tabs.lock(&page.target_id).await;
-        let target = self
-            .locate_one(&running, &page, &locator, options, None, timeout)
+        let called = self
+            .call_on(
+                &running,
+                &page,
+                Some(&locator),
+                options,
+                Want::One(None),
+                FrameOnly::Owner,
+                function,
+                timeout,
+            )
             .await?;
-        let mut params = runtime::CallFunctionOnParams::new(function.to_owned());
-        params.object_id = Some(target.object_id.clone());
-        params.return_by_value = Some(true);
-        params.await_promise = Some(true);
-        let result = target
-            .context
-            .session
-            .with_timeout(timeout)
-            .call(params)
-            .await
-            .map_err(|e| from_cdp(&e, &self.session));
-        let note = target.note.clone();
-        target.release();
         Ok(RefCall {
-            value: function_value(result?)?,
-            note,
+            value: called.value,
+            note: called.note,
         })
     }
 
@@ -183,40 +200,136 @@ impl Engine {
         let running = self.running()?;
         let page = self.page(&running, tab, timeout).await?;
         let _tab = self.tabs.lock(&page.target_id).await;
-        let place = self
-            .place(
+        let called = self
+            .call_on(
                 &running,
                 &page,
-                &locator,
+                Some(&locator),
                 options,
+                Want::All,
                 FrameOnly::Owner,
+                function,
                 timeout,
             )
             .await?;
-        let declaration = format!(
-            "function (steps, root) {{ {GUARD} const els = globalThis.__ccdp.query(steps, root);\n\
-             return ({function}).call(els); }}"
-        );
-        let mut params = runtime::CallFunctionOnParams::new(declaration);
-        params.arguments = Some(vec![steps_argument(&locator), place.root_argument()]);
-        params.return_by_value = Some(true);
-        params.await_promise = Some(true);
-        let result = injected::call(
-            &place.context.session.with_timeout(timeout),
-            place.context.context_id,
-            params,
-        )
-        .await
-        .map_err(|e| from_cdp(&e, &self.session));
-        let note = place.note.clone();
-        place.release();
-        let result = result?;
-        if let Some(message) = locator_error(&result) {
-            return Err(bad_locator(&locator, &message));
-        }
         Ok(RefCall {
-            value: function_value(result)?,
+            value: called.value,
+            note: called.note,
+        })
+    }
+
+    /// Calls `function` on what `locator` matches in `page` (see
+    /// [`Want`]), in chrome-cdp's isolated world, where the helper bundle
+    /// `__ccdp` is loaded. Without a locator, and for one that names a
+    /// frame when `frame_only` is [`FrameOnly::Document`], `this` is the
+    /// (main or that frame's) `document`. Call it holding the tab's lock.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn call_on(
+        &self,
+        running: &Running,
+        page: &Page,
+        locator: Option<&Locator>,
+        options: &LocateOptions,
+        want: Want<'_>,
+        frame_only: FrameOnly,
+        function: &str,
+        timeout: Duration,
+    ) -> Result<Called, ErrorInfo> {
+        let all = matches!(want, Want::All);
+        if let Some(locator) = locator.filter(|l| !l.in_frame_steps().is_empty()) {
+            if let Want::One(retry) = want {
+                let target = self
+                    .locate_one(running, page, locator, options, retry, timeout)
+                    .await?;
+                let result =
+                    call_on_object(&target.context, &target.object_id, function, false, timeout)
+                        .await
+                        .map_err(|e| from_cdp(&e, &self.session));
+                let note = target.note.clone();
+                let frame = target.key.frame.clone();
+                target.release();
+                return Ok(Called {
+                    value: function_value(result?)?,
+                    note,
+                    frame,
+                });
+            }
+            let place = self
+                .place(running, page, locator, options, FrameOnly::Owner, timeout)
+                .await?;
+            let declaration = format!(
+                "function (steps, root) {{ {GUARD} const els = globalThis.__ccdp.query(steps, root);\n\
+                 return ({function}).call(els); }}"
+            );
+            let mut params = runtime::CallFunctionOnParams::new(declaration);
+            params.arguments = Some(vec![steps_argument(locator), place.root_argument()]);
+            params.return_by_value = Some(true);
+            params.await_promise = Some(true);
+            let result = injected::call(
+                &place.context.session.with_timeout(timeout),
+                place.context.context_id,
+                params,
+            )
+            .await
+            .map_err(|e| from_cdp(&e, &self.session));
+            let (note, frame) = (place.note.clone(), place.frame.clone());
+            place.release();
+            let result = result?;
+            if let Some(message) = locator_error(&result) {
+                return Err(bad_locator(locator, &message));
+            }
+            return Ok(Called {
+                value: function_value(result)?,
+                note,
+                frame,
+            });
+        }
+        // No steps inside a frame: a ref's element, a frame's `<iframe>`
+        // or document, or the page.
+        let place = if let Some(locator) = locator {
+            self.place(running, page, locator, options, frame_only, timeout)
+                .await?
+        } else {
+            let context = self
+                .frame_context(running, page, None, World::Isolated, timeout)
+                .await?;
+            let frame = running
+                .tabs
+                .frames(page.id)
+                .into_iter()
+                .next()
+                .ok_or_else(|| self.tab_gone(page))?
+                .id;
+            Place {
+                frame,
+                context,
+                root: None,
+                note: None,
+            }
+        };
+        let result = if let Some(root) = &place.root {
+            call_on_object(&place.context, &root.object_id, function, all, timeout).await
+        } else {
+            let this = if all { "[document]" } else { "document" };
+            let mut params = runtime::CallFunctionOnParams::new(format!(
+                "function () {{ {GUARD} return ({function}).call({this}); }}"
+            ));
+            params.return_by_value = Some(true);
+            params.await_promise = Some(true);
+            injected::call(
+                &place.context.session.with_timeout(timeout),
+                place.context.context_id,
+                params,
+            )
+            .await
+        }
+        .map_err(|e| from_cdp(&e, &self.session));
+        let (note, frame) = (place.note.clone(), place.frame.clone());
+        place.release();
+        Ok(Called {
+            value: function_value(result?)?,
             note,
+            frame,
         })
     }
 
@@ -435,7 +548,7 @@ impl Engine {
 
     /// The `<iframe>` element of frame `frame`: its parent frame, and a
     /// handle on it there.
-    async fn frame_owner(
+    pub(crate) async fn frame_owner(
         &self,
         running: &Running,
         page: &Page,
@@ -492,7 +605,7 @@ impl Engine {
     }
 
     /// No element matches.
-    fn not_found(&self, page: &Page, locator: &Locator) -> ErrorInfo {
+    pub(crate) fn not_found(&self, page: &Page, locator: &Locator) -> ErrorInfo {
         let mut info = ErrorInfo::new(ErrorKind::NotFound, format!("no element matches {locator}"))
             .hint(
                 Hint::run(Cmd::new("snapshot").session(&self.session))
@@ -679,6 +792,30 @@ fn value(value: Value) -> runtime::CallArgument {
         unserializable_value: None,
         object_id: None,
     }
+}
+
+/// Calls `function` with `this` set to the object (or, with `all`, an
+/// array of it), returning its value.
+async fn call_on_object(
+    context: &FrameContext,
+    object_id: &str,
+    function: &str,
+    all: bool,
+    timeout: Duration,
+) -> cdp::Result<runtime::CallFunctionOnReturns> {
+    let this = if all { "[this]" } else { "this" };
+    let mut params = runtime::CallFunctionOnParams::new(format!(
+        "function () {{ {GUARD} return ({function}).call({this}); }}"
+    ));
+    params.object_id = Some(object_id.to_owned());
+    params.return_by_value = Some(true);
+    params.await_promise = Some(true);
+    injected::call(
+        &context.session.with_timeout(timeout),
+        context.context_id,
+        params,
+    )
+    .await
 }
 
 async fn describe(session: &cdp::Session, object_id: &str) -> cdp::Result<dom::Node> {

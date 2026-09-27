@@ -438,6 +438,90 @@ pub struct SnapshotRequest {
     pub max_chars: usize,
 }
 
+/// What a read command reads of an element, or of the page without a
+/// locator.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Read {
+    /// `text [loc]`: the visible text of every match (the page's without
+    /// a locator).
+    Text,
+    /// `html [loc]`: the element's content (`outer`: the element too),
+    /// pretty-printed unless `raw`.
+    Html {
+        #[serde(default)]
+        outer: bool,
+        #[serde(default)]
+        raw: bool,
+    },
+    /// `attr <loc> <name>`: an attribute's value.
+    Attr { name: String },
+    /// `value <loc>`: a field's current value.
+    Value,
+    /// `count <loc>`: how many elements match.
+    Count,
+    /// `box <loc>`: the element's box in the viewport.
+    Box,
+    /// `markdown [loc]`: the readable content as Markdown.
+    Markdown,
+}
+
+impl Read {
+    /// The command's name.
+    pub fn command(&self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Html { .. } => "html",
+            Self::Attr { .. } => "attr",
+            Self::Value => "value",
+            Self::Count => "count",
+            Self::Box => "box",
+            Self::Markdown => "markdown",
+        }
+    }
+}
+
+/// `text`, `html`, `attr`, `value`, `count`, `box` and `markdown`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadRequest {
+    pub read: Read,
+    /// The element(s) to read; the page if `None` (`text`, `html`,
+    /// `markdown`).
+    #[serde(default)]
+    pub locator: Option<String>,
+    /// `--tab`: the tab to read; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// `--strict-refs`: a ref whose element is gone is an error, never
+    /// re-resolved by role and name.
+    #[serde(default)]
+    pub strict_refs: bool,
+    /// The attribute `testid=` locators read; `data-testid` if `None`.
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
+/// `find <query>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FindRequest {
+    /// Words to look for in roles, names, values and text.
+    pub query: String,
+    /// `--role`: only nodes with this role.
+    #[serde(default)]
+    pub role: Option<String>,
+    /// `--limit`: how many matches to show (0 = all).
+    pub limit: usize,
+    /// `--tab`: the tab to search; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
 /// Milliseconds from a request as a duration, at least 1 ms.
 pub(crate) fn millis(ms: u64) -> Duration {
     Duration::from_millis(ms.max(1))

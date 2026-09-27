@@ -24,6 +24,8 @@ pub const WAIT: &str = "wait";
 pub const DIALOG: &str = "dialog";
 pub const DOWNLOADS: &str = "downloads";
 pub const SNAPSHOT: &str = "snapshot";
+pub const FIND: &str = "find";
+pub const READ: &str = "read";
 
 /// `hello`: the first call on every connection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

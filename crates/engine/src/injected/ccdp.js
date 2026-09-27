@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 2b178705108557c0
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 0a3f10ced2ce6b0a
 "use strict";
 (() => {
   // src/dom.ts
@@ -304,8 +304,8 @@
       case "body":
         return "none";
       default: {
-        const html = el;
-        if (html.isContentEditable && !(el.parentElement && el.parentElement.isContentEditable)) return "textbox";
+        const html2 = el;
+        if (html2.isContentEditable && !(el.parentElement && el.parentElement.isContentEditable)) return "textbox";
         return "generic";
       }
     }
@@ -346,9 +346,9 @@
       if (t === "img" || t === "input" && attr(el, "type") === "image") return " " + (attr(el, "alt") || "") + " ";
       if (t === "input" || t === "textarea") {
         const role = roleOf(el);
-        const value = el.value;
-        if (role === "textbox" || role === "searchbox" || role === "spinbutton" || role === "slider") return " " + value + " ";
-        if (role === "button") return " " + (value || "") + " ";
+        const value2 = el.value;
+        if (role === "textbox" || role === "searchbox" || role === "spinbutton" || role === "slider") return " " + value2 + " ";
+        if (role === "button") return " " + (value2 || "") + " ";
         return "";
       }
       if (t === "select") {
@@ -387,22 +387,22 @@
   function nameOf(el, role) {
     const labelledby = attr(el, "aria-labelledby");
     if (labelledby) {
-      const text = norm(byIds(el, labelledby).map((l) => textOf(l, null, 0)).join(" "));
-      if (text) return text;
+      const text2 = norm(byIds(el, labelledby).map((l) => textOf(l, null, 0)).join(" "));
+      if (text2) return text2;
     }
     const label = norm(attr(el, "aria-label"));
     if (label) return label;
     const t = tag(el);
     if (t === "input" || t === "textarea" || t === "select" || t === "meter" || t === "progress" || t === "output") {
       const type = (attr(el, "type") || "").toLowerCase();
-      const value = el.value;
+      const value2 = el.value;
       if (t === "input" && ["button", "submit", "reset"].includes(type)) {
-        return norm(value) || (type === "submit" ? "Submit" : type === "reset" ? "Reset" : "");
+        return norm(value2) || (type === "submit" ? "Submit" : type === "reset" ? "Reset" : "");
       }
       if (t === "input" && type === "image") return norm(attr(el, "alt")) || "Submit";
       const labels = el.labels ? Array.from(el.labels) : [];
-      const text = norm(labels.map((l) => textOf(l, el, 0)).join(" "));
-      if (text) return text;
+      const text2 = norm(labels.map((l) => textOf(l, el, 0)).join(" "));
+      if (text2) return text2;
       return norm(attr(el, "title")) || norm(attr(el, "placeholder"));
     }
     if (t === "img" || t === "area") return norm(attr(el, "alt")) || norm(attr(el, "title"));
@@ -417,10 +417,10 @@
     }
     if (t === "iframe") return norm(attr(el, "title"));
     if (FROM_CONTENT.has(role) && role !== "row") {
-      let text = "";
-      for (const child of childrenOf(el)) text += textOf(child, null, 1, role === "treeitem");
-      text = norm(text);
-      if (text) return text;
+      let text2 = "";
+      for (const child of childrenOf(el)) text2 += textOf(child, null, 1, role === "treeitem");
+      text2 = norm(text2);
+      if (text2) return text2;
     }
     return norm(attr(el, "title"));
   }
@@ -485,16 +485,16 @@
   };
 
   // src/css.ts
-  function split(text, sep) {
+  function split(text2, sep) {
     const parts = [];
     let depth = 0;
     let quote = "";
     let current = "";
-    for (let i = 0; i < text.length; i++) {
-      const c = text[i];
+    for (let i = 0; i < text2.length; i++) {
+      const c = text2[i];
       if (quote) {
         current += c;
-        if (c === "\\") current += text[++i] ?? "";
+        if (c === "\\") current += text2[++i] ?? "";
         else if (c === quote) quote = "";
         continue;
       }
@@ -502,7 +502,7 @@
       else if (c === "[" || c === "(") depth++;
       else if (c === "]" || c === ")") depth--;
       else if (c === "\\") {
-        current += c + (text[++i] ?? "");
+        current += c + (text2[++i] ?? "");
         continue;
       }
       const isSep = depth === 0 && (sep === " " ? /\s/.test(c) : c === sep);
@@ -512,8 +512,8 @@
       }
       if (sep === " ") {
         let j = i;
-        while (j + 1 < text.length && /\s/.test(text[j + 1])) j++;
-        const next = text[j + 1] ?? "";
+        while (j + 1 < text2.length && /\s/.test(text2[j + 1])) j++;
+        const next = text2[j + 1] ?? "";
         const prev = current.trimEnd().slice(-1);
         i = j;
         if (!current.trim() || ">+~".includes(next) || ">+~".includes(prev) || next === "") {
@@ -583,21 +583,21 @@
       } catch (e) {
         throw new LocatorError(`/${m.value}/${m.flags || ""} is not a valid regex: ${e.message}`);
       }
-      return (text) => re.test(norm(text));
+      return (text2) => re.test(norm(text2));
     }
     const want = norm(m.value);
-    if (m.mode === "exact") return (text) => norm(text) === want;
+    if (m.mode === "exact") return (text2) => norm(text2) === want;
     const lower = want.toLowerCase();
-    return (text) => norm(text).toLowerCase().includes(lower);
+    return (text2) => norm(text2).toLowerCase().includes(lower);
   }
   var Texts = class {
     cache = /* @__PURE__ */ new Map();
     of(el) {
-      let text = this.cache.get(el);
-      if (text !== void 0) return text;
-      text = this.compute(el);
-      this.cache.set(el, text);
-      return text;
+      let text2 = this.cache.get(el);
+      if (text2 !== void 0) return text2;
+      text2 = this.compute(el);
+      this.cache.set(el, text2);
+      return text2;
     }
     compute(el) {
       if (SKIP.has(tag(el))) return "";
@@ -671,8 +671,8 @@
   function byAttribute(name, m, scope) {
     const test = matcher(m);
     return descendants(scope).filter((el) => {
-      const value = el.getAttribute(name);
-      return value !== null && test(value);
+      const value2 = el.getAttribute(name);
+      return value2 !== null && test(value2);
     });
   }
   function find(step, scope, texts) {
@@ -778,6 +778,463 @@
     return { json: JSON.stringify({ count: found.length, candidates: els.map(describe) }), els };
   }
 
+  // src/read.ts
+  function tidy(text2) {
+    return text2.replace(/ /g, " ").split(/\r?\n/).map((line) => line.replace(/[ \t\f\v\r]+/g, " ").trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
+  function text(node) {
+    const el = node instanceof Document ? node.body || node.documentElement : node;
+    if (!el) return "";
+    if (!(el instanceof HTMLElement)) return tidy(el.textContent || "");
+    if (!visible(el)) return "";
+    const around = /* @__PURE__ */ new Set();
+    for (const d of descendants(el)) {
+      if (!d.shadowRoot) continue;
+      for (let a = d; a && !around.has(a); a = a === el ? null : parentOf(a)) around.add(a);
+    }
+    if (!around.size) return tidy(el.innerText);
+    let out = "";
+    const walk2 = (parent) => {
+      for (const child of childrenOf(parent)) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          out += child.data.replace(/\s+/g, " ");
+          continue;
+        }
+        if (!(child instanceof HTMLElement) || SKIP.has(tag(child))) continue;
+        const style = getComputedStyle(child);
+        if (style.display === "none") continue;
+        const block = style.display !== "contents" && !style.display.startsWith("inline");
+        if (block) out += "\n";
+        if (tag(child) === "br") out += "\n";
+        else if (around.has(child)) walk2(child);
+        else out += child.innerText;
+        if (block) out += "\n";
+      }
+    };
+    walk2(el);
+    return tidy(out);
+  }
+  var VOID = /* @__PURE__ */ new Set([
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr"
+  ]);
+  var CUT = 200;
+  var LINE = 120;
+  var cut2 = (s, n) => s.length > n ? `${s.slice(0, n)}… (${s.length} chars)` : s;
+  var escapeText = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  var escapeAttr = (s) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  function openTag(el) {
+    let out = `<${tag(el)}`;
+    for (const a of Array.from(el.attributes)) {
+      out += a.value === "" ? ` ${a.name}` : ` ${a.name}="${escapeAttr(cut2(a.value, CUT))}"`;
+    }
+    return out + ">";
+  }
+  function html(node, outer) {
+    const out = [];
+    if (node instanceof Document) {
+      if (node.doctype) out.push(`<!doctype ${node.doctype.name}>`);
+      if (node.documentElement) pretty(node.documentElement, 0, out);
+    } else if (outer) {
+      pretty(node, 0, out);
+    } else {
+      for (const child of contentOf(node)) pretty(child, 0, out);
+    }
+    return out.join("\n");
+  }
+  function contentOf(el) {
+    const kids = [];
+    if (el.shadowRoot) kids.push(el.shadowRoot);
+    const own = tag(el) === "template" ? el.content.childNodes : el.childNodes;
+    kids.push(...Array.from(own));
+    return kids.filter((n) => !(n.nodeType === Node.TEXT_NODE && !n.data.trim()));
+  }
+  function pretty(node, depth, out) {
+    const indent2 = "  ".repeat(depth);
+    if (node instanceof ShadowRoot) {
+      out.push(`${indent2}#shadow-root (${node.mode})`);
+      for (const child of Array.from(node.childNodes)) {
+        if (child.nodeType === Node.TEXT_NODE && !child.data.trim()) continue;
+        pretty(child, depth + 1, out);
+      }
+      return;
+    }
+    if (node.nodeType === Node.TEXT_NODE) {
+      const collapsed = norm(node.data);
+      if (collapsed) out.push(indent2 + escapeText(collapsed));
+      return;
+    }
+    if (node.nodeType === Node.COMMENT_NODE) {
+      out.push(`${indent2}<!-- ${cut2(norm(node.data), CUT)} -->`);
+      return;
+    }
+    if (!(node instanceof Element)) return;
+    const name = tag(node);
+    const open = openTag(node);
+    if (VOID.has(name)) {
+      out.push(indent2 + open);
+      return;
+    }
+    const close = `</${name}>`;
+    if (name === "script" || name === "style") {
+      const body = (node.textContent || "").trim();
+      out.push(indent2 + open + (body ? cut2(body, CUT) : "") + close);
+      return;
+    }
+    if (name === "pre" || name === "textarea") {
+      out.push(indent2 + open + escapeText(node.textContent || "") + close);
+      return;
+    }
+    const kids = contentOf(node);
+    const line = compact(node, LINE - indent2.length);
+    if (line !== null) {
+      out.push(indent2 + line);
+      return;
+    }
+    out.push(indent2 + open);
+    for (const child of kids) pretty(child, depth + 1, out);
+    out.push(indent2 + close);
+  }
+  function compact(el, room) {
+    const name = tag(el);
+    if (name === "script" || name === "style" || name === "pre" || name === "textarea" || el.shadowRoot) return null;
+    let line = openTag(el);
+    if (VOID.has(name)) return line.length <= room ? line : null;
+    const own = name === "template" ? el.content.childNodes : el.childNodes;
+    const kids = Array.from(own);
+    for (let i = 0; i < kids.length && line.length <= room; i++) {
+      const child = kids[i];
+      if (child.nodeType === Node.TEXT_NODE) {
+        let t = child.data.replace(/\s+/g, " ");
+        if (i === 0) t = t.trimStart();
+        if (i === kids.length - 1) t = t.trimEnd();
+        line += escapeText(t);
+      } else if (child instanceof Element) {
+        const inner = compact(child, room - line.length);
+        if (inner === null) return null;
+        line += inner;
+      } else {
+        return null;
+      }
+    }
+    line += `</${name}>`;
+    return line.length <= room ? line : null;
+  }
+  function value(el) {
+    if (el instanceof HTMLInputElement) {
+      if (el.type === "file") {
+        return { value: Array.from(el.files || []).map((f) => f.name), kind: "file" };
+      }
+      return { value: el.value, kind: el.type === "password" ? "password" : "input" };
+    }
+    if (el instanceof HTMLTextAreaElement) return { value: el.value, kind: "textarea" };
+    if (el instanceof HTMLSelectElement) {
+      const chosen = Array.from(el.selectedOptions).map((o) => o.value);
+      return { value: el.multiple ? chosen : chosen[0] ?? "", kind: "select" };
+    }
+    if (el instanceof HTMLOutputElement) return { value: el.value, kind: "output" };
+    if (el instanceof HTMLProgressElement || el instanceof HTMLMeterElement) {
+      return { value: String(el.value), kind: tag(el) };
+    }
+    if (el instanceof HTMLElement && el.isContentEditable) {
+      return { value: tidy(el.innerText), kind: "contenteditable" };
+    }
+    const now = el.getAttribute("aria-valuetext") ?? el.getAttribute("aria-valuenow");
+    if (now !== null) return { value: now, kind: "aria" };
+    return { error: `<${tag(el)}> has no value` };
+  }
+  var DROP = /* @__PURE__ */ new Set([
+    "script",
+    "style",
+    "noscript",
+    "template",
+    "head",
+    "svg",
+    "canvas",
+    "iframe",
+    "frame",
+    "object",
+    "embed",
+    "video",
+    "audio",
+    "map",
+    "input",
+    "select",
+    "textarea",
+    "button",
+    "dialog",
+    "datalist",
+    "option",
+    "label"
+  ]);
+  var LIST_START = /^(?:- |\d+\. )/;
+  var FURNITURE = /* @__PURE__ */ new Set(["nav", "aside", "footer"]);
+  var FURNITURE_ROLES = /* @__PURE__ */ new Set(["navigation", "complementary", "contentinfo", "search"]);
+  function markdown(el) {
+    const readable = el instanceof Document;
+    const root = el instanceof Document ? mainContent() : el;
+    const md = new Markdown(readable);
+    const blocks = [];
+    md.blocks(root, blocks);
+    return { markdown: blocks.join("\n\n").replace(/\n{3,}/g, "\n\n").trim(), source: describeEl(root) };
+  }
+  function describeEl(el) {
+    let out = tag(el);
+    if (el.id) out += `#${el.id}`;
+    else if (typeof el.className === "string" && el.className.trim()) out += `.${el.className.trim().split(/\s+/)[0]}`;
+    return out;
+  }
+  function mainContent() {
+    const body = document.body || document.documentElement;
+    const one2 = (selector) => {
+      const found = Array.from(document.querySelectorAll(selector)).filter(visible);
+      return found.length === 1 ? found[0] : null;
+    };
+    const main = one2("main, [role=main]") || one2("article");
+    if (main) return main;
+    const scores = /* @__PURE__ */ new Map();
+    for (const p of Array.from(body.querySelectorAll("p, pre, blockquote, td, li"))) {
+      const t = norm(p.textContent);
+      if (t.length < 25 || !visible(p)) continue;
+      const score = 1 + t.split(",").length + Math.min(Math.floor(t.length / 100), 3);
+      const parent = p.parentElement;
+      if (!parent) continue;
+      scores.set(parent, (scores.get(parent) || 0) + score);
+      const grand = parent.parentElement;
+      if (grand) scores.set(grand, (scores.get(grand) || 0) + score / 2);
+    }
+    let best = null;
+    let top = 0;
+    for (const [candidate, score] of scores) {
+      if (score > top) {
+        best = candidate;
+        top = score;
+      }
+    }
+    return best && top >= 5 ? best : body;
+  }
+  var Markdown = class {
+    /** `readable`: leave page furniture (navigation, sidebars, footers)
+     * out. */
+    constructor(readable) {
+      this.readable = readable;
+    }
+    readable;
+    base = location.href;
+    display(el) {
+      return el.ownerDocument.defaultView.getComputedStyle(el).display;
+    }
+    shown(el) {
+      if (DROP.has(tag(el))) return false;
+      if (el.getAttribute("aria-hidden") === "true") return false;
+      return this.display(el) !== "none";
+    }
+    furniture(el) {
+      if (!this.readable) return false;
+      const role = el.getAttribute("role");
+      return FURNITURE.has(tag(el)) || role !== null && FURNITURE_ROLES.has(role);
+    }
+    isBlock(el) {
+      const display = this.display(el);
+      return display !== "contents" && !display.startsWith("inline") && display !== "none";
+    }
+    /** Appends `el`'s content as Markdown blocks to `out`. */
+    blocks(el, out) {
+      let run = "";
+      const flush = () => {
+        const paragraph = tidyInline(run);
+        if (paragraph) out.push(paragraph);
+        run = "";
+      };
+      for (const child of childrenOf(el)) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          run += collapse(child.data);
+          continue;
+        }
+        if (!(child instanceof Element) || !this.shown(child) || this.furniture(child)) continue;
+        if (this.display(child) === "contents") {
+          flush();
+          this.blocks(child, out);
+          continue;
+        }
+        if (!this.isBlock(child) && tag(child) !== "table") {
+          run += this.inline(child);
+          continue;
+        }
+        flush();
+        this.block(child, out);
+      }
+      flush();
+    }
+    block(el, out) {
+      const name = tag(el);
+      const heading = /^h([1-6])$/.exec(name);
+      if (heading) {
+        const t = tidyInline(this.inlineChildren(el)).replace(/\n+/g, " ");
+        if (t) out.push(`${"#".repeat(Number(heading[1]))} ${t}`);
+        return;
+      }
+      switch (name) {
+        case "hr":
+          out.push("---");
+          return;
+        case "br":
+          return;
+        case "img": {
+          const img = this.inline(el);
+          if (img) out.push(img);
+          return;
+        }
+        case "pre": {
+          const code = el.querySelector("code");
+          const lang = /(?:^|\s)(?:language|lang)-(\S+)/.exec((code || el).className || "");
+          const body = (el.innerText || el.textContent || "").replace(/\n+$/, "");
+          out.push("```" + (lang ? lang[1] : "") + "\n" + body + "\n```");
+          return;
+        }
+        case "ul":
+        case "ol":
+          this.list(el, name === "ol", out);
+          return;
+        case "blockquote": {
+          const inner = [];
+          this.blocks(el, inner);
+          const quoted = inner.join("\n\n").split("\n").map((l) => l ? `> ${l}` : ">").join("\n");
+          if (inner.length) out.push(quoted);
+          return;
+        }
+        case "table":
+          this.table(el, out);
+          return;
+        case "dt": {
+          const t = tidyInline(this.inlineChildren(el));
+          if (t) out.push(`**${t}**`);
+          return;
+        }
+        case "dd": {
+          const inner = [];
+          this.blocks(el, inner);
+          if (inner.length) out.push(indent(inner.join("\n\n"), ": ", "  "));
+          return;
+        }
+        default:
+          this.blocks(el, out);
+      }
+    }
+    list(el, ordered, out) {
+      const items = [];
+      let n = ordered ? Number(el.getAttribute("start") || 1) : 0;
+      for (const child of childrenOf(el)) {
+        if (!(child instanceof Element) || !this.shown(child)) continue;
+        const inner = [];
+        if (tag(child) === "li") this.blocks(child, inner);
+        else this.block(child, inner);
+        const body = inner.reduce((all, b) => !all ? b : all + (LIST_START.test(b) ? "\n" : "\n\n") + b, "");
+        if (!body) continue;
+        const marker = ordered ? `${n++}. ` : "- ";
+        items.push(indent(body, marker, " ".repeat(marker.length)));
+      }
+      if (items.length) out.push(items.join(items.some((i) => i.includes("\n\n")) ? "\n\n" : "\n"));
+    }
+    table(table, out) {
+      const rows = Array.from(table.rows).filter((r) => this.shown(r));
+      if (!rows.length) return;
+      const cells = rows.map((r) => Array.from(r.cells).map((c) => tidyInline(this.inlineChildren(c)).replace(/\n+/g, " ").replace(/\|/g, "\\|")));
+      const width = Math.max(...cells.map((r) => r.length));
+      if (width === 0) return;
+      const line = (r) => `| ${Array.from({ length: width }, (_, i) => r[i] ?? "").join(" | ")} |`;
+      const header = cells[0];
+      const lines = [line(header), `|${" --- |".repeat(width)}`, ...cells.slice(1).map(line)];
+      const caption = table.caption ? tidyInline(this.inlineChildren(table.caption)) : "";
+      if (caption) out.push(`**${caption}**`);
+      out.push(lines.join("\n"));
+    }
+    inlineChildren(el) {
+      let out = "";
+      for (const child of childrenOf(el)) out += this.inline(child);
+      return out;
+    }
+    /** `node` as inline Markdown; a block inside inline content becomes
+     * a line break. */
+    inline(node) {
+      if (node.nodeType === Node.TEXT_NODE) return collapse(node.data);
+      if (!(node instanceof Element) || !this.shown(node) || this.furniture(node)) return "";
+      const name = tag(node);
+      if (name === "br") return "\n";
+      if (name === "img") {
+        const alt = norm(node.getAttribute("alt"));
+        const src = node.getAttribute("src") || "";
+        if (!alt && (!src || src.startsWith("data:"))) return "";
+        return `![${alt}](${src.startsWith("data:") ? "" : this.href(src)})`;
+      }
+      const inner = this.inlineChildren(node);
+      const wrapped = this.isBlock(node) ? `
+${inner}
+` : inner;
+      const t = norm(inner);
+      if (!t) return wrapped.includes("![") ? wrapped : " ";
+      switch (name) {
+        case "a": {
+          const href = node.getAttribute("href");
+          if (!href || /^javascript:/i.test(href)) return wrapped;
+          return edge(inner, `[${tidyInline(inner).replace(/\n+/g, " ")}](${this.href(href)})`);
+        }
+        case "strong":
+        case "b":
+          return edge(inner, `**${t}**`);
+        case "em":
+        case "i":
+          return edge(inner, `_${t}_`);
+        case "code":
+        case "kbd":
+        case "samp":
+          return edge(inner, t.includes("`") ? `\`\` ${t} \`\`` : `\`${t}\``);
+        case "del":
+        case "s":
+          return edge(inner, `~~${t}~~`);
+        default:
+          return wrapped;
+      }
+    }
+    /** A link as the snapshot shows it: relative (path, query, fragment)
+     * when on the page's origin. */
+    href(raw) {
+      let url;
+      try {
+        url = new URL(raw, this.base);
+      } catch {
+        return raw;
+      }
+      const here = new URL(this.base);
+      if (url.origin === here.origin && /^(https?|file):$/.test(url.protocol)) {
+        return url.pathname + url.search + url.hash;
+      }
+      return url.href;
+    }
+  };
+  var collapse = (s) => s.replace(/[ \t\n\r\f]+/g, " ");
+  function edge(raw, marked) {
+    return (/^\s/.test(raw) ? " " : "") + marked + (/\s$/.test(raw) ? " " : "");
+  }
+  function tidyInline(s) {
+    return s.replace(/ /g, " ").split("\n").map((l) => l.replace(/[ \t\f\v\r]+/g, " ").trim()).filter((l, i, all) => l || i > 0 && all[i - 1]).join("\n").trim();
+  }
+  function indent(body, first, rest) {
+    return body.split("\n").map((l, i) => i === 0 ? first + l : l ? rest + l : l).join("\n");
+  }
+
   // src/walker.ts
   function scrolls(el, style) {
     if (tag(el) === "html" || tag(el) === "body") return false;
@@ -816,8 +1273,8 @@
       const n = { p: parent, r: role };
       const name = shownName(el, role);
       if (name) n.n = name;
-      const value = valueOf(el, role);
-      if (value != null && value !== "") n.v = String(value);
+      const value2 = valueOf(el, role);
+      if (value2 != null && value2 !== "") n.v = String(value2);
       const lv = level(el, role);
       if (lv) n.l = lv;
       const href = el.href;
@@ -852,6 +1309,6 @@
   }
 
   // src/index.ts
-  var api = { version: 1, query, one, describe, walk };
+  var api = { version: 1, query, one, describe, walk, visible, text, tidy, html, value, markdown };
   if (!globalThis.__ccdp) globalThis.__ccdp = api;
 })();

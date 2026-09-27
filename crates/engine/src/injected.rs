@@ -20,16 +20,19 @@ pub(crate) const BUNDLE: &str = include_str!("injected/ccdp.js");
 /// The first statement of a function that uses `__ccdp`.
 pub(crate) const GUARD: &str = "if (!globalThis.__ccdp) throw new Error('__ccdp is not loaded');";
 
-/// Calls a function that starts with [`GUARD`] in context `context_id`.
-/// When the bundle is not there (a world made before chrome-cdp attached
-/// could miss it), loads it and calls again.
+/// Calls a function that starts with [`GUARD`] in context `context_id`
+/// (on `params.object_id`, an object of that context, when set). When
+/// the bundle is not there (a world made before chrome-cdp attached could
+/// miss it), loads it and calls again.
 pub(crate) async fn call(
     session: &Session,
     context_id: runtime::ExecutionContextId,
     params: runtime::CallFunctionOnParams,
 ) -> cdp::Result<runtime::CallFunctionOnReturns> {
     let mut params = params;
-    params.execution_context_id = Some(context_id);
+    if params.object_id.is_none() {
+        params.execution_context_id = Some(context_id);
+    }
     let result = session.call(params.clone()).await?;
     if !missing(&result) {
         return Ok(result);

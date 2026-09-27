@@ -17,7 +17,8 @@
 //! page: JavaScript dialogs (`dialog`, and `interrupt` for the commands
 //! they stall), downloads (`downloads`), crashes, and HTTP
 //! authentication. Plan 04 adds `snapshot` (milestones 4.1 and 4.3: two
-//! engines, one output format, refs). Later plans add modules next to
+//! engines, one output format, refs), the locator engine (`locator`, 4.4)
+//! and the read commands (`read` and `find`, 4.5). Later plans add modules next to
 //! `tabs` and `navigate`: `page`, `input`, `observe`, `emulate`, `route`.
 
 mod dialog;
@@ -32,6 +33,7 @@ mod navigate;
 mod network;
 mod pattern;
 mod raw;
+mod read;
 mod request;
 mod snapshot;
 mod tabs;
@@ -55,11 +57,12 @@ pub use errors::from_cdp;
 pub use frames::{FrameInfo, WORLD_NAME, World};
 pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, parse_locator};
 pub use navigate::normalize_url;
+pub use read::check_read;
 pub use request::{
     CdpRequest, ConnectRequest, DialogPolicy, DialogRequest, DownloadsRequest, ElementState,
-    HttpCredentials, NavigateRequest, Navigation, OpenRequest, SnapshotEngine, SnapshotRequest,
-    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target, WaitFor, WaitRequest,
-    WaitUntil,
+    FindRequest, HttpCredentials, NavigateRequest, Navigation, OpenRequest, Read, ReadRequest,
+    SnapshotEngine, SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
+    Target, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_snapshot};
 pub use tabs::commands::TabClosed;

@@ -156,6 +156,46 @@ pub const COMMANDS: &[CommandSchema] = &[
         summary: "the page's accessibility tree, with refs on what can be acted on",
         schema: || schema_for!(Envelope<SnapshotData>),
     },
+    CommandSchema {
+        name: "find",
+        summary: "the nodes whose role, name or text match, best first, with refs",
+        schema: || schema_for!(Envelope<FindData>),
+    },
+    CommandSchema {
+        name: "text",
+        summary: "the visible text of the page or of each match",
+        schema: || schema_for!(Envelope<TextData>),
+    },
+    CommandSchema {
+        name: "html",
+        summary: "the HTML of the document or of an element, pretty-printed",
+        schema: || schema_for!(Envelope<HtmlData>),
+    },
+    CommandSchema {
+        name: "attr",
+        summary: "an attribute's value, or null without it",
+        schema: || schema_for!(Envelope<AttrData>),
+    },
+    CommandSchema {
+        name: "value",
+        summary: "a field's current value",
+        schema: || schema_for!(Envelope<ValueData>),
+    },
+    CommandSchema {
+        name: "count",
+        summary: "how many elements match, and how many are visible",
+        schema: || schema_for!(Envelope<CountData>),
+    },
+    CommandSchema {
+        name: "box",
+        summary: "an element's box in the viewport, in CSS pixels",
+        schema: || schema_for!(Envelope<BoxData>),
+    },
+    CommandSchema {
+        name: "markdown",
+        summary: "the page's readable content (or an element's) as Markdown",
+        schema: || schema_for!(Envelope<MarkdownData>),
+    },
 ];
 
 /// The registry entry for `name` (`"tab close"`), if any.
@@ -633,6 +673,156 @@ pub struct SnapshotNode {
     pub was: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<SnapshotNode>,
+}
+
+/// `data` of `chrome-cdp find --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FindData {
+    /// The tab searched, e.g. `t1`.
+    pub tab: String,
+    /// The main frame's URL.
+    pub url: String,
+    /// The document title.
+    pub title: String,
+    /// The words searched for.
+    pub query: String,
+    /// `--role`: the only role searched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// How many nodes matched; `matches` holds the best `--limit` of them.
+    pub count: u64,
+    /// The matches, best first (then in page order), as snapshot nodes
+    /// without children.
+    pub matches: Vec<FindMatch>,
+}
+
+/// One match of `find`: its snapshot node (with a ref unless it is
+/// text) and where it is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FindMatch {
+    #[serde(flatten)]
+    pub node: SnapshotNode,
+    /// The nearest named container around it: `form "Login"`,
+    /// `row "Invoice 12 $120"`, `iframe "Payment"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+}
+
+/// `data` of `chrome-cdp text --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TextData {
+    /// The tab read, e.g. `t1`.
+    pub tab: String,
+    /// The locator; absent for the whole page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locator: Option<String>,
+    /// The visible text of each match, in page order, whitespace tidied:
+    /// runs of spaces collapsed, lines trimmed, at most one empty line in
+    /// a row. A hidden match has empty text.
+    pub texts: Vec<String>,
+}
+
+/// `data` of `chrome-cdp html --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HtmlData {
+    /// The tab read, e.g. `t1`.
+    pub tab: String,
+    /// The locator; absent for the whole document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locator: Option<String>,
+    /// Whether the element itself is included (`--outer`, and always for
+    /// the whole document).
+    pub outer: bool,
+    /// Whether this is the browser's own serialisation (`--raw`) rather
+    /// than the pretty-printed form.
+    pub raw: bool,
+    /// The HTML.
+    pub html: String,
+}
+
+/// `data` of `chrome-cdp attr --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AttrData {
+    /// The tab read, e.g. `t1`.
+    pub tab: String,
+    pub locator: String,
+    /// The attribute's name.
+    pub name: String,
+    /// Its value; `null` when the element has no such attribute.
+    pub value: Option<String>,
+}
+
+/// `data` of `chrome-cdp value --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ValueData {
+    /// The tab read, e.g. `t1`.
+    pub tab: String,
+    pub locator: String,
+    /// What was read: `input`, `password`, `textarea`, `select`, `file`,
+    /// `output`, `progress`, `meter`, `contenteditable` (its text) or
+    /// `aria` (`aria-valuetext`, else `aria-valuenow`).
+    pub kind: String,
+    /// The value; for a multiple select or a file input, the values one
+    /// per line.
+    pub value: String,
+    /// A multiple select's selected values or a file input's file names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub values: Option<Vec<String>>,
+}
+
+/// `data` of `chrome-cdp count --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CountData {
+    /// The tab read, e.g. `t1`.
+    pub tab: String,
+    pub locator: String,
+    /// How many elements match.
+    pub count: u64,
+    /// How many of them are visible.
+    pub visible: u64,
+}
+
+/// `data` of `chrome-cdp box --json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BoxData {
+    /// The tab read, e.g. `t1`.
+    pub tab: String,
+    pub locator: String,
+    /// The element's border box in CSS pixels, relative to the top-left
+    /// corner of the tab's viewport (iframes' offsets added); `null` when
+    /// it is not rendered (`display: none`, or not in the layout).
+    #[serde(rename = "box")]
+    pub rect: Option<Rect>,
+    /// Whether any of the box is inside the viewport (scrolled into view).
+    pub in_viewport: bool,
+}
+
+/// A rectangle in CSS pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Rect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// `data` of `chrome-cdp markdown --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MarkdownData {
+    /// The tab read, e.g. `t1`.
+    pub tab: String,
+    /// The main frame's URL.
+    pub url: String,
+    /// The document title.
+    pub title: String,
+    /// The locator; absent when the page's main content was picked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locator: Option<String>,
+    /// The element converted: `main`, `article`, `div#content`, `body`,
+    /// … (tag, then `#id` or the first class).
+    pub source: String,
+    /// The content as Markdown. Links on the page's origin are relative.
+    pub markdown: String,
 }
 
 /// `data` of `chrome-cdp tabs --json`.

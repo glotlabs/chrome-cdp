@@ -336,6 +336,14 @@ impl Daemon {
                 Ok(p) => output(self.engine.snapshot(p).await),
                 Err(e) => Err(e),
             },
+            rpc::FIND => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.find(p)).await),
+                Err(e) => Err(e),
+            },
+            rpc::READ => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.read(p)).await),
+                Err(e) => Err(e),
+            },
             rpc::DOWNLOADS => match params(req.params) {
                 Ok(p) => output(self.engine.downloads(p)),
                 Err(e) => Err(e),
