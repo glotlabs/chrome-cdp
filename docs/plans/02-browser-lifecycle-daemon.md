@@ -1,6 +1,6 @@
 # Plan 02 — Browser lifecycle & daemon
 
-Status: DONE (2.1-2.4; the fresh-VM check and the benchmarks are still to run)
+Status: DONE (2.1-2.4 closed out; the fresh-VM check waits for the nightly job, and the benchmarks run after all plans)
 Depends on: 01
 
 ## Goal
@@ -230,3 +230,7 @@ _(append here)_
 - 2.4: `uninstall` refuses a browser that a live session launched.
 - 2.4: Tests run each session in a `Sandbox` (its own `XDG_RUNTIME_DIR` and `TMPDIR`, idle timeout 2 min, `close --all` on drop). CI's leftover-process step also looks for `chrome-cdp __daemon`. The golden case `missing-subcommand` is gone until a command has subcommands again (plan 03's `tab`). Golden files mask pids, uptimes, the run dir's random suffix and the Chrome version.
 - 2.4: The fresh-VM box stays open: this machine is not a fresh VM. The timing box stays open, deferred: benchmarks run after all plans. The check is written as the ignored test `crates/chrome-cdp/tests/bench.rs`, for plan 10's `xtask bench` to adopt.
+- Close-out: every bullet of 2.1-2.4 and every test in "Tests" was checked against the code. `cargo xtask ci` passes with `CHROME_PATH` set and leaves no Chrome, daemon or watchdog processes. `open https://example.com` with plain discovery finds the cache install and loads the page. The one missing test, a connected client keeping a daemon with no browser alive, was added; `__daemon` has a hidden `--no-browser-grace` flag for it.
+- Close-out: on Ubuntu 23.10+ (`apparmor_restrict_unprivileged_userns=1`), the fresh-VM sequence is `install --with-deps && open`, as the nightly job runs it. Plain `install` only warns, and `open` then fails with the `--with-deps` hint (checked here with a cache the profile does not cover). That is 2.3's rule: never drop the sandbox silently.
+- Close-out: the fresh-VM box stays open until the nightly job is green on Ubuntu x86_64 and macOS arm64; this machine already had Chrome and its libraries. The timing box stays open: deferred, benchmarks run after all plans (`tests/bench.rs`, ignored).
+- Close-out: `open --device` is still missing. Plan 07's `emulate` should add it.
