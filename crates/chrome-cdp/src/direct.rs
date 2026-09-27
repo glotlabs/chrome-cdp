@@ -16,7 +16,7 @@ use serde_json::{Map, Value};
 use tokio::signal::unix::{Signal, SignalKind, signal};
 
 use crate::cli::{DirectCdpArgs, GlobalArgs, Target};
-use crate::{errors, input};
+use crate::input;
 
 /// Runs `__direct cdp`.
 pub(crate) fn cdp(args: &DirectCdpArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
@@ -194,17 +194,17 @@ async fn call(
                 .browser()
                 .call(target::CreateTargetParams::new("about:blank".into()))
                 .await
-                .map_err(|e| errors::from_cdp(&e))?;
+                .map_err(|e| engine::from_cdp(&e, protocol::DEFAULT_SESSION))?;
             conn.attach(created.target_id)
                 .await
-                .map_err(|e| errors::from_cdp(&e))?
+                .map_err(|e| engine::from_cdp(&e, protocol::DEFAULT_SESSION))?
         }
     };
     session
         .call_raw(&args.method, Value::Object(params))
         .await
         .map_err(|e| {
-            let info = errors::from_cdp(&e);
+            let info = engine::from_cdp(&e, protocol::DEFAULT_SESSION);
             let browser_domain = ["Browser.", "Target."]
                 .iter()
                 .any(|d| args.method.starts_with(d));

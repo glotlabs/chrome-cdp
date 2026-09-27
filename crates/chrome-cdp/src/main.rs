@@ -14,7 +14,6 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Mode, Output};
 mod cli;
 mod config;
 mod direct;
-mod errors;
 mod input;
 mod install;
 mod log;

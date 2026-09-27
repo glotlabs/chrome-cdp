@@ -194,6 +194,194 @@ pub struct UninstallData {
     pub dir: String,
 }
 
+/// The state of a session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionState {
+    /// The daemon runs and has a browser.
+    Running,
+    /// The browser exited or the connection to it dropped; `open` starts a
+    /// new one.
+    Crashed,
+    /// The daemon runs but has no browser yet (it is starting, or its
+    /// launch failed).
+    Idle,
+    /// No daemon runs for this session.
+    Stopped,
+}
+
+impl SessionState {
+    /// The name used in text output.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Crashed => "crashed",
+            Self::Idle => "idle",
+            Self::Stopped => "stopped",
+        }
+    }
+}
+
+/// How a session got its browser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserKind {
+    /// chrome-cdp launched it (`open`); `close` shuts it down.
+    Launched,
+    /// An existing browser (`connect`); `close` only detaches.
+    Connected,
+}
+
+/// The browser a session drives.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserInfo {
+    /// Launched or connected.
+    pub kind: BrowserKind,
+    /// `Browser.getVersion`'s product, e.g. `HeadlessChrome/154.0.8037.57`.
+    pub product: String,
+    /// The binary launched (launched browsers).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Why that binary was picked, e.g. `found google-chrome on PATH`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// The browser's pid, which is also its process group (launched
+    /// browsers).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+    /// Whether it runs without a window (launched browsers).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headless: Option<bool>,
+    /// The profile (launched browsers).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<ProfileInfo>,
+    /// Extra flags from `--chrome-arg`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chrome_args: Vec<String>,
+    /// The DevTools WebSocket URL (connected browsers).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+}
+
+/// A launched browser's profile.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ProfileInfo {
+    /// `temporary` (deleted on close), `named` (`--profile`) or `dir`
+    /// (`--user-data-dir`).
+    pub kind: String,
+    /// The `--profile` name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// The profile directory.
+    pub dir: String,
+}
+
+/// A page, after `open <url>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PageInfo {
+    /// The URL after navigation (redirects followed).
+    pub url: String,
+    /// The document title.
+    pub title: String,
+}
+
+/// `data` of `chrome-cdp open --json` and `chrome-cdp connect --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct OpenData {
+    /// The session name.
+    pub session: String,
+    /// Whether this call started the browser (or attached to it); `false`
+    /// when the session already had it.
+    pub started: bool,
+    /// The browser.
+    pub browser: BrowserInfo,
+    /// The page opened, when a URL was given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page: Option<PageInfo>,
+}
+
+/// `data` of `chrome-cdp close --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CloseData {
+    /// Each session asked to close.
+    pub sessions: Vec<ClosedSession>,
+}
+
+/// One session in `chrome-cdp close`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ClosedSession {
+    /// The session name.
+    pub session: String,
+    /// Whether it was running; closing a stopped session does nothing.
+    pub was_running: bool,
+    /// What happened to its browser: `closed` (launched), `detached`
+    /// (connected), or `none`.
+    pub browser: String,
+}
+
+/// `data` of `chrome-cdp status --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct StatusData {
+    /// The session name.
+    pub session: String,
+    /// Its state.
+    pub state: SessionState,
+    /// The browser, when there is one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser: Option<BrowserInfo>,
+    /// Why the browser went away (state `crashed`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub crash: Option<String>,
+    /// Open pages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tabs: Option<u32>,
+    /// Milliseconds since the browser started (or was attached).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uptime_ms: Option<u64>,
+    /// The daemon's pid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub daemon_pid: Option<u32>,
+    /// Milliseconds of inactivity before the daemon closes the browser and
+    /// exits; 0 means never.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_timeout_ms: Option<u64>,
+    /// The session directory (socket, logs, `meta.json`).
+    pub dir: String,
+    /// With `--logs`: the last lines of Chrome's stderr (`chrome.log`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logs: Option<Vec<String>>,
+}
+
+/// `data` of `chrome-cdp sessions --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SessionsData {
+    /// Every session with a live daemon, by name.
+    pub sessions: Vec<SessionEntry>,
+}
+
+/// One line of `chrome-cdp sessions`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SessionEntry {
+    /// The session name.
+    pub session: String,
+    /// Its state.
+    pub state: SessionState,
+    /// `Browser.getVersion`'s product, when there is a browser.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub product: Option<String>,
+    /// Launched or connected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<BrowserKind>,
+    /// Open pages.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tabs: Option<u32>,
+    /// Milliseconds since the browser started.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uptime_ms: Option<u64>,
+    /// The daemon's pid.
+    pub daemon_pid: u32,
+}
+
 /// The `--json` envelope (see [`crate::Envelope`]) with `data: T`.
 #[derive(JsonSchema)]
 #[serde(untagged)]

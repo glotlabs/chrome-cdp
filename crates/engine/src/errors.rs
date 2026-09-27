@@ -1,13 +1,14 @@
-//! Mapping library errors to user-facing [`ErrorInfo`]s (plan 08 §3).
+//! Mapping CDP client errors to user-facing [`ErrorInfo`]s (plan 08 §3).
 
 use cdp::CdpError;
 use protocol::format;
-use protocol::{ErrorInfo, ErrorKind};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 use serde_json::json;
 
 /// Maps a CDP client error to its kind, message and generic hint. Commands
-/// replace the hint when they know a better next step.
-pub(crate) fn from_cdp(err: &CdpError) -> ErrorInfo {
+/// replace the hint when they know a better next step. Hints name
+/// `session`.
+pub fn from_cdp(err: &CdpError, session: &str) -> ErrorInfo {
     match err {
         CdpError::Protocol {
             method,
@@ -30,7 +31,7 @@ pub(crate) fn from_cdp(err: &CdpError) -> ErrorInfo {
             ErrorKind::BrowserCrashed,
             format!("Chrome went away: {reason}"),
         )
-        .hint("run the command again; add -vv to see Chrome's output"),
+        .hint(crashed_hint(session)),
         CdpError::Timeout { method, after } => ErrorInfo::new(
             ErrorKind::Timeout,
             format!(
@@ -49,6 +50,17 @@ pub(crate) fn from_cdp(err: &CdpError) -> ErrorInfo {
     }
 }
 
+/// What to run after the browser went away.
+pub(crate) fn crashed_hint(session: &str) -> Hint {
+    Hint::run(Cmd::new("open").session(session))
+        .why("starts a new browser")
+        .or(Cmd::new("status")
+            .session(session)
+            .switch("logs")
+            .to_string()
+            + " shows why")
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -60,12 +72,15 @@ mod tests {
 
     #[test]
     fn unknown_method_points_at_the_domain_docs() {
-        let err = from_cdp(&CdpError::Protocol {
-            method: "Nope.nope".into(),
-            code: -32601,
-            message: "'Nope.nope' wasn't found".into(),
-            data: None,
-        });
+        let err = from_cdp(
+            &CdpError::Protocol {
+                method: "Nope.nope".into(),
+                code: -32601,
+                message: "'Nope.nope' wasn't found".into(),
+                data: None,
+            },
+            "default",
+        );
         assert_eq!(err.kind, ErrorKind::ProtocolError);
         assert_eq!(
             err.to_text(),
@@ -76,10 +91,13 @@ mod tests {
 
     #[test]
     fn timeout_suggests_a_longer_one() {
-        let err = from_cdp(&CdpError::Timeout {
-            method: "Runtime.evaluate".into(),
-            after: Duration::from_millis(500),
-        });
+        let err = from_cdp(
+            &CdpError::Timeout {
+                method: "Runtime.evaluate".into(),
+                after: Duration::from_millis(500),
+            },
+            "default",
+        );
         assert_eq!(err.exit_code(), 3);
         assert_eq!(
             err.to_text(),
@@ -90,10 +108,17 @@ mod tests {
 
     #[test]
     fn disconnect_is_a_browser_crash() {
-        let err = from_cdp(&CdpError::Disconnected {
-            reason: "pipe closed".into(),
-        });
+        let err = from_cdp(
+            &CdpError::Disconnected {
+                reason: "pipe closed".into(),
+            },
+            "default",
+        );
         assert_eq!(err.kind, ErrorKind::BrowserCrashed);
         assert_eq!(err.exit_code(), 4);
+        assert_eq!(
+            err.hint.as_deref(),
+            Some("chrome-cdp open   (starts a new browser), or chrome-cdp status --logs shows why")
+        );
     }
 }

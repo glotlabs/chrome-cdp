@@ -104,7 +104,7 @@ pub struct RpcError {
     pub message: String,
     /// The error to show the user.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub data: Option<ErrorInfo>,
+    pub data: Option<Box<ErrorInfo>>,
 }
 
 impl RpcError {
@@ -133,7 +133,7 @@ impl RpcError {
         Self {
             code: Self::COMMAND_FAILED,
             message: info.message.clone(),
-            data: Some(info),
+            data: Some(Box::new(info)),
         }
     }
 
@@ -142,7 +142,7 @@ impl RpcError {
     /// understand each other).
     pub fn into_error_info(self) -> ErrorInfo {
         match self.data {
-            Some(info) => info,
+            Some(info) => *info,
             None => ErrorInfo::new(
                 ErrorKind::DaemonUnavailable,
                 format!("the session daemon rejected the call: {}", self.message),
