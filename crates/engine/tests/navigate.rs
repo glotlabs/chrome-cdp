@@ -10,6 +10,7 @@ use std::io::{Read as _, Write as _};
 use std::net::TcpListener;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use browser::Host;
@@ -411,32 +412,51 @@ async fn reload_loads_the_page_again() {
     engine.close().await;
 }
 
-/// Serves one page on a port, then stops listening.
-fn serve_once() -> String {
+/// Serves one page on a port until `stop` is called, then stops
+/// listening. Every request gets the page, and a connection that sends
+/// nothing (a preconnect) is let go, so the page load cannot miss it.
+fn serve_until_stopped() -> (String, impl FnOnce()) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}/", listener.local_addr().unwrap());
-    std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        let mut buf = [0; 4096];
-        let _ = stream.read(&mut buf);
-        let body = "<title>Once</title>once";
-        let _ = write!(
-            stream,
-            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
+    let addr = listener.local_addr().unwrap();
+    let stopped = Arc::new(AtomicBool::new(false));
+    let server = std::thread::spawn({
+        let stopped = stopped.clone();
+        move || {
+            for stream in listener.incoming() {
+                if stopped.load(Ordering::SeqCst) {
+                    break;
+                }
+                let Ok(mut stream) = stream else { continue };
+                let mut buf = [0; 4096];
+                if !matches!(stream.read(&mut buf), Ok(n) if n > 0) {
+                    continue;
+                }
+                let body = "<title>Once</title>once";
+                let _ = write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+            }
+        }
     });
-    url
+    let stop = move || {
+        stopped.store(true, Ordering::SeqCst);
+        // Wake the accept loop; it drops the listener as it ends.
+        let _ = std::net::TcpStream::connect(addr);
+        server.join().unwrap();
+    };
+    (format!("http://{addr}/"), stop)
 }
 
 #[tokio::test]
 async fn a_reload_that_fails_says_why() {
     let Some(path) = chrome_path() else { return };
     let engine = start(&path).await;
-    let url = serve_once();
+    let (url, stop) = serve_until_stopped();
     let (page, _) = ok(&engine, goto(&url)).await;
     assert_eq!(page.title, "Once");
-    // The server is gone now.
+    stop();
     let err = nav(
         &engine,
         Navigation::Reload { hard: false },
