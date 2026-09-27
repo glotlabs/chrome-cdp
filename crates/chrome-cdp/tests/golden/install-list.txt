@@ -1,0 +1,21 @@
+$ chrome-cdp install --list
+exit: 0
+--- stdout
+installed:
+(none)
+
+available (Chrome for Testing, linux64):
+CHANNEL  VERSION        INSTALLED
+stable   154.0.8037.57  -
+beta     155.0.8059.12  -
+dev      156.0.8072.0   -
+canary   156.0.8075.0   -
+
+$ chrome-cdp install --list --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"available":[{"channel":"stable","installed":null,"version":"154.0.8037.57"},{"channel":"beta","installed":null,"version":"155.0.8059.12"},{"channel":"dev","installed":null,"version":"156.0.8072.0"},{"channel":"canary","installed":null,"version":"156.0.8075.0"}],"installed":[],"platform":"linux64"}}
+
+$ chrome-cdp install --list -q
+exit: 0
+

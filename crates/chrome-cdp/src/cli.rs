@@ -113,6 +113,29 @@ Examples:
   chrome-cdp schema version         # the schema of chrome-cdp --version --json")]
     Schema(SchemaArgs),
 
+    /// Download Chrome for Testing into chrome-cdp's cache.
+    #[command(after_help = "\
+The cache is $CHROME_CDP_CACHE, else ~/.cache/chrome-cdp (Linux) or
+~/Library/Caches/chrome-cdp (macOS). --timeout bounds connecting and each
+wait for data, not the whole download. CHROME_CDP_CFT_URL points at a
+mirror of the Chrome for Testing index.
+
+Examples:
+  chrome-cdp install                       # the current stable Chrome
+  chrome-cdp install --headless-shell      # smaller, headless only
+  chrome-cdp install --channel beta
+  chrome-cdp install --version 154         # the newest 154.x
+  chrome-cdp install --with-deps           # Linux: also the system libraries
+  chrome-cdp install --list")]
+    Install(InstallArgs),
+
+    /// Remove a browser installed by `chrome-cdp install`.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp install --list                # shows the ids
+  chrome-cdp uninstall stable-154.0.8037.57-linux64")]
+    Uninstall(UninstallArgs),
+
     /// Temporary daemon-less commands (plan 01). Plan 02 replaces them.
     #[command(name = "__direct", hide = true, subcommand)]
     Direct(DirectCommand),
@@ -123,6 +146,65 @@ pub(crate) struct SchemaArgs {
     /// The command, e.g. `version` or `tab close`; omit it to list them.
     #[arg(value_name = "COMMAND")]
     pub(crate) command: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct InstallArgs {
+    /// The release channel to install.
+    #[arg(long, value_enum, default_value_t = Channel::Stable, conflicts_with = "version")]
+    pub(crate) channel: Channel,
+
+    /// A version, or the start of one: 154, 154.0.8037.57.
+    #[arg(long, value_name = "VERSION")]
+    pub(crate) version: Option<String>,
+
+    /// Install chrome-headless-shell (smaller, headless only) instead of
+    /// full Chrome.
+    #[arg(long)]
+    pub(crate) headless_shell: bool,
+
+    /// Download again even if it is installed.
+    #[arg(long)]
+    pub(crate) force: bool,
+
+    /// Linux: also install the system libraries Chrome needs, with sudo
+    /// apt-get or dnf (asks first on a terminal).
+    #[arg(long)]
+    pub(crate) with_deps: bool,
+
+    /// List the installed browsers and each channel's current version.
+    #[arg(
+        long,
+        conflicts_with_all = ["version", "headless_shell", "force", "with_deps"]
+    )]
+    pub(crate) list: bool,
+}
+
+/// A Chrome release channel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum Channel {
+    Stable,
+    Beta,
+    Dev,
+    Canary,
+}
+
+impl Channel {
+    pub(crate) fn to_browser(self) -> browser::Channel {
+        match self {
+            Self::Stable => browser::Channel::Stable,
+            Self::Beta => browser::Channel::Beta,
+            Self::Dev => browser::Channel::Dev,
+            Self::Canary => browser::Channel::Canary,
+        }
+    }
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct UninstallArgs {
+    /// The install id, as `chrome-cdp install --list` shows it.
+    #[arg(value_name = "ID")]
+    pub(crate) id: String,
 }
 
 #[derive(Debug, Subcommand)]
@@ -151,6 +233,16 @@ pub(crate) struct DirectCdpArgs {
     /// then browsers from `chrome-cdp install`, then a system Chrome.
     #[arg(long, value_name = "PATH")]
     pub(crate) chrome: Option<PathBuf>,
+
+    /// If no Chrome is found, install Chrome for Testing first.
+    #[arg(
+        long,
+        env = "CHROME_CDP_AUTO_INSTALL",
+        action = ArgAction::SetTrue,
+        value_parser = BoolishValueParser::new(),
+        hide_env_values = true
+    )]
+    pub(crate) auto_install: bool,
 
     /// Send the call to the browser, or to a new about:blank page.
     #[arg(long, value_enum, default_value_t = Target::Browser)]
@@ -247,8 +339,9 @@ mod tests {
     }
 
     /// Commands whose output cannot grow with the page, so they need no
-    /// `--max-chars`/`--limit`.
-    const FIXED_SIZE: &[&str] = &["schema"];
+    /// `--max-chars`/`--limit`. (`install --list` grows only with the
+    /// browsers the user installed.)
+    const FIXED_SIZE: &[&str] = &["schema", "install", "uninstall"];
 
     /// The plan 08 checklist: every command has an example in its help, a
     /// registered `--json` schema, the global flags, and a bounded output.

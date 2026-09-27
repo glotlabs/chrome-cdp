@@ -1,0 +1,12 @@
+$ chrome-cdp uninstall stable-1.0.0.0-linux64
+exit: 2
+--- stderr
+error: no browser stable-1.0.0.0-linux64 is installed
+  installed: none
+  hint: chrome-cdp install --list
+
+$ chrome-cdp uninstall stable-1.0.0.0-linux64 --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"no browser stable-1.0.0.0-linux64 is installed","hint":"chrome-cdp install --list","notes":[{"label":"installed","text":"none"}],"details":{"installed":[]}}}
+

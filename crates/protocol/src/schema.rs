@@ -52,6 +52,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<SchemaData>),
     },
     CommandSchema {
+        name: "install",
+        summary: "the browser installed, or with --list the installed and available ones",
+        schema: || schema_for!(Envelope<InstallData>),
+    },
+    CommandSchema {
+        name: "uninstall",
+        summary: "the browser removed",
+        schema: || schema_for!(Envelope<UninstallData>),
+    },
+    CommandSchema {
         name: "__direct cdp",
         summary: "the raw CDP result object (temporary; plan 02's cdp returns the same)",
         schema: || schema_for!(Envelope<Map<String, Value>>),
@@ -94,6 +104,90 @@ pub struct SchemaListEntry {
     pub name: String,
     /// What its `data` holds.
     pub summary: String,
+}
+
+/// `data` of `chrome-cdp install --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum InstallData {
+    /// `chrome-cdp install`: the browser now in the cache.
+    Installed(InstalledBrowser),
+    /// `chrome-cdp install --list`.
+    List(InstallList),
+}
+
+/// A browser `chrome-cdp install` put in the cache.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InstalledBrowser {
+    /// `<channel>-<version>-<platform>`; `chrome-cdp uninstall` takes it.
+    pub id: String,
+    /// `stable`, `beta`, `dev`, `canary`, or `pinned` for a `--version` no
+    /// channel is on.
+    pub channel: String,
+    /// E.g. `154.0.8037.57`.
+    pub version: String,
+    /// The Chrome for Testing platform, e.g. `linux64` or `mac-arm64`.
+    pub platform: String,
+    /// `chrome` or `chrome-headless-shell`.
+    pub product: String,
+    /// The binary to launch.
+    pub path: String,
+    /// Whether this run downloaded it; `false` when it was already there.
+    pub downloaded: bool,
+    /// The bytes downloaded (0 when nothing was).
+    pub download_size: u64,
+    /// System packages `--with-deps` installed.
+    #[serde(default)]
+    pub packages_installed: Vec<String>,
+}
+
+/// `data` of `chrome-cdp install --list`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InstallList {
+    /// This machine's Chrome for Testing platform; `null` where there is no
+    /// build.
+    pub platform: Option<String>,
+    /// Complete installs for this platform, in the order discovery prefers
+    /// them.
+    pub installed: Vec<InstallListEntry>,
+    /// Each channel's current version. Empty when the index cannot be
+    /// fetched (a warning says why).
+    pub available: Vec<AvailableBrowser>,
+}
+
+/// One install in `chrome-cdp install --list`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InstallListEntry {
+    /// `<channel>-<version>-<platform>`.
+    pub id: String,
+    /// `stable`, `beta`, `dev`, `canary` or `pinned`.
+    pub channel: String,
+    /// E.g. `154.0.8037.57`.
+    pub version: String,
+    /// `chrome` and/or `chrome-headless-shell`.
+    pub products: Vec<String>,
+    /// The binary launched from this install (full Chrome if present).
+    pub path: String,
+}
+
+/// A channel's current version in `chrome-cdp install --list`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AvailableBrowser {
+    /// `stable`, `beta`, `dev` or `canary`.
+    pub channel: String,
+    /// E.g. `154.0.8037.57`.
+    pub version: String,
+    /// The install id when this version is installed.
+    pub installed: Option<String>,
+}
+
+/// `data` of `chrome-cdp uninstall --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct UninstallData {
+    /// The install id removed.
+    pub id: String,
+    /// The directory removed.
+    pub dir: String,
 }
 
 /// The `--json` envelope (see [`crate::Envelope`]) with `data: T`.

@@ -26,7 +26,7 @@ pub use cft::{
     parse_channels, version_release,
 };
 pub use deps::{CannotRun, DepsFix, Distro, check_runs, chromium_package_line, missing_libraries};
-pub use discover::{Chrome, DiscoverError, Problem, Source, discover, locate};
+pub use discover::{Chrome, DiscoverError, Problem, Remedy, Source, discover, locate};
 pub use host::{Arch, CACHE_ENV, CHROME_ENV, Host, INDEX_ENV, Os};
 pub use install::{
     InstallError, Installation, PINNED, Progress, Request, channels, install, uninstall,

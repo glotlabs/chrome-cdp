@@ -1,0 +1,11 @@
+$ chrome-cdp install --list --force
+exit: 2
+--- stderr
+error: the argument '--list' cannot be used with '--force'
+  hint: chrome-cdp install --help
+
+$ chrome-cdp install --list --force --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"the argument '--list' cannot be used with '--force'","hint":"chrome-cdp install --help"}}
+

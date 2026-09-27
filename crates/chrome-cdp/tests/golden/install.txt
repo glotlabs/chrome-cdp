@@ -1,0 +1,15 @@
+$ chrome-cdp install
+exit: 0
+--- stdout
+installed Chrome for Testing 154.0.8037.57 (stable), 600B: <tmp>/browsers/stable-154.0.8037.57-linux64/chrome-linux64/chrome
+
+$ chrome-cdp install --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"channel":"stable","download_size":0,"downloaded":false,"id":"stable-154.0.8037.57-linux64","packages_installed":[],"path":"<tmp>/browsers/stable-154.0.8037.57-linux64/chrome-linux64/chrome","platform":"linux64","product":"chrome","version":"154.0.8037.57"}}
+
+$ chrome-cdp install -q
+exit: 0
+--- stdout
+<tmp>/browsers/stable-154.0.8037.57-linux64/chrome-linux64/chrome
+

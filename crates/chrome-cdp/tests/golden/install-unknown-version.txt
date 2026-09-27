@@ -1,0 +1,12 @@
+$ chrome-cdp install --version 99
+exit: 2
+--- stderr
+error: Chrome for Testing has no version 99
+  newest: 156.0.8075.0
+  hint: chrome-cdp install --list   (shows each channel's current version)
+
+$ chrome-cdp install --version 99 --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"Chrome for Testing has no version 99","hint":"chrome-cdp install --list   (shows each channel's current version)","notes":[{"label":"newest","text":"156.0.8075.0"}]}}
+

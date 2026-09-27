@@ -3,7 +3,8 @@
 //!
 //! It launches Chrome over `--remote-debugging-pipe` with a throwaway
 //! profile, makes one call, prints the result, and closes Chrome. Chrome is
-//! found by `browser::discover` (milestone 2.1). Plan 02 replaces this with
+//! found by `browser::discover` (milestone 2.1), and with `--auto-install`
+//! installed first if there is none (2.2). Plan 02 replaces this with
 //! the daemon-backed `chrome-cdp cdp` and moves the launch flags into the
 //! `browser` crate; delete this module then.
 
@@ -55,8 +56,8 @@ pub(crate) fn cdp(args: &DirectCdpArgs, global: &GlobalArgs) -> Result<Output, E
     // Check everything that needs no browser before starting one.
     check_method(&args.method)?;
     let params = parse_params(args.params.as_deref())?;
-    let found = ::browser::discover(args.chrome.as_deref(), &::browser::Host::current())
-        .map_err(|e| e.to_error_info())?;
+    let found =
+        crate::install::find_chrome(args.chrome.as_deref(), args.auto_install, global.timeout)?;
     tracing::info!(
         chrome = %found.path.display(),
         version = found.version.as_ref().map(ToString::to_string),

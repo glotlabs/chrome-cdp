@@ -16,8 +16,10 @@ mod config;
 mod direct;
 mod errors;
 mod input;
+mod install;
 mod log;
 mod output;
+mod progress;
 mod schema;
 mod version;
 
@@ -45,6 +47,8 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         None => Err(ErrorInfo::new(ErrorKind::BadArgs, "no command given")
             .hint(Cmd::new("").switch("help"))),
         Some(Command::Schema(args)) => schema::run(&args),
+        Some(Command::Install(args)) => install::install(&args, cli.global.timeout),
+        Some(Command::Uninstall(args)) => install::uninstall(&args),
         Some(Command::Direct(DirectCommand::Cdp(args))) => direct::cdp(&args, &cli.global),
     }
 }

@@ -38,6 +38,9 @@ enum Fixture {
     MissingChromeEnv,
     /// Runs in a directory whose `.chrome-cdp.toml` has a typo.
     BadConfig,
+    /// A fake Chrome for Testing index (`<cft>`) and an empty cache in the
+    /// temp dir. Linux x86_64 only: it serves `linux64` builds.
+    FakeCft,
 }
 
 struct Case {
@@ -111,6 +114,36 @@ const CASES: &[Case] = &[
         args: &["schema", "nope"],
         modes: ERR,
         fixture: Fixture::None,
+    },
+    Case {
+        name: "install",
+        args: &["install"],
+        modes: ALL,
+        fixture: Fixture::FakeCft,
+    },
+    Case {
+        name: "install-list",
+        args: &["install", "--list"],
+        modes: ALL,
+        fixture: Fixture::FakeCft,
+    },
+    Case {
+        name: "install-unknown-version",
+        args: &["install", "--version", "99"],
+        modes: ERR,
+        fixture: Fixture::FakeCft,
+    },
+    Case {
+        name: "install-list-conflicts",
+        args: &["install", "--list", "--force"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "uninstall-missing",
+        args: &["uninstall", "stable-1.0.0.0-linux64"],
+        modes: ERR,
+        fixture: Fixture::FakeCft,
     },
     Case {
         name: "direct-bad-method",
@@ -322,7 +355,8 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
     let dir = tempfile::tempdir().unwrap();
     let mut norm = base.with(dir.path(), "<tmp>");
     let mut cwd = None;
-    let mut env = None;
+    let mut env: Vec<(&str, String)> = Vec::new();
+    let mut _server = None;
     let chrome = match case.fixture {
         Fixture::None => None,
         Fixture::Chrome => {
@@ -347,12 +381,23 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
             Some(chrome)
         }
         Fixture::MissingChromeEnv => {
-            env = Some(("CHROME_CDP_CHROME", "/nonexistent/chrome"));
+            env.push(("CHROME_CDP_CHROME", "/nonexistent/chrome".into()));
             None
         }
         Fixture::BadConfig => {
             std::fs::write(dir.path().join(".chrome-cdp.toml"), "sesion = \"shop\"\n").unwrap();
             cwd = Some(dir.path().to_owned());
+            None
+        }
+        Fixture::FakeCft => {
+            if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+                return None;
+            }
+            let server = browser::testing::FakeCft::start("linux64");
+            norm = norm.with(Path::new(&server.url), "<cft>");
+            env.push(("CHROME_CDP_CFT_URL", server.url.clone()));
+            env.push(("CHROME_CDP_CACHE", dir.path().display().to_string()));
+            _server = Some(server);
             None
         }
     };
@@ -375,9 +420,7 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
         if let Some(cwd) = &cwd {
             cmd.current_dir(cwd);
         }
-        if let Some((key, value)) = env {
-            cmd.env(key, value);
-        }
+        cmd.envs(env.iter().map(|(k, v)| (k, v)));
         let result = cmd.output().unwrap();
         let shown: Vec<_> = args.iter().map(|a| shell_words(a)).collect();
         let _ = writeln!(out, "$ chrome-cdp {}", shown.join(" ").trim_end());
