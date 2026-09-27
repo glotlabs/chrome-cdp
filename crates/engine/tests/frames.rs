@@ -351,3 +351,80 @@ async fn cdp_calls_reach_a_frame_and_its_main_world() {
     assert_eq!(url, site.url_b("/frames/leaf.html"));
     engine.close().await;
 }
+
+/// A Chrome started with a DevTools port on `url`, and its profile dir.
+fn debug_chrome(path: &std::path::Path, url: &str) -> (std::process::Child, PathBuf, String) {
+    let profile = std::env::temp_dir().join(format!("engine-frames-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&profile);
+    std::fs::create_dir_all(&profile).unwrap();
+    let child = std::process::Command::new(path)
+        .args([
+            "--headless",
+            "--remote-debugging-port=0",
+            "--no-first-run",
+            "--no-default-browser-check",
+        ])
+        .arg(format!("--user-data-dir={}", profile.display()))
+        .arg(url)
+        .env("TMPDIR", &profile)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let active = profile.join("DevToolsActivePort");
+    let start = Instant::now();
+    let port = loop {
+        if let Ok(text) = std::fs::read_to_string(&active)
+            && text.lines().count() >= 2
+        {
+            break text.lines().next().unwrap().to_owned();
+        }
+        assert!(start.elapsed() < TIMEOUT, "no DevTools port");
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    (child, profile, port)
+}
+
+async fn connect(port: &str) -> Arc<Engine> {
+    let engine = Engine::new("engine-frames-connect", None);
+    engine
+        .connect(engine::ConnectRequest {
+            endpoint: port.to_owned(),
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap();
+    engine
+}
+
+#[tokio::test]
+async fn frames_that_existed_before_connecting_are_found() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let (mut chrome, profile, port) = debug_chrome(&path, &site.url("/frames/nested.html"));
+    // Let the page and all its frames load while nobody is attached.
+    let first = connect(&port).await;
+    frames_loaded(&first, 5).await;
+    first.close().await;
+    drop(first);
+
+    let engine = connect(&port).await;
+    let frames = frames_loaded(&engine, 5).await;
+    let names: Vec<&str> = frames.iter().map(|f| f.name.as_str()).collect();
+    assert_eq!(names, ["", "local", "deep", "remote", "remote-leaf"]);
+    let leaf_b = json!(format!("leaf on {}", site.b()));
+    assert_eq!(
+        eval(&engine, Some("deep"), World::Main, "where").await,
+        leaf_b
+    );
+    for frame in [None, Some("local"), Some("remote")] {
+        let ours = eval(&engine, frame, World::Isolated, "typeof where").await;
+        assert_eq!(ours, json!("undefined"), "{frame:?}");
+        let title = eval(&engine, frame, World::Isolated, "document.title").await;
+        assert_ne!(title, json!(""), "{frame:?}");
+    }
+    engine.close().await;
+    chrome.kill().unwrap();
+    chrome.wait().unwrap();
+    let _ = std::fs::remove_dir_all(profile);
+}
