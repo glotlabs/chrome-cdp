@@ -1,0 +1,5 @@
+page t2 "Simple page" {{ORIGIN_A}}/snapshot/simple.html
+- heading "Hello, fixtures" (h1)
+- text "A short paragraph with"
+- link "a link" [e1] → /nav/a.html
+- text "in it."

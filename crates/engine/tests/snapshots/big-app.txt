@@ -1,0 +1,464 @@
+page t12 "Big app" {{ORIGIN_A}}/snapshot/big-app.html
+- banner
+  - link "Big app" [e1] → /
+  - navigation "Main" [e2]
+    - link "Section 1" [e3] → /section/1
+    - link "Section 2" [e4] → /section/2
+    - link "Section 3" [e5] → /section/3
+    - link "Section 4" [e6] → /section/4
+    - link "Section 5" [e7] → /section/5
+    - link "Section 6" [e8] → /section/6
+    - link "Section 7" [e9] → /section/7
+    - link "Section 8" [e10] → /section/8
+    - link "Section 9" [e11] → /section/9
+    - link "Section 10" [e12] → /section/10
+    - link "Section 11" [e13] → /section/11
+    - link "Section 12" [e14] → /section/12
+    - link "Section 13" [e15] → /section/13
+    - link "Section 14" [e16] → /section/14
+    - link "Section 15" [e17] → /section/15
+    - link "Section 16" [e18] → /section/16
+    - link "Section 17" [e19] → /section/17
+    - link "Section 18" [e20] → /section/18
+    - link "Section 19" [e21] → /section/19
+    - link "Section 20" [e22] → /section/20
+    - link "Section 21" [e23] → /section/21
+    - link "Section 22" [e24] → /section/22
+    - link "Section 23" [e25] → /section/23
+    - link "Section 24" [e26] → /section/24
+    - link "Section 25" [e27] → /section/25
+    - link "Section 26" [e28] → /section/26
+    - link "Section 27" [e29] → /section/27
+    - link "Section 28" [e30] → /section/28
+    - link "Section 29" [e31] → /section/29
+    - link "Section 30" [e32] → /section/30
+    - … 10 more link (use --scope e2 --all)
+  - searchbox "Search orders" [e33]
+- complementary "Folders" [e34] scrollable
+  - list [e35]
+    - listitem
+      - clickable "Folder 1" [e36]
+      - text "(7)"
+    - listitem
+      - clickable "Folder 2" [e37]
+      - text "(14)"
+    - listitem
+      - clickable "Folder 3" [e38]
+      - text "(21)"
+    - listitem
+      - clickable "Folder 4" [e39]
+      - text "(5)"
+    - listitem
+      - clickable "Folder 5" [e40]
+      - text "(12)"
+    - listitem
+      - clickable "Folder 6" [e41]
+      - text "(19)"
+    - listitem
+      - clickable "Folder 7" [e42]
+      - text "(3)"
+    - listitem
+      - clickable "Folder 8" [e43]
+      - text "(10)"
+    - listitem
+      - clickable "Folder 9" [e44]
+      - text "(17)"
+    - listitem
+      - clickable "Folder 10" [e45]
+      - text "(1)"
+    - listitem
+      - clickable "Folder 11" [e46]
+      - text "(8)"
+    - listitem
+      - clickable "Folder 12" [e47]
+      - text "(15)"
+    - listitem
+      - clickable "Folder 13" [e48]
+      - text "(22)"
+    - listitem
+      - clickable "Folder 14" [e49]
+      - text "(6)"
+    - listitem
+      - clickable "Folder 15" [e50]
+      - text "(13)"
+    - listitem
+      - clickable "Folder 16" [e51]
+      - text "(20)"
+    - listitem
+      - clickable "Folder 17" [e52]
+      - text "(4)"
+    - listitem
+      - clickable "Folder 18" [e53]
+      - text "(11)"
+    - listitem
+      - clickable "Folder 19" [e54]
+      - text "(18)"
+    - listitem
+      - clickable "Folder 20" [e55]
+      - text "(2)"
+    - listitem
+      - clickable "Folder 21" [e56]
+      - text "(9)"
+    - listitem
+      - clickable "Folder 22" [e57]
+      - text "(16)"
+    - listitem
+      - clickable "Folder 23" [e58]
+      - text "(0)"
+    - listitem
+      - clickable "Folder 24" [e59]
+      - text "(7)"
+    - listitem
+      - clickable "Folder 25" [e60]
+      - text "(14)"
+    - listitem
+      - clickable "Folder 26" [e61]
+      - text "(21)"
+    - listitem
+      - clickable "Folder 27" [e62]
+      - text "(5)"
+    - listitem
+      - clickable "Folder 28" [e63]
+      - text "(12)"
+    - listitem
+      - clickable "Folder 29" [e64]
+      - text "(19)"
+    - listitem
+      - clickable "Folder 30" [e65]
+      - text "(3)"
+    - … 30 more listitem (use --scope e35 --all)
+- main
+  - heading "Orders" (h1)
+  - toolbar "Bulk actions"
+    - button "Export" [e66]
+    - button "Archive" [e67]
+  - table [e68]
+    - row
+      - columnheader
+        - checkbox "Select all" [e69] unchecked
+      - columnheader "Order"
+      - columnheader "Customer"
+      - columnheader "Status"
+      - columnheader "Total"
+      - columnheader "Actions"
+    - row
+      - cell
+        - checkbox "Select order 1" [e70] unchecked
+      - cell
+        - link "#1001" [e71] → /orders/1
+      - cell "Customer 1"
+      - cell "Pending"
+      - cell "$13.00"
+      - cell
+        - button "Edit" [e72]
+        - button "Delete order 1" [e73]
+    - row
+      - cell
+        - checkbox "Select order 2" [e74] unchecked
+      - cell
+        - link "#1002" [e75] → /orders/2
+      - cell "Customer 2"
+      - cell "Refunded"
+      - cell "$26.00"
+      - cell
+        - button "Edit" [e76]
+        - button "Delete order 2" [e77]
+    - row
+      - cell
+        - checkbox "Select order 3" [e78] unchecked
+      - cell
+        - link "#1003" [e79] → /orders/3
+      - cell "Customer 3"
+      - cell "Paid"
+      - cell "$39.00"
+      - cell
+        - button "Edit" [e80]
+        - button "Delete order 3" [e81]
+    - row
+      - cell
+        - checkbox "Select order 4" [e82] unchecked
+      - cell
+        - link "#1004" [e83] → /orders/4
+      - cell "Customer 4"
+      - cell "Pending"
+      - cell "$52.00"
+      - cell
+        - button "Edit" [e84]
+        - button "Delete order 4" [e85]
+    - row
+      - cell
+        - checkbox "Select order 5" [e86] unchecked
+      - cell
+        - link "#1005" [e87] → /orders/5
+      - cell "Customer 5"
+      - cell "Refunded"
+      - cell "$65.00"
+      - cell
+        - button "Edit" [e88]
+        - button "Delete order 5" [e89]
+    - row
+      - cell
+        - checkbox "Select order 6" [e90] unchecked
+      - cell
+        - link "#1006" [e91] → /orders/6
+      - cell "Customer 6"
+      - cell "Paid"
+      - cell "$78.00"
+      - cell
+        - button "Edit" [e92]
+        - button "Delete order 6" [e93]
+    - row
+      - cell
+        - checkbox "Select order 7" [e94] unchecked
+      - cell
+        - link "#1007" [e95] → /orders/7
+      - cell "Customer 7"
+      - cell "Pending"
+      - cell "$91.00"
+      - cell
+        - button "Edit" [e96]
+        - button "Delete order 7" [e97]
+    - row
+      - cell
+        - checkbox "Select order 8" [e98] unchecked
+      - cell
+        - link "#1008" [e99] → /orders/8
+      - cell "Customer 8"
+      - cell "Refunded"
+      - cell "$104.00"
+      - cell
+        - button "Edit" [e100]
+        - button "Delete order 8" [e101]
+    - row
+      - cell
+        - checkbox "Select order 9" [e102] unchecked
+      - cell
+        - link "#1009" [e103] → /orders/9
+      - cell "Customer 9"
+      - cell "Paid"
+      - cell "$117.00"
+      - cell
+        - button "Edit" [e104]
+        - button "Delete order 9" [e105]
+    - row
+      - cell
+        - checkbox "Select order 10" [e106] unchecked
+      - cell
+        - link "#1010" [e107] → /orders/10
+      - cell "Customer 10"
+      - cell "Pending"
+      - cell "$130.00"
+      - cell
+        - button "Edit" [e108]
+        - button "Delete order 10" [e109]
+    - row
+      - cell
+        - checkbox "Select order 11" [e110] unchecked
+      - cell
+        - link "#1011" [e111] → /orders/11
+      - cell "Customer 11"
+      - cell "Refunded"
+      - cell "$143.00"
+      - cell
+        - button "Edit" [e112]
+        - button "Delete order 11" [e113]
+    - row
+      - cell
+        - checkbox "Select order 12" [e114] unchecked
+      - cell
+        - link "#1012" [e115] → /orders/12
+      - cell "Customer 12"
+      - cell "Paid"
+      - cell "$156.00"
+      - cell
+        - button "Edit" [e116]
+        - button "Delete order 12" [e117]
+    - row
+      - cell
+        - checkbox "Select order 13" [e118] unchecked
+      - cell
+        - link "#1013" [e119] → /orders/13
+      - cell "Customer 13"
+      - cell "Pending"
+      - cell "$169.00"
+      - cell
+        - button "Edit" [e120]
+        - button "Delete order 13" [e121]
+    - row
+      - cell
+        - checkbox "Select order 14" [e122] unchecked
+      - cell
+        - link "#1014" [e123] → /orders/14
+      - cell "Customer 14"
+      - cell "Refunded"
+      - cell "$182.00"
+      - cell
+        - button "Edit" [e124]
+        - button "Delete order 14" [e125]
+    - row
+      - cell
+        - checkbox "Select order 15" [e126] unchecked
+      - cell
+        - link "#1015" [e127] → /orders/15
+      - cell "Customer 15"
+      - cell "Paid"
+      - cell "$195.00"
+      - cell
+        - button "Edit" [e128]
+        - button "Delete order 15" [e129]
+    - row
+      - cell
+        - checkbox "Select order 16" [e130] unchecked
+      - cell
+        - link "#1016" [e131] → /orders/16
+      - cell "Customer 16"
+      - cell "Pending"
+      - cell "$208.00"
+      - cell
+        - button "Edit" [e132]
+        - button "Delete order 16" [e133]
+    - row
+      - cell
+        - checkbox "Select order 17" [e134] unchecked
+      - cell
+        - link "#1017" [e135] → /orders/17
+      - cell "Customer 17"
+      - cell "Refunded"
+      - cell "$221.00"
+      - cell
+        - button "Edit" [e136]
+        - button "Delete order 17" [e137]
+    - row
+      - cell
+        - checkbox "Select order 18" [e138] unchecked
+      - cell
+        - link "#1018" [e139] → /orders/18
+      - cell "Customer 18"
+      - cell "Paid"
+      - cell "$234.00"
+      - cell
+        - button "Edit" [e140]
+        - button "Delete order 18" [e141]
+    - row
+      - cell
+        - checkbox "Select order 19" [e142] unchecked
+      - cell
+        - link "#1019" [e143] → /orders/19
+      - cell "Customer 19"
+      - cell "Pending"
+      - cell "$247.00"
+      - cell
+        - button "Edit" [e144]
+        - button "Delete order 19" [e145]
+    - row
+      - cell
+        - checkbox "Select order 20" [e146] unchecked
+      - cell
+        - link "#1020" [e147] → /orders/20
+      - cell "Customer 20"
+      - cell "Refunded"
+      - cell "$260.00"
+      - cell
+        - button "Edit" [e148]
+        - button "Delete order 20" [e149]
+    - row
+      - cell
+        - checkbox "Select order 21" [e150] unchecked
+      - cell
+        - link "#1021" [e151] → /orders/21
+      - cell "Customer 21"
+      - cell "Paid"
+      - cell "$273.00"
+      - cell
+        - button "Edit" [e152]
+        - button "Delete order 21" [e153]
+    - row
+      - cell
+        - checkbox "Select order 22" [e154] unchecked
+      - cell
+        - link "#1022" [e155] → /orders/22
+      - cell "Customer 22"
+      - cell "Pending"
+      - cell "$286.00"
+      - cell
+        - button "Edit" [e156]
+        - button "Delete order 22" [e157]
+    - row
+      - cell
+        - checkbox "Select order 23" [e158] unchecked
+      - cell
+        - link "#1023" [e159] → /orders/23
+      - cell "Customer 23"
+      - cell "Refunded"
+      - cell "$299.00"
+      - cell
+        - button "Edit" [e160]
+        - button "Delete order 23" [e161]
+    - row
+      - cell
+        - checkbox "Select order 24" [e162] unchecked
+      - cell
+        - link "#1024" [e163] → /orders/24
+      - cell "Customer 24"
+      - cell "Paid"
+      - cell "$312.00"
+      - cell
+        - button "Edit" [e164]
+        - button "Delete order 24" [e165]
+    - row
+      - cell
+        - checkbox "Select order 25" [e166] unchecked
+      - cell
+        - link "#1025" [e167] → /orders/25
+      - cell "Customer 25"
+      - cell "Pending"
+      - cell "$325.00"
+      - cell
+        - button "Edit" [e168]
+        - button "Delete order 25" [e169]
+    - row
+      - cell
+        - checkbox "Select order 26" [e170] unchecked
+      - cell
+        - link "#1026" [e171] → /orders/26
+      - cell "Customer 26"
+      - cell "Refunded"
+      - cell "$338.00"
+      - cell
+        - button "Edit" [e172]
+        - button "Delete order 26" [e173]
+    - row
+      - cell
+        - checkbox "Select order 27" [e174] unchecked
+      - cell
+        - link "#1027" [e175] → /orders/27
+      - cell "Customer 27"
+      - cell "Paid"
+      - cell "$351.00"
+      - cell
+        - button "Edit" [e176]
+        - button "Delete order 27" [e177]
+    - row
+      - cell
+        - checkbox "Select order 28" [e178] unchecked
+      - cell
+        - link "#1028" [e179] → /orders/28
+      - cell "Customer 28"
+      - cell "Pending"
+      - cell "$364.00"
+      - cell
+        - button "Edit" [e180]
+        - button "Delete order 28" [e181]
+    - row
+      - cell
+        - checkbox "Select order 29" [e182] unchecked
+      - cell
+        - link "#1029" [e183] → /orders/29
+      - cell "Customer 29"
+      - cell "Refunded"
+      - cell "$377.00"
+      - cell
+        - button "Edit" [e184]
+        - button "Delete order 29" [e185]
+    - … 271 more row (use --scope e68 --all)
+- contentinfo "Big app footer"

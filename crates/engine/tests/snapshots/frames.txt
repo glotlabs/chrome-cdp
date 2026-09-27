@@ -1,0 +1,11 @@
+page t10 "Frames" {{ORIGIN_A}}/snapshot/frames.html
+- heading "Frames" (h1)
+- iframe "Same site" [e1]
+  - text "Inside a frame."
+  - button "Frame button" [e2]
+  - link "Frame link" [e3] → /snapshot/simple.html
+- iframe "Other site" [e4]
+  - text "Inside a frame."
+  - button "Frame button" [e5]
+  - link "Frame link" [e6] → /snapshot/simple.html
+- text "After the frames."

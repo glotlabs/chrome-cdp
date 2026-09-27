@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 
 use browser::Host;
 use engine::{
-    ElementState, Engine, NavigateRequest, Navigation, OpenRequest, WaitFor, WaitRequest,
-    WaitUntil, World,
+    ElementState, Engine, NavigateRequest, Navigation, OpenRequest, SnapshotRequest, WaitFor,
+    WaitRequest, WaitUntil, World,
 };
 use fixtures::Fixtures;
 use protocol::schema::{NavigateData, WaitData};
@@ -660,7 +660,7 @@ async fn goto_settles_by_default() {
     let site = Fixtures::shared();
     let engine = start(&path).await;
     // Content rendered from data fetched after the load event is there
-    // when `goto` returns, every time.
+    // when `goto` returns, every time, in the DOM and in the snapshot.
     let runs: usize = std::env::var("CHROME_CDP_SETTLE_RUNS")
         .ok()
         .and_then(|n| n.parse().ok())
@@ -676,8 +676,31 @@ async fn goto_settles_by_default() {
         assert_eq!(nav.wait, "settle");
         assert_eq!(nav.title, "SPA: Inbox", "run {run}");
         assert!(output.warnings.is_empty(), "{:?}", output.warnings);
-        let items = eval(&engine, "document.querySelectorAll('#app li').length").await;
-        assert_eq!(items, json!(3), "run {run}");
+        // The snapshot right after `goto` shows what the app rendered
+        // (plan 03's SPA criterion).
+        let snapshot = engine
+            .snapshot(SnapshotRequest {
+                tab: None,
+                interactive: false,
+                scope: None,
+                depth: None,
+                diff: false,
+                all_refs: false,
+                all: false,
+                text_limit: 200,
+                no_text: false,
+                engine: None,
+                timeout_ms: TIMEOUT_MS,
+                max_chars: 0,
+            })
+            .await
+            .unwrap_or_else(|e| panic!("snapshot: {}", e.to_text()));
+        let expected = "\n- main\n  - heading \"Inbox\" (h1)\n  - list\n    - listitem \"one\"\n    - listitem \"two\"\n    - listitem \"three\"";
+        assert!(
+            snapshot.text.ends_with(expected),
+            "run {run}: {}",
+            snapshot.text
+        );
     }
     // A page whose DOM never stops changing still settles, after 3 s.
     goto(&engine, &site.url("/wait/animated.html")).await;

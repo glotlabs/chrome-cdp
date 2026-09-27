@@ -1,0 +1,31 @@
+page t4 "Every form control" {{ORIGIN_A}}/snapshot/forms.html
+- form "Profile"
+  - textbox "Name" [e1] value="Ada Lovelace"
+  - textbox "Email" [e2]
+  - textbox "Phone" [e3] value="555-0100" readonly
+  - textbox "Website" [e4] value="not a url" invalid
+  - searchbox "Search" [e5]
+  - spinbutton "Age" [e6] value="36"
+  - slider "Volume" [e7] value="7"
+  - textbox "Birthday" [e8] value="1815-12-10"
+  - textbox "Password" [e9] (password)
+  - textbox "Bio" [e10] value="Wrote the first program."
+  - combobox "Country" [e11] value="United Kingdom" collapsed
+    - option "Norway" [e12]
+    - option "United Kingdom" [e13] selected
+    - option "France" [e14]
+  - listbox "Languages" [e15]
+    - option "English" [e16] selected
+    - option "French" [e17]
+    - option "Italian" [e18] selected
+  - group "Plan"
+    - radio "Free" [e19] unchecked
+    - radio "Pro" [e20] checked
+  - checkbox "Newsletter" [e21] checked
+  - checkbox "Select all" [e22] mixed
+  - checkbox "Beta features" [e23] unchecked disabled
+  - textbox "Notes" [e24] required
+  - textbox "Rich text" [e25] value="Some bold text"
+  - button "Save profile" [e26]
+  - button "Reset" [e27]
+  - button "Delete account" [e28] disabled

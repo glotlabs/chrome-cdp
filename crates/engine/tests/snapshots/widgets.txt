@@ -1,0 +1,34 @@
+page t8 "ARIA widgets" {{ORIGIN_A}}/snapshot/widgets.html
+- main
+  - tablist "Sections"
+    - tab "Overview" [e1] selected
+    - tab "Settings" [e2]
+  - tabpanel "Overview"
+    - text "Overview panel"
+  - button "Account" [e3] collapsed
+  - button "Filters" [e4] expanded
+  - menu "Filters menu"
+    - menuitemcheckbox "Unread" [e5] checked
+    - menuitem "Archive" [e6]
+  - button "Italic" [e7]
+  - switch "Dark mode" [e8] checked
+  - slider "Zoom" [e9] value="150%"
+  - progressbar "Upload"
+  - combobox "City" [e10] value="Os" expanded
+  - listbox "Cities" [e11]
+    - option "Oslo" [e12] selected
+    - option "Osaka" [e13]
+  - tree "Files"
+    - treeitem "src" [e14] expanded
+      - treeitem "main.rs" [e15]
+  - status "Saved 2 minutes ago"
+  - alertdialog "Confirm delete"
+    - text "Delete this file?"
+    - button "Cancel" [e16]
+    - button "Delete" [e17]
+  - generic "Log" [e18] scrollable
+    - text "Line 1"
+    - text "Line 2"
+    - text "Line 3"
+    - text "Line 4"
+    - text "Line 5"

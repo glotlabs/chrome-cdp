@@ -1,0 +1,15 @@
+page t6 "Clickable elements" {{ORIGIN_A}}/snapshot/clickable.html
+- main
+  - clickable "Inline onclick" [e1]
+  - clickable "Delegated handler" [e2]
+  - clickable "Focusable span" [e3]
+  - text "Programmatic focus only"
+  - button "Bold" [e4] pressed
+  - text "Listener without pointer"
+  - button "Close" [e5]
+  - clickable "Product card A clickable card with a nested pointer span." [e6]
+  - list
+    - listitem "First entry" [e7]
+    - listitem "Second entry" [e8]
+  - link "Link with a pointer span" [e9] → /nav/a.html
+  - clickable "Presentation div" [e10]

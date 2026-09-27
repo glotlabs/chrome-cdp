@@ -1,0 +1,77 @@
+page t7 "Lists and tables" {{ORIGIN_A}}/snapshot/lists-tables.html
+- heading "Lists and tables" (h1)
+- heading "Fruit" (h2)
+- list
+  - listitem "Apples"
+  - listitem
+    - text "Pears"
+    - list
+      - listitem "Conference"
+      - listitem "Williams"
+- heading "Numbers" (h2)
+- list [e1]
+  - listitem "Number 1"
+  - listitem "Number 2"
+  - listitem "Number 3"
+  - listitem "Number 4"
+  - listitem "Number 5"
+  - listitem "Number 6"
+  - listitem "Number 7"
+  - listitem "Number 8"
+  - listitem "Number 9"
+  - listitem "Number 10"
+  - listitem "Number 11"
+  - listitem "Number 12"
+  - listitem "Number 13"
+  - listitem "Number 14"
+  - listitem "Number 15"
+  - listitem "Number 16"
+  - listitem "Number 17"
+  - listitem "Number 18"
+  - listitem "Number 19"
+  - listitem "Number 20"
+  - listitem "Number 21"
+  - listitem "Number 22"
+  - listitem "Number 23"
+  - listitem "Number 24"
+  - listitem "Number 25"
+  - listitem "Number 26"
+  - listitem "Number 27"
+  - listitem "Number 28"
+  - listitem "Number 29"
+  - listitem "Number 30"
+  - … 170 more listitem (use --scope e1 --all)
+- heading "Invoices" (h2)
+- table "Invoices"
+  - row
+    - columnheader "Number"
+    - columnheader "Customer"
+    - columnheader "Total"
+    - columnheader "Actions"
+  - row
+    - cell "12"
+    - cell "Ada"
+    - cell "$120"
+    - cell
+      - button "Edit" [e2]
+      - button "Delete" [e3]
+  - row
+    - cell "13"
+    - cell "Grace"
+    - cell "$80"
+    - cell
+      - button "Edit" [e4]
+      - button "Delete" [e5]
+  - row
+    - cell "14"
+    - cell "Linus"
+    - cell "$42"
+    - cell
+      - button "Edit" [e6]
+      - button "Delete" [e7]
+- heading "Glossary" (h2)
+- descriptionlist
+  - term "CDP"
+  - definition "Chrome DevTools Protocol"
+  - term "AX"
+  - definition "Accessibility"

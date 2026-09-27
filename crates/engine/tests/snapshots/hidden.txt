@@ -1,0 +1,10 @@
+page t5 "Hidden content" {{ORIGIN_A}}/snapshot/hidden.html
+- heading "Visibility" (h1)
+- text "Visible text."
+- text "Visible again inside hidden"
+- text "Off-screen text"
+- link "Skip to content" [e1] → /snapshot/hidden.html#main
+- button "Transparent button" [e2]
+- button "More details" [e3] collapsed
+- button "Open details" [e4] expanded
+- text "Expanded details text"

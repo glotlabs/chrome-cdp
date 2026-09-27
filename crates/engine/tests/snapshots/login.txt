@@ -1,0 +1,20 @@
+page t3 "Sign in – Acme" {{ORIGIN_A}}/snapshot/login.html
+- banner
+  - link "Acme" [e1] → /
+  - navigation "Main"
+    - link "Pricing" [e2] → /pricing
+    - link "Docs" [e3] → /docs
+- main
+  - heading "Sign in" (h1)
+  - form "Login"
+    - textbox "Email" [e4] required
+    - textbox "Password" [e5] (password)
+    - checkbox "Remember me" [e6] unchecked
+    - button "Sign in" [e7]
+    - alert "Invalid password"
+  - link "Forgot password?" [e8] → /forgot
+- iframe "Payment" [e9]
+  - textbox "Card number" [e10]
+- contentinfo
+  - text "© 2026 Acme"
+  - link "Terms" [e11] → https://example.com/terms
