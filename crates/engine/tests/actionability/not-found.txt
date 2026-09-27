@@ -1,0 +1,4 @@
+error: no element matches #nope
+  waited: 1.2s
+  hint: chrome-cdp snapshot --session actionable-states   (shows the page; use a ref from it)
+

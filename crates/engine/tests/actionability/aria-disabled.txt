@@ -1,0 +1,4 @@
+error: #aria is disabled: it has aria-disabled="true" on <div>
+  waited: 1.2s
+  hint: chrome-cdp snapshot --session actionable-states   (a control is often disabled until the form is complete)
+

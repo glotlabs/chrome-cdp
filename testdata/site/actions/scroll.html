@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Scroll</title>
+<style>
+  #log { position: fixed; top: 0; right: 0; margin: 0; }
+  #box { height: 200px; width: 300px; overflow: auto; margin-top: 2000px; border: 1px solid; }
+  #wide { width: 4000px; }
+</style>
+<p id="log"></p>
+<p><button id="near">Near</button></p>
+<div id="box">
+  <div style="height: 1500px"></div>
+  <button id="deep">Deep</button>
+  <div style="height: 500px"></div>
+</div>
+<div style="height: 3000px"></div>
+<div id="wide"><button id="right" style="margin-left: 3500px">Right</button></div>
+<p><button id="far">Far</button></p>
+<script src="log.js"></script>

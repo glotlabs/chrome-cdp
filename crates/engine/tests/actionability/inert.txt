@@ -1,0 +1,4 @@
+error: #inert does not receive pointer events: it has pointer-events: none
+  waited: 1.2s
+  hint: act on the element around it instead
+

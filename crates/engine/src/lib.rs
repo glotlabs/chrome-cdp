@@ -18,8 +18,10 @@
 //! they stall), downloads (`downloads`), crashes, and HTTP
 //! authentication. Plan 04 adds `snapshot` (milestones 4.1 and 4.3: two
 //! engines, one output format, refs), the locator engine (`locator`, 4.4)
-//! and the read commands (`read` and `find`, 4.5). Later plans add modules next to
-//! `tabs` and `navigate`: `page`, `input`, `observe`, `emulate`, `route`.
+//! and the read commands (`read` and `find`, 4.5). Plan 05 adds `input`,
+//! starting with the actionability pipeline every action runs (5.1).
+//! Later plans add modules next to `tabs` and `navigate`: `page`,
+//! `observe`, `emulate`, `route`.
 
 mod dialog;
 mod downloads;
@@ -27,6 +29,7 @@ mod endpoint;
 mod errors;
 mod frames;
 mod injected;
+mod input;
 mod interrupt;
 mod locator;
 mod navigate;
@@ -55,6 +58,7 @@ use tokio::sync::Notify;
 pub use endpoint::{Endpoint, parse_endpoint};
 pub use errors::from_cdp;
 pub use frames::{FrameInfo, WORLD_NAME, World};
+pub use input::{ActionPoint, Checks};
 pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, parse_locator};
 pub use navigate::normalize_url;
 pub use read::check_read;

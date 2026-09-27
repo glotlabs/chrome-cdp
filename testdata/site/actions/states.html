@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>States</title>
+<p id="log"></p>
+<button id="later" disabled>Later</button>
+<button id="never" disabled>Never</button>
+<fieldset disabled><legend>Old</legend><button id="in-fieldset">In fieldset</button></fieldset>
+<div aria-disabled="true"><span id="aria" role="button" tabindex="0">Aria</span></div>
+<input id="readonly" readonly value="fixed">
+<input id="text" value="edit me">
+<textarea id="notes"></textarea>
+<div id="editor" contenteditable="true">Rich</div>
+<input id="checkbox" type="checkbox">
+<div id="div">Just a div</div>
+<div class="modal" style="display: none"><button id="hidden">Hidden</button></div>
+<button id="invisible" style="visibility: hidden">Invisible</button>
+<div class="fade" style="opacity: 0"><button id="clear">Clear</button></div>
+<button id="empty" style="width: 0; height: 0; padding: 0; border: 0; overflow: hidden">Empty</button>
+<button id="shows" style="display: none">Shows</button>
+<div id="slot"></div>
+<script src="log.js"></script>
+<script>
+  setTimeout(() => {
+    document.getElementById('later').disabled = false;
+    document.getElementById('shows').style.display = '';
+    const b = document.createElement('button');
+    b.id = 'appears';
+    b.textContent = 'Appears';
+    document.getElementById('slot').append(b);
+  }, 500);
+</script>

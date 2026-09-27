@@ -1,0 +1,4 @@
+error: #forever did not stop moving: it is still moving
+  waited: 1.2s
+  hint: an endless animation never stops; act on it with --force
+

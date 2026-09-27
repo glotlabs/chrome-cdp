@@ -1,0 +1,14 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Shadow</title>
+<p id="log"></p>
+<div id="host"></div>
+<script src="log.js"></script>
+<script>
+  const root = document.getElementById('host').attachShadow({ mode: 'open' });
+  root.innerHTML = '<p><button id="inside"><span>Inside</span> shadow</button></p>';
+  root.addEventListener('click', (e) => {
+    const log = document.getElementById('log');
+    log.textContent = (log.textContent + ' ' + e.target.closest('[id]').id).trim();
+  });
+</script>

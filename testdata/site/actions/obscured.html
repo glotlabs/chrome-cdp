@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Obscured</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  #under { position: fixed; left: 40px; bottom: 40px; }
+  .cookie-banner { position: fixed; left: 0; right: 0; bottom: 0; height: 120px; background: #eee; z-index: 10; }
+  #inert { pointer-events: none; }
+</style>
+<p id="log"></p>
+<button id="inert">Inert</button>
+<button id="under">Sign in</button>
+<div class="cookie-banner">
+  <p>We use cookies</p>
+  <a href="/privacy">Privacy policy</a>
+  <button id="accept" onclick="this.parentElement.remove()">Accept</button>
+</div>
+<script src="log.js"></script>

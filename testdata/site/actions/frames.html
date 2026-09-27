@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Frames</title>
+<style>
+  iframe { width: 400px; height: 200px; display: block; }
+  #cover { position: absolute; left: 0; top: 0; width: 400px; height: 200px; background: rgba(0,0,0,.2); }
+  #covered-wrap { position: relative; }
+</style>
+<p id="log"></p>
+<div style="height: 1500px"></div>
+<iframe name="same" title="Same" src="/actions/frame.html"></iframe>
+<iframe name="other" title="Other" src="{{ORIGIN_B}}/actions/frame.html"></iframe>
+<div id="covered-wrap">
+  <iframe name="covered" title="Covered" src="{{ORIGIN_B}}/actions/frame.html"></iframe>
+  <div id="cover">Loading…</div>
+</div>
+<script src="log.js"></script>

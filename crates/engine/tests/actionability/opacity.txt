@@ -1,0 +1,4 @@
+error: #clear is not visible: it has opacity: 0 on <div class="fade">
+  waited: 1.2s
+  hint: chrome-cdp snapshot --session actionable-states   (shows what is on the page; it may need a click to open)
+

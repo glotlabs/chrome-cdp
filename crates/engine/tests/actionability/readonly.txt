@@ -1,0 +1,4 @@
+error: #readonly is read-only: it has the readonly attribute
+  waited: 1.2s
+  hint: chrome-cdp snapshot --session actionable-states   (shows the page's fields)
+

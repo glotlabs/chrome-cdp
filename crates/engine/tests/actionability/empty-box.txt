@@ -1,0 +1,4 @@
+error: #empty is not visible: its box is empty (0x0)
+  waited: 1.2s
+  hint: chrome-cdp snapshot --session actionable-states   (shows what is on the page; it may need a click to open)
+

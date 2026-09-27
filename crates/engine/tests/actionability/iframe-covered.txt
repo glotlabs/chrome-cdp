@@ -1,0 +1,5 @@
+error: frame=covered >> #inner is covered by another element
+  covering: div "Loading…" [e1]
+  waited: 1.2s
+  hint: chrome-cdp snapshot --scope e1 --session actionable-frames   (shows what covers it; close it first)
+

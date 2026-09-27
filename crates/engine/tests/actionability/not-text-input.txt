@@ -1,0 +1,3 @@
+error: #checkbox cannot take text: it is an <input type=checkbox>, which takes no text
+  hint: chrome-cdp snapshot -i --session actionable-states   (lists the page's text fields)
+

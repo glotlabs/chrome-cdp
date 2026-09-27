@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Moving</title>
+<style>
+  @keyframes slide { from { margin-left: 0; } to { margin-left: 300px; } }
+  #settles { animation: slide 600ms linear 1; animation-fill-mode: forwards; }
+  #forever { animation: slide 1s linear infinite alternate; }
+</style>
+<p id="log"></p>
+<p><button id="settles">Settles</button></p>
+<p><button id="forever">Forever</button></p>
+<script src="log.js"></script>

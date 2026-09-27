@@ -1,0 +1,5 @@
+error: #under is covered by another element
+  covering: div "We use cookies Privacy policy Accept" [e1]
+  waited: 1.2s
+  hint: chrome-cdp click e2 --session actionable-obscured   (button "Accept" inside it)
+
