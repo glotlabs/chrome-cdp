@@ -1,6 +1,6 @@
 # Plan 02 — Browser lifecycle & daemon
 
-Status: TODO
+Status: IN PROGRESS (2.1 done)
 Depends on: 01
 
 ## Goal
@@ -165,3 +165,13 @@ For the found browser, check the version (`--version` output, or read
 ## Decisions log
 
 _(append here)_
+- 2.1: Discovery lives in `browser` (`discover`, `locate`, `installed`, `cache_dir`). It reads the machine through a `Host` value (OS, arch, `HOME`, `PATH`, `XDG_CACHE_HOME`, `CHROME_CDP_CHROME`, `CHROME_CDP_CACHE`, and a root for fixed system paths), so the resolution-order tests run on a temp-dir "filesystem".
+- 2.1: `--chrome` no longer uses clap's `env`; discovery reads `CHROME_CDP_CHROME` itself, so it can say which one was used (`given by --chrome` / `given by CHROME_CDP_CHROME`) and word its error per source. A bad explicit path is a `ChromeNotFound` error, never a silent fallback to other browsers.
+- 2.1: `--chrome` also accepts a bare name looked up on `PATH` (`--chrome chromium`) and a macOS `.app` bundle (the binary inside it is used).
+- 2.1: Installed browsers must have `INSTALLATION_COMPLETE` and match this host's platform key. Several installs rank full Chrome before headless shell, then stable > beta > dev > canary, then the newest version. Their version comes from the directory name, so no process is run.
+- 2.1: Snap is detected by a path under `/snap/`, a symlink to `snap`, or a small wrapper script that execs `/snap/bin/…` (Ubuntu's `chromium-browser`). A snap only gets a warning for now; milestone 2.3 must put its profile outside `/tmp` and hidden dirs (snap confinement blocks `~/.cache` too).
+- 2.1: The minimum is `MIN_CHROME_MAJOR = 150` (the vendored protocol is Chrome 154's, minus 4). A unit test pins it to `PROTOCOL_REVISION`, so moving the protocol pin forces a look at it. Too old, and "cannot tell the version", are warnings, not errors. When the command then fails, they are attached to the error as `warning:` notes, because error envelopes carry no warnings.
+- 2.1: The version comes from `Info.plist` for macOS app bundles (a string search, no plist crate), else from `<chrome> --version` with a 5 s cap.
+- 2.1: `status` does not exist yet, so the choice and its reason (`Source::describe`) are logged at `-v` by `__direct cdp`. `Chrome` and `Source` are `Serialize` for milestone 2.4's `meta.json` and `status`.
+- 2.1: `--auto-install` / `CHROME_CDP_AUTO_INSTALL` and the "run `chrome-cdp install`" hint wait for milestone 2.2: a hint naming a command that does not exist would mislead. The not-found hint says to install Chrome or Chromium, pass `--chrome`, or set `CHROME_CDP_CHROME`, and lists every place searched (`searched:` note, `details.searched`).
+- 2.1: The golden case `direct-no-chrome-given` depended on what the machine has installed, so it became `direct-chrome-env-missing`. The not-found output is checked by a unit test and by a CLI test that skips on machines with a system Chrome. The test fake Chrome now answers `--version`.
