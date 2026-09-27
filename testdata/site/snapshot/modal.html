@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Modal dialog</title>
+<header>
+  <nav aria-label="Main"><a href="/">Home</a> <a href="/account">Account</a></nav>
+</header>
+<main>
+  <h1>Account</h1>
+  <p>Background text behind the dialog.</p>
+  <button id="open">Open settings</button>
+</main>
+<dialog id="settings" aria-labelledby="settings-title">
+  <h2 id="settings-title">Settings</h2>
+  <form method="dialog">
+    <label>Display name <input value="Ada"></label>
+    <label><input type="checkbox" checked> Email me</label>
+    <button id="cancel" value="cancel">Cancel</button>
+    <button id="save" value="save">Save</button>
+  </form>
+</dialog>
+<div role="dialog" aria-modal="true" aria-label="Cookie consent" style="position:fixed;bottom:0">
+  <p>We use cookies.</p>
+  <button id="accept">Accept</button>
+</div>
+<script>document.getElementById('settings').showModal();</script>

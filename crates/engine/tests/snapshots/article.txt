@@ -1,4 +1,4 @@
-page t11 "A long article" {{ORIGIN_A}}/snapshot/article.html
+page t12 "A long article" {{ORIGIN_A}}/snapshot/article.html
 - article
   - heading "The Analytical Engine" (h1)
   - text "By"

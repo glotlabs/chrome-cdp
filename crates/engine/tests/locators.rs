@@ -233,6 +233,21 @@ async fn every_grammar_form_finds_its_elements() {
         all(&engine, "testid=login", &options).await.unwrap(),
         json!(["login"])
     );
+
+    // An open modal dialog makes the rest of the page inert, so `role=`
+    // leaves it out, as the snapshot does.
+    goto(&engine, &site.url("/snapshot/modal.html")).await;
+    let options = LocateOptions::default();
+    assert_eq!(
+        all(&engine, "role=button", &options).await.unwrap(),
+        json!(["cancel", "save"])
+    );
+    assert_eq!(
+        all(&engine, "role=button[include-hidden]", &options)
+            .await
+            .unwrap(),
+        json!(["open", "cancel", "save", "accept"])
+    );
     engine.close().await;
 }
 

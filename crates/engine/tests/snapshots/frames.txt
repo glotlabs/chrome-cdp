@@ -1,4 +1,4 @@
-page t10 "Frames" {{ORIGIN_A}}/snapshot/frames.html
+page t11 "Frames" {{ORIGIN_A}}/snapshot/frames.html
 - heading "Frames" (h1)
 - iframe "Same site" [e1]
   - text "Inside a frame."

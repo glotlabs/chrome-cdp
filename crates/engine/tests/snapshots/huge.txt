@@ -1,4 +1,4 @@
-page t13 "Huge page" {{ORIGIN_A}}/snapshot/huge.html
+page t14 "Huge page" {{ORIGIN_A}}/snapshot/huge.html
 - heading "Huge page" (h1)
 - main [e1]
   - region "Section 1"

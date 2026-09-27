@@ -38,6 +38,7 @@ const CORPUS: &[&str] = &[
     "clickable",
     "lists-tables",
     "widgets",
+    "modal",
     "shadow",
     "frames",
     "article",

@@ -84,7 +84,9 @@ the last value, and the page.
 everything an agent can act on: controls, links, elements that only act like
 buttons (`clickable`: `onclick`, `tabindex`, `cursor: pointer`), scrollable
 boxes and iframes, whose content (cross-site too) is shown inside them.
-Hidden content is left out, a list is cut after 30 of a kind (`--all` shows
+A password field says `(password)` (its value is never shown) and a file
+input `(file)`. Hidden content, and the page behind an open modal dialog,
+is left out, a list is cut after 30 of a kind (`--all` shows
 them), text is cut at 200 characters (`--text-limit`) and the output at
 20,000 (`--max-chars`). `-i` keeps only what has a ref, with the landmarks,
 tables and rows around it; `--scope e12` (or any locator, e.g.

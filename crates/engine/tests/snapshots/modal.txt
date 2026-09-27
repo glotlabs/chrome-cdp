@@ -1,0 +1,8 @@
+page t9 "Modal dialog" {{ORIGIN_A}}/snapshot/modal.html
+- dialog "Settings"
+  - heading "Settings" (h2)
+  - form
+    - textbox "Display name" [e1] value="Ada" focused
+    - checkbox "Email me" [e2] checked
+    - button "Cancel" [e3]
+    - button "Save" [e4]

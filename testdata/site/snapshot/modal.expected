@@ -1,0 +1,15 @@
+# Expected snapshot of modal.html (plan 04 corpus). Lines must appear in
+# this order and at this depth (other lines may come between); [ref]
+# stands for any ref. A line starting with ! is text no line may contain.
+# A modal dialog makes the rest of the page inert: it is left out.
+- dialog "Settings"
+  - heading "Settings" (h2)
+  - form
+    - textbox "Display name" [ref] value="Ada" focused
+    - checkbox "Email me" [ref] checked
+    - button "Cancel" [ref]
+    - button "Save" [ref]
+!Open settings
+!Background text
+!Cookie consent
+!Home

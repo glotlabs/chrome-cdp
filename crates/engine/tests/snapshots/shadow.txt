@@ -1,4 +1,4 @@
-page t9 "Shadow DOM" {{ORIGIN_A}}/snapshot/shadow.html
+page t10 "Shadow DOM" {{ORIGIN_A}}/snapshot/shadow.html
 - heading "Shadow DOM" (h1)
 - heading "Slotted title" (h2)
 - button "Open shadow button" [e1]

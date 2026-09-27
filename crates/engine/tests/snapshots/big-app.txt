@@ -1,4 +1,4 @@
-page t12 "Big app" {{ORIGIN_A}}/snapshot/big-app.html
+page t13 "Big app" {{ORIGIN_A}}/snapshot/big-app.html
 - banner
   - link "Big app" [e1] → /
   - navigation "Main" [e2]
