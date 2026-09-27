@@ -357,6 +357,11 @@ pub(crate) struct DaemonArgs {
     /// The build of the CLI that starts it.
     #[arg(long, value_name = "ID")]
     pub(crate) build: String,
+
+    /// How long it waits for work while it has no browser (tests shorten
+    /// it). Default: 10s.
+    #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
+    pub(crate) no_browser_grace: Option<Duration>,
 }
 
 /// How to find and launch Chrome (`open`).

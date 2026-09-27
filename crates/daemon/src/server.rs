@@ -35,7 +35,7 @@ pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_mins(30);
 
 /// How long a daemon without a browser (its launch failed, or no `open`
 /// came) waits for work before it exits.
-const NO_BROWSER_GRACE: Duration = Duration::from_secs(10);
+pub const NO_BROWSER_GRACE: Duration = Duration::from_secs(10);
 
 /// How long a starting daemon waits for another one to let go of the lock
 /// (a client probing it holds it for an instant).
@@ -50,6 +50,8 @@ pub struct ServeOptions {
     pub session: String,
     /// The build of the CLI that started it (see `client`).
     pub build: String,
+    /// [`NO_BROWSER_GRACE`], shorter in tests.
+    pub no_browser_grace: Duration,
 }
 
 /// Runs the daemon to the end and returns its exit code.
@@ -96,6 +98,7 @@ async fn serve(opts: &ServeOptions) -> Result<u8, String> {
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_secs()),
         idle_timeout: Mutex::new(DEFAULT_IDLE_TIMEOUT),
+        no_browser_grace: opts.no_browser_grace,
         last_activity: Mutex::new(Instant::now()),
         in_flight: AtomicUsize::new(0),
         connections: AtomicUsize::new(0),
@@ -178,6 +181,7 @@ struct Daemon {
     started_at: u64,
     /// Zero means never.
     idle_timeout: Mutex<Duration>,
+    no_browser_grace: Duration,
     last_activity: Mutex<Instant>,
     in_flight: AtomicUsize,
     /// Open client connections. A CLI keeps its connection while it
@@ -233,7 +237,7 @@ impl Daemon {
             return None;
         }
         let limit = match self.engine.state() {
-            SessionState::Idle => NO_BROWSER_GRACE,
+            SessionState::Idle => self.no_browser_grace,
             _ => *lock_ignoring_poison(&self.idle_timeout),
         };
         if limit.is_zero() {

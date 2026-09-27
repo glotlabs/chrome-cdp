@@ -39,6 +39,9 @@ fn main() -> ExitCode {
         return ExitCode::from(daemon::server::run(&daemon::server::ServeOptions {
             session: cli.global.session.clone(),
             build: args.build.clone(),
+            no_browser_grace: args
+                .no_browser_grace
+                .unwrap_or(daemon::server::NO_BROWSER_GRACE),
         }));
     }
     log::init(cli.global.verbose);

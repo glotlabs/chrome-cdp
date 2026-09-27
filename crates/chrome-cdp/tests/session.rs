@@ -212,6 +212,36 @@ fn an_idle_session_shuts_down() {
 }
 
 #[test]
+fn a_connected_client_keeps_a_daemon_without_browser_alive() {
+    // As while `open --auto-install` downloads Chrome: a CLI is connected,
+    // but has sent nothing yet.
+    let sandbox = Sandbox::new();
+    let log = std::fs::File::create(sandbox.dir.path().join("daemon.log")).unwrap();
+    let mut daemon = sandbox
+        .cli()
+        .args(["__daemon", "--session", "default", "--build", "test"])
+        .args(["--no-browser-grace", "300ms"])
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let sock = sandbox.runtime_dir().join("chrome-cdp/default/sock");
+    wait_until("the daemon to listen", || sock.exists());
+    let client = std::os::unix::net::UnixStream::connect(&sock).unwrap();
+
+    std::thread::sleep(Duration::from_secs(2));
+    assert_eq!(daemon.try_wait().unwrap(), None, "exited despite a client");
+    assert_eq!(stdout(&sandbox.run(&["status", "-q"])), "idle\n");
+
+    drop(client);
+    wait_until("the daemon to exit", || {
+        daemon.try_wait().unwrap().is_some()
+    });
+    assert!(daemon.wait().unwrap().success());
+    assert_eq!(stdout(&sandbox.run(&["status", "-q"])), "stopped\n");
+}
+
+#[test]
 fn a_crash_is_reported_and_open_starts_a_new_browser() {
     let Some(chrome) = chrome_path() else { return };
     let sandbox = Sandbox::with_chrome(&chrome);
