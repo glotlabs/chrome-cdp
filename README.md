@@ -6,12 +6,15 @@ for agents: one command per step, compact output, refs instead of selectors,
 and errors that say what to run next.
 
 **Status:** early development. Sessions (`open`, `connect`, `status`,
-`sessions`, `close`), tabs (`tabs`, `tab`), raw CDP calls,
-`install`/`uninstall` and `schema` work so far:
+`sessions`, `close`), tabs (`tabs`, `tab`), navigation (`goto`, `back`,
+`forward`, `reload`), raw CDP calls, `install`/`uninstall` and `schema` work
+so far:
 
 ```sh
 chrome-cdp install                    # Chrome for Testing, if there is no Chrome
 chrome-cdp open https://example.com   # starts the session's browser
+chrome-cdp goto example.com/about     # → 200 https://example.com/about "About" (412ms)
+chrome-cdp back
 chrome-cdp cdp --target page Runtime.evaluate '{"expression":"document.title"}'
 chrome-cdp tabs                       # * t1  https://example.com/  "Example Domain"
 chrome-cdp status
@@ -39,6 +42,18 @@ blank one unless `--close-browser` closes the session. A popup (`window.open`,
 that opened it says `opened tab t3`; `open --follow-popups` makes popups
 active instead. Every new tab, frame and worker is set up before it runs any
 script.
+
+`goto <url>` loads a page and waits for its load event (`--wait
+domcontentloaded|networkidle|commit|none` for less), then prints the HTTP
+status, the final URL after redirects, the title and the time taken. A URL
+without a scheme gets `https://` (`http://` for localhost and IPs), and a
+relative one (`/login`, `./next`, `?q=1`) resolves against `base_url` from the
+config, else the current page. A 4xx/5xx status is a warning; a page that
+cannot load fails with a reason and a hint ("connection refused on
+localhost:3000 — is your dev server running?"). `back` and `forward` walk the
+tab's history (saying so at either end), and `reload [--hard]` loads the page
+again. `open --ignore-https-errors` lets a session load sites with
+self-signed certificates.
 
 Each tab's frames are tracked, cross-site (out-of-process) iframes included.
 `cdp --frame <name|url-part|id>` sends a call to one:
@@ -74,8 +89,8 @@ explains the sandbox and profile rules.
 Every command prints its result on stdout and notes and errors on stderr,
 takes `--json` (one `{"ok":…}` object) and `-q`, and exits 0 ok, 1 action
 failed, 2 usage, 3 timeout, 4 browser/daemon, 5 dialog. Defaults for
-`--session` and `--timeout` can live in `~/.config/chrome-cdp/config.toml`
-or a project's `.chrome-cdp.toml`.
+`--session`, `--timeout` and `base_url` can live in
+`~/.config/chrome-cdp/config.toml` or a project's `.chrome-cdp.toml`.
 
 ## Development
 
@@ -90,7 +105,8 @@ cargo deny check    # licenses and advisories
 Integration tests need a real Chrome: set `CHROME_PATH` to a Chrome or
 Chromium binary. They load pages from the fixture site in `testdata/site`,
 served by `crates/fixtures` on two sites (`127.0.0.1` and `localhost`, so
-frames from one in the other run out of process); `cargo xtask fixtures`
+frames from one in the other run out of process) and on an HTTPS origin with
+a self-signed certificate; `cargo xtask fixtures`
 serves it for poking at by hand. Command output is pinned by golden files in
 `crates/chrome-cdp/tests/golden/`; after an intended change, rewrite them with
 `UPDATE_GOLDEN=1 cargo test -p chrome-cdp --test golden`.
