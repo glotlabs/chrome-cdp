@@ -7,13 +7,14 @@ and errors that say what to run next.
 
 **Status:** early development. Sessions (`open`, `connect`, `status`,
 `sessions`, `close`), tabs (`tabs`, `tab`), navigation (`goto`, `back`,
-`forward`, `reload`), raw CDP calls, `install`/`uninstall` and `schema` work
-so far:
+`forward`, `reload`), `wait`, raw CDP calls, `install`/`uninstall` and
+`schema` work so far:
 
 ```sh
 chrome-cdp install                    # Chrome for Testing, if there is no Chrome
 chrome-cdp open https://example.com   # starts the session's browser
 chrome-cdp goto example.com/about     # → 200 https://example.com/about "About" (412ms)
+chrome-cdp wait --text 'Welcome back'  # instead of sleep
 chrome-cdp back
 chrome-cdp cdp --target page Runtime.evaluate '{"expression":"document.title"}'
 chrome-cdp tabs                       # * t1  https://example.com/  "Example Domain"
@@ -43,9 +44,10 @@ that opened it says `opened tab t3`; `open --follow-popups` makes popups
 active instead. Every new tab, frame and worker is set up before it runs any
 script.
 
-`goto <url>` loads a page and waits for its load event (`--wait
-domcontentloaded|networkidle|commit|none` for less), then prints the HTTP
-status, the final URL after redirects, the title and the time taken. A URL
+`goto <url>` loads a page and waits for its load event and then for the page
+to settle: no requests for 500 ms and no DOM changes for 300 ms, 5 s at most
+(`--wait load|domcontentloaded|networkidle|commit|none` for less), then prints
+the HTTP status, the final URL after redirects, the title and the time taken. A URL
 without a scheme gets `https://` (`http://` for localhost and IPs), and a
 relative one (`/login`, `./next`, `?q=1`) resolves against `base_url` from the
 config, else the current page. A 4xx/5xx status is a warning; a page that
@@ -60,6 +62,17 @@ Each tab's frames are tracked, cross-site (out-of-process) iframes included.
 `chrome-cdp cdp --frame checkout Runtime.evaluate '{"expression":"location.href"}'`
 runs in that iframe's page, whichever process it lives in. chrome-cdp's own
 scripts run in an isolated world in each frame, out of the page's reach.
+
+`wait` replaces `sleep`. It takes one condition and returns as soon as it
+holds: an element (`wait '#results'`, `wait .spinner --state hidden`; CSS or
+XPath until snapshot refs land), visible text (`--text`, `--text-gone`,
+optionally `--in <locator>`), the URL (`--url /dashboard`, a glob or
+`/regex/`), `--load`, `--idle` (network idle, not counting WebSockets,
+beacons and requests open over 10 s), `--settle`, a JavaScript expression
+(`--fn 'window.app.ready'`), or a request or response since the previous
+command (`--response '**/api/save' --status 200`). On timeout (exit 3) it says
+what it saw instead: how many elements matched, the requests still in flight,
+the URL, the last value, and the page.
 
 It finds Chrome by itself: `--chrome <path>`, then `$CHROME_CDP_CHROME`, then
 browsers installed in the chrome-cdp cache (`~/.cache/chrome-cdp`, or
@@ -88,7 +101,8 @@ explains the sandbox and profile rules.
 
 Every command prints its result on stdout and notes and errors on stderr,
 takes `--json` (one `{"ok":…}` object) and `-q`, and exits 0 ok, 1 action
-failed, 2 usage, 3 timeout, 4 browser/daemon, 5 dialog. Defaults for
+failed, 2 usage, 3 timeout, 4 browser/daemon, 5 dialog. `--timeout` defaults
+to 10 s for `wait` and 30 s for everything else. Defaults for
 `--session`, `--timeout` and `base_url` can live in
 `~/.config/chrome-cdp/config.toml` or a project's `.chrome-cdp.toml`.
 
