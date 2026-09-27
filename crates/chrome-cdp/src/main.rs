@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use clap::error::ErrorKind as ClapErrorKind;
 use clap::{CommandFactory as _, FromArgMatches as _};
-use protocol::{ErrorInfo, ErrorKind, Mode, Output};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Mode, Output};
 
 mod cli;
 mod config;
@@ -42,9 +42,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         return Ok(version::run());
     }
     match cli.command {
-        None => {
-            Err(ErrorInfo::new(ErrorKind::BadArgs, "no command given").hint("chrome-cdp --help"))
-        }
+        None => Err(ErrorInfo::new(ErrorKind::BadArgs, "no command given").hint(help_cmd())),
         Some(Command::Schema(args)) => schema::run(&args),
         Some(Command::Direct(DirectCommand::Cdp(args))) => direct::cdp(&args, &cli.global),
     }
@@ -68,8 +66,13 @@ fn usage_error(e: &clap::Error) -> u8 {
         .next()
         .unwrap_or_default()
         .trim_start_matches("error: ");
-    let info = ErrorInfo::new(ErrorKind::BadArgs, message).hint("chrome-cdp --help");
+    let info = ErrorInfo::new(ErrorKind::BadArgs, message).hint(help_cmd());
     output::print(Mode::Json, Err(info))
+}
+
+/// `chrome-cdp --help`.
+fn help_cmd() -> Cmd {
+    Cmd::new("").switch("help")
 }
 
 /// Whether `--json` was asked for, from the raw arguments (clap failed to

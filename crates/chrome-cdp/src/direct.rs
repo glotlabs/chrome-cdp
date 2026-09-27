@@ -16,7 +16,7 @@ use std::time::Duration;
 use cdp::domains::{browser, target};
 use cdp::transport::PipeTransport;
 use cdp::{CdpError, Connection, ConnectionOptions};
-use protocol::{ErrorInfo, ErrorKind, Output, format};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Output, format};
 use serde_json::{Map, Value, json};
 use tempfile::TempDir;
 use tokio::io::{AsyncBufReadExt as _, BufReader};
@@ -184,9 +184,12 @@ async fn call(
                     if args.target == Target::Browser && !browser_domain =>
                 {
                     info.hint(format!(
-                        "if {m} is a page method, send it to a page: \
-                         chrome-cdp __direct cdp --target page {m} …",
-                        m = args.method
+                        "if {m} is a page method, send it to a page: {cmd}",
+                        m = args.method,
+                        cmd = Cmd::new("__direct cdp")
+                            .flag("target", "page")
+                            .arg(&args.method)
+                            .raw("…")
                     ))
                 }
                 _ => info,
@@ -222,9 +225,10 @@ impl Chrome {
         let (transport, mut child) = PipeTransport::spawn(cmd).map_err(|e| {
             let info = launch_failed(format!("cannot start {}: {e}", path.display()));
             match e.kind() {
-                io::ErrorKind::PermissionDenied => {
-                    info.hint(format!("make it executable: chmod +x {}", path.display()))
-                }
+                io::ErrorKind::PermissionDenied => info.hint(format!(
+                    "make it executable: chmod +x {}",
+                    format::shell_quote(&path.to_string_lossy())
+                )),
                 _ => info.hint("check that --chrome points at a Chrome or Chromium binary"),
             }
         })?;
