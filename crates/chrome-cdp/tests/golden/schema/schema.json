@@ -156,6 +156,11 @@
           "type": "string"
         },
         {
+          "const": "InstallFailed",
+          "description": "Downloading or unpacking a browser (`chrome-cdp install`) failed.",
+          "type": "string"
+        },
+        {
           "const": "DialogOpen",
           "description": "A JavaScript dialog blocks the page.",
           "type": "string"

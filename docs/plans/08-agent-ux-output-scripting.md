@@ -53,7 +53,7 @@ Humans are the second user; they get colour and progress bars only on a TTY.
 | 1 | action/assertion failed (page-level) | `NotFound`, `Ambiguous`, `Obscured`, `NotEnabled`, `RefStale`, `RefDetached`, `ExpectFailed`, `EvalError`, `NavigationFailed` |
 | 2 | usage error | `BadArgs`, `BadLocator` |
 | 3 | timeout | `Timeout` (always with observed state) |
-| 4 | browser/daemon/environment | `ChromeNotFound`, `LaunchFailed`, `BrowserCrashed`, `DaemonUnavailable`, `ProtocolError` |
+| 4 | browser/daemon/environment | `ChromeNotFound`, `LaunchFailed`, `BrowserCrashed`, `DaemonUnavailable`, `ProtocolError`, `InstallFailed` |
 | 5 | dialog blocking | `DialogOpen` |
 
 Every error has:

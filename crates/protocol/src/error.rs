@@ -56,6 +56,8 @@ pub enum ErrorKind {
     DaemonUnavailable,
     /// Chrome rejected a CDP call.
     ProtocolError,
+    /// Downloading or unpacking a browser (`chrome-cdp install`) failed.
+    InstallFailed,
 
     // Exit 5.
     /// A JavaScript dialog blocks the page.
@@ -64,7 +66,7 @@ pub enum ErrorKind {
 
 impl ErrorKind {
     /// Every kind, in exit-code order.
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 19] = [
         Self::NotFound,
         Self::Ambiguous,
         Self::Obscured,
@@ -82,6 +84,7 @@ impl ErrorKind {
         Self::BrowserCrashed,
         Self::DaemonUnavailable,
         Self::ProtocolError,
+        Self::InstallFailed,
         Self::DialogOpen,
     ];
 
@@ -103,7 +106,8 @@ impl ErrorKind {
             | Self::LaunchFailed
             | Self::BrowserCrashed
             | Self::DaemonUnavailable
-            | Self::ProtocolError => 4,
+            | Self::ProtocolError
+            | Self::InstallFailed => 4,
             Self::DialogOpen => 5,
         }
     }
