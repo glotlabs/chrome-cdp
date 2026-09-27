@@ -286,6 +286,21 @@ pub const COMMANDS: &[CommandSchema] = &[
         summary: "the element that lost focus",
         schema: || schema_for!(Envelope<FocusData>),
     },
+    CommandSchema {
+        name: "upload",
+        summary: "the file input and the files it holds now",
+        schema: || schema_for!(Envelope<UploadData>),
+    },
+    CommandSchema {
+        name: "clipboard read",
+        summary: "the text on the clipboard",
+        schema: || schema_for!(Envelope<ClipboardReadData>),
+    },
+    CommandSchema {
+        name: "clipboard write",
+        summary: "how much text was put on the clipboard",
+        schema: || schema_for!(Envelope<ClipboardWriteData>),
+    },
 ];
 
 /// The registry entry for `name` (`"tab close"`), if any.
@@ -1110,6 +1125,51 @@ pub struct FocusData {
     /// The locator as given.
     pub locator: String,
     pub element: ActedElement,
+}
+
+/// A file `upload` gave a file input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct UploadedFile {
+    /// Its absolute path.
+    pub path: String,
+    /// Its name, as the page sees it.
+    pub name: String,
+    /// Its size in bytes.
+    pub size: u64,
+}
+
+/// `data` of `chrome-cdp upload --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct UploadData {
+    /// The tab acted in, e.g. `t1`.
+    pub tab: String,
+    /// The locator as given.
+    pub locator: String,
+    /// The file input, or what was clicked to open a file chooser.
+    pub element: ActedElement,
+    /// The files the input holds now (none after `--clear`).
+    pub files: Vec<UploadedFile>,
+    /// Whether the files went through a file chooser that clicking
+    /// `element` opened (else straight into the input).
+    pub chooser: bool,
+}
+
+/// `data` of `chrome-cdp clipboard read --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ClipboardReadData {
+    /// The tab whose page read it, e.g. `t1`.
+    pub tab: String,
+    /// The clipboard's text (empty when it holds none).
+    pub text: String,
+}
+
+/// `data` of `chrome-cdp clipboard write --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ClipboardWriteData {
+    /// The tab whose page wrote it, e.g. `t1`.
+    pub tab: String,
+    /// How many characters were written.
+    pub chars: usize,
 }
 
 /// `data` of `chrome-cdp tabs --json`.

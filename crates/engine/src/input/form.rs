@@ -570,7 +570,7 @@ impl Actor<'_> {
 
     /// The one element `locator` matches, waiting (until the deadline)
     /// while it matches none.
-    async fn locate_waiting(&self, locator: &Locator) -> Result<Target, ErrorInfo> {
+    pub(super) async fn locate_waiting(&self, locator: &Locator) -> Result<Target, ErrorInfo> {
         let retry = |l: &str| self.retry(l);
         loop {
             match self

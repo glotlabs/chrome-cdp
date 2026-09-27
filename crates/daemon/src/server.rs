@@ -348,6 +348,10 @@ impl Daemon {
                 Ok(p) => output(Box::pin(self.engine.act(p)).await),
                 Err(e) => Err(e),
             },
+            rpc::CLIPBOARD => match params(req.params) {
+                Ok(p) => output(self.engine.clipboard(p).await),
+                Err(e) => Err(e),
+            },
             rpc::DOWNLOADS => match params(req.params) {
                 Ok(p) => output(self.engine.downloads(p)),
                 Err(e) => Err(e),

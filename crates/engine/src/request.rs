@@ -504,6 +504,29 @@ pub struct ReadRequest {
     pub max_chars: usize,
 }
 
+/// What `clipboard` does.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ClipboardOp {
+    /// `clipboard read`: the clipboard's text.
+    Read,
+    /// `clipboard write <text>`: puts text on the clipboard.
+    Write { text: String },
+}
+
+/// `clipboard read` and `clipboard write <text>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClipboardRequest {
+    pub op: ClipboardOp,
+    /// `--tab`: the tab whose page uses the clipboard; the active one if
+    /// `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    pub timeout_ms: u64,
+    /// The output budget (0 = none), for what `read` prints.
+    pub max_chars: usize,
+}
+
 /// `find <query>`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FindRequest {
@@ -746,6 +769,18 @@ pub enum Action {
     Focus { locator: String },
     /// `blur <loc>`.
     Blur { locator: String },
+    /// `upload <loc> <file>...` (or `--clear`): files into a file input,
+    /// or into the file chooser that clicking `locator` opens.
+    Upload {
+        locator: String,
+        /// Absolute paths; empty with `clear`.
+        #[serde(default)]
+        files: Vec<String>,
+        #[serde(default)]
+        clear: bool,
+        #[serde(default)]
+        force: bool,
+    },
 }
 
 impl Action {
@@ -767,13 +802,14 @@ impl Action {
             Self::Check { .. } => "uncheck",
             Self::Focus { .. } => "focus",
             Self::Blur { .. } => "blur",
+            Self::Upload { .. } => "upload",
         }
     }
 }
 
 /// The input actions: `click`, `dblclick`, `hover`, `tap`, `mouse`,
 /// `drag`, `scroll`, `press`, `type`, `fill`, `select`, `check`,
-/// `uncheck`, `focus` and `blur`.
+/// `uncheck`, `focus`, `blur` and `upload`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ActionRequest {
     pub action: Action,

@@ -24,6 +24,7 @@
 //! Later plans add modules next to `tabs` and `navigate`: `page`,
 //! `observe`, `emulate`, `route`.
 
+mod clipboard;
 mod dialog;
 mod downloads;
 mod endpoint;
@@ -64,11 +65,11 @@ pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, parse_locato
 pub use navigate::normalize_url;
 pub use read::check_read;
 pub use request::{
-    Action, ActionRequest, Button, CdpRequest, ConnectRequest, DialogPolicy, DialogRequest,
-    DownloadsRequest, ElementState, FindRequest, HttpCredentials, Modifier, MouseOp,
-    NavigateRequest, Navigation, OpenRequest, Read, ReadRequest, ScrollTo, SnapshotEngine,
-    SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target,
-    WaitFor, WaitRequest, WaitUntil,
+    Action, ActionRequest, Button, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
+    DialogPolicy, DialogRequest, DownloadsRequest, ElementState, FindRequest, HttpCredentials,
+    Modifier, MouseOp, NavigateRequest, Navigation, OpenRequest, Read, ReadRequest, ScrollTo,
+    SnapshotEngine, SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
+    Target, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use tabs::commands::TabClosed;

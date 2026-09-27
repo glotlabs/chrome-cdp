@@ -11,9 +11,10 @@
 //! Every event is real input (`Input.dispatchMouseEvent`,
 //! `Input.dispatchKeyEvent`, `Input.insertText`) sent to the tab, so the
 //! page sees trusted events in the order a user makes them; only values
-//! that take no typing (a date, a `<select>`) are set in the page. Later
-//! milestones add files (5.4) and the post-action report (5.5) as more
-//! [`Action`]s.
+//! that take no typing (a date, a `<select>`) are set in the page.
+//! Milestone 5.4 adds `upload` (files into a file input, or the file
+//! chooser a click opens); `clipboard` lives in [`crate::clipboard`]. The
+//! post-action report (5.5) comes last.
 
 mod actionability;
 mod drag;
@@ -22,6 +23,7 @@ mod keyboard;
 mod keys;
 mod mouse;
 mod scroll;
+mod upload;
 
 use std::fmt::Write as _;
 use std::time::Duration;
@@ -125,6 +127,31 @@ pub fn check_action(req: &ActionRequest) -> Result<(), ErrorInfo> {
                     .hint(Hint::run(example.arg("")).why("clears a field")));
             }
         }
+        Action::Upload {
+            locator,
+            files,
+            clear,
+            ..
+        } => {
+            options.parse(locator)?;
+            match (clear, files.is_empty()) {
+                (true, false) => {
+                    return bad(
+                        "--clear takes no files".to_owned(),
+                        Cmd::new("upload").arg(locator).switch("clear"),
+                    );
+                }
+                (false, true) => {
+                    return bad(
+                        "upload needs a file, or --clear".to_owned(),
+                        Cmd::new("upload").arg(locator).raw("<file>"),
+                    );
+                }
+                _ => {
+                    upload::check_files(files)?;
+                }
+            }
+        }
         Action::Select {
             locator, values, ..
         } => {
@@ -220,6 +247,7 @@ impl Actor<'_> {
             Action::Select { .. } => self.select().await,
             Action::Check { .. } => self.check().await,
             Action::Focus { .. } | Action::Blur { .. } => self.focus().await,
+            Action::Upload { .. } => self.upload().await,
         }
     }
 
@@ -314,6 +342,10 @@ impl Actor<'_> {
             Action::Fill { text, .. } => cmd.arg(locator).arg(text),
             Action::Select { values, .. } => values.iter().fold(cmd.arg(locator), Cmd::arg),
             Action::Check { .. } | Action::Focus { .. } | Action::Blur { .. } => cmd.arg(locator),
+            Action::Upload { files, clear, .. } => {
+                let cmd = files.iter().fold(cmd.arg(locator), Cmd::arg);
+                if *clear { cmd.switch("clear") } else { cmd }
+            }
         }
         .session(self.session())
     }

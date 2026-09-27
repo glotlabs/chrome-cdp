@@ -27,6 +27,7 @@ pub const SNAPSHOT: &str = "snapshot";
 pub const FIND: &str = "find";
 pub const READ: &str = "read";
 pub const ACT: &str = "act";
+pub const CLIPBOARD: &str = "clipboard";
 
 /// `hello`: the first call on every connection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
