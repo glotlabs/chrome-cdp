@@ -19,7 +19,9 @@ tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 zip.workspace = true
 
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(unix)'.dependencies]
+# Removes macOS's quarantine attribute after install (also builds and is
+# tested on Linux).
 xattr = "1.6"
 
 [features]

@@ -46,7 +46,10 @@ fn install_list_and_uninstall() {
     let dir = tempfile::tempdir().unwrap();
     let cache = dir.path();
     let id = "stable-154.0.8037.57-linux64";
-    let binary = cache.join("browsers").join(id).join("chrome-linux64/chrome");
+    let binary = cache
+        .join("browsers")
+        .join(id)
+        .join("chrome-linux64/chrome");
 
     let out = run(with_fake(&server, cache).args(["install", "--json"]));
     assert_eq!(code(&out), 0);

@@ -500,13 +500,19 @@ fn remove_stale_staging(browsers: &Path) {
 
 /// Removes `com.apple.quarantine` from every file under `dir`, so
 /// Gatekeeper does not block the unsigned test build.
-#[cfg(target_os = "macos")]
 fn remove_quarantine(dir: &Path) {
-    const ATTR: &str = "com.apple.quarantine";
+    if cfg!(target_os = "macos") {
+        remove_attribute(dir, "com.apple.quarantine");
+    }
+}
+
+/// Removes the extended attribute `name` from `dir` and everything under
+/// it, without following symlinks (their targets are inside `dir`).
+#[cfg(unix)]
+fn remove_attribute(dir: &Path, name: &str) {
     let mut stack = vec![dir.to_owned()];
     while let Some(path) = stack.pop() {
-        // Not following symlinks: their targets are inside `dir` anyway.
-        let _ = xattr::remove(&path, ATTR);
+        let _ = xattr::remove(&path, name);
         if path.symlink_metadata().is_ok_and(|m| m.is_dir()) {
             stack.extend(
                 fs::read_dir(&path)
@@ -519,8 +525,8 @@ fn remove_quarantine(dir: &Path) {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-fn remove_quarantine(_dir: &Path) {}
+#[cfg(not(unix))]
+fn remove_attribute(_dir: &Path, _name: &str) {}
 
 /// The HTTP client for the index and the downloads.
 struct Client {
@@ -969,6 +975,29 @@ mod tests {
             ),
             "{text}"
         );
+    }
+
+    #[test]
+    fn removes_an_attribute_from_a_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("a/b/file");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "").unwrap();
+        std::os::unix::fs::symlink("file", dir.path().join("a/b/link")).unwrap();
+        // macOS's attribute cannot be set on Linux; a user one can.
+        let name = if cfg!(target_os = "macos") {
+            "com.apple.quarantine"
+        } else {
+            "user.chrome-cdp-test"
+        };
+        if xattr::set(&file, name, b"1").is_err() {
+            eprintln!("skipping: this filesystem has no extended attributes");
+            return;
+        }
+        xattr::set(dir.path().join("a"), name, b"1").unwrap();
+        super::remove_attribute(dir.path(), name);
+        assert_eq!(xattr::get(&file, name).unwrap(), None);
+        assert_eq!(xattr::get(dir.path().join("a"), name).unwrap(), None);
     }
 
     #[test]
