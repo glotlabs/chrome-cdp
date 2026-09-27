@@ -1,0 +1,15 @@
+$ chrome-cdp dblclick '#go'
+exit: 0
+--- stdout
+double-clicked e1 button "Go"
+
+$ chrome-cdp dblclick '#go' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"action":"dblclick","button":"left","count":2,"element":{"name":"Go","ref":"e1","role":"button","tag":"button"},"locator":"#go","point":{"x":48.0,"y":31.0},"tab":"t1"}}
+
+$ chrome-cdp dblclick '#go' -q
+exit: 0
+--- stdout
+e1
+

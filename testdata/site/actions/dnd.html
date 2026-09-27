@@ -1,0 +1,33 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Drag and drop</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  .card { width: 120px; height: 20px; padding: 10px; margin: 10px; background: #fda; }
+  #done h2 { margin: 0; height: 30px; font-size: 16px; line-height: 30px; }
+  #done { position: absolute; left: 300px; top: 10px; width: 200px; height: 200px; background: #dfd; }
+</style>
+<!-- HTML5 drag and drop: cards move into the Done zone. dragstart puts the
+     card's id in the drag data; drop reads it back. #log gets the events. -->
+<div id="todo">
+  <div class="card" id="card1" draggable="true">Card 1</div>
+  <div class="card" id="card2" draggable="true">Card 2</div>
+</div>
+<section id="done" aria-label="Done"><h2>Done</h2></section>
+<p id="log" style="position: absolute; top: 300px"></p>
+<script>
+  const log = (s) => { const l = document.getElementById('log'); l.textContent = (l.textContent + ' ' + s).trim(); };
+  for (const card of document.querySelectorAll('.card')) {
+    card.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', card.id); log('dragstart:' + card.id); });
+    card.addEventListener('dragend', () => log('dragend:' + card.id));
+  }
+  const done = document.getElementById('done');
+  done.addEventListener('dragenter', (e) => { e.preventDefault(); log('dragenter'); });
+  done.addEventListener('dragover', (e) => e.preventDefault());
+  done.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const id = e.dataTransfer.getData('text/plain');
+    done.appendChild(document.getElementById(id));
+    log('drop:' + id);
+  });
+</script>

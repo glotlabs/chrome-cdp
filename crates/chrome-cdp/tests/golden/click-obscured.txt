@@ -1,0 +1,13 @@
+$ chrome-cdp click '#under' --timeout 1s
+exit: 1
+--- stderr
+error: #under is covered by another element
+  covering: div "We use cookies Privacy policy Accept" [e1]
+  waited: 1s
+  hint: chrome-cdp click e2   (button "Accept" inside it), or chrome-cdp click '#under' --force
+
+$ chrome-cdp click '#under' --timeout 1s --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"Obscured","message":"#under is covered by another element","hint":"chrome-cdp click e2   (button \"Accept\" inside it), or chrome-cdp click '#under' --force","notes":[{"label":"covering","text":"div \"We use cookies Privacy policy Accept\" [e1]"},{"label":"waited","text":"1s"}],"details":{"check":"hit","covering":{"name":"We use cookies Privacy policy Accept","ref":"e1","role":"generic","tag":"div"},"dismiss":{"name":"Accept","ref":"e2","role":"button","tag":"button"},"locator":"#under","point":{"x":68.0,"y":387.0},"timeout_ms":1000}}}
+

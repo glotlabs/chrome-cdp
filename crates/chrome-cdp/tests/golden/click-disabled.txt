@@ -1,0 +1,12 @@
+$ chrome-cdp click '#off' --timeout 1s
+exit: 1
+--- stderr
+error: #off is disabled: it has the disabled attribute
+  waited: 1s
+  hint: chrome-cdp snapshot   (a control is often disabled until the form is complete)
+
+$ chrome-cdp click '#off' --timeout 1s --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotEnabled","message":"#off is disabled: it has the disabled attribute","hint":"chrome-cdp snapshot   (a control is often disabled until the form is complete)","notes":[{"label":"waited","text":"1s"}],"details":{"check":"enabled","locator":"#off","timeout_ms":1000,"why":"it has the disabled attribute"}}}
+

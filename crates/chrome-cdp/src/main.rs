@@ -135,6 +135,85 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             args.max_chars,
             &cli.global,
         ),
+        Some(Command::Click(args)) => session::act(
+            pointer_action(&args.pointer, |locator, modifiers, position, force| {
+                engine::Action::Click {
+                    locator,
+                    button: args.button.to_button(),
+                    count: args.count,
+                    modifiers,
+                    position,
+                    force,
+                    dblclick: false,
+                }
+            }),
+            args.pointer.refs.strict_refs,
+            &cli.global,
+        ),
+        Some(Command::Dblclick(args)) => session::act(
+            pointer_action(&args.pointer, |locator, modifiers, position, force| {
+                engine::Action::Click {
+                    locator,
+                    button: args.button.to_button(),
+                    count: 2,
+                    modifiers,
+                    position,
+                    force,
+                    dblclick: true,
+                }
+            }),
+            args.pointer.refs.strict_refs,
+            &cli.global,
+        ),
+        Some(Command::Hover(args)) => session::act(
+            pointer_action(&args.pointer, |locator, modifiers, position, force| {
+                engine::Action::Hover {
+                    locator,
+                    modifiers,
+                    position,
+                    force,
+                }
+            }),
+            args.pointer.refs.strict_refs,
+            &cli.global,
+        ),
+        Some(Command::Tap(args)) => session::act(
+            pointer_action(&args.pointer, |locator, modifiers, position, force| {
+                engine::Action::Tap {
+                    locator,
+                    modifiers,
+                    position,
+                    force,
+                }
+            }),
+            args.pointer.refs.strict_refs,
+            &cli.global,
+        ),
+        Some(Command::Drag(args)) => session::act(
+            engine::Action::Drag {
+                from: args.from.clone(),
+                to: args.to.clone(),
+                steps: args.steps,
+                force: args.force,
+            },
+            args.refs.strict_refs,
+            &cli.global,
+        ),
+        Some(Command::Scroll(args)) => session::act(
+            engine::Action::Scroll {
+                locator: args.locator.clone(),
+                by: args.by,
+                to: args.to,
+                force: args.force,
+            },
+            args.refs.strict_refs,
+            &cli.global,
+        ),
+        Some(Command::Mouse(args)) => session::act(
+            engine::Action::Mouse(mouse_op(&args.command)),
+            false,
+            &cli.global,
+        ),
         // Handled in `main`.
         Some(Command::Daemon(_)) => Ok(Output::new(serde_json::Value::Null, "")),
     }
@@ -168,7 +247,8 @@ fn usage_info(e: &clap::Error) -> ErrorInfo {
         .lines()
         .find_map(|l| l.strip_prefix("Usage: "))
         .map(command_path)
-        .unwrap_or_default();
+        // An invalid value's error shows no usage.
+        .unwrap_or_else(typed_command);
     let missing = [
         ClapErrorKind::DisplayHelpOnMissingArgumentOrSubcommand,
         ClapErrorKind::MissingSubcommand,
@@ -212,6 +292,28 @@ fn command_path(usage: &str) -> String {
         .join(" ")
 }
 
+/// The subcommand typed (`mouse move`), from the raw arguments: the words
+/// that name a subcommand of the one before (values of flags before it do
+/// not).
+fn typed_command() -> String {
+    let mut cmd = Cli::command();
+    let mut path = Vec::new();
+    for arg in std::env::args().skip(1).take_while(|a| a != "--") {
+        if arg.starts_with('-') {
+            continue;
+        }
+        let Some(sub) = cmd.find_subcommand(&arg).cloned() else {
+            if path.is_empty() {
+                continue;
+            }
+            break;
+        };
+        path.push(arg);
+        cmd = sub;
+    }
+    path.join(" ")
+}
+
 /// Whether `--json` was asked for, from the raw arguments (clap failed to
 /// parse them) or `CHROME_CDP_JSON`.
 fn json_requested() -> bool {
@@ -226,6 +328,42 @@ fn json_requested() -> bool {
         )
     });
     flag || env
+}
+
+/// The action of `click`, `dblclick`, `hover` or `tap`, from their shared
+/// arguments.
+fn pointer_action(
+    args: &cli::PointerArgs,
+    action: impl FnOnce(String, Vec<engine::Modifier>, Option<(f64, f64)>, bool) -> engine::Action,
+) -> engine::Action {
+    action(
+        args.locator.clone(),
+        args.modifiers.clone().unwrap_or_default().0,
+        args.position,
+        args.force,
+    )
+}
+
+fn mouse_op(command: &cli::MouseCommand) -> engine::MouseOp {
+    let at = |x: Option<f64>, y: Option<f64>| x.zip(y);
+    match command {
+        cli::MouseCommand::Move(a) => engine::MouseOp::Move {
+            x: a.x,
+            y: a.y,
+            steps: a.steps,
+        },
+        cli::MouseCommand::Down(a) => engine::MouseOp::Down {
+            at: at(a.x, a.y),
+            button: a.button.unwrap_or_default().to_button(),
+            count: a.count,
+        },
+        cli::MouseCommand::Up(a) => engine::MouseOp::Up {
+            at: at(a.x, a.y),
+            button: a.button.map(cli::ButtonArg::to_button),
+            count: a.count,
+        },
+        cli::MouseCommand::Wheel(a) => engine::MouseOp::Wheel { dx: a.dx, dy: a.dy },
+    }
 }
 
 #[cfg(test)]

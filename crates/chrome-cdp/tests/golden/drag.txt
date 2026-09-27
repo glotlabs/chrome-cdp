@@ -1,0 +1,15 @@
+$ chrome-cdp drag '#card1' '#done'
+exit: 0
+--- stdout
+dragged e1 div "Card 1" to e2 region "Done" (HTML5 drag and drop)
+
+$ chrome-cdp drag '#card1' '#done' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"from":{"name":"Card 1","ref":"e1","role":"generic","tag":"div"},"from_point":{"x":380.0,"y":70.0},"method":"html5","tab":"t1","to":{"name":"Done","ref":"e2","role":"region","tag":"section"},"to_point":{"x":400.0,"y":110.0}}}
+
+$ chrome-cdp drag '#card1' '#done' -q
+exit: 0
+--- stdout
+400,110
+

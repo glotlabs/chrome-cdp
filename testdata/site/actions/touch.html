@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Touch</title>
+<!-- touchstart, touchend and click on the buttons are logged into #log,
+     with the button's id (below them, so it does not move them). #cancels cancels its touchend, which stops the
+     click a tap would cause. -->
+<button id="tap">Tap me</button>
+<button id="cancels">Cancels</button>
+<p id="log"></p>
+<script>
+  const log = (e) => {
+    const l = document.getElementById('log');
+    l.textContent = (l.textContent + ' ' + e.type + ':' + e.currentTarget.id + (e.isTrusted ? '' : '(synthetic)')).trim();
+  };
+  for (const id of ['tap', 'cancels']) {
+    for (const type of ['touchstart', 'touchend', 'click']) document.getElementById(id).addEventListener(type, log);
+  }
+  document.getElementById('cancels').addEventListener('touchend', (e) => e.preventDefault());
+</script>

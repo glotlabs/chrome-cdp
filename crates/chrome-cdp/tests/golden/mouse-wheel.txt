@@ -1,0 +1,15 @@
+$ chrome-cdp mouse wheel 0 -100
+exit: 0
+--- stdout
+turned the wheel by 0,-100 at 0,0
+
+$ chrome-cdp mouse wheel 0 -100 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"action":"wheel","buttons":0,"delta":{"x":0.0,"y":-100.0},"point":{"x":0.0,"y":0.0},"tab":"t1"}}
+
+$ chrome-cdp mouse wheel 0 -100 -q
+exit: 0
+--- stdout
+0,0
+

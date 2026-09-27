@@ -19,9 +19,10 @@ use daemon::meta::Meta;
 use daemon::paths::{Env, SessionPaths, check_name};
 use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
-    CdpRequest, ConnectRequest, DialogRequest, DownloadsRequest, ElementState, FindRequest,
-    HttpCredentials, NavigateRequest, Navigation, OpenRequest, Read, ReadRequest, SnapshotRequest,
-    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, WaitFor, WaitRequest,
+    Action, ActionRequest, CdpRequest, ConnectRequest, DialogRequest, DownloadsRequest,
+    ElementState, FindRequest, HttpCredentials, NavigateRequest, Navigation, OpenRequest, Read,
+    ReadRequest, SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
+    WaitFor, WaitRequest,
 };
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
@@ -566,6 +567,28 @@ pub(crate) fn read(
     let mut client = running_session(&ctx)?;
     ctx.runtime
         .block_on(client.call_output(rpc::READ, &request, ctx.timeout + QUICK))
+}
+
+/// The input actions (`click`, `hover`, `drag`, `scroll`, `mouse`, …):
+/// need a running session. They wait up to 10s by default, like `wait`.
+pub(crate) fn act(
+    action: Action,
+    strict_refs: bool,
+    global: &GlobalArgs,
+) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::with_default(global, WAIT_TIMEOUT)?;
+    let request = ActionRequest {
+        action,
+        tab: ctx.tab.clone(),
+        strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(ctx.timeout),
+    };
+    engine::check_action(&request)?;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::ACT, &request, ctx.timeout + QUICK))
 }
 
 /// `dialog accept [text]` and `dialog dismiss`: need a running session.

@@ -1,0 +1,11 @@
+$ chrome-cdp scroll
+exit: 2
+--- stderr
+error: scroll needs a locator, --by or --to
+  hint: chrome-cdp scroll --by 0,600
+
+$ chrome-cdp scroll --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"scroll needs a locator, --by or --to","hint":"chrome-cdp scroll --by 0,600"}}
+

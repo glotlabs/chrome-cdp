@@ -1,0 +1,5 @@
+$ chrome-cdp drag '#d' '#a'
+exit: 0
+--- stdout
+dragged e1 listitem "Delta" to e2 listitem "Alpha" (mouse events)
+

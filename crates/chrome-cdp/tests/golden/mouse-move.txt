@@ -1,0 +1,15 @@
+$ chrome-cdp mouse move 10 20.5
+exit: 0
+--- stdout
+moved the mouse to 10,20.5
+
+$ chrome-cdp mouse move 10 20.5 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"action":"move","buttons":0,"point":{"x":10.0,"y":20.5},"tab":"t1"}}
+
+$ chrome-cdp mouse move 10 20.5 -q
+exit: 0
+--- stdout
+10,20.5
+

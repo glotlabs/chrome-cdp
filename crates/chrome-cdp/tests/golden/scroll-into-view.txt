@@ -1,0 +1,15 @@
+$ chrome-cdp scroll 'text=Mail 12'
+exit: 0
+--- stdout
+e1 listitem "Mail 12" is in view; e2 list "Inbox" is at 0,385 (max 0,650)
+
+$ chrome-cdp scroll 'text=Mail 12' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"at_bottom":false,"at_left":true,"at_right":true,"at_top":false,"container":{"name":"Inbox","ref":"e2","role":"list","tag":"ul"},"element":{"name":"Mail 12","ref":"e1","role":"listitem","tag":"li"},"max_x":0.0,"max_y":650.0,"tab":"t1","x":0.0,"y":385.0}}
+
+$ chrome-cdp scroll 'text=Mail 12' -q
+exit: 0
+--- stdout
+0,385
+

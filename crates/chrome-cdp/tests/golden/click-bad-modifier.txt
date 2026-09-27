@@ -1,0 +1,11 @@
+$ chrome-cdp click '#go' --modifiers Hyper
+exit: 2
+--- stderr
+error: invalid value 'Hyper' for '--modifiers <KEYS>': unknown modifier `Hyper`; use Alt, Control, Meta or Shift
+  hint: chrome-cdp click --help
+
+$ chrome-cdp click '#go' --modifiers Hyper --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"invalid value 'Hyper' for '--modifiers <KEYS>': unknown modifier `Hyper`; use Alt, Control, Meta or Shift","hint":"chrome-cdp click --help"}}
+

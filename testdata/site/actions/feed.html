@@ -1,0 +1,47 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Feed</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  .post { height: 100px; border-bottom: 1px solid #ccc; }
+  #inbox { position: fixed; right: 0; top: 0; width: 200px; height: 150px; overflow-y: auto; background: #ffd; }
+  #inbox li { height: 40px; }
+</style>
+<!-- Infinite scroll: 20 posts of 100px; when the page is scrolled within
+     200px of the end, 10 more load (up to 50). #inbox is a fixed scroll
+     container of its own. #loaded counts the loads, #wheels the wheel
+     events the page got. -->
+<p>Loaded <span id="loaded">0</span> times, <span id="wheels">0</span> wheels</p>
+<ul id="inbox" aria-label="Inbox"></ul>
+<div id="posts"></div>
+<button id="end">End</button>
+<script>
+  const posts = document.getElementById('posts');
+  let count = 0;
+  const more = (n) => {
+    for (let i = 0; i < n && count < 50; i++) {
+      const p = document.createElement('div');
+      p.className = 'post';
+      p.textContent = 'Post ' + (++count);
+      posts.appendChild(p);
+    }
+  };
+  more(20);
+  const inbox = document.getElementById('inbox');
+  for (let i = 1; i <= 20; i++) {
+    const li = document.createElement('li');
+    li.textContent = 'Mail ' + i;
+    inbox.appendChild(li);
+  }
+  let loads = 0;
+  addEventListener('scroll', () => {
+    if (scrollY + innerHeight >= document.documentElement.scrollHeight - 200 && count < 50) {
+      more(10);
+      document.getElementById('loaded').textContent = ++loads;
+    }
+  });
+  addEventListener('wheel', () => {
+    const w = document.getElementById('wheels');
+    w.textContent = Number(w.textContent) + 1;
+  }, { passive: true });
+</script>

@@ -1,0 +1,11 @@
+$ chrome-cdp tap '#tap'
+exit: 2
+--- stderr
+error: tap needs touch emulation, which is off in this tab
+  hint: chrome-cdp click '#tap'   (a mouse click), or chrome-cdp cdp --target page Emulation.setTouchEmulationEnabled '{"enabled": true}'
+
+$ chrome-cdp tap '#tap' --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"tap needs touch emulation, which is off in this tab","hint":"chrome-cdp click '#tap'   (a mouse click), or chrome-cdp cdp --target page Emulation.setTouchEmulationEnabled '{\"enabled\": true}'"}}
+

@@ -450,6 +450,108 @@ Examples:
   chrome-cdp markdown 'css=article' --max-chars 0")]
     Markdown(MarkdownArgs),
 
+    /// Click an element: waits until it can be clicked, then a real mouse click.
+    #[command(after_help = "\
+Waits (up to --timeout, 10s by default) until the element is visible,
+stable, enabled and not covered, scrolls it into view, then moves the
+mouse to its centre and presses and releases the button there: trusted
+events, as a user makes them. When something covers it, the error names
+what, with a ref, and a click that likely dismisses it. Needs a running
+session.
+
+Examples:
+  chrome-cdp click e6
+  chrome-cdp click 'role=button[name=\"Sign in\"]'
+  chrome-cdp click e6 --button right          # the context menu
+  chrome-cdp click e12 --modifiers Shift      # select a range
+  chrome-cdp click '#canvas' --position 10,20  # from its top-left corner
+  chrome-cdp click e6 --force                 # skip the checks")]
+    Click(ClickArgs),
+
+    /// Double-click an element (click --count 2).
+    #[command(after_help = "\
+Two clicks in a row, as a user makes them: the page gets mousedown,
+mouseup and click twice, then dblclick. Waits like click. Needs a running
+session.
+
+Examples:
+  chrome-cdp dblclick e6
+  chrome-cdp dblclick 'text=Rename me'")]
+    Dblclick(DblclickArgs),
+
+    /// Move the mouse over an element (menus, tooltips).
+    #[command(after_help = "\
+Waits like click (except that a disabled element is fine), then moves the
+mouse to the element's centre, so the page gets mouseover, mouseenter and
+mousemove, and :hover styles apply. Needs a running session.
+
+Examples:
+  chrome-cdp hover e8
+  chrome-cdp hover 'role=menuitem[name=\"File\"]'")]
+    Hover(HoverArgs),
+
+    /// Tap an element with a touch (needs touch emulation).
+    #[command(after_help = "\
+Waits like click, then a touch starts and ends at the element's centre.
+The tab must emulate a touch screen (navigator.maxTouchPoints > 0), or
+the page would get no touch events; use click otherwise. Needs a running
+session.
+
+Examples:
+  chrome-cdp tap e6
+  chrome-cdp tap 'role=link[name=\"Menu\"]'")]
+    Tap(TapArgs),
+
+    /// Drag an element onto another: mouse events, or HTML5 drag and drop.
+    #[command(after_help = "\
+Presses the left button on the first element, moves to the second in
+--steps moves and releases there, which is what sortable lists built on
+mouse or pointer events need. When the page starts an HTML5 drag
+(draggable elements), it is finished with real drag events (dragenter,
+dragover, drop) carrying the page's own drag data. Both elements are
+waited for like hover. Needs a running session.
+
+Examples:
+  chrome-cdp drag e4 e9
+  chrome-cdp drag 'text=Card 1' 'role=list[name=\"Done\"]'
+  chrome-cdp drag e4 e9 --steps 30          # slower, for fussy libraries")]
+    Drag(DragArgs),
+
+    /// Scroll the page or an element with the mouse wheel.
+    #[command(after_help = "\
+Real wheel events over the element (the middle of the viewport without
+one), so scroll listeners and infinite scroll run. Prints where the
+scroll container (the element or its nearest scrollable ancestor, else
+the page) is now, and which end it reached. With a locator and neither
+--by nor --to, scrolls the element into view. Needs a running session.
+
+Examples:
+  chrome-cdp scroll --by 0,600               # the page, one screen down
+  chrome-cdp scroll --to bottom              # load more of a feed
+  chrome-cdp scroll e30 --by 0,-200          # inside a list
+  chrome-cdp scroll e30 --to top
+  chrome-cdp scroll e99                      # into view")]
+    Scroll(ScrollArgs),
+
+    /// Low-level mouse events at viewport coordinates.
+    #[command(
+        subcommand_required = true,
+        arg_required_else_help = true,
+        after_help = "\
+An escape hatch for what the element commands cannot express: canvas
+drawing, drags in hops, a press held across commands. Coordinates are
+CSS pixels from the top-left corner of the tab's viewport. The session
+keeps where the mouse is and which buttons it holds between commands.
+
+Examples:
+  chrome-cdp mouse move 100 200
+  chrome-cdp mouse down
+  chrome-cdp mouse move 300 200 --steps 10
+  chrome-cdp mouse up
+  chrome-cdp mouse wheel 0 400"
+    )]
+    Mouse(MouseArgs),
+
     /// Answer the JavaScript dialog (confirm, prompt, …) the page waits on.
     #[command(
         subcommand_required = true,
@@ -754,6 +856,271 @@ pub(crate) struct StrictRefsArgs {
         hide_env_values = true
     )]
     pub(crate) strict_refs: bool,
+}
+
+/// `--position` and `--by`: `x,y`.
+pub(crate) fn parse_pair(text: &str) -> Result<(f64, f64), String> {
+    let (x, y) = text
+        .split_once(',')
+        .ok_or_else(|| format!("`{text}` is not x,y (e.g. 10,20)"))?;
+    let number = |part: &str| {
+        part.trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|n| n.is_finite())
+            .ok_or_else(|| format!("`{text}` is not x,y (e.g. 10,20)"))
+    };
+    Ok((number(x)?, number(y)?))
+}
+
+/// `scroll --to`: top, bottom, left, right or x,y.
+fn parse_scroll_to(text: &str) -> Result<engine::ScrollTo, String> {
+    Ok(match text.trim().to_ascii_lowercase().as_str() {
+        "top" => engine::ScrollTo::Top,
+        "bottom" => engine::ScrollTo::Bottom,
+        "left" => engine::ScrollTo::Left,
+        "right" => engine::ScrollTo::Right,
+        _ => {
+            let (x, y) = parse_pair(text)
+                .map_err(|_| format!("`{text}` is not top, bottom, left, right or x,y"))?;
+            engine::ScrollTo::Point { x, y }
+        }
+    })
+}
+
+/// `--modifiers`: one value holding them all (clap would take a `Vec`
+/// for a repeated flag).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Modifiers(pub(crate) Vec<engine::Modifier>);
+
+fn parse_modifiers(text: &str) -> Result<Modifiers, String> {
+    engine::parse_modifiers(text).map(Modifiers)
+}
+
+/// `--button`.
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub(crate) enum ButtonArg {
+    #[default]
+    Left,
+    Right,
+    Middle,
+}
+
+impl ButtonArg {
+    pub(crate) fn to_button(self) -> engine::Button {
+        match self {
+            Self::Left => engine::Button::Left,
+            Self::Right => engine::Button::Right,
+            Self::Middle => engine::Button::Middle,
+        }
+    }
+}
+
+/// What `click`, `dblclick`, `hover` and `tap` share.
+#[derive(Debug, Args)]
+pub(crate) struct PointerArgs {
+    /// The element: a ref (e12) or a locator that matches one.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: String,
+
+    /// Keys held during it: Alt, Control, Meta, Shift (comma-separated).
+    #[arg(long, value_name = "KEYS", value_parser = parse_modifiers)]
+    pub(crate) modifiers: Option<Modifiers>,
+
+    /// Where on the element, in CSS pixels from the top-left corner of
+    /// its box, instead of its centre.
+    #[arg(long, value_name = "X,Y", value_parser = parse_pair, allow_hyphen_values = true)]
+    pub(crate) position: Option<(f64, f64)>,
+
+    /// Skip the checks (visible, stable, enabled, not covered); still
+    /// scroll the element into view.
+    #[arg(long)]
+    pub(crate) force: bool,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ClickArgs {
+    #[command(flatten)]
+    pub(crate) pointer: PointerArgs,
+
+    /// The mouse button.
+    #[arg(long, value_enum, default_value_t = ButtonArg::Left, value_name = "BUTTON")]
+    pub(crate) button: ButtonArg,
+
+    /// How many clicks in a row (2 is a double click).
+    #[arg(long, default_value_t = 1, value_name = "N")]
+    pub(crate) count: u32,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct DblclickArgs {
+    #[command(flatten)]
+    pub(crate) pointer: PointerArgs,
+
+    /// The mouse button.
+    #[arg(long, value_enum, default_value_t = ButtonArg::Left, value_name = "BUTTON")]
+    pub(crate) button: ButtonArg,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct HoverArgs {
+    #[command(flatten)]
+    pub(crate) pointer: PointerArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct TapArgs {
+    #[command(flatten)]
+    pub(crate) pointer: PointerArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct DragArgs {
+    /// The element to drag: a ref (e12) or a locator that matches one.
+    #[arg(value_name = "FROM")]
+    pub(crate) from: String,
+
+    /// The element to drop it on.
+    #[arg(value_name = "TO")]
+    pub(crate) to: String,
+
+    /// How many mouse moves from one to the other.
+    #[arg(long, default_value_t = 10, value_name = "N")]
+    pub(crate) steps: u32,
+
+    /// Skip the checks (visible, stable, not covered) on both.
+    #[arg(long)]
+    pub(crate) force: bool,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+}
+
+#[derive(Debug, Args)]
+#[command(group(ArgGroup::new("amount").args(["by", "to"])))]
+pub(crate) struct ScrollArgs {
+    /// The element to scroll in (or into view); the page if omitted.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: Option<String>,
+
+    /// Wheel by this much, in CSS pixels (positive is right and down).
+    #[arg(long, value_name = "DX,DY", value_parser = parse_pair, allow_hyphen_values = true)]
+    pub(crate) by: Option<(f64, f64)>,
+
+    /// Wheel until this end: top, bottom, left, right, or a scroll
+    /// offset x,y.
+    #[arg(long, value_name = "WHERE", value_parser = parse_scroll_to)]
+    pub(crate) to: Option<engine::ScrollTo>,
+
+    /// Skip the checks on the element (visible, stable, not covered).
+    #[arg(long)]
+    pub(crate) force: bool,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MouseArgs {
+    #[command(subcommand)]
+    pub(crate) command: MouseCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum MouseCommand {
+    /// Move the mouse to a point.
+    #[command(
+        allow_negative_numbers = true,
+        after_help = "\
+From where the mouse is, in --steps even moves; buttons held stay held
+(a drag).
+
+Examples:
+  chrome-cdp mouse move 100 200
+  chrome-cdp mouse move 400 200 --steps 20"
+    )]
+    Move(MouseMoveArgs),
+    /// Press a mouse button (where the mouse is, or at x y).
+    #[command(
+        allow_negative_numbers = true,
+        after_help = "\
+The button stays held until `mouse up`, across commands.
+
+Examples:
+  chrome-cdp mouse down
+  chrome-cdp mouse down 100 200 --button right"
+    )]
+    Down(MouseButtonArgs),
+    /// Release a mouse button (where the mouse is, or at x y).
+    #[command(
+        allow_negative_numbers = true,
+        after_help = "\
+Examples:
+  chrome-cdp mouse up
+  chrome-cdp mouse up 300 200"
+    )]
+    Up(MouseButtonArgs),
+    /// Turn the mouse wheel where the mouse is.
+    #[command(
+        allow_negative_numbers = true,
+        after_help = "\
+DX and DY are CSS pixels: positive scrolls right and down. Use `scroll`
+to scroll an element and see where it ended.
+
+Examples:
+  chrome-cdp mouse wheel 0 400
+  chrome-cdp mouse wheel 0 -400"
+    )]
+    Wheel(MouseWheelArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MouseMoveArgs {
+    /// CSS pixels from the viewport's left edge.
+    #[arg(value_name = "X")]
+    pub(crate) x: f64,
+
+    /// CSS pixels from the viewport's top edge.
+    #[arg(value_name = "Y")]
+    pub(crate) y: f64,
+
+    /// How many moves to get there.
+    #[arg(long, default_value_t = 1, value_name = "N")]
+    pub(crate) steps: u32,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MouseButtonArgs {
+    /// Move here first: CSS pixels from the viewport's left edge.
+    #[arg(value_name = "X", requires = "y")]
+    pub(crate) x: Option<f64>,
+
+    /// And from its top edge.
+    #[arg(value_name = "Y")]
+    pub(crate) y: Option<f64>,
+
+    /// The mouse button: left for down; for up, the one held.
+    #[arg(long, value_enum, value_name = "BUTTON")]
+    pub(crate) button: Option<ButtonArg>,
+
+    /// The click count the event carries (2 for the second press of a
+    /// double click).
+    #[arg(long, default_value_t = 1, value_name = "N")]
+    pub(crate) count: u32,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MouseWheelArgs {
+    /// Horizontal delta in CSS pixels.
+    #[arg(value_name = "DX")]
+    pub(crate) dx: f64,
+
+    /// Vertical delta in CSS pixels.
+    #[arg(value_name = "DY")]
+    pub(crate) dy: f64,
 }
 
 #[derive(Debug, Args)]
@@ -1381,6 +1748,8 @@ mod tests {
     /// `tab`, `tab new` and `tab close` describe one or two tabs.
     /// `goto`, `back`, `forward` and `reload` print one line.
     /// `dialog accept|dismiss` print one line (the dialog's text is cut).
+    /// The input actions print a line naming their element(s) (names cut
+    /// at 60 characters) or a point.
     const FIXED_SIZE: &[&str] = &[
         "schema",
         "count",
@@ -1400,6 +1769,16 @@ mod tests {
         "reload",
         "dialog accept",
         "dialog dismiss",
+        "click",
+        "dblclick",
+        "hover",
+        "tap",
+        "drag",
+        "scroll",
+        "mouse move",
+        "mouse down",
+        "mouse up",
+        "mouse wheel",
     ];
 
     /// The plan 08 checklist: every command has an example in its help, a

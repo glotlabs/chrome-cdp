@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sortable</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  ul { list-style: none; padding: 0; margin: 20px; width: 200px; }
+  li { height: 40px; line-height: 40px; margin: 4px 0; background: #ddf; padding-left: 8px; user-select: none; }
+  li.dragging { opacity: 0.6; }
+</style>
+<!-- A sortable list built on pointer events, as libraries do: press on an
+     item, move at least 5px to start, and the item is dropped before the
+     item under the pointer on release. #order shows the order. -->
+<ul id="list" aria-label="Tasks">
+  <li id="a">Alpha</li>
+  <li id="b">Bravo</li>
+  <li id="c">Charlie</li>
+  <li id="d">Delta</li>
+</ul>
+<p id="order"></p>
+<script>
+  const list = document.getElementById('list');
+  const order = () => { document.getElementById('order').textContent = [...list.children].map((li) => li.id).join(' '); };
+  let pressed = null;
+  let start = null;
+  let dragging = false;
+  let moves = 0;
+  list.addEventListener('pointerdown', (e) => {
+    pressed = e.target.closest('li');
+    start = [e.clientX, e.clientY];
+    moves = 0;
+  });
+  document.addEventListener('pointermove', (e) => {
+    if (!pressed || !(e.buttons & 1)) return;
+    moves += 1;
+    if (!dragging && Math.hypot(e.clientX - start[0], e.clientY - start[1]) >= 5) {
+      dragging = true;
+      pressed.classList.add('dragging');
+    }
+  });
+  document.addEventListener('pointerup', (e) => {
+    if (dragging) {
+      pressed.classList.remove('dragging');
+      pressed.style.pointerEvents = 'none';
+      const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('li');
+      pressed.style.pointerEvents = '';
+      if (over && over !== pressed) list.insertBefore(pressed, over);
+      document.getElementById('order').dataset.moves = moves;
+    }
+    pressed = null;
+    dragging = false;
+    order();
+  });
+  order();
+</script>

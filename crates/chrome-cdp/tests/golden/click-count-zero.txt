@@ -1,0 +1,11 @@
+$ chrome-cdp click '#go' --count 0
+exit: 2
+--- stderr
+error: --count must be at least 1
+  hint: chrome-cdp click '#go' --count 2
+
+$ chrome-cdp click '#go' --count 0 --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"--count must be at least 1","hint":"chrome-cdp click '#go' --count 2"}}
+

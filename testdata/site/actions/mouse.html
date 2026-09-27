@@ -1,0 +1,36 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mouse</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  #pad { position: absolute; left: 0; top: 200px; width: 400px; height: 200px; background: #eef; }
+  .bar { display: flex; gap: 8px; margin: 16px 8px; }
+  #menu:hover + #tip { display: block; }
+  #tip { display: none; }
+  button, #menu { display: inline-block; box-sizing: border-box; width: 80px; height: 30px; }
+</style>
+<!-- Every mouse event on the buttons and the pad is logged into #events,
+     one per line: type, target id, button, buttons, detail (click count),
+     modifiers held, and whether it was trusted. -->
+<p class="bar"><button id="go">Go</button><button id="off" disabled>Off</button><span
+  id="menu" tabindex="0">Menu</span><span id="tip">Tooltip</span></p>
+<pre id="events"></pre>
+<div id="pad"></div>
+<script>
+  const out = document.getElementById('events');
+  const keys = (e) => ['alt', 'ctrl', 'meta', 'shift'].filter((k) => e[k + 'Key']).join('+') || '-';
+  const log = (e) => {
+    const where = e.target.id === 'pad' ? ` ${e.offsetX},${e.offsetY}` : '';
+    out.textContent += `${e.type} ${e.target.id} b${e.button} bs${e.buttons} d${e.detail} ${keys(e)} ${e.isTrusted ? 'trusted' : 'synthetic'}${where}\n`;
+  };
+  for (const id of ['go', 'menu']) {
+    const el = document.getElementById(id);
+    for (const type of ['mousedown', 'mouseup', 'click', 'dblclick', 'contextmenu', 'auxclick', 'mouseenter']) {
+      el.addEventListener(type, log);
+    }
+  }
+  document.getElementById('menu').addEventListener('contextmenu', (e) => e.preventDefault());
+  document.getElementById('go').addEventListener('contextmenu', (e) => e.preventDefault());
+  const pad = document.getElementById('pad');
+  for (const type of ['mousedown', 'mouseup', 'mousemove', 'wheel']) pad.addEventListener(type, log);
+</script>
