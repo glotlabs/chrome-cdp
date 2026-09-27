@@ -13,6 +13,7 @@ use super::tree::{
     CLICKABLE, IFRAME, Node, NodeKey, is_interactive, is_landmark, is_structural, is_text_field,
     name_from_content, shows_value,
 };
+use crate::request::SnapshotEngine;
 
 /// How many siblings of one role a list shows before the rest collapse
 /// into one `… N more` line.
@@ -84,16 +85,16 @@ pub(crate) fn shape(nodes: Vec<Node>, view: &View) -> Vec<Node> {
 }
 
 /// Gives every reffable node shown (every node with `--all-refs`) its
-/// ref, in document order.
-pub(crate) fn assign_refs(nodes: &mut [Node], refs: &mut Refs, all: bool) {
+/// ref, in document order. `engine` read them.
+pub(crate) fn assign_refs(nodes: &mut [Node], refs: &mut Refs, all: bool, engine: SnapshotEngine) {
     for node in nodes {
         if (node.reffable || all)
             && node.more.is_none()
             && let Some(key) = &node.key
         {
-            node.reference = Some(refs.assign(key, &node.role, &node.name));
+            node.reference = Some(refs.assign_from(key, &node.role, &node.name, engine));
         }
-        assign_refs(&mut node.children, refs, all);
+        assign_refs(&mut node.children, refs, all, engine);
     }
 }
 
@@ -434,6 +435,7 @@ mod tests {
 
     use super::super::tree::{Checked, NONE, Node, NodeKey, States, TEXT};
     use super::{LIST_LIMIT, View, assign_refs, find, shape, truncate};
+    use crate::request::SnapshotEngine;
     use crate::snapshot::refs::Refs;
 
     fn key(n: i64) -> NodeKey {
@@ -619,7 +621,7 @@ mod tests {
         let page = vec![keyed("list", "", 1, items)];
         let mut shaped = shape(page.clone(), &View::default());
         let mut refs = Refs::default();
-        assign_refs(&mut shaped, &mut refs, false);
+        assign_refs(&mut shaped, &mut refs, false, SnapshotEngine::Ax);
         let shown = lines(&shaped);
         assert_eq!(shown[0], "list [e1]");
         assert_eq!(shown.len(), 1 + LIST_LIMIT + 1);

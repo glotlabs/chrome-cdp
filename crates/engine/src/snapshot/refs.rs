@@ -16,6 +16,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::tree::NodeKey;
+use crate::request::SnapshotEngine;
 
 /// What a ref was given to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +24,9 @@ pub(crate) struct RefEntry {
     pub(crate) key: NodeKey,
     pub(crate) role: String,
     pub(crate) name: String,
+    /// The engine whose role and name these are: the fallback reads the
+    /// frame with it, since the two can differ.
+    pub(crate) engine: SnapshotEngine,
     /// Its frame's same-document navigations when the ref was last shown.
     route: u32,
 }
@@ -61,8 +65,19 @@ pub(crate) struct Refs {
 
 impl Refs {
     /// The ref of `key`, given now if it has none. Updates the role and
-    /// name kept with it.
+    /// name kept with it, as engine A (Chrome's tree) computed them.
     pub(crate) fn assign(&mut self, key: &NodeKey, role: &str, name: &str) -> u32 {
+        self.assign_from(key, role, name, SnapshotEngine::Ax)
+    }
+
+    /// [`Refs::assign`], with the role and name `engine` computed.
+    pub(crate) fn assign_from(
+        &mut self,
+        key: &NodeKey,
+        role: &str,
+        name: &str,
+        engine: SnapshotEngine,
+    ) -> u32 {
         let number = if let Some(&number) = self.by_key.get(key) {
             number
         } else {
@@ -74,6 +89,7 @@ impl Refs {
             key: key.clone(),
             role: role.to_owned(),
             name: name.to_owned(),
+            engine,
             route: self.route(&key.frame),
         };
         self.by_number.insert(number, entry);

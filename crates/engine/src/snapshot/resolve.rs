@@ -19,10 +19,11 @@ use serde_json::{Value, json};
 use super::prune::{self, View};
 use super::refs::{Lookup, RefEntry, parse_ref};
 use super::tree::{Node, NodeKey};
-use super::{Capture, ax};
+use super::{Capture, ax, dom as walker};
 use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::locator::LocateOptions;
+use crate::request::SnapshotEngine;
 use crate::tabs::{FrameContext, Page, tab_name};
 use crate::{Engine, Running};
 
@@ -243,9 +244,14 @@ impl Engine {
         if frames.is_empty() {
             return Ok(Vec::new());
         }
-        let Capture { nodes, .. } = ax::capture(&frames, timeout)
-            .await
-            .map_err(|e| from_cdp(&e, &self.session))?;
+        let Capture { nodes, .. } = match entry.engine {
+            SnapshotEngine::Ax => ax::capture(&frames, timeout)
+                .await
+                .map_err(|e| from_cdp(&e, &self.session))?,
+            SnapshotEngine::Dom => {
+                walker::capture(self, running, page, &frames, None, timeout).await?
+            }
+        };
         let view = View {
             collapse: false,
             text_limit: 0,

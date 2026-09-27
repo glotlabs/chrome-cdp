@@ -15,7 +15,8 @@ use std::time::{Duration, Instant};
 
 use browser::Host;
 use engine::{
-    Engine, NavigateRequest, Navigation, OpenRequest, RefCall, SnapshotRequest, WaitUntil, World,
+    Engine, NavigateRequest, Navigation, OpenRequest, RefCall, SnapshotEngine, SnapshotRequest,
+    WaitUntil, World,
 };
 use fixtures::Fixtures;
 use protocol::schema::{SnapshotData, SnapshotNode};
@@ -309,6 +310,24 @@ async fn a_remount_re_resolves_by_role_and_name() {
         .await
         .unwrap_err();
     assert_eq!(strict.kind, ErrorKind::RefDetached);
+
+    // A ref from the DOM walker is re-resolved with the DOM walker.
+    goto(&engine, &site.url("/refs/rerender.html")).await;
+    let walked = engine
+        .snapshot(SnapshotRequest {
+            engine: Some(SnapshotEngine::Dom),
+            ..request()
+        })
+        .await
+        .unwrap();
+    let data: SnapshotData = serde_json::from_value(walked.data).unwrap();
+    let mut walked = Vec::new();
+    collect(&data.nodes, "", &mut walked);
+    let milk = ref_of(&walked, "button", "Buy milk");
+    eval(&engine, "remount(TODOS); true").await;
+    let found = call(&engine, &milk, false).await.unwrap();
+    assert_eq!(found.value, "Buy milk");
+    assert_eq!(found.note, Some(format!("{milk} re-resolved by role+name")));
 }
 
 #[tokio::test(flavor = "multi_thread")]

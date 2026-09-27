@@ -232,7 +232,7 @@ impl Engine {
                 if memory.refs.generation() != generation && attempts < READ_ATTEMPTS {
                     return None;
                 }
-                prune::assign_refs(&mut shown, &mut memory.refs, view.all_refs);
+                prune::assign_refs(&mut shown, &mut memory.refs, view.all_refs, engine);
                 let before = memory.last.replace(capture.nodes.clone());
                 let new_page = std::mem::take(&mut memory.new_page) && before.is_some();
                 let before = before.map(|old| {

@@ -21,6 +21,7 @@ use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::frames::commands::find_error;
 use crate::injected::{self, GUARD, own_properties};
+use crate::request::SnapshotEngine;
 use crate::snapshot::{NodeKey, RefCall, Target, parse_ref};
 use crate::tabs::{FrameContext, Page, tab_name};
 use crate::{Engine, Running};
@@ -703,7 +704,11 @@ impl Engine {
                     .zip(&keys)
                     .map(|(c, key)| {
                         let key = key.as_ref().filter(|_| current)?;
-                        Some(format!("e{}", m.refs.assign(key, &c.role, &c.name)))
+                        // The bundle's role and name: engine B's code.
+                        let number = m
+                            .refs
+                            .assign_from(key, &c.role, &c.name, SnapshotEngine::Dom);
+                        Some(format!("e{number}"))
                     })
                     .collect()
             })
