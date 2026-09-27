@@ -410,8 +410,32 @@ async fn frames_that_existed_before_connecting_are_found() {
 
     let engine = connect(&port).await;
     let frames = frames_loaded(&engine, 5).await;
-    let names: Vec<&str> = frames.iter().map(|f| f.name.as_str()).collect();
-    assert_eq!(names, ["", "local", "deep", "remote", "remote-leaf"]);
+    // Siblings are listed in the order they were found, and on connect
+    // the cross-site frame's session may report before `getFrameTree`
+    // (which leaves it out) answers; the shape is fixed.
+    let mut shape: Vec<(&str, usize, Option<&str>)> = frames
+        .iter()
+        .map(|f| {
+            let parent = f.parent.as_deref().and_then(|p| {
+                frames
+                    .iter()
+                    .find(|other| other.id == p)
+                    .map(|other| other.name.as_str())
+            });
+            (f.name.as_str(), f.depth, parent)
+        })
+        .collect();
+    shape.sort_unstable();
+    assert_eq!(
+        shape,
+        [
+            ("", 0, None),
+            ("deep", 2, Some("local")),
+            ("local", 1, Some("")),
+            ("remote", 1, Some("")),
+            ("remote-leaf", 2, Some("remote")),
+        ]
+    );
     let leaf_b = json!(format!("leaf on {}", site.b()));
     assert_eq!(
         eval(&engine, Some("deep"), World::Main, "where").await,
