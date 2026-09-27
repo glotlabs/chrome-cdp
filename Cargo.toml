@@ -19,6 +19,7 @@ protocol = { path = "crates/protocol" }
 
 # External crates.
 bytes = "1"
+clap = { version = "4.6", features = ["derive", "env"] }
 dashmap = "6"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 heck = "0.5"

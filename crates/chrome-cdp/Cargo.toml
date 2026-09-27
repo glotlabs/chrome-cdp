@@ -11,7 +11,17 @@ name = "chrome-cdp"
 path = "src/main.rs"
 
 [dependencies]
+cdp.workspace = true
+clap.workspace = true
 protocol.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["io-util", "process", "rt", "sync", "time"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true
