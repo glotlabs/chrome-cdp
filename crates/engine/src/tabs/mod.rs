@@ -1215,14 +1215,22 @@ fn frame_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event:
                 // A new document: the page runs again after a crash.
                 tab.crashed = None;
             }
-            if e.r#type == page::NavigationType::BackForwardCacheRestore {
-                frames.restored(session_id, &e.frame);
+            let gone = if e.r#type == page::NavigationType::BackForwardCacheRestore {
+                frames.restored(session_id, &e.frame)
             } else {
-                frames.navigated(session_id, &e.frame);
+                frames.navigated(session_id, &e.frame)
+            };
+            if !gone.is_empty() {
+                let main = gone.iter().any(|id| id == frames.root());
+                tab.snapshot.refs.navigated(&gone, main);
             }
         }),
-        page::NavigatedWithinDocument::NAME => decode::<page::NavigatedWithinDocument>(event)
-            .map(|e| frames.navigated_within_document(&e.frame_id, &e.url)),
+        page::NavigatedWithinDocument::NAME => {
+            decode::<page::NavigatedWithinDocument>(event).map(|e| {
+                frames.navigated_within_document(&e.frame_id, &e.url);
+                tab.snapshot.refs.route_changed(&e.frame_id);
+            })
+        }
         page::FrameDetached::NAME => decode::<page::FrameDetached>(event).map(|e| {
             let swap = e.reason == page::FrameDetachedReason::Swap;
             frames.detached(&e.frame_id, swap);

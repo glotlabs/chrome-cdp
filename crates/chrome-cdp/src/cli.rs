@@ -581,6 +581,17 @@ pub(crate) struct SnapshotArgs {
     #[arg(long, value_enum, value_name = "ENGINE")]
     pub(crate) engine: Option<SnapshotEngineArg>,
 
+    /// A --scope ref whose element is gone fails, instead of being
+    /// re-resolved to the one element with its role and name.
+    #[arg(
+        long,
+        env = "CHROME_CDP_STRICT_REFS",
+        action = ArgAction::SetTrue,
+        value_parser = BoolishValueParser::new(),
+        hide_env_values = true
+    )]
+    pub(crate) strict_refs: bool,
+
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,

@@ -418,6 +418,10 @@ pub struct SnapshotRequest {
     /// `--engine`; the default engine if `None`.
     #[serde(default)]
     pub engine: Option<SnapshotEngine>,
+    /// `--strict-refs`: a `--scope` ref whose element is gone is an
+    /// error, never re-resolved by role and name.
+    #[serde(default)]
+    pub strict_refs: bool,
     pub timeout_ms: u64,
     /// The output budget (0 = none).
     pub max_chars: usize,

@@ -506,6 +506,7 @@ pub(crate) fn snapshot(args: &SnapshotArgs, global: &GlobalArgs) -> Result<Outpu
         text_limit: args.text_limit,
         no_text: args.no_text,
         engine: args.engine.map(crate::cli::SnapshotEngineArg::to_engine),
+        strict_refs: args.strict_refs,
         timeout_ms: millis(ctx.timeout),
         max_chars: args.max_chars,
     };

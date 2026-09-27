@@ -60,7 +60,7 @@ pub use request::{
     TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target, WaitFor, WaitRequest,
     WaitUntil,
 };
-pub use snapshot::{DEFAULT_ENGINE, check_snapshot};
+pub use snapshot::{DEFAULT_ENGINE, RefCall, check_snapshot};
 pub use tabs::commands::TabClosed;
 pub use tabs::parse_tab_id;
 pub use wait::check_condition;

@@ -99,6 +99,8 @@ struct Frame {
     parent: Option<String>,
     name: String,
     url: String,
+    /// Its document (loader id); empty before its first navigation.
+    loader: String,
     /// The session that owns it.
     session: String,
     main: Option<Context>,
@@ -131,6 +133,7 @@ impl FrameTree {
                 parent: None,
                 name: String::new(),
                 url: String::new(),
+                loader: String::new(),
                 session: session.to_owned(),
                 main: None,
                 isolated: None,
@@ -184,8 +187,11 @@ impl FrameTree {
     /// `Page.frameNavigated` on `session`: the frame's new document; the
     /// session owns it now. The old document's frames are gone (Chrome
     /// does not always say so); the new one's attach after this event.
-    pub(crate) fn navigated(&mut self, session: &str, nav: &page::Frame) {
+    /// Returns the frames whose documents went away: the frame itself
+    /// unless the event repeats its document, and its old subframes.
+    pub(crate) fn navigated(&mut self, session: &str, nav: &page::Frame) -> Vec<String> {
         let children = self.take_children(&nav.id);
+        let mut gone: Vec<String> = children.iter().map(|(id, _)| id.clone()).collect();
         let is_root = nav.id == self.root;
         if is_root && nav.loader_id != self.root_loader {
             let old = std::mem::replace(&mut self.root_loader, nav.loader_id.clone());
@@ -204,16 +210,22 @@ impl FrameTree {
         }
         frame.name = nav.name.clone().unwrap_or_default();
         frame.url = full_url(nav);
+        if frame.loader != nav.loader_id {
+            frame.loader.clone_from(&nav.loader_id);
+            gone.insert(0, nav.id.clone());
+        }
+        gone
     }
 
     /// `Page.frameNavigated` with type `BackForwardCacheRestore`: an
     /// earlier document of the main frame is back, with the subframes it
     /// had. Frames its sessions announced again meanwhile keep what they
     /// reported; the rest come back from when the document was left.
-    pub(crate) fn restored(&mut self, session: &str, nav: &page::Frame) {
+    /// Returns the frames whose documents went away, like
+    /// [`FrameTree::navigated`].
+    pub(crate) fn restored(&mut self, session: &str, nav: &page::Frame) -> Vec<String> {
         if nav.id != self.root {
-            self.navigated(session, nav);
-            return;
+            return self.navigated(session, nav);
         }
         let cached = self
             .cached
@@ -222,7 +234,7 @@ impl FrameTree {
             .and_then(|i| self.cached.remove(i))
             .map(|(_, frames)| frames)
             .unwrap_or_default();
-        self.navigated(session, nav);
+        let gone = self.navigated(session, nav);
         for (id, frame) in cached {
             match self.frames.get_mut(&id) {
                 Some(again) => {
@@ -240,6 +252,7 @@ impl FrameTree {
                 }
             }
         }
+        gone
     }
 
     /// Removes the subframes of frame `id` and returns them.
@@ -364,6 +377,11 @@ impl FrameTree {
             self.remove(&id);
         }
         self.contexts_cleared(session);
+    }
+
+    /// The main frame's id.
+    pub(crate) fn root(&self) -> &str {
+        &self.root
     }
 
     /// The id of the session that owns frame `id`.

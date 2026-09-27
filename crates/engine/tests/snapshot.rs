@@ -89,6 +89,7 @@ fn request() -> SnapshotRequest {
         text_limit: 200,
         no_text: false,
         engine: None,
+        strict_refs: false,
         timeout_ms: TIMEOUT_MS,
         max_chars: 0,
     }

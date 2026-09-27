@@ -16,6 +16,7 @@ mod dom;
 mod prune;
 mod refs;
 mod render;
+mod resolve;
 mod tree;
 
 use std::time::Duration;
@@ -36,6 +37,7 @@ use crate::{Engine, Running};
 use prune::View;
 use refs::Refs;
 pub(crate) use refs::parse_ref;
+pub use resolve::RefCall;
 use tree::{Node, NodeKey};
 
 /// The engine `snapshot` uses unless `--engine` says otherwise; chosen by
@@ -168,12 +170,14 @@ impl Engine {
         let mark = running.tabs.mark();
         let _tab = self.tabs.lock(&page.target_id).await;
         let frames = running.tabs.frame_sources(page.id);
-        let scope_key = match &scope {
-            None => None,
-            Some(scope) => Some(
-                self.scope_key(&running, &page, &frames, scope, timeout)
-                    .await?,
-            ),
+        let (scope_key, note) = match &scope {
+            None => (None, None),
+            Some(scope) => {
+                let (key, note) = self
+                    .scope_key(&running, &page, &frames, scope, req.strict_refs, timeout)
+                    .await?;
+                (Some(key), note)
+            }
         };
         let capture = {
             let read = async {
@@ -257,35 +261,32 @@ impl Engine {
         };
         let more = "--interactive, --scope <ref> or --max-chars 0 for all of it";
         let text = fit(&text, req.max_chars, more);
-        let output = Output::typed(&data, text).limit(req.max_chars, more);
+        let mut output = Output::typed(&data, text).limit(req.max_chars, more);
+        if let Some(note) = note {
+            output = output.warning(note);
+        }
         Ok(self.report_events(&running, mark, output, None).await)
     }
 
-    /// The node `--scope` names.
+    /// The node `--scope` names, and the note to show if its ref was
+    /// re-resolved.
     async fn scope_key(
         &self,
         running: &Running,
         page: &Page,
         frames: &[FrameSource],
         scope: &Scope,
+        strict: bool,
         timeout: Duration,
-    ) -> Result<NodeKey, ErrorInfo> {
+    ) -> Result<(NodeKey, Option<String>), ErrorInfo> {
         match scope {
             Scope::Ref(number) => {
-                let entry = running
-                    .tabs
-                    .snapshot_memory(page.id, |m| m.refs.entry(*number).cloned())
-                    .flatten();
-                entry.map(|e| e.key).ok_or_else(|| {
-                    ErrorInfo::new(
-                        ErrorKind::NotFound,
-                        format!("tab {} has no ref e{number}", tab_name(page.id)),
-                    )
-                    .hint(
-                        Hint::run(Cmd::new("snapshot").session(&self.session))
-                            .why("shows the refs the page has now"),
-                    )
-                })
+                let target = self
+                    .resolve_ref(running, page, *number, strict, timeout)
+                    .await?;
+                let found = (target.key.clone(), target.note.clone());
+                target.release();
+                Ok(found)
             }
             Scope::Locator(locator) => {
                 let main = frames.first().ok_or_else(|| {
@@ -339,10 +340,11 @@ impl Engine {
                     .call(params)
                     .await
                     .map_err(|e| from_cdp(&e, &self.session))?;
-                Ok(NodeKey {
+                let key = NodeKey {
                     frame: main.info.id.clone(),
                     backend: described.node.backend_node_id,
-                })
+                };
+                Ok((key, None))
             }
         }
     }
