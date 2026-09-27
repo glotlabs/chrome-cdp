@@ -257,7 +257,7 @@ fn direct_times_out_on_a_silent_chrome() {
     assert_eq!(v["error"]["kind"], json!("Timeout"));
     assert_eq!(
         v["error"]["message"],
-        json!("Browser.getVersion: no response from Chrome after 300ms")
+        json!("Chrome started but did not answer within 300ms")
     );
     // The hung child is killed, not waited for.
     assert!(started.elapsed() < std::time::Duration::from_secs(10));

@@ -287,6 +287,14 @@ impl Chrome {
                 message.push_str(last);
             }
             ErrorInfo::new(ErrorKind::LaunchFailed, message)
+        } else if let CdpError::Timeout { after, .. } = err {
+            // Name the wait, not the internal handshake call.
+            let mut info = errors::from_cdp(err);
+            info.message = format!(
+                "Chrome started but did not answer within {}",
+                output::duration(*after)
+            );
+            info
         } else {
             errors::from_cdp(err)
         };
