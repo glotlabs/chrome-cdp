@@ -11,6 +11,7 @@ mod cft;
 mod discover;
 mod host;
 mod installed;
+mod unzip;
 mod version;
 
 pub use cft::{

@@ -271,7 +271,7 @@ pub fn version_release(
 pub(crate) fn parts(version: &str) -> Vec<u64> {
     version
         .split('.')
-        .map(|p| p.parse::<u64>())
+        .map(str::parse::<u64>)
         .collect::<Result<_, _>>()
         .unwrap_or_default()
 }
@@ -301,10 +301,9 @@ mod tests {
         };
         let mut out = format!(r#""chrome":[{}],"chromedriver":[]"#, list("chrome"));
         if shell {
-            out.push_str(&format!(
-                r#","chrome-headless-shell":[{}]"#,
-                list("chrome-headless-shell")
-            ));
+            out += r#","chrome-headless-shell":["#;
+            out += &list("chrome-headless-shell");
+            out += "]";
         }
         out
     }

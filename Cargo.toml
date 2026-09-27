@@ -36,6 +36,8 @@ schemars = "1.2"
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
+# Chrome for Testing zips only use deflate; reading needs no other codec.
+zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [workspace.lints.rust]
 # Denied (not forbidden) so the fd-passing module in `cdp` can opt out with
