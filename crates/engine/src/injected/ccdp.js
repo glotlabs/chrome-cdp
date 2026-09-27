@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 9abb18bf920543ea
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 313c62ae61f82e1c
 "use strict";
 (() => {
   // src/dom.ts
@@ -1504,6 +1504,165 @@ ${inner}
     return false;
   }
 
+  // src/form.ts
+  function focused(el) {
+    const doc = el ? el.ownerDocument || el : document;
+    let f = doc.activeElement;
+    while (f && f.shadowRoot && f.shadowRoot.activeElement) f = f.shadowRoot.activeElement;
+    return f && f !== doc.body && f !== doc.documentElement ? f : null;
+  }
+  function hasFocus(el) {
+    const f = focused(el);
+    return !!f && (f === el || contains(el, f));
+  }
+  function caretToEnd(el) {
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      try {
+        const end = el.value.length;
+        el.setSelectionRange(end, end);
+      } catch {
+      }
+      return;
+    }
+    if (el.isContentEditable) {
+      const range = el.ownerDocument.createRange();
+      range.selectNodeContents(el);
+      range.collapse(false);
+      const selection = el.ownerDocument.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
+  }
+  var SET_VALUE = /* @__PURE__ */ new Set(["color", "date", "time", "datetime-local", "month", "range", "week"]);
+  var TYPE_INTO = /* @__PURE__ */ new Set(["", "email", "number", "password", "search", "tel", "text", "url"]);
+  var EXAMPLES = {
+    color: "#ff0000",
+    date: "2026-09-27",
+    time: "13:45",
+    "datetime-local": "2026-09-27T13:45",
+    month: "2026-09",
+    week: "2026-W39"
+  };
+  var fire = (el) => {
+    el.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  function fillPrepare(el, value2) {
+    if (el instanceof HTMLInputElement) {
+      const type = el.type.toLowerCase();
+      if (!TYPE_INTO.has(type) && !SET_VALUE.has(type)) {
+        return { error: `it is an <input type=${type}>, which takes no text` };
+      }
+      if (type === "number" && value2.trim() !== "" && Number.isNaN(Number(value2.trim()))) {
+        return { error: `it is an <input type=number>, and "${value2}" is not a number`, example: el.min || "42" };
+      }
+      if (SET_VALUE.has(type)) {
+        const want = value2.trim();
+        el.focus();
+        el.value = want;
+        if (el.value !== want) {
+          const range2 = type === "range";
+          const like = range2 ? `a number from ${el.min || "0"} to ${el.max || "100"}${el.step && el.step !== "1" ? ` in steps of ${el.step}` : ""}` : `a value like ${EXAMPLES[type]}`;
+          const example = range2 ? el.min || "0" : EXAMPLES[type];
+          return { error: `it is an <input type=${type}>, which takes ${like}, not "${value2}"`, example };
+        }
+        fire(el);
+        return { set: true };
+      }
+      el.focus();
+      el.select();
+      return { set: false };
+    }
+    if (el instanceof HTMLTextAreaElement) {
+      el.focus();
+      el.select();
+      return { set: false };
+    }
+    if (!el.isContentEditable) {
+      return { error: "it is not an input, textarea or contenteditable element" };
+    }
+    const range = el.ownerDocument.createRange();
+    range.selectNodeContents(el);
+    const selection = el.ownerDocument.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    el.focus();
+    return { set: false };
+  }
+  function fieldValue(el) {
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      return { value: el.value, secret: el instanceof HTMLInputElement && el.type === "password" };
+    }
+    return { value: el.innerText.replace(/\n$/, ""), secret: false };
+  }
+  var option = (o) => ({ value: o.value, label: norm(o.label) });
+  var LISTED2 = 20;
+  function selectOptions(el, values) {
+    if (!(el instanceof HTMLSelectElement)) {
+      return JSON.stringify({ notSelect: true, role: roleOf(el) || "" });
+    }
+    const options = Array.from(el.options);
+    const picked = [];
+    for (const v of values) {
+      const wanted = norm(v);
+      const found = options.find((o) => o.value === v) || options.find((o) => norm(o.label) === wanted) || options.find((o) => norm(o.label).toLowerCase() === wanted.toLowerCase());
+      if (!found) {
+        const listed = options.slice(0, LISTED2).map((o) => ({ ...option(o), disabled: o.disabled || void 0 }));
+        return JSON.stringify({ missing: v, options: listed, more: Math.max(0, options.length - LISTED2) });
+      }
+      if (found.disabled || found.parentElement instanceof HTMLOptGroupElement && found.parentElement.disabled) {
+        return JSON.stringify({ disabled: v });
+      }
+      if (!picked.includes(found)) picked.push(found);
+    }
+    if (!el.multiple && picked.length > 1) return JSON.stringify({ single: picked.length });
+    for (const o of options) o.selected = picked.includes(o);
+    fire(el);
+    return JSON.stringify({ selected: picked.map(option) });
+  }
+  var CHECKABLE = /* @__PURE__ */ new Set(["checkbox", "radio", "switch", "menuitemcheckbox", "menuitemradio"]);
+  function visuallyHidden(el) {
+    if (invisible(el)) return true;
+    const box = el.getBoundingClientRect();
+    if (box.width <= 1 || box.height <= 1) return true;
+    const s = getComputedStyle(el);
+    return s.clip !== "auto" && s.clip !== "" || s.clipPath !== "none" && s.clipPath !== "";
+  }
+  function checkState(el) {
+    let control = el;
+    if (el instanceof HTMLLabelElement && el.control) control = el.control;
+    let kind = null;
+    let state = false;
+    const role = roleOf(control) || "";
+    if (control instanceof HTMLInputElement && (control.type === "checkbox" || control.type === "radio")) {
+      kind = "native";
+      state = control.indeterminate && control.type === "checkbox" ? "mixed" : control.checked;
+    } else if (CHECKABLE.has(role)) {
+      kind = "aria";
+      const aria = control.getAttribute("aria-checked");
+      state = aria === "mixed" ? "mixed" : aria === "true";
+    }
+    let click = control;
+    if (el !== control) {
+      click = el;
+    } else if (kind === "native" && visuallyHidden(control)) {
+      const labels = Array.from(control.labels || []);
+      click = labels.find((l) => visible(l) && !invisible(l)) || control;
+    }
+    const radio = role === "radio" || role === "menuitemradio" || control.type === "radio";
+    const candidate = describe(control);
+    const disabled2 = control.matches(":disabled") || control.getAttribute("aria-disabled") === "true";
+    const out = { kind, state, radio, candidate, disabled: disabled2, click: click && click !== control ? describe(click) : null };
+    return { json: JSON.stringify(out), els: [control, click] };
+  }
+  function reaches(el, hit) {
+    if (contains(el, hit)) return true;
+    for (let a = hit instanceof Element ? hit : parentOf(hit); a; a = parentOf(a)) {
+      if (a instanceof HTMLLabelElement) return a.control === el;
+    }
+    return false;
+  }
+
   // src/index.ts
   var api = {
     version: 1,
@@ -1522,7 +1681,15 @@ ${inner}
     covering,
     scrollState,
     scrollSettled,
-    draggable
+    draggable,
+    focused,
+    hasFocus,
+    caretToEnd,
+    fillPrepare,
+    fieldValue,
+    selectOptions,
+    checkState,
+    reaches
   };
   if (!globalThis.__ccdp) globalThis.__ccdp = api;
 })();

@@ -32,7 +32,8 @@
 //!
 //! When the timeout expires, the error names the check that failed last
 //! and what it saw. `--force` ([`Checks::force`]) skips checks 2-5 and 7,
-//! but still scrolls the element into view and aims at it.
+//! but still scrolls the element into view and aims at it. Actions that
+//! do not use the mouse skip 7 ([`Checks::no_hit_test`]).
 
 use std::time::Duration;
 
@@ -90,6 +91,10 @@ pub struct Checks {
     /// element's box instead of at the centre of its visible part.
     #[serde(default)]
     pub position: Option<(f64, f64)>,
+    /// Skip the hit test (7): the action reaches the element through the
+    /// keyboard or the page, not a mouse at a point (fill, type, select).
+    #[serde(default)]
+    pub no_hit_test: bool,
 }
 
 /// Where an action acts on its element: a point in the tab's viewport, in
@@ -422,7 +427,8 @@ impl Engine {
             },
             Err(why) => return Err(Attempt::Retry(Failure::OutOfView { why })),
         };
-        if !checks.force {
+        let hit_test = !checks.force && !checks.no_hit_test;
+        if hit_test {
             let aim = Aim {
                 key: &target.key,
                 context: &target.context,
@@ -499,6 +505,9 @@ impl Engine {
                             viewport.height.round()
                         ),
                     }));
+                }
+                if !hit_test {
+                    return Ok(());
                 }
                 let aim = Aim {
                     key: &owner.key,
@@ -679,7 +688,7 @@ impl Engine {
             let hit_id = resolved.object.object_id.unwrap_or_default();
             let mut params = runtime::CallFunctionOnParams::new(format!(
                 "function (hit) {{ {GUARD} const ccdp = globalThis.__ccdp;\n\
-                 return ccdp.contains(this, hit) ? null : ccdp.covering(this, hit); }}"
+                 return ccdp.reaches(this, hit) ? null : ccdp.covering(this, hit); }}"
             ));
             params.object_id = Some(aim.object_id.to_owned());
             params.arguments = Some(vec![runtime::CallArgument {
@@ -795,7 +804,7 @@ impl Engine {
 /// Whether a failed resolve means "not there yet": the locator matched
 /// nothing, or names a frame that is not there. A ref that is gone does
 /// not come back.
-fn waits_for(err: &ErrorInfo) -> bool {
+pub(crate) fn waits_for(err: &ErrorInfo) -> bool {
     err.kind == ErrorKind::NotFound
         && err
             .details

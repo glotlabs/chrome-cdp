@@ -48,7 +48,7 @@ const on = (el: Element, cause: Element | null) => (cause && cause !== el ? ` on
 /** Why the element is not visible, or `null` if it is: a non-empty box,
  * not `visibility: hidden`, and not transparent (`opacity: 0` on it or an
  * ancestor). */
-function invisible(el: Element): string | null {
+export function invisible(el: Element): string | null {
   if (!visible(el)) {
     const box = el.getBoundingClientRect();
     if (box.width > 0 && box.height > 0) return 'it has visibility: hidden';

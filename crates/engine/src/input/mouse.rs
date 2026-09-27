@@ -208,6 +208,7 @@ impl Actor<'_> {
             editable: false,
             force,
             position,
+            no_hit_test: false,
         };
         let retry = |l: &str| self.retry(l);
         let ready = self.ready(&parsed, checks, &retry).await?;

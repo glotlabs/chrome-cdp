@@ -35,24 +35,28 @@ const CLICK: Checks = Checks {
     editable: false,
     force: false,
     position: None,
+    no_hit_test: false,
 };
 const HOVER: Checks = Checks {
     enabled: false,
     editable: false,
     force: false,
     position: None,
+    no_hit_test: false,
 };
 const FILL: Checks = Checks {
     enabled: true,
     editable: true,
     force: false,
     position: None,
+    no_hit_test: false,
 };
 const FORCE: Checks = Checks {
     enabled: true,
     editable: false,
     force: true,
     position: None,
+    no_hit_test: false,
 };
 
 fn chrome_path() -> Option<PathBuf> {

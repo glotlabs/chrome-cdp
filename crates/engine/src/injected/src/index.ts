@@ -3,7 +3,8 @@
 // Page.addScriptToEvaluateOnNewDocument) as `globalThis.__ccdp`, where
 // page scripts cannot reach or change it. It holds the locator engine,
 // the DOM walker, what the read commands (4.5) take from elements, the
-// actionability checks (5.1), and what mouse actions ask the page (5.2).
+// actionability checks (5.1), what mouse actions ask the page (5.2), and
+// what keyboard and form actions ask it (5.3).
 // Built into `ccdp.js` by `cargo xtask build-js`; the engine embeds that
 // file.
 
@@ -13,6 +14,7 @@ import { walk } from './walker';
 import { contains, visible } from './dom';
 import { checkActionable, covering } from './actionable';
 import { draggable, scrollSettled, scrollState } from './pointer';
+import { caretToEnd, checkState, fieldValue, fillPrepare, focused, hasFocus, reaches, selectOptions } from './form';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -37,6 +39,14 @@ const api = {
   scrollState,
   scrollSettled,
   draggable,
+  focused,
+  hasFocus,
+  caretToEnd,
+  fillPrepare,
+  fieldValue,
+  selectOptions,
+  checkState,
+  reaches,
 };
 
 if (!globalThis.__ccdp) globalThis.__ccdp = api;
