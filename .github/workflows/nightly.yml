@@ -1,0 +1,48 @@
+name: Nightly
+
+# Installs Chrome for Testing for real on every OS and architecture
+# (plan 02, milestone 2.2), so a change in the index or the zips shows up.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  install:
+    name: install (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest      # linux64
+          - ubuntu-24.04-arm   # linux-arm64
+          - macos-latest       # mac-arm64
+          - macos-15-intel     # mac-x64
+    runs-on: ${{ matrix.os }}
+    env:
+      CHROME_CDP_CACHE: ${{ runner.temp }}/chrome-cdp-cache
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p chrome-cdp
+      # install checks on Linux that the browser starts (`--version`) and
+      # fails with the missing libraries if it does not.
+      - run: target/release/chrome-cdp install
+      - run: target/release/chrome-cdp install --headless-shell
+      - run: target/release/chrome-cdp install --list
+      - name: The installed binaries run
+        shell: bash
+        run: |
+          "$(target/release/chrome-cdp install -q)" --version
+          "$(target/release/chrome-cdp install --headless-shell -q)" --version
+      # Launching needs the sandbox; on Ubuntu the AppArmor userns rule
+      # blocks it for binaries outside /opt/google/chrome until milestone
+      # 2.3 handles it, so this step may fail there for now.
+      - name: Launch the installed Chrome
+        continue-on-error: true
+        run: target/release/chrome-cdp __direct cdp Browser.getVersion

@@ -6,9 +6,10 @@ for agents: one command per step, compact output, refs instead of selectors,
 and errors that say what to run next.
 
 **Status:** early development. Only `chrome-cdp --version`, `chrome-cdp
-schema` and a temporary raw CDP call work so far:
+schema`, `install`/`uninstall` and a temporary raw CDP call work so far:
 
 ```sh
+chrome-cdp install                    # Chrome for Testing, if there is no Chrome
 chrome-cdp __direct cdp Browser.getVersion
 chrome-cdp __direct cdp --target page Runtime.evaluate '{"expression":"1+1"}'
 chrome-cdp schema version   # JSON Schema of `chrome-cdp --version --json`
@@ -18,6 +19,17 @@ It finds Chrome by itself: `--chrome <path>`, then `$CHROME_CDP_CHROME`, then
 browsers installed in the chrome-cdp cache (`~/.cache/chrome-cdp`, or
 `~/Library/Caches/chrome-cdp` on macOS; `$CHROME_CDP_CACHE` overrides it),
 then a system Google Chrome or Chromium. `-v` logs which one it used.
+
+`chrome-cdp install` downloads [Chrome for
+Testing](https://googlechromelabs.github.io/chrome-for-testing/) into that
+cache: `--channel stable|beta|dev|canary`, `--version 154`, `--headless-shell`
+for the smaller headless-only build, `--force` to download again, and `--list`
+for what is installed and available. `chrome-cdp uninstall <id>` removes one.
+On Linux it checks that the browser starts; if system libraries are missing it
+prints the `apt-get`/`dnf` line, and `--with-deps` runs it (with sudo, asking
+first). `--auto-install` (or `CHROME_CDP_AUTO_INSTALL=1`) installs Chrome when
+none is found. `CHROME_CDP_CFT_URL` points at a mirror of the Chrome for
+Testing index.
 
 Every command prints its result on stdout and notes and errors on stderr,
 takes `--json` (one `{"ok":…}` object) and `-q`, and exits 0 ok, 1 action
