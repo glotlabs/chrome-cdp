@@ -1,0 +1,11 @@
+$ chrome-cdp dialog accept
+exit: 1
+--- stderr
+error: no dialog is open in tab t1
+  hint: chrome-cdp tabs   (shows each tab's open dialog, if any)
+
+$ chrome-cdp dialog accept --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"no dialog is open in tab t1","hint":"chrome-cdp tabs   (shows each tab's open dialog, if any)","details":{"open_in":[],"tab":"t1"}}}
+

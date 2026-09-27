@@ -1,0 +1,13 @@
+$ chrome-cdp downloads
+exit: 0
+--- stdout
+no downloads yet; files the pages download go to <sandbox>/run/chrome-cdp/default/downloads
+
+$ chrome-cdp downloads --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"dir":"<sandbox>/run/chrome-cdp/default/downloads","downloads":[]}}
+
+$ chrome-cdp downloads -q
+exit: 0
+

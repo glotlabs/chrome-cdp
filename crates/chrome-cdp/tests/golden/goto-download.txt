@@ -1,0 +1,15 @@
+$ chrome-cdp goto '<site>/downloads/report.txt?download=report.txt'
+exit: 0
+--- stdout
+downloaded: report.txt (27B) → <sandbox>/run/chrome-cdp/default/downloads/report.txt
+
+$ chrome-cdp goto '<site>/downloads/report.txt?download=report.txt' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"download":{"file":"report.txt","path":"<sandbox>/run/chrome-cdp/default/downloads/report (1).txt","received_bytes":27,"state":"completed","tab":"t1","total_bytes":27,"url":"<site>/downloads/report.txt?download=report.txt"},"elapsed_ms":<ms>,"navigated":false,"requested_url":"<site>/downloads/report.txt?download=report.txt","restored":false,"same_document":false,"tab":"t1","title":"","url":"about:blank","wait":"download"}}
+
+$ chrome-cdp goto '<site>/downloads/report.txt?download=report.txt' -q
+exit: 0
+--- stdout
+<sandbox>/run/chrome-cdp/default/downloads/report (2).txt
+

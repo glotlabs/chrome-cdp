@@ -1,0 +1,19 @@
+$ chrome-cdp goto '<site>/dialogs/on-load.html?kind=alert&message=Saved'
+exit: 0
+--- stdout
+→ 200 <site>/dialogs/on-load.html?kind=alert&message=Saved "Dialog on load" (<ms>)
+--- stderr
+warning: dialog: alert "Saved" (accepted)
+
+$ chrome-cdp goto '<site>/dialogs/on-load.html?kind=alert&message=Saved' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"elapsed_ms":<ms>,"navigated":true,"requested_url":"<site>/dialogs/on-load.html?kind=alert&message=Saved","restored":false,"same_document":false,"status":200,"tab":"t1","title":"Dialog on load","url":"<site>/dialogs/on-load.html?kind=alert&message=Saved","wait":"settle"},"warnings":["dialog: alert \"Saved\" (accepted)"],"events":[{"type":"dialog","tab":"t1","kind":"alert","message":"Saved","accepted":true,"by":"policy"}]}
+
+$ chrome-cdp goto '<site>/dialogs/on-load.html?kind=alert&message=Saved' -q
+exit: 0
+--- stdout
+<site>/dialogs/on-load.html?kind=alert&message=Saved
+--- stderr
+warning: dialog: alert "Saved" (accepted)
+

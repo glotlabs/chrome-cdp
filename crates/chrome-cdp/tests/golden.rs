@@ -439,6 +439,60 @@ const CASES: &[Case] = &[
         modes: ERR,
         fixture: Fixture::NoSessions,
     },
+    Case {
+        name: "wait-download-none",
+        args: &["wait", "--download", "--timeout", "500ms"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "goto-dialog-open",
+        args: &[
+            "goto",
+            "{site}/dialogs/on-load.html?kind=confirm&message=Delete%20item%3F",
+        ],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "goto-alert",
+        args: &[
+            "goto",
+            "{site}/dialogs/on-load.html?kind=alert&message=Saved",
+        ],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "dialog-none-open",
+        args: &["dialog", "accept"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "dialog-not-running",
+        args: &["dialog", "dismiss"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
+        name: "goto-download",
+        args: &["goto", "{site}/downloads/report.txt?download=report.txt"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "downloads-none",
+        args: &["downloads"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "goto-auth-required",
+        args: &["goto", "{site}/auth/"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
 ];
 
 fn golden_dir() -> PathBuf {
@@ -549,7 +603,9 @@ fn mask(text: &str, prefix: &str, keep: &dyn Fn(char) -> bool, to: &str) -> Stri
             .chars()
             .next()
             .is_some_and(|c| c.is_ascii_digit() || to == "<rand>");
-        if end > 0 && starts_right {
+        // ` (412ms)` is a time, ` (27B)` and `report (1).txt` are not.
+        let ends_right = prefix != " (" || rest[..end].ends_with('s');
+        if end > 0 && starts_right && ends_right {
             out.push_str(to);
             rest = &rest[end..];
         }

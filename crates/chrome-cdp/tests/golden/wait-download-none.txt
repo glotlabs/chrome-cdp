@@ -1,0 +1,13 @@
+$ chrome-cdp wait --download --timeout 500ms
+exit: 3
+--- stderr
+error: waited 500ms for a download to finish
+  observed: no download started
+  page: about:blank ""
+  hint: chrome-cdp wait --download --timeout 1s   (only downloads since the previous command count; run the action that starts it first)
+
+$ chrome-cdp wait --download --timeout 500ms --json
+exit: 3
+--- stdout
+{"ok":false,"error":{"kind":"Timeout","message":"waited 500ms for a download to finish","hint":"chrome-cdp wait --download --timeout 1s   (only downloads since the previous command count; run the action that starts it first)","notes":[{"label":"observed","text":"no download started"},{"label":"page","text":"about:blank \"\""}],"details":{"condition":"download","observed":{"download":null},"page":{"title":"","url":"about:blank"},"timeout_ms":500}}}
+

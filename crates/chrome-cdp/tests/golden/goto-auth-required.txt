@@ -1,0 +1,11 @@
+$ chrome-cdp goto <site>/auth/
+exit: 1
+--- stderr
+error: <site> asks for a user name and password (HTTP authentication)
+  hint: chrome-cdp open --http-credentials USER:PASSWORD   (then goto again; if the session has some, the server refused them)
+
+$ chrome-cdp goto <site>/auth/ --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NavigationFailed","message":"<site> asks for a user name and password (HTTP authentication)","hint":"chrome-cdp open --http-credentials USER:PASSWORD   (then goto again; if the session has some, the server refused them)","details":{"error":"net::ERR_INVALID_AUTH_CREDENTIALS","reason":"auth","url":"<site>/auth/"}}}
+

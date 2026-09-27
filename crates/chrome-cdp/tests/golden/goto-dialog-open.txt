@@ -1,0 +1,11 @@
+$ chrome-cdp goto '<site>/dialogs/on-load.html?kind=confirm&message=Delete%20item%3F'
+exit: 5
+--- stderr
+error: dialog open in tab t1: confirm "Delete item?"
+  hint: chrome-cdp dialog accept, or chrome-cdp dialog dismiss
+
+$ chrome-cdp goto '<site>/dialogs/on-load.html?kind=confirm&message=Delete%20item%3F' --json
+exit: 5
+--- stdout
+{"ok":false,"error":{"kind":"DialogOpen","message":"dialog open in tab t1: confirm \"Delete item?\"","hint":"chrome-cdp dialog accept, or chrome-cdp dialog dismiss","details":{"dialog":{"kind":"confirm","message":"Delete item?","url":"<site>/dialogs/on-load.html?kind=confirm&message=Delete%20item%3F"},"tab":"t1"}}}
+
