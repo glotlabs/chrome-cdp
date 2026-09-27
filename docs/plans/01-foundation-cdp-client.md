@@ -1,6 +1,6 @@
 # Plan 01 — Foundation & CDP client
 
-Status: DONE (1.1-1.4; the two open criteria need a green GitHub CI run, including macOS)
+Status: DONE (1.1-1.4; the two open criteria are verified on Linux and wait only for a first GitHub CI run, which needs a remote, for macOS and the other runners)
 Depends on: 00-overview (read first), 08 §2–§4 (output conventions)
 
 ## Goal
@@ -151,3 +151,6 @@ _(append here)_
 - 1.4: `__direct cdp` also takes `--target browser|page` (page = a new about:blank tab), which plan 02's `cdp` has too, so page methods are testable now. The Chrome comes from `--chrome` or `CHROME_CDP_CHROME` only; discovery is plan 02. It sends `Browser.getVersion` as a handshake, so a Chrome that dies at startup is `LaunchFailed` with the tail of its stderr (in `details.chrome_stderr`), and "No usable sandbox" gets an AppArmor hint.
 - 1.4: `CdpError` maps to `ProtocolError` (exit 4; -32601/-32602 hint at the domain's docs), `Timeout` (exit 3; hint doubles `--timeout`), and `BrowserCrashed` for a disconnect (exit 4).
 - 1.4: Text and `-q` output of `__direct cdp` is bounded by `--max-chars` (default 20,000; 0 = no limit). `--json` output is never truncated, because truncated JSON is invalid; plan 08 should decide how `--json` stays bounded.
+- Close-out: `cargo xtask ci` (with `CHROME_PATH` and `CHROME_CDP_REQUIRE_CHROME=1`), `cargo deny check` and `cargo xtask dist` (1.7 MB) are green on Linux x86_64. The two unticked criteria need the GitHub runners. The repo has no remote yet, so they are left open rather than guessed.
+- Close-out: The kill test now leaves 10 calls pending on two page sessions and checks that all of them, plus new calls on the browser session, fail with `Disconnected`. Measured 8-17 ms after SIGKILL, with the test run alone on Linux.
+- Close-out: The latency baseline measured 2.97 s (297 µs/call) on today's dev VM (4 vCPUs), just under the 3 s budget. The 1.3 commit measures the same, so the difference from 1.6 s is the host, not a regression. The client is 11 µs/call of that (in-memory transport); `Browser.getVersion`, which never leaves Chrome's browser process, is 130 µs. Under a parallel build on the same VM it took 4 s. Plan 10 should run this benchmark on a fixed, idle machine.
