@@ -1,6 +1,6 @@
 # Plan 03 — Pages, navigation & waiting
 
-Status: TODO
+Status: IN PROGRESS (3.1 done)
 Depends on: 02
 
 ## Goal
@@ -148,3 +148,12 @@ download, and a basic-auth route.
 ## Decisions log
 
 _(append here)_
+- 3.1: The fixture server is the `fixtures` crate (hyper 1, already in the tree through reqwest). Its two origins are `http://127.0.0.1:<a>` and `http://localhost:<b>`: different *sites*, not just ports, so a frame from one in the other is an OOPIF with Chrome's default site isolation; no `--site-per-process` is needed. Pages may use `{{ORIGIN_A}}`, `{{ORIGIN_B}}` and `{{ORIGIN}}`, any path takes `?delay=<ms>`, and responses are `no-store`. Tests use `Fixtures::shared()` (one per test process, on its own thread). `cargo xtask fixtures` runs the crate's binary, since xtask stays std-only.
+- 3.1: A new target's setup steps (auto-attach, `Page.enable`, init scripts) and `Runtime.runIfWaitingForDebugger` are all sent before any answer is awaited. Chrome runs them in order, but `Page.enable` in a noopener popup's new renderer only answers once the target runs, so awaiting each step first stalled every such popup for the 10 s step timeout and skipped its init scripts. To make "sent in order" hold, `cdp::Session::call` now queues the request when called, not when first polled.
+- 3.1: Tab ids are given in the order Chrome announces the targets (`attachedToTarget`), but a tab is listed and usable only once its setup has finished. Pages with a `subtype` (prerender) are not tabs; other target kinds (workers, `browser_ui`, extension pages) are attached and resumed but not listed.
+- 3.1: When the active tab closes, the tab that was active before it becomes active, else the newest tab. When no tab is left (a page ran `window.close()`), the next page command opens a blank one.
+- 3.1: "Opened" tabs are the ones no command created, not only those with an `openerId` (Chrome sets it for noopener popups too; a user's Ctrl+T in headed mode counts as well). A page command reports them as typed `events` (`tab_opened`, the first `protocol::schema::Event`) and, because `cdp`'s stdout is the raw JSON result, as a warning line (`opened tab t2 (url); switch to it: chrome-cdp tab t2`). The report waits up to 500 ms for the popup's first URL. A popup that attaches after the command returned (a `target=_blank` click is asynchronous) is not reported; plan 05's post-action settle should catch those for actions.
+- 3.1: `--follow-popups` is an `open` flag that sets the session's policy (kept until changed, and across a daemon upgrade); it is not a launch option, so it never forces `--restart`. `--tab` is a global flag with `CHROME_CDP_TAB`, used by `cdp --target page`, `open <url>` and `tab close`.
+- 3.1: `tabs`, `tab <id>` and `tab close` need a running session and do not start one (`DaemonUnavailable`, hint `chrome-cdp open`); `tab new` starts one like `cdp` does. `tab` with no id or subcommand prints its help. The plan 08 checklist test now also checks a command that has both subcommands and positionals (`tab`).
+- 3.1: `Engine::add_init_script` applies a script to every current page and OOPIF session and to all later ones (also after a browser restart). It is the hook for plan 07's init scripts; only tests call it for now. Emulation and routes add their steps to `tabs::setup`, and 3.2 adds frame tracking there.
+- 3.1: `status` and `sessions` count tabs from the manager instead of calling `Target.getTargets`.

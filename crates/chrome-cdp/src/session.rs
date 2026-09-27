@@ -201,6 +201,9 @@ fn keep_previous_options(request: &mut OpenRequest, previous: &OpenRequest) {
     if request.chrome_args.is_empty() {
         request.chrome_args.clone_from(&previous.chrome_args);
     }
+    if request.follow_popups.is_none() {
+        request.follow_popups = previous.follow_popups;
+    }
 }
 
 /// `connect <endpoint>`.
@@ -640,6 +643,7 @@ mod tests {
     fn an_upgrade_keeps_the_options_not_given_again() {
         let previous = OpenRequest {
             headed: Some(true),
+            follow_popups: Some(true),
             profile: Some(browser::ProfileChoice::Named("work".into())),
             chrome_args: vec!["--lang=de".into()],
             ..OpenRequest::default()
@@ -652,5 +656,6 @@ mod tests {
         assert_eq!(request.headed, Some(true));
         assert_eq!(request.profile, previous.profile);
         assert_eq!(request.chrome_args, ["--lang=fr"]);
+        assert_eq!(request.follow_popups, Some(true));
     }
 }

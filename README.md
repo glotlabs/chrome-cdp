@@ -6,13 +6,14 @@ for agents: one command per step, compact output, refs instead of selectors,
 and errors that say what to run next.
 
 **Status:** early development. Sessions (`open`, `connect`, `status`,
-`sessions`, `close`), raw CDP calls, `install`/`uninstall` and `schema` work
-so far:
+`sessions`, `close`), tabs (`tabs`, `tab`), raw CDP calls,
+`install`/`uninstall` and `schema` work so far:
 
 ```sh
 chrome-cdp install                    # Chrome for Testing, if there is no Chrome
 chrome-cdp open https://example.com   # starts the session's browser
 chrome-cdp cdp --target page Runtime.evaluate '{"expression":"document.title"}'
+chrome-cdp tabs                       # * t1  https://example.com/  "Example Domain"
 chrome-cdp status
 chrome-cdp close
 chrome-cdp schema open      # JSON Schema of `chrome-cdp open --json`
@@ -28,6 +29,16 @@ that browser running. Session files (socket, logs, `meta.json`) live in
 `$XDG_RUNTIME_DIR/chrome-cdp/<session>` on Linux and
 `$TMPDIR/chrome-cdp/<session>` on macOS; `status` shows the path and
 `status --logs` the end of Chrome's log.
+
+Tabs have short ids (`t1`, `t2`, …) in the order they open, never reused in a
+session. Commands act on the active tab, or on the one `--tab t2` (or
+`CHROME_CDP_TAB`) names. `tab t2` switches, `tab new [url]` opens one and
+switches to it, and `tab close [id]` closes one; closing the last tab leaves a
+blank one unless `--close-browser` closes the session. A popup (`window.open`,
+`target=_blank`) opens a new tab that stays in the background, and the command
+that opened it says `opened tab t3`; `open --follow-popups` makes popups
+active instead. Every new tab, frame and worker is set up before it runs any
+script.
 
 It finds Chrome by itself: `--chrome <path>`, then `$CHROME_CDP_CHROME`, then
 browsers installed in the chrome-cdp cache (`~/.cache/chrome-cdp`, or
@@ -66,11 +77,15 @@ or a project's `.chrome-cdp.toml`.
 cargo xtask ci      # fmt --check, gen-cdp --check, clippy -D warnings, tests
 cargo xtask gen-cdp # regenerate CDP types (crates/cdp/protocol/README.md)
 cargo xtask dist    # release binary in dist/ (size budget: 15 MB)
+cargo xtask fixtures # serve testdata/site on two local origins
 cargo deny check    # licenses and advisories
 ```
 
 Integration tests need a real Chrome: set `CHROME_PATH` to a Chrome or
-Chromium binary. Command output is pinned by golden files in
+Chromium binary. They load pages from the fixture site in `testdata/site`,
+served by `crates/fixtures` on two sites (`127.0.0.1` and `localhost`, so
+frames from one in the other run out of process); `cargo xtask fixtures`
+serves it for poking at by hand. Command output is pinned by golden files in
 `crates/chrome-cdp/tests/golden/`; after an intended change, rewrite them with
 `UPDATE_GOLDEN=1 cargo test -p chrome-cdp --test golden`.
 
