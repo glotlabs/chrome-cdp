@@ -60,22 +60,36 @@ impl Session {
     }
 
     /// Calls a typed command and decodes its result.
-    pub async fn call<C: Command>(&self, params: C) -> Result<C::Returns> {
-        let result = self
+    ///
+    /// The command is sent when `call` is called, not when the future is
+    /// first polled: calls made one after another reach Chrome in that
+    /// order even when awaited together (e.g. setting up a paused target
+    /// and resuming it, where an early answer would wait for the resume).
+    pub fn call<C: Command>(
+        &self,
+        params: C,
+    ) -> impl Future<Output = Result<C::Returns>> + Send + 'static {
+        let response = self
             .conn
-            .request(self.id(), C::METHOD, &params, self.timeout())
-            .await?;
-        serde_json::from_value(result).map_err(|e| CdpError::Decode {
-            method: C::METHOD.to_owned(),
-            message: e.to_string(),
-        })
+            .request(self.id(), C::METHOD, &params, self.timeout());
+        async move {
+            let result = response.await?;
+            serde_json::from_value(result).map_err(|e| CdpError::Decode {
+                method: C::METHOD.to_owned(),
+                message: e.to_string(),
+            })
+        }
     }
 
     /// Calls any method with JSON params and returns the raw JSON result.
-    pub async fn call_raw(&self, method: &str, params: Value) -> Result<Value> {
+    /// Sent at once, like [`Session::call`].
+    pub fn call_raw(
+        &self,
+        method: &str,
+        params: Value,
+    ) -> impl Future<Output = Result<Value>> + Send + 'static {
         self.conn
             .request(self.id(), method, &params, self.timeout())
-            .await
     }
 
     /// Streams this session's events of type `E`.

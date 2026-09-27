@@ -181,6 +181,28 @@ async fn detaching_ends_the_session_streams() {
 }
 
 #[tokio::test]
+async fn calls_are_sent_when_made_not_when_polled() {
+    let (conn, mut peer) = connect();
+    let session = conn.session("S1");
+    // Made in this order, polled in the reverse one.
+    let first = session.call_raw("A.first", json!({}));
+    let second = session.call_raw("A.second", json!({}));
+    let (id_a, a) = next_request(&mut peer).await;
+    let (id_b, b) = next_request(&mut peer).await;
+    assert_eq!(
+        (a["method"].as_str(), b["method"].as_str()),
+        (Some("A.first"), Some("A.second"))
+    );
+    peer.send_json(&json!({"id": id_b, "result": {"n": 2}}));
+    peer.send_json(&json!({"id": id_a, "result": {"n": 1}}));
+    assert_eq!(second.await.unwrap(), json!({"n": 2}));
+    assert_eq!(first.await.unwrap(), json!({"n": 1}));
+    // A call dropped unpolled leaves nothing pending.
+    drop(session.call_raw("A.dropped", json!({})));
+    assert_eq!(conn.pending_calls(), 0);
+}
+
+#[tokio::test]
 async fn attach_uses_flat_mode() {
     let (conn, mut peer) = connect();
     let attach = tokio::spawn({

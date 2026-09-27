@@ -200,17 +200,32 @@ impl Connection {
         self.inner.shared.subscribe(session_id.unwrap_or_default())
     }
 
-    /// Sends one request and waits for its response.
+    /// Sends one request now and returns a future for its response.
+    ///
+    /// The request is queued before this returns, not when the future is
+    /// first polled, so requests made one after another reach Chrome in
+    /// that order even when their futures are awaited together.
     ///
     /// Cancel safe: dropping the future removes the pending entry, and a late
     /// response is ignored.
-    pub(crate) async fn request<P: Serialize + ?Sized>(
+    pub(crate) fn request<P: Serialize + ?Sized>(
         &self,
         session_id: Option<&str>,
         method: &str,
         params: &P,
         timeout: Duration,
-    ) -> Result<Value> {
+    ) -> impl Future<Output = Result<Value>> + Send + 'static + use<P> {
+        let sent = self.send(session_id, method, params);
+        response(sent, method.to_owned(), timeout)
+    }
+
+    /// Registers a request as pending and queues it for the writer.
+    fn send<P: Serialize + ?Sized>(
+        &self,
+        session_id: Option<&str>,
+        method: &str,
+        params: &P,
+    ) -> Result<(oneshot::Receiver<Response>, PendingGuard)> {
         let shared = &self.inner.shared;
         let id = self.inner.next_id.fetch_add(1, Ordering::Relaxed);
         let msg = serde_json::to_vec(&Request {
@@ -226,7 +241,10 @@ impl Connection {
 
         let (tx, rx) = oneshot::channel();
         shared.pending.insert(id, tx);
-        let _guard = PendingGuard { shared, id };
+        let guard = PendingGuard {
+            shared: shared.clone(),
+            id,
+        };
         // Checked after inserting: `Shared::close` sets the reason before it
         // drains `pending`, so either we see the reason here or the drain sees
         // our entry.
@@ -236,10 +254,23 @@ impl Connection {
         if self.inner.outgoing.send(Bytes::from(msg)).is_err() {
             return Err(CdpError::disconnected("the writer task stopped"));
         }
+        Ok((rx, guard))
+    }
+}
 
-        match tokio::time::timeout(timeout, rx).await {
+/// Waits for the response to a request [`Connection::send`] queued.
+fn response(
+    sent: Result<(oneshot::Receiver<Response>, PendingGuard)>,
+    method: String,
+    timeout: Duration,
+) -> impl Future<Output = Result<Value>> + Send + 'static {
+    async move {
+        let (rx, guard) = sent?;
+        let response = tokio::time::timeout(timeout, rx).await;
+        let shared = &guard.shared;
+        match response {
             Err(_) => Err(CdpError::Timeout {
-                method: method.to_owned(),
+                method,
                 after: timeout,
             }),
             Ok(Err(_)) => Err(CdpError::disconnected(
@@ -254,7 +285,7 @@ impl Connection {
                 message,
                 data,
             }))) => Err(CdpError::Protocol {
-                method: method.to_owned(),
+                method,
                 code,
                 message,
                 data,
@@ -276,12 +307,12 @@ impl fmt::Debug for Connection {
 }
 
 /// Removes a call's pending entry when the call finishes or is dropped.
-struct PendingGuard<'a> {
-    shared: &'a Shared,
+struct PendingGuard {
+    shared: Arc<Shared>,
     id: u64,
 }
 
-impl Drop for PendingGuard<'_> {
+impl Drop for PendingGuard {
     fn drop(&mut self) {
         self.shared.pending.remove(&self.id);
     }
