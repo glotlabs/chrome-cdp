@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Unsaved changes</title>
+<h1>Unsaved changes</h1>
+<p>Leaving asks first (once the page had a click: Chrome only shows
+beforeunload dialogs after a user gesture).</p>
+<script>
+  window.addEventListener('beforeunload', (event) => {
+    event.preventDefault();
+    event.returnValue = 'You have unsaved changes';
+  });
+</script>

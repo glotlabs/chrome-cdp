@@ -13,5 +13,9 @@
   <li><a href="/nav/js-redirect.html">nav/js-redirect.html</a>: location.replace to nav/b.html while loading</li>
   <li><a href="/redirect?to=/nav/a.html&amp;n=3">/redirect?to=&lt;path&gt;&amp;n=&lt;hops&gt;</a>: a chain of 302 redirects</li>
   <li><a href="/workers/worker.html">workers/worker.html</a>: a dedicated worker</li>
+  <li><a href="/dialogs/on-load.html?kind=confirm&amp;message=Delete%20item%3F">dialogs/on-load.html?kind=alert|confirm|prompt&amp;message=</a>: a dialog while the page loads</li>
+  <li><a href="/dialogs/beforeunload.html">dialogs/beforeunload.html</a>: asks before leaving (after a click)</li>
+  <li><a href="/downloads/">downloads/</a>: links to files served as attachments</li>
+  <li><a href="/auth/">auth/</a>: needs HTTP basic auth (ada / s3cret)</li>
 </ul>
-<p>Any path takes <code>?delay=&lt;ms&gt;</code> and <code>?status=&lt;code&gt;</code>.</p>
+<p>Any path takes <code>?delay=&lt;ms&gt;</code>, <code>?status=&lt;code&gt;</code> and <code>?download=&lt;name&gt;</code>.</p>

@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Dialog on load</title>
+<h1>Dialog on load</h1>
+<p id="result">no dialog yet</p>
+<script>
+  // ?kind=alert|confirm|prompt&message=…&default=…: opens that dialog
+  // while the page loads (before its load event), then shows the answer.
+  const params = new URLSearchParams(location.search);
+  const kind = params.get('kind') || 'alert';
+  const message = params.get('message') || 'Hello';
+  const answer = kind === 'prompt'
+    ? prompt(message, params.get('default') || '')
+    : window[kind](message);
+  document.getElementById('result').textContent = `${kind}: ${JSON.stringify(answer)}`;
+</script>

@@ -27,6 +27,11 @@
 //!   line of text if there is none).
 //! - `/redirect?to=<path>&n=<hops>` redirects (302) `n` times (default 1)
 //!   and then to `to`.
+//! - `?download=<name>` sends the response as an attachment named `name`
+//!   (`Content-Disposition`), so Chrome downloads it.
+//! - Paths under `/auth/` need HTTP basic auth as [`AUTH_USER`] with
+//!   [`AUTH_PASSWORD`]; without it they answer 401 with a
+//!   `WWW-Authenticate` challenge.
 //! - Sends `Cache-Control: no-store`, so a reload always hits the server.
 //! - `/ws` is a WebSocket that echoes every message (for pages that keep
 //!   one open).
@@ -45,8 +50,8 @@ use futures_util::{SinkExt as _, StreamExt as _};
 use http_body_util::Full;
 use hyper::body::Incoming;
 use hyper::header::{
-    CACHE_CONTROL, CONNECTION, CONTENT_TYPE, HeaderValue, LOCATION, SEC_WEBSOCKET_ACCEPT,
-    SEC_WEBSOCKET_KEY, UPGRADE,
+    AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_DISPOSITION, CONTENT_TYPE, HeaderValue,
+    LOCATION, SEC_WEBSOCKET_ACCEPT, SEC_WEBSOCKET_KEY, UPGRADE, WWW_AUTHENTICATE,
 };
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -58,6 +63,16 @@ use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::WebSocketStream;
 use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
 use tokio_tungstenite::tungstenite::protocol::Role;
+
+/// The user name `/auth/` pages accept.
+pub const AUTH_USER: &str = "ada";
+
+/// The password `/auth/` pages accept.
+pub const AUTH_PASSWORD: &str = "s3cret";
+
+/// `Authorization` for [`AUTH_USER`] and [`AUTH_PASSWORD`]: base64 of
+/// `ada:s3cret`.
+const AUTH_HEADER: &str = "Basic YWRhOnMzY3JldA==";
 
 /// The site's files: `testdata/site` in the repository.
 pub fn site_dir() -> PathBuf {
@@ -261,6 +276,21 @@ async fn respond(site: &Site, origin: &str, req: &Request<Incoming>) -> Response
     if path == "/redirect" {
         return redirect(query);
     }
+    if path.starts_with("/auth/")
+        && req.headers().get(AUTHORIZATION).map(HeaderValue::as_bytes)
+            != Some(AUTH_HEADER.as_bytes())
+    {
+        let mut response = response(
+            StatusCode::UNAUTHORIZED,
+            "text/plain; charset=utf-8",
+            Bytes::from_static(b"log in first\n"),
+        );
+        response.headers_mut().insert(
+            WWW_AUTHENTICATE,
+            HeaderValue::from_static("Basic realm=\"fixtures\""),
+        );
+        return response;
+    }
     let status = param(query, "status")
         .and_then(|v| v.parse::<u16>().ok())
         .and_then(|code| StatusCode::from_u16(code).ok());
@@ -286,6 +316,11 @@ async fn respond(site: &Site, origin: &str, req: &Request<Incoming>) -> Response
     };
     if let Some(status) = status {
         *response.status_mut() = status;
+    }
+    if let Some(name) = param(query, "download")
+        && let Ok(value) = HeaderValue::from_str(&format!("attachment; filename=\"{name}\""))
+    {
+        response.headers_mut().insert(CONTENT_DISPOSITION, value);
     }
     response
 }
@@ -504,6 +539,44 @@ mod tests {
             text.contains("location: /redirect?to=/nav/a.html&n=1"),
             "{text}"
         );
+    }
+
+    /// A GET with extra header lines; returns the whole response.
+    fn get_raw(url: &str, headers: &str) -> String {
+        let rest = url.strip_prefix("http://").unwrap();
+        let (authority, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
+        let mut stream = TcpStream::connect(authority).unwrap();
+        write!(
+            stream,
+            "GET {path} HTTP/1.1\r\nHost: {authority}\r\n{headers}Connection: close\r\n\r\n"
+        )
+        .unwrap();
+        let mut text = String::new();
+        stream.read_to_string(&mut text).unwrap();
+        text
+    }
+
+    #[test]
+    fn downloads_and_basic_auth() {
+        let f = Fixtures::shared();
+        let text = get_raw(&f.url("/downloads/report.txt?download=report.txt"), "");
+        assert!(
+            text.contains("content-disposition: attachment; filename=\"report.txt\""),
+            "{text}"
+        );
+
+        let text = get_raw(&f.url("/auth/"), "");
+        assert!(text.starts_with("HTTP/1.1 401 Unauthorized"), "{text}");
+        assert!(
+            text.contains("www-authenticate: Basic realm=\"fixtures\""),
+            "{text}"
+        );
+        let text = get_raw(
+            &f.url("/auth/"),
+            &format!("Authorization: {}\r\n", super::AUTH_HEADER),
+        );
+        assert!(text.starts_with("HTTP/1.1 200 OK"), "{text}");
+        assert!(text.contains("Signed in"), "{text}");
     }
 
     #[test]
