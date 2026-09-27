@@ -1,0 +1,82 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Refs: fuzz</title>
+<main>
+  <section id="one" aria-label="One"></section>
+  <section id="two" aria-label="Two"></section>
+</main>
+<script>
+// Elements for the ref fuzz test (crates/engine/tests/refs.rs). Every
+// element has a unique data-id, so the test can tell which one a ref hit.
+// Names come from a small pool, so several elements often share one.
+// mutate(seed, n) applies n random changes, the same ones for a seed.
+const NAMES = ['Save', 'Open', 'Delete', 'Next', 'Help', 'Cancel'];
+let nextId = 1;
+let rand;
+
+function rng(seed) {
+  let s = seed >>> 0 || 1;
+  return () => {
+    s ^= s << 13; s >>>= 0;
+    s ^= s >>> 17;
+    s ^= s << 5; s >>>= 0;
+    return s / 4294967296;
+  };
+}
+
+function pick(list) {
+  return list[Math.floor(rand() * list.length)];
+}
+
+function make(tag, name) {
+  const el = document.createElement(tag);
+  if (tag === 'a') el.href = '#' + name.toLowerCase();
+  el.textContent = name;
+  el.dataset.id = String(nextId++);
+  return el;
+}
+
+function all() {
+  return [...document.querySelectorAll('[data-id]')];
+}
+
+function sections() {
+  return [...document.querySelectorAll('section')];
+}
+
+const CHANGES = {
+  // Gone for good.
+  remove() { const el = pick(all()); if (el) el.remove(); },
+  // Re-rendered: a new node with the same tag and name in its place.
+  replace() {
+    const el = pick(all());
+    if (el) el.replaceWith(make(el.tagName.toLowerCase(), el.textContent));
+  },
+  // Same node, new name.
+  rename() { const el = pick(all()); if (el) el.textContent = pick(NAMES); },
+  // Same node, elsewhere.
+  move() { const el = pick(all()); if (el) pick(sections()).appendChild(el); },
+  // A new node, maybe with a name others have.
+  add() { pick(sections()).appendChild(make(pick(['button', 'a']), pick(NAMES))); },
+  // Same node, hidden for a while (still in the document).
+  hide() { const el = pick(all()); if (el) el.hidden = !el.hidden; },
+};
+
+function mutate(seed, n) {
+  rand = rng(seed);
+  const kinds = Object.keys(CHANGES);
+  const done = [];
+  for (let i = 0; i < n; i++) {
+    // Keep the page from running out of elements.
+    const kind = all().length < 8 ? 'add' : pick(kinds);
+    CHANGES[kind]();
+    done.push(kind);
+  }
+  return done;
+}
+
+rand = rng(7);
+for (let i = 0; i < 12; i++) {
+  pick(sections()).appendChild(make(pick(['button', 'a']), pick(NAMES)));
+}
+</script>

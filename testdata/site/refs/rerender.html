@@ -1,0 +1,48 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Refs: re-render</title>
+<main>
+  <h1>Todos</h1>
+  <ul id="list"></ul>
+  <button id="save">Save</button>
+</main>
+<script>
+// A keyed list rendered the way React reconciles one: render(items) keeps
+// the <li> (and its button) of a key it rendered before, makes new ones for
+// new keys and removes the rest. remount(items) replaces every node, as a
+// new `key` on the list would.
+const list = document.getElementById('list');
+let rendered = new Map();
+
+function render(items) {
+  const next = new Map();
+  for (const item of items) {
+    let li = rendered.get(item.key);
+    if (!li) {
+      li = document.createElement('li');
+      li.appendChild(document.createElement('button'));
+    }
+    li.firstChild.textContent = item.label;
+    next.set(item.key, li);
+    list.appendChild(li);
+  }
+  for (const [key, li] of rendered) {
+    if (!next.has(key)) li.remove();
+  }
+  rendered = next;
+}
+
+function remount(items) {
+  list.replaceChildren();
+  rendered = new Map();
+  render(items);
+}
+
+const TODOS = [
+  { key: 'a', label: 'Buy milk' },
+  { key: 'b', label: 'Walk dog' },
+  { key: 'c', label: 'Delete' },
+  { key: 'd', label: 'Delete' },
+];
+render(TODOS);
+</script>

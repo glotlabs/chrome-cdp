@@ -331,7 +331,6 @@ impl Engine {
             "ref": format!("e{number}"),
             "role": entry.role,
             "name": entry.name,
-            "frame": entry.key.frame,
         });
         match why {
             Why::Strict | Why::Matches(0) => {}
