@@ -7,11 +7,16 @@
 //! - [`cache_dir`] and [`installed`] know the `chrome-cdp install` cache
 //!   layout, which milestone 2.2 writes.
 
+mod cft;
 mod discover;
 mod host;
 mod installed;
 mod version;
 
+pub use cft::{
+    Channel, ChannelVersion, DEFAULT_INDEX_URL, IndexError, Product, Release, channel_release,
+    parse_channels, version_release,
+};
 pub use discover::{Chrome, DiscoverError, Problem, Source, discover, locate};
 pub use host::{Arch, CACHE_ENV, CHROME_ENV, Host, Os};
 pub use installed::{COMPLETE_MARKER, Installed, cache_dir, installed, platform_key};

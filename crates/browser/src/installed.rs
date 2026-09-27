@@ -5,6 +5,7 @@
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
+use crate::cft::{Product, parts};
 use crate::host::{Arch, CACHE_ENV, Host, Os, is_executable};
 
 /// Written last by `install`, so a partial install is never used.
@@ -98,22 +99,12 @@ fn parse_install(dir: &Path, id: &str, platform: &str) -> Option<Installed> {
     })
 }
 
-/// Where the binary sits inside an install dir (the layout of the Chrome
-/// for Testing zips), full Chrome first; `true` marks headless shell.
+/// Where the binary sits inside an install dir, full Chrome first; `true`
+/// marks headless shell.
 fn binaries(platform: &str) -> [(String, bool); 2] {
-    let chrome = if platform.starts_with("mac") {
-        format!(
-            "chrome-{platform}/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
-        )
-    } else {
-        format!("chrome-{platform}/chrome")
-    };
     [
-        (chrome, false),
-        (
-            format!("chrome-headless-shell-{platform}/chrome-headless-shell"),
-            true,
-        ),
+        (Product::Chrome.binary(platform), false),
+        (Product::HeadlessShell.binary(platform), true),
     ]
 }
 
@@ -124,13 +115,10 @@ fn better(a: &Installed, b: &Installed) -> Ordering {
             .position(|c| *c == channel)
             .unwrap_or(4)
     }
-    fn numbers(version: &str) -> Vec<u64> {
-        version.split('.').map(|p| p.parse().unwrap_or(0)).collect()
-    }
     a.headless_shell
         .cmp(&b.headless_shell)
         .then_with(|| channel_rank(&a.channel).cmp(&channel_rank(&b.channel)))
-        .then_with(|| numbers(&b.version).cmp(&numbers(&a.version)))
+        .then_with(|| parts(&b.version).cmp(&parts(&a.version)))
         .then_with(|| a.id.cmp(&b.id))
 }
 
