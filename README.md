@@ -11,7 +11,7 @@ and errors that say what to run next.
 `html`, `attr`, `value`, `count`, `box`, `markdown`), the mouse (`click`,
 `dblclick`, `hover`, `tap`, `drag`, `scroll`, `mouse`), the keyboard and
 forms (`press`, `type`, `fill`, `select`, `check`, `uncheck`, `focus`,
-`blur`), dialogs (`dialog`),
+`blur`), files and the clipboard (`upload`, `clipboard`), dialogs (`dialog`),
 `downloads`, raw CDP calls, `install`/`uninstall` and `schema` work so far:
 
 ```sh
@@ -183,6 +183,14 @@ on macOS and Control elsewhere (also in `click --modifiers`). `select <loc>
 <value|label>...` picks a `<select>`'s options, `check`/`uncheck <loc>`
 click a checkbox, radio or switch only when needed (a hidden input through
 its label) and make sure it changed, and `focus`/`blur <loc>` move focus.
+
+Files: `upload <loc> <file>...` gives a file input (even a hidden one, or
+the input a `<label>` names) its files, and the page gets `input` and
+`change`; for a button that opens a file chooser, it clicks the button and
+fills the chooser instead. `--clear` empties the input. `clipboard read`
+and `clipboard write <text>` use the page's clipboard API (the page must be
+on https or localhost, and keeps the clipboard permission): read what a
+page's Copy button copied, or write text and `press Mod+V` to paste it.
 
 JavaScript dialogs never hang a command. By default an `alert` and a
 `beforeunload` ("leave the page?") are accepted and mentioned in the output;
