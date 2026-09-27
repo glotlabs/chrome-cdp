@@ -24,7 +24,7 @@ use serde_json::{Map, Value, json};
 use tokio::time::Instant;
 
 use crate::downloads;
-use crate::locator::{Locator, parse_locator};
+use crate::locator::{LocateOptions, Locator, parse_locator};
 use crate::navigate::describe;
 use crate::network::{Exchange, IDLE_QUIET, InFlight};
 use crate::pattern::UrlPattern;
@@ -85,6 +85,22 @@ pub fn check_condition(condition: &WaitFor) -> Result<(), ErrorInfo> {
 }
 
 impl Condition {
+    /// Reads `testid=` locators from `attribute`.
+    fn with_testid_attribute(self, attribute: Option<&str>) -> Self {
+        match self {
+            Self::Element { locator, state } => Self::Element {
+                locator: locator.with_testid_attribute(attribute),
+                state,
+            },
+            Self::Text { text, within, gone } => Self::Text {
+                text,
+                within: within.map(|l| l.with_testid_attribute(attribute)),
+                gone,
+            },
+            other => other,
+        }
+    }
+
     pub(crate) fn parse(req: &WaitFor) -> Result<Self, ErrorInfo> {
         let not_empty = |value: &str, what: &str, example: &str| {
             if value.trim().is_empty() {
@@ -235,6 +251,8 @@ pub(crate) struct Met {
     pub(crate) value: Option<Value>,
     pub(crate) exchange: Option<Exchange>,
     pub(crate) download: Option<DownloadInfo>,
+    /// `e6 re-resolved by role+name` when a ref's element was found again.
+    pub(crate) note: Option<String>,
 }
 
 impl Met {
@@ -325,7 +343,8 @@ pub(crate) struct Settled {
 impl Engine {
     /// `wait`: one condition in the active tab (or `--tab`).
     pub async fn wait(&self, req: WaitRequest) -> Result<Output, ErrorInfo> {
-        let condition = Condition::parse(&req.condition)?;
+        let condition = Condition::parse(&req.condition)?
+            .with_testid_attribute(req.testid_attribute.as_deref());
         let running = self.running()?;
         let timeout = millis(req.timeout_ms);
         let page = self.page(&running, req.tab.as_deref(), timeout).await?;
@@ -389,6 +408,9 @@ impl Engine {
         let mut output = Output::typed(&data, text)
             .quiet(quiet)
             .limit(req.max_chars, "--max-chars 0 for all of it");
+        if let Some(note) = met.note {
+            output = output.warning(note);
+        }
         if matches!(condition, Condition::Delay(_)) {
             output = output.warning(
                 "a fixed wait is slow and flaky; wait for what you need instead: \
@@ -511,7 +533,12 @@ impl Engine {
             | Condition::Element { .. }
             | Condition::Text { .. }
             | Condition::Function(_) => {
-                self.probe_until(running, page, condition, deadline).await?
+                let options = LocateOptions {
+                    strict_refs: req.strict_refs,
+                    testid_attribute: req.testid_attribute.clone(),
+                };
+                self.probe_until(running, page, condition, &options, deadline)
+                    .await?
             }
         };
         match outcome {
@@ -677,7 +704,7 @@ mod tests {
     fn conditions_are_checked_before_waiting() {
         let bad = [
             WaitFor::Element {
-                locator: "role=button".into(),
+                locator: "role=".into(),
                 state: ElementState::Visible,
             },
             WaitFor::Text {
@@ -687,7 +714,7 @@ mod tests {
             },
             WaitFor::Text {
                 text: "Hi".into(),
-                within: Some("e12".into()),
+                within: Some("main".into()),
                 gone: false,
             },
             WaitFor::Url {

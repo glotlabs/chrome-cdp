@@ -90,6 +90,7 @@ fn request() -> SnapshotRequest {
         no_text: false,
         engine: None,
         strict_refs: false,
+        testid_attribute: None,
         timeout_ms: TIMEOUT_MS,
         max_chars: 0,
     }

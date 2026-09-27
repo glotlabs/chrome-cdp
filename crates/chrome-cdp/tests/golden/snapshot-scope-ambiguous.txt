@@ -1,0 +1,14 @@
+$ chrome-cdp snapshot --scope text=Delete
+exit: 1
+--- stderr
+error: 3 elements match text=Delete: e1, e2, e3
+  e1: button "Delete" (in row "Invoice 12 $120 Delete")
+  e2: button "Delete" (in row "Invoice 13 $130 Delete")
+  e3: button "Delete" (in row "Invoice 14 $140 Delete")
+  hint: chrome-cdp snapshot --scope e1   (the first one), or add >> nth=<index> to text=Delete
+
+$ chrome-cdp snapshot --scope text=Delete --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"Ambiguous","message":"3 elements match text=Delete: e1, e2, e3","hint":"chrome-cdp snapshot --scope e1   (the first one), or add >> nth=<index> to text=Delete","notes":[{"label":"e1","text":"button \"Delete\" (in row \"Invoice 12 $120 Delete\")"},{"label":"e2","text":"button \"Delete\" (in row \"Invoice 13 $130 Delete\")"},{"label":"e3","text":"button \"Delete\" (in row \"Invoice 14 $140 Delete\")"}],"details":{"candidates":[{"context":"row \"Invoice 12 $120 Delete\"","name":"Delete","ref":"e1","role":"button","visible":true},{"context":"row \"Invoice 13 $130 Delete\"","name":"Delete","ref":"e2","role":"button","visible":true},{"context":"row \"Invoice 14 $140 Delete\"","name":"Delete","ref":"e3","role":"button","visible":true}],"count":3,"locator":"text=Delete"}}}
+

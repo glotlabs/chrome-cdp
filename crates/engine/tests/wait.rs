@@ -75,6 +75,8 @@ async fn wait(engine: &Engine, condition: WaitFor, timeout_ms: u64) -> Result<Ou
         .wait(WaitRequest {
             condition,
             tab: None,
+            strict_refs: false,
+            testid_attribute: None,
             timeout_ms,
             max_chars: 20_000,
         })
@@ -195,11 +197,7 @@ async fn elements_reach_each_state() {
         .await
         .unwrap_err();
     assert_eq!(err.kind, ErrorKind::BadLocator, "{}", err.to_text());
-    assert!(
-        err.message.starts_with("`#[` is not a valid selector: "),
-        "{}",
-        err.message
-    );
+    assert_eq!(err.message, "#[: #[ is not a valid CSS selector");
     assert!(start.elapsed() < TIMEOUT);
     engine.close().await;
 }
@@ -691,6 +689,7 @@ async fn goto_settles_by_default() {
                 no_text: false,
                 engine: None,
                 strict_refs: false,
+                testid_attribute: None,
                 timeout_ms: TIMEOUT_MS,
                 max_chars: 0,
             })

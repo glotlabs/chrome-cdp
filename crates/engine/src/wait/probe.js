@@ -3,27 +3,25 @@
 // frame (or every 100 ms where frames do not run, e.g. a hidden tab) until
 // it holds or `budget` ms pass. Returns {done, observed, value?, fatal?}.
 // `fatal` is an error in the spec itself (a bad selector): no use waiting.
-// The engine puts `--fn`'s expression (or null) in place of the userFn
-// placeholder below.
-async function (spec, budget) {
+// Locators are the in-frame steps of plan 04's locators, evaluated by the
+// injected bundle (`__ccdp.query`) from `root` (a ref's element, or the
+// document when null). The engine puts `--fn`'s expression (or null) in
+// place of the userFn placeholder below.
+async function (spec, budget, root) {
+  if (spec.kind !== 'fn' && spec.kind !== 'load' && !globalThis.__ccdp) {
+    throw new Error('__ccdp is not loaded');
+  }
   const deadline = Date.now() + budget;
   const userFn = __FN__;
   const norm = (s) => String(s).replace(/\s+/g, ' ').trim();
 
   class Fatal extends Error {}
-  const find = (loc) => {
+  const find = (steps) => {
     try {
-      if (loc.kind === 'css') return Array.from(document.querySelectorAll(loc.value));
-      const found = document.evaluate(loc.value, document, null,
-        XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-      const out = [];
-      for (let i = 0; i < found.snapshotLength; i++) {
-        const node = found.snapshotItem(i);
-        if (node.nodeType === Node.ELEMENT_NODE) out.push(node);
-      }
-      return out;
+      return globalThis.__ccdp.query(steps, root);
     } catch (e) {
-      throw new Fatal(e && e.message ? e.message : String(e));
+      if (e && e.name === 'LocatorError') throw new Fatal(e.message);
+      throw e;
     }
   };
   // Visible: a non-empty box and not `visibility: hidden` (Playwright's
@@ -37,7 +35,7 @@ async function (spec, budget) {
 
   const checks = {
     element() {
-      const els = find(spec.locator);
+      const els = find(spec.steps);
       const shown = els.filter(visible).length;
       const on = els.filter(enabled).length;
       const observed = { count: els.length, visible: shown, enabled: on };

@@ -193,7 +193,7 @@ impl Engine {
     /// A handle on the node `key` names in the isolated world of its
     /// frame (and that world), or `None` if the node or its frame is
     /// gone.
-    async fn live_node(
+    pub(crate) async fn live_node(
         &self,
         running: &Running,
         page: &Page,

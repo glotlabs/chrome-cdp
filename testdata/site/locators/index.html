@@ -1,0 +1,59 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Locators</title>
+<style>.gone { display: none; } .ghost { visibility: hidden; }</style>
+<header id="top">
+  <a id="home" href="/">Acme</a>
+  <nav aria-label="Main"><a id="pricing" href="/pricing">Pricing</a></nav>
+</header>
+<main id="main">
+  <h1 id="h1">Sign in</h1>
+  <h2 id="h2">Invoices</h2>
+  <form id="login" data-testid="login-form" data-qa="login">
+    <label for="email">Email address</label>
+    <input id="email" type="email" placeholder="you@example.com">
+    <label>Password <input id="password" type="password" placeholder="Password"></label>
+    <span id="phone-label">Phone</span>
+    <input id="phone" aria-labelledby="phone-label">
+    <input id="search" aria-label="Search the site" title="Search">
+    <label><input id="remember" type="checkbox" checked> Remember me</label>
+    <input id="terms" type="checkbox" aria-label="Terms">
+    <button id="submit" type="submit">Sign in</button>
+    <button id="submit-disabled" disabled>Sign in later</button>
+    <input id="reset" type="reset" value="Clear form">
+    <button id="toggle" aria-pressed="true">Bold</button>
+    <button id="menu" aria-expanded="false">Menu</button>
+  </form>
+  <p id="note">Don't have an account? <a id="signup" href="/signup">Sign  up
+    now</a></p>
+  <p id="split">Hello <b id="world">world</b></p>
+  <div id="hidden-copy" class="gone"><button id="hidden-button">Sign in</button></div>
+  <div class="ghost"><span id="ghost-text">Ghost text</span></div>
+  <img id="logo" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="Acme logo" width="10" height="10">
+  <table id="invoices">
+    <tr><th>Invoice</th><th>Amount</th><th>Actions</th></tr>
+    <tr id="row-12"><td>Invoice 12</td><td>$120</td><td><button id="delete-12">Delete</button></td></tr>
+    <tr id="row-13"><td>Invoice 13</td><td>$130</td><td><button id="delete-13">Delete</button></td></tr>
+    <tr id="row-14"><td>Invoice 14</td><td>$140</td><td><button id="delete-14">Delete</button></td></tr>
+  </table>
+  <ul id="items">
+    <li id="item-1" class="item">Apples</li>
+    <li id="item-2" class="item">Bananas</li>
+    <li id="item-3" class="item gone">Cherries</li>
+    <li id="item-4" class="item">Dates</li>
+  </ul>
+  <div id="host"></div>
+  <div id="outer-host"></div>
+  <iframe id="pay" name="payment" title="Payment" src="/locators/frame.html?where=same"></iframe>
+  <iframe id="remote" name="remote" title="Remote" src="{{ORIGIN_B}}/locators/frame.html?where=other"></iframe>
+</main>
+<script>
+  const host = document.getElementById('host');
+  const root = host.attachShadow({ mode: 'open' });
+  root.innerHTML = '<div class="card"><button id="shadow-button">Shadow save</button>'
+    + '<span id="shadow-text">Inside the shadow</span></div>';
+  const outer = document.getElementById('outer-host').attachShadow({ mode: 'open' });
+  outer.innerHTML = '<section class="panel"><div id="inner-host"></div></section>';
+  const inner = outer.getElementById('inner-host').attachShadow({ mode: 'open' });
+  inner.innerHTML = '<button id="deep-button" class="deep">Deep</button>';
+</script>

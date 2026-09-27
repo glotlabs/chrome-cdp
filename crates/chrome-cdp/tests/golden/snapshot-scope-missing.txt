@@ -1,11 +1,11 @@
 $ chrome-cdp snapshot --scope '#nothing'
 exit: 1
 --- stderr
-error: no element matches --scope #nothing
-  hint: chrome-cdp snapshot   (shows the page; scope it by a ref from there)
+error: no element matches #nothing
+  hint: chrome-cdp snapshot   (shows the page; use a ref from it)
 
 $ chrome-cdp snapshot --scope '#nothing' --json
 exit: 1
 --- stdout
-{"ok":false,"error":{"kind":"NotFound","message":"no element matches --scope #nothing","hint":"chrome-cdp snapshot   (shows the page; scope it by a ref from there)"}}
+{"ok":false,"error":{"kind":"NotFound","message":"no element matches #nothing","hint":"chrome-cdp snapshot   (shows the page; use a ref from it)","details":{"count":0,"locator":"#nothing","tab":"t1"}}}
 

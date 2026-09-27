@@ -483,6 +483,8 @@ pub(crate) fn wait(args: &WaitCmdArgs, global: &GlobalArgs) -> Result<Output, Er
     let request = WaitRequest {
         condition,
         tab: ctx.tab.clone(),
+        strict_refs: args.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
         timeout_ms: millis(ctx.timeout),
         max_chars: args.max_chars,
     };
@@ -507,6 +509,7 @@ pub(crate) fn snapshot(args: &SnapshotArgs, global: &GlobalArgs) -> Result<Outpu
         no_text: args.no_text,
         engine: args.engine.map(crate::cli::SnapshotEngineArg::to_engine),
         strict_refs: args.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
         timeout_ms: millis(ctx.timeout),
         max_chars: args.max_chars,
     };

@@ -31,7 +31,8 @@ export function matcher(m: TextMatch): Matcher {
 
 /** The text of elements, as `text=` and `has-text=` read it: the text
  * content of the composed tree (open shadow roots and slots), without
- * scripts and styles, and a button-like input's value. Cached per query. */
+ * scripts, styles and hidden (`display: none`, `visibility: hidden`)
+ * elements, and a button-like input's value. Cached per query. */
 export class Texts {
   private cache = new Map<Element, string>();
 
@@ -52,8 +53,13 @@ export class Texts {
     let out = '';
     for (const child of childrenOf(el)) {
       if (child.nodeType === Node.TEXT_NODE) out += (child as Text).data;
-      else if (child instanceof Element) out += tag(child) === 'br' ? '\n' : this.of(child);
+      else if (child instanceof Element && shown(child)) out += tag(child) === 'br' ? '\n' : this.of(child);
     }
     return out;
   }
+}
+
+function shown(el: Element): boolean {
+  const style = (el.ownerDocument.defaultView as Window).getComputedStyle(el);
+  return style.display !== 'none' && style.visibility !== 'hidden' && style.visibility !== 'collapse';
 }

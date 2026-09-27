@@ -1,0 +1,15 @@
+$ chrome-cdp wait 'role=button[name="Sign in"]'
+exit: 0
+--- stdout
+role=button[name="Sign in"] is visible (<ms>)
+
+$ chrome-cdp wait 'role=button[name="Sign in"]' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"condition":"element","count":1,"elapsed_ms":<ms>,"met":"role=button[name=\"Sign in\"] is visible","tab":"t1","url":"<site>/locators/index.html"}}
+
+$ chrome-cdp wait 'role=button[name="Sign in"]' -q
+exit: 0
+--- stdout
+1
+

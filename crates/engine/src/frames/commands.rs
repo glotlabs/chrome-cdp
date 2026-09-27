@@ -176,7 +176,7 @@ impl Engine {
     }
 }
 
-fn find_error(tab: u32, query: &str, err: FindError) -> ErrorInfo {
+pub(crate) fn find_error(tab: u32, query: &str, err: FindError) -> ErrorInfo {
     let (info, frames) = match err {
         FindError::NotFound(frames) => (
             ErrorInfo::new(

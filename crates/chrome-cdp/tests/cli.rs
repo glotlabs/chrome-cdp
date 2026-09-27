@@ -167,8 +167,8 @@ fn bad_config_is_a_usage_error_naming_the_file() {
         stderr(&out),
         format!(
             "error: config {f}: unknown field `sesion`, expected one of `session`, `timeout`, \
-             `base_url`\n  hint: fix or remove the key in {f}; known keys: session, timeout, \
-             base_url\n",
+             `base_url`, `testid_attribute`\n  hint: fix or remove the key in {f}; known keys: session, \
+             timeout, base_url, testid_attribute\n",
             f = file.display()
         )
     );

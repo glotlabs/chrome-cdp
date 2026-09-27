@@ -1,11 +1,11 @@
-$ chrome-cdp snapshot --scope role=button
+$ chrome-cdp snapshot --scope 'Sign in'
 exit: 2
 --- stderr
-error: `role=button`: role= locators are not supported yet
-  hint: use a ref from the snapshot (e12), css=<selector> or xpath=<expression>
+error: --scope: `Sign in` is not a locator
+  hint: use text="Sign in" to find it by its text, or css=<selector>
 
-$ chrome-cdp snapshot --scope role=button --json
+$ chrome-cdp snapshot --scope 'Sign in' --json
 exit: 2
 --- stdout
-{"ok":false,"error":{"kind":"BadLocator","message":"`role=button`: role= locators are not supported yet","hint":"use a ref from the snapshot (e12), css=<selector> or xpath=<expression>"}}
+{"ok":false,"error":{"kind":"BadLocator","message":"--scope: `Sign in` is not a locator","hint":"use text=\"Sign in\" to find it by its text, or css=<selector>"}}
 

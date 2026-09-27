@@ -23,14 +23,12 @@ mod tree;
 use std::time::Duration;
 
 use cdp::Session;
-use cdp::domains::{dom as cdp_dom, runtime};
 use protocol::schema::{SnapshotData, SnapshotNode};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
-use serde_json::json;
 
 use crate::errors::from_cdp;
-use crate::frames::{FrameInfo, World};
-use crate::locator::{Locator, parse_locator};
+use crate::frames::FrameInfo;
+use crate::locator::{LocateOptions, Locator};
 use crate::request::{SnapshotEngine, SnapshotRequest, millis};
 use crate::tabs::{Page, tab_name};
 use crate::{Engine, Running};
@@ -39,7 +37,9 @@ use prune::View;
 use refs::Refs;
 pub(crate) use refs::parse_ref;
 pub use resolve::RefCall;
-use tree::{Node, NodeKey};
+pub(crate) use resolve::Target;
+use tree::Node;
+pub(crate) use tree::NodeKey;
 
 /// The engine `snapshot` uses unless `--engine` says otherwise; chosen by
 /// the corpus comparison in plan 04's decisions log.
@@ -127,34 +127,36 @@ impl SnapshotEngine {
     }
 }
 
-/// How `--scope` names the subtree.
-enum Scope {
-    Ref(u32),
-    Locator(Locator),
-}
-
-/// Checks `--scope` without a browser.
-fn parse_scope(text: &str) -> Result<Scope, ErrorInfo> {
-    match parse_ref(text) {
-        Some(number) => Ok(Scope::Ref(number)),
-        None => parse_locator(text).map(Scope::Locator).map_err(|e| {
-            e.hint(Hint::text(
-                "use a ref from the snapshot (e12), css=<selector> or xpath=<expression>",
-            ))
-        }),
-    }
-}
-
 /// Checks a snapshot request's arguments (the `--scope` locator) without a
 /// browser, so the CLI can fail before it starts one.
 pub fn check_snapshot(req: &SnapshotRequest) -> Result<(), ErrorInfo> {
-    req.scope.as_deref().map(parse_scope).transpose().map(drop)
+    scope_locator(req).map(drop)
+}
+
+/// The `--scope` locator.
+fn scope_locator(req: &SnapshotRequest) -> Result<Option<Locator>, ErrorInfo> {
+    req.scope
+        .as_deref()
+        .map(|scope| {
+            locate_options(req).parse(scope).map_err(|e| {
+                let message = format!("--scope: {}", e.message);
+                ErrorInfo { message, ..e }
+            })
+        })
+        .transpose()
+}
+
+fn locate_options(req: &SnapshotRequest) -> LocateOptions {
+    LocateOptions {
+        strict_refs: req.strict_refs,
+        testid_attribute: req.testid_attribute.clone(),
+    }
 }
 
 impl Engine {
     /// `snapshot`: the active tab (or `--tab`) as an accessibility tree.
     pub async fn snapshot(&self, req: SnapshotRequest) -> Result<Output, ErrorInfo> {
-        let scope = req.scope.as_deref().map(parse_scope).transpose()?;
+        let scope = scope_locator(&req)?;
         let view = View {
             interactive: req.interactive,
             depth: req.depth,
@@ -170,14 +172,23 @@ impl Engine {
         self.check_not_blocked(&running, &page)?;
         let mark = running.tabs.mark();
         let _tab = self.tabs.lock(&page.target_id).await;
-        let frames = running.tabs.frame_sources(page.id);
         let (scope_key, note) = match &scope {
             None => (None, None),
             Some(scope) => {
-                let (key, note) = self
-                    .scope_key(&running, &page, &frames, scope, req.strict_refs, timeout)
+                let retry = |r: &str| Cmd::new("snapshot").flag("scope", r);
+                let target = self
+                    .locate_one(
+                        &running,
+                        &page,
+                        scope,
+                        &locate_options(&req),
+                        Some(&retry),
+                        timeout,
+                    )
                     .await?;
-                (Some(key), note)
+                let found = (Some(target.key.clone()), target.note.clone());
+                target.release();
+                found
             }
         };
         // A frame that loads a new document while the page is read would
@@ -278,88 +289,6 @@ impl Engine {
         Ok(self.report_events(&running, mark, output, None).await)
     }
 
-    /// The node `--scope` names, and the note to show if its ref was
-    /// re-resolved.
-    async fn scope_key(
-        &self,
-        running: &Running,
-        page: &Page,
-        frames: &[FrameSource],
-        scope: &Scope,
-        strict: bool,
-        timeout: Duration,
-    ) -> Result<(NodeKey, Option<String>), ErrorInfo> {
-        match scope {
-            Scope::Ref(number) => {
-                let target = self
-                    .resolve_ref(running, page, *number, strict, timeout)
-                    .await?;
-                let found = (target.key.clone(), target.note.clone());
-                target.release();
-                Ok(found)
-            }
-            Scope::Locator(locator) => {
-                let main = frames.first().ok_or_else(|| {
-                    ErrorInfo::new(
-                        ErrorKind::NotFound,
-                        format!("tab {} went away", tab_name(page.id)),
-                    )
-                })?;
-                let object = self
-                    .in_frame(running, page, None, World::Isolated, timeout, |context| {
-                        let mut params = runtime::CallFunctionOnParams::new(FIND_JS.to_owned());
-                        params.execution_context_id = Some(context.context_id);
-                        params.arguments = Some(vec![runtime::CallArgument {
-                            value: Some(json!(locator)),
-                            unserializable_value: None,
-                            object_id: None,
-                        }]);
-                        context.session.with_timeout(timeout).call(params)
-                    })
-                    .await?
-                    .map_err(|e| from_cdp(&e, &self.session))?;
-                if let Some(exception) = object.exception_details {
-                    let message = exception
-                        .exception
-                        .and_then(|e| e.description)
-                        .unwrap_or(exception.text);
-                    let first = message.lines().next().unwrap_or_default().to_owned();
-                    return Err(ErrorInfo::new(
-                        ErrorKind::BadLocator,
-                        format!("--scope {locator}: {first}"),
-                    )
-                    .hint(Hint::text("check the selector")));
-                }
-                let Some(object_id) = object.result.object_id else {
-                    return Err(ErrorInfo::new(
-                        ErrorKind::NotFound,
-                        format!("no element matches --scope {locator}"),
-                    )
-                    .hint(
-                        Hint::run(Cmd::new("snapshot").session(&self.session))
-                            .why("shows the page; scope it by a ref from there"),
-                    ));
-                };
-                let params = cdp_dom::DescribeNodeParams {
-                    object_id: Some(object_id.clone()),
-                    ..cdp_dom::DescribeNodeParams::default()
-                };
-                let described = main.session.with_timeout(timeout).call(params).await;
-                let _ = main
-                    .session
-                    .with_timeout(timeout)
-                    .call(runtime::ReleaseObjectParams { object_id })
-                    .await;
-                let described = described.map_err(|e| from_cdp(&e, &self.session))?;
-                let key = NodeKey {
-                    frame: main.info.id.clone(),
-                    backend: described.node.backend_node_id,
-                };
-                Ok((key, None))
-            }
-        }
-    }
-
     /// The error when the `--scope` node is not in the tree.
     fn scope_gone(&self, req: &SnapshotRequest, page: &Page) -> ErrorInfo {
         let scope = req.scope.clone().unwrap_or_default();
@@ -390,14 +319,6 @@ fn scoped(scope: Option<&NodeKey>, nodes: &[Node]) -> Option<Vec<Node>> {
         Some(key) => prune::find(nodes, key).map(|n| vec![n]),
     }
 }
-
-/// Finds the first element a `{kind, value}` locator matches, in the
-/// isolated world.
-const FIND_JS: &str = "function (loc) {
-  if (loc.kind === 'css') return document.querySelector(loc.value);
-  return document.evaluate(loc.value, document, null,
-    XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-}";
 
 /// Cuts `text` at a line boundary so that it and the note that says so fit
 /// in `max_chars` (0 = no limit).

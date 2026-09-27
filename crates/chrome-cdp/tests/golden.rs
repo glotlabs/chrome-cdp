@@ -447,8 +447,8 @@ const CASES: &[Case] = &[
         fixture: Fixture::Session,
     },
     Case {
-        name: "wait-unsupported-locator",
-        args: &["wait", "role=button"],
+        name: "wait-bad-locator",
+        args: &["wait", "role=button[nme=Save]"],
         modes: ERR,
         fixture: Fixture::NoSessions,
     },
@@ -475,6 +475,30 @@ const CASES: &[Case] = &[
         args: &["snapshot", "--scope", "css=form", "-i"],
         modes: ALL,
         fixture: Fixture::SessionAt("/snapshot/login.html"),
+    },
+    Case {
+        name: "snapshot-scope-ambiguous",
+        args: &["snapshot", "--scope", "text=Delete"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/locators/index.html"),
+    },
+    Case {
+        name: "snapshot-scope-locator",
+        args: &["snapshot", "--scope", "role=row >> has-text=Invoice 13"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/locators/index.html"),
+    },
+    Case {
+        name: "snapshot-scope-frame",
+        args: &["snapshot", "--scope", "frame=payment"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/locators/index.html"),
+    },
+    Case {
+        name: "wait-role",
+        args: &["wait", "role=button[name=\"Sign in\"]"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/locators/index.html"),
     },
     Case {
         name: "snapshot-scope-missing",
@@ -506,7 +530,7 @@ const CASES: &[Case] = &[
     },
     Case {
         name: "snapshot-bad-scope",
-        args: &["snapshot", "--scope", "role=button"],
+        args: &["snapshot", "--scope", "Sign in"],
         modes: ERR,
         fixture: Fixture::NoSessions,
     },

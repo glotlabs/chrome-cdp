@@ -57,6 +57,16 @@ pub(crate) async fn load(
     }
 }
 
+/// The own properties of object `object`.
+pub(crate) async fn own_properties(
+    session: &cdp::Session,
+    object: &str,
+) -> cdp::Result<Vec<runtime::PropertyDescriptor>> {
+    let mut params = runtime::GetPropertiesParams::new(object.to_owned());
+    params.own_properties = Some(true);
+    Ok(session.call(params).await?.result)
+}
+
 fn missing(result: &runtime::CallFunctionOnReturns) -> bool {
     result.exception_details.as_ref().is_some_and(|e| {
         e.exception

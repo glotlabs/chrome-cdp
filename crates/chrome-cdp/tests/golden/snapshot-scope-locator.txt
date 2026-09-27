@@ -1,0 +1,25 @@
+$ chrome-cdp snapshot --scope 'role=row >> has-text=Invoice 13'
+exit: 0
+--- stdout
+page t1 "Locators" <site>/locators/index.html
+- row
+  - cell "Invoice 13"
+  - cell "$130"
+  - cell
+    - button "Delete" [e1]
+
+$ chrome-cdp snapshot --scope 'role=row >> has-text=Invoice 13' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"engine":"ax","nodes":[{"children":[{"name":"Invoice 13","role":"cell"},{"name":"$130","role":"cell"},{"children":[{"name":"Delete","ref":"e1","role":"button"}],"role":"cell"}],"role":"row"}],"tab":"t1","title":"Locators","url":"<site>/locators/index.html"}}
+
+$ chrome-cdp snapshot --scope 'role=row >> has-text=Invoice 13' -q
+exit: 0
+--- stdout
+page t1 "Locators" <site>/locators/index.html
+- row
+  - cell "Invoice 13"
+  - cell "$130"
+  - cell
+    - button "Delete" [e1]
+

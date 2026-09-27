@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 71ca3121684a1171
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 2b178705108557c0
 "use strict";
 (() => {
   // src/dom.ts
@@ -478,6 +478,10 @@
 
   // src/errors.ts
   var LocatorError = class extends Error {
+    constructor(message) {
+      super(message);
+      this.name = "LocatorError";
+    }
   };
 
   // src/css.ts
@@ -604,11 +608,15 @@
       let out = "";
       for (const child of childrenOf(el)) {
         if (child.nodeType === Node.TEXT_NODE) out += child.data;
-        else if (child instanceof Element) out += tag(child) === "br" ? "\n" : this.of(child);
+        else if (child instanceof Element && shown(child)) out += tag(child) === "br" ? "\n" : this.of(child);
       }
       return out;
     }
   };
+  function shown(el) {
+    const style = el.ownerDocument.defaultView.getComputedStyle(el);
+    return style.display !== "none" && style.visibility !== "hidden" && style.visibility !== "collapse";
+  }
 
   // src/locator.ts
   function xpath(expression, scope) {
@@ -755,7 +763,7 @@
     for (let a = parentOf(el); a; a = parentOf(a)) {
       const r = roleOf(a);
       if (!r || !CONTEXT_ROLES.has(r)) continue;
-      const n = cut(r === "row" || r === "listitem" ? norm(a.textContent) : nameOf(a, r), 40);
+      const n = cut(r === "row" || r === "listitem" ? norm(textOf(a, null, 0)) : nameOf(a, r), 40);
       if (!n) continue;
       out.context = `${r} "${n.replace(/"/g, '\\"')}"`;
       break;

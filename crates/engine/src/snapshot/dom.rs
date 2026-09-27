@@ -22,7 +22,7 @@ use super::tree::{Checked, IFRAME, NONE, Node, NodeKey, States};
 use super::{Capture, FrameSource, relative_href};
 use crate::errors::from_cdp;
 use crate::frames::World;
-use crate::injected;
+use crate::injected::{self, own_properties};
 use crate::tabs::Page;
 use crate::{Engine, Running};
 
@@ -256,15 +256,6 @@ async fn read_walk(
         walked,
         described: out,
     }))
-}
-
-async fn own_properties(
-    session: &cdp::Session,
-    object: &str,
-) -> cdp::Result<Vec<runtime::PropertyDescriptor>> {
-    let mut params = runtime::GetPropertiesParams::new(object.to_owned());
-    params.own_properties = Some(true);
-    Ok(session.call(params).await?.result)
 }
 
 /// The tree of frame `frame`, iframes filled in from `walks`.

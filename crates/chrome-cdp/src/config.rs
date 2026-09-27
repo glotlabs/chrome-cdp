@@ -12,6 +12,9 @@
 //! which beats the user config, which beats the built-in default. Unknown
 //! keys are errors, so a typo does not silently do nothing. Later plans add
 //! keys to [`File`] and apply them in [`apply`].
+//!
+//! `testid_attribute` (plan 04) names the attribute `testid=` locators
+//! read; `CHROME_CDP_TESTID_ATTRIBUTE` beats it.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -27,7 +30,7 @@ use crate::cli::{GlobalArgs, parse_duration};
 pub(crate) const PROJECT_FILE: &str = ".chrome-cdp.toml";
 
 /// The keys a config file may set.
-const KEYS: &str = "session, timeout, base_url";
+const KEYS: &str = "session, timeout, base_url, testid_attribute";
 
 /// One config file as written.
 #[derive(Debug, Default, Deserialize)]
@@ -36,6 +39,7 @@ struct File {
     session: Option<String>,
     timeout: Option<String>,
     base_url: Option<String>,
+    testid_attribute: Option<String>,
 }
 
 /// Validated settings from one or more files.
@@ -44,6 +48,7 @@ struct Settings {
     session: Option<String>,
     timeout: Option<Duration>,
     base_url: Option<String>,
+    testid_attribute: Option<String>,
 }
 
 impl Settings {
@@ -53,6 +58,7 @@ impl Settings {
             session: over.session.or(self.session),
             timeout: over.timeout.or(self.timeout),
             base_url: over.base_url.or(self.base_url),
+            testid_attribute: over.testid_attribute.or(self.testid_attribute),
         }
     }
 }
@@ -81,6 +87,15 @@ pub(crate) fn apply(global: &mut GlobalArgs, matches: &ArgMatches) -> Result<(),
         global.timeout = settings.timeout;
     }
     global.base_url = settings.base_url;
+    global.testid_attribute = match std::env::var("CHROME_CDP_TESTID_ATTRIBUTE") {
+        Ok(env) if !env.trim().is_empty() => Some(check_attribute(env.trim()).map_err(|m| {
+            ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("CHROME_CDP_TESTID_ATTRIBUTE: {m}"),
+            )
+        })?),
+        _ => settings.testid_attribute,
+    };
     Ok(())
 }
 
@@ -133,11 +148,29 @@ fn parse(text: &str) -> Result<Settings, String> {
             "base_url: `{url}` is not an absolute http(s) or file URL"
         ));
     }
+    let testid_attribute = file
+        .testid_attribute
+        .map(|a| check_attribute(&a).map_err(|m| format!("testid_attribute: {m}")))
+        .transpose()?;
     Ok(Settings {
         session: file.session,
         timeout,
         base_url: file.base_url,
+        testid_attribute,
     })
+}
+
+/// An HTML attribute name, e.g. `data-qa`.
+fn check_attribute(name: &str) -> Result<String, String> {
+    let ok = name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | ':' | '.'));
+    if ok {
+        Ok(name.to_owned())
+    } else {
+        Err(format!("`{name}` is not an attribute name (e.g. data-qa)"))
+    }
 }
 
 fn bad(path: &Path, message: &str) -> ErrorInfo {
@@ -168,7 +201,15 @@ mod tests {
                 session: Some("shop".into()),
                 timeout: Some(Duration::from_secs(5)),
                 base_url: Some("http://localhost:3000".into()),
+                testid_attribute: None,
             }
+        );
+        assert_eq!(
+            parse("testid_attribute = \"data-qa\"")
+                .unwrap()
+                .testid_attribute
+                .as_deref(),
+            Some("data-qa")
         );
         assert_eq!(parse("").unwrap(), Settings::default());
     }
@@ -185,6 +226,10 @@ mod tests {
         assert_eq!(
             parse("base_url = \"/login\"").unwrap_err(),
             "base_url: `/login` is not an absolute http(s) or file URL"
+        );
+        assert_eq!(
+            parse("testid_attribute = \"data qa\"").unwrap_err(),
+            "testid_attribute: `data qa` is not an attribute name (e.g. data-qa)"
         );
     }
 

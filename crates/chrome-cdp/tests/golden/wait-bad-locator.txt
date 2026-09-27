@@ -1,0 +1,11 @@
+$ chrome-cdp wait 'role=button[nme=Save]'
+exit: 2
+--- stderr
+error: `role=button[nme=Save]`: unknown role attribute [nme]
+  hint: use name, checked, disabled, expanded, level, pressed, selected or include-hidden
+
+$ chrome-cdp wait 'role=button[nme=Save]' --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadLocator","message":"`role=button[nme=Save]`: unknown role attribute [nme]","hint":"use name, checked, disabled, expanded, level, pressed, selected or include-hidden"}}
+

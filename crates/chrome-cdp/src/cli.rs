@@ -93,6 +93,12 @@ pub(crate) struct GlobalArgs {
     /// `base_url` from the config files, for relative URLs (`goto /login`).
     #[arg(skip)]
     pub(crate) base_url: Option<String>,
+
+    /// The attribute `testid=` locators read (`testid_attribute` in the
+    /// config files, or `CHROME_CDP_TESTID_ATTRIBUTE`); `data-testid` if
+    /// `None`.
+    #[arg(skip)]
+    pub(crate) testid_attribute: Option<String>,
 }
 
 /// The timeout of navigation and of commands without their own default.
@@ -280,7 +286,8 @@ Give exactly one condition. It is checked against the active tab (or
 --tab) until it holds or --timeout (default 10s) passes; a timeout
 (exit 3) says what the page showed instead. Needs a running session.
 
-  <LOCATOR>           an element: #id, .class, [attr], css=…, xpath=…;
+  <LOCATOR>           an element: a ref (e12), #id, css=…, text=…,
+                      role=button[name=\"…\"], label=…, frame=… >> …;
                       --state visible (default), hidden, attached,
                       detached or enabled
   --text, --text-gone visible text anywhere (or --in <LOCATOR>); spaces
@@ -298,6 +305,8 @@ Give exactly one condition. It is checked against the active tab (or
 
 Examples:
   chrome-cdp wait '#results'
+  chrome-cdp wait 'role=button[name=\"Save\"]'
+  chrome-cdp wait e12 --state detached
   chrome-cdp wait .spinner --state hidden
   chrome-cdp wait --text 'Welcome back'
   chrome-cdp wait --text-gone Loading --in '#main'
@@ -322,6 +331,7 @@ Examples:
   chrome-cdp snapshot -i                  # only what can be acted on
   chrome-cdp snapshot --scope e12         # one part of the page
   chrome-cdp snapshot --scope '#results' --depth 3
+  chrome-cdp snapshot --scope 'frame=payment'
   chrome-cdp snapshot --diff              # what changed since the last one")]
     Snapshot(SnapshotArgs),
 
@@ -547,7 +557,8 @@ pub(crate) struct SnapshotArgs {
     #[arg(short, long)]
     pub(crate) interactive: bool,
 
-    /// Only this part of the page: a ref (e12) or a CSS/XPath locator.
+    /// Only this part of the page: a ref (e12) or any locator that
+    /// matches one element.
     #[arg(long, value_name = "LOCATOR")]
     pub(crate) scope: Option<String>,
 
@@ -770,14 +781,25 @@ impl Wait {
     )
 )]
 pub(crate) struct WaitCmdArgs {
-    /// An element to wait for (#id, .class, [attr], css=…, xpath=…), or
-    /// how long to sleep: 500 (milliseconds) or 2s.
+    /// An element to wait for (any locator: e12, #id, text=…, role=…),
+    /// or how long to sleep: 500 (milliseconds) or 2s.
     #[arg(value_name = "LOCATOR|MS")]
     pub(crate) target: Option<String>,
 
     /// The state the element must reach.
     #[arg(long, value_enum, value_name = "STATE")]
     pub(crate) state: Option<ElementStateArg>,
+
+    /// A ref whose element is gone fails, instead of being re-resolved
+    /// to the one element with its role and name.
+    #[arg(
+        long,
+        env = "CHROME_CDP_STRICT_REFS",
+        action = ArgAction::SetTrue,
+        value_parser = BoolishValueParser::new(),
+        hide_env_values = true
+    )]
+    pub(crate) strict_refs: bool,
 
     /// The page's load event.
     #[arg(long)]
@@ -805,7 +827,7 @@ pub(crate) struct WaitCmdArgs {
     pub(crate) text_gone: Option<String>,
 
     /// Look for --text or --text-gone only in the first element this
-    /// locator matches.
+    /// locator matches (or in the frame=… it names).
     #[arg(long = "in", value_name = "LOCATOR")]
     pub(crate) within: Option<String>,
 

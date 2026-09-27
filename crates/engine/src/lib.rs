@@ -53,7 +53,7 @@ use tokio::sync::Notify;
 pub use endpoint::{Endpoint, parse_endpoint};
 pub use errors::from_cdp;
 pub use frames::{FrameInfo, WORLD_NAME, World};
-pub use locator::{Locator, parse_locator};
+pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, parse_locator};
 pub use navigate::normalize_url;
 pub use request::{
     CdpRequest, ConnectRequest, DialogPolicy, DialogRequest, DownloadsRequest, ElementState,

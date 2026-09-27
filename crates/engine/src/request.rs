@@ -348,6 +348,13 @@ pub struct WaitRequest {
     /// `--tab`: the tab to watch; the active one if `None`.
     #[serde(default)]
     pub tab: Option<String>,
+    /// `--strict-refs`: a ref whose element is gone fails instead of
+    /// being re-resolved by role and name.
+    #[serde(default)]
+    pub strict_refs: bool,
+    /// The attribute `testid=` locators read; `data-testid` if `None`.
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
     /// Bounds the wait.
     pub timeout_ms: u64,
     /// The output budget (0 = none), for `--fn`'s value.
@@ -395,7 +402,7 @@ pub struct SnapshotRequest {
     /// `--interactive`: only nodes with refs and their landmarks.
     #[serde(default)]
     pub interactive: bool,
-    /// `--scope`: only the subtree of this ref or CSS/XPath locator.
+    /// `--scope`: only the subtree of the element this locator names.
     #[serde(default)]
     pub scope: Option<String>,
     /// `--depth`: how many levels to show.
@@ -422,6 +429,10 @@ pub struct SnapshotRequest {
     /// error, never re-resolved by role and name.
     #[serde(default)]
     pub strict_refs: bool,
+    /// The attribute `testid=` locators read (`testid_attribute` in the
+    /// config); `data-testid` if `None`.
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
     pub timeout_ms: u64,
     /// The output budget (0 = none).
     pub max_chars: usize,

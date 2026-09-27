@@ -3,7 +3,7 @@
 // either finds elements inside the current ones (`A >> B`: B inside A) or
 // filters them (`nth=`, `visible=`, `has-text=`).
 
-import { hiddenForAria, labelsOf, level, nameOf, roleOf, shownName, statesOf, activeElement } from './aria';
+import { activeElement, hiddenForAria, labelsOf, level, nameOf, roleOf, shownName, statesOf, textOf } from './aria';
 import { css } from './css';
 import { descendants, inOrder, norm, parentOf, tag, visible } from './dom';
 import { LocatorError } from './errors';
@@ -169,7 +169,7 @@ export function describe(el: Element): Candidate {
   for (let a = parentOf(el); a; a = parentOf(a)) {
     const r = roleOf(a);
     if (!r || !CONTEXT_ROLES.has(r)) continue;
-    const n = cut(r === 'row' || r === 'listitem' ? norm(a.textContent) : nameOf(a, r), 40);
+    const n = cut(r === 'row' || r === 'listitem' ? norm(textOf(a, null, 0)) : nameOf(a, r), 40);
     if (!n) continue;
     out.context = `${r} "${n.replace(/"/g, '\\"')}"`;
     break;

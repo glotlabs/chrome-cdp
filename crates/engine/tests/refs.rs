@@ -68,6 +68,7 @@ fn request() -> SnapshotRequest {
         no_text: false,
         engine: None,
         strict_refs: false,
+        testid_attribute: None,
         timeout_ms: TIMEOUT_MS,
         max_chars: 0,
     }
@@ -302,6 +303,7 @@ async fn a_remount_re_resolves_by_role_and_name() {
         .snapshot(SnapshotRequest {
             scope: Some(milk.clone()),
             strict_refs: true,
+            testid_attribute: None,
             ..request()
         })
         .await

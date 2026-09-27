@@ -1,11 +1,11 @@
 $ chrome-cdp -V
 exit: 2
 --- stderr
-error: config <tmp>/.chrome-cdp.toml: unknown field `sesion`, expected one of `session`, `timeout`, `base_url`
-  hint: fix or remove the key in <tmp>/.chrome-cdp.toml; known keys: session, timeout, base_url
+error: config <tmp>/.chrome-cdp.toml: unknown field `sesion`, expected one of `session`, `timeout`, `base_url`, `testid_attribute`
+  hint: fix or remove the key in <tmp>/.chrome-cdp.toml; known keys: session, timeout, base_url, testid_attribute
 
 $ chrome-cdp -V --json
 exit: 2
 --- stdout
-{"ok":false,"error":{"kind":"BadArgs","message":"config <tmp>/.chrome-cdp.toml: unknown field `sesion`, expected one of `session`, `timeout`, `base_url`","hint":"fix or remove the key in <tmp>/.chrome-cdp.toml; known keys: session, timeout, base_url"}}
+{"ok":false,"error":{"kind":"BadArgs","message":"config <tmp>/.chrome-cdp.toml: unknown field `sesion`, expected one of `session`, `timeout`, `base_url`, `testid_attribute`","hint":"fix or remove the key in <tmp>/.chrome-cdp.toml; known keys: session, timeout, base_url, testid_attribute"}}
 

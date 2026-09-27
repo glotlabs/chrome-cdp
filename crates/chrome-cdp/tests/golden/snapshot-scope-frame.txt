@@ -1,0 +1,21 @@
+$ chrome-cdp snapshot --scope frame=payment
+exit: 0
+--- stdout
+page t1 "Locators" <site>/locators/index.html
+- iframe "Payment" [e1]
+  - textbox "Card number" [e2]
+  - button "Pay" [e3]
+
+$ chrome-cdp snapshot --scope frame=payment --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"engine":"ax","nodes":[{"children":[{"name":"Card number","ref":"e2","role":"textbox"},{"name":"Pay","ref":"e3","role":"button"}],"name":"Payment","ref":"e1","role":"iframe"}],"tab":"t1","title":"Locators","url":"<site>/locators/index.html"}}
+
+$ chrome-cdp snapshot --scope frame=payment -q
+exit: 0
+--- stdout
+page t1 "Locators" <site>/locators/index.html
+- iframe "Payment" [e1]
+  - textbox "Card number" [e2]
+  - button "Pay" [e3]
+
