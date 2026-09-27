@@ -1,6 +1,6 @@
 # Plan 02 — Browser lifecycle & daemon
 
-Status: IN PROGRESS (2.1-2.2 done)
+Status: IN PROGRESS (2.1-2.3 done)
 Depends on: 01
 
 ## Goal
@@ -159,7 +159,7 @@ For the found browser, check the version (`--version` output, or read
       `chrome-cdp install && chrome-cdp open https://example.com` to success.
 - [ ] Cold open < 1.5 s (with Chrome already installed) and warm no-op command
       < 30 ms p50, measured by `xtask bench`.
-- [ ] No orphan Chrome processes in any test (checked by a CI step that
+- [x] No orphan Chrome processes in any test (checked by a CI step that
       searches for leftover processes).
 
 ## Decisions log
@@ -192,3 +192,21 @@ _(append here)_
 - 2.2: `install` prints one line ending in the binary's path, and `-q` prints just the path. `--list` prints one line per install (a table would cut the path) and a table of channels. The output checklist counts `install` and `uninstall` as fixed-size.
 - 2.2: `.github/workflows/nightly.yml` installs both products on all four runners and runs them. Its launch step is `continue-on-error` until 2.3 deals with Ubuntu's AppArmor sandbox rule. 2.3's profile glob must also cover `chrome-linux-arm64/chrome` and `chrome-headless-shell-linux-arm64/chrome-headless-shell`.
 - 2.2: No acceptance box is ticked. The fresh-VM check needs 2.4's `open`, the timings are deferred (benchmarks run after all plans), and orphan checks come with launch.
+- 2.3: Launch lives in `browser::launch`: `flags` (the one flag list), `profile`, `sandbox` (with an `/etc/apparmor.d` reader in `apparmor`), `process`, `stderr`, and `sys` for the libc calls. `launch()` returns `ErrorInfo` directly: its errors are for users, and 2.4's daemon passes them through as is. `__direct cdp` uses it with the shared `LaunchArgs` (`--headed`, `--profile`, `--user-data-dir`, `--chrome-arg`) that 2.4's `open` should flatten too.
+- 2.3: Flags: the plan's list, plus `--disable-field-trial-config` (no field trials, so runs behave the same) and `--disable-search-engine-choice-screen` (a headed dialog). `--disable-features` covers Translate, MediaRouter, DialMediaRouteProvider, OptimizationHints, AcceptCHFrame, AutofillServerCommunication, GlobalMediaControls, LensOverlay, HttpsUpgrades (it breaks local `http://` servers) and PaintHolding. `--disable-dev-shm-usage` and `--password-store=basic` are Linux only, `--use-mock-keychain` macOS only. `docs/chrome-flags.md` explains each one, and a test fails if one is missing there. A user `--disable-features`/`--enable-features` is merged with ours (Chrome honours only the last one). `--chrome-arg` values must be `--flags`; `--user-data-dir` and the debugging pipe are refused.
+- 2.3: `--no-sandbox` is added as root, or in a container (`$container`, `/.dockerenv`, `/run/.containerenv`) where user namespaces fail: the `max_user_namespaces`/`unprivileged_userns_clone` sysctls, else `unshare --user true`, since a seccomp filter can block them. If that cannot be told (no `unshare`), the sandbox stays on. Both cases, and a user's `--chrome-arg=--no-sandbox`, print a warning.
+- 2.3: The AppArmor check runs before launch only for browsers in chrome-cdp's cache, which is the case `install --with-deps` can fix. Any other binary is launched, and Chrome's own "No usable sandbox" is explained afterwards, so a misread custom profile can never block a working system Chrome. The reader follows profile headers (on several lines too), `userns` rules, `@{VAR}` definitions (`@{HOME}` gets its default value plus this user's home) and AppArmor globs. A setuid-root `chrome-sandbox` also counts. `CHROME_CDP_NO_USERNS_CHECK=1` turns the check off, as an escape hatch, and the CLI tests set it so their output does not depend on the machine.
+- 2.3: `install --with-deps` writes the profile with `sudo install -m 644` and loads it with `apparmor_parser -r`, after one prompt; `run_fix` became `run_privileged`. The profile uses `abi <abi/4.0>` (Ubuntu 24.04, the first ABI with `userns`) and covers `chrome-linux64`, `chrome-linux-arm64` and both headless-shell dirs. The default cache uses `@{HOME}/.cache/chrome-cdp`, so it covers every user. Another cache (`CHROME_CDP_CACHE`, `XDG_CACHE_HOME`) gets `chrome-cdp-<fnv32 of the path>` with its absolute path, so it never overwrites the default. Without `--with-deps`, `install` warns. The sudo path could not run here (no sudo); the profile text is checked by parsing it back.
+- 2.3: The nightly job installs with `--with-deps` and launches both products, without `continue-on-error`.
+- 2.3: Processes: Chrome leads its own process group, and close kills the group after the browser exits. On Linux, `PR_SET_PDEATHSIG` is set in `pre_exec`. That needs `unsafe`, so `launch::sys` is a second `#[allow(unsafe_code)]` module next to `cdp`'s fd module. The death signal follows the *thread* that spawned Chrome, so 2.4's daemon must launch from a runtime worker, never from `spawn_blocking`.
+- 2.3: The kqueue watchdog became a watchdog on every OS: `/bin/sh` in its own process group reads a pipe from chrome-cdp. If chrome-cdp dies, the pipe closes, and the watchdog kills Chrome's group and deletes the run dir. It needs no `unsafe` and is tested on Linux. Reaping stale pids from the session file is 2.4's.
+- 2.3: Crashpad handlers `setsid` out of Chrome's group, but they exit with the browser (checked by hand and by the tests' process checks).
+- 2.3: Each launch gets a private run dir (`chrome-cdp-*` in the temp dir, or under `~/snap/<snap>/common/chrome-cdp` for a snap). It holds the temporary profile and serves as Chrome's `TMPDIR`: Chrome keeps its `org.chromium.Chromium.*` socket dir there, which leaked into `/tmp` whenever Chrome was killed. Close, `Drop` and the watchdog delete it.
+- 2.3: Profiles: the data dir is `$XDG_DATA_HOME/chrome-cdp` or `~/.local/share/chrome-cdp` (Linux), `~/Library/Application Support/chrome-cdp` (macOS). Names are `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`, and dirs are created 0700. `--user-data-dir` inside an everyday Chrome/Chromium user data dir is `BadArgs`. A kept profile whose `SingletonLock` names a live pid on this host is `LaunchFailed`, since Chrome would hand the launch to that browser and exit.
+- 2.3: Snaps: named profiles and the run dir go under `~/snap/<snap>/common/chrome-cdp` (the snap name comes from `/snap/bin/<name>`, else `chromium`). A `--user-data-dir` a snap cannot write (under `/tmp`, or a hidden dir in `$HOME`) gets a warning. Discovery's snap warning was dropped. This is not yet tested with a real snap.
+- 2.3: `--headed` on Linux needs `DISPLAY` or `WAYLAND_DISPLAY`, else `LaunchFailed` with an `xvfb-run -a` hint. With chrome-headless-shell it is `BadArgs`.
+- 2.3: Chrome's stderr goes to `LaunchOptions::log_file`, rotated at 8 MB (`LOG_LIMIT`) and at each launch, keeping one `.1`. It is written 0600. 2.4 points it at `<session dir>/chrome.log`; `__direct cdp` has no session and passes none.
+- 2.3: `__direct cdp` handles SIGINT, SIGTERM and SIGHUP. Dropping the `Launched` kills the group and deletes the run dir. It then prints `error: interrupted by SIGTERM; Chrome was closed` and exits 128+n, the shell convention; no §3 kind fits a signal.
+- 2.3: `install --json` gains an optional `apparmor_profile` field (the profile `--with-deps` wrote).
+- 2.3: CI fails if a process with `--remote-debugging-pipe` or `chrome-cdp-watchdog` in its command line survives the tests. The acceptance box is ticked because the launch tests assert it, and a full local run left no processes and no temp dirs. The step has not run on GitHub yet. The cdp crate's own Chrome tests now keep Chrome's `TMPDIR` in their profile.
+- 2.3: The fresh-VM box waits for 2.4's `open`, and the timing box is deferred: benchmarks run after all plans.
