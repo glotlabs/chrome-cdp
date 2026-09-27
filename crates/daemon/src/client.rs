@@ -22,12 +22,11 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader, Lines};
-use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 
 use crate::meta::Meta;
 use crate::paths::{Env, SessionPaths};
 use crate::rpc::{self, Hello, HelloResult};
-use crate::transport::unix;
+use crate::transport::unix::{self, ReadHalf, WriteHalf};
 
 /// How long a new daemon gets to answer.
 const START_WAIT: Duration = Duration::from_secs(10);
@@ -43,8 +42,8 @@ const DAEMON_LOG_LIMIT: u64 = 1024 * 1024;
 /// A connection to a session's daemon.
 #[derive(Debug)]
 pub struct Client {
-    reader: Lines<BufReader<OwnedReadHalf>>,
-    writer: OwnedWriteHalf,
+    reader: Lines<BufReader<ReadHalf>>,
+    writer: WriteHalf,
     next_id: u64,
     session: String,
     /// What the daemon said to `hello`.

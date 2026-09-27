@@ -7,8 +7,11 @@ use std::path::Path;
 
 use tokio::net::{UnixListener, UnixStream};
 
-/// The server's end of a connection.
+/// One end of a connection.
 pub(crate) type Stream = UnixStream;
+/// The halves of a [`Stream`], for a reader task and a writer.
+pub(crate) type ReadHalf = tokio::net::unix::OwnedReadHalf;
+pub(crate) type WriteHalf = tokio::net::unix::OwnedWriteHalf;
 
 /// Binds the session socket, replacing a stale one left by a dead daemon
 /// (the caller holds the daemon lock, so no live daemon owns it).
