@@ -26,7 +26,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use cdp::domains::{page, runtime, target};
+use cdp::domains::{page, runtime, security, target};
 use cdp::{Connection, Event as _, RawEvent, RawEventStream, Session};
 use protocol::schema::{Event, TabInfo};
 
@@ -85,11 +85,18 @@ pub(crate) struct Settings {
     init_scripts: Mutex<Vec<String>>,
     /// Whether a popup becomes the active tab.
     follow_popups: AtomicBool,
+    /// Whether pages load despite certificate errors
+    /// (`Security.setIgnoreCertificateErrors`, browser-wide).
+    ignore_https_errors: AtomicBool,
 }
 
 impl Settings {
     pub(crate) fn set_follow_popups(&self, follow: bool) {
         self.follow_popups.store(follow, Ordering::Relaxed);
+    }
+
+    pub(crate) fn set_ignore_https_errors(&self, ignore: bool) {
+        self.ignore_https_errors.store(ignore, Ordering::Relaxed);
     }
 
     pub(crate) fn add_init_script(&self, source: &str) {
@@ -115,6 +122,8 @@ struct Shared {
     state: Mutex<State>,
     /// Bumped on every change, for waiters.
     changed: watch::Sender<u64>,
+    /// Whether this browser was told to ignore certificate errors.
+    security_applied: AtomicBool,
     /// The watcher and setup tasks. They hold the connection, so they are
     /// stopped with the manager (a connected browser's WebSocket closes
     /// only when the last handle goes).
@@ -190,6 +199,7 @@ impl Tabs {
                 starting: true,
             }),
             changed: watch::Sender::new(0),
+            security_applied: AtomicBool::new(false),
             tasks: Mutex::default(),
         });
         // Subscribe before anything can attach.
@@ -205,6 +215,7 @@ impl Tabs {
     /// until the pages that exist already are tabs.
     pub(crate) async fn init(&self, timeout: Duration) -> cdp::Result<()> {
         let browser = self.conn.browser().with_timeout(timeout);
+        self.apply_security(timeout).await?;
         browser
             .call(target::SetDiscoverTargetsParams::new(true))
             .await?;
@@ -240,6 +251,25 @@ impl Tabs {
         }
         drop(state);
         self.shared.bump();
+        Ok(())
+    }
+
+    /// Applies the session's `--ignore-https-errors` to the browser. It is
+    /// only sent when set, or when turning it off again.
+    pub(crate) async fn apply_security(&self, timeout: Duration) -> cdp::Result<()> {
+        let ignore = self
+            .shared
+            .settings
+            .ignore_https_errors
+            .load(Ordering::Relaxed);
+        let applied = self.shared.security_applied.swap(ignore, Ordering::Relaxed);
+        if ignore || applied {
+            self.conn
+                .browser()
+                .with_timeout(timeout)
+                .call(security::SetIgnoreCertificateErrorsParams::new(ignore))
+                .await?;
+        }
         Ok(())
     }
 
@@ -902,6 +932,12 @@ async fn setup(
         steps.push((
             "Page.enable",
             step(session.call(page::EnableParams::default())),
+        ));
+        // `init`, `DOMContentLoaded`, `load`, … per frame, for navigation
+        // waits.
+        steps.push((
+            "Page.setLifecycleEventsEnabled",
+            step(session.call(page::SetLifecycleEventsEnabledParams::new(true))),
         ));
         // Reports every execution context, the existing ones too.
         steps.push((

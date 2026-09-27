@@ -316,6 +316,10 @@ impl Daemon {
                 Ok(p) => output(self.engine.tab_select(p).await),
                 Err(e) => Err(e),
             },
+            rpc::NAVIGATE => match params(req.params) {
+                Ok(p) => output(self.engine.navigate(p).await),
+                Err(e) => Err(e),
+            },
             rpc::TAB_CLOSE => match params(req.params) {
                 Ok(p) => match self.engine.tab_close(p).await {
                     Ok(closed) => {
@@ -360,6 +364,7 @@ impl Daemon {
         let record = OpenRequest {
             chrome: None,
             url: None,
+            base_url: None,
             tab: None,
             restart: false,
             ..p.request.clone()

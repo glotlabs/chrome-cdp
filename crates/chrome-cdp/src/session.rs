@@ -1,6 +1,7 @@
 //! The session commands (plan 02, milestone 2.4): `open`, `connect`,
-//! `close`, `status`, `sessions` and `cdp`; and the tab commands (plan 03,
-//! milestone 3.1): `tabs`, `tab <id>`, `tab new` and `tab close`.
+//! `close`, `status`, `sessions` and `cdp`; the tab commands (plan 03,
+//! milestone 3.1): `tabs`, `tab <id>`, `tab new` and `tab close`; and
+//! navigation (milestone 3.3): `goto`, `back`, `forward` and `reload`.
 //!
 //! Each one finds the session's daemon (starting it when the command needs
 //! a browser), sends one call, and returns the daemon's `Output` or
@@ -15,8 +16,8 @@ use daemon::meta::Meta;
 use daemon::paths::{Env, SessionPaths, check_name};
 use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
-    CdpRequest, ConnectRequest, OpenRequest, TabCloseRequest, TabNewRequest, TabSelectRequest,
-    TabsRequest,
+    CdpRequest, ConnectRequest, NavigateRequest, Navigation, OpenRequest, TabCloseRequest,
+    TabNewRequest, TabSelectRequest, TabsRequest,
 };
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
@@ -24,8 +25,8 @@ use serde_json::{Map, Value, json};
 use tokio::runtime::Runtime;
 
 use crate::cli::{
-    CdpArgs, CloseArgs, ConnectArgs, GlobalArgs, IdleArgs, OpenArgs, SessionsArgs, StatusArgs,
-    TabArgs, TabCommand, TabsArgs,
+    CdpArgs, CloseArgs, ConnectArgs, GlobalArgs, GotoArgs, HistoryArgs, IdleArgs, OpenArgs,
+    ReloadArgs, SessionsArgs, StatusArgs, TabArgs, TabCommand, TabsArgs,
 };
 use crate::{input, version};
 
@@ -41,6 +42,8 @@ struct Ctx {
     timeout: Duration,
     /// `--tab`.
     tab: Option<String>,
+    /// `base_url` from the config.
+    base_url: Option<String>,
 }
 
 impl Ctx {
@@ -64,6 +67,7 @@ impl Ctx {
             runtime,
             timeout: global.timeout,
             tab: global.tab.clone(),
+            base_url: global.base_url.clone(),
         })
     }
 
@@ -164,8 +168,10 @@ fn open_in(
         chrome_args: launch.chrome_args.clone(),
         restart: args.restart,
         url,
+        base_url: ctx.base_url.clone(),
         tab,
         follow_popups: args.follow_popups.then_some(true),
+        ignore_https_errors: args.ignore_https_errors.then_some(true),
         timeout_ms: millis(ctx.timeout),
     };
     if let Some(previous) = session.replaced.as_ref().and_then(|m| m.launch.as_ref()) {
@@ -203,6 +209,9 @@ fn keep_previous_options(request: &mut OpenRequest, previous: &OpenRequest) {
     }
     if request.follow_popups.is_none() {
         request.follow_popups = previous.follow_popups;
+    }
+    if request.ignore_https_errors.is_none() {
+        request.ignore_https_errors = previous.ignore_https_errors;
     }
 }
 
@@ -314,6 +323,7 @@ pub(crate) fn tab(args: &TabArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
             let (mut session, warnings) = with_browser(&ctx)?;
             let request = TabNewRequest {
                 url,
+                base_url: ctx.base_url.clone(),
                 timeout_ms: millis(ctx.timeout),
             };
             let output = ctx.runtime.block_on(session.client.call_output(
@@ -362,6 +372,57 @@ pub(crate) fn tab(args: &TabArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
                 .block_on(client.call_output(rpc::TAB_SELECT, &request, ctx.timeout + QUICK))
         }
     }
+}
+
+/// `goto <url>`: starts the session's browser if it has none, like `cdp`.
+pub(crate) fn goto(args: &GotoArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let url = engine::normalize_url(&input::text_arg(&args.url, "URL")?)?;
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let (mut session, warnings) = with_browser(&ctx)?;
+    let navigation = Navigation::Goto {
+        url,
+        base_url: ctx.base_url.clone(),
+    };
+    let output = navigate(&ctx, &mut session.client, navigation, args.wait.wait)?;
+    Ok(warnings.into_iter().fold(output, Output::warning))
+}
+
+/// `back` and `forward`: need a running session.
+pub(crate) fn history(
+    navigation: Navigation,
+    args: &HistoryArgs,
+    global: &GlobalArgs,
+) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    navigate(&ctx, &mut client, navigation, args.wait.wait)
+}
+
+/// `reload [--hard]`: needs a running session.
+pub(crate) fn reload(args: &ReloadArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let navigation = Navigation::Reload { hard: args.hard };
+    navigate(&ctx, &mut client, navigation, args.wait.wait)
+}
+
+fn navigate(
+    ctx: &Ctx,
+    client: &mut daemon::client::Client,
+    navigation: Navigation,
+    wait: crate::cli::Wait,
+) -> Result<Output, ErrorInfo> {
+    let request = NavigateRequest {
+        navigation,
+        wait: wait.to_engine(),
+        tab: ctx.tab.clone(),
+        timeout_ms: millis(ctx.timeout),
+    };
+    ctx.runtime
+        .block_on(client.call_output(rpc::NAVIGATE, &request, ctx.long_wait()))
 }
 
 /// Gives a session without a browser one, as `open` would (or as the

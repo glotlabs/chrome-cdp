@@ -11,8 +11,10 @@ use serde_json::json;
 
 use super::{BLANK, Page, TabError, parse_tab_id, tab_name};
 use crate::errors::from_cdp;
-use crate::request::{TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, millis};
-use crate::{Engine, Running, navigate};
+use crate::request::{
+    Navigation, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, WaitUntil, millis,
+};
+use crate::{Engine, Running};
 
 /// How long a report of a new tab waits for it to have a URL.
 const POPUP_URL_WAIT: Duration = Duration::from_millis(500);
@@ -164,13 +166,24 @@ impl Engine {
             .activate(page.id, timeout)
             .await
             .map_err(|e| self.tab_error(&running, e))?;
+        let mut warnings = Vec::new();
         if let Some(url) = &req.url {
             let _tab = self.tabs.lock(&page.target_id).await;
-            navigate::open_url(&page.session, url, timeout, &self.session).await?;
+            let navigation = Navigation::Goto {
+                url: url.clone(),
+                base_url: req.base_url.clone(),
+            };
+            let navigated = self
+                .navigate_page(&running, &page, &navigation, WaitUntil::Load, timeout)
+                .await?;
+            warnings = navigated.warnings;
         }
         let tab = self.tab_info(&running, page.id).await;
         let text = format!("opened tab {}", describe_tab(&tab));
-        let output = Output::typed(&TabData { tab: tab.clone() }, text).quiet(tab.id);
+        let output = warnings.into_iter().fold(
+            Output::typed(&TabData { tab: tab.clone() }, text).quiet(tab.id),
+            Output::warning,
+        );
         Ok(self.report_opened(&running, mark, output).await)
     }
 

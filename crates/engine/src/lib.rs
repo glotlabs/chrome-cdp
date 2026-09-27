@@ -9,7 +9,9 @@
 //! (`tabs`): every target is auto-attached and set up before it runs, and
 //! page commands act on the active tab or `--tab`. Milestone 3.2 tracks
 //! each tab's frames and their execution contexts (`frames`), with an
-//! isolated world for chrome-cdp's own scripts. Later plans add modules
+//! isolated world for chrome-cdp's own scripts. Milestone 3.3 adds
+//! navigation (`navigate`: `goto`, `back`, `forward`, `reload`, and the
+//! page load of `open` and `tab new`). Later plans add modules
 //! next to `tabs` and `navigate`: `page`, `snapshot`, `locator`, `input`,
 //! `observe`, `emulate`, `route`.
 
@@ -39,8 +41,8 @@ pub use errors::from_cdp;
 pub use frames::{FrameInfo, WORLD_NAME, World};
 pub use navigate::normalize_url;
 pub use request::{
-    CdpRequest, ConnectRequest, OpenRequest, TabCloseRequest, TabNewRequest, TabSelectRequest,
-    TabsRequest, Target,
+    CdpRequest, ConnectRequest, NavigateRequest, Navigation, OpenRequest, TabCloseRequest,
+    TabNewRequest, TabSelectRequest, TabsRequest, Target, WaitUntil,
 };
 pub use tabs::commands::TabClosed;
 pub use tabs::parse_tab_id;
@@ -209,6 +211,9 @@ impl Engine {
         if let Some(follow) = req.follow_popups {
             self.settings.set_follow_popups(follow);
         }
+        if let Some(ignore) = req.ignore_https_errors {
+            self.settings.set_ignore_https_errors(ignore);
+        }
         let mut warnings = Vec::new();
         let current = match &*self.lock_state() {
             State::Running(running) => Some(running.clone()),
@@ -225,6 +230,13 @@ impl Engine {
             }
             Some(running) => {
                 self.check_fits(&running, &req)?;
+                if req.ignore_https_errors.is_some() {
+                    running
+                        .tabs
+                        .apply_security(timeout)
+                        .await
+                        .map_err(|e| from_cdp(&e, &self.session))?;
+                }
                 (running, false)
             }
             None => (self.launch(&req, &mut warnings).await?, true),
@@ -234,7 +246,15 @@ impl Engine {
                 let tab = tab.map(tabs::tab_name);
                 let page = self.page(&running, tab.as_deref(), timeout).await?;
                 let _tab = self.tabs.lock(&page.target_id).await;
-                Some(navigate::open_url(&page.session, url, timeout, &self.session).await?)
+                let navigation = Navigation::Goto {
+                    url: url.clone(),
+                    base_url: req.base_url.clone(),
+                };
+                let navigated = self
+                    .navigate_page(&running, &page, &navigation, WaitUntil::Load, timeout)
+                    .await?;
+                warnings.extend(navigated.warnings.iter().cloned());
+                Some(navigated.page_info())
             }
             None => None,
         };

@@ -39,6 +39,9 @@ pub struct OpenRequest {
     /// A URL to load in the active tab (see [`crate::normalize_url`]).
     #[serde(default)]
     pub url: Option<String>,
+    /// `base_url` from the config, for a relative `url`.
+    #[serde(default)]
+    pub base_url: Option<String>,
     /// `--tab`: load `url` in this tab instead.
     #[serde(default)]
     pub tab: Option<String>,
@@ -46,6 +49,10 @@ pub struct OpenRequest {
     /// keeps the session's setting (off at first).
     #[serde(default)]
     pub follow_popups: Option<bool>,
+    /// `--ignore-https-errors`: whether pages load despite certificate
+    /// errors; `None` keeps the session's setting (off at first).
+    #[serde(default)]
+    pub ignore_https_errors: Option<bool>,
     /// Bounds the launch and the page load.
     pub timeout_ms: u64,
 }
@@ -107,6 +114,9 @@ pub struct TabNewRequest {
     /// A URL to load in the new tab (see [`crate::normalize_url`]).
     #[serde(default)]
     pub url: Option<String>,
+    /// `base_url` from the config, for a relative `url`.
+    #[serde(default)]
+    pub base_url: Option<String>,
     /// Bounds opening the tab and loading the page.
     pub timeout_ms: u64,
 }
@@ -128,6 +138,71 @@ pub struct TabCloseRequest {
     /// On the last tab, close the session instead of leaving a blank tab.
     #[serde(default)]
     pub close_browser: bool,
+    pub timeout_ms: u64,
+}
+
+/// What a navigation waits for (`--wait`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WaitUntil {
+    /// The load event: the document and its images, scripts and styles.
+    #[default]
+    Load,
+    /// `DOMContentLoaded`: the document is parsed.
+    DomContentLoaded,
+    /// No network requests for 500 ms (Chrome's own `networkIdle`).
+    NetworkIdle,
+    /// The server answered and the new document replaced the old one.
+    Commit,
+    /// Nothing: return once the navigation is sent.
+    None,
+}
+
+impl WaitUntil {
+    /// The `--wait` value.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Load => "load",
+            Self::DomContentLoaded => "domcontentloaded",
+            Self::NetworkIdle => "networkidle",
+            Self::Commit => "commit",
+            Self::None => "none",
+        }
+    }
+}
+
+/// The navigations of `goto`, `back`, `forward` and `reload`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Navigation {
+    /// Load a URL (see [`crate::normalize_url`]); a relative one resolves
+    /// against `base_url`, else the page's URL.
+    Goto {
+        url: String,
+        #[serde(default)]
+        base_url: Option<String>,
+    },
+    /// One history entry back.
+    Back,
+    /// One history entry forward.
+    Forward,
+    /// Load the page again; `hard` bypasses the cache.
+    Reload {
+        #[serde(default)]
+        hard: bool,
+    },
+}
+
+/// `goto`, `back`, `forward` and `reload`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NavigateRequest {
+    pub navigation: Navigation,
+    #[serde(default)]
+    pub wait: WaitUntil,
+    /// `--tab`: the tab to navigate; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// Bounds the whole navigation, the wait included.
     pub timeout_ms: u64,
 }
 

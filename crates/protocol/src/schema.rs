@@ -111,6 +111,26 @@ pub const COMMANDS: &[CommandSchema] = &[
         summary: "the tab closed and the tab now active",
         schema: || schema_for!(Envelope<TabCloseData>),
     },
+    CommandSchema {
+        name: "goto",
+        summary: "the page loaded: final URL, title and HTTP status",
+        schema: || schema_for!(Envelope<NavigateData>),
+    },
+    CommandSchema {
+        name: "back",
+        summary: "the page gone back to, or navigated: false at the start of history",
+        schema: || schema_for!(Envelope<NavigateData>),
+    },
+    CommandSchema {
+        name: "forward",
+        summary: "the page gone forward to, or navigated: false at the end of history",
+        schema: || schema_for!(Envelope<NavigateData>),
+    },
+    CommandSchema {
+        name: "reload",
+        summary: "the page reloaded: URL, title and HTTP status",
+        schema: || schema_for!(Envelope<NavigateData>),
+    },
 ];
 
 /// The registry entry for `name` (`"tab close"`), if any.
@@ -328,6 +348,10 @@ pub struct PageInfo {
     pub url: String,
     /// The document title.
     pub title: String,
+    /// The HTTP status of the main document; absent for pages without one
+    /// (`file:`, `data:`, `about:`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<u16>,
 }
 
 /// `data` of `chrome-cdp open --json` and `chrome-cdp connect --json`.
@@ -474,6 +498,40 @@ pub struct TabCloseData {
     /// last tab).
     #[serde(default)]
     pub session_closed: bool,
+}
+
+/// `data` of `chrome-cdp goto`, `back`, `forward` and `reload --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NavigateData {
+    /// The tab that navigated, e.g. `t1`.
+    pub tab: String,
+    /// `goto`: the URL asked for, with its scheme added or resolved against
+    /// `base_url` or the current page; before redirects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requested_url: Option<String>,
+    /// The page's URL now (redirects followed).
+    pub url: String,
+    /// The document title.
+    pub title: String,
+    /// The HTTP status of the main document. A 4xx or 5xx is a warning, not
+    /// an error. Absent for pages without one (`file:`, `data:`, `about:`)
+    /// and for same-document navigations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<u16>,
+    /// `false` when `back` or `forward` found no history entry to go to, so
+    /// nothing happened.
+    pub navigated: bool,
+    /// Whether the document stayed: a `#fragment` or a history entry made
+    /// by `pushState`.
+    pub same_document: bool,
+    /// Whether the page came back from the back/forward cache (`back`,
+    /// `forward`), with its state as it was.
+    pub restored: bool,
+    /// What the command waited for: `load`, `domcontentloaded`,
+    /// `networkidle`, `commit` or `none`.
+    pub wait: String,
+    /// Milliseconds from the start of the navigation until that.
+    pub elapsed_ms: u64,
 }
 
 /// Something that happened in the browser while a command ran. The

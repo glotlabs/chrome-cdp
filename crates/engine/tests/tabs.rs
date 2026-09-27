@@ -134,6 +134,7 @@ async fn cross_site_frames_are_attached_set_up_and_resumed() {
     let output = engine
         .tab_new(TabNewRequest {
             url: Some(site.url("/frames/cross-origin.html")),
+            base_url: None,
             timeout_ms: TIMEOUT_MS,
         })
         .await

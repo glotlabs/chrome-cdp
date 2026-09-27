@@ -19,6 +19,7 @@ pub const TABS: &str = "tabs";
 pub const TAB_NEW: &str = "tab_new";
 pub const TAB_SELECT: &str = "tab_select";
 pub const TAB_CLOSE: &str = "tab_close";
+pub const NAVIGATE: &str = "navigate";
 
 /// `hello`: the first call on every connection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

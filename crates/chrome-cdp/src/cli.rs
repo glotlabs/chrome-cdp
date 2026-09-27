@@ -92,7 +92,6 @@ pub(crate) struct GlobalArgs {
 
     /// `base_url` from the config files, for relative URLs (`goto /login`).
     #[arg(skip)]
-    #[allow(dead_code)] // Read by plan 03's `goto`.
     pub(crate) base_url: Option<String>,
 }
 
@@ -216,6 +215,52 @@ Examples:
     )]
     Tab(TabArgs),
 
+    /// Load a URL in the current tab and wait for it.
+    #[command(after_help = "\
+Starts the session's browser first if it has none. Without a scheme,
+https:// is added (http:// for localhost and IPs). A relative URL (/login,
+./next, ?q=1, #top) resolves against base_url from the config
+(.chrome-cdp.toml), else against the current page. Prints the HTTP status,
+final URL (after redirects), title and time taken; a 4xx/5xx status is a
+warning. A page that cannot load (DNS, connection refused, certificate …)
+fails with exit code 1 and says why.
+
+Examples:
+  chrome-cdp goto https://example.com
+  chrome-cdp goto localhost:3000/login
+  chrome-cdp goto /settings                      # with base_url, or on the same site
+  chrome-cdp goto example.com --wait domcontentloaded
+  chrome-cdp goto file:///tmp/report.html
+  chrome-cdp goto https://example.com --tab t2 -q   # prints the final URL")]
+    Goto(GotoArgs),
+
+    /// Go back one page in the tab's history.
+    #[command(after_help = "\
+At the start of the history it says so and exits 0. Going back to a
+pushState entry of a single-page app is a same-document navigation.
+
+Examples:
+  chrome-cdp back
+  chrome-cdp back --tab t2 --wait commit")]
+    Back(HistoryArgs),
+
+    /// Go forward one page in the tab's history.
+    #[command(after_help = "\
+At the end of the history it says so and exits 0.
+
+Examples:
+  chrome-cdp forward
+  chrome-cdp forward --json")]
+    Forward(HistoryArgs),
+
+    /// Load the current page again.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp reload
+  chrome-cdp reload --hard          # bypass the cache
+  chrome-cdp reload --wait domcontentloaded")]
+    Reload(ReloadArgs),
+
     /// Make one raw CDP call on the session's browser or current page.
     #[command(after_help = "\
 Starts the session's browser first if it has none.
@@ -321,6 +366,12 @@ pub(crate) struct OpenArgs {
     #[arg(long)]
     pub(crate) follow_popups: bool,
 
+    /// Load pages despite certificate errors (self-signed test servers).
+    /// The session keeps this setting; it applies to a running browser
+    /// too.
+    #[arg(long)]
+    pub(crate) ignore_https_errors: bool,
+
     #[command(flatten)]
     pub(crate) idle: IdleArgs,
 }
@@ -394,6 +445,66 @@ pub(crate) struct CdpArgs {
     /// long strings and arrays in `data` are shortened instead.
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct GotoArgs {
+    /// The URL; `-` reads it from stdin.
+    #[arg(value_name = "URL")]
+    pub(crate) url: String,
+
+    #[command(flatten)]
+    pub(crate) wait: WaitArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct HistoryArgs {
+    #[command(flatten)]
+    pub(crate) wait: WaitArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ReloadArgs {
+    /// Bypass the cache.
+    #[arg(long)]
+    pub(crate) hard: bool,
+
+    #[command(flatten)]
+    pub(crate) wait: WaitArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct WaitArgs {
+    /// What to wait for before returning; --timeout bounds it.
+    #[arg(long, value_enum, default_value_t = Wait::Load, value_name = "EVENT")]
+    pub(crate) wait: Wait,
+}
+
+/// What a navigation waits for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum Wait {
+    /// The load event: the page with its images, scripts and styles.
+    Load,
+    /// DOMContentLoaded: the HTML is parsed.
+    Domcontentloaded,
+    /// No network requests for 500 ms.
+    Networkidle,
+    /// The server answered and the new page replaced the old one.
+    Commit,
+    /// Nothing: return once the navigation is sent.
+    None,
+}
+
+impl Wait {
+    pub(crate) fn to_engine(self) -> engine::WaitUntil {
+        match self {
+            Self::Load => engine::WaitUntil::Load,
+            Self::Domcontentloaded => engine::WaitUntil::DomContentLoaded,
+            Self::Networkidle => engine::WaitUntil::NetworkIdle,
+            Self::Commit => engine::WaitUntil::Commit,
+            Self::None => engine::WaitUntil::None,
+        }
+    }
 }
 
 #[derive(Debug, Args)]
@@ -623,6 +734,7 @@ mod tests {
     /// `open`, `connect` and `close` print a line or two; `sessions` grows
     /// only with the sessions the user started.
     /// `tab`, `tab new` and `tab close` describe one or two tabs.
+    /// `goto`, `back`, `forward` and `reload` print one line.
     const FIXED_SIZE: &[&str] = &[
         "schema",
         "install",
@@ -634,6 +746,10 @@ mod tests {
         "tab",
         "tab new",
         "tab close",
+        "goto",
+        "back",
+        "forward",
+        "reload",
     ];
 
     /// The plan 08 checklist: every command has an example in its help, a
