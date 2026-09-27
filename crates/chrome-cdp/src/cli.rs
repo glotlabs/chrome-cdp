@@ -348,6 +348,7 @@ Examples:
   chrome-cdp find checkout
   chrome-cdp find 'sign in' --role button
   chrome-cdp find email textbox
+  chrome-cdp find delete --scope e40        # only inside e40
   chrome-cdp find delete --limit 0          # every match
   chrome-cdp find checkout -q               # only the refs")]
     Find(FindArgs),
@@ -764,6 +765,14 @@ pub(crate) struct FindArgs {
     /// Only nodes with this role (button, link, textbox, heading, …).
     #[arg(long, value_name = "ROLE")]
     pub(crate) role: Option<String>,
+
+    /// Only search this part of the page: a ref (e12) or any locator that
+    /// matches one element.
+    #[arg(long, value_name = "LOCATOR")]
+    pub(crate) scope: Option<String>,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
 
     /// Show at most this many matches, best first (0 = all).
     #[arg(long, default_value_t = 10, value_name = "N")]

@@ -126,10 +126,11 @@ and lists them with new refs and where each is (`e41: button "Delete" (in row
 
 Reading the page without a full snapshot:
 
-- `find <words> [--role r] [--limit 10]` searches roles, names, values and
-  text (every word must match; a typo in a long word is forgiven) and prints
-  the best matches as snapshot lines with refs, each with the named container
-  it is in. `-q` prints only the refs.
+- `find <words> [--role r] [--scope loc] [--limit 10]` searches roles, names,
+  values and text (every word must match; a typo in a long word is forgiven)
+  and prints the best matches as snapshot lines with refs, each with the
+  named container it is in. `--scope` searches one part of the page (a
+  dialog, a row, an iframe). `-q` prints only the refs.
 - `text [loc]` prints the visible text of the page, or of every match (one
   per line), tidied; `html [loc] [--outer] [--raw]` the HTML, pretty-printed
   (open shadow roots included) unless `--raw`.

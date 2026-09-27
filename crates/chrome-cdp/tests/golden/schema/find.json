@@ -346,6 +346,13 @@
             "null"
           ]
         },
+        "scope": {
+          "description": "`--scope`: the locator of the only part of the page searched.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "tab": {
           "description": "The tab searched, e.g. `t1`.",
           "type": "string"

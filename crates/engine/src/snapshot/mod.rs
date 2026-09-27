@@ -16,6 +16,7 @@
 mod ax;
 mod dom;
 mod find;
+pub use find::check_find;
 mod prune;
 mod refs;
 mod render;
@@ -143,15 +144,17 @@ impl SnapshotEngine {
 /// Checks a snapshot request's arguments (the `--scope` locator) without a
 /// browser, so the CLI can fail before it starts one.
 pub fn check_snapshot(req: &SnapshotRequest) -> Result<(), ErrorInfo> {
-    scope_locator(req).map(drop)
+    scope_locator(req.scope.as_deref(), &locate_options(req)).map(drop)
 }
 
-/// The `--scope` locator.
-fn scope_locator(req: &SnapshotRequest) -> Result<Option<Locator>, ErrorInfo> {
-    req.scope
-        .as_deref()
+/// A `--scope` locator.
+pub(crate) fn scope_locator(
+    scope: Option<&str>,
+    options: &LocateOptions,
+) -> Result<Option<Locator>, ErrorInfo> {
+    scope
         .map(|scope| {
-            locate_options(req).parse(scope).map_err(|e| {
+            options.parse(scope).map_err(|e| {
                 let message = format!("--scope: {}", e.message);
                 ErrorInfo { message, ..e }
             })
@@ -169,7 +172,8 @@ fn locate_options(req: &SnapshotRequest) -> LocateOptions {
 impl Engine {
     /// `snapshot`: the active tab (or `--tab`) as an accessibility tree.
     pub async fn snapshot(&self, req: SnapshotRequest) -> Result<Output, ErrorInfo> {
-        let scope = scope_locator(&req)?;
+        let options = locate_options(&req);
+        let scope = scope_locator(req.scope.as_deref(), &options)?;
         let view = View {
             interactive: req.interactive,
             depth: req.depth,
@@ -185,25 +189,10 @@ impl Engine {
         self.check_not_blocked(&running, &page)?;
         let mark = running.tabs.mark();
         let _tab = self.tabs.lock(&page.target_id).await;
-        let (scope_key, note) = match &scope {
-            None => (None, None),
-            Some(scope) => {
-                let retry = |r: &str| Cmd::new("snapshot").flag("scope", r);
-                let target = self
-                    .locate_one(
-                        &running,
-                        &page,
-                        scope,
-                        &locate_options(&req),
-                        Some(&retry),
-                        timeout,
-                    )
-                    .await?;
-                let found = (Some(target.key.clone()), target.note.clone());
-                target.release();
-                found
-            }
-        };
+        let retry = |r: &str| Cmd::new("snapshot").flag("scope", r);
+        let (scope_key, note) = self
+            .scope_key(&running, &page, scope.as_ref(), &options, &retry, timeout)
+            .await?;
         // A frame that loads a new document while the page is read would
         // leave refs on nodes that are gone: read it again.
         let mut attempts = 0;
@@ -236,7 +225,7 @@ impl Engine {
             };
             let capture = self.unless_blocked(&running, &page, mark, read).await?;
             let Some(current) = scoped(scope_key.as_ref(), &capture.nodes) else {
-                return Err(self.scope_gone(&req, &page));
+                return Err(self.scope_gone(req.scope.as_deref(), &page));
             };
             let mut shown = prune::shape(current, &view);
             let assigned = running.tabs.snapshot_memory(page.id, |memory| {
@@ -312,9 +301,32 @@ impl Engine {
         Ok(self.report_events(&running, mark, output, None).await)
     }
 
+    /// The node a `--scope` locator names, and the note if its ref was
+    /// re-resolved. `retry` is the command an `Ambiguous` hint runs with
+    /// a candidate's ref.
+    pub(crate) async fn scope_key(
+        &self,
+        running: &Running,
+        page: &Page,
+        scope: Option<&Locator>,
+        options: &LocateOptions,
+        retry: &(dyn Fn(&str) -> Cmd + Sync),
+        timeout: Duration,
+    ) -> Result<(Option<NodeKey>, Option<String>), ErrorInfo> {
+        let Some(scope) = scope else {
+            return Ok((None, None));
+        };
+        let target = self
+            .locate_one(running, page, scope, options, Some(retry), timeout)
+            .await?;
+        let found = (Some(target.key.clone()), target.note.clone());
+        target.release();
+        Ok(found)
+    }
+
     /// The error when the `--scope` node is not in the tree.
-    fn scope_gone(&self, req: &SnapshotRequest, page: &Page) -> ErrorInfo {
-        let scope = req.scope.clone().unwrap_or_default();
+    pub(crate) fn scope_gone(&self, scope: Option<&str>, page: &Page) -> ErrorInfo {
+        let scope = scope.unwrap_or_default();
         ErrorInfo::new(
             ErrorKind::NotFound,
             format!(
@@ -336,7 +348,7 @@ const READ_ATTEMPTS: u32 = 3;
 
 /// `nodes`, or the subtree of the `--scope` node (`None` if it is not in
 /// them).
-fn scoped(scope: Option<&NodeKey>, nodes: &[Node]) -> Option<Vec<Node>> {
+pub(crate) fn scoped(scope: Option<&NodeKey>, nodes: &[Node]) -> Option<Vec<Node>> {
     match scope {
         None => Some(nodes.to_vec()),
         Some(key) => prune::find(nodes, key).map(|n| vec![n]),

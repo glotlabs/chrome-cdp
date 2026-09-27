@@ -512,6 +512,16 @@ pub struct FindRequest {
     /// `--role`: only nodes with this role.
     #[serde(default)]
     pub role: Option<String>,
+    /// `--scope`: only the subtree of the element this locator names.
+    #[serde(default)]
+    pub scope: Option<String>,
+    /// `--strict-refs`: a `--scope` ref whose element is gone is an
+    /// error, never re-resolved by role and name.
+    #[serde(default)]
+    pub strict_refs: bool,
+    /// The attribute `testid=` locators read; `data-testid` if `None`.
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
     /// `--limit`: how many matches to show (0 = all).
     pub limit: usize,
     /// `--tab`: the tab to search; the active one if `None`.

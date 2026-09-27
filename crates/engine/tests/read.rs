@@ -102,10 +102,23 @@ async fn find(
     role: Option<&str>,
     limit: usize,
 ) -> Result<Output, ErrorInfo> {
+    find_in(engine, query, role, None, limit).await
+}
+
+async fn find_in(
+    engine: &Engine,
+    query: &str,
+    role: Option<&str>,
+    scope: Option<&str>,
+    limit: usize,
+) -> Result<Output, ErrorInfo> {
     engine
         .find(FindRequest {
             query: query.to_owned(),
             role: role.map(str::to_owned),
+            scope: scope.map(str::to_owned),
+            strict_refs: false,
+            testid_attribute: None,
             limit,
             tab: None,
             timeout_ms: TIMEOUT_MS,
@@ -500,6 +513,50 @@ async fn find_ranks_matches_and_gives_refs() {
     let err = find(&engine, "zebra", None, 10).await.unwrap_err();
     assert_eq!(err.kind, ErrorKind::NotFound);
     assert_eq!(err.message, "nothing in tab t1 matches \"zebra\"");
+
+    // --scope searches one part of the page, with contexts inside it.
+    let output = find_in(&engine, "pay now", None, Some("frame=other"), 10)
+        .await
+        .unwrap();
+    let found: FindData = serde_json::from_value(output.data).unwrap();
+    assert_eq!(found.count, 1);
+    assert_eq!(found.scope.as_deref(), Some("frame=other"));
+    assert_eq!(
+        found.matches[0].context.as_deref(),
+        Some("iframe \"Other\"")
+    );
+    let output = find_in(&engine, "email", None, Some("e2"), 10)
+        .await
+        .unwrap();
+    assert_eq!(
+        output.text.lines().nth(1),
+        Some("- textbox \"Email\" [e5] value=\"ada@example.com\" (in form \"Checkout\")"),
+        "{}",
+        output.text
+    );
+    let err = find_in(&engine, "checkout", None, Some("role=navigation"), 10)
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::NotFound);
+    assert!(
+        err.to_text()
+            .contains("only --scope role=navigation was searched"),
+        "{}",
+        err.to_text()
+    );
+    let err = find_in(&engine, "checkout", None, Some("css=a"), 10)
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Ambiguous);
+    assert!(
+        err.to_text().contains("find checkout --scope e"),
+        "{}",
+        err.to_text()
+    );
+    let err = find_in(&engine, "checkout", None, Some("Checkout"), 10)
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::BadLocator);
     engine.close().await;
 }
 

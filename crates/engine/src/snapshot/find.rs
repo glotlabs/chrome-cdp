@@ -17,8 +17,9 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use super::prune::{self, View};
 use super::render;
 use super::tree::{IFRAME, Node};
-use super::{AxReader, READ_ATTEMPTS, Reader};
+use super::{AxReader, READ_ATTEMPTS, Reader, scope_locator, scoped};
 use crate::Engine;
+use crate::locator::LocateOptions;
 use crate::request::{FindRequest, millis};
 use crate::tabs::tab_name;
 
@@ -213,6 +214,19 @@ fn visit(
     }
 }
 
+/// Checks a find request's `--scope` locator without a browser, so the CLI
+/// can fail before it starts one.
+pub fn check_find(req: &FindRequest) -> Result<(), ErrorInfo> {
+    scope_locator(req.scope.as_deref(), &find_options(req)).map(drop)
+}
+
+fn find_options(req: &FindRequest) -> LocateOptions {
+    LocateOptions {
+        strict_refs: req.strict_refs,
+        testid_attribute: req.testid_attribute.clone(),
+    }
+}
+
 impl Engine {
     /// `find`: the nodes of the active tab (or `--tab`) that match a
     /// query, as snapshot lines with refs.
@@ -224,12 +238,18 @@ impl Engine {
                     .hint(Hint::run(Cmd::new("find").arg("checkout"))),
             );
         }
+        let options = find_options(&req);
+        let scope = scope_locator(req.scope.as_deref(), &options)?;
         let running = self.running()?;
         let timeout = millis(req.timeout_ms);
         let page = self.page(&running, req.tab.as_deref(), timeout).await?;
         self.check_not_blocked(&running, &page)?;
         let mark = running.tabs.mark();
         let _tab = self.tabs.lock(&page.target_id).await;
+        let retry = |r: &str| Cmd::new("find").arg(&req.query).flag("scope", r);
+        let (scope_key, note) = self
+            .scope_key(&running, &page, scope.as_ref(), &options, &retry, timeout)
+            .await?;
         let view = View {
             collapse: false,
             ..View::default()
@@ -247,9 +267,12 @@ impl Engine {
             let reader = AxReader {
                 session: &self.session,
             };
-            let read = reader.read(&frames, None, timeout);
+            let read = reader.read(&frames, scope_key.as_ref(), timeout);
             let capture = self.unless_blocked(&running, &page, mark, read).await?;
-            let shown = prune::shape(capture.nodes.clone(), &view);
+            let Some(current) = scoped(scope_key.as_ref(), &capture.nodes) else {
+                return Err(self.scope_gone(req.scope.as_deref(), &page));
+            };
+            let shown = prune::shape(current, &view);
             let mut hits = search(&shown, &query, req.role.as_deref());
             let assigned = running.tabs.snapshot_memory(page.id, |memory| {
                 if memory.refs.generation() != generation && attempts < READ_ATTEMPTS {
@@ -282,16 +305,25 @@ impl Engine {
                 format!("nothing in tab {tab} matches {:?}", req.query),
             )
             .hint(
-                Hint::run(
-                    Cmd::new("snapshot")
+                Hint::run(match &req.scope {
+                    Some(scope) => Cmd::new("snapshot")
+                        .switch("interactive")
+                        .flag("scope", scope)
+                        .session(&self.session),
+                    None => Cmd::new("snapshot")
                         .switch("interactive")
                         .session(&self.session),
-                )
+                })
                 .why("shows what can be acted on"),
             )
-            .details(serde_json::json!({ "query": req.query, "role": req.role, "tab": tab }));
+            .details(serde_json::json!({
+                "query": req.query, "role": req.role, "scope": req.scope, "tab": tab,
+            }));
             if let Some(role) = &req.role {
                 info = info.note("role", format!("only {role} nodes were searched"));
+            }
+            if let Some(scope) = &req.scope {
+                info = info.note("scope", format!("only --scope {scope} was searched"));
             }
             return Err(info);
         }
@@ -331,6 +363,7 @@ impl Engine {
             title: capture.title,
             query: req.query.clone(),
             role: req.role.clone(),
+            scope: req.scope.clone(),
             count: count as u64,
             matches,
         };
@@ -339,9 +372,12 @@ impl Engine {
             .iter()
             .filter_map(|m| m.node.reference.clone())
             .collect();
-        let output = Output::typed(&data, text)
+        let mut output = Output::typed(&data, text)
             .quiet(refs.join("\n"))
             .limit(req.max_chars, "--limit or --max-chars 0 for all of it");
+        if let Some(note) = note {
+            output = output.warning(note);
+        }
         Ok(self.report_events(&running, mark, output, None).await)
     }
 }

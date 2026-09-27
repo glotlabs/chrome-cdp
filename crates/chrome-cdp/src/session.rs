@@ -528,11 +528,15 @@ pub(crate) fn find(args: &FindArgs, global: &GlobalArgs) -> Result<Output, Error
     let request = FindRequest {
         query,
         role: args.role.clone(),
+        scope: args.scope.clone(),
+        strict_refs: args.refs.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
         limit: args.limit,
         tab: ctx.tab.clone(),
         timeout_ms: millis(ctx.timeout),
         max_chars: args.max_chars,
     };
+    engine::check_find(&request)?;
     let mut client = running_session(&ctx)?;
     ctx.runtime
         .block_on(client.call_output(rpc::FIND, &request, ctx.timeout + QUICK))

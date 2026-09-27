@@ -696,6 +696,9 @@ pub struct FindData {
     /// `--role`: the only role searched.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
+    /// `--scope`: the locator of the only part of the page searched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
     /// How many nodes matched; `matches` holds the best `--limit` of them.
     pub count: u64,
     /// The matches, best first (then in page order), as snapshot nodes
