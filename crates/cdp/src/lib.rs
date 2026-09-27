@@ -9,23 +9,56 @@
 //!   transports, plus an in-memory one for tests. The fd-passing code
 //!   (`transport::pipe::fd`) is the only module in the workspace allowed to
 //!   use `unsafe`; the workspace denies it elsewhere.
-//! - `connection` / `session` (milestone 1.3): request correlation, event
-//!   routing by `sessionId`, timeouts and cancellation.
+//! - [`Connection`] / [`Session`]: request correlation, event routing by
+//!   `sessionId`, timeouts and cancellation.
+//!
+//! Wire frames are logged at trace level under the `cdp::wire` target
+//! (`CHROME_CDP_LOG=cdp=trace`), truncated to 1 KB each.
+//!
+//! ```no_run
+//! # async fn demo() -> cdp::Result<()> {
+//! use cdp::domains::{browser, page, target};
+//! use cdp::transport::PipeTransport;
+//!
+//! let mut cmd = tokio::process::Command::new("chrome");
+//! cmd.args(["--headless", "--remote-debugging-pipe"]);
+//! let (transport, _child) = PipeTransport::spawn(cmd).expect("spawn");
+//! let conn = cdp::Connection::new(transport);
+//! let version = conn.browser().call(browser::GetVersionParams::default()).await?;
+//! println!("{}", version.product);
+//!
+//! let created = conn
+//!     .browser()
+//!     .call(target::CreateTargetParams::new("about:blank".into()))
+//!     .await?;
+//! let page = conn.attach(created.target_id).await?;
+//! let mut loaded = page.listen::<page::LoadEventFired>();
+//! page.call(page::EnableParams::default()).await?;
+//! page.call(page::NavigateParams::new("data:text/html,hi".into())).await?;
+//! loaded.next().await;
+//! # Ok(())
+//! # }
+//! ```
 
 use std::fmt::Debug;
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+mod connection;
 pub mod domains;
 mod error;
+mod log;
+mod session;
 pub mod transport;
 
+pub use connection::{Connection, ConnectionOptions, RawEvent};
 pub use error::{CdpError, Result, TransportError};
+pub use session::{EventStream, RawEventStream, Session};
 
 /// A CDP command: its params struct, method name and result type.
 ///
-/// `Session::call` serialises `self` as the `params` and
+/// [`Session::call`] serialises `self` as the `params` and
 /// deserialises the `result` into [`Command::Returns`].
 pub trait Command: Serialize + Debug + Send + Sync {
     /// The wire method name, e.g. `"Page.navigate"`.

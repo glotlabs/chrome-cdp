@@ -73,7 +73,6 @@ pub enum CdpError {
 }
 
 impl CdpError {
-    #[allow(dead_code)] // used by the connection (next commit)
     pub(crate) fn disconnected(reason: impl Into<String>) -> Self {
         Self::Disconnected {
             reason: reason.into(),
