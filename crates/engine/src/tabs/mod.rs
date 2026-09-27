@@ -20,6 +20,7 @@ pub(crate) mod commands;
 mod locks;
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -679,32 +680,43 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, top_level: bool) {
 /// Prepares a new target before it runs: auto-attach for its children,
 /// the domains commands need, the session's settings; then resumes it.
 ///
+/// Every step and the resume are sent at once and only then awaited. Chrome
+/// runs them in order, but some answers (`Page.enable` in a popup's new
+/// renderer) only come once the target runs, so awaiting each step before
+/// sending the next would stall until the timeout.
+///
 /// Later milestones add their per-target steps here (frames and isolated
 /// worlds in 3.2, emulation and routes in plan 07).
 async fn setup(shared: &Shared, session: &Session, host: bool, waiting: bool) {
-    let steps = async {
-        if host {
-            session.call(auto_attach()).await?;
-            session.call(page::EnableParams::default()).await?;
-            for source in shared.settings.init_scripts() {
-                session
-                    .call(page::AddScriptToEvaluateOnNewDocumentParams::new(source))
-                    .await?;
-            }
+    let mut steps: Vec<(&str, Step)> = Vec::new();
+    if host {
+        steps.push(("auto-attach", step(session.call(auto_attach()))));
+        steps.push((
+            "Page.enable",
+            step(session.call(page::EnableParams::default())),
+        ));
+        for source in shared.settings.init_scripts() {
+            let add = page::AddScriptToEvaluateOnNewDocumentParams::new(source);
+            steps.push(("an init script", step(session.call(add))));
         }
-        cdp::Result::<()>::Ok(())
-    };
-    if let Err(e) = steps.await {
-        // Usually the target closed meanwhile.
-        tracing::debug!("setting up a target failed: {e}");
     }
-    if waiting
-        && let Err(e) = session
-            .call(runtime::RunIfWaitingForDebuggerParams::default())
-            .await
-    {
-        tracing::debug!("resuming a target failed: {e}");
+    if waiting {
+        let resume = runtime::RunIfWaitingForDebuggerParams::default();
+        steps.push(("resuming", step(session.call(resume))));
     }
+    for (what, result) in steps {
+        if let Err(e) = result.await {
+            // Usually the target closed meanwhile.
+            tracing::debug!("setting up a target failed at {what}: {e}");
+        }
+    }
+}
+
+/// One setup call already sent, its result discarded.
+type Step = Pin<Box<dyn Future<Output = cdp::Result<()>> + Send>>;
+
+fn step<T>(call: impl Future<Output = cdp::Result<T>> + Send + 'static) -> Step {
+    Box::pin(async move { call.await.map(drop) })
 }
 
 /// Tab `id` is set up: commands may use it now.
