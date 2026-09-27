@@ -1,6 +1,6 @@
 # Plan 03 — Pages, navigation & waiting
 
-Status: DONE (3.1-3.5; the SPA snapshot acceptance check needs plan 04's snapshot)
+Status: DONE (3.1-3.5 closed out; the SPA snapshot acceptance check waits for plan 04's snapshot)
 Depends on: 02
 
 ## Goal
@@ -195,3 +195,4 @@ _(append here)_
 - 3.5: HTTP auth needs `Fetch` interception: Chrome rejects `handleAuthRequests` with empty `patterns` and sends `Fetch.authRequired` only for intercepted requests, so with `--http-credentials` every page and OOPIF session intercepts `*` and continues each paused request at once (without credentials nothing is intercepted). A second challenge for the same request is cancelled, so wrong credentials end in `net::ERR_INVALID_AUTH_CREDENTIALS`, now `NavigationFailed` with `details.reason: auth` and hint `open --http-credentials USER:PASSWORD`. The flag takes `-` for stdin and `CHROME_CDP_HTTP_CREDENTIALS`; the credentials are kept in the 0600 `meta.json` for upgrades, and `Debug` output hides the password. Service and shared workers' requests are not intercepted.
 - 3.5: The fixture server got `?download=<name>` (served as an attachment) and a basic-auth area `/auth/` (`fixtures::AUTH_USER`/`AUTH_PASSWORD`), plus `dialogs/on-load.html?kind=&message=&default=`, `dialogs/beforeunload.html` and `downloads/`. The golden normaliser now masks ` (…)` as a time only when it ends in `s`.
 - 3.5 (a 3.4 bug found while testing): a cross-site iframe's document request is sent on its parent's session but ends on the iframe's own, so the parent's tracker kept it in flight and every navigation to a page with an OOPIF waited out the 5 s settle with a warning. A frame that commits a document now ends the requests other sessions sent for it.
+- Close-out: every item of the Tests section was checked against the tests. The timeout cases missing for `--domcontentloaded` (a new `wait/slow-script.html` holds it up with a parser-blocking script), `--state enabled|detached|attached`, `--request` and the settle's in-flight note were added to `crates/engine/tests/wait.rs`; `wait <ms>` has no timeout by design. The reload test's one-page server now serves until stopped, since a connection Chrome opened without a request made the page load fail now and then. `goto_settles_by_default` passed 50 runs in a row again (`CHROME_CDP_SETTLE_RUNS=50`); the SPA box stays open until plan 04's `snapshot` can be checked the same way.
