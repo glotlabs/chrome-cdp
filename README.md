@@ -8,7 +8,8 @@ and errors that say what to run next.
 **Status:** early development. Sessions (`open`, `connect`, `status`,
 `sessions`, `close`), tabs (`tabs`, `tab`), navigation (`goto`, `back`,
 `forward`, `reload`), `wait`, `snapshot`, reading the page (`find`, `text`,
-`html`, `attr`, `value`, `count`, `box`, `markdown`), dialogs (`dialog`),
+`html`, `attr`, `value`, `count`, `box`, `markdown`), the mouse (`click`,
+`dblclick`, `hover`, `tap`, `drag`, `scroll`, `mouse`), dialogs (`dialog`),
 `downloads`, raw CDP calls, `install`/`uninstall` and `schema` work so far:
 
 ```sh
@@ -17,6 +18,7 @@ chrome-cdp open https://example.com   # starts the session's browser
 chrome-cdp goto example.com/about     # → 200 https://example.com/about "About" (412ms)
 chrome-cdp snapshot -i                # what can be acted on, with refs: button "Save" [e6]
 chrome-cdp find checkout              # - button "Checkout" [e6] (in form "Cart")
+chrome-cdp click e6                   # clicked e6 button "Checkout"
 chrome-cdp markdown                   # the article, as Markdown
 chrome-cdp wait --text 'Welcome back'  # instead of sleep
 chrome-cdp back
@@ -146,6 +148,24 @@ Reading the page without a full snapshot:
 document when the locator names one (`text frame=payment`). An element that
 is not there is `NotFound` (exit 1); an attribute that is not there, or an
 element that is not rendered (for `box`), prints nothing and a warning.
+
+Acting with the mouse: `click <loc>` waits (up to `--timeout`, 10s by
+default) until the element is visible, stable, enabled and not covered,
+scrolls it into view, and clicks its centre with real, trusted mouse
+events; it prints what it clicked (`clicked e6 button "Sign in"`). When
+something covers it, the error names what, with a ref, and a click that
+likely dismisses it (`click e89   (button "Accept" inside it)`). `--button
+right|middle`, `--count 2` (or `dblclick`), `--modifiers Shift,Meta`,
+`--position x,y` (from the element's top-left corner) and `--force` (skip
+the checks) change the click. `hover <loc>` moves the mouse over it, and
+`tap <loc>` touches it when the tab emulates a touch screen.
+`drag <from> <to> [--steps 10]` presses, moves and releases (what sortable
+lists on mouse or pointer events need), and finishes an HTML5 drag the page
+starts with real drag events. `scroll [loc] --by 0,600` or `--to
+top|bottom|x,y` turns the wheel over the element or the page (infinite
+scroll loads more) and prints where it is and which end it reached; `scroll
+<loc>` alone scrolls it into view. `mouse move|down|up|wheel` sends raw
+events at viewport points; a press is held across commands.
 
 JavaScript dialogs never hang a command. By default an `alert` and a
 `beforeunload` ("leave the page?") are accepted and mentioned in the output;

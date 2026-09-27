@@ -1,6 +1,6 @@
 # Plan 05 — Interaction & actionability
 
-Status: IN PROGRESS (5.1 done)
+Status: IN PROGRESS (5.1-5.2 done)
 Depends on: 04
 
 ## Goal
@@ -157,3 +157,13 @@ _(append here)_
 - 5.1: `--force` skips checks 2-5 and the hit test, but still scrolls the element into view and aims at its first quad (the plan said to skip 2-7): a click at an off-screen point lands on nothing. A `display: none` element has no point even with `--force`.
 - 5.1: The obscured error names the highest ancestor of the hit element that does not contain the target (the cookie banner, not the `<p>` in it), with a ref, and a button in it whose name looks like a dismissal (Accept, OK, Close, ...; else its first button) as the hint's `click`. When the target itself does not take pointer events (`pointer-events: none`), the error says so and names the element the click lands on instead.
 - 5.1: The opacity exception for inputs styled invisibly behind labels is left to 5.3, which clicks the `<label>` for those.
+- 5.2: Every action goes through one daemon method (`act`) and `Engine::act`, with an `Action` enum (`click`, `hover`, `tap`, `mouse`, `drag`, `scroll`); 5.3-5.5 add variants. Actions wait 10 s by default, like `wait`, and one deadline covers everything an action waits for (a drag aims four times).
+- 5.2: `--no-wait-after` is not added yet: 5.5 owns the post-action wait and report, and a flag that does nothing would mislead (as plan 08 decided for global flags). Actions return once their events are sent, with the tabs, dialogs and downloads `report_events` already lists.
+- 5.2: Each action prints one line naming its element as the snapshot does, giving it a ref if it had none (`clicked e6 button "Sign in"`); `-q` prints the ref. `hover` skips the enabled check (a disabled control still shows its tooltip); `drag` and `scroll` use the same checks as `hover`.
+- 5.2: `--modifiers` only sets the events' `modifiers` bits (`shiftKey`, … and link dispositions); no key events are sent for them. `Mod` is not accepted yet: 5.3 resolves it by the browser's platform.
+- 5.2: `--position x,y` counts from the top-left corner of the element's first quad (its border box), and the point must be in the viewport; the hit test runs there.
+- 5.2: `mouse down|up` take an optional `x y` to move to first, `mouse wheel dx dy` turns the wheel where the mouse is, and `mouse up` without `--button` releases the button held. Each tab keeps where chrome-cdp put the mouse and the buttons it holds, so moves start there and a press can span commands.
+- 5.2: `drag` is one flow, not "pointer first, then HTML5": drags are intercepted (`Input.setInterceptDrags`) while the mouse presses on `from` and moves to `to` in `--steps`. If the page starts an HTML5 drag, its `dragData` comes back and the drop is finished with `Input.dispatchDragEvent` (enter, over, drop), then the mouse is released; otherwise the release ends a pointer drag. It waits up to 1 s for drag data only when `from` is draggable. Both elements are aimed at twice; if aiming at one moved the other, they do not fit in the viewport together and the drag fails (`Obscured`, the closest kind) instead of dropping in the wrong place.
+- 5.2: `scroll` reports on the container a wheel over the element scrolls first (the element or its nearest scrollable ancestor, else the page). Without a locator the wheel turns in the middle of the viewport. `--by` is one wheel event; `--to` sends wheels until it gets there, stops moving, or after 10 wheels. After each wheel it waits in the page until the offset moved and held for two frames, or did not move for 10 frames. `scroll <loc>` alone scrolls the element into view (the pipeline does that when it aims).
+- 5.2: `tap` needs touch emulation (`navigator.maxTouchPoints > 0`), else it fails with `BadArgs` and hints at `click`, or at `cdp --target page Emulation.setTouchEmulationEnabled` until plan 07's `emulate` exists. It sends a touch start and end; the browser makes the click, which a cancelled `touchend` stops.
+- 5.2: Fixture logs sit below the elements they log for: a log that grows above a button moves it between a touch and the click the browser makes of it, which looked like taps not clicking in headless Chrome.
