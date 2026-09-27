@@ -3,12 +3,13 @@
 //! with `goto`.
 //!
 //! Every navigation follows the tab's main frame through its events (see
-//! [`watch`]) until `--wait` holds: `load` by default, or
-//! `domcontentloaded`, `networkidle`, `commit` or `none`. A failed load is
-//! a `NavigationFailed` error whose `details.reason` says why (see
-//! [`failure`]); an HTTP 4xx/5xx is only a warning. Milestone 3.4's wait
-//! engine adds the settle after the wait (in [`Engine::navigate_page`]),
-//! and its own network-idle tracking in place of Chrome's `networkIdle`.
+//! [`watch`]) until `--wait` holds: by default the load event and then the
+//! wait engine's settle (network idle and a quiet DOM, a few seconds at
+//! most), or `load`, `domcontentloaded`, `networkidle` (the wait engine's
+//! network idle after `DOMContentLoaded`), `commit` or `none`. A failed
+//! load is a `NavigationFailed` error whose `details.reason` says why (see
+//! [`failure`]); an HTTP 4xx/5xx is only a warning, and so is a page that
+//! does not settle.
 
 mod failure;
 mod url;
@@ -26,8 +27,10 @@ use tokio::time::Instant;
 pub use self::url::normalize_url;
 use self::watch::Watch;
 use crate::errors::from_cdp;
+use crate::network::InFlight;
 use crate::request::{NavigateRequest, Navigation, WaitUntil, millis};
 use crate::tabs::{BLANK, Page, tab_name};
+use crate::wait::{NAVIGATION_SETTLE, Unmet, busy_unmet};
 use crate::{Engine, Running};
 
 /// How long describing the page may take in an error report.
@@ -211,6 +214,7 @@ impl Engine {
                     wait,
                     &watch,
                     timeout,
+                    &[],
                 )
                 .await);
         }
@@ -225,6 +229,31 @@ impl Engine {
                 &self.session,
             ));
         }
+        let mut warnings = Vec::new();
+        match wait {
+            WaitUntil::Settle => {
+                let limit = deadline.min(Instant::now() + NAVIGATION_SETTLE);
+                if let Err(unmet) = self.settle(running, page, start, limit).await? {
+                    warnings.push(unsettled(&unmet));
+                }
+            }
+            WaitUntil::NetworkIdle => {
+                if let Err(busy) = running.tabs.network_idle(page.id, start, deadline).await {
+                    return Err(self
+                        .wait_timeout(
+                            page,
+                            navigation,
+                            requested.as_deref(),
+                            wait,
+                            &watch,
+                            timeout,
+                            &busy,
+                        )
+                        .await);
+                }
+            }
+            _ => {}
+        }
         let elapsed = start.elapsed();
         let shown = describe(&session).await.map_err(cdp_err)?;
         // Chrome reports 200 for `data:` pages too; only HTTP has one.
@@ -232,7 +261,6 @@ impl Engine {
         let status = (http && !watch.same_document)
             .then_some(shown.status)
             .flatten();
-        let mut warnings = Vec::new();
         if let Some(status) = status.filter(|s| *s >= 400) {
             warnings.push(format!(
                 "the server answered HTTP {status}{} for {}",
@@ -317,7 +345,9 @@ impl Engine {
         info.details(details)
     }
 
-    /// The navigation started but `wait` did not hold in time.
+    /// The navigation started but `wait` did not hold in time; `busy` are
+    /// the requests that kept the network from going idle.
+    #[allow(clippy::too_many_arguments)]
     async fn wait_timeout(
         &self,
         page: &Page,
@@ -326,6 +356,7 @@ impl Engine {
         wait: WaitUntil,
         watch: &Watch,
         timeout: Duration,
+        busy: &[InFlight],
     ) -> ErrorInfo {
         let observed = describe(&page.session.with_timeout(DESCRIBE_TIMEOUT))
             .await
@@ -356,9 +387,11 @@ impl Engine {
                 .session(&self.session)
         };
         let hint = match wait {
-            WaitUntil::Load if watch.committed() => Hint::run(again("wait", "domcontentloaded"))
-                .why("does not wait for images, scripts and styles")
-                .or(format!("a longer --timeout, e.g. --timeout {longer}")),
+            WaitUntil::Load | WaitUntil::Settle if watch.committed() => {
+                Hint::run(again("wait", "domcontentloaded"))
+                    .why("does not wait for images, scripts and styles")
+                    .or(format!("a longer --timeout, e.g. --timeout {longer}"))
+            }
             WaitUntil::NetworkIdle if watch.committed() => Hint::run(again("wait", "load"))
                 .why("the page keeps the network busy")
                 .or(format!("a longer --timeout, e.g. --timeout {longer}")),
@@ -377,6 +410,13 @@ impl Engine {
         let mut details = json!({ "wait": wait.as_str(), "reached": reached });
         if let Some(url) = requested {
             details["url"] = json!(url);
+        }
+        if wait == WaitUntil::NetworkIdle && watch.committed() {
+            let unmet = busy_unmet(busy);
+            for (label, text) in unmet.notes {
+                info = info.note(label, text);
+            }
+            details["observed"] = json!(unmet.observed);
         }
         if let Some(observed) = observed {
             info = info.note("page", format!("{} {:?}", observed.url, observed.title));
@@ -397,10 +437,30 @@ fn retry(navigation: &Navigation, url: Option<&str>) -> Cmd {
     }
 }
 
+/// The warning of a navigation whose page did not settle in time.
+fn unsettled(unmet: &Unmet) -> String {
+    let busy: Vec<&str> = unmet
+        .notes
+        .iter()
+        .filter(|(label, _)| *label == "in flight")
+        .map(|(_, text)| text.as_str())
+        .collect();
+    let why = if busy.is_empty() {
+        "requests kept starting".to_owned()
+    } else {
+        format!("in flight: {}", busy.join(", "))
+    };
+    format!(
+        "the page was still loading {} after the load event ({why}); \
+         chrome-cdp wait --settle waits for it",
+        format::duration(NAVIGATION_SETTLE)
+    )
+}
+
 /// What `wait` waits for, in words.
 fn milestone(wait: WaitUntil) -> &'static str {
     match wait {
-        WaitUntil::Load => "the load event",
+        WaitUntil::Load | WaitUntil::Settle => "the load event",
         WaitUntil::DomContentLoaded => "DOMContentLoaded",
         WaitUntil::NetworkIdle => "network idle",
         WaitUntil::Commit | WaitUntil::None => "a new document",
@@ -409,16 +469,16 @@ fn milestone(wait: WaitUntil) -> &'static str {
 
 /// The page as it is now.
 #[derive(Debug)]
-struct Shown {
-    url: String,
-    title: String,
+pub(crate) struct Shown {
+    pub(crate) url: String,
+    pub(crate) title: String,
     /// The main document's HTTP status, if it has one.
-    status: Option<u16>,
+    pub(crate) status: Option<u16>,
 }
 
 /// The page's URL, title and HTTP status (from the Navigation Timing
 /// entry, so no `Network` events are needed).
-async fn describe(page: &cdp::Session) -> cdp::Result<Shown> {
+pub(crate) async fn describe(page: &cdp::Session) -> cdp::Result<Shown> {
     let mut params = runtime::EvaluateParams::new(
         "(() => { const n = performance.getEntriesByType('navigation')[0]; \
          return [location.href, document.title, n ? n.responseStatus : 0]; })()"

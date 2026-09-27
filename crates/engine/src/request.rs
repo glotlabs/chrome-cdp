@@ -145,12 +145,16 @@ pub struct TabCloseRequest {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum WaitUntil {
-    /// The load event: the document and its images, scripts and styles.
+    /// The load event, then the page settles (network idle and a quiet
+    /// DOM), for a few seconds at most.
     #[default]
+    Settle,
+    /// The load event: the document and its images, scripts and styles.
     Load,
     /// `DOMContentLoaded`: the document is parsed.
     DomContentLoaded,
-    /// No network requests for 500 ms (Chrome's own `networkIdle`).
+    /// No requests in flight for 500 ms, not counting WebSockets,
+    /// beacons, event streams and requests open longer than 10 s.
     NetworkIdle,
     /// The server answered and the new document replaced the old one.
     Commit,
@@ -162,6 +166,7 @@ impl WaitUntil {
     /// The `--wait` value.
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Settle => "settle",
             Self::Load => "load",
             Self::DomContentLoaded => "domcontentloaded",
             Self::NetworkIdle => "networkidle",
@@ -204,6 +209,93 @@ pub struct NavigateRequest {
     pub tab: Option<String>,
     /// Bounds the whole navigation, the wait included.
     pub timeout_ms: u64,
+}
+
+/// What `wait` waits for: one condition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum WaitFor {
+    /// `--load`: the main document's load event.
+    Load,
+    /// `--domcontentloaded`: the main document is parsed.
+    DomContentLoaded,
+    /// `--idle`: network idle (see [`WaitUntil::NetworkIdle`]).
+    Idle,
+    /// `--settle`: network idle and no DOM changes for 300 ms (3 s at
+    /// most for the DOM part).
+    Settle,
+    /// `<locator> [--state]`: an element in a state.
+    Element {
+        locator: String,
+        #[serde(default)]
+        state: ElementState,
+    },
+    /// `--text` (or `--text-gone`): visible text in the page, or in the
+    /// first element `within` names.
+    Text {
+        text: String,
+        #[serde(default)]
+        within: Option<String>,
+        #[serde(default)]
+        gone: bool,
+    },
+    /// `--url`: the main frame's URL matches a pattern.
+    Url { pattern: String },
+    /// `--fn`: a JavaScript expression is truthy (polled in the page).
+    Function { expression: String },
+    /// `--request`: a request whose URL matches.
+    Request { pattern: String },
+    /// `--response [--status]`: a response whose URL (and status) match.
+    Response {
+        pattern: String,
+        #[serde(default)]
+        status: Option<u16>,
+    },
+    /// `wait <ms>`: a fixed delay.
+    Delay { ms: u64 },
+}
+
+/// The state `wait <locator>` waits for.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ElementState {
+    /// A match has a non-empty box and is not `visibility: hidden`.
+    #[default]
+    Visible,
+    /// No match is visible (or there is none).
+    Hidden,
+    /// A match is in the document.
+    Attached,
+    /// No match is in the document.
+    Detached,
+    /// A match is not disabled (nor inside `aria-disabled="true"`).
+    Enabled,
+}
+
+impl ElementState {
+    /// The `--state` value.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Visible => "visible",
+            Self::Hidden => "hidden",
+            Self::Attached => "attached",
+            Self::Detached => "detached",
+            Self::Enabled => "enabled",
+        }
+    }
+}
+
+/// `wait`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WaitRequest {
+    pub condition: WaitFor,
+    /// `--tab`: the tab to watch; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// Bounds the wait.
+    pub timeout_ms: u64,
+    /// The output budget (0 = none), for `--fn`'s value.
+    pub max_chars: usize,
 }
 
 /// Milliseconds from a request as a duration, at least 1 ms.

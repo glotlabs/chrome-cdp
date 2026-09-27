@@ -382,6 +382,14 @@ impl FrameTree {
         (context.session == frame.session).then_some(context)
     }
 
+    /// The main frame's URL (empty before its first navigation).
+    pub(crate) fn main_url(&self) -> &str {
+        self.frames
+            .get(&self.root)
+            .map(|f| f.url.as_str())
+            .unwrap_or_default()
+    }
+
     /// Every frame, parents before their children, siblings in the order
     /// they appeared.
     pub(crate) fn list(&self) -> Vec<FrameInfo> {

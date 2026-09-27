@@ -95,14 +95,15 @@ impl Watch {
             // Chrome reports `init` when a document commits; `committed`
             // covers a document whose events came before `expect`.
             WaitUntil::Commit => self.committed || seen("init"),
-            WaitUntil::DomContentLoaded => seen("DOMContentLoaded"),
-            WaitUntil::Load => seen("load"),
-            WaitUntil::NetworkIdle => seen("networkIdle"),
+            // The wait engine's network idle follows (see `navigate_page`).
+            WaitUntil::DomContentLoaded | WaitUntil::NetworkIdle => seen("DOMContentLoaded"),
+            // The settle follows.
+            WaitUntil::Load | WaitUntil::Settle => seen("load"),
         }
     }
 
     /// The `--wait` conditions the current document reached, for a
-    /// timeout error: `commit`, `domcontentloaded`, `load`, `networkidle`.
+    /// timeout error: `commit`, `domcontentloaded`, `load`.
     pub(crate) fn seen(&self) -> Vec<&'static str> {
         let Some(loader) = &self.loader else {
             return Vec::new();
@@ -111,7 +112,6 @@ impl Watch {
             ("init", "commit"),
             ("DOMContentLoaded", "domcontentloaded"),
             ("load", "load"),
-            ("networkIdle", "networkidle"),
         ]
         .into_iter()
         .filter(|(event, _)| {

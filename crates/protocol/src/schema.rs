@@ -131,6 +131,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         summary: "the page reloaded: URL, title and HTTP status",
         schema: || schema_for!(Envelope<NavigateData>),
     },
+    CommandSchema {
+        name: "wait",
+        summary: "the condition that held, the page's URL and the time it took",
+        schema: || schema_for!(Envelope<WaitData>),
+    },
 ];
 
 /// The registry entry for `name` (`"tab close"`), if any.
@@ -527,11 +532,49 @@ pub struct NavigateData {
     /// Whether the page came back from the back/forward cache (`back`,
     /// `forward`), with its state as it was.
     pub restored: bool,
-    /// What the command waited for: `load`, `domcontentloaded`,
-    /// `networkidle`, `commit` or `none`.
+    /// What the command waited for: `settle` (the load event, then the
+    /// page settled), `load`, `domcontentloaded`, `networkidle`, `commit`
+    /// or `none`.
     pub wait: String,
     /// Milliseconds from the start of the navigation until that.
     pub elapsed_ms: u64,
+}
+
+/// `data` of `chrome-cdp wait --json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct WaitData {
+    /// The tab watched, e.g. `t1`.
+    pub tab: String,
+    /// What was waited for: `load`, `domcontentloaded`, `idle`, `settle`,
+    /// `element`, `text`, `text_gone`, `url`, `fn`, `request`, `response`
+    /// or `delay`.
+    pub condition: String,
+    /// What held, in words: `text "Welcome" is visible`.
+    pub met: String,
+    /// The main frame's URL when it held.
+    pub url: String,
+    /// Milliseconds the wait took.
+    pub elapsed_ms: u64,
+    /// `wait <locator>`: how many elements matched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u64>,
+    /// `--fn`: the expression's value (as JSON; other values as a string).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<Value>,
+    /// `--request` and `--response`: the one that matched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<RequestInfo>,
+}
+
+/// A request or response a wait matched.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RequestInfo {
+    /// `GET`, `POST`, … (empty if not known).
+    pub method: String,
+    pub url: String,
+    /// The HTTP status, for a response.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<u16>,
 }
 
 /// Something that happened in the browser while a command ran. The

@@ -11,7 +11,9 @@
 //! each tab's frames and their execution contexts (`frames`), with an
 //! isolated world for chrome-cdp's own scripts. Milestone 3.3 adds
 //! navigation (`navigate`: `goto`, `back`, `forward`, `reload`, and the
-//! page load of `open` and `tab new`). Later plans add modules
+//! page load of `open` and `tab new`). Milestone 3.4 adds the wait engine
+//! (`wait`, fed by each tab's `network` tracker), which navigations use
+//! for their settle. Later plans add modules
 //! next to `tabs` and `navigate`: `page`, `snapshot`, `locator`, `input`,
 //! `observe`, `emulate`, `route`.
 
@@ -20,10 +22,12 @@ mod errors;
 mod frames;
 mod locator;
 mod navigate;
+mod network;
 mod pattern;
 mod raw;
 mod request;
 mod tabs;
+mod wait;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -44,11 +48,13 @@ pub use frames::{FrameInfo, WORLD_NAME, World};
 pub use locator::{Locator, parse_locator};
 pub use navigate::normalize_url;
 pub use request::{
-    CdpRequest, ConnectRequest, NavigateRequest, Navigation, OpenRequest, TabCloseRequest,
-    TabNewRequest, TabSelectRequest, TabsRequest, Target, WaitUntil,
+    CdpRequest, ConnectRequest, ElementState, NavigateRequest, Navigation, OpenRequest,
+    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target, WaitFor, WaitRequest,
+    WaitUntil,
 };
 pub use tabs::commands::TabClosed;
 pub use tabs::parse_tab_id;
+pub use wait::check_condition;
 
 use request::millis;
 use tabs::{Settings, TabLocks, Tabs};
@@ -254,7 +260,7 @@ impl Engine {
                     base_url: req.base_url.clone(),
                 };
                 let navigated = self
-                    .navigate_page(&running, &page, &navigation, WaitUntil::Load, timeout)
+                    .navigate_page(&running, &page, &navigation, WaitUntil::Settle, timeout)
                     .await?;
                 warnings.extend(navigated.warnings.iter().cloned());
                 Some(navigated.page_info())

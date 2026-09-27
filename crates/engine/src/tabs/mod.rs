@@ -26,14 +26,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use cdp::domains::{page, runtime, security, target};
+use cdp::domains::{network, page, runtime, security, target};
 use cdp::{Connection, Event as _, RawEvent, RawEventStream, Session};
 use protocol::schema::{Event, TabInfo};
 
 use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
+use crate::network::{Exchange, Idle, InFlight, Network};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 use tokio::sync::watch;
 use tokio::task::AbortHandle;
+use tokio::time::Instant;
 
 pub(crate) use locks::TabLocks;
 
@@ -159,6 +161,11 @@ struct Tab {
     ready: bool,
     /// Its frames, also those of its OOPIF sessions.
     frames: FrameTree,
+    /// Its requests, also those of its OOPIF sessions.
+    network: Network,
+    /// The network log's marks when the page command before the current
+    /// one, and the current one, began.
+    command_marks: (u64, u64),
 }
 
 /// A page or iframe session.
@@ -562,6 +569,139 @@ impl Tabs {
         }
     }
 
+    /// Re-runs `check` on every change to the tabs (frames, requests, …)
+    /// and at the instant it asks for, until it gives a value, or `None`
+    /// once `deadline` passes. The event-driven half of the wait engine
+    /// (see [`crate::wait`]).
+    async fn watch<T>(
+        &self,
+        deadline: Instant,
+        mut check: impl FnMut(&State, Instant) -> Check<T>,
+    ) -> Option<T> {
+        let mut changed = self.shared.changed.subscribe();
+        loop {
+            let now = Instant::now();
+            let later = match check(&self.shared.lock(), now) {
+                Check::Done(value) => return Some(value),
+                Check::Later(at) => at,
+            };
+            if now >= deadline {
+                return None;
+            }
+            let wake = later.map_or(deadline, |at| at.min(deadline));
+            tokio::select! {
+                result = changed.changed() => {
+                    if result.is_err() {
+                        return None;
+                    }
+                }
+                () = tokio::time::sleep_until(wake) => {}
+            }
+        }
+    }
+
+    /// Marks the start of a page command on tab `id` in its network log.
+    pub(crate) fn begin_command(&self, id: u32) {
+        if let Some(tab) = self.shared.lock().tabs.get_mut(&id) {
+            tab.command_marks = (tab.command_marks.1, tab.network.seq());
+        }
+    }
+
+    /// The network log's mark when the page command before the current
+    /// one on tab `id` began: `wait --request/--response` also accept what
+    /// that command (a click, a `goto`) caused before `wait` ran.
+    pub(crate) fn previous_command_mark(&self, id: u32) -> u64 {
+        self.shared
+            .lock()
+            .tabs
+            .get(&id)
+            .map_or(0, |t| t.command_marks.0)
+    }
+
+    /// Waits until tab `id`'s network is idle since `since` (see
+    /// [`Network::idle`]). On timeout, returns the requests still in
+    /// flight.
+    pub(crate) async fn network_idle(
+        &self,
+        id: u32,
+        since: Instant,
+        deadline: Instant,
+    ) -> Result<(), Vec<InFlight>> {
+        let idle = self
+            .watch(deadline, |state, now| {
+                let Some(tab) = state.tabs.get(&id) else {
+                    return Check::Done(());
+                };
+                match tab.network.idle(since, now) {
+                    Idle::Now => Check::Done(()),
+                    Idle::At(at) | Idle::Busy(at) => Check::Later(Some(at)),
+                }
+            })
+            .await;
+        match idle {
+            Some(()) => Ok(()),
+            None => Err(self.busy(id)),
+        }
+    }
+
+    /// The requests that keep tab `id`'s network busy now.
+    pub(crate) fn busy(&self, id: u32) -> Vec<InFlight> {
+        self.shared
+            .lock()
+            .tabs
+            .get(&id)
+            .map(|t| t.network.busy(Instant::now()))
+            .unwrap_or_default()
+    }
+
+    /// Waits for a request (or, with `response`, a response) of tab `id`
+    /// logged after mark `after` that `matches`.
+    pub(crate) async fn exchange(
+        &self,
+        id: u32,
+        response: bool,
+        after: u64,
+        matches: impl Fn(&Exchange) -> bool,
+        deadline: Instant,
+    ) -> Option<Exchange> {
+        self.watch(deadline, |state, _| {
+            let found = state.tabs.get(&id).and_then(|tab| {
+                if response {
+                    tab.network.response_since(after, &matches)
+                } else {
+                    tab.network.request_since(after, &matches)
+                }
+            });
+            found.map_or(Check::Later(None), Check::Done)
+        })
+        .await
+    }
+
+    /// Waits until tab `id`'s main frame URL `matches`, and returns it;
+    /// on timeout, the URL it has.
+    pub(crate) async fn main_url(
+        &self,
+        id: u32,
+        matches: impl Fn(&str) -> bool,
+        deadline: Instant,
+    ) -> Result<String, String> {
+        let mut last = String::new();
+        let found = self
+            .watch(deadline, |state, _| {
+                let Some(tab) = state.tabs.get(&id) else {
+                    return Check::Later(None);
+                };
+                let url = tab.frames.main_url();
+                if matches(url) {
+                    return Check::Done(url.to_owned());
+                }
+                url.clone_into(&mut last);
+                Check::Later(None)
+            })
+            .await;
+        found.ok_or(last)
+    }
+
     /// Adds a script that runs before any of a document's own, in every tab
     /// and frame from now on (plan 07's init scripts build on this).
     pub(crate) async fn add_init_script(&self, source: &str, timeout: Duration) -> cdp::Result<()> {
@@ -586,6 +726,14 @@ impl Tabs {
         }
         Ok(())
     }
+}
+
+/// What a [`Tabs::watch`] check found.
+#[derive(Debug)]
+enum Check<T> {
+    Done(T),
+    /// Not yet: look again on the next change, or at this instant.
+    Later(Option<Instant>),
 }
 
 /// Where a script runs: a frame's session and one of its contexts.
@@ -775,6 +923,11 @@ async fn watch_host(
                     detached(&shared, session_id);
                 }
             }
+            method if method.starts_with("Network.") => {
+                if let Some(tab) = tab {
+                    network_event(&shared, &session_id, tab, method, &event);
+                }
+            }
             method => {
                 if let Some(tab) = tab {
                     frame_event(&shared, &session_id, tab, method, &event);
@@ -788,13 +941,17 @@ async fn watch_host(
 /// `tab`'s frame tree.
 fn frame_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event: &RawEvent) {
     let mut state = shared.lock();
-    let Some(frames) = state.tabs.get_mut(&tab).map(|t| &mut t.frames) else {
+    let Some(tab) = state.tabs.get_mut(&tab) else {
         return;
     };
+    let frames = &mut tab.frames;
     let decoded = match method {
         page::FrameAttached::NAME => decode::<page::FrameAttached>(event)
             .map(|e| frames.attached(session_id, &e.frame_id, &e.parent_frame_id)),
         page::FrameNavigated::NAME => decode::<page::FrameNavigated>(event).map(|e| {
+            let main = e.frame.parent_id.is_none();
+            tab.network
+                .navigated(session_id, &e.frame.id, &e.frame.loader_id, main);
             if e.r#type == page::NavigationType::BackForwardCacheRestore {
                 frames.restored(session_id, &e.frame);
             } else {
@@ -823,6 +980,18 @@ fn frame_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event:
     match decoded {
         Ok(()) => shared.bump(),
         Err(e) => tracing::warn!("cannot decode {method}: {e}"),
+    }
+}
+
+/// Applies a `Network` event of `session_id` to tab `tab`'s requests.
+fn network_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event: &RawEvent) {
+    let followed = shared
+        .lock()
+        .tabs
+        .get_mut(&tab)
+        .is_some_and(|t| t.network.event(session_id, method, &event.params));
+    if followed {
+        shared.bump();
     }
 }
 
@@ -865,6 +1034,8 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
                 opener_target: info.opener_id.clone(),
                 ready: false,
                 frames: FrameTree::new(&info.target_id, &session_id),
+                network: Network::default(),
+                command_marks: (0, 0),
             },
         );
         Some(id)
@@ -943,6 +1114,11 @@ async fn setup(
         steps.push((
             "Runtime.enable",
             step(session.call(runtime::EnableParams::default())),
+        ));
+        // Requests, for network idle and `wait --request/--response`.
+        steps.push((
+            "Network.enable",
+            step(session.call(network::EnableParams::default())),
         ));
         // The frames that exist already; events report later ones.
         let tree = session.call(page::GetFrameTreeParams::default());
@@ -1029,6 +1205,7 @@ fn detached(shared: &Shared, session_id: &str) {
         && let Some(tab) = state.tabs.get_mut(&tab)
     {
         tab.frames.session_gone(session_id);
+        tab.network.session_gone(session_id);
     }
     let tab = state
         .tabs

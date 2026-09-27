@@ -36,11 +36,13 @@ impl Engine {
         timeout: Duration,
     ) -> Result<Page, ErrorInfo> {
         let id = tab.map(parse_tab_id).transpose()?;
-        running
+        let page = running
             .tabs
             .page(id, timeout)
             .await
-            .map_err(|e| self.tab_error(running, e))
+            .map_err(|e| self.tab_error(running, e))?;
+        running.tabs.begin_command(page.id);
+        Ok(page)
     }
 
     fn tab_error(&self, running: &Running, err: TabError) -> ErrorInfo {
@@ -174,7 +176,7 @@ impl Engine {
                 base_url: req.base_url.clone(),
             };
             let navigated = self
-                .navigate_page(&running, &page, &navigation, WaitUntil::Load, timeout)
+                .navigate_page(&running, &page, &navigation, WaitUntil::Settle, timeout)
                 .await?;
             warnings = navigated.warnings;
         }
