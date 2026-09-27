@@ -1,0 +1,17 @@
+[package]
+name = "fixtures"
+description = "The fixture web site (testdata/site) on two origins, for integration tests and `cargo xtask fixtures`"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytes.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+tokio = { workspace = true, features = ["macros", "net", "rt", "time"] }
+
+[lints]
+workspace = true

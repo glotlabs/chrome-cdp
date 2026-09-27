@@ -1,0 +1,8 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Cross-origin frame: waiting</title>
+<script>
+  window.addEventListener('message', (e) => { document.title = 'Cross-origin frame: ' + e.data; });
+</script>
+<h1>Cross-origin frame</h1>
+<iframe id="child" src="{{ORIGIN_B}}/frames/child.html"></iframe>

@@ -1,0 +1,11 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>chrome-cdp fixtures</title>
+<h1>chrome-cdp fixtures</h1>
+<p>This origin: {{ORIGIN}}. The other site: <a href="{{ORIGIN_B}}/">{{ORIGIN_B}}</a>.</p>
+<ul>
+  <li><a href="/tabs/popup.html">tabs/popup.html</a>: window.open and target=_blank popups</li>
+  <li><a href="/frames/cross-origin.html">frames/cross-origin.html</a>: an iframe from the other site (an OOPIF)</li>
+  <li><a href="/workers/worker.html">workers/worker.html</a>: a dedicated worker</li>
+</ul>
+<p>Any path takes <code>?delay=&lt;ms&gt;</code>.</p>

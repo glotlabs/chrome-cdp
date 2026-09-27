@@ -22,7 +22,7 @@ tasks:
                       and tests
   dist [--target T]   build the release binary into dist/ and check its size
   gen-cdp [--check]   regenerate CDP types from the vendored protocol JSON
-  fixtures            manage the fixture site in testdata/site
+  fixtures            serve testdata/site on two local origins (--port, --port-b)
 ";
 
 type Result<T = ()> = std::result::Result<T, String>;
@@ -123,12 +123,12 @@ fn gen_cdp(args: &[String]) -> Result {
     cargo(run)
 }
 
+/// Serves the fixture site (`crates/fixtures`, the same server the
+/// integration tests use) until interrupted. Takes `--port` and `--port-b`.
 fn fixtures(args: &[String]) -> Result {
-    no_args("fixtures", args)?;
-    Err(
-        "fixtures is not implemented yet (it will serve testdata/site once the test server exists)"
-            .into(),
-    )
+    let mut run = vec!["run", "--quiet", "--locked", "--package", "fixtures", "--"];
+    run.extend(args.iter().map(String::as_str));
+    cargo(run)
 }
 
 fn no_args(task: &str, args: &[String]) -> Result {

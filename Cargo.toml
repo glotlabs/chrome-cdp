@@ -16,6 +16,7 @@ browser = { path = "crates/browser" }
 engine = { path = "crates/engine" }
 daemon = { path = "crates/daemon" }
 protocol = { path = "crates/protocol" }
+fixtures = { path = "crates/fixtures" }
 
 # External crates.
 bytes = "1"
@@ -23,6 +24,9 @@ clap = { version = "4.6", features = ["derive", "env"] }
 dashmap = "6"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 heck = "0.5"
+http-body-util = "0.1"
+hyper = { version = "1", default-features = false, features = ["http1", "server"] }
+hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
 libc = "0.2"
 proptest = "1"
 # HTTPS for `chrome-cdp install`: rustls with ring, never OpenSSL (overview §3).

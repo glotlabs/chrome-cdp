@@ -1,0 +1,7 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Child frame</title>
+<p>A frame served from {{ORIGIN}}.</p>
+<script>
+  parent.postMessage('child ran' + (window.__chromeCdpInit ? ' after the init script' : ''), '*');
+</script>

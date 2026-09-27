@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Popup</title>
+<script>
+  // Session settings (init scripts, plan 07) must run before this, so a
+  // global they set is visible here.
+  document.title = 'Popup: ' + (window.__chromeCdpInit ? 'init script ran first' : 'no init script');
+</script>
+<h1>Popup</h1>
