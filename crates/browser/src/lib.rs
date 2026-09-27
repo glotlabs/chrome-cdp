@@ -5,13 +5,19 @@
 //! - [`Host`] is what discovery reads from the machine: OS, architecture and
 //!   a few environment variables. Tests build a fake one.
 //! - [`cache_dir`] and [`installed`] know the `chrome-cdp install` cache
-//!   layout, which milestone 2.2 writes.
+//!   layout, which [`install`] (milestone 2.2) fills from the Chrome for
+//!   Testing index ([`parse_channels`], [`version_release`]).
+//! - [`DepsFix`] and [`missing_libraries`] explain a Linux Chrome that
+//!   cannot start for lack of shared libraries.
 
 mod cft;
 mod deps;
 mod discover;
 mod host;
+mod install;
 mod installed;
+#[cfg(any(test, feature = "test-support"))]
+pub mod testing;
 mod unzip;
 mod version;
 
@@ -21,7 +27,10 @@ pub use cft::{
 };
 pub use deps::{DepsFix, Distro, chromium_package_line, missing_libraries};
 pub use discover::{Chrome, DiscoverError, Problem, Source, discover, locate};
-pub use host::{Arch, CACHE_ENV, CHROME_ENV, Host, Os};
+pub use host::{Arch, CACHE_ENV, CHROME_ENV, Host, INDEX_ENV, Os};
+pub use install::{
+    InstallError, Installation, PINNED, Progress, Request, channels, install, uninstall,
+};
 pub use installed::{COMPLETE_MARKER, Installed, cache_dir, installed, platform_key};
 pub use version::{ChromeVersion, MIN_CHROME_MAJOR};
 

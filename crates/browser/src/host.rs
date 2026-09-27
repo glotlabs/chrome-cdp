@@ -8,9 +8,18 @@ use std::path::{Path, PathBuf};
 pub const CHROME_ENV: &str = "CHROME_CDP_CHROME";
 /// The env var overriding the cache dir that `chrome-cdp install` fills.
 pub const CACHE_ENV: &str = "CHROME_CDP_CACHE";
+/// The env var replacing the Chrome for Testing index URL (a mirror).
+pub const INDEX_ENV: &str = "CHROME_CDP_CFT_URL";
 
-/// The environment variables discovery reads.
-const VARS: &[&str] = &[CHROME_ENV, CACHE_ENV, "XDG_CACHE_HOME", "HOME", "PATH"];
+/// The environment variables discovery and install read.
+const VARS: &[&str] = &[
+    CHROME_ENV,
+    CACHE_ENV,
+    INDEX_ENV,
+    "XDG_CACHE_HOME",
+    "HOME",
+    "PATH",
+];
 
 /// An operating system chrome-cdp knows how to find Chrome on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

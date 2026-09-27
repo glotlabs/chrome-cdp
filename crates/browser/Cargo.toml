@@ -9,13 +9,26 @@ publish.workspace = true
 [dependencies]
 cdp.workspace = true
 protocol.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
+tracing.workspace = true
 zip.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+xattr = "1.6"
+
+[features]
+# `browser::testing`: a fake Chrome for Testing server for other crates' tests.
+test-support = []
 
 [dev-dependencies]
 tempfile.workspace = true
+tokio = { workspace = true, features = ["rt"] }
 
 [lints]
 workspace = true

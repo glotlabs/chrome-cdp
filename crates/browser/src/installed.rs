@@ -54,6 +54,9 @@ pub struct Installed {
     pub executable: PathBuf,
     /// Whether it is `chrome-headless-shell` (no `--headed`).
     pub headless_shell: bool,
+    /// Every product in the install dir, full Chrome first; `executable`
+    /// is the first one's binary.
+    pub products: Vec<Product>,
 }
 
 /// The complete installs for this host's platform, best first: full Chrome
@@ -85,27 +88,20 @@ fn parse_install(dir: &Path, id: &str, platform: &str) -> Option<Installed> {
     if dir_platform != platform || !dir.join(COMPLETE_MARKER).is_file() {
         return None;
     }
-    let (executable, headless_shell) = binaries(platform)
+    let products: Vec<Product> = [Product::Chrome, Product::HeadlessShell]
         .into_iter()
-        .map(|(rel, shell)| (dir.join(rel), shell))
-        .find(|(path, _)| is_executable(path))?;
+        .filter(|p| is_executable(&dir.join(p.binary(platform))))
+        .collect();
+    let first = *products.first()?;
     Some(Installed {
         id: id.to_owned(),
         channel: channel.to_owned(),
         version: version.to_owned(),
         platform: platform.to_owned(),
-        executable,
-        headless_shell,
+        executable: dir.join(first.binary(platform)),
+        headless_shell: first == Product::HeadlessShell,
+        products,
     })
-}
-
-/// Where the binary sits inside an install dir, full Chrome first; `true`
-/// marks headless shell.
-fn binaries(platform: &str) -> [(String, bool); 2] {
-    [
-        (Product::Chrome.binary(platform), false),
-        (Product::HeadlessShell.binary(platform), true),
-    ]
 }
 
 fn better(a: &Installed, b: &Installed) -> Ordering {

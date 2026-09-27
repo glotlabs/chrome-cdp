@@ -185,7 +185,7 @@ pub(crate) mod tests {
         let dest = dir.path().join("out");
         let mut calls = Vec::new();
         extract(&archive, &dest, &mut |done, total| {
-            calls.push((done, total))
+            calls.push((done, total));
         })
         .unwrap();
 
