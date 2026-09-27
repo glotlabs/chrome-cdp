@@ -184,3 +184,4 @@ Robot Framework). Treat it as a specified format from day one:
 ## Decisions log
 
 _(append here)_
+- (from plan 01, milestone 1.4) The `protocol` crate already has `ErrorKind` with the §3 exit codes, `ErrorInfo` and the `Envelope`, and the binary renders all output through `output::render`. Milestone 8.1 builds on these instead of starting over. Open question left for 8.1: how `--json` output stays bounded (1.4 only bounds the text forms).

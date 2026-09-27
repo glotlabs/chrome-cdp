@@ -5,7 +5,13 @@ built first for AI agents working from a shell. It aims to replace Playwright
 for agents: one command per step, compact output, refs instead of selectors,
 and errors that say what to run next.
 
-**Status:** early development; no commands work yet.
+**Status:** early development. Only `chrome-cdp --version` and a temporary
+raw CDP call work so far:
+
+```sh
+chrome-cdp __direct cdp Browser.getVersion --chrome /path/to/chrome
+chrome-cdp __direct cdp --target page Runtime.evaluate '{"expression":"1+1"}' --chrome /path/to/chrome
+```
 
 ## Development
 

@@ -1,6 +1,6 @@
 # Plan 01 — Foundation & CDP client
 
-Status: IN PROGRESS (1.1-1.3 done)
+Status: DONE (1.1-1.4; the two open criteria need a green GitHub CI run, including macOS)
 Depends on: 00-overview (read first), 08 §2–§4 (output conventions)
 
 ## Goal
@@ -141,3 +141,13 @@ _(append here)_
 - 1.3: The Chrome tests are not `#[ignore]`. Without `CHROME_PATH` they pass as no-ops. CI sets `CHROME_PATH` and `CHROME_CDP_REQUIRE_CHROME=1` on runners with Google Chrome preinstalled, so there a missing Chrome fails the run. The Linux arm64 runner has no Google Chrome and covers the pipe only through a stand-in `sh` child. The stand-in child tests run on every Unix runner, macOS included.
 - 1.3: `WsTransport` supports `ws://` only (no TLS feature). Add rustls in plan 02 if `connect` needs `wss://`.
 - 1.3: The library only emits tracing events (targets `cdp::wire` and `cdp::connection`). The binary installs the `CHROME_CDP_LOG` subscriber (milestone 1.4); the Chrome tests already do.
+- 1.4: Release binary size with clap, tokio and tempfile: 1.7 MB (x86_64 Linux).
+- 1.4: `ErrorKind` (the plan 08 §3 table with exit codes), `ErrorInfo` (message, hint, details, stderr text form) and the `--json` `Envelope` live in `protocol` now, because every command needs them. The envelope omits empty `warnings`/`events`. The hint builder, golden tests and JSON Schemas stay in milestone 8.1.
+- 1.4: Every command returns `Result<Success, ErrorInfo>`, and `output::render` prints it: text or `-q` on stdout, warnings and errors on stderr, or one envelope with `--json`. New commands add a `Command` variant and return a `Success` with their text and quiet forms.
+- 1.4: `--version`/`-V` is our own flag (clap's is disabled), so `--version --json` and `-q` follow the output contract. Text: `chrome-cdp 0.1.0 (git <sha12>, CDP protocol r1687809)`. `build.rs` embeds the sha; `CHROME_CDP_GIT_SHA` at build time overrides it (tarball builds), else it is `unknown`.
+- 1.4: `--timeout` requires a unit (`500ms`, `30s`, `2m`). A bare `5000` is a usage error, because agents coming from Playwright mean milliseconds and humans mean seconds.
+- 1.4: `--json`, `--quiet`, `--session` and `--timeout` have `CHROME_CDP_*` env vars. `-v` has none; `CHROME_CDP_LOG` (an `EnvFilter` directive) is its env form and overrides it. `--json` and `--quiet` conflict.
+- 1.4: Usage errors print clap's text on stderr and exit 2. With `--json` (flag or env var) they are a `BadArgs` envelope on stdout like any other error.
+- 1.4: `__direct cdp` also takes `--target browser|page` (page = a new about:blank tab), which plan 02's `cdp` has too, so page methods are testable now. The Chrome comes from `--chrome` or `CHROME_CDP_CHROME` only; discovery is plan 02. It sends `Browser.getVersion` as a handshake, so a Chrome that dies at startup is `LaunchFailed` with the tail of its stderr (in `details.chrome_stderr`), and "No usable sandbox" gets an AppArmor hint.
+- 1.4: `CdpError` maps to `ProtocolError` (exit 4; -32601/-32602 hint at the domain's docs), `Timeout` (exit 3; hint doubles `--timeout`), and `BrowserCrashed` for a disconnect (exit 4).
+- 1.4: Text and `-q` output of `__direct cdp` is bounded by `--max-chars` (default 20,000; 0 = no limit). `--json` output is never truncated, because truncated JSON is invalid; plan 08 should decide how `--json` stays bounded.
