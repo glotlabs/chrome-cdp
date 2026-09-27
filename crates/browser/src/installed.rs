@@ -30,10 +30,11 @@ pub fn cache_dir(host: &Host) -> Option<PathBuf> {
 }
 
 /// The Chrome for Testing platform key for this host, or `None` where there
-/// is no build (Linux arm64).
-pub(crate) fn platform_key(host: &Host) -> Option<&'static str> {
+/// is no build. (Linux arm64 builds exist since Chrome 153.)
+pub fn platform_key(host: &Host) -> Option<&'static str> {
     match (host.os, host.arch) {
         (Os::Linux, Arch::X86_64) => Some("linux64"),
+        (Os::Linux, Arch::Aarch64) => Some("linux-arm64"),
         (Os::MacOs, Arch::Aarch64) => Some("mac-arm64"),
         (Os::MacOs, Arch::X86_64) => Some("mac-x64"),
         _ => None,
@@ -174,7 +175,8 @@ mod tests {
     fn platform_keys() {
         let key = |os, arch| platform_key(&Host::fake(os, arch, Path::new("/")));
         assert_eq!(key(Os::Linux, Arch::X86_64), Some("linux64"));
-        assert_eq!(key(Os::Linux, Arch::Aarch64), None);
+        assert_eq!(key(Os::Linux, Arch::Aarch64), Some("linux-arm64"));
+        assert_eq!(key(Os::Linux, Arch::Other), None);
         assert_eq!(key(Os::MacOs, Arch::Aarch64), Some("mac-arm64"));
         assert_eq!(key(Os::MacOs, Arch::X86_64), Some("mac-x64"));
         assert_eq!(key(Os::Other, Arch::X86_64), None);
@@ -224,6 +226,29 @@ mod tests {
         assert_eq!(best.platform, "linux64");
         assert!(!best.headless_shell);
         assert!(installed(&host)[4].headless_shell);
+    }
+
+    #[test]
+    fn linux_arm64_ids_parse() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = Host::fake(Os::Linux, Arch::Aarch64, dir.path())
+            .with_var("CHROME_CDP_CACHE", dir.path());
+        install(
+            dir.path(),
+            "stable-154.0.1.0-linux-arm64",
+            "chrome-linux-arm64/chrome",
+        );
+        install(
+            dir.path(),
+            "stable-155.0.1.0-linux64",
+            "chrome-linux64/chrome",
+        );
+        let found = installed(&host);
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            (found[0].version.as_str(), found[0].platform.as_str()),
+            ("154.0.1.0", "linux-arm64")
+        );
     }
 
     #[test]

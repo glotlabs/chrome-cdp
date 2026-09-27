@@ -14,7 +14,7 @@ mod version;
 
 pub use discover::{Chrome, DiscoverError, Problem, Source, discover, locate};
 pub use host::{Arch, CACHE_ENV, CHROME_ENV, Host, Os};
-pub use installed::{COMPLETE_MARKER, Installed, cache_dir, installed};
+pub use installed::{COMPLETE_MARKER, Installed, cache_dir, installed, platform_key};
 pub use version::{ChromeVersion, MIN_CHROME_MAJOR};
 
 #[cfg(test)]
