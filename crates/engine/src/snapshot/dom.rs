@@ -1,4 +1,4 @@
-//! Engine B (plan 04, 4.3): a DOM walker (`walker.js`) injected into
+//! Engine B (plan 04, 4.3): a DOM walker (`injected/src/walker.ts`) in
 //! chrome-cdp's isolated world.
 //!
 //! Every frame is walked at once, in its own document. The walker works
@@ -22,11 +22,18 @@ use super::tree::{Checked, IFRAME, NONE, Node, NodeKey, States};
 use super::{Capture, FrameSource, relative_href};
 use crate::errors::from_cdp;
 use crate::frames::World;
+use crate::injected;
 use crate::tabs::Page;
 use crate::{Engine, Running};
 
-/// The walker; called with the `--scope` element (or `null`).
-const WALKER_JS: &str = include_str!("walker.js");
+/// Calls the walker (in the injected bundle) with the `--scope` element
+/// (or `null`).
+fn walker_js() -> String {
+    format!(
+        "function (scope) {{ {} return globalThis.__ccdp.walk(scope); }}",
+        injected::GUARD
+    )
+}
 
 /// The object group the walker's results live in until they are read
 /// (one per frame: frames of one process share a session).
@@ -173,15 +180,14 @@ async fn walk(
         };
         scope_object = session.call(params).await?.object.object_id;
     }
-    let mut params = runtime::CallFunctionOnParams::new(WALKER_JS.to_owned());
-    params.execution_context_id = Some(context.context_id);
+    let mut params = runtime::CallFunctionOnParams::new(walker_js());
     params.object_group = Some(group.clone());
     params.arguments = Some(vec![runtime::CallArgument {
         value: scope_object.is_none().then_some(Value::Null),
         unserializable_value: None,
         object_id: scope_object,
     }]);
-    let result = session.call(params).await;
+    let result = injected::call(&session, context.context_id, params).await;
     let outcome = read_walk(&session, result).await;
     let _ = session
         .call(runtime::ReleaseObjectGroupParams::new(group))

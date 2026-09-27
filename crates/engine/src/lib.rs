@@ -25,6 +25,7 @@ mod downloads;
 mod endpoint;
 mod errors;
 mod frames;
+mod injected;
 mod interrupt;
 mod locator;
 mod navigate;

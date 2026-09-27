@@ -45,6 +45,7 @@ use self::auth::Auth;
 use self::dialogs::OpenDialog;
 use self::downloads::Download;
 use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
+use crate::injected;
 use crate::network::{Exchange, Idle, InFlight, Network};
 use crate::request::{DialogPolicy, HttpCredentials};
 use crate::snapshot::{FrameSource, Memory as SnapshotMemory};
@@ -714,6 +715,7 @@ impl Tabs {
                 params.world_name = Some(frames::WORLD_NAME.to_owned());
                 let created = session.with_timeout(timeout).call(params).await?;
                 let context_id = created.execution_context_id;
+                injected::load(&session.with_timeout(timeout), context_id).await?;
                 if let Some(tab) = self.shared.lock().tabs.get_mut(&id) {
                     let context = Context {
                         session: owner,
@@ -1409,9 +1411,10 @@ async fn setup(
                 Ok(())
             }),
         ));
-        // chrome-cdp's isolated world in every document from now on, and
-        // in the ones that exist already.
-        let mut world = page::AddScriptToEvaluateOnNewDocumentParams::new(String::new());
+        // chrome-cdp's isolated world, with its helper bundle, in every
+        // document from now on, and in the ones that exist already.
+        let mut world =
+            page::AddScriptToEvaluateOnNewDocumentParams::new(injected::BUNDLE.to_owned());
         world.world_name = Some(frames::WORLD_NAME.to_owned());
         world.run_immediately = Some(true);
         steps.push(("the isolated world", step(session.call(world))));

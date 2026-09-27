@@ -22,6 +22,8 @@ tasks:
                       and tests
   dist [--target T]   build the release binary into dist/ and check its size
   gen-cdp [--check]   regenerate CDP types from the vendored protocol JSON
+  build-js [--check]  typecheck and bundle the injected helper (needs Node's npx)
+                      into crates/engine/src/injected/ccdp.js
   fixtures            serve testdata/site on two local origins (--port, --port-b)
                       and an HTTPS one with a self-signed certificate
 ";
@@ -38,6 +40,7 @@ fn main() -> ExitCode {
         "ci" => ci(rest),
         "dist" => dist(rest),
         "gen-cdp" => gen_cdp(rest),
+        "build-js" => build_js(rest),
         "fixtures" => fixtures(rest),
         "-h" | "--help" | "help" => {
             print!("{USAGE}");
@@ -122,6 +125,114 @@ fn gen_cdp(args: &[String]) -> Result {
         _ => return Err("usage: cargo xtask gen-cdp [--check]".into()),
     }
     cargo(run)
+}
+
+/// The injected helper bundle's TypeScript sources and built file.
+const INJECTED_DIR: &str = "crates/engine/src/injected";
+const INJECTED_OUT: &str = "ccdp.js";
+/// Pinned so the committed bundle builds the same everywhere.
+const ESBUILD: &str = "esbuild@0.28.2";
+const TYPESCRIPT: &str = "typescript@7.0.2";
+
+/// Typechecks the injected TypeScript with `tsc` and bundles it with
+/// `esbuild` (both through `npx`, pinned), into a file that is committed,
+/// so a plain `cargo build` needs no Node. The first line records a hash of
+/// the sources; an engine test fails when it does not match them.
+/// `--check` fails if the committed file is not what the sources build.
+fn build_js(args: &[String]) -> Result {
+    let check = match args {
+        [] => false,
+        [flag] if flag == "--check" => true,
+        _ => return Err("usage: cargo xtask build-js [--check]".into()),
+    };
+    let dir = workspace_root().join(INJECTED_DIR);
+    run(Command::new("npx")
+        .args(["--yes", "-p", TYPESCRIPT, "tsc", "-p", "tsconfig.json"])
+        .current_dir(&dir))?;
+    let bundled = output(
+        Command::new("npx")
+            .args([
+                "--yes",
+                ESBUILD,
+                "src/index.ts",
+                "--bundle",
+                "--format=iife",
+                "--target=chrome120",
+                "--charset=utf8",
+                "--legal-comments=none",
+                "--log-level=warning",
+            ])
+            .current_dir(&dir),
+    )?;
+    let hash = injected_hash(&dir.join("src"))?;
+    let built = format!(
+        "// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: {hash:016x}\n{bundled}"
+    );
+    let out = dir.join(INJECTED_OUT);
+    if check {
+        let committed = fs::read_to_string(&out).unwrap_or_default();
+        if committed != built {
+            return Err(format!(
+                "{} is not what its sources build; run `cargo xtask build-js`",
+                out.display()
+            ));
+        }
+        return Ok(());
+    }
+    fs::write(&out, built).map_err(|e| format!("write {}: {e}", out.display()))?;
+    eprintln!("wrote {}", out.display());
+    Ok(())
+}
+
+/// FNV-1a over the `.ts` files of `dir`, by name: each file's name, a NUL,
+/// its bytes and a NUL. The engine's `injected` test computes the same.
+fn injected_hash(dir: &Path) -> Result<u64> {
+    let mut files: Vec<PathBuf> = fs::read_dir(dir)
+        .map_err(|e| format!("read {}: {e}", dir.display()))?
+        .filter_map(|entry| Some(entry.ok()?.path()))
+        .filter(|p| p.extension() == Some(OsStr::new("ts")))
+        .collect();
+    files.sort();
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for file in files {
+        let name = file
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
+        let bytes = fs::read(&file).map_err(|e| format!("read {}: {e}", file.display()))?;
+        for byte in name.bytes().chain([0]).chain(bytes).chain([0]) {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0100_0000_01b3);
+        }
+    }
+    Ok(hash)
+}
+
+/// Runs `cmd` and fails if it does not succeed.
+fn run(cmd: &mut Command) -> Result {
+    let shown = format!("{cmd:?}");
+    eprintln!("$ {shown}");
+    let status = cmd.status().map_err(|e| format!("{shown}: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("{shown} failed ({status})"))
+    }
+}
+
+/// Runs `cmd` and returns its stdout.
+fn output(cmd: &mut Command) -> Result<String> {
+    let shown = format!("{cmd:?}");
+    eprintln!("$ {shown}");
+    let out = cmd
+        .stderr(std::process::Stdio::inherit())
+        .output()
+        .map_err(|e| format!("{shown}: {e}"))?;
+    if !out.status.success() {
+        return Err(format!("{shown} failed ({})", out.status));
+    }
+    String::from_utf8(out.stdout).map_err(|e| format!("{shown}: {e}"))
 }
 
 /// Serves the fixture site (`crates/fixtures`, the same server the
