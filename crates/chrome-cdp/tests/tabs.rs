@@ -131,10 +131,8 @@ fn popups_open_as_background_tabs_with_stable_ids() {
         "{}",
         stderr(&out)
     );
-    assert_eq!(
-        stdout(&sandbox.run(&["status", "--json"])).contains(r#""tabs":3"#),
-        true
-    );
+    let status = json_out(&sandbox.run(&["status", "--json"]));
+    assert_eq!(status["data"]["tabs"], json!(3));
 }
 
 #[test]
