@@ -1,0 +1,61 @@
+$ chrome-cdp html '#checkout' --outer
+exit: 0
+--- stdout
+<form id="checkout" aria-label="Checkout">
+  <label>Email <input id="email" type="email" value="ada@example.com"></label>
+  <label>Password <input id="password" type="password" value="hunter2"></label>
+  <label>
+    Notes
+    <textarea id="notes">Leave at
+the door</textarea>
+  </label>
+  <label>
+    Country
+    <select id="country"><option value="no">Norway</option><option value="se" selected>Sweden</option></select>
+  </label>
+  <label>
+    Extras
+    <select id="extras" multiple>
+      <option value="wrap" selected>Gift wrap</option>
+      <option value="card">Card</option>
+      <option value="bag" selected>Bag</option>
+    </select>
+  </label>
+  <div id="editor" contenteditable="true">Edited <b>text</b></div>
+  <div id="volume" role="slider" aria-valuenow="7" aria-valuetext="seven" tabindex="0">Volume</div>
+  <button id="pay" type="submit" data-empty>Checkout</button>
+</form>
+
+$ chrome-cdp html '#checkout' --outer --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"html":"<form id=\"checkout\" aria-label=\"Checkout\">\n  <label>Email <input id=\"email\" type=\"email\" value=\"ada@example.com\"></label>\n  <label>Password <input id=\"password\" type=\"password\" value=\"hunter2\"></label>\n  <label>\n    Notes\n    <textarea id=\"notes\">Leave at\nthe door</textarea>\n  </label>\n  <label>\n    Country\n    <select id=\"country\"><option value=\"no\">Norway</option><option value=\"se\" selected>Sweden</option></select>\n  </label>\n  <label>\n    Extras\n    <select id=\"extras\" multiple>\n      <option value=\"wrap\" selected>Gift wrap</option>\n      <option value=\"card\">Card</option>\n      <option value=\"bag\" selected>Bag</option>\n    </select>\n  </label>\n  <div id=\"editor\" contenteditable=\"true\">Edited <b>text</b></div>\n  <div id=\"volume\" role=\"slider\" aria-valuenow=\"7\" aria-valuetext=\"seven\" tabindex=\"0\">Volume</div>\n  <button id=\"pay\" type=\"submit\" data-empty>Checkout</button>\n</form>","locator":"#checkout","outer":true,"raw":false,"tab":"t1"}}
+
+$ chrome-cdp html '#checkout' --outer -q
+exit: 0
+--- stdout
+<form id="checkout" aria-label="Checkout">
+  <label>Email <input id="email" type="email" value="ada@example.com"></label>
+  <label>Password <input id="password" type="password" value="hunter2"></label>
+  <label>
+    Notes
+    <textarea id="notes">Leave at
+the door</textarea>
+  </label>
+  <label>
+    Country
+    <select id="country"><option value="no">Norway</option><option value="se" selected>Sweden</option></select>
+  </label>
+  <label>
+    Extras
+    <select id="extras" multiple>
+      <option value="wrap" selected>Gift wrap</option>
+      <option value="card">Card</option>
+      <option value="bag" selected>Bag</option>
+    </select>
+  </label>
+  <div id="editor" contenteditable="true">Edited <b>text</b></div>
+  <div id="volume" role="slider" aria-valuenow="7" aria-valuetext="seven" tabindex="0">Volume</div>
+  <button id="pay" type="submit" data-empty>Checkout</button>
+</form>
+

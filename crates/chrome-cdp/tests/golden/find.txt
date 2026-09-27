@@ -1,0 +1,18 @@
+$ chrome-cdp find checkout
+exit: 0
+--- stdout
+page t1 "Read commands" <site>/read/index.html
+- button "Checkout" [e1] (in form "Checkout")
+- form "Checkout" [e2]
+
+$ chrome-cdp find checkout --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"count":2,"matches":[{"context":"form \"Checkout\"","name":"Checkout","ref":"e1","role":"button"},{"name":"Checkout","ref":"e2","role":"form"}],"query":"checkout","tab":"t1","title":"Read commands","url":"<site>/read/index.html"}}
+
+$ chrome-cdp find checkout -q
+exit: 0
+--- stdout
+e1
+e2
+

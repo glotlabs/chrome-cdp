@@ -1,0 +1,12 @@
+$ chrome-cdp find zebra --role button
+exit: 1
+--- stderr
+error: nothing in tab t1 matches "zebra"
+  role: only button nodes were searched
+  hint: chrome-cdp snapshot --interactive   (shows what can be acted on)
+
+$ chrome-cdp find zebra --role button --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"nothing in tab t1 matches \"zebra\"","hint":"chrome-cdp snapshot --interactive   (shows what can be acted on)","notes":[{"label":"role","text":"only button nodes were searched"}],"details":{"query":"zebra","role":"button","tab":"t1"}}}
+

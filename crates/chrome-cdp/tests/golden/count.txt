@@ -1,0 +1,15 @@
+$ chrome-cdp count .item
+exit: 0
+--- stdout
+4 (3 visible)
+
+$ chrome-cdp count .item --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"count":4,"locator":".item","tab":"t1","visible":3}}
+
+$ chrome-cdp count .item -q
+exit: 0
+--- stdout
+4
+

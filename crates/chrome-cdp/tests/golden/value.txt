@@ -1,0 +1,17 @@
+$ chrome-cdp value '#extras'
+exit: 0
+--- stdout
+wrap
+bag
+
+$ chrome-cdp value '#extras' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"kind":"select","locator":"#extras","tab":"t1","value":"wrap\nbag","values":["wrap","bag"]}}
+
+$ chrome-cdp value '#extras' -q
+exit: 0
+--- stdout
+wrap
+bag
+

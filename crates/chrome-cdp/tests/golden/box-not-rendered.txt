@@ -1,0 +1,15 @@
+$ chrome-cdp box '#hidden-text'
+exit: 0
+--- stderr
+warning: #hidden-text is not rendered, so it has no box
+
+$ chrome-cdp box '#hidden-text' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"box":null,"in_viewport":false,"locator":"#hidden-text","tab":"t1"},"warnings":["#hidden-text is not rendered, so it has no box"]}
+
+$ chrome-cdp box '#hidden-text' -q
+exit: 0
+--- stderr
+warning: #hidden-text is not rendered, so it has no box
+

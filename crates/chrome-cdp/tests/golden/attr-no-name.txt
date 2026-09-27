@@ -1,0 +1,11 @@
+$ chrome-cdp attr '#pricing'
+exit: 2
+--- stderr
+error: the following required arguments were not provided: <NAME>
+  hint: chrome-cdp attr --help
+
+$ chrome-cdp attr '#pricing' --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"the following required arguments were not provided: <NAME>","hint":"chrome-cdp attr --help"}}
+

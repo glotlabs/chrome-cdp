@@ -1,0 +1,48 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Read commands</title>
+<style>
+  body { margin: 0; font: 16px/1.2 sans-serif; }
+  .gone { display: none; }
+  #box { position: absolute; left: 30px; top: 40px; width: 120px; height: 36px; margin: 0; }
+  #far { position: absolute; left: 10px; top: 5000px; width: 50px; height: 20px; }
+  #frames { position: absolute; left: 0; top: 200px; }
+  iframe { border: 5px solid black; padding: 10px; width: 300px; height: 150px; margin: 0; display: block; }
+</style>
+<header>
+  <nav aria-label="Main"><a id="home" href="/">Acme</a> <a id="pricing" href="/pricing" class="nav link" data-x="1">Pricing</a></nav>
+</header>
+<main id="main">
+  <h1>Your   cart</h1>
+  <p id="intro">Three   items,
+     ready to    ship.</p>
+  <ul id="items">
+    <li class="item">Apples</li>
+    <li class="item">Bananas</li>
+    <li class="item gone">Cherries</li>
+    <li class="item">Dates</li>
+  </ul>
+  <form id="checkout" aria-label="Checkout">
+    <label>Email <input id="email" type="email" value="ada@example.com"></label>
+    <label>Password <input id="password" type="password" value="hunter2"></label>
+    <label>Notes <textarea id="notes">Leave at
+the door</textarea></label>
+    <label>Country <select id="country"><option value="no">Norway</option><option value="se" selected>Sweden</option></select></label>
+    <label>Extras <select id="extras" multiple><option value="wrap" selected>Gift wrap</option><option value="card">Card</option><option value="bag" selected>Bag</option></select></label>
+    <div id="editor" contenteditable="true">Edited   <b>text</b></div>
+    <div id="volume" role="slider" aria-valuenow="7" aria-valuetext="seven" tabindex="0">Volume</div>
+    <button id="pay" type="submit" data-empty="">Checkout</button>
+  </form>
+  <p id="hidden-text" class="gone">Secret</p>
+  <div id="host"></div>
+</main>
+<div id="box">Box</div>
+<div id="far">Far</div>
+<div id="frames">
+  <iframe id="same" name="same" title="Same" src="/read/frame.html"></iframe>
+  <iframe id="other" name="other" title="Other" src="{{ORIGIN_B}}/read/frame.html"></iframe>
+</div>
+<script>
+  document.getElementById('host').attachShadow({ mode: 'open' }).innerHTML =
+    '<p class="shadow">Inside the shadow</p>';
+</script>

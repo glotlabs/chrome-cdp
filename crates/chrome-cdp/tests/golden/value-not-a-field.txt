@@ -1,0 +1,11 @@
+$ chrome-cdp value '#intro'
+exit: 1
+--- stderr
+error: #intro has no value: it is a <p>, not a field
+  hint: chrome-cdp text '#intro'   (its text), or name an input, textarea, select or editable element
+
+$ chrome-cdp value '#intro' --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"#intro has no value: it is a <p>, not a field","hint":"chrome-cdp text '#intro'   (its text), or name an input, textarea, select or editable element"}}
+

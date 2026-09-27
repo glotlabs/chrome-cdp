@@ -1,0 +1,11 @@
+$ chrome-cdp count
+exit: 2
+--- stderr
+error: the following required arguments were not provided: <LOCATOR>
+  hint: chrome-cdp count --help
+
+$ chrome-cdp count --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"the following required arguments were not provided: <LOCATOR>","hint":"chrome-cdp count --help"}}
+

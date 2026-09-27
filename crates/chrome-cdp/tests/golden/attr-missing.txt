@@ -1,0 +1,15 @@
+$ chrome-cdp attr '#pricing' title
+exit: 0
+--- stderr
+warning: #pricing has no attribute "title" (it has id, href, class, data-x)
+
+$ chrome-cdp attr '#pricing' title --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"locator":"#pricing","name":"title","tab":"t1","value":null},"warnings":["#pricing has no attribute \"title\" (it has id, href, class, data-x)"]}
+
+$ chrome-cdp attr '#pricing' title -q
+exit: 0
+--- stderr
+warning: #pricing has no attribute "title" (it has id, href, class, data-x)
+

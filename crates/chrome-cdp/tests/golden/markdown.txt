@@ -1,0 +1,73 @@
+$ chrome-cdp markdown
+exit: 0
+--- stdout
+# The Analytical Engine
+
+By [Ada Lovelace](/authors/ada), 1843. See [Babbage](https://example.org/babbage).
+
+The engine has **no pretensions** whatever to _originate_ anything, and it can do whatever we know how to order it to perform.
+
+## Notes
+
+- Note A covers the `mill`.
+- Note G covers Bernoulli numbers:
+  1. first
+  2. second
+
+> It weaves algebraical patterns, just as the Jacquard loom weaves flowers and leaves.
+
+```rust
+for n in 1..=7 {
+    b(n);
+}
+```
+
+| Note | Topic |
+| --- | --- |
+| A | The mill \| store |
+| G | Bernoulli |
+
+Line one
+Line two
+
+![A diagram](/nav/pixel.svg)
+
+$ chrome-cdp markdown --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"markdown":"# The Analytical Engine\n\nBy [Ada Lovelace](/authors/ada), 1843. See [Babbage](https://example.org/babbage).\n\nThe engine has **no pretensions** whatever to _originate_ anything, and it can do whatever we know how to order it to perform.\n\n## Notes\n\n- Note A covers the `mill`.\n- Note G covers Bernoulli numbers:\n  1. first\n  2. second\n\n> It weaves algebraical patterns, just as the Jacquard loom weaves flowers and leaves.\n\n```rust\nfor n in 1..=7 {\n    b(n);\n}\n```\n\n| Note | Topic |\n| --- | --- |\n| A | The mill \\| store |\n| G | Bernoulli |\n\nLine one\nLine two\n\n![A diagram](/nav/pixel.svg)","source":"div#content","tab":"t1","title":"The Analytical Engine","url":"<site>/read/article.html"}}
+
+$ chrome-cdp markdown -q
+exit: 0
+--- stdout
+# The Analytical Engine
+
+By [Ada Lovelace](/authors/ada), 1843. See [Babbage](https://example.org/babbage).
+
+The engine has **no pretensions** whatever to _originate_ anything, and it can do whatever we know how to order it to perform.
+
+## Notes
+
+- Note A covers the `mill`.
+- Note G covers Bernoulli numbers:
+  1. first
+  2. second
+
+> It weaves algebraical patterns, just as the Jacquard loom weaves flowers and leaves.
+
+```rust
+for n in 1..=7 {
+    b(n);
+}
+```
+
+| Note | Topic |
+| --- | --- |
+| A | The mill \| store |
+| G | Bernoulli |
+
+Line one
+Line two
+
+![A diagram](/nav/pixel.svg)
+

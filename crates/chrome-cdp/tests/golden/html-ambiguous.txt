@@ -1,0 +1,15 @@
+$ chrome-cdp html .item
+exit: 1
+--- stderr
+error: 4 elements match .item: e1, e2, e3, e4
+  e1: listitem "Apples"
+  e2: listitem "Bananas"
+  e3: listitem "Cherries" (hidden)
+  e4: listitem "Dates"
+  hint: chrome-cdp html e1   (the first one), or add >> nth=<index> to .item
+
+$ chrome-cdp html .item --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"Ambiguous","message":"4 elements match .item: e1, e2, e3, e4","hint":"chrome-cdp html e1   (the first one), or add >> nth=<index> to .item","notes":[{"label":"e1","text":"listitem \"Apples\""},{"label":"e2","text":"listitem \"Bananas\""},{"label":"e3","text":"listitem \"Cherries\" (hidden)"},{"label":"e4","text":"listitem \"Dates\""}],"details":{"candidates":[{"context":null,"name":"Apples","ref":"e1","role":"listitem","visible":true},{"context":null,"name":"Bananas","ref":"e2","role":"listitem","visible":true},{"context":null,"name":"Cherries","ref":"e3","role":"listitem","visible":false},{"context":null,"name":"Dates","ref":"e4","role":"listitem","visible":true}],"count":4,"locator":".item"}}}
+

@@ -1,0 +1,25 @@
+$ chrome-cdp text .item
+exit: 0
+--- stdout
+Apples
+Bananas
+
+Dates
+--- stderr
+warning: 1 of the 4 matches are hidden: they show no text
+
+$ chrome-cdp text .item --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"locator":".item","tab":"t1","texts":["Apples","Bananas","","Dates"]},"warnings":["1 of the 4 matches are hidden: they show no text"]}
+
+$ chrome-cdp text .item -q
+exit: 0
+--- stdout
+Apples
+Bananas
+
+Dates
+--- stderr
+warning: 1 of the 4 matches are hidden: they show no text
+

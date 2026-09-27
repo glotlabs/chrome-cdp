@@ -1,0 +1,15 @@
+$ chrome-cdp box 'frame=same >> #target'
+exit: 0
+--- stdout
+x=22 y=224 w=40 h=20
+
+$ chrome-cdp box 'frame=same >> #target' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"box":{"height":20.0,"width":40.0,"x":22.0,"y":224.0},"in_viewport":true,"locator":"frame=same >> #target","tab":"t1"}}
+
+$ chrome-cdp box 'frame=same >> #target' -q
+exit: 0
+--- stdout
+22 224 40 20
+
