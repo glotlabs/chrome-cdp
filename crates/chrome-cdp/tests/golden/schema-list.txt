@@ -11,11 +11,15 @@ close      the sessions closed
 status     the session's state, browser, tabs and uptime
 sessions   every live session
 cdp        the raw CDP result object
+tabs       the session's tabs, in the order they opened
+tab        the tab made active
+tab new    the tab opened (and made active)
+tab close  the tab closed and the tab now active
 
 $ chrome-cdp schema --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"commands":[{"name":"version","summary":"chrome-cdp --version: version, git commit and CDP protocol revision"},{"name":"schema","summary":"a command's JSON Schema, or the list of commands"},{"name":"install","summary":"the browser installed, or with --list the installed and available ones"},{"name":"uninstall","summary":"the browser removed"},{"name":"open","summary":"the session and its browser, and the page opened"},{"name":"connect","summary":"the session and the browser it attached to"},{"name":"close","summary":"the sessions closed"},{"name":"status","summary":"the session's state, browser, tabs and uptime"},{"name":"sessions","summary":"every live session"},{"name":"cdp","summary":"the raw CDP result object"}]}}
+{"ok":true,"data":{"commands":[{"name":"version","summary":"chrome-cdp --version: version, git commit and CDP protocol revision"},{"name":"schema","summary":"a command's JSON Schema, or the list of commands"},{"name":"install","summary":"the browser installed, or with --list the installed and available ones"},{"name":"uninstall","summary":"the browser removed"},{"name":"open","summary":"the session and its browser, and the page opened"},{"name":"connect","summary":"the session and the browser it attached to"},{"name":"close","summary":"the sessions closed"},{"name":"status","summary":"the session's state, browser, tabs and uptime"},{"name":"sessions","summary":"every live session"},{"name":"cdp","summary":"the raw CDP result object"},{"name":"tabs","summary":"the session's tabs, in the order they opened"},{"name":"tab","summary":"the tab made active"},{"name":"tab new","summary":"the tab opened (and made active)"},{"name":"tab close","summary":"the tab closed and the tab now active"}]}}
 
 $ chrome-cdp schema -q
 exit: 0
@@ -30,4 +34,8 @@ close
 status
 sessions
 cdp
+tabs
+tab
+tab new
+tab close
 

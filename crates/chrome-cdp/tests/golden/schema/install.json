@@ -34,7 +34,9 @@
         "events": {
           "default": [],
           "description": "Page events observed while the command ran.",
-          "items": true,
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
           "type": "array"
         },
         "ok": {
@@ -189,6 +191,46 @@
           "const": "DialogOpen",
           "description": "A JavaScript dialog blocks the page.",
           "type": "string"
+        }
+      ]
+    },
+    "Event": {
+      "description": "Something that happened in the browser while a command ran. The\nenvelope lists them in `events`; the command's text says what matters.",
+      "oneOf": [
+        {
+          "description": "A tab opened that no command asked for: a popup (`window.open`,\n`target=_blank`) or one the user opened. It is not active unless the\nsession follows popups (`open --follow-popups`).",
+          "properties": {
+            "active": {
+              "description": "Whether it became the active tab.",
+              "type": "boolean"
+            },
+            "opener": {
+              "description": "The tab that opened it, if known.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tab": {
+              "description": "The new tab's id.",
+              "type": "string"
+            },
+            "type": {
+              "const": "tab_opened",
+              "type": "string"
+            },
+            "url": {
+              "description": "Its URL when the command ended (it may still be loading).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tab",
+            "url",
+            "active"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -363,8 +405,10 @@
         },
         "events": {
           "default": [],
-          "description": "Page events observed while the command ran (dialogs, navigations, …).",
-          "items": true,
+          "description": "Page events observed while the command ran (tabs opened, dialogs,\nnavigations, …).",
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
           "type": "array"
         },
         "ok": {

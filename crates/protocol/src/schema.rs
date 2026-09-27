@@ -91,6 +91,26 @@ pub const COMMANDS: &[CommandSchema] = &[
         summary: "the raw CDP result object",
         schema: || schema_for!(Envelope<Map<String, Value>>),
     },
+    CommandSchema {
+        name: "tabs",
+        summary: "the session's tabs, in the order they opened",
+        schema: || schema_for!(Envelope<TabsData>),
+    },
+    CommandSchema {
+        name: "tab",
+        summary: "the tab made active",
+        schema: || schema_for!(Envelope<TabData>),
+    },
+    CommandSchema {
+        name: "tab new",
+        summary: "the tab opened (and made active)",
+        schema: || schema_for!(Envelope<TabData>),
+    },
+    CommandSchema {
+        name: "tab close",
+        summary: "the tab closed and the tab now active",
+        schema: || schema_for!(Envelope<TabCloseData>),
+    },
 ];
 
 /// The registry entry for `name` (`"tab close"`), if any.
@@ -407,6 +427,76 @@ pub struct SessionEntry {
     pub daemon_pid: u32,
 }
 
+/// One tab of a session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TabInfo {
+    /// The tab's id, `t1`, `t2`, …: given in the order tabs open and never
+    /// reused within a session. `--tab` takes it.
+    pub id: String,
+    /// Whether commands act on this tab when no `--tab` is given.
+    pub active: bool,
+    /// The document title.
+    pub title: String,
+    /// The current URL.
+    pub url: String,
+    /// The tab that opened this one (a popup), if chrome-cdp knows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub opener: Option<String>,
+}
+
+/// `data` of `chrome-cdp tabs --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TabsData {
+    /// Every open tab, by id.
+    pub tabs: Vec<TabInfo>,
+}
+
+/// `data` of `chrome-cdp tab <id> --json` and `chrome-cdp tab new --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TabData {
+    /// The tab, now active.
+    pub tab: TabInfo,
+}
+
+/// `data` of `chrome-cdp tab close --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TabCloseData {
+    /// The id of the tab closed.
+    pub closed: String,
+    /// The tab active now; absent when the session closed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active: Option<TabInfo>,
+    /// Whether a blank tab was opened because the last one closed (so the
+    /// session keeps its browser).
+    #[serde(default)]
+    pub opened_blank: bool,
+    /// Whether the session and its browser closed (`--close-browser` on the
+    /// last tab).
+    #[serde(default)]
+    pub session_closed: bool,
+}
+
+/// Something that happened in the browser while a command ran. The
+/// envelope lists them in `events`; the command's text says what matters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Event {
+    /// A tab opened that no command asked for: a popup (`window.open`,
+    /// `target=_blank`) or one the user opened. It is not active unless the
+    /// session follows popups (`open --follow-popups`).
+    TabOpened {
+        /// The new tab's id.
+        tab: String,
+        /// Its URL when the command ended (it may still be loading).
+        url: String,
+        /// The tab that opened it, if known.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        opener: Option<String>,
+        /// Whether it became the active tab.
+        active: bool,
+    },
+}
+
 /// The `--json` envelope (see [`crate::Envelope`]) with `data: T`.
 #[derive(JsonSchema)]
 #[serde(untagged)]
@@ -429,9 +519,10 @@ struct OkEnvelope<T> {
     /// Non-fatal notes.
     #[serde(default)]
     warnings: Vec<String>,
-    /// Page events observed while the command ran (dialogs, navigations, …).
+    /// Page events observed while the command ran (tabs opened, dialogs,
+    /// navigations, …).
     #[serde(default)]
-    events: Vec<Value>,
+    events: Vec<Event>,
     /// Values in `data` shortened to keep the output bounded; `--max-chars`
     /// (or the command's own flag, named in the warning) shows more.
     #[serde(default)]
@@ -451,7 +542,7 @@ struct ErrEnvelope {
     warnings: Vec<String>,
     /// Page events observed while the command ran.
     #[serde(default)]
-    events: Vec<Value>,
+    events: Vec<Event>,
 }
 
 #[cfg(test)]

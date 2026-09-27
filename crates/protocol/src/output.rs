@@ -12,6 +12,7 @@ use serde_json::Value;
 
 use crate::ErrorInfo;
 use crate::bound::{self, Limit, Truncation};
+use crate::schema::Event;
 use crate::style::Style;
 
 /// A command's successful result in every output form. The daemon returns
@@ -32,7 +33,7 @@ pub struct Output {
     /// …). Only the `--json` form lists them; commands put what matters into
     /// their text.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub events: Vec<Value>,
+    pub events: Vec<Event>,
     /// The output budget. Every command whose output can grow with the page
     /// (snapshot, text, eval, raw CDP, logs, …) must set one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -73,6 +74,13 @@ impl Output {
         self
     }
 
+    /// Adds a page event (`--json` only; say what matters in the text too).
+    #[must_use]
+    pub fn event(mut self, event: Event) -> Self {
+        self.events.push(event);
+        self
+    }
+
     /// Bounds every form at `max_chars` (0 = no limit); `more` says how to
     /// see the rest, after "use": `--max-chars 0 for all of it`.
     #[must_use]
@@ -105,7 +113,7 @@ pub struct Envelope {
     pub warnings: Vec<String>,
     /// Page events observed while the command ran (dialogs, navigations, …).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub events: Vec<Value>,
+    pub events: Vec<Event>,
     /// Values in `data` shortened to keep the output bounded.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub truncated: Vec<Truncation>,
