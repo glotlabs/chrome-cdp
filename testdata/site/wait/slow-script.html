@@ -1,0 +1,11 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Slow script</title>
+<h1>Slow script</h1>
+<p>A parser-blocking script answers after <code>?ms=</code> (default 5000),
+so <code>DOMContentLoaded</code> waits that long.</p>
+<script>
+  const ms = new URLSearchParams(location.search).get('ms') || '5000';
+  document.write(`<script src="/wait/noop.js?delay=${ms}"><\/script>`);
+</script>
+<p id="after">Parsed.</p>

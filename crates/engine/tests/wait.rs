@@ -506,6 +506,82 @@ async fn load_states() {
 }
 
 #[tokio::test]
+async fn the_other_conditions_time_out_and_say_what_they_saw() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path).await;
+    // A parser-blocking script holds up DOMContentLoaded.
+    goto_with(
+        &engine,
+        &site.url("/wait/slow-script.html?ms=20000"),
+        WaitUntil::Commit,
+    )
+    .await;
+    let err = times_out(&engine, WaitFor::DomContentLoaded).await;
+    assert_eq!(err.message, "waited 700ms for DOMContentLoaded");
+    assert!(
+        err.to_text()
+            .contains("observed: document.readyState is \"loading\"\n"),
+        "{}",
+        err.to_text()
+    );
+
+    // Element states the lazy page never reaches (it never runs its timer).
+    goto(&engine, &site.url("/wait/lazy.html?after=600000")).await;
+    let err = times_out(&engine, element("#go", ElementState::Enabled)).await;
+    assert_eq!(err.message, "waited 700ms for #go to be enabled");
+    assert!(
+        err.to_text()
+            .contains("observed: 1 match, visible, disabled\n"),
+        "{}",
+        err.to_text()
+    );
+    let err = times_out(&engine, element("#loading", ElementState::Detached)).await;
+    assert_eq!(err.details.unwrap()["observed"]["count"], 1);
+    let err = times_out(&engine, element("#welcome", ElementState::Attached)).await;
+    assert!(
+        err.to_text().contains("observed: no element matches\n"),
+        "{}",
+        err.to_text()
+    );
+
+    // A request nobody sends.
+    let err = times_out(
+        &engine,
+        WaitFor::Request {
+            pattern: "/api/save".into(),
+        },
+    )
+    .await;
+    assert_eq!(err.message, "waited 700ms for a request to \"/api/save\"");
+    assert!(
+        err.to_text().contains("observed: no matching request\n"),
+        "{}",
+        err.to_text()
+    );
+    assert!(
+        err.hint
+            .as_deref()
+            .is_some_and(|h| h.contains("run the action that sends it first")),
+        "{:?}",
+        err.hint
+    );
+
+    // A settle that times out names the requests still open.
+    goto(&engine, &site.url("/wait/slow-request.html?ms=20000")).await;
+    let err = times_out(&engine, WaitFor::Settle).await;
+    assert!(
+        err.to_text().contains(&format!(
+            "in flight: GET {} (",
+            site.url("/wait/slow.json?delay=20000")
+        )),
+        "{}",
+        err.to_text()
+    );
+    engine.close().await;
+}
+
+#[tokio::test]
 async fn network_idle_ignores_beacons_and_websockets() {
     let Some(path) = chrome_path() else { return };
     let site = Fixtures::shared();
