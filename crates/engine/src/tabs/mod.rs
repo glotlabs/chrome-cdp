@@ -46,6 +46,7 @@ use self::dialogs::OpenDialog;
 use self::downloads::Download;
 use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
 use crate::injected;
+use crate::input::Pointer;
 use crate::network::{Exchange, Idle, InFlight, Network};
 use crate::request::{DialogPolicy, HttpCredentials};
 use crate::snapshot::{FrameSource, Memory as SnapshotMemory};
@@ -229,6 +230,8 @@ struct Tab {
     crashed: Option<u64>,
     /// Its refs and last snapshot.
     snapshot: SnapshotMemory,
+    /// Where the mouse is and what it holds, as chrome-cdp sent it.
+    pointer: Pointer,
 }
 
 /// A page or iframe session.
@@ -656,6 +659,15 @@ impl Tabs {
             .tabs
             .get_mut(&id)
             .map(|tab| f(&mut tab.snapshot))
+    }
+
+    /// Calls `f` with tab `id`'s mouse state (`None` if the tab is gone).
+    pub(crate) fn pointer<R>(&self, id: u32, f: impl FnOnce(&mut Pointer) -> R) -> Option<R> {
+        self.shared
+            .lock()
+            .tabs
+            .get_mut(&id)
+            .map(|tab| f(&mut tab.pointer))
     }
 
     /// The frame of tab `id` that `query` names (see
@@ -1313,6 +1325,7 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
                 dialog: None,
                 crashed: None,
                 snapshot: SnapshotMemory::default(),
+                pointer: Pointer::default(),
             },
         );
         Some(id)

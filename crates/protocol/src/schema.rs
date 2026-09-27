@@ -196,6 +196,56 @@ pub const COMMANDS: &[CommandSchema] = &[
         summary: "the page's readable content (or an element's) as Markdown",
         schema: || schema_for!(Envelope<MarkdownData>),
     },
+    CommandSchema {
+        name: "click",
+        summary: "the element clicked, the point, button, click count and modifiers",
+        schema: || schema_for!(Envelope<PointerData>),
+    },
+    CommandSchema {
+        name: "dblclick",
+        summary: "the element double-clicked and the point",
+        schema: || schema_for!(Envelope<PointerData>),
+    },
+    CommandSchema {
+        name: "hover",
+        summary: "the element the mouse is over and the point",
+        schema: || schema_for!(Envelope<PointerData>),
+    },
+    CommandSchema {
+        name: "tap",
+        summary: "the element tapped and the point",
+        schema: || schema_for!(Envelope<PointerData>),
+    },
+    CommandSchema {
+        name: "mouse move",
+        summary: "where the mouse is now and the buttons held",
+        schema: || schema_for!(Envelope<MouseData>),
+    },
+    CommandSchema {
+        name: "mouse down",
+        summary: "the button pressed, where, and the buttons held",
+        schema: || schema_for!(Envelope<MouseData>),
+    },
+    CommandSchema {
+        name: "mouse up",
+        summary: "the button released, where, and the buttons held",
+        schema: || schema_for!(Envelope<MouseData>),
+    },
+    CommandSchema {
+        name: "mouse wheel",
+        summary: "the wheel's deltas and where the mouse is",
+        schema: || schema_for!(Envelope<MouseData>),
+    },
+    CommandSchema {
+        name: "drag",
+        summary: "the elements dragged from and to, the points, and how",
+        schema: || schema_for!(Envelope<DragResult>),
+    },
+    CommandSchema {
+        name: "scroll",
+        summary: "what scrolled, its new scroll position, and which ends it reached",
+        schema: || schema_for!(Envelope<ScrollData>),
+    },
 ];
 
 /// The registry entry for `name` (`"tab close"`), if any.
@@ -833,6 +883,109 @@ pub struct MarkdownData {
     pub source: String,
     /// The content as Markdown. Links on the page's origin are relative.
     pub markdown: String,
+}
+
+/// An element an action acted on, as the output names it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ActedElement {
+    /// Its ref, e.g. `e6` (absent if the page changed before one could
+    /// be given).
+    #[serde(rename = "ref", default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
+    /// Its role (`generic` for none).
+    pub role: String,
+    /// Its accessible name (or text), cut to 60 characters.
+    pub name: String,
+    /// Its tag name, lower case.
+    pub tag: String,
+}
+
+/// A point in the tab's viewport, in CSS pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Point {
+    pub x: f64,
+    pub y: f64,
+}
+
+/// `data` of `chrome-cdp click`, `dblclick`, `hover` and `tap --json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PointerData {
+    /// The tab acted in, e.g. `t1`.
+    pub tab: String,
+    /// `click`, `dblclick`, `hover` or `tap`.
+    pub action: String,
+    /// The locator as given.
+    pub locator: String,
+    pub element: ActedElement,
+    /// Where the events went, in the tab's viewport.
+    pub point: Point,
+    /// The button (clicks).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub button: Option<String>,
+    /// How many clicks (clicks).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
+    /// The modifier keys held: `Alt`, `Control`, `Meta`, `Shift`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub modifiers: Vec<String>,
+}
+
+/// `data` of `chrome-cdp mouse move|down|up|wheel --json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct MouseData {
+    /// The tab acted in, e.g. `t1`.
+    pub tab: String,
+    /// `move`, `down`, `up` or `wheel`.
+    pub action: String,
+    /// Where the mouse is now, in the tab's viewport.
+    pub point: Point,
+    /// The button pressed or released (`down`, `up`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub button: Option<String>,
+    /// The buttons held now: left 1, right 2, middle 4 (added).
+    pub buttons: u32,
+    /// The wheel's deltas (`wheel`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delta: Option<Point>,
+}
+
+/// `data` of `chrome-cdp drag --json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DragResult {
+    /// The tab acted in, e.g. `t1`.
+    pub tab: String,
+    pub from: ActedElement,
+    pub to: ActedElement,
+    /// Where the drag started and ended, in the tab's viewport.
+    pub from_point: Point,
+    pub to_point: Point,
+    /// `pointer` (mouse events only) or `html5` (the page started an
+    /// HTML5 drag, which was carried out with drag events).
+    pub method: String,
+}
+
+/// `data` of `chrome-cdp scroll --json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ScrollData {
+    /// The tab acted in, e.g. `t1`.
+    pub tab: String,
+    /// The element the locator named, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element: Option<ActedElement>,
+    /// The scroll container reported on; absent for the page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container: Option<ActedElement>,
+    /// Its scroll offset now, in CSS pixels.
+    pub x: f64,
+    pub y: f64,
+    /// The largest scroll offsets it has now.
+    pub max_x: f64,
+    pub max_y: f64,
+    /// Which ends it is at.
+    pub at_top: bool,
+    pub at_bottom: bool,
+    pub at_left: bool,
+    pub at_right: bool,
 }
 
 /// `data` of `chrome-cdp tabs --json`.

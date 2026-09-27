@@ -536,3 +536,200 @@ pub struct FindRequest {
 pub(crate) fn millis(ms: u64) -> Duration {
     Duration::from_millis(ms.max(1))
 }
+
+/// A mouse button (`--button`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Button {
+    #[default]
+    Left,
+    Right,
+    Middle,
+}
+
+impl Button {
+    /// Its name, as typed.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Left => "left",
+            Self::Right => "right",
+            Self::Middle => "middle",
+        }
+    }
+}
+
+/// A modifier key held during a mouse action (`--modifiers`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Modifier {
+    Alt,
+    Control,
+    Meta,
+    Shift,
+}
+
+impl Modifier {
+    /// Its name as the output shows it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Alt => "Alt",
+            Self::Control => "Control",
+            Self::Meta => "Meta",
+            Self::Shift => "Shift",
+        }
+    }
+}
+
+/// Where `scroll --to` goes.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ScrollTo {
+    Top,
+    Bottom,
+    Left,
+    Right,
+    /// A scroll offset, in CSS pixels.
+    Point {
+        x: f64,
+        y: f64,
+    },
+}
+
+/// What a low-level `mouse` command does.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum MouseOp {
+    /// `mouse move x y`: in `steps` moves from where the mouse is.
+    Move { x: f64, y: f64, steps: u32 },
+    /// `mouse down [x y]`: press `button` (after moving to the point).
+    Down {
+        #[serde(default)]
+        at: Option<(f64, f64)>,
+        #[serde(default)]
+        button: Button,
+        count: u32,
+    },
+    /// `mouse up [x y]`: release `button` (after moving to the point);
+    /// without one, the button held (left if none or several are).
+    Up {
+        #[serde(default)]
+        at: Option<(f64, f64)>,
+        #[serde(default)]
+        button: Option<Button>,
+        count: u32,
+    },
+    /// `mouse wheel dx dy`: a wheel event where the mouse is.
+    Wheel { dx: f64, dy: f64 },
+}
+
+impl MouseOp {
+    /// The subcommand's name.
+    pub fn command(&self) -> &'static str {
+        match self {
+            Self::Move { .. } => "move",
+            Self::Down { .. } => "down",
+            Self::Up { .. } => "up",
+            Self::Wheel { .. } => "wheel",
+        }
+    }
+}
+
+/// What an input action does (plan 05). Each names its element(s) with a
+/// locator, except `mouse`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Action {
+    /// `click <loc>` (and `dblclick`, which is `count: 2`).
+    Click {
+        locator: String,
+        #[serde(default)]
+        button: Button,
+        count: u32,
+        #[serde(default)]
+        modifiers: Vec<Modifier>,
+        /// `--position x,y`: from the top-left corner of the element's
+        /// border box instead of its centre.
+        #[serde(default)]
+        position: Option<(f64, f64)>,
+        #[serde(default)]
+        force: bool,
+        /// Typed as `dblclick`: for hints.
+        #[serde(default)]
+        dblclick: bool,
+    },
+    /// `hover <loc>`.
+    Hover {
+        locator: String,
+        #[serde(default)]
+        modifiers: Vec<Modifier>,
+        #[serde(default)]
+        position: Option<(f64, f64)>,
+        #[serde(default)]
+        force: bool,
+    },
+    /// `tap <loc>`: a touch, when touch emulation is on.
+    Tap {
+        locator: String,
+        #[serde(default)]
+        modifiers: Vec<Modifier>,
+        #[serde(default)]
+        position: Option<(f64, f64)>,
+        #[serde(default)]
+        force: bool,
+    },
+    /// `mouse move|down|up|wheel`: raw mouse events at viewport points.
+    Mouse(MouseOp),
+    /// `drag <from> <to>`.
+    Drag {
+        from: String,
+        to: String,
+        steps: u32,
+        #[serde(default)]
+        force: bool,
+    },
+    /// `scroll [loc] [--by dx,dy | --to where]`: wheel events at the
+    /// element (the page's centre without one). Neither `by` nor `to`
+    /// scrolls the element into view.
+    Scroll {
+        #[serde(default)]
+        locator: Option<String>,
+        #[serde(default)]
+        by: Option<(f64, f64)>,
+        #[serde(default)]
+        to: Option<ScrollTo>,
+        #[serde(default)]
+        force: bool,
+    },
+}
+
+impl Action {
+    /// The command's name, as typed.
+    pub fn command(&self) -> &'static str {
+        match self {
+            Self::Click { dblclick: true, .. } => "dblclick",
+            Self::Click { .. } => "click",
+            Self::Hover { .. } => "hover",
+            Self::Tap { .. } => "tap",
+            Self::Mouse(_) => "mouse",
+            Self::Drag { .. } => "drag",
+            Self::Scroll { .. } => "scroll",
+        }
+    }
+}
+
+/// `click`, `dblclick`, `hover`, `tap`, `mouse`, `drag` and `scroll`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ActionRequest {
+    pub action: Action,
+    /// `--tab`: the tab to act in; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// `--strict-refs`: a ref whose element is gone is an error, never
+    /// re-resolved by role and name.
+    #[serde(default)]
+    pub strict_refs: bool,
+    /// The attribute `testid=` locators read; `data-testid` if `None`.
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    /// How long to wait for the element to be actionable.
+    pub timeout_ms: u64,
+}

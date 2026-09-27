@@ -19,7 +19,8 @@
 //! authentication. Plan 04 adds `snapshot` (milestones 4.1 and 4.3: two
 //! engines, one output format, refs), the locator engine (`locator`, 4.4)
 //! and the read commands (`read` and `find`, 4.5). Plan 05 adds `input`,
-//! starting with the actionability pipeline every action runs (5.1).
+//! starting with the actionability pipeline every action runs (5.1)
+//! and the mouse and pointer actions (5.2).
 //! Later plans add modules next to `tabs` and `navigate`: `page`,
 //! `observe`, `emulate`, `route`.
 
@@ -58,15 +59,16 @@ use tokio::sync::Notify;
 pub use endpoint::{Endpoint, parse_endpoint};
 pub use errors::from_cdp;
 pub use frames::{FrameInfo, WORLD_NAME, World};
-pub use input::{ActionPoint, Checks};
+pub use input::{ActionPoint, Checks, check_action, parse_modifiers};
 pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, parse_locator};
 pub use navigate::normalize_url;
 pub use read::check_read;
 pub use request::{
-    CdpRequest, ConnectRequest, DialogPolicy, DialogRequest, DownloadsRequest, ElementState,
-    FindRequest, HttpCredentials, NavigateRequest, Navigation, OpenRequest, Read, ReadRequest,
-    SnapshotEngine, SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
-    Target, WaitFor, WaitRequest, WaitUntil,
+    Action, ActionRequest, Button, CdpRequest, ConnectRequest, DialogPolicy, DialogRequest,
+    DownloadsRequest, ElementState, FindRequest, HttpCredentials, Modifier, MouseOp,
+    NavigateRequest, Navigation, OpenRequest, Read, ReadRequest, ScrollTo, SnapshotEngine,
+    SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target,
+    WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use tabs::commands::TabClosed;
