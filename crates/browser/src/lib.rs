@@ -9,6 +9,8 @@
 //!   Testing index ([`parse_channels`], [`version_release`]).
 //! - [`DepsFix`] and [`missing_libraries`] explain a Linux Chrome that
 //!   cannot start for lack of shared libraries.
+//! - [`launch()`] starts Chrome over `--remote-debugging-pipe` with the
+//!   flags, profile and sandbox rules of milestone 2.3.
 
 mod cft;
 mod deps;
@@ -16,6 +18,7 @@ mod discover;
 mod host;
 mod install;
 mod installed;
+pub mod launch;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
 mod unzip;
@@ -32,6 +35,7 @@ pub use install::{
     InstallError, Installation, PINNED, Progress, Request, channels, install, uninstall,
 };
 pub use installed::{COMPLETE_MARKER, Installed, cache_dir, installed, platform_key};
+pub use launch::{LaunchOptions, Launched, ProfileChoice, launch};
 pub use version::{ChromeVersion, MIN_CHROME_MAJOR};
 
 #[cfg(test)]

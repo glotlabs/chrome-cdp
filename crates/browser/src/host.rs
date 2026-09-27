@@ -11,14 +11,21 @@ pub const CACHE_ENV: &str = "CHROME_CDP_CACHE";
 /// The env var replacing the Chrome for Testing index URL (a mirror).
 pub const INDEX_ENV: &str = "CHROME_CDP_CFT_URL";
 
-/// The environment variables discovery and install read.
+/// The environment variables discovery, install and launch read.
 const VARS: &[&str] = &[
     CHROME_ENV,
     CACHE_ENV,
     INDEX_ENV,
     "XDG_CACHE_HOME",
+    "XDG_DATA_HOME",
     "HOME",
     "PATH",
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    // Set by systemd-nspawn, podman and others inside a container.
+    "container",
+    // Chrome's setuid sandbox helper, if not next to the binary.
+    "CHROME_DEVEL_SANDBOX",
 ];
 
 /// An operating system chrome-cdp knows how to find Chrome on.
