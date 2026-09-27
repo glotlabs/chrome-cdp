@@ -335,6 +335,120 @@ Examples:
   chrome-cdp snapshot --diff              # what changed since the last one")]
     Snapshot(SnapshotArgs),
 
+    /// Search the page for elements by role, name or text; shows refs.
+    #[command(after_help = "\
+Every word must match, in any order: a part of a node's name, value or
+text (any case), its role (button, link, textbox, …), or, for words of
+five letters or more, a word of the name one typo away. The best matches
+come first, as snapshot lines with refs and the named container each is
+in. Cheaper than a whole snapshot when you know what you want. Needs a
+running session.
+
+Examples:
+  chrome-cdp find checkout
+  chrome-cdp find 'sign in' --role button
+  chrome-cdp find email textbox
+  chrome-cdp find delete --limit 0          # every match
+  chrome-cdp find checkout -q               # only the refs")]
+    Find(FindArgs),
+
+    /// Print the visible text of the page, or of every element a locator matches.
+    #[command(after_help = "\
+The rendered text (innerText): hidden content left out, runs of spaces
+collapsed, lines trimmed, at most one empty line in a row. With a locator
+that matches several elements, one text per match, in page order. A
+locator that names a frame (frame=payment, or an iframe's ref) reads that
+frame's document. Needs a running session.
+
+Examples:
+  chrome-cdp text
+  chrome-cdp text e12
+  chrome-cdp text '#results'
+  chrome-cdp text 'role=listitem'           # one line per item
+  chrome-cdp text frame=payment")]
+    Text(ReadTextArgs),
+
+    /// Print the HTML of the document or of an element, pretty-printed.
+    #[command(after_help = "\
+An element's content (its innerHTML) unless --outer; without a locator,
+the whole document. One element per line, two spaces per level, text
+collapsed, and long attribute values, comments and script or style bodies
+cut; open shadow roots show as #shadow-root. --raw prints the browser's
+own serialisation instead. Needs a running session.
+
+Examples:
+  chrome-cdp html e12
+  chrome-cdp html '#cart' --outer
+  chrome-cdp html                           # the whole document
+  chrome-cdp html form --raw")]
+    Html(HtmlArgs),
+
+    /// Print an attribute of an element.
+    #[command(after_help = "\
+Prints nothing (and a warning naming the attributes it has) when the
+element has no such attribute; --json has \"value\": null. For a
+field's current value use `value`. Needs a running session.
+
+Examples:
+  chrome-cdp attr e12 href
+  chrome-cdp attr '#avatar' src
+  chrome-cdp attr 'role=button[name=\"Save\"]' aria-disabled")]
+    Attr(AttrArgs),
+
+    /// Print a field's current value: input, textarea, select, editable text.
+    #[command(after_help = "\
+A select prints the chosen option's value (a multiple select, and a file
+input's file names, one per line); an editable element its text; a slider,
+spin button, progress bar or meter its value. Needs a running session.
+
+Examples:
+  chrome-cdp value e3
+  chrome-cdp value 'label=Email'
+  chrome-cdp value '#country'")]
+    Value(ValueArgs),
+
+    /// Count the elements a locator matches (0 is not an error).
+    #[command(after_help = "\
+Prints the count, and how many are visible when that differs:
+`4 (3 visible)`. -q prints only the count. Needs a running session.
+
+Examples:
+  chrome-cdp count '.cart-item'
+  chrome-cdp count 'role=row'
+  chrome-cdp count 'text=Out of stock' -q")]
+    Count(CountArgs),
+
+    /// Print an element's box in the viewport: x, y, width and height.
+    #[command(
+        name = "box",
+        after_help = "\
+CSS pixels from the top-left corner of the tab's viewport (iframes'
+offsets added), rounded to hundredths: `x=24 y=310 w=120 h=36`, with
+`(outside the 1280x720 viewport)` when scrolled out of view. Prints
+nothing and a warning when the element is not rendered. -q prints the
+four numbers. Needs a running session.
+
+Examples:
+  chrome-cdp box e12
+  chrome-cdp box '#checkout' -q"
+    )]
+    BoundingBox(BoxArgs),
+
+    /// Print the page's readable content (or an element's) as Markdown.
+    #[command(after_help = "\
+Without a locator, the main content: a single <main> (or role=main), else
+a single <article>, else the element that holds the most paragraph text;
+navigation, sidebars and footers inside it are left out. Headings, lists,
+links (relative on the page's origin), images, code, quotes and tables are
+kept; controls are not. A locator that names a frame reads that frame's
+main content. Needs a running session.
+
+Examples:
+  chrome-cdp markdown
+  chrome-cdp markdown e40
+  chrome-cdp markdown 'css=article' --max-chars 0")]
+    Markdown(MarkdownArgs),
+
     /// Answer the JavaScript dialog (confirm, prompt, …) the page waits on.
     #[command(
         subcommand_required = true,
@@ -624,6 +738,144 @@ impl SnapshotEngineArg {
             Self::Dom => engine::SnapshotEngine::Dom,
         }
     }
+}
+
+/// `--strict-refs` for commands that take a locator.
+#[derive(Debug, Args)]
+pub(crate) struct StrictRefsArgs {
+    /// A ref whose element is gone fails, instead of being re-resolved to
+    /// the one element with its role and name.
+    #[arg(
+        long,
+        env = "CHROME_CDP_STRICT_REFS",
+        action = ArgAction::SetTrue,
+        value_parser = BoolishValueParser::new(),
+        hide_env_values = true
+    )]
+    pub(crate) strict_refs: bool,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct FindArgs {
+    /// Words to look for; `-` reads them from stdin.
+    #[arg(value_name = "QUERY", required = true, num_args = 1..)]
+    pub(crate) query: Vec<String>,
+
+    /// Only nodes with this role (button, link, textbox, heading, …).
+    #[arg(long, value_name = "ROLE")]
+    pub(crate) role: Option<String>,
+
+    /// Show at most this many matches, best first (0 = all).
+    #[arg(long, default_value_t = 10, value_name = "N")]
+    pub(crate) limit: usize,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ReadTextArgs {
+    /// The element(s): a ref (e12) or any locator; the page if omitted.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: Option<String>,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct HtmlArgs {
+    /// The element: a ref (e12) or a locator that matches one; the whole
+    /// document if omitted.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: Option<String>,
+
+    /// Include the element itself, not only its content.
+    #[arg(long)]
+    pub(crate) outer: bool,
+
+    /// The browser's own serialisation, not pretty-printed.
+    #[arg(long)]
+    pub(crate) raw: bool,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct AttrArgs {
+    /// The element: a ref (e12) or a locator that matches one.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: String,
+
+    /// The attribute, e.g. href.
+    #[arg(value_name = "NAME")]
+    pub(crate) name: String,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ValueArgs {
+    /// The field: a ref (e12) or a locator that matches one.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: String,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct CountArgs {
+    /// What to count: any locator.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: String,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct BoxArgs {
+    /// The element: a ref (e12) or a locator that matches one.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: String,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MarkdownArgs {
+    /// The element: a ref (e12) or a locator that matches one; the page's
+    /// main content if omitted.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: Option<String>,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
 }
 
 #[derive(Debug, Args)]
@@ -1122,6 +1374,8 @@ mod tests {
     /// `dialog accept|dismiss` print one line (the dialog's text is cut).
     const FIXED_SIZE: &[&str] = &[
         "schema",
+        "count",
+        "box",
         "install",
         "uninstall",
         "open",

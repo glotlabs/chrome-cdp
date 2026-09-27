@@ -24,11 +24,19 @@ dialog accept   the dialog accepted, and the text typed into a prompt
 dialog dismiss  the dialog dismissed
 downloads       the session's downloads, oldest first
 snapshot        the page's accessibility tree, with refs on what can be acted on
+find            the nodes whose role, name or text match, best first, with refs
+text            the visible text of the page or of each match
+html            the HTML of the document or of an element, pretty-printed
+attr            an attribute's value, or null without it
+value           a field's current value
+count           how many elements match, and how many are visible
+box             an element's box in the viewport, in CSS pixels
+markdown        the page's readable content (or an element's) as Markdown
 
 $ chrome-cdp schema --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"commands":[{"name":"version","summary":"chrome-cdp --version: version, git commit and CDP protocol revision"},{"name":"schema","summary":"a command's JSON Schema, or the list of commands"},{"name":"install","summary":"the browser installed, or with --list the installed and available ones"},{"name":"uninstall","summary":"the browser removed"},{"name":"open","summary":"the session and its browser, and the page opened"},{"name":"connect","summary":"the session and the browser it attached to"},{"name":"close","summary":"the sessions closed"},{"name":"status","summary":"the session's state, browser, tabs and uptime"},{"name":"sessions","summary":"every live session"},{"name":"cdp","summary":"the raw CDP result object"},{"name":"tabs","summary":"the session's tabs, in the order they opened"},{"name":"tab","summary":"the tab made active"},{"name":"tab new","summary":"the tab opened (and made active)"},{"name":"tab close","summary":"the tab closed and the tab now active"},{"name":"goto","summary":"the page loaded: final URL, title and HTTP status"},{"name":"back","summary":"the page gone back to, or navigated: false at the start of history"},{"name":"forward","summary":"the page gone forward to, or navigated: false at the end of history"},{"name":"reload","summary":"the page reloaded: URL, title and HTTP status"},{"name":"wait","summary":"the condition that held, the page's URL and the time it took"},{"name":"dialog accept","summary":"the dialog accepted, and the text typed into a prompt"},{"name":"dialog dismiss","summary":"the dialog dismissed"},{"name":"downloads","summary":"the session's downloads, oldest first"},{"name":"snapshot","summary":"the page's accessibility tree, with refs on what can be acted on"}]}}
+{"ok":true,"data":{"commands":[{"name":"version","summary":"chrome-cdp --version: version, git commit and CDP protocol revision"},{"name":"schema","summary":"a command's JSON Schema, or the list of commands"},{"name":"install","summary":"the browser installed, or with --list the installed and available ones"},{"name":"uninstall","summary":"the browser removed"},{"name":"open","summary":"the session and its browser, and the page opened"},{"name":"connect","summary":"the session and the browser it attached to"},{"name":"close","summary":"the sessions closed"},{"name":"status","summary":"the session's state, browser, tabs and uptime"},{"name":"sessions","summary":"every live session"},{"name":"cdp","summary":"the raw CDP result object"},{"name":"tabs","summary":"the session's tabs, in the order they opened"},{"name":"tab","summary":"the tab made active"},{"name":"tab new","summary":"the tab opened (and made active)"},{"name":"tab close","summary":"the tab closed and the tab now active"},{"name":"goto","summary":"the page loaded: final URL, title and HTTP status"},{"name":"back","summary":"the page gone back to, or navigated: false at the start of history"},{"name":"forward","summary":"the page gone forward to, or navigated: false at the end of history"},{"name":"reload","summary":"the page reloaded: URL, title and HTTP status"},{"name":"wait","summary":"the condition that held, the page's URL and the time it took"},{"name":"dialog accept","summary":"the dialog accepted, and the text typed into a prompt"},{"name":"dialog dismiss","summary":"the dialog dismissed"},{"name":"downloads","summary":"the session's downloads, oldest first"},{"name":"snapshot","summary":"the page's accessibility tree, with refs on what can be acted on"},{"name":"find","summary":"the nodes whose role, name or text match, best first, with refs"},{"name":"text","summary":"the visible text of the page or of each match"},{"name":"html","summary":"the HTML of the document or of an element, pretty-printed"},{"name":"attr","summary":"an attribute's value, or null without it"},{"name":"value","summary":"a field's current value"},{"name":"count","summary":"how many elements match, and how many are visible"},{"name":"box","summary":"an element's box in the viewport, in CSS pixels"},{"name":"markdown","summary":"the page's readable content (or an element's) as Markdown"}]}}
 
 $ chrome-cdp schema -q
 exit: 0
@@ -56,4 +64,12 @@ dialog accept
 dialog dismiss
 downloads
 snapshot
+find
+text
+html
+attr
+value
+count
+box
+markdown
 

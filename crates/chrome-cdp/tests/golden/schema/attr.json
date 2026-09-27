@@ -1,0 +1,472 @@
+{
+  "$defs": {
+    "AttrData": {
+      "description": "`data` of `chrome-cdp attr --json`.",
+      "properties": {
+        "locator": {
+          "type": "string"
+        },
+        "name": {
+          "description": "The attribute's name.",
+          "type": "string"
+        },
+        "tab": {
+          "description": "The tab read, e.g. `t1`.",
+          "type": "string"
+        },
+        "value": {
+          "description": "Its value; `null` when the element has no such attribute.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "tab",
+        "locator",
+        "name"
+      ],
+      "type": "object"
+    },
+    "DownloadInfo": {
+      "description": "A file the browser downloaded (or is downloading) into the session's\n`downloads` directory.",
+      "properties": {
+        "file": {
+          "description": "The file's name, as the server suggested it (made unique in the\ndirectory).",
+          "type": "string"
+        },
+        "path": {
+          "description": "The absolute path of the file, once it completed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "received_bytes": {
+          "description": "Bytes received so far.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "description": "`in_progress`, `completed` or `canceled`.",
+          "type": "string"
+        },
+        "tab": {
+          "description": "The tab whose page started it, if known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "total_bytes": {
+          "description": "The size the server announced, if it did.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "The URL downloaded.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "file",
+        "state",
+        "received_bytes"
+      ],
+      "type": "object"
+    },
+    "ErrEnvelope": {
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/ErrorInfo",
+          "description": "What went wrong and what to run next."
+        },
+        "events": {
+          "default": [],
+          "description": "Page events observed while the command ran.",
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "type": "array"
+        },
+        "ok": {
+          "const": false,
+          "description": "Always `false`.",
+          "type": "boolean"
+        },
+        "warnings": {
+          "default": [],
+          "description": "Non-fatal notes.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ok",
+        "error"
+      ],
+      "type": "object"
+    },
+    "ErrorInfo": {
+      "description": "A command failure as the user sees it: what happened, and the next\ncommand to run.",
+      "properties": {
+        "details": {
+          "description": "Structured context (candidates, observed URL, CDP error code, …)."
+        },
+        "hint": {
+          "description": "The concrete next command to try.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/ErrorKind",
+          "description": "The stable error name."
+        },
+        "message": {
+          "description": "One line saying what happened.",
+          "type": "string"
+        },
+        "notes": {
+          "description": "Short labelled facts shown between the message and the hint in the\ntext form (`covering: div \"We use cookies\" [e88]`).",
+          "items": {
+            "$ref": "#/$defs/Note"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ErrorKind": {
+      "description": "What went wrong, as a stable machine-readable name.\n\nThe name is part of the `--json` contract (`\"kind\":\"Timeout\"`) and each\nkind maps to one process exit code.",
+      "oneOf": [
+        {
+          "const": "NotFound",
+          "description": "No element matches the locator.",
+          "type": "string"
+        },
+        {
+          "const": "Ambiguous",
+          "description": "The locator matches several elements where one is needed.",
+          "type": "string"
+        },
+        {
+          "const": "Obscured",
+          "description": "Another element covers the target.",
+          "type": "string"
+        },
+        {
+          "const": "NotEnabled",
+          "description": "The target is disabled.",
+          "type": "string"
+        },
+        {
+          "const": "RefStale",
+          "description": "The ref is from an older snapshot.",
+          "type": "string"
+        },
+        {
+          "const": "RefDetached",
+          "description": "The ref's element was removed from the page.",
+          "type": "string"
+        },
+        {
+          "const": "ExpectFailed",
+          "description": "An `expect` assertion failed.",
+          "type": "string"
+        },
+        {
+          "const": "EvalError",
+          "description": "JavaScript threw.",
+          "type": "string"
+        },
+        {
+          "const": "NavigationFailed",
+          "description": "Navigation failed (DNS, TLS, HTTP error page, …).",
+          "type": "string"
+        },
+        {
+          "const": "BadArgs",
+          "description": "Bad flags or arguments.",
+          "type": "string"
+        },
+        {
+          "const": "BadLocator",
+          "description": "The locator does not parse.",
+          "type": "string"
+        },
+        {
+          "const": "Timeout",
+          "description": "Something did not happen in time.",
+          "type": "string"
+        },
+        {
+          "const": "ChromeNotFound",
+          "description": "No Chrome binary was found.",
+          "type": "string"
+        },
+        {
+          "const": "LaunchFailed",
+          "description": "Chrome was found but could not be started.",
+          "type": "string"
+        },
+        {
+          "const": "BrowserCrashed",
+          "description": "Chrome exited or the connection to it dropped.",
+          "type": "string"
+        },
+        {
+          "const": "PageCrashed",
+          "description": "A tab's page crashed (its renderer process died); `reload` brings\nit back.",
+          "type": "string"
+        },
+        {
+          "const": "DaemonUnavailable",
+          "description": "The session daemon cannot be reached or started.",
+          "type": "string"
+        },
+        {
+          "const": "ProtocolError",
+          "description": "Chrome rejected a CDP call.",
+          "type": "string"
+        },
+        {
+          "const": "InstallFailed",
+          "description": "Downloading or unpacking a browser (`chrome-cdp install`) failed.",
+          "type": "string"
+        },
+        {
+          "const": "DialogOpen",
+          "description": "A JavaScript dialog blocks the page.",
+          "type": "string"
+        }
+      ]
+    },
+    "Event": {
+      "description": "Something that happened in the browser while a command ran. The\nenvelope lists them in `events`; the command's text says what matters.",
+      "oneOf": [
+        {
+          "description": "A tab opened that no command asked for: a popup (`window.open`,\n`target=_blank`) or one the user opened. It is not active unless the\nsession follows popups (`open --follow-popups`).",
+          "properties": {
+            "active": {
+              "description": "Whether it became the active tab.",
+              "type": "boolean"
+            },
+            "opener": {
+              "description": "The tab that opened it, if known.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tab": {
+              "description": "The new tab's id.",
+              "type": "string"
+            },
+            "type": {
+              "const": "tab_opened",
+              "type": "string"
+            },
+            "url": {
+              "description": "Its URL when the command ended (it may still be loading).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tab",
+            "url",
+            "active"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A JavaScript dialog closed without a `chrome-cdp dialog` command:\nthe session's `--dialogs` policy answered it (an `alert` or\n`beforeunload` by default), or a navigation dismissed it.",
+          "properties": {
+            "accepted": {
+              "description": "Whether it was accepted (else dismissed).",
+              "type": "boolean"
+            },
+            "by": {
+              "description": "`policy` (the session's `--dialogs` answered it) or `other`\n(it closed without `chrome-cdp dialog`: a navigation dismissed\nit, or a raw CDP call answered it).",
+              "type": "string"
+            },
+            "kind": {
+              "description": "`alert`, `confirm`, `prompt` or `beforeunload`.",
+              "type": "string"
+            },
+            "message": {
+              "description": "The text it showed.",
+              "type": "string"
+            },
+            "tab": {
+              "description": "The tab it opened in.",
+              "type": "string"
+            },
+            "type": {
+              "const": "dialog",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tab",
+            "kind",
+            "message",
+            "accepted",
+            "by"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/DownloadInfo",
+          "description": "A download started, or finished, while the command ran.",
+          "properties": {
+            "type": {
+              "const": "download",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Note": {
+      "description": "One labelled line of an error's text form.",
+      "properties": {
+        "label": {
+          "description": "A short lowercase label, e.g. `covering`.",
+          "type": "string"
+        },
+        "text": {
+          "description": "One line of text.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "text"
+      ],
+      "type": "object"
+    },
+    "OkEnvelope": {
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/AttrData",
+          "description": "The command's result."
+        },
+        "events": {
+          "default": [],
+          "description": "Page events observed while the command ran (tabs opened, dialogs,\nnavigations, …).",
+          "items": {
+            "$ref": "#/$defs/Event"
+          },
+          "type": "array"
+        },
+        "ok": {
+          "const": true,
+          "description": "Always `true`.",
+          "type": "boolean"
+        },
+        "truncated": {
+          "default": [],
+          "description": "Values in `data` shortened to keep the output bounded; `--max-chars`\n(or the command's own flag, named in the warning) shows more.",
+          "items": {
+            "$ref": "#/$defs/Truncation"
+          },
+          "type": "array"
+        },
+        "warnings": {
+          "default": [],
+          "description": "Non-fatal notes.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ok",
+        "data"
+      ],
+      "type": "object"
+    },
+    "TruncatedKind": {
+      "description": "What kind of value was shortened.",
+      "oneOf": [
+        {
+          "const": "string",
+          "description": "Lengths count characters.",
+          "type": "string"
+        },
+        {
+          "const": "array",
+          "description": "Lengths count items.",
+          "type": "string"
+        }
+      ]
+    },
+    "Truncation": {
+      "description": "One value that `--json` output shortened to fit the budget.",
+      "properties": {
+        "kept": {
+          "description": "How much was kept (a cut string also ends in `…`).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/TruncatedKind",
+          "description": "A string (lengths in characters) or an array (lengths in items)."
+        },
+        "len": {
+          "description": "The original length.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "path": {
+          "description": "Where, as a JSON Pointer into `data` (`/result/value`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "kind",
+        "len",
+        "kept"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/OkEnvelope",
+      "description": "The command succeeded."
+    },
+    {
+      "$ref": "#/$defs/ErrEnvelope",
+      "description": "The command failed."
+    }
+  ],
+  "description": "The `--json` envelope (see [`crate::Envelope`]) with `data: T`.",
+  "title": "chrome-cdp attr --json"
+}

@@ -80,6 +80,61 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Dialog(args)) => session::dialog(&args, &cli.global),
         Some(Command::Downloads(args)) => session::downloads(&args, &cli.global),
         Some(Command::Snapshot(args)) => session::snapshot(&args, &cli.global),
+        Some(Command::Find(args)) => session::find(&args, &cli.global),
+        Some(Command::Text(args)) => session::read(
+            engine::Read::Text,
+            args.locator.clone(),
+            &args.refs,
+            args.max_chars,
+            &cli.global,
+        ),
+        Some(Command::Html(args)) => session::read(
+            engine::Read::Html {
+                outer: args.outer,
+                raw: args.raw,
+            },
+            args.locator.clone(),
+            &args.refs,
+            args.max_chars,
+            &cli.global,
+        ),
+        Some(Command::Attr(args)) => session::read(
+            engine::Read::Attr {
+                name: args.name.clone(),
+            },
+            Some(args.locator.clone()),
+            &args.refs,
+            args.max_chars,
+            &cli.global,
+        ),
+        Some(Command::Value(args)) => session::read(
+            engine::Read::Value,
+            Some(args.locator.clone()),
+            &args.refs,
+            args.max_chars,
+            &cli.global,
+        ),
+        Some(Command::Count(args)) => session::read(
+            engine::Read::Count,
+            Some(args.locator.clone()),
+            &args.refs,
+            0,
+            &cli.global,
+        ),
+        Some(Command::BoundingBox(args)) => session::read(
+            engine::Read::Box,
+            Some(args.locator.clone()),
+            &args.refs,
+            0,
+            &cli.global,
+        ),
+        Some(Command::Markdown(args)) => session::read(
+            engine::Read::Markdown,
+            args.locator.clone(),
+            &args.refs,
+            args.max_chars,
+            &cli.global,
+        ),
         // Handled in `main`.
         Some(Command::Daemon(_)) => Ok(Output::new(serde_json::Value::Null, "")),
     }

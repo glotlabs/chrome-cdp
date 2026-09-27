@@ -2,8 +2,9 @@
 //! `close`, `status`, `sessions` and `cdp`; the tab commands (plan 03,
 //! milestone 3.1): `tabs`, `tab <id>`, `tab new` and `tab close`; and
 //! navigation (milestone 3.3): `goto`, `back`, `forward` and `reload`;
-//! `wait` (milestone 3.4); `dialog` and `downloads` (milestone 3.5); and
-//! `snapshot` (plan 04).
+//! `wait` (milestone 3.4); `dialog` and `downloads` (milestone 3.5);
+//! `snapshot` (plan 04); and the read commands `find`, `text`, `html`,
+//! `attr`, `value`, `count`, `box` and `markdown` (milestone 4.5).
 //!
 //! Each one finds the session's daemon (starting it when the command needs
 //! a browser), sends one call, and returns the daemon's `Output` or
@@ -18,9 +19,9 @@ use daemon::meta::Meta;
 use daemon::paths::{Env, SessionPaths, check_name};
 use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
-    CdpRequest, ConnectRequest, DialogRequest, DownloadsRequest, ElementState, HttpCredentials,
-    NavigateRequest, Navigation, OpenRequest, SnapshotRequest, TabCloseRequest, TabNewRequest,
-    TabSelectRequest, TabsRequest, WaitFor, WaitRequest,
+    CdpRequest, ConnectRequest, DialogRequest, DownloadsRequest, ElementState, FindRequest,
+    HttpCredentials, NavigateRequest, Navigation, OpenRequest, Read, ReadRequest, SnapshotRequest,
+    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, WaitFor, WaitRequest,
 };
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
@@ -29,9 +30,9 @@ use tokio::runtime::Runtime;
 
 use crate::cli::{
     CdpArgs, CloseArgs, ConnectArgs, DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs,
-    ElementStateArg, GlobalArgs, GotoArgs, HistoryArgs, IdleArgs, OpenArgs, ReloadArgs,
-    SessionsArgs, SnapshotArgs, StatusArgs, TabArgs, TabCommand, TabsArgs, WAIT_TIMEOUT,
-    WaitCmdArgs, parse_duration,
+    ElementStateArg, FindArgs, GlobalArgs, GotoArgs, HistoryArgs, IdleArgs, OpenArgs, ReloadArgs,
+    SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs,
+    WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -517,6 +518,50 @@ pub(crate) fn snapshot(args: &SnapshotArgs, global: &GlobalArgs) -> Result<Outpu
     let mut client = running_session(&ctx)?;
     ctx.runtime
         .block_on(client.call_output(rpc::SNAPSHOT, &request, ctx.timeout + QUICK))
+}
+
+/// `find <query>`: needs a running session.
+pub(crate) fn find(args: &FindArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let query = input::text_arg(&args.query.join(" "), "QUERY")?;
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let request = FindRequest {
+        query,
+        role: args.role.clone(),
+        limit: args.limit,
+        tab: ctx.tab.clone(),
+        timeout_ms: millis(ctx.timeout),
+        max_chars: args.max_chars,
+    };
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::FIND, &request, ctx.timeout + QUICK))
+}
+
+/// `text`, `html`, `attr`, `value`, `count`, `box` and `markdown`: need a
+/// running session.
+pub(crate) fn read(
+    read: Read,
+    locator: Option<String>,
+    refs: &StrictRefsArgs,
+    max_chars: usize,
+    global: &GlobalArgs,
+) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let request = ReadRequest {
+        read,
+        locator,
+        tab: ctx.tab.clone(),
+        strict_refs: refs.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(ctx.timeout),
+        max_chars,
+    };
+    engine::check_read(&request)?;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::READ, &request, ctx.timeout + QUICK))
 }
 
 /// `dialog accept [text]` and `dialog dismiss`: need a running session.
