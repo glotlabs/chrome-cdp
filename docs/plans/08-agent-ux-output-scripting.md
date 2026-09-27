@@ -7,8 +7,8 @@ Depends on: 01. Cross-cutting: every plan follows §2–§4.
 
 Make `chrome-cdp` the easiest browser tool for an LLM agent to use correctly
 on the first try. This plan defines the output contract, errors, exit codes,
-help and discoverability, and multi-step scripting. It also covers optional
-MCP mode.
+help and discoverability, and multi-step scripting. MCP mode (milestone 8.4)
+is out of scope for v1.
 
 ## 1. Who the user is
 
@@ -161,7 +161,7 @@ Robot Framework). Treat it as a specified format from day one:
   Also generate `AGENTS.md` snippet output and `llms.txt`.
 - `chrome-cdp completions <shell>` (clap_complete).
 
-## Milestone 8.4 — MCP server mode (v1 stretch, likely v1.1)
+## Milestone 8.4 — MCP server mode (out of scope for v1; do not implement)
 
 - `chrome-cdp mcp` runs a stdio MCP server that exposes the same commands as
   tools (generated from the clap definitions, so it can't drift). Tool results
@@ -185,3 +185,4 @@ Robot Framework). Treat it as a specified format from day one:
 
 _(append here)_
 - (from plan 01, milestone 1.4) The `protocol` crate already has `ErrorKind` with the §3 exit codes, `ErrorInfo` and the `Envelope`, and the binary renders all output through `output::render`. Milestone 8.1 builds on these instead of starting over. Open question left for 8.1: how `--json` output stays bounded (1.4 only bounds the text forms).
+- 8.4: MCP server mode is dropped from v1 by the maintainer. Keep the milestone text as a design note for later, but do not build it or add an `mcp` feature.

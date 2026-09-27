@@ -162,7 +162,7 @@ Locator grammar (shared by all commands, defined in plan 04):
 | 05 | [Interaction & actionability](05-interaction-actionability.md) | 04 | Click/fill/type/etc. with auto-wait |
 | 06 | [Observability](06-observability.md) | 03 | Screenshots, console, network, eval, trace/HAR |
 | 07 | [Network control, emulation & state](07-network-emulation-state.md) | 03 | Mocking, devices, cookies, auth state |
-| 08 | [Agent UX, output & scripting](08-agent-ux-output-scripting.md) | 01 (cross-cutting) | Output contract, errors, batch, skill docs, MCP mode |
+| 08 | [Agent UX, output & scripting](08-agent-ux-output-scripting.md) | 01 (cross-cutting) | Output contract, errors, batch, skill docs |
 | 09 | [Assertions & test mode](09-assertions-test-mode.md) | 05 | `expect`, script runner, test reports |
 | 11 | [E2E testing with a mocked backend](11-e2e-testing-mocked-backend.md) | 07, 08, 09 | Committed scenario + mock files, `chrome-cdp test`, stateful mocks, and the same scenarios against a real backend |
 | 10 | [Quality, benchmarks & release](10-quality-benchmarks-release.md) | all | CI matrix, Playwright parity, benchmarks, packaging |
