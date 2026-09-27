@@ -1,6 +1,6 @@
 # Plan 04 — Snapshot, refs & locators
 
-Status: IN PROGRESS (4.1-4.5 done; the token and latency criteria wait for plan 10's benchmarks)
+Status: DONE (4.1-4.5; the p95 latency criterion waits for plan 10's benchmarks)
 Depends on: 03
 
 ## Goal
@@ -176,7 +176,7 @@ One grammar, used everywhere (`<loc>` in all plans):
 
 ## Acceptance criteria
 
-- [ ] On the benchmark corpus, the default snapshot uses ≤ 60% of the tokens of
+- [x] On the benchmark corpus, the default snapshot uses ≤ 60% of the tokens of
       Playwright MCP's `browser_snapshot` for the same pages, with no loss of
       actionable elements (audited list).
 - [ ] p95 snapshot latency meets the targets in 4.3.
@@ -243,3 +243,6 @@ One grammar, used everywhere (`<loc>` in all plans):
 - Close-out: each ref remembers the engine whose role and name it keeps, and the role+name fallback reads the frame with that engine: `snapshot --engine dom` refs and the `Ambiguous` candidates' refs (named by the bundle, engine B's code) with the DOM walker, the rest with Chrome's tree. Where the two engines differ, a ref could otherwise never re-resolve.
 - Close-out: engine A puts a left-out clickable (a `role=presentation` `div`, a plain `span`) back around any content that is not a control, not only text: an icon-only `div` is `clickable "Settings"`, not an unreffed `img`.
 - Close-out: a table Chrome judges to be for layout (`layouttable`, `layouttablerow`, `layouttablecell`: no headers or other signs of data) is hoisted away like a `generic`, cell names and all: its cells are boxes, and each cell's name repeated its content. That also ends the one known difference between the snapshot's roles and `role=`'s (4.4). `role_locators_find_what_the_snapshot_shows` checks that `role=<role>[name="<name>"]` finds every named control, heading, row, cell, landmark and dialog the default snapshot shows on the corpus (25 per page); the only gap is the closed shadow root's input, out of the isolated world's reach.
+- Close-out, acceptance: the token criterion is measured by `bench/playwright/snapshot-tokens.mjs` (Playwright MCP 0.0.82 driving the same Chrome for Testing 154, o200k_base tokens; no Anthropic API key was available, and the ratio is what counts). On the 13-page corpus the default snapshot is 14,625 tokens to Playwright's 476,225 (3%; long lists collapse), and 255,940 (54%) with nothing collapsed or cut (`--all --max-chars 0`). Per page the median is 52%; `clickable` (60%) and `widgets` (68%) are above 60% because they show what Playwright leaves out (refs and values on a switch and a slider, `collapsed`, refs on a focusable span and a presentation `div`), not because of overhead. The audit found no actionable element lost: every element Playwright gives a ref to that chrome-cdp does not is inert (an `inert` subtree, the page behind a modal dialog), so it cannot be acted on. The box is ticked on the corpus totals; plan 10 re-runs it on its larger corpus.
+- Close-out, acceptance: the p95 latency box stays open. Deferred: benchmarks run after all plans (`snapshot_latency_benchmark` is built and `#[ignore]`d, and the locator timing note is in `.looper/tasks/`).
+- Close-out, tests: the golden files are the repo's own (`crates/engine/tests/snapshots/*.txt` and `crates/chrome-cdp/tests/golden/`, rewritten with `UPDATE_GOLDEN=1`), not `insta`: the harness existed from plan 08 and needs no extra dependency. The forms page gained the input types it lacked (time, datetime-local, month, week, color, file, image) and the corpus a 13th page, `modal` (an open modal `<dialog>`). That found three gaps, now fixed: a color input was an unreffed `colorwell` with its label repeated (now reffed, with its value; the bundle says `colorwell` too), a file input looked like any button (now `(file)`, `file` in JSON, like `(password)`), and the DOM walker and `role=` showed the page behind a modal dialog, which Chrome's tree leaves out as inert. Corpus scores now: engine A 313/313 expected lines, engine B 312/313 (the closed shadow root).
