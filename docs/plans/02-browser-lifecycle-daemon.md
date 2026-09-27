@@ -36,9 +36,10 @@ For the found browser, check the version (`--version` output, or read
   (`https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json`
   and `known-good-versions-with-downloads.json`).
 - `install [--channel stable|beta|dev|canary] [--version X] [--headless-shell] [--force]`.
-- Platform keys: `linux64`, `mac-arm64`, `mac-x64`. Chrome for Testing has
-  **no linux-arm64 build**. On linux-arm64, fall back to the system `chromium`
-  and print distro-specific install hints (apt/dnf/apk/pacman).
+- Platform keys: `linux64`, `linux-arm64`, `mac-arm64`, `mac-x64`. Chrome for
+  Testing has published linux-arm64 builds since Chrome 153 (see the decisions
+  log). Where no build exists, fall back to the system `chromium` and print
+  distro-specific install hints (apt/dnf/apk/pacman).
 - Cache dir: `$XDG_CACHE_HOME/chrome-cdp` or `~/.cache/chrome-cdp` on Linux,
   `~/Library/Caches/chrome-cdp` on macOS. Override with `CHROME_CDP_CACHE`.
   Layout: `browsers/<channel>-<version>-<platform>/`.

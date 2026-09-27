@@ -45,10 +45,13 @@ sites: SPAs, redirects, popups, iframes and slow networks.
 
 - `goto <url> [--wait load|domcontentloaded|networkidle|commit|none] [--timeout]`.
   Default wait: `load`, then a short *settle* (see 3.4). URLs without a scheme
-  get `https://`. `localhost`/IPs get `http://`. Relative paths resolve
-  against the current URL. `file://` paths are allowed.
+  get `https://`. `localhost`/IPs get `http://`. A relative path resolves
+  against `base_url` from the config (plan 08 §4) when it is set, else
+  against the current URL. `file://` paths are allowed. `open <url>` uses
+  the same navigation code as `goto`.
 - Handle `Page.navigate` returning `errorText` (DNS failure, connection refused,
-  certificate error). Map each to a distinct error kind with a hint. Examples:
+  certificate error). Each is a `NavigationFailed` error (exit 1, per plan 08
+  §3) with a distinct `details.reason` and its own hint. Examples:
   "connection refused on localhost:3000 — is your dev server running?".
   `--ignore-https-errors` is a launch/session option
   (`Security.setIgnoreCertificateErrors`).
@@ -92,7 +95,10 @@ for text 'Welcome'; page is https://x/login, title 'Sign in', 2 console errors
 debugging.
 
 Default timeouts: 30 s for navigation, 10 s for waits and actions. Configure
-per command with `--timeout` or per session with `CHROME_CDP_TIMEOUT`.
+per command with `--timeout` or per session with `CHROME_CDP_TIMEOUT`. So the
+global `--timeout` has no fixed clap default (today it is 30 s for every
+command): when neither the flag, the env var nor a config file sets it, each
+command supplies its own default.
 
 ## Milestone 3.5 — Dialogs & lifecycle edge cases
 
@@ -110,6 +116,12 @@ per command with `--timeout` or per session with `CHROME_CDP_TIMEOUT`.
   `Fetch.authRequired`.
 
 ## Tests
+
+Milestone 3.1 builds the fixture server: one shared, in-process server for
+`testdata/site` (for example in a test-support crate or module) that every
+integration test and `cargo xtask fixtures` use. It serves two origins (two
+ports) so cross-origin iframes run out of process. Later milestones and plans
+add pages and routes to it instead of starting their own servers.
 
 The fixture site (`testdata/site`) needs pages for: redirect chains, slow
 responses (`?delay=`), 404/500, SPA pushState routing, lazily-rendered content,
@@ -129,7 +141,8 @@ download, and a basic-auth route.
 
 - [ ] `goto` + default settle gives a correct snapshot on the SPA fixture with
       no extra wait, 50 runs in a row.
-- [ ] Every navigation error type maps to a distinct exit code and hint.
+- [ ] Every navigation error type maps to a distinct `details.reason` and
+      hint (all exit 1, `NavigationFailed`, per plan 08 §3).
 - [ ] Cross-origin iframes are attached and addressable.
 
 ## Decisions log
