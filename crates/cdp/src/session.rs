@@ -70,7 +70,7 @@ impl Session {
     pub fn call<C: Command>(
         &self,
         params: C,
-    ) -> impl Future<Output = Result<C::Returns>> + Send + 'static {
+    ) -> impl Future<Output = Result<C::Returns>> + Send + 'static + use<C> {
         let response = self
             .conn
             .request(self.id(), C::METHOD, &params, self.timeout());
@@ -90,7 +90,7 @@ impl Session {
         &self,
         method: &str,
         params: Value,
-    ) -> impl Future<Output = Result<Value>> + Send + 'static {
+    ) -> impl Future<Output = Result<Value>> + Send + 'static + use<> {
         self.conn
             .request(self.id(), method, &params, self.timeout())
     }

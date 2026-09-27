@@ -5,8 +5,9 @@
 //! and out-of-process iframe session (their OOPIFs and dedicated workers),
 //! always with `waitForDebuggerOnStart`. A new target is paused before it
 //! runs any script; [`setup`] applies the session's settings to it (init
-//! scripts today; emulation and routes in plan 07; frame tracking in 3.2
-//! hooks in there too) and only then resumes it. That is what makes
+//! scripts today; emulation and routes in plan 07), turns on the events
+//! that track its frames and execution contexts (milestone 3.2, see
+//! [`crate::frames`]), and only then resumes it. That is what makes
 //! settings apply to a popup's first script.
 //!
 //! Page targets are tabs. Each gets a short id (`t1`, `t2`, …) in the order
@@ -28,6 +29,8 @@ use std::time::Duration;
 use cdp::domains::{page, runtime, target};
 use cdp::{Connection, Event as _, RawEvent, RawEventStream, Session};
 use protocol::schema::{Event, TabInfo};
+
+use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 use tokio::sync::watch;
 use tokio::task::AbortHandle;
@@ -126,7 +129,7 @@ struct State {
     /// Tab ids by when they were last active, most recent last.
     recent: Vec<u32>,
     /// Page and iframe sessions (they take init scripts), by session id.
-    hosts: HashMap<String, Session>,
+    hosts: HashMap<String, Host>,
     /// Targets commands created (or found at start): not "opened" events.
     ours: HashSet<String>,
     /// Tabs that opened, newest last, with a sequence number.
@@ -145,6 +148,16 @@ struct Tab {
     opener_target: Option<String>,
     /// Set up and resumed; commands may use it.
     ready: bool,
+    /// Its frames, also those of its OOPIF sessions.
+    frames: FrameTree,
+}
+
+/// A page or iframe session.
+#[derive(Debug)]
+struct Host {
+    session: Session,
+    /// The tab whose frames it has (none for a prerender page).
+    tab: Option<u32>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -426,11 +439,110 @@ impl Tabs {
             .collect()
     }
 
+    /// Tab `id`'s frames, parents before their children.
+    pub(crate) fn frames(&self, id: u32) -> Vec<FrameInfo> {
+        self.shared
+            .lock()
+            .tabs
+            .get(&id)
+            .map(|t| t.frames.list())
+            .unwrap_or_default()
+    }
+
+    /// The frame of tab `id` that `query` names (see
+    /// [`FrameTree::find`]).
+    pub(crate) fn find_frame(&self, id: u32, query: &str) -> Result<FrameInfo, FindError> {
+        match self.shared.lock().tabs.get(&id) {
+            Some(tab) => tab.frames.find(query),
+            None => Err(FindError::NotFound(Vec::new())),
+        }
+    }
+
+    /// Where to run a script in `world` of frame `frame` (tab `id`): the
+    /// session that owns the frame and the context's id. Waits up to
+    /// `timeout` for the frame's document to have one. The isolated world
+    /// is made on first use if the frame has none yet (a frame that
+    /// existed before the session attached).
+    pub(crate) async fn context(
+        &self,
+        id: u32,
+        frame: &str,
+        world: World,
+        timeout: Duration,
+    ) -> Result<FrameContext, FrameError> {
+        enum Found {
+            Context(Context),
+            /// The main world exists, so the document does: make ours.
+            Create(String),
+            Gone,
+        }
+        let mut found = None;
+        self.wait(timeout, |state| {
+            let tree = state.tabs.get(&id).map(|t| &t.frames);
+            let Some((tree, owner)) = tree.and_then(|t| Some((t, t.owner(frame)?))) else {
+                found = Some(Found::Gone);
+                return true;
+            };
+            if let Some(context) = tree.context(frame, world) {
+                found = Some(Found::Context(context.clone()));
+            } else if world == World::Isolated && tree.context(frame, World::Main).is_some() {
+                found = Some(Found::Create(owner.to_owned()));
+            }
+            found.is_some()
+        })
+        .await;
+        let session_of = |session_id: &str| {
+            let state = self.shared.lock();
+            state.hosts.get(session_id).map(|h| h.session.clone())
+        };
+        match found {
+            Some(Found::Context(context)) => Ok(FrameContext {
+                session: session_of(&context.session).ok_or(FrameError::Gone)?,
+                context_id: context.id,
+            }),
+            Some(Found::Create(owner)) => {
+                let session = session_of(&owner).ok_or(FrameError::Gone)?;
+                let mut params = page::CreateIsolatedWorldParams::new(frame.to_owned());
+                params.world_name = Some(frames::WORLD_NAME.to_owned());
+                let created = session.with_timeout(timeout).call(params).await?;
+                let context_id = created.execution_context_id;
+                if let Some(tab) = self.shared.lock().tabs.get_mut(&id) {
+                    let context = Context {
+                        session: owner,
+                        id: context_id,
+                    };
+                    tab.frames.isolated_created(frame, context);
+                }
+                Ok(FrameContext {
+                    session,
+                    context_id,
+                })
+            }
+            Some(Found::Gone) => Err(FrameError::Gone),
+            None => Err(FrameError::NoContext),
+        }
+    }
+
+    /// Forgets `context` of tab `id`: Chrome said it is gone before the
+    /// event that says so arrived.
+    pub(crate) fn forget_context(&self, id: u32, context: &FrameContext) {
+        let session_id = context.session.id().unwrap_or_default();
+        if let Some(tab) = self.shared.lock().tabs.get_mut(&id) {
+            tab.frames.context_destroyed(session_id, context.context_id);
+        }
+    }
+
     /// Adds a script that runs before any of a document's own, in every tab
     /// and frame from now on (plan 07's init scripts build on this).
     pub(crate) async fn add_init_script(&self, source: &str, timeout: Duration) -> cdp::Result<()> {
         self.shared.settings.add_init_script(source);
-        let hosts: Vec<Session> = self.shared.lock().hosts.values().cloned().collect();
+        let hosts: Vec<Session> = self
+            .shared
+            .lock()
+            .hosts
+            .values()
+            .map(|h| h.session.clone())
+            .collect();
         for host in hosts {
             let result = host
                 .with_timeout(timeout)
@@ -443,6 +555,29 @@ impl Tabs {
             }
         }
         Ok(())
+    }
+}
+
+/// Where a script runs: a frame's session and one of its contexts.
+#[derive(Debug, Clone)]
+pub(crate) struct FrameContext {
+    pub(crate) session: Session,
+    pub(crate) context_id: runtime::ExecutionContextId,
+}
+
+/// Why a frame has no context to run a script in.
+#[derive(Debug)]
+pub(crate) enum FrameError {
+    /// The frame (or its tab) went away.
+    Gone,
+    /// Its document has no context yet (still loading, or stuck).
+    NoContext,
+    Cdp(cdp::CdpError),
+}
+
+impl From<cdp::CdpError> for FrameError {
+    fn from(e: cdp::CdpError) -> Self {
+        Self::Cdp(e)
     }
 }
 
@@ -508,8 +643,8 @@ impl State {
     }
 
     fn remove(&mut self, id: u32) {
-        if let Some(tab) = self.tabs.remove(&id) {
-            self.hosts.retain(|_, s| s.id() != tab.session.id());
+        if self.tabs.remove(&id).is_some() {
+            self.hosts.retain(|_, h| h.tab != Some(id));
         }
         self.recent.retain(|&r| r != id);
         if self.active == Some(id) {
@@ -567,7 +702,7 @@ fn auto_attach() -> target::SetAutoAttachParams {
 async fn watch_browser(shared: Arc<Shared>, mut events: RawEventStream) {
     while let Some(event) = events.next().await {
         match event.method.as_str() {
-            target::AttachedToTarget::NAME => attached(&shared, &event, true),
+            target::AttachedToTarget::NAME => attached(&shared, &event, Parent::Browser),
             target::DetachedFromTarget::NAME => {
                 if let Some(session_id) = event.params["sessionId"].as_str() {
                     detached(&shared, session_id);
@@ -594,18 +729,66 @@ async fn watch_browser(shared: Arc<Shared>, mut events: RawEventStream) {
 }
 
 /// Handles a page or iframe session's events: its own auto-attached
-/// targets (OOPIFs, workers) and their detaching.
-async fn watch_host(shared: Arc<Shared>, mut events: RawEventStream) {
+/// targets (OOPIFs, workers) and their detaching, and the frame and
+/// execution context events of tab `tab`'s frames it owns.
+async fn watch_host(
+    shared: Arc<Shared>,
+    mut events: RawEventStream,
+    session_id: String,
+    tab: Option<u32>,
+) {
     while let Some(event) = events.next().await {
         match event.method.as_str() {
-            target::AttachedToTarget::NAME => attached(&shared, &event, false),
+            target::AttachedToTarget::NAME => attached(&shared, &event, Parent::Host(tab)),
             target::DetachedFromTarget::NAME => {
                 if let Some(session_id) = event.params["sessionId"].as_str() {
                     detached(&shared, session_id);
                 }
             }
-            _ => {}
+            method => {
+                if let Some(tab) = tab {
+                    frame_event(&shared, &session_id, tab, method, &event);
+                }
+            }
         }
+    }
+}
+
+/// Applies a frame or execution context event of `session_id` to tab
+/// `tab`'s frame tree.
+fn frame_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event: &RawEvent) {
+    let mut state = shared.lock();
+    let Some(frames) = state.tabs.get_mut(&tab).map(|t| &mut t.frames) else {
+        return;
+    };
+    let decoded = match method {
+        page::FrameAttached::NAME => decode::<page::FrameAttached>(event)
+            .map(|e| frames.attached(session_id, &e.frame_id, &e.parent_frame_id)),
+        page::FrameNavigated::NAME => {
+            decode::<page::FrameNavigated>(event).map(|e| frames.navigated(session_id, &e.frame))
+        }
+        page::NavigatedWithinDocument::NAME => decode::<page::NavigatedWithinDocument>(event)
+            .map(|e| frames.navigated_within_document(&e.frame_id, &e.url)),
+        page::FrameDetached::NAME => decode::<page::FrameDetached>(event).map(|e| {
+            let swap = e.reason == page::FrameDetachedReason::Swap;
+            frames.detached(&e.frame_id, swap);
+        }),
+        runtime::ExecutionContextCreated::NAME => decode::<runtime::ExecutionContextCreated>(event)
+            .map(|e| frames.context_created(session_id, &e.context)),
+        runtime::ExecutionContextDestroyed::NAME => {
+            decode::<runtime::ExecutionContextDestroyed>(event)
+                .map(|e| frames.context_destroyed(session_id, e.execution_context_id))
+        }
+        runtime::ExecutionContextsCleared::NAME => {
+            frames.contexts_cleared(session_id);
+            Ok(())
+        }
+        _ => return,
+    };
+    drop(state);
+    match decoded {
+        Ok(()) => shared.bump(),
+        Err(e) => tracing::warn!("cannot decode {method}: {e}"),
     }
 }
 
@@ -613,9 +796,17 @@ fn decode<E: cdp::Event>(event: &RawEvent) -> Result<E, serde_json::Error> {
     E::deserialize(&event.params)
 }
 
+/// Which session announced a target.
+#[derive(Debug, Clone, Copy)]
+enum Parent {
+    Browser,
+    /// A page or iframe session, with its tab (none for a prerender).
+    Host(Option<u32>),
+}
+
 /// A target attached (paused if new): register a tab for a page, then set
 /// it up and resume it in its own task.
-fn attached(shared: &Arc<Shared>, event: &RawEvent, top_level: bool) {
+fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
     let attached = match decode::<target::AttachedToTarget>(event) {
         Ok(attached) => attached,
         Err(e) => {
@@ -624,8 +815,9 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, top_level: bool) {
         }
     };
     let info = attached.target_info;
-    let session = shared.conn.session(attached.session_id);
-    let tab = if top_level && is_tab(&info) {
+    let session_id = attached.session_id;
+    let session = shared.conn.session(session_id.clone());
+    let new_tab = if matches!(parent, Parent::Browser) && is_tab(&info) {
         let mut state = shared.lock();
         let id = state.next_id;
         state.next_id += 1;
@@ -638,6 +830,7 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, top_level: bool) {
                 title: info.title.clone(),
                 opener_target: info.opener_id.clone(),
                 ready: false,
+                frames: FrameTree::new(&info.target_id, &session_id),
             },
         );
         Some(id)
@@ -652,42 +845,53 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, top_level: bool) {
         info.target_id
     );
     let host = matches!(info.r#type.as_str(), "page" | "iframe");
+    let tab = match parent {
+        Parent::Browser => new_tab,
+        Parent::Host(tab) => tab,
+    };
     if host {
-        // Before auto-attach is turned on for it, so no child is missed.
+        // Before auto-attach and the domains are turned on for it, so no
+        // child and no frame event is missed.
         let events = session.events();
-        shared
-            .lock()
-            .hosts
-            .insert(session.id().unwrap_or_default().to_owned(), session.clone());
-        shared.spawn(watch_host(shared.clone(), events));
+        shared.lock().hosts.insert(
+            session_id.clone(),
+            Host {
+                session: session.clone(),
+                tab,
+            },
+        );
+        shared.spawn(watch_host(shared.clone(), events, session_id, tab));
     }
     let waiting = attached.waiting_for_debugger;
     let task_shared = shared.clone();
     shared.spawn(async move {
-        setup(
-            &task_shared,
-            &session.with_timeout(SETUP_TIMEOUT),
-            host,
-            waiting,
-        )
-        .await;
-        if let Some(id) = tab {
+        let session = session.with_timeout(SETUP_TIMEOUT);
+        setup(&task_shared, &session, host, tab, waiting).await;
+        if let Some(id) = new_tab {
             ready(&task_shared, id);
         }
     });
 }
 
 /// Prepares a new target before it runs: auto-attach for its children,
-/// the domains commands need, the session's settings; then resumes it.
+/// the domains commands need, frame tracking and chrome-cdp's isolated
+/// world, the session's settings; then resumes it. `host` is set for page
+/// and iframe sessions, with `tab` the tab whose frames they have.
 ///
 /// Every step and the resume are sent at once and only then awaited. Chrome
 /// runs them in order, but some answers (`Page.enable` in a popup's new
 /// renderer) only come once the target runs, so awaiting each step before
 /// sending the next would stall until the timeout.
 ///
-/// Later milestones add their per-target steps here (frames and isolated
-/// worlds in 3.2, emulation and routes in plan 07).
-async fn setup(shared: &Shared, session: &Session, host: bool, waiting: bool) {
+/// Later milestones add their per-target steps here (emulation and routes
+/// in plan 07).
+async fn setup(
+    shared: &Arc<Shared>,
+    session: &Session,
+    host: bool,
+    tab: Option<u32>,
+    waiting: bool,
+) {
     let mut steps: Vec<(&str, Step)> = Vec::new();
     if host {
         steps.push(("auto-attach", step(session.call(auto_attach()))));
@@ -695,6 +899,31 @@ async fn setup(shared: &Shared, session: &Session, host: bool, waiting: bool) {
             "Page.enable",
             step(session.call(page::EnableParams::default())),
         ));
+        // Reports every execution context, the existing ones too.
+        steps.push((
+            "Runtime.enable",
+            step(session.call(runtime::EnableParams::default())),
+        ));
+        // The frames that exist already; events report later ones.
+        let tree = session.call(page::GetFrameTreeParams::default());
+        let seed_shared = shared.clone();
+        let session_id = session.id().unwrap_or_default().to_owned();
+        steps.push((
+            "Page.getFrameTree",
+            Box::pin(async move {
+                let tree = tree.await?.frame_tree;
+                if let Some(tab) = tab {
+                    seed(&seed_shared, tab, &session_id, &tree);
+                }
+                Ok(())
+            }),
+        ));
+        // chrome-cdp's isolated world in every document from now on, and
+        // in the ones that exist already.
+        let mut world = page::AddScriptToEvaluateOnNewDocumentParams::new(String::new());
+        world.world_name = Some(frames::WORLD_NAME.to_owned());
+        world.run_immediately = Some(true);
+        steps.push(("the isolated world", step(session.call(world))));
         for source in shared.settings.init_scripts() {
             let add = page::AddScriptToEvaluateOnNewDocumentParams::new(source);
             steps.push(("an init script", step(session.call(add))));
@@ -710,6 +939,15 @@ async fn setup(shared: &Shared, session: &Session, host: bool, waiting: bool) {
             tracing::debug!("setting up a target failed at {what}: {e}");
         }
     }
+}
+
+/// Adds the frames `Page.getFrameTree` reported on `session_id` to tab
+/// `tab`.
+fn seed(shared: &Shared, tab: u32, session_id: &str, tree: &page::FrameTree) {
+    if let Some(tab) = shared.lock().tabs.get_mut(&tab) {
+        tab.frames.seed(session_id, tree);
+    }
+    shared.bump();
 }
 
 /// One setup call already sent, its result discarded.
@@ -746,7 +984,12 @@ fn ready(shared: &Shared, id: u32) {
 /// A session went away: forget its tab or frame.
 fn detached(shared: &Shared, session_id: &str) {
     let mut state = shared.lock();
-    state.hosts.remove(session_id);
+    let host = state.hosts.remove(session_id);
+    if let Some(tab) = host.and_then(|h| h.tab)
+        && let Some(tab) = state.tabs.get_mut(&tab)
+    {
+        tab.frames.session_gone(session_id);
+    }
     let tab = state
         .tabs
         .iter()

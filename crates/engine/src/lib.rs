@@ -7,12 +7,15 @@
 //! crashes, makes raw CDP calls (`cdp`), and serialises page commands with a
 //! per-tab async mutex. Milestone 3.1 adds the target & tab manager
 //! (`tabs`): every target is auto-attached and set up before it runs, and
-//! page commands act on the active tab or `--tab`. Later plans add modules
+//! page commands act on the active tab or `--tab`. Milestone 3.2 tracks
+//! each tab's frames and their execution contexts (`frames`), with an
+//! isolated world for chrome-cdp's own scripts. Later plans add modules
 //! next to `tabs` and `navigate`: `page`, `snapshot`, `locator`, `input`,
 //! `observe`, `emulate`, `route`.
 
 mod endpoint;
 mod errors;
+mod frames;
 mod navigate;
 mod raw;
 mod request;
@@ -33,6 +36,7 @@ use tokio::sync::Notify;
 
 pub use endpoint::{Endpoint, parse_endpoint};
 pub use errors::from_cdp;
+pub use frames::{FrameInfo, WORLD_NAME, World};
 pub use navigate::normalize_url;
 pub use request::{
     CdpRequest, ConnectRequest, OpenRequest, TabCloseRequest, TabNewRequest, TabSelectRequest,
