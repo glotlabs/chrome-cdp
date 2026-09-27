@@ -1,0 +1,13 @@
+$ chrome-cdp wait --text 'Welcome back' --timeout 500ms
+exit: 3
+--- stderr
+error: waited 500ms for text "Welcome back"
+  observed: not in the page's visible text
+  page: about:blank ""
+  hint: chrome-cdp wait --text 'Welcome back' --timeout 1s   (the text must match exactly, spaces collapsed; only visible text counts)
+
+$ chrome-cdp wait --text 'Welcome back' --timeout 500ms --json
+exit: 3
+--- stdout
+{"ok":false,"error":{"kind":"Timeout","message":"waited 500ms for text \"Welcome back\"","hint":"chrome-cdp wait --text 'Welcome back' --timeout 1s   (the text must match exactly, spaces collapsed; only visible text counts)","notes":[{"label":"observed","text":"not in the page's visible text"},{"label":"page","text":"about:blank \"\""}],"details":{"condition":"text","observed":{"found":false},"page":{"title":"","url":"about:blank"},"timeout_ms":500}}}
+

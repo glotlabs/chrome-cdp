@@ -76,10 +76,9 @@ pub(crate) fn apply(global: &mut GlobalArgs, matches: &ArgMatches) -> Result<(),
     {
         global.session = session;
     }
-    if let Some(timeout) = settings.timeout
-        && defaulted("timeout")
-    {
-        global.timeout = timeout;
+    // `--timeout` has no clap default: each command has its own.
+    if global.timeout.is_none() {
+        global.timeout = settings.timeout;
     }
     global.base_url = settings.base_url;
     Ok(())

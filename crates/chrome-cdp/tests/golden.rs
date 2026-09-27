@@ -397,6 +397,48 @@ const CASES: &[Case] = &[
         modes: ERR,
         fixture: Fixture::NoSessions,
     },
+    Case {
+        name: "wait-url",
+        args: &["wait", "--url", "blank"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "wait-fn",
+        args: &["wait", "--fn", "6 * 7"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "wait-element-timeout",
+        args: &["wait", "#results", "--timeout", "500ms"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "wait-text-timeout",
+        args: &["wait", "--text", "Welcome back", "--timeout", "500ms"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "wait-delay",
+        args: &["wait", "100"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "wait-unsupported-locator",
+        args: &["wait", "role=button"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
+        name: "wait-not-running",
+        args: &["wait", "--idle"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
 ];
 
 fn golden_dir() -> PathBuf {
@@ -472,9 +514,9 @@ impl Normalizer {
             ("\"daemon_pid\":", &digits, "<pid>"),
             ("\"uptime_ms\":", &digits, "<ms>"),
             ("\"elapsed_ms\":", &digits, "<ms>"),
-            // A navigation's time: `"Title" (412ms)`.
+            // A navigation's or wait's time: `"Title" (412ms)`.
             (
-                "\" (",
+                " (",
                 &|c: char| c.is_ascii_digit() || matches!(c, '.' | 'm' | 's'),
                 "<ms>",
             ),

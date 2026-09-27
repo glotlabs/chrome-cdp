@@ -320,6 +320,10 @@ impl Daemon {
                 Ok(p) => output(self.engine.navigate(p).await),
                 Err(e) => Err(e),
             },
+            rpc::WAIT => match params(req.params) {
+                Ok(p) => output(self.engine.wait(p).await),
+                Err(e) => Err(e),
+            },
             rpc::TAB_CLOSE => match params(req.params) {
                 Ok(p) => match self.engine.tab_close(p).await {
                     Ok(closed) => {

@@ -6,7 +6,7 @@ no earlier page in tab t1's history to go back to; still at about:blank ""
 $ chrome-cdp back --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"elapsed_ms":<ms>,"navigated":false,"restored":false,"same_document":false,"tab":"t1","title":"","url":"about:blank","wait":"load"}}
+{"ok":true,"data":{"elapsed_ms":<ms>,"navigated":false,"restored":false,"same_document":false,"tab":"t1","title":"","url":"about:blank","wait":"settle"}}
 
 $ chrome-cdp back -q
 exit: 0

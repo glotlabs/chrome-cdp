@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::builder::BoolishValueParser;
-use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, ArgGroup, Args, Parser, Subcommand, ValueEnum};
 
 use protocol::Mode;
 
@@ -69,16 +69,16 @@ pub(crate) struct GlobalArgs {
     )]
     pub(crate) session: String,
 
-    /// Give up after this long, e.g. 500ms, 30s, 2m.
+    /// Give up after this long, e.g. 500ms, 30s, 2m. Default: 10s for
+    /// `wait`, 30s for navigation and everything else.
     #[arg(
         long,
         global = true,
         env = "CHROME_CDP_TIMEOUT",
-        default_value = "30s",
         value_parser = parse_duration,
         value_name = "DURATION"
     )]
-    pub(crate) timeout: Duration,
+    pub(crate) timeout: Option<Duration>,
 
     /// The tab page commands act on, e.g. t2 (see `chrome-cdp tabs`).
     /// Default: the active tab.
@@ -95,7 +95,18 @@ pub(crate) struct GlobalArgs {
     pub(crate) base_url: Option<String>,
 }
 
+/// The timeout of navigation and of commands without their own default.
+pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The timeout of `wait` (and plan 05's actions).
+pub(crate) const WAIT_TIMEOUT: Duration = Duration::from_secs(10);
+
 impl GlobalArgs {
+    /// `--timeout` (or its env var or config key), else `default`.
+    pub(crate) fn timeout_or(&self, default: Duration) -> Duration {
+        self.timeout.unwrap_or(default)
+    }
+
     /// How to render results.
     pub(crate) fn mode(&self) -> Mode {
         if self.json {
@@ -260,6 +271,37 @@ Examples:
   chrome-cdp reload --hard          # bypass the cache
   chrome-cdp reload --wait domcontentloaded")]
     Reload(ReloadArgs),
+
+    /// Wait for the page: an element, text, the URL, network idle, a request, …
+    #[command(after_help = "\
+Give exactly one condition. It is checked against the active tab (or
+--tab) until it holds or --timeout (default 10s) passes; a timeout
+(exit 3) says what the page showed instead. Needs a running session.
+
+  <LOCATOR>           an element: #id, .class, [attr], css=…, xpath=…;
+                      --state visible (default), hidden, attached,
+                      detached or enabled
+  --text, --text-gone visible text anywhere (or --in <LOCATOR>); spaces
+                      are collapsed, case counts
+  --url               the page URL: a part of it, a glob (* and **) or
+                      /regex/
+  --load, --domcontentloaded, --idle (no requests for 500ms, not counting
+                      WebSockets, beacons and requests open over 10s),
+  --settle            (network idle and no DOM changes for 300ms)
+  --fn                a JavaScript expression that becomes truthy
+  --request, --response [--status]  since the previous command began
+  <MS>                a fixed sleep, e.g. 500 or 2s (prefer a condition)
+
+Examples:
+  chrome-cdp wait '#results'
+  chrome-cdp wait .spinner --state hidden
+  chrome-cdp wait --text 'Welcome back'
+  chrome-cdp wait --text-gone Loading --in '#main'
+  chrome-cdp wait --url /dashboard
+  chrome-cdp wait --idle
+  chrome-cdp wait --fn 'window.app && window.app.ready'
+  chrome-cdp wait --response '**/api/save' --status 200")]
+    Wait(WaitCmdArgs),
 
     /// Make one raw CDP call on the session's browser or current page.
     #[command(after_help = "\
@@ -476,18 +518,22 @@ pub(crate) struct ReloadArgs {
 #[derive(Debug, Args)]
 pub(crate) struct WaitArgs {
     /// What to wait for before returning; --timeout bounds it.
-    #[arg(long, value_enum, default_value_t = Wait::Load, value_name = "EVENT")]
+    #[arg(long, value_enum, default_value_t = Wait::Settle, value_name = "EVENT")]
     pub(crate) wait: Wait,
 }
 
 /// What a navigation waits for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum Wait {
+    /// The load event, then until the page settles (no requests for
+    /// 500ms, no DOM changes for 300ms), 5s at most.
+    Settle,
     /// The load event: the page with its images, scripts and styles.
     Load,
     /// DOMContentLoaded: the HTML is parsed.
     Domcontentloaded,
-    /// No network requests for 500 ms.
+    /// DOMContentLoaded, then no requests for 500ms (not counting
+    /// WebSockets, beacons and requests open over 10s).
     Networkidle,
     /// The server answered and the new page replaced the old one.
     Commit,
@@ -498,11 +544,119 @@ pub(crate) enum Wait {
 impl Wait {
     pub(crate) fn to_engine(self) -> engine::WaitUntil {
         match self {
+            Self::Settle => engine::WaitUntil::Settle,
             Self::Load => engine::WaitUntil::Load,
             Self::Domcontentloaded => engine::WaitUntil::DomContentLoaded,
             Self::Networkidle => engine::WaitUntil::NetworkIdle,
             Self::Commit => engine::WaitUntil::Commit,
             Self::None => engine::WaitUntil::None,
+        }
+    }
+}
+
+#[derive(Debug, Args)]
+#[command(
+    group(
+        ArgGroup::new("condition")
+            .required(true)
+            .args([
+                "target", "load", "domcontentloaded", "idle", "settle", "text", "text_gone",
+                "url", "function", "request", "response",
+            ])
+    )
+)]
+pub(crate) struct WaitCmdArgs {
+    /// An element to wait for (#id, .class, [attr], css=…, xpath=…), or
+    /// how long to sleep: 500 (milliseconds) or 2s.
+    #[arg(value_name = "LOCATOR|MS")]
+    pub(crate) target: Option<String>,
+
+    /// The state the element must reach.
+    #[arg(long, value_enum, value_name = "STATE")]
+    pub(crate) state: Option<ElementStateArg>,
+
+    /// The page's load event.
+    #[arg(long)]
+    pub(crate) load: bool,
+
+    /// DOMContentLoaded: the HTML is parsed.
+    #[arg(long)]
+    pub(crate) domcontentloaded: bool,
+
+    /// Network idle: no requests for 500ms (not counting WebSockets,
+    /// beacons and requests open over 10s).
+    #[arg(long)]
+    pub(crate) idle: bool,
+
+    /// Network idle and no DOM changes for 300ms (3s at most for the DOM).
+    #[arg(long)]
+    pub(crate) settle: bool,
+
+    /// Visible text to wait for; `-` reads it from stdin.
+    #[arg(long, value_name = "TEXT")]
+    pub(crate) text: Option<String>,
+
+    /// Visible text to wait to go away; `-` reads it from stdin.
+    #[arg(long, value_name = "TEXT")]
+    pub(crate) text_gone: Option<String>,
+
+    /// Look for --text or --text-gone only in the first element this
+    /// locator matches.
+    #[arg(long = "in", value_name = "LOCATOR")]
+    pub(crate) within: Option<String>,
+
+    /// The page URL: a part of it, a glob (* and **) or /regex/.
+    #[arg(long, value_name = "PATTERN")]
+    pub(crate) url: Option<String>,
+
+    /// A JavaScript expression, polled in the page until it is truthy
+    /// (promises are awaited); `-` reads it from stdin.
+    #[arg(long = "fn", value_name = "JS")]
+    pub(crate) function: Option<String>,
+
+    /// A request whose URL matches (a part, a glob or /regex/), sent since
+    /// the previous command began.
+    #[arg(long, value_name = "PATTERN")]
+    pub(crate) request: Option<String>,
+
+    /// A response whose URL matches, received since the previous command
+    /// began.
+    #[arg(long, value_name = "PATTERN")]
+    pub(crate) response: Option<String>,
+
+    /// The status the --response must have.
+    #[arg(long, value_name = "CODE")]
+    pub(crate) status: Option<u16>,
+
+    /// Bound the output (--fn's value) to this many characters (0 = no
+    /// limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+/// `wait <locator> --state`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum ElementStateArg {
+    /// A match has a box and is not visibility: hidden.
+    Visible,
+    /// No match is visible (or none exists).
+    Hidden,
+    /// A match is in the document.
+    Attached,
+    /// No match is in the document.
+    Detached,
+    /// A match is not disabled.
+    Enabled,
+}
+
+impl ElementStateArg {
+    pub(crate) fn to_engine(self) -> engine::ElementState {
+        match self {
+            Self::Visible => engine::ElementState::Visible,
+            Self::Hidden => engine::ElementState::Hidden,
+            Self::Attached => engine::ElementState::Attached,
+            Self::Detached => engine::ElementState::Detached,
+            Self::Enabled => engine::ElementState::Enabled,
         }
     }
 }
@@ -723,7 +877,7 @@ mod tests {
         ])
         .unwrap();
         assert!(cli.global.json);
-        assert_eq!(cli.global.timeout, Duration::from_secs(2));
+        assert_eq!(cli.global.timeout, Some(Duration::from_secs(2)));
         assert_eq!(cli.global.session, "s1");
         assert_eq!(cli.global.verbose, 2);
     }
@@ -821,6 +975,20 @@ mod tests {
         };
         assert_eq!(args.idle.idle_timeout, Some(Duration::ZERO));
         assert!(Cli::try_parse_from(["chrome-cdp", "open", "--idle-timeout", "5"]).is_err());
+    }
+
+    #[test]
+    fn wait_takes_exactly_one_condition() {
+        let parse = |args: &[&str]| {
+            Cli::try_parse_from(["chrome-cdp", "wait"].iter().chain(args)).map(|_| ())
+        };
+        assert!(parse(&["#go"]).is_ok());
+        assert!(parse(&["#go", "--state", "hidden"]).is_ok());
+        assert!(parse(&["--text", "Hi", "--in", "#main"]).is_ok());
+        assert!(parse(&["--response", "/api", "--status", "201"]).is_ok());
+        assert!(parse(&[]).is_err());
+        assert!(parse(&["#go", "--text", "Hi"]).is_err());
+        assert!(parse(&["--idle", "--load"]).is_err());
     }
 
     #[test]

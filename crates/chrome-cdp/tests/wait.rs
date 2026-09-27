@@ -1,0 +1,93 @@
+//! `wait` (plan 03, milestone 3.4) end to end: conditions through the
+//! daemon, `-` for stdin, the 10 s default timeout and
+//! `CHROME_CDP_TIMEOUT`, `--tab`, and `goto`'s default settle.
+//!
+//! The real-Chrome tests need `CHROME_PATH` (see `cli.rs`).
+
+#![allow(clippy::unwrap_used, clippy::print_stderr)]
+
+mod common;
+
+use std::io::Write as _;
+use std::process::Stdio;
+use std::time::{Duration, Instant};
+
+use common::{Sandbox, chrome_path, code, json_out, run, stderr, stdout};
+use fixtures::Fixtures;
+
+#[test]
+fn wait_through_the_daemon() {
+    let Some(chrome) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let sandbox = Sandbox::with_chrome(&chrome);
+    // `wait` needs a running session; it does not start one.
+    let out = sandbox.run(&["wait", "--idle"]);
+    assert_eq!(code(&out), 4, "{}", stderr(&out));
+
+    // `goto` settles by default: the SPA has rendered its data.
+    let out = sandbox.run(&["goto", &site.url("/wait/spa-fetch.html"), "--json"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let data = &json_out(&out)["data"];
+    assert_eq!(data["wait"], "settle");
+    assert_eq!(data["title"], "SPA: Inbox");
+
+    let out = sandbox.run(&["goto", &site.url("/wait/lazy.html?after=300")]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["wait", "#welcome"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert!(
+        stdout(&out).starts_with("#welcome is visible ("),
+        "{}",
+        stdout(&out)
+    );
+
+    // The text from stdin.
+    let mut child = sandbox
+        .cli()
+        .args(["wait", "--text", "-", "--in", "#main", "--json"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"Welcome, Ada\n")
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert_eq!(
+        json_out(&out)["data"]["met"],
+        "text \"Welcome, Ada\" is visible"
+    );
+
+    let out = sandbox.run(&["wait", "--fn", "window.appReady.user", "-q"]);
+    assert_eq!(stdout(&out), "\"Ada\"\n");
+
+    // Checked before the daemon is asked.
+    let out = sandbox.run(&["wait", "--status", "200", "--request", "/api"]);
+    assert_eq!(code(&out), 2, "{}", stderr(&out));
+    assert!(stderr(&out).starts_with("error: --status needs --response\n"));
+
+    // `--tab` names the tab.
+    let out = sandbox.run(&["tab", "new", &site.url("/nav/a.html")]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["wait", "--text", "Page A", "--tab", "t2", "--json"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert_eq!(json_out(&out)["data"]["tab"], "t2");
+
+    // The timeout comes from CHROME_CDP_TIMEOUT, else it is 10 s.
+    let out = run(sandbox
+        .cli()
+        .args(["wait", "#never"])
+        .env("CHROME_CDP_TIMEOUT", "600ms"));
+    assert_eq!(code(&out), 3, "{}", stderr(&out));
+    assert!(stderr(&out).starts_with("error: waited 600ms for #never to be visible\n"));
+    let start = Instant::now();
+    let out = sandbox.run(&["wait", "#never"]);
+    assert_eq!(code(&out), 3, "{}", stderr(&out));
+    assert!(stderr(&out).starts_with("error: waited 10s for #never to be visible\n"));
+    assert!(start.elapsed() >= Duration::from_secs(10));
+}

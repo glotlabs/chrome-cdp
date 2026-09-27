@@ -1,0 +1,13 @@
+$ chrome-cdp wait '#results' --timeout 500ms
+exit: 3
+--- stderr
+error: waited 500ms for #results to be visible
+  observed: no element matches
+  page: about:blank ""
+  hint: chrome-cdp wait '#results' --timeout 1s   (no element matches the locator yet; check it)
+
+$ chrome-cdp wait '#results' --timeout 500ms --json
+exit: 3
+--- stdout
+{"ok":false,"error":{"kind":"Timeout","message":"waited 500ms for #results to be visible","hint":"chrome-cdp wait '#results' --timeout 1s   (no element matches the locator yet; check it)","notes":[{"label":"observed","text":"no element matches"},{"label":"page","text":"about:blank \"\""}],"details":{"condition":"element","observed":{"count":0,"enabled":0,"visible":0},"page":{"title":"","url":"about:blank"},"timeout_ms":500}}}
+

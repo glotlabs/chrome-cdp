@@ -260,7 +260,7 @@
           "type": "string"
         },
         "wait": {
-          "description": "What the command waited for: `load`, `domcontentloaded`,\n`networkidle`, `commit` or `none`.",
+          "description": "What the command waited for: `settle` (the load event, then the\npage settled), `load`, `domcontentloaded`, `networkidle`, `commit`\nor `none`.",
           "type": "string"
         }
       },

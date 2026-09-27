@@ -58,7 +58,9 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         None => Err(ErrorInfo::new(ErrorKind::BadArgs, "no command given")
             .hint(Cmd::new("").switch("help"))),
         Some(Command::Schema(args)) => schema::run(&args),
-        Some(Command::Install(args)) => install::install(&args, cli.global.timeout),
+        Some(Command::Install(args)) => {
+            install::install(&args, cli.global.timeout_or(cli::DEFAULT_TIMEOUT))
+        }
         Some(Command::Uninstall(args)) => install::uninstall(&args),
         Some(Command::Open(args)) => session::open(&args, &cli.global),
         Some(Command::Connect(args)) => session::connect(&args, &cli.global),
@@ -74,6 +76,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             session::history(engine::Navigation::Forward, &args, &cli.global)
         }
         Some(Command::Reload(args)) => session::reload(&args, &cli.global),
+        Some(Command::Wait(args)) => session::wait(&args, &cli.global),
         // Handled in `main`.
         Some(Command::Daemon(_)) => Ok(Output::new(serde_json::Value::Null, "")),
     }

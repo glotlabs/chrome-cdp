@@ -8,7 +8,7 @@ warning: the server answered HTTP 404 Not Found for <site>/nav/missing.html
 $ chrome-cdp goto <site>/nav/missing.html --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"elapsed_ms":<ms>,"navigated":true,"requested_url":"<site>/nav/missing.html","restored":false,"same_document":false,"status":404,"tab":"t1","title":"","url":"<site>/nav/missing.html","wait":"load"},"warnings":["the server answered HTTP 404 Not Found for <site>/nav/missing.html"]}
+{"ok":true,"data":{"elapsed_ms":<ms>,"navigated":true,"requested_url":"<site>/nav/missing.html","restored":false,"same_document":false,"status":404,"tab":"t1","title":"","url":"<site>/nav/missing.html","wait":"settle"},"warnings":["the server answered HTTP 404 Not Found for <site>/nav/missing.html"]}
 
 $ chrome-cdp goto <site>/nav/missing.html -q
 exit: 0

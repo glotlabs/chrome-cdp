@@ -90,9 +90,9 @@ async fn met(engine: &Engine, condition: WaitFor) -> (WaitData, Output) {
 
 /// Waits `condition` with a short timeout and returns the error.
 async fn times_out(engine: &Engine, condition: WaitFor) -> ErrorInfo {
-    let err = wait(engine, condition.clone(), 700)
-        .await
-        .expect_err(&format!("{condition:?} held"));
+    let Err(err) = wait(engine, condition.clone(), 700).await else {
+        panic!("{condition:?} held");
+    };
     eprintln!("{}", err.to_text());
     assert_eq!(err.kind, ErrorKind::Timeout, "{}", err.to_text());
     assert_eq!(err.exit_code(), 3);
@@ -513,15 +513,10 @@ async fn network_idle_ignores_beacons_and_websockets() {
     for page in ["/wait/beacon.html", "/wait/websocket.html"] {
         goto(&engine, &site.url(page)).await;
         // Well within 2 s, though the page never stops talking.
-        let (data, output) = wait(&engine, WaitFor::Idle, 2_000)
+        let output = wait(&engine, WaitFor::Idle, 2_000)
             .await
-            .map(|o| {
-                (
-                    serde_json::from_value::<WaitData>(o.data.clone()).unwrap(),
-                    o,
-                )
-            })
             .unwrap_or_else(|e| panic!("{page}: {}", e.to_text()));
+        let data: WaitData = serde_json::from_value(output.data.clone()).unwrap();
         assert!(output.text.starts_with("network idle ("), "{}", output.text);
         assert!(data.elapsed_ms < 2_000);
         // `--wait networkidle` uses the same tracker.

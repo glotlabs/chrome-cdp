@@ -6,7 +6,7 @@ exit: 0
 $ chrome-cdp goto '<site>/redirect?to=/nav/a.html' --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"elapsed_ms":<ms>,"navigated":true,"requested_url":"<site>/redirect?to=/nav/a.html","restored":false,"same_document":false,"status":200,"tab":"t1","title":"Page A","url":"<site>/nav/a.html","wait":"load"}}
+{"ok":true,"data":{"elapsed_ms":<ms>,"navigated":true,"requested_url":"<site>/redirect?to=/nav/a.html","restored":false,"same_document":false,"status":200,"tab":"t1","title":"Page A","url":"<site>/nav/a.html","wait":"settle"}}
 
 $ chrome-cdp goto '<site>/redirect?to=/nav/a.html' -q
 exit: 0

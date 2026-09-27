@@ -1,0 +1,11 @@
+$ chrome-cdp wait role=button
+exit: 2
+--- stderr
+error: `role=button`: role= locators are not supported yet
+  hint: use css=<selector> or xpath=<expression>
+
+$ chrome-cdp wait role=button --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadLocator","message":"`role=button`: role= locators are not supported yet","hint":"use css=<selector> or xpath=<expression>"}}
+

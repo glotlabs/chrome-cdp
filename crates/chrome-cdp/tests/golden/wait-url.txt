@@ -1,0 +1,15 @@
+$ chrome-cdp wait --url blank
+exit: 0
+--- stdout
+URL about:blank matches "blank" (<ms>)
+
+$ chrome-cdp wait --url blank --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"condition":"url","elapsed_ms":<ms>,"met":"URL about:blank matches \"blank\"","tab":"t1","url":"about:blank"}}
+
+$ chrome-cdp wait --url blank -q
+exit: 0
+--- stdout
+about:blank
+

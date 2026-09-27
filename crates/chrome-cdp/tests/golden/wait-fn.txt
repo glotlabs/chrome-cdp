@@ -1,0 +1,15 @@
+$ chrome-cdp wait --fn '6 * 7'
+exit: 0
+--- stdout
+--fn returned 42 (<ms>)
+
+$ chrome-cdp wait --fn '6 * 7' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"condition":"fn","elapsed_ms":<ms>,"met":"--fn returned 42","tab":"t1","url":"about:blank","value":42}}
+
+$ chrome-cdp wait --fn '6 * 7' -q
+exit: 0
+--- stdout
+42
+

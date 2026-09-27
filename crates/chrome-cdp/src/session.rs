@@ -1,7 +1,8 @@
 //! The session commands (plan 02, milestone 2.4): `open`, `connect`,
 //! `close`, `status`, `sessions` and `cdp`; the tab commands (plan 03,
 //! milestone 3.1): `tabs`, `tab <id>`, `tab new` and `tab close`; and
-//! navigation (milestone 3.3): `goto`, `back`, `forward` and `reload`.
+//! navigation (milestone 3.3): `goto`, `back`, `forward` and `reload`; and
+//! `wait` (milestone 3.4).
 //!
 //! Each one finds the session's daemon (starting it when the command needs
 //! a browser), sends one call, and returns the daemon's `Output` or
@@ -16,8 +17,8 @@ use daemon::meta::Meta;
 use daemon::paths::{Env, SessionPaths, check_name};
 use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
-    CdpRequest, ConnectRequest, NavigateRequest, Navigation, OpenRequest, TabCloseRequest,
-    TabNewRequest, TabSelectRequest, TabsRequest,
+    CdpRequest, ConnectRequest, ElementState, NavigateRequest, Navigation, OpenRequest,
+    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, WaitFor, WaitRequest,
 };
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
@@ -25,8 +26,9 @@ use serde_json::{Map, Value, json};
 use tokio::runtime::Runtime;
 
 use crate::cli::{
-    CdpArgs, CloseArgs, ConnectArgs, GlobalArgs, GotoArgs, HistoryArgs, IdleArgs, OpenArgs,
-    ReloadArgs, SessionsArgs, StatusArgs, TabArgs, TabCommand, TabsArgs,
+    CdpArgs, CloseArgs, ConnectArgs, DEFAULT_TIMEOUT, ElementStateArg, GlobalArgs, GotoArgs,
+    HistoryArgs, IdleArgs, OpenArgs, ReloadArgs, SessionsArgs, StatusArgs, TabArgs, TabCommand,
+    TabsArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -47,7 +49,13 @@ struct Ctx {
 }
 
 impl Ctx {
+    /// A command whose timeout defaults to [`DEFAULT_TIMEOUT`].
     fn new(global: &GlobalArgs) -> Result<Self, ErrorInfo> {
+        Self::with_default(global, DEFAULT_TIMEOUT)
+    }
+
+    /// A command whose timeout defaults to `default`.
+    fn with_default(global: &GlobalArgs, default: Duration) -> Result<Self, ErrorInfo> {
         check_name(&global.session)?;
         let env = Env::current();
         let paths = SessionPaths::new(&env, &global.session);
@@ -65,7 +73,7 @@ impl Ctx {
             paths,
             build: version::build_id(),
             runtime,
-            timeout: global.timeout,
+            timeout: global.timeout_or(default),
             tab: global.tab.clone(),
             base_url: global.base_url.clone(),
         })
@@ -425,6 +433,137 @@ fn navigate(
         .block_on(client.call_output(rpc::NAVIGATE, &request, ctx.long_wait()))
 }
 
+/// `wait`: needs a running session.
+pub(crate) fn wait(args: &WaitCmdArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let condition = wait_condition(args)?;
+    engine::check_condition(&condition)?;
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::with_default(global, WAIT_TIMEOUT)?;
+    let mut client = running_session(&ctx)?;
+    let delay = match condition {
+        WaitFor::Delay { ms } => Duration::from_millis(ms),
+        _ => Duration::ZERO,
+    };
+    let request = WaitRequest {
+        condition,
+        tab: ctx.tab.clone(),
+        timeout_ms: millis(ctx.timeout),
+        max_chars: args.max_chars,
+    };
+    let wait = ctx.timeout + delay + QUICK;
+    ctx.runtime
+        .block_on(client.call_output(rpc::WAIT, &request, wait))
+}
+
+/// The one condition `wait`'s arguments name (clap makes sure there is
+/// exactly one).
+fn wait_condition(args: &WaitCmdArgs) -> Result<WaitFor, ErrorInfo> {
+    // From stdin, without the line's end.
+    let text = |value: &str, what: &str| {
+        input::text_arg(value, what).map(|t| t.trim_end_matches(['\r', '\n']).to_owned())
+    };
+    let needs = |flag: &str, given: bool, what: &str, example: Cmd| {
+        if given {
+            Err(bad_args(format!("{flag} needs {what}")).hint(Hint::run(example)))
+        } else {
+            Ok(())
+        }
+    };
+    needs(
+        "--state",
+        args.state.is_some() && args.target.is_none(),
+        "a locator",
+        Cmd::new("wait").arg(".spinner").flag("state", "hidden"),
+    )?;
+    needs(
+        "--in",
+        args.within.is_some() && args.text.is_none() && args.text_gone.is_none(),
+        "--text or --text-gone",
+        Cmd::new("wait").flag("text", "Saved").flag("in", "#main"),
+    )?;
+    needs(
+        "--status",
+        args.status.is_some() && args.response.is_none(),
+        "--response",
+        Cmd::new("wait")
+            .flag("response", "/api/save")
+            .flag("status", "200"),
+    )?;
+    if let Some(target) = &args.target {
+        if let Some(ms) = delay_ms(target) {
+            needs(
+                "--state",
+                args.state.is_some(),
+                "a locator, not a delay",
+                Cmd::new("wait").arg(".spinner").flag("state", "hidden"),
+            )?;
+            return Ok(WaitFor::Delay { ms });
+        }
+        return Ok(WaitFor::Element {
+            locator: target.clone(),
+            state: args
+                .state
+                .map_or(ElementState::Visible, ElementStateArg::to_engine),
+        });
+    }
+    Ok(if args.load {
+        WaitFor::Load
+    } else if args.domcontentloaded {
+        WaitFor::DomContentLoaded
+    } else if args.idle {
+        WaitFor::Idle
+    } else if args.settle {
+        WaitFor::Settle
+    } else if let Some(value) = &args.text {
+        WaitFor::Text {
+            text: text(value, "TEXT")?,
+            within: args.within.clone(),
+            gone: false,
+        }
+    } else if let Some(value) = &args.text_gone {
+        WaitFor::Text {
+            text: text(value, "TEXT")?,
+            within: args.within.clone(),
+            gone: true,
+        }
+    } else if let Some(pattern) = &args.url {
+        WaitFor::Url {
+            pattern: pattern.clone(),
+        }
+    } else if let Some(js) = &args.function {
+        WaitFor::Function {
+            expression: text(js, "JS")?,
+        }
+    } else if let Some(pattern) = &args.request {
+        WaitFor::Request {
+            pattern: pattern.clone(),
+        }
+    } else if let Some(pattern) = &args.response {
+        WaitFor::Response {
+            pattern: pattern.clone(),
+            status: args.status,
+        }
+    } else {
+        return Err(
+            bad_args("wait needs a condition").hint(Cmd::new("wait").switch("help").to_string())
+        );
+    })
+}
+
+/// `wait 500` or `wait 2s`: a delay, not a locator.
+fn delay_ms(target: &str) -> Option<u64> {
+    let target = target.trim();
+    if !target.is_empty() && target.bytes().all(|b| b.is_ascii_digit()) {
+        return target.parse().ok();
+    }
+    if !target.starts_with(|c: char| c.is_ascii_digit()) {
+        return None;
+    }
+    parse_duration(target)
+        .ok()
+        .map(|d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+}
+
 /// Gives a session without a browser one, as `open` would (or as the
 /// daemon an upgrade replaced had), and returns the warnings to show.
 fn auto_open(ctx: &Ctx, session: &mut Session) -> Result<Vec<String>, ErrorInfo> {
@@ -666,7 +805,64 @@ mod tests {
     use protocol::ErrorKind;
     use serde_json::json;
 
-    use super::{check_method, keep_previous_options, parse_params};
+    use super::{check_method, delay_ms, keep_previous_options, parse_params};
+
+    #[test]
+    fn flags_that_need_another() {
+        use clap::Parser as _;
+        let condition = |args: &[&str]| {
+            let cli =
+                crate::cli::Cli::try_parse_from(["chrome-cdp", "wait"].iter().chain(args)).unwrap();
+            let Some(crate::cli::Command::Wait(args)) = cli.command else {
+                panic!("not wait")
+            };
+            super::wait_condition(&args)
+        };
+        for (args, message) in [
+            (
+                &["--idle", "--state", "hidden"][..],
+                "--state needs a locator",
+            ),
+            (
+                &["500", "--state", "hidden"],
+                "--state needs a locator, not a delay",
+            ),
+            (
+                &["--url", "/x", "--in", "#main"],
+                "--in needs --text or --text-gone",
+            ),
+            (
+                &["--request", "/x", "--status", "200"],
+                "--status needs --response",
+            ),
+        ] {
+            let err = condition(args).unwrap_err();
+            assert_eq!(err.message, message);
+            assert_eq!(err.exit_code(), 2);
+        }
+        assert!(matches!(
+            condition(&["--text", "Hi", "--in", "#main"]).unwrap(),
+            engine::WaitFor::Text {
+                within: Some(_),
+                gone: false,
+                ..
+            }
+        ));
+        assert!(matches!(
+            condition(&["2s"]).unwrap(),
+            engine::WaitFor::Delay { ms: 2000 }
+        ));
+    }
+
+    #[test]
+    fn delays_and_locators() {
+        assert_eq!(delay_ms("500"), Some(500));
+        assert_eq!(delay_ms("2s"), Some(2_000));
+        assert_eq!(delay_ms("1.5s"), Some(1_500));
+        assert_eq!(delay_ms("#results"), None);
+        assert_eq!(delay_ms("css=div"), None);
+        assert_eq!(delay_ms("2x"), None);
+    }
 
     #[test]
     fn method_names() {

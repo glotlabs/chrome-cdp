@@ -1,0 +1,17 @@
+$ chrome-cdp wait 100
+exit: 0
+--- stdout
+waited 100ms
+--- stderr
+warning: a fixed wait is slow and flaky; wait for what you need instead: chrome-cdp wait <locator>, --text, --url, --idle or --fn
+
+$ chrome-cdp wait 100 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"condition":"delay","elapsed_ms":<ms>,"met":"waited 100ms","tab":"t1","url":"about:blank"},"warnings":["a fixed wait is slow and flaky; wait for what you need instead: chrome-cdp wait <locator>, --text, --url, --idle or --fn"]}
+
+$ chrome-cdp wait 100 -q
+exit: 0
+--- stderr
+warning: a fixed wait is slow and flaky; wait for what you need instead: chrome-cdp wait <locator>, --text, --url, --idle or --fn
+
