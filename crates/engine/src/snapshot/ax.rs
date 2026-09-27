@@ -368,7 +368,11 @@ impl Builder<'_> {
             frame: frame.info.id.clone(),
             backend,
         });
-        let name = str_value(node.name.as_ref()).unwrap_or_default();
+        let name = if chrome_role.starts_with("LayoutTable") {
+            String::new()
+        } else {
+            str_value(node.name.as_ref()).unwrap_or_default()
+        };
         match role.as_str() {
             TEXT => return Some(Node::text(name, key)),
             "linebreak" => return Some(Node::text("\n", key)),
@@ -432,6 +436,10 @@ fn role_name(chrome: &str) -> Option<String> {
             // Date and time inputs: filled as text; their parts are
             // Chrome's own.
             "Date" | "DateTime" | "InputTime" => "textbox",
+            // A table Chrome judged to be for layout (no headers, a
+            // caption or other signs of data): its rows and cells are
+            // only boxes, and Chrome names each cell by its content.
+            "LayoutTable" | "LayoutTableRow" | "LayoutTableCell" | "LayoutTableColumn" => NONE,
             "MenuListPopup" | "RootWebArea" | "WebArea" | "" => NONE,
             "MenuListOption" => "option",
             other => return Some(other.to_ascii_lowercase()),

@@ -69,6 +69,11 @@ page t7 "Lists and tables" {{ORIGIN_A}}/snapshot/lists-tables.html
     - cell
       - button "Edit" [e6]
       - button "Delete" [e7]
+- heading "Layout" (h2)
+- text "Left column"
+- link "Right link" [e8] → /nav/a.html
+- text "Second row"
+- button "Row button" [e9]
 - heading "Glossary" (h2)
 - descriptionlist
   - term "CDP"

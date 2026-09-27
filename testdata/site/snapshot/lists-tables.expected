@@ -71,6 +71,11 @@
     - cell
       - button "Edit" [ref]
       - button "Delete" [ref]
+- heading "Layout" (h2)
+- text "Left column"
+- link "Right link" [ref] → /nav/a.html
+- text "Second row"
+- button "Row button" [ref]
 - heading "Glossary" (h2)
 - descriptionlist
   - term "CDP"
@@ -78,3 +83,4 @@
   - term "AX"
   - definition "Accessibility"
 !Number 31"
+!layouttable

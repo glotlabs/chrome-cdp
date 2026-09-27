@@ -24,7 +24,7 @@ use engine::{
     SnapshotRequest, TabCloseRequest, TabNewRequest, WaitUntil, World,
 };
 use fixtures::Fixtures;
-use protocol::schema::SnapshotData;
+use protocol::schema::{SnapshotData, SnapshotNode};
 use protocol::{ErrorInfo, ErrorKind, Output};
 
 const TIMEOUT_MS: u64 = 30_000;
@@ -276,6 +276,119 @@ fn check_golden(page: &str, actual: &str) -> Option<String> {
             path.display()
         )),
     }
+}
+
+/// ARIA roles an agent may copy from a snapshot into a `role=` locator:
+/// the controls (not chrome-cdp's own `clickable` and `iframe`, nor
+/// Chrome's `colorwell`) and the named parts of a page.
+const ARIA_ROLES: &[&str] = &[
+    "heading",
+    "row",
+    "cell",
+    "columnheader",
+    "rowheader",
+    "region",
+    "navigation",
+    "form",
+    "dialog",
+    "alertdialog",
+    "tablist",
+    "tabpanel",
+    "menu",
+    "tree",
+    "button",
+    "link",
+    "textbox",
+    "searchbox",
+    "checkbox",
+    "radio",
+    "switch",
+    "combobox",
+    "listbox",
+    "option",
+    "menuitem",
+    "menuitemcheckbox",
+    "menuitemradio",
+    "tab",
+    "slider",
+    "spinbutton",
+    "treeitem",
+];
+
+/// `role=<role>[name="<name>"]` for every named node of those roles the
+/// default snapshot shows (in an iframe: `frame=<its ref> >> …`), up to
+/// `limit`.
+fn role_locators(nodes: &[SnapshotNode], frame: Option<&str>, limit: usize, out: &mut Vec<String>) {
+    for node in nodes {
+        if out.len() >= limit {
+            return;
+        }
+        if ARIA_ROLES.contains(&node.role.as_str())
+            && !node.name.is_empty()
+            && !node.name.contains(['"', '\\'])
+        {
+            let locator = format!("role={}[name=\"{}\"]", node.role, node.name);
+            out.push(match frame {
+                Some(frame) => format!("frame={frame} >> {locator}"),
+                None => locator,
+            });
+        }
+        let inner = if node.role == "iframe" {
+            node.reference.as_deref()
+        } else {
+            frame
+        };
+        role_locators(&node.children, inner, limit, out);
+    }
+}
+
+/// An agent copies a role and name from the snapshot into a `role=`
+/// locator: it must find the element. The snapshot's roles and names are
+/// Chrome's; `role=` computes its own in the page (engine B's code).
+#[tokio::test(flavor = "multi_thread")]
+async fn role_locators_find_what_the_snapshot_shows() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path).await;
+    let options = engine::LocateOptions::default();
+    let mut problems = Vec::new();
+    let mut checked = 0;
+    for page in CORPUS {
+        new_tab(&engine, &site.url(&format!("/snapshot/{page}.html"))).await;
+        let output = snapshot(
+            &engine,
+            SnapshotRequest {
+                text_limit: 0,
+                ..request()
+            },
+        )
+        .await;
+        let data: SnapshotData = serde_json::from_value(output.data).unwrap();
+        let mut locators = Vec::new();
+        role_locators(&data.nodes, None, 25, &mut locators);
+        for locator in locators {
+            checked += 1;
+            let found = engine
+                .call_on_all(
+                    None,
+                    &locator,
+                    &options,
+                    "function () { return this.length; }",
+                    Duration::from_millis(TIMEOUT_MS),
+                )
+                .await;
+            match found {
+                Ok(call) if call.value.as_u64().unwrap_or(0) > 0 => {}
+                // The isolated world cannot see into closed shadow roots.
+                Ok(_) if locator.contains("Closed shadow") => {}
+                Ok(_) => problems.push(format!("{page}: {locator} finds nothing")),
+                Err(e) => problems.push(format!("{page}: {locator}: {}", e.to_text())),
+            }
+        }
+        close_tab(&engine).await;
+    }
+    assert!(checked > 100, "only {checked} locators checked");
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
