@@ -352,8 +352,23 @@ async fn cdp_calls_reach_a_frame_and_its_main_world() {
     engine.close().await;
 }
 
-/// A Chrome started with a DevTools port on `url`, and its profile dir.
-fn debug_chrome(path: &std::path::Path, url: &str) -> (std::process::Child, PathBuf, String) {
+/// A Chrome this test started; killed (and its profile removed) on drop,
+/// so a failing assertion does not leave it running.
+struct DebugChrome {
+    child: std::process::Child,
+    profile: PathBuf,
+}
+
+impl Drop for DebugChrome {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let _ = std::fs::remove_dir_all(&self.profile);
+    }
+}
+
+/// A Chrome started with a DevTools port on `url`, and that port.
+fn debug_chrome(path: &std::path::Path, url: &str) -> (DebugChrome, String) {
     let profile = std::env::temp_dir().join(format!("engine-frames-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&profile);
     std::fs::create_dir_all(&profile).unwrap();
@@ -371,6 +386,10 @@ fn debug_chrome(path: &std::path::Path, url: &str) -> (std::process::Child, Path
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
+    let chrome = DebugChrome {
+        child,
+        profile: profile.clone(),
+    };
     let active = profile.join("DevToolsActivePort");
     let start = Instant::now();
     let port = loop {
@@ -382,7 +401,7 @@ fn debug_chrome(path: &std::path::Path, url: &str) -> (std::process::Child, Path
         assert!(start.elapsed() < TIMEOUT, "no DevTools port");
         std::thread::sleep(Duration::from_millis(50));
     };
-    (child, profile, port)
+    (chrome, port)
 }
 
 async fn connect(port: &str) -> Arc<Engine> {
@@ -401,7 +420,7 @@ async fn connect(port: &str) -> Arc<Engine> {
 async fn frames_that_existed_before_connecting_are_found() {
     let Some(path) = chrome_path() else { return };
     let site = Fixtures::shared();
-    let (mut chrome, profile, port) = debug_chrome(&path, &site.url("/frames/nested.html"));
+    let (chrome, port) = debug_chrome(&path, &site.url("/frames/nested.html"));
     // Let the page and all its frames load while nobody is attached.
     let first = connect(&port).await;
     frames_loaded(&first, 5).await;
@@ -448,7 +467,5 @@ async fn frames_that_existed_before_connecting_are_found() {
         assert_ne!(title, json!(""), "{frame:?}");
     }
     engine.close().await;
-    chrome.kill().unwrap();
-    chrome.wait().unwrap();
-    let _ = std::fs::remove_dir_all(profile);
+    drop(chrome);
 }
