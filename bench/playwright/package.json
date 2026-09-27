@@ -1,0 +1,14 @@
+{
+  "name": "chrome-cdp-bench-playwright",
+  "private": true,
+  "type": "module",
+  "description": "Playwright comparisons for chrome-cdp's benchmarks (plan 10); run only in bench jobs.",
+  "scripts": {
+    "snapshot-tokens": "node snapshot-tokens.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.1",
+    "@playwright/mcp": "0.0.82",
+    "gpt-tokenizer": "4.0.0"
+  }
+}
