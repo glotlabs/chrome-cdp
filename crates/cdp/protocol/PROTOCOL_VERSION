@@ -1,0 +1,6 @@
+# The Chromium revision the vendored protocol JSON was taken from.
+# `cargo xtask gen-cdp` reads `revision` and exposes it as
+# `cdp::domains::PROTOCOL_REVISION`. See README.md for how to update.
+revision = 1687809
+source = https://github.com/ChromeDevTools/devtools-protocol/tree/v0.0.1687809/json
+chrome = 154.0.8037.57 (branch position 1689415)

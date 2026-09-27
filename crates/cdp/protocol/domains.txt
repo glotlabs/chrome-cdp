@@ -1,0 +1,23 @@
+# Domains `cargo xtask gen-cdp` generates typed modules for (plan 01, 1.2).
+# One domain per line. `Domain: name, name` generates only those commands and
+# events. Types that listed items refer to are always generated, even from
+# domains not listed here.
+Accessibility
+Browser
+CSS: enable, disable, getComputedStyleForNode, startRuleUsageTracking, stopRuleUsageTracking, takeCoverageDelta
+DOM
+DOMSnapshot
+Emulation
+Fetch
+IO
+Input
+Log
+Network
+Overlay: enable, disable, highlightNode, hideHighlight
+Page
+Performance
+Runtime
+Security
+Storage
+Target
+Tracing
