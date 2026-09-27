@@ -240,8 +240,13 @@ pub(crate) fn cdp(args: &CdpArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
     let request = CdpRequest {
         method: args.method.clone(),
         params,
-        target: args.target.to_engine(),
+        target: if args.frame.is_some() {
+            engine::Target::Page
+        } else {
+            args.target.to_engine()
+        },
         tab: ctx.tab.clone(),
+        frame: args.frame.clone(),
         timeout_ms: millis(ctx.timeout),
         max_chars: args.max_chars,
     };

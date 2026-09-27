@@ -226,7 +226,8 @@ Examples:
   chrome-cdp cdp --target page Runtime.evaluate '{\"expression\":\"1+1\"}'
   echo '{\"expression\":\"1+1\"}' | chrome-cdp cdp --target page Runtime.evaluate -
   chrome-cdp cdp Target.getTargets --session shop
-  chrome-cdp cdp --target page --tab t2 Page.reload")]
+  chrome-cdp cdp --target page --tab t2 Page.reload
+  chrome-cdp cdp --frame checkout.example Runtime.evaluate '{\"expression\":\"location.href\"}'")]
     Cdp(CdpArgs),
 
     /// The session daemon; other commands start it.
@@ -381,6 +382,13 @@ pub(crate) struct CdpArgs {
     /// Send the call to the browser, or to the active tab (or --tab).
     #[arg(long, value_enum, default_value_t = Target::Browser)]
     pub(crate) target: Target,
+
+    /// Send the call to a frame of the tab: its name attribute, a part of
+    /// its URL, or its id. Implies --target page. A cross-site frame has
+    /// its own CDP session; Runtime.evaluate runs in the frame's page
+    /// world unless the params name a context.
+    #[arg(long, value_name = "FRAME")]
+    pub(crate) frame: Option<String>,
 
     /// Bound the output to this many characters (0 = no limit). With --json,
     /// long strings and arrays in `data` are shortened instead.

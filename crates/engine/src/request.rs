@@ -82,6 +82,11 @@ pub struct CdpRequest {
     /// `--tab`: the tab for [`Target::Page`]; the active one if `None`.
     #[serde(default)]
     pub tab: Option<String>,
+    /// `--frame`: send a [`Target::Page`] call to this frame's session (an
+    /// OOPIF has its own), and run `Runtime` evaluations in its main
+    /// world. Its id, `name` or a part of its URL.
+    #[serde(default)]
+    pub frame: Option<String>,
     /// Bounds the call.
     pub timeout_ms: u64,
     /// The output budget (0 = none).

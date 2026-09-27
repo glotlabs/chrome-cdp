@@ -55,6 +55,7 @@ async fn eval(engine: &Engine, tab: Option<&str>, expression: &str) -> Value {
             params: params.as_object().unwrap().clone(),
             target: Target::Page,
             tab: tab.map(str::to_owned),
+            frame: None,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })
@@ -156,6 +157,7 @@ async fn cross_site_frames_are_attached_set_up_and_resumed() {
             params: serde_json::Map::new(),
             target: Target::Browser,
             tab: None,
+            frame: None,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })
