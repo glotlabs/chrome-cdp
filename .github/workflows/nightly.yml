@@ -30,18 +30,21 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p chrome-cdp
       # install checks on Linux that the browser starts (`--version`) and
-      # fails with the missing libraries if it does not.
-      - run: target/release/chrome-cdp install
-      - run: target/release/chrome-cdp install --headless-shell
+      # fails with the missing libraries if it does not. --with-deps also
+      # writes the AppArmor profile that Ubuntu 23.10+ needs for Chrome's
+      # sandbox (runners have passwordless sudo); on macOS it only warns.
+      - run: target/release/chrome-cdp install --with-deps
+      - run: target/release/chrome-cdp install --headless-shell --with-deps
       - run: target/release/chrome-cdp install --list
       - name: The installed binaries run
         shell: bash
         run: |
           "$(target/release/chrome-cdp install -q)" --version
           "$(target/release/chrome-cdp install --headless-shell -q)" --version
-      # Launching needs the sandbox; on Ubuntu the AppArmor userns rule
-      # blocks it for binaries outside /opt/google/chrome until milestone
-      # 2.3 handles it, so this step may fail there for now.
-      - name: Launch the installed Chrome
-        continue-on-error: true
-        run: target/release/chrome-cdp __direct cdp Browser.getVersion
+      # With the sandbox on: never --no-sandbox.
+      - name: Launch the installed browsers
+        shell: bash
+        run: |
+          target/release/chrome-cdp __direct cdp Browser.getVersion
+          target/release/chrome-cdp __direct cdp Browser.getVersion \
+            --chrome "$(target/release/chrome-cdp install --headless-shell -q)"

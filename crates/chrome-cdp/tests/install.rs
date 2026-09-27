@@ -175,8 +175,6 @@ fn auto_install_installs_when_no_chrome_is_found() {
     assert_eq!(error["kind"], json!("LaunchFailed"), "{error}");
     let installed = cache.join("browsers/stable-154.0.8037.57-linux64");
     assert!(installed.join("INSTALLATION_COMPLETE").is_file());
-    // On Ubuntu 23.10+ the launch fails before starting it (no AppArmor
-    // profile covers the temp cache), with a `why` note first.
     let warnings = |error: &Value| -> Vec<String> {
         error["notes"]
             .as_array()
@@ -199,4 +197,58 @@ fn auto_install_installs_when_no_chrome_is_found() {
     assert_eq!(json_out(&out)["error"]["kind"], json!("LaunchFailed"));
     assert!(warnings(&json_out(&out)["error"]).is_empty());
     assert_eq!(zip_downloads(&server), 1);
+}
+
+/// Whether this machine has Ubuntu 23.10+'s AppArmor userns rule on.
+fn userns_restricted() -> bool {
+    std::fs::read_to_string("/proc/sys/kernel/apparmor_restrict_unprivileged_userns")
+        .is_ok_and(|v| v.trim() == "1")
+}
+
+#[test]
+fn the_apparmor_rule_is_reported_by_install_and_launch() {
+    if !linux_x86_64() {
+        return;
+    }
+    let server = FakeCft::start("linux64");
+    let dir = tempfile::tempdir().unwrap();
+    let cache = dir.path().join("cache");
+    let out = run(with_fake(&server, &cache)
+        .args(["install", "--json"])
+        .env_remove("CHROME_CDP_NO_USERNS_CHECK"));
+    assert_eq!(code(&out), 0);
+    let v = json_out(&out);
+    let warnings = v["warnings"].as_array().cloned().unwrap_or_default();
+    let blocked = |w: &Value| {
+        w.as_str().unwrap().starts_with(
+            "AppArmor blocks Chrome's sandbox on this machine until a profile allows it; \
+             run chrome-cdp install --with-deps to write /etc/apparmor.d/chrome-cdp-",
+        )
+    };
+    // No profile covers a temp cache, so the rule shows wherever it is on.
+    assert_eq!(warnings.iter().any(blocked), userns_restricted(), "{v}");
+
+    // Launching it fails before it starts, with the same fix.
+    let out = run(with_fake(&server, &cache)
+        .args(["__direct", "cdp", "Browser.getVersion"])
+        .env_remove("CHROME_CDP_NO_USERNS_CHECK"));
+    let err = stderr(&out);
+    if userns_restricted() {
+        assert_eq!(code(&out), 4);
+        assert!(
+            err.starts_with(
+                "error: Chrome's sandbox cannot start: AppArmor blocks user namespaces for "
+            ),
+            "{err}"
+        );
+        assert!(
+            err.contains(
+                "\n  hint: chrome-cdp install --with-deps   (writes /etc/apparmor.d/chrome-cdp-"
+            ),
+            "{err}"
+        );
+    }
+    // The escape hatch turns the check off: the fake then fails to speak CDP.
+    let out = run(with_fake(&server, &cache).args(["__direct", "cdp", "Browser.getVersion"]));
+    assert!(!stderr(&out).contains("AppArmor"), "{}", stderr(&out));
 }

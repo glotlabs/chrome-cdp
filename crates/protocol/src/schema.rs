@@ -139,6 +139,10 @@ pub struct InstalledBrowser {
     /// System packages `--with-deps` installed.
     #[serde(default)]
     pub packages_installed: Vec<String>,
+    /// The AppArmor profile `--with-deps` wrote so Chrome's sandbox works
+    /// (Ubuntu 23.10+); absent when none was needed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub apparmor_profile: Option<String>,
 }
 
 /// `data` of `chrome-cdp install --list`.

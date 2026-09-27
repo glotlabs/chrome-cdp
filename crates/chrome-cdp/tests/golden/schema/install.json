@@ -275,6 +275,13 @@
     "InstalledBrowser": {
       "description": "A browser `chrome-cdp install` put in the cache.",
       "properties": {
+        "apparmor_profile": {
+          "description": "The AppArmor profile `--with-deps` wrote so Chrome's sandbox works\n(Ubuntu 23.10+); absent when none was needed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "channel": {
           "description": "`stable`, `beta`, `dev`, `canary`, or `pinned` for a `--version` no\nchannel is on.",
           "type": "string"

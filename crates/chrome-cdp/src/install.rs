@@ -15,6 +15,7 @@ use std::time::Duration;
 
 use browser::{
     CannotRun, DepsFix, DiscoverError, Host, Installation, Os, Product, Remedy, Request,
+    launch::{self, UsernsCheck},
 };
 use protocol::schema::{
     AvailableBrowser, InstallData, InstallList, InstallListEntry, InstalledBrowser, UninstallData,
@@ -44,7 +45,8 @@ pub(crate) fn install(args: &InstallArgs, timeout: Duration) -> Result<Output, E
     let done = download(&host, &request, timeout)?;
     let again = again(args);
     let packages = ensure_runs(&host, &done, args.with_deps, &again)?;
-    let mut output = installed_output(&done, &packages);
+    let sandbox = ensure_sandbox(&host, &done, args.with_deps, &again)?;
+    let mut output = installed_output(&done, &packages, &sandbox);
     if args.with_deps && host.os != Os::Linux {
         output = output.warning("--with-deps only installs Linux packages; nothing to do here");
     }
@@ -164,6 +166,83 @@ fn ensure_runs(
     }
 }
 
+/// What `install` did about Chrome's sandbox.
+#[derive(Debug, Default)]
+struct Sandbox {
+    /// The AppArmor profile `--with-deps` wrote.
+    written: Option<String>,
+    warning: Option<String>,
+}
+
+/// On Linux with Ubuntu 23.10+'s AppArmor rule, a browser in the cache
+/// needs a profile granting `userns` to use its sandbox. `--with-deps`
+/// writes `/etc/apparmor.d/chrome-cdp` (with sudo) and loads it; without
+/// it, a warning says so.
+fn ensure_sandbox(
+    host: &Host,
+    done: &Installation,
+    with_deps: bool,
+    again: &Cmd,
+) -> Result<Sandbox, ErrorInfo> {
+    if launch::userns_check(host, &done.executable) != UsernsCheck::Blocked {
+        return Ok(Sandbox::default());
+    }
+    let Some(profile) = launch::apparmor_profile(host) else {
+        return Ok(Sandbox::default());
+    };
+    if !with_deps {
+        return Ok(Sandbox {
+            written: None,
+            warning: Some(format!(
+                "AppArmor blocks Chrome's sandbox on this machine until a profile allows it; \
+                 run {} to write {} (with sudo)",
+                again.clone().switch("with-deps"),
+                profile.path.display()
+            )),
+        });
+    }
+    let staged = tempfile::Builder::new()
+        .prefix("chrome-cdp-apparmor-")
+        .tempfile()
+        .and_then(|mut f| {
+            std::io::Write::write_all(&mut f, profile.text.as_bytes())?;
+            Ok(f)
+        })
+        .map_err(|e| {
+            ErrorInfo::new(
+                ErrorKind::InstallFailed,
+                format!("cannot write the AppArmor profile: {e}"),
+            )
+        })?;
+    let target = profile.path.display().to_string();
+    let commands = vec![
+        vec![
+            "install".to_owned(),
+            "-m".into(),
+            "644".into(),
+            staged.path().display().to_string(),
+            target.clone(),
+        ],
+        vec!["apparmor_parser".to_owned(), "-r".into(), target.clone()],
+    ];
+    run_privileged(
+        &format!("Chrome's sandbox needs an AppArmor profile on this machine ({target})."),
+        &commands,
+    )?;
+    let warning =
+        (launch::userns_check(host, &done.executable) == UsernsCheck::Blocked).then(|| {
+            format!(
+                "wrote {target}, but it does not seem to cover {}; launching may fail with \
+             \"No usable sandbox\"",
+                done.executable.display()
+            )
+        });
+    Ok(Sandbox {
+        written: Some(target),
+        warning,
+    })
+}
+
 /// The error for an installed browser that does not start.
 fn cannot_run(done: &Installation, cannot: &CannotRun, again: &Cmd, tried: bool) -> ErrorInfo {
     let path = done.executable.display().to_string();
@@ -202,32 +281,50 @@ fn cannot_run(done: &Installation, cannot: &CannotRun, again: &Cmd, tried: bool)
     }
 }
 
-/// Runs the package manager line of `fix` (with sudo unless root), after
-/// asking on a terminal. Without one, it runs only if sudo needs no
-/// password (CI).
+/// Runs the package manager line of `fix` with [`run_privileged`].
 fn run_fix(fix: &DepsFix) -> Result<(), ErrorInfo> {
     let command = fix.command.clone().unwrap_or_default();
+    run_privileged(
+        &format!(
+            "chrome-cdp needs these system libraries: {}",
+            fix.missing.join(", ")
+        ),
+        &[command],
+    )
+}
+
+/// Runs `commands` in turn (with sudo unless root), after explaining why
+/// (`why`) and asking on a terminal. Without one, they run only if sudo
+/// needs no password (CI).
+fn run_privileged(why: &str, commands: &[Vec<String>]) -> Result<(), ErrorInfo> {
     let root = is_root();
-    let argv: Vec<String> = if root {
-        command
-    } else {
-        std::iter::once("sudo".to_owned()).chain(command).collect()
-    };
-    let line = argv.join(" ");
+    let argvs: Vec<Vec<String>> = commands
+        .iter()
+        .map(|c| {
+            if root {
+                c.clone()
+            } else {
+                std::iter::once("sudo".to_owned())
+                    .chain(c.iter().cloned())
+                    .collect()
+            }
+        })
+        .collect();
+    let line = argvs
+        .iter()
+        .map(|a| a.join(" "))
+        .collect::<Vec<_>>()
+        .join(" && ");
     let interactive = std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
     if interactive {
-        crate::output::stderr(&format!(
-            "chrome-cdp needs these system libraries: {}\nIt will run: {line}\nContinue? [y/N] ",
-            fix.missing.join(", ")
-        ));
+        crate::output::stderr(&format!("{why}\nIt will run: {line}\nContinue? [y/N] "));
         let mut answer = String::new();
         let _ = std::io::stdin().lock().read_line(&mut answer);
         if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
-            return Err(ErrorInfo::new(
-                ErrorKind::BadArgs,
-                "cancelled; no packages were installed",
-            )
-            .hint(format!("run it yourself: {line}")));
+            return Err(
+                ErrorInfo::new(ErrorKind::BadArgs, "cancelled; nothing was changed")
+                    .hint(format!("run it yourself: {line}")),
+            );
         }
     } else if !root && !passwordless_sudo() {
         return Err(ErrorInfo::new(
@@ -236,32 +333,34 @@ fn run_fix(fix: &DepsFix) -> Result<(), ErrorInfo> {
         )
         .hint(format!("run it in a terminal: {line}")));
     }
-    tracing::info!("running {line}");
-    // The package manager's output goes to stderr: stdout is the result.
-    let stdout = std::io::stderr()
-        .as_fd()
-        .try_clone_to_owned()
-        .map_or_else(|_| Stdio::null(), Stdio::from);
-    let status = Command::new(&argv[0])
-        .args(&argv[1..])
-        .stdout(stdout)
-        .status()
-        .map_err(|e| {
-            ErrorInfo::new(
+    for argv in &argvs {
+        let one = argv.join(" ");
+        tracing::info!("running {one}");
+        // The command's output goes to stderr: stdout is the result.
+        let stdout = std::io::stderr()
+            .as_fd()
+            .try_clone_to_owned()
+            .map_or_else(|_| Stdio::null(), Stdio::from);
+        let status = Command::new(&argv[0])
+            .args(&argv[1..])
+            .stdout(stdout)
+            .status()
+            .map_err(|e| {
+                ErrorInfo::new(
+                    ErrorKind::InstallFailed,
+                    format!("cannot run {}: {e}", argv[0]),
+                )
+                .hint(format!("run it yourself: {line}"))
+            })?;
+        if !status.success() {
+            return Err(ErrorInfo::new(
                 ErrorKind::InstallFailed,
-                format!("cannot run {}: {e}", argv[0]),
+                format!("`{one}` failed ({status})"),
             )
-            .hint(format!("run it yourself: {line}"))
-        })?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(ErrorInfo::new(
-            ErrorKind::InstallFailed,
-            format!("`{line}` failed ({status})"),
-        )
-        .hint("read its output above, fix the cause and run the command again"))
+            .hint("read its output above, fix the cause and run the command again"));
+        }
     }
+    Ok(())
 }
 
 fn is_root() -> bool {
@@ -281,7 +380,7 @@ fn passwordless_sudo() -> bool {
         .is_ok_and(|s| s.success())
 }
 
-fn installed_output(done: &Installation, packages: &[String]) -> Output {
+fn installed_output(done: &Installation, packages: &[String], sandbox: &Sandbox) -> Output {
     let path = done.executable.display().to_string();
     let what = format!(
         "{} {} ({})",
@@ -297,6 +396,10 @@ fn installed_output(done: &Installation, packages: &[String]) -> Output {
         text.push_str("\ninstalled packages: ");
         text.push_str(&packages.join(" "));
     }
+    if let Some(profile) = &sandbox.written {
+        text.push_str("\nwrote AppArmor profile: ");
+        text.push_str(profile);
+    }
     let data = InstallData::Installed(InstalledBrowser {
         id: done.id.clone(),
         channel: done.channel.clone(),
@@ -307,9 +410,13 @@ fn installed_output(done: &Installation, packages: &[String]) -> Output {
         downloaded: done.downloaded.is_some(),
         download_size: done.downloaded.unwrap_or(0),
         packages_installed: packages.to_vec(),
+        apparmor_profile: sandbox.written.clone(),
     });
     let output = Output::typed(&data, text).quiet(path);
-    done.warnings.iter().fold(output, Output::warning)
+    done.warnings
+        .iter()
+        .chain(&sandbox.warning)
+        .fold(output, Output::warning)
 }
 
 /// `install --list`: the installs for this platform, and each channel's

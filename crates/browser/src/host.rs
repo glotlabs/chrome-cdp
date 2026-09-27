@@ -10,12 +10,16 @@ pub const CHROME_ENV: &str = "CHROME_CDP_CHROME";
 pub const CACHE_ENV: &str = "CHROME_CDP_CACHE";
 /// The env var replacing the Chrome for Testing index URL (a mirror).
 pub const INDEX_ENV: &str = "CHROME_CDP_CFT_URL";
+/// The env var that turns off the AppArmor userns check before launch
+/// (`1`), for when it misjudges a machine.
+pub const NO_USERNS_CHECK_ENV: &str = "CHROME_CDP_NO_USERNS_CHECK";
 
 /// The environment variables discovery, install and launch read.
 const VARS: &[&str] = &[
     CHROME_ENV,
     CACHE_ENV,
     INDEX_ENV,
+    NO_USERNS_CHECK_ENV,
     "XDG_CACHE_HOME",
     "XDG_DATA_HOME",
     "HOME",

@@ -11,7 +11,7 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use crate::host::{Host, Os};
+use crate::host::{Host, NO_USERNS_CHECK_ENV, Os};
 use crate::installed::cache_dir;
 use crate::launch::{apparmor, sys};
 
@@ -119,6 +119,8 @@ pub enum UsernsCheck {
     Blocked,
     /// The rule is on but the profiles cannot be read.
     Unknown,
+    /// `CHROME_CDP_NO_USERNS_CHECK=1` turned the check off.
+    Skipped,
 }
 
 /// Checks `binary` against Ubuntu 23.10+'s rule
@@ -126,6 +128,9 @@ pub enum UsernsCheck {
 pub fn userns_check(host: &Host, binary: &Path) -> UsernsCheck {
     if host.os != Os::Linux {
         return UsernsCheck::NotRestricted;
+    }
+    if host.var(NO_USERNS_CHECK_ENV).is_some_and(|v| v != "0") {
+        return UsernsCheck::Skipped;
     }
     let restricted =
         std::fs::read_to_string(host.system_path(RESTRICT_SYSCTL)).is_ok_and(|v| v.trim() == "1");
@@ -317,6 +322,8 @@ mod tests {
 
         let (_root, host, binary) = machine("1\n", &[]);
         assert_eq!(userns_check(&host, &binary), UsernsCheck::Blocked);
+        let skip = host.clone().with_var("CHROME_CDP_NO_USERNS_CHECK", "1");
+        assert_eq!(userns_check(&skip, &binary), UsernsCheck::Skipped);
         let mac = Host::fake(Os::MacOs, Arch::Aarch64, Path::new("/"));
         assert_eq!(userns_check(&mac, &binary), UsernsCheck::NotRestricted);
 

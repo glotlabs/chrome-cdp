@@ -72,8 +72,15 @@ blocks the sandbox for any binary that has no AppArmor profile granting
 from `chrome-cdp install` fail with "No usable sandbox!". chrome-cdp checks for
 this before it launches one and says to run `chrome-cdp install --with-deps`.
 That command writes `/etc/apparmor.d/chrome-cdp` (with sudo, after asking)
-and loads it with `apparmor_parser -r`. It never falls back to `--no-sandbox`
-by itself.
+and loads it with `apparmor_parser -r`. It covers the browsers in
+`~/.cache/chrome-cdp` of every user, for x86_64 and arm64. A cache elsewhere
+(`CHROME_CDP_CACHE`, `XDG_CACHE_HOME`) gets its own `chrome-cdp-<hash>`
+profile for its path. chrome-cdp never falls back to `--no-sandbox` by
+itself.
+
+If the check misjudges your machine (it reads the profiles in
+`/etc/apparmor.d`), `CHROME_CDP_NO_USERNS_CHECK=1` turns it off. Chrome
+then reports the problem itself, with the same hint.
 
 ## Profiles
 

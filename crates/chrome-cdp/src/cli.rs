@@ -167,8 +167,9 @@ pub(crate) struct InstallArgs {
     #[arg(long)]
     pub(crate) force: bool,
 
-    /// Linux: also install the system libraries Chrome needs, with sudo
-    /// apt-get or dnf (asks first on a terminal).
+    /// Linux: also install the system libraries Chrome needs (sudo apt-get
+    /// or dnf) and, on Ubuntu 23.10+, the AppArmor profile its sandbox
+    /// needs. Asks first on a terminal.
     #[arg(long)]
     pub(crate) with_deps: bool,
 

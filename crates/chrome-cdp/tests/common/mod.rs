@@ -32,6 +32,8 @@ pub fn empty_config_home() -> PathBuf {
 
 /// The binary with a clean `CHROME_CDP_*` environment and no config files
 /// (an empty user config dir; run from the temp dir, away from the repo).
+/// The AppArmor userns check is off, so output does not depend on whether
+/// the machine has Ubuntu's rule; tests of the check remove the variable.
 pub fn cli() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_chrome-cdp"));
     for (key, _) in std::env::vars_os() {
@@ -40,6 +42,7 @@ pub fn cli() -> Command {
         }
     }
     cmd.env("XDG_CONFIG_HOME", empty_config_home())
+        .env("CHROME_CDP_NO_USERNS_CHECK", "1")
         .env_remove("NO_COLOR")
         .current_dir(std::env::temp_dir())
         .stdin(Stdio::null());

@@ -27,9 +27,17 @@ for the smaller headless-only build, `--force` to download again, and `--list`
 for what is installed and available. `chrome-cdp uninstall <id>` removes one.
 On Linux it checks that the browser starts; if system libraries are missing it
 prints the `apt-get`/`dnf` line, and `--with-deps` runs it (with sudo, asking
-first). `--auto-install` (or `CHROME_CDP_AUTO_INSTALL=1`) installs Chrome when
-none is found. `CHROME_CDP_CFT_URL` points at a mirror of the Chrome for
-Testing index.
+first). On Ubuntu 23.10+, `--with-deps` also writes the AppArmor profile that
+Chrome's sandbox needs there. `--auto-install` (or `CHROME_CDP_AUTO_INSTALL=1`)
+installs Chrome when none is found. `CHROME_CDP_CFT_URL` points at a mirror of
+the Chrome for Testing index.
+
+Chrome runs headless with its sandbox on and a temporary profile that is
+deleted afterwards. `--headed` opens a window, `--profile <name>` keeps
+logins between runs, `--user-data-dir <path>` picks the directory, and
+`--chrome-arg=<flag>` adds a Chrome flag. Nothing outlives chrome-cdp, even
+`kill -9`. [docs/chrome-flags.md](docs/chrome-flags.md) lists the flags and
+explains the sandbox and profile rules.
 
 Every command prints its result on stdout and notes and errors on stderr,
 takes `--json` (one `{"ok":…}` object) and `-q`, and exits 0 ok, 1 action
