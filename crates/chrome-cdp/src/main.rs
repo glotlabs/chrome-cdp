@@ -246,9 +246,8 @@ fn usage_info(e: &clap::Error) -> ErrorInfo {
     let command = rendered
         .lines()
         .find_map(|l| l.strip_prefix("Usage: "))
-        .map(command_path)
         // An invalid value's error shows no usage.
-        .unwrap_or_else(typed_command);
+        .map_or_else(typed_command, command_path);
     let missing = [
         ClapErrorKind::DisplayHelpOnMissingArgumentOrSubcommand,
         ClapErrorKind::MissingSubcommand,
