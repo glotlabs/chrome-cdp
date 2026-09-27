@@ -9,7 +9,9 @@ and errors that say what to run next.
 `sessions`, `close`), tabs (`tabs`, `tab`), navigation (`goto`, `back`,
 `forward`, `reload`), `wait`, `snapshot`, reading the page (`find`, `text`,
 `html`, `attr`, `value`, `count`, `box`, `markdown`), the mouse (`click`,
-`dblclick`, `hover`, `tap`, `drag`, `scroll`, `mouse`), dialogs (`dialog`),
+`dblclick`, `hover`, `tap`, `drag`, `scroll`, `mouse`), the keyboard and
+forms (`press`, `type`, `fill`, `select`, `check`, `uncheck`, `focus`,
+`blur`), dialogs (`dialog`),
 `downloads`, raw CDP calls, `install`/`uninstall` and `schema` work so far:
 
 ```sh
@@ -19,6 +21,8 @@ chrome-cdp goto example.com/about     # → 200 https://example.com/about "About
 chrome-cdp snapshot -i                # what can be acted on, with refs: button "Save" [e6]
 chrome-cdp find checkout              # - button "Checkout" [e6] (in form "Cart")
 chrome-cdp click e6                   # clicked e6 button "Checkout"
+chrome-cdp fill e9 'ada@example.com'  # filled e9 textbox "Email"
+chrome-cdp press Enter                # pressed Enter in e9 textbox "Email"
 chrome-cdp markdown                   # the article, as Markdown
 chrome-cdp wait --text 'Welcome back'  # instead of sleep
 chrome-cdp back
@@ -166,6 +170,19 @@ top|bottom|x,y` turns the wheel over the element or the page (infinite
 scroll loads more) and prints where it is and which end it reached; `scroll
 <loc>` alone scrolls it into view. `mouse move|down|up|wheel` sends raw
 events at viewport points; a press is held across commands.
+
+Typing: `fill <loc> <text>` is the fast path: it waits until the field is
+visible, enabled and editable, selects what it holds and inserts the text
+as one trusted edit, so React, Vue and Svelte state follows (`""` clears;
+date, time, colour and range inputs get their value set). `type <text>
+[--in loc] [--delay 50ms]` presses a key per character instead (every key
+listener runs; emoji and CJK are inserted as an input method does).
+`press <keys> [--in loc]` sends keys and chords where focus is: `Enter`,
+`Shift+Tab`, `"Control+A Backspace"`; `Mod` is Meta when the browser runs
+on macOS and Control elsewhere (also in `click --modifiers`). `select <loc>
+<value|label>...` picks a `<select>`'s options, `check`/`uncheck <loc>`
+click a checkbox, radio or switch only when needed (a hidden input through
+its label) and make sure it changed, and `focus`/`blur <loc>` move focus.
 
 JavaScript dialogs never hang a command. By default an `alert` and a
 `beforeunload` ("leave the page?") are accepted and mentioned in the output;

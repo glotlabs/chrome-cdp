@@ -1,6 +1,6 @@
 # Plan 05 — Interaction & actionability
 
-Status: IN PROGRESS (5.1-5.2 done)
+Status: IN PROGRESS (5.1-5.3 done)
 Depends on: 04
 
 ## Goal
@@ -139,7 +139,7 @@ right-click handlers.
 
 - [ ] Every fixture interaction passes 50 consecutive runs on each CI runner
       (flakiness gate).
-- [ ] `fill` on the React, Vue and Svelte fixture inputs updates framework
+- [x] `fill` on the React, Vue and Svelte fixture inputs updates framework
       state.
 - [ ] The obscured-element error always includes the obstructing ref.
 - [ ] `press Mod+A` behaves correctly on both macOS and Linux runners.
@@ -167,3 +167,13 @@ _(append here)_
 - 5.2: `scroll` reports on the container a wheel over the element scrolls first (the element or its nearest scrollable ancestor, else the page). Without a locator the wheel turns in the middle of the viewport. `--by` is one wheel event; `--to` sends wheels until it gets there, stops moving, or after 10 wheels. After each wheel it waits in the page until the offset moved and held for two frames, or did not move for 10 frames. `scroll <loc>` alone scrolls the element into view (the pipeline does that when it aims).
 - 5.2: `tap` needs touch emulation (`navigator.maxTouchPoints > 0`), else it fails with `BadArgs` and hints at `click`, or at `cdp --target page Emulation.setTouchEmulationEnabled` until plan 07's `emulate` exists. It sends a touch start and end; the browser makes the click, which a cancelled `touchend` stops.
 - 5.2: Fixture logs sit below the elements they log for: a log that grows above a button moves it between a touch and the click the browser makes of it, which looked like taps not clicking in headless Chrome.
+- 5.3: The key table is generated from playwright-core 1.64's bundled `usKeyboardLayout` and `macEditingCommands` by `bench/playwright/gen-keys.cjs` into `engine/src/input/keys/table.rs` (credited in `NOTICE`). Keys are named by code, by the character they type, or by name; multi-letter names also match in any case, with synonyms agents type (`Esc`, `Ctrl`, `Cmd`, `Up`, `PgDn`). Unlike Playwright, Shift with a character key types its shifted character (`Shift+1` is `!`), and a shifted numpad key sends its shifted key code.
+- 5.3: `Mod` is resolved by the browser's user agent (`Browser.getVersion`, "Macintosh"), asked once per browser, not by the page's `navigator.platform` (emulation can change that; the editing behaviour follows the real OS). `click --modifiers Mod` resolves it the same way. On macOS every key down carries Playwright's whole editing-command table (not only selectAll, copy and paste; synthetic Backspace and arrows need theirs too); elsewhere none are sent, so `Control+V` does not paste twice. Only verified on Linux: no macOS runner here.
+- 5.3: `press` and `type` take `--in <loc>`: the pipeline (enabled; editable for `type`) without the hit test, then `DOM.focus`, which works in out-of-process iframes where a page's `focus()` may not. An element that cannot take focus fails (`NotEnabled`) instead of sending keys elsewhere. Without `--in`, keys go where focus is and the output names that element (its `<iframe>` when focus is in one).
+- 5.3: `type` presses a key for each character the layout has and inserts runs of the others with one `Input.insertText` (an emoji sequence stays whole); with `--delay` each character is its own event. `type --in` on an element it had to focus puts the caret at the end, as a click after the text would. A `--delay` whose total outlasts the timeout fails at once (`BadArgs`, with a `--timeout` that fits).
+- 5.3: Keyboard and form actions skip the hit test (`Checks::no_hit_test`), as Playwright's `fill` does: a floating label over a field does not stop typing into it. `check` keeps it (it clicks), and the hit test now counts a hit on a `<label>` of the element as reaching it (Playwright's follow-label).
+- 5.3: `fill` focuses, selects the content (`select()`, or a Range for contenteditable) and inserts the text; `""` presses Delete on the selection. Step 4 needs no code: the browser fires `change` on blur after a trusted edit (tested). Date, time, datetime-local, month, week, colour and range inputs get their value set with synthetic `input` and `change`; a value they refuse fails with `BadArgs` and an example to fill. When the field holds something else afterwards (a mask, `maxlength`), a warning says what (only the length for passwords, whose value `--json` leaves out).
+- 5.3: `select` matches each value by option value, then label, then label in any case, and waits until they match (options may load late); a disabled option is waited for, then `NotEnabled`. It sets the options and fires `input` and `change` like Playwright. A non-`<select>` fails with `NotEnabled` (as 5.1's "cannot take text" does); for a combobox or listbox the hint clicks it, then its option.
+- 5.3: `check`/`uncheck` read the state (native, `aria-checked`, or the control of a `<label>` locator), do nothing and say so when it already is, and refuse to uncheck a radio (`BadArgs`). A native input that is visually hidden (transparent, clipped or at most 1px, as with `.sr-only`) is clicked through its first visible label, which gets a ref; that settles 5.1's opacity exception without relaxing the visible check. After the click the state must change within 1 s (frameworks render late), else `NotEnabled` ("did not check it", and "it is disabled" when so).
+- 5.3: `focus` and `blur` run the pipeline without the enabled check and the hit test. `blur` on an element without focus is a no-op that says so.
+- 5.3: The framework fixture (`testdata/site/actions/frameworks.html`) uses vendored builds (`actions/vendor/`): React 18.3.1 (the last with UMD builds), Vue 3.5.43, and a Svelte 5.57.1 component compiled and bundled with esbuild; `fill`, `check` and `select` update their state.
