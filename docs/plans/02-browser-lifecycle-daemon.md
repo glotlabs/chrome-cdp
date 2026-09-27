@@ -1,6 +1,6 @@
 # Plan 02 — Browser lifecycle & daemon
 
-Status: IN PROGRESS (2.1 done)
+Status: IN PROGRESS (2.1-2.2 done)
 Depends on: 01
 
 ## Goal
@@ -175,3 +175,20 @@ _(append here)_
 - 2.1: `status` does not exist yet, so the choice and its reason (`Source::describe`) are logged at `-v` by `__direct cdp`. `Chrome` and `Source` are `Serialize` for milestone 2.4's `meta.json` and `status`.
 - 2.1: `--auto-install` / `CHROME_CDP_AUTO_INSTALL` and the "run `chrome-cdp install`" hint wait for milestone 2.2: a hint naming a command that does not exist would mislead. The not-found hint says to install Chrome or Chromium, pass `--chrome`, or set `CHROME_CDP_CHROME`, and lists every place searched (`searched:` note, `details.searched`).
 - 2.1: The golden case `direct-no-chrome-given` depended on what the machine has installed, so it became `direct-chrome-env-missing`. The not-found output is checked by a unit test and by a CLI test that skips on machines with a system Chrome. The test fake Chrome now answers `--version`.
+- 2.2: Chrome for Testing has published linux-arm64 builds since Chrome 153, so the plan's "no linux-arm64 build" is out of date. Linux arm64 maps to `linux-arm64`. The distro Chromium hint (apt/dnf/apk/pacman/zypper, and snap on Ubuntu) now covers only machines with no build at all and `--version`s with no build for this platform.
+- 2.2: Full Chrome and headless shell of one version share `browsers/<channel>-<version>-<platform>/`, as the zips unpack and as 2.3's AppArmor glob expects. Each product is unpacked in `browsers/.staging-*` and moved in with one `rename`, then the marker is written. A crash leaves only a staging dir, which the next install removes.
+- 2.2: `--version` takes a full version or a prefix of whole parts (`154` picks the newest 154.x with a build for this platform) from `known-good-versions-with-downloads.json`. The install is labelled with the channel that version is current on, else `pinned`, which discovery ranks after canary. `--channel` and `--version` conflict.
+- 2.2: The lock is std's `File::lock` on `<cache>/install.lock` (stable since Rust 1.89; MSRV is 1.98), not `fs4`. `uninstall` takes it too. A waiting install prints a line on a terminal.
+- 2.2: The download is checked against `Content-Length`, and the zip crate checks each entry's CRC-32 as it reads. The index has no hashes. GCS's `x-goog-hash` MD5 would need another crate, so it is not checked.
+- 2.2: HTTP is reqwest 0.13 with `rustls-no-provider` plus rustls's ring provider (aws-lc-rs needs cmake), and rustls-platform-verifier, so system and corporate CAs work. cargo-deny passes. The release binary grew from 2.0 MB to 4.5 MB.
+- 2.2: `--timeout` bounds connecting and each wait for data, not the whole download. A stall is a `Timeout` error (exit 3).
+- 2.2: New error kind `InstallFailed` (exit 4) for failed downloads and unpacking. An unknown `--version` or uninstall id is `BadArgs`. On Linux, an install that cannot start (`--version` fails) is `LaunchFailed`, with the missing libraries from `ldd` and the `apt-get`/`dnf` line. The install stays, so rerunning with `--with-deps` skips the download.
+- 2.2: `--with-deps` asks on a terminal. Without one, it runs only as root or with passwordless sudo (CI); otherwise it fails with the line to run. The package manager's output goes to stderr. The library table covers Debian/Ubuntu (with `t64` names from Ubuntu 24.04 and Debian 13) and Fedora/RHEL. Writing the AppArmor profile is milestone 2.3's part of `--with-deps`.
+- 2.2: Offline, `install` keeps an installed build of the channel and warns; `--list` shows the installs and warns.
+- 2.2: `CHROME_CDP_CFT_URL` replaces the index URL, for mirrors. Tests point it at a fake server in `browser::testing` (feature `test-support`), which serves script "browsers" that answer `--version`.
+- 2.2: `--auto-install` / `CHROME_CDP_AUTO_INSTALL` is on `__direct cdp` for now, through `install::find_chrome`, which 2.4's `open` should call. The not-found hint is now `chrome-cdp install`, or the distro package where there is no build.
+- 2.2: Installing a newer version leaves older installs of the channel in place, with a warning that names the `uninstall` command. There is no automatic cleanup.
+- 2.2: The quarantine walk uses the `xattr` crate. It builds on every unix and is tested on Linux with a `user.*` attribute. It has not run on a Mac yet; the nightly job covers that.
+- 2.2: `install` prints one line ending in the binary's path, and `-q` prints just the path. `--list` prints one line per install (a table would cut the path) and a table of channels. The output checklist counts `install` and `uninstall` as fixed-size.
+- 2.2: `.github/workflows/nightly.yml` installs both products on all four runners and runs them. Its launch step is `continue-on-error` until 2.3 deals with Ubuntu's AppArmor sandbox rule. 2.3's profile glob must also cover `chrome-linux-arm64/chrome` and `chrome-headless-shell-linux-arm64/chrome-headless-shell`.
+- 2.2: No acceptance box is ticked. The fresh-VM check needs 2.4's `open`, the timings are deferred (benchmarks run after all plans), and orphan checks come with launch.
