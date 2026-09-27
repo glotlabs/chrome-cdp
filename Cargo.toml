@@ -30,6 +30,7 @@ hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
 libc = "0.2"
 proptest = "1"
 # HTTPS for `chrome-cdp install`: rustls with ring, never OpenSSL (overview §3).
+regex = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }

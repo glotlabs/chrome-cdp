@@ -18,7 +18,9 @@
 mod endpoint;
 mod errors;
 mod frames;
+mod locator;
 mod navigate;
+mod pattern;
 mod raw;
 mod request;
 mod tabs;
@@ -39,6 +41,7 @@ use tokio::sync::Notify;
 pub use endpoint::{Endpoint, parse_endpoint};
 pub use errors::from_cdp;
 pub use frames::{FrameInfo, WORLD_NAME, World};
+pub use locator::{Locator, parse_locator};
 pub use navigate::normalize_url;
 pub use request::{
     CdpRequest, ConnectRequest, NavigateRequest, Navigation, OpenRequest, TabCloseRequest,
