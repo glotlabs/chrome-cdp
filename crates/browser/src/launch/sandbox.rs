@@ -15,6 +15,11 @@ use crate::host::{Host, NO_USERNS_CHECK_ENV, Os};
 use crate::installed::cache_dir;
 use crate::launch::{apparmor, sys};
 
+/// Whether chrome-cdp runs as root.
+pub fn running_as_root() -> bool {
+    sys::euid() == 0
+}
+
 /// The sysctl behind Ubuntu's rule.
 const RESTRICT_SYSCTL: &str = "/proc/sys/kernel/apparmor_restrict_unprivileged_userns";
 
@@ -43,7 +48,7 @@ pub(crate) struct SandboxEnv {
 impl SandboxEnv {
     /// This machine. Only probes user namespaces inside a container.
     pub(crate) fn detect(host: &Host) -> Self {
-        let root = sys::euid() == 0;
+        let root = running_as_root();
         let container = container_marker(host);
         let userns = if container.is_some() && !root && host.os == Os::Linux {
             userns_available(host)

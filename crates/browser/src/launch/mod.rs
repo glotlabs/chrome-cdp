@@ -30,7 +30,7 @@ use tokio::process::Child;
 use tokio::time::timeout;
 
 pub use profile::{ProfileChoice, data_dir, named_profile_dir};
-pub use sandbox::{AppArmorProfile, UsernsCheck, apparmor_profile, userns_check};
+pub use sandbox::{AppArmorProfile, UsernsCheck, apparmor_profile, running_as_root, userns_check};
 pub use stderr::LOG_LIMIT;
 
 use crate::discover::Chrome;

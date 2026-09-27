@@ -297,7 +297,7 @@ fn run_fix(fix: &DepsFix) -> Result<(), ErrorInfo> {
 /// (`why`) and asking on a terminal. Without one, they run only if sudo
 /// needs no password (CI).
 fn run_privileged(why: &str, commands: &[Vec<String>]) -> Result<(), ErrorInfo> {
-    let root = is_root();
+    let root = launch::running_as_root();
     let argvs: Vec<Vec<String>> = commands
         .iter()
         .map(|c| {
@@ -361,13 +361,6 @@ fn run_privileged(why: &str, commands: &[Vec<String>]) -> Result<(), ErrorInfo> 
         }
     }
     Ok(())
-}
-
-fn is_root() -> bool {
-    Command::new("id")
-        .arg("-u")
-        .output()
-        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim() == "0")
 }
 
 fn passwordless_sudo() -> bool {
