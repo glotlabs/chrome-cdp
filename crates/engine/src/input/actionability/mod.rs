@@ -51,7 +51,7 @@ use crate::snapshot::{FrameSource, NodeKey, Target};
 use crate::tabs::{FrameContext, Page};
 use crate::{Engine, Running};
 
-use geometry::{bounds, centre, is_below, local_root, origin, out_of_view, pick};
+use geometry::{bounds, centre, is_below, local_root, offset, origin, out_of_view, pick};
 
 mod geometry;
 mod report;
@@ -70,7 +70,7 @@ const GROUP: &str = "chrome-cdp-aim";
 
 /// What an action needs of its element besides being there, visible,
 /// stable, in view and not covered.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct Checks {
     /// Not disabled (click, check, select; not hover).
     #[serde(default)]
@@ -82,6 +82,10 @@ pub struct Checks {
     /// element into view and aim at it.
     #[serde(default)]
     pub force: bool,
+    /// `--position dx,dy`: aim this far from the top-left corner of the
+    /// element's box instead of at the centre of its visible part.
+    #[serde(default)]
+    pub position: Option<(f64, f64)>,
 }
 
 /// Where an action acts on its element: a point in the tab's viewport, in
@@ -221,7 +225,10 @@ impl Engine {
         self.check_not_blocked(&running, &page)?;
         let mark = running.tabs.mark();
         let _tab = self.tabs.lock(&page.target_id).await;
-        let work = self.actionable(&running, &page, &locator, options, checks, None, timeout);
+        let deadline = Instant::now() + timeout;
+        let work = self.actionable(
+            &running, &page, &locator, options, checks, None, timeout, deadline,
+        );
         let ready = Box::pin(self.unless_blocked(&running, &page, mark, work)).await?;
         let point = ActionPoint {
             x: ready.x,
@@ -235,7 +242,9 @@ impl Engine {
     /// The actionability pipeline (see the module docs): the element
     /// `locator` matches in `page`, once it passes `checks`, and the point
     /// to act at. `retry` gives the action's command with another locator,
-    /// for hints. Call it holding the tab's lock.
+    /// for hints. It gives up at `deadline`; errors say it waited
+    /// `timeout` (the action's, which may have begun earlier). Call it
+    /// holding the tab's lock.
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn actionable(
         &self,
@@ -246,8 +255,8 @@ impl Engine {
         checks: Checks,
         retry: Option<&(dyn Fn(&str) -> Cmd + Sync)>,
         timeout: Duration,
+        deadline: Instant,
     ) -> Result<Actionable, ErrorInfo> {
-        let deadline = Instant::now() + timeout;
         let mut delays = RETRY_DELAYS.iter().copied();
         let mut last = None;
         let failure = loop {
@@ -373,14 +382,20 @@ impl Engine {
         let viewport = self.viewport(running, page, &root, timeout).await?;
         // The element's box, to scroll into view in each parent frame.
         let mut bounds = quads.first().map(|q| bounds(q)).unwrap_or_default();
-        let (mut x, mut y) = match pick(&quads, viewport) {
-            Some(point) => point,
-            None if checks.force && !quads.is_empty() => centre(&quads[0]),
-            None => {
-                return Err(Attempt::Retry(Failure::OutOfView {
-                    why: out_of_view(&quads, viewport),
-                }));
-            }
+        let picked = match checks.position {
+            Some(position) => offset(&quads, position, viewport),
+            None => pick(&quads, viewport).ok_or_else(|| out_of_view(&quads, viewport)),
+        };
+        let (mut x, mut y) = match picked {
+            Ok(point) => point,
+            Err(_) if checks.force && !quads.is_empty() => match checks.position {
+                Some((dx, dy)) => {
+                    let [left, top, ..] = geometry::bounds(&quads[0]);
+                    (left + dx, top + dy)
+                }
+                None => centre(&quads[0]),
+            },
+            Err(why) => return Err(Attempt::Retry(Failure::OutOfView { why })),
         };
         if !checks.force {
             let aim = Aim {

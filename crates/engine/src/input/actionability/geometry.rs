@@ -63,6 +63,30 @@ pub(super) fn pick(quads: &[dom::Quad], viewport: Viewport) -> Option<(f64, f64)
     })
 }
 
+/// `--position dx,dy`: the point that far from the top-left corner of the
+/// first quad's bounding box, if it is in the viewport; else why not.
+pub(super) fn offset(
+    quads: &[dom::Quad],
+    (dx, dy): (f64, f64),
+    viewport: Viewport,
+) -> Result<(f64, f64), String> {
+    let Some(quad) = quads.iter().find(|q| q.len() == 8) else {
+        return Err("it has no box".to_owned());
+    };
+    let [left, top, ..] = bounds(quad);
+    let (x, y) = (left + dx, top + dy);
+    if x < 0.0 || y < 0.0 || x >= viewport.width || y >= viewport.height {
+        return Err(format!(
+            "the point at {dx},{dy} in it is at x={} y={}, the viewport is {}x{}",
+            x.round(),
+            y.round(),
+            viewport.width.round(),
+            viewport.height.round()
+        ));
+    }
+    Ok((x, y))
+}
+
 /// The area of a quad (four points, clockwise or not).
 fn area(quad: &[f64]) -> f64 {
     let mut sum = 0.0;
@@ -149,6 +173,19 @@ mod tests {
             "its box is at x=50 y=925, the viewport is 800x600"
         );
         assert_eq!(out_of_view(&[], VIEWPORT), "it has no box");
+    }
+
+    #[test]
+    fn positions_count_from_the_top_left_corner() {
+        let quad = vec![10.0, 20.0, 110.0, 20.0, 110.0, 60.0, 10.0, 60.0];
+        assert_eq!(
+            offset(std::slice::from_ref(&quad), (5.0, 6.0), VIEWPORT),
+            Ok((15.0, 26.0))
+        );
+        assert_eq!(
+            offset(&[quad], (0.0, 590.0), VIEWPORT),
+            Err("the point at 0,590 in it is at x=10 y=610, the viewport is 800x600".to_owned())
+        );
     }
 
     #[test]
