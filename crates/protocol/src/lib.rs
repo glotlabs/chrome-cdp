@@ -7,9 +7,10 @@
 //!   renderer for text, `-q` and the `--json` [`Envelope`];
 //! - [`bound`]: how text and JSON output stay within a budget;
 //! - [`format`]: durations, sizes and shell quoting for text output;
-//! - [`schema`]: each command's `data` type and its JSON Schema.
+//! - [`schema`]: each command's `data` type and its JSON Schema;
+//! - [`rpc`]: the line-delimited JSON-RPC 2.0 envelope between the CLI and
+//!   the session daemon (plan 02).
 //!
-//! The RPC request and response types join them with the daemon (plan 02).
 //! It has no I/O so both the CLI and the daemon can depend on it cheaply.
 
 pub mod bound;
@@ -17,6 +18,7 @@ mod error;
 pub mod format;
 mod hint;
 mod output;
+pub mod rpc;
 pub mod schema;
 mod style;
 
