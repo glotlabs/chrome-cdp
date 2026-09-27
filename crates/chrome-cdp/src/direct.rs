@@ -1,70 +1,41 @@
 //! `chrome-cdp __direct cdp`: a temporary, daemon-less raw CDP call
 //! (plan 01, milestone 1.4).
 //!
-//! It launches Chrome over `--remote-debugging-pipe` with a throwaway
-//! profile, makes one call, prints the result, and closes Chrome. Chrome is
-//! found by `browser::discover` (milestone 2.1), and with `--auto-install`
-//! installed first if there is none (2.2). Plan 02 replaces this with
-//! the daemon-backed `chrome-cdp cdp` and moves the launch flags into the
-//! `browser` crate; delete this module then.
+//! It launches Chrome with `browser::launch` (milestone 2.3) and a
+//! temporary profile unless `--profile`/`--user-data-dir` say otherwise,
+//! makes one call, prints the result, and closes Chrome. Chrome is found by
+//! `browser::discover` (2.1), and with `--auto-install` installed first if
+//! there is none (2.2). Plan 02's daemon-backed `chrome-cdp cdp` replaces
+//! this; delete this module then.
 
-use std::collections::VecDeque;
-use std::io;
-use std::path::Path;
-use std::process::Stdio;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-
-use cdp::domains::{browser, target};
-use cdp::transport::PipeTransport;
-use cdp::{CdpError, Connection, ConnectionOptions};
-use protocol::{Cmd, ErrorInfo, ErrorKind, Output, format};
-use serde_json::{Map, Value, json};
-use tempfile::TempDir;
-use tokio::io::{AsyncBufReadExt as _, BufReader};
-use tokio::process::{Child, ChildStderr, Command};
-use tokio::task::JoinHandle;
-use tokio::time::timeout;
+use browser::Host;
+use cdp::domains::target;
+use cdp::{CdpError, Connection};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Output};
+use serde_json::{Map, Value};
+use tokio::signal::unix::{Signal, SignalKind, signal};
 
 use crate::cli::{DirectCdpArgs, GlobalArgs, Target};
 use crate::{errors, input};
-
-/// A minimal flag set for a headless, quiet, isolated Chrome. Plan 02 owns
-/// the real list.
-const CHROME_FLAGS: &[&str] = &[
-    "--headless",
-    "--remote-debugging-pipe",
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--disable-background-networking",
-    "--disable-component-update",
-    "--disable-default-apps",
-    "--disable-dev-shm-usage",
-    "--disable-sync",
-    "--password-store=basic",
-    "--use-mock-keychain",
-];
-
-/// How long to wait for Chrome to exit after `Browser.close`.
-const EXIT_GRACE: Duration = Duration::from_secs(5);
-
-/// Chrome stderr lines kept for launch-failure messages.
-const STDERR_TAIL: usize = 20;
 
 /// Runs `__direct cdp`.
 pub(crate) fn cdp(args: &DirectCdpArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     // Check everything that needs no browser before starting one.
     check_method(&args.method)?;
     let params = parse_params(args.params.as_deref())?;
-    let found =
-        crate::install::find_chrome(args.chrome.as_deref(), args.auto_install, global.timeout)?;
+    let launch = &args.launch;
+    let found = crate::install::find_chrome(
+        launch.chrome.as_deref(),
+        launch.auto_install,
+        global.timeout,
+    )?;
     tracing::info!(
         chrome = %found.path.display(),
         version = found.version.as_ref().map(ToString::to_string),
         "using Chrome {}",
         found.source.describe()
     );
-    let chrome = found.path;
+    let options = launch.options(global.timeout);
 
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -75,28 +46,85 @@ pub(crate) fn cdp(args: &DirectCdpArgs, global: &GlobalArgs) -> Result<Output, E
                 format!("cannot start the runtime: {e}"),
             )
         })?;
-    let value = runtime
-        .block_on(async {
-            let chrome = Chrome::launch(&chrome, global.timeout).await?;
-            let result = call(&chrome.conn, args, params).await;
+    let outcome = runtime.block_on(async {
+        let mut signals = Signals::register();
+        let work = async {
+            let chrome = browser::launch(&found, &options, &Host::current()).await?;
+            let result = call(chrome.connection(), args, params).await;
+            let warnings = chrome.warnings.clone();
             chrome.close().await;
-            result
-        })
-        // An error has no warnings, so a warning such as "Chrome is too old"
-        // becomes a note: it may be the reason.
-        .map_err(|info| {
-            found
-                .warnings
-                .iter()
-                .fold(info, |info, w| info.note("warning", w))
-        })?;
+            result.map(|value| (value, warnings))
+        };
+        // A signal drops `work`, and with it the `Launched`, which kills
+        // Chrome and deletes the temporary profile.
+        tokio::select! {
+            result = work => Ok(result),
+            signal = signals.recv() => Err(signal),
+        }
+    });
+    drop(runtime);
+    let (value, launch_warnings) = match outcome {
+        Ok(result) => result,
+        Err((name, code)) => {
+            crate::output::stderr(&format!("error: interrupted by {name}; Chrome was closed\n"));
+            std::process::exit(code);
+        }
+    }
+    // An error has no warnings, so a warning such as "Chrome is too old"
+    // becomes a note: it may be the reason.
+    .map_err(|info| {
+        found
+            .warnings
+            .iter()
+            .fold(info, |info, w| info.note("warning", w))
+    })?;
 
     let pretty = serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string());
     let compact = value.to_string();
     let output = Output::new(value, pretty)
         .quiet(compact)
         .limit(args.max_chars, "--max-chars 0 for all of it");
-    Ok(found.warnings.into_iter().fold(output, Output::warning))
+    Ok(found
+        .warnings
+        .into_iter()
+        .chain(launch_warnings)
+        .fold(output, Output::warning))
+}
+
+/// SIGINT, SIGTERM and SIGHUP, registered before Chrome starts so none is
+/// missed.
+struct Signals(Vec<(Signal, &'static str, i32)>);
+
+impl Signals {
+    fn register() -> Self {
+        let kinds = [
+            (SignalKind::interrupt(), "SIGINT", 130),
+            (SignalKind::terminate(), "SIGTERM", 143),
+            (SignalKind::hangup(), "SIGHUP", 129),
+        ];
+        let mut streams = Vec::new();
+        for (kind, name, code) in kinds {
+            match signal(kind) {
+                Ok(stream) => streams.push((stream, name, code)),
+                Err(e) => tracing::warn!("cannot handle {name}: {e}"),
+            }
+        }
+        Self(streams)
+    }
+
+    /// Waits for one; returns its name and the shell's exit code for it
+    /// (128 + its number).
+    async fn recv(&mut self) -> (&'static str, i32) {
+        std::future::poll_fn(|cx| {
+            for (stream, name, code) in &mut self.0 {
+                if stream.poll_recv(cx).is_ready() {
+                    return std::task::Poll::Ready((*name, *code));
+                }
+            }
+            std::task::Poll::Pending
+        })
+        .await
+    }
 }
 
 fn bad_args(message: impl Into<String>) -> ErrorInfo {
@@ -198,212 +226,12 @@ async fn call(
         })
 }
 
-/// A Chrome launched for one call.
-struct Chrome {
-    conn: Connection,
-    child: Child,
-    profile: TempDir,
-    stderr: StderrTail,
-}
-
-impl Chrome {
-    /// Starts Chrome and waits until it answers `Browser.getVersion`.
-    async fn launch(path: &Path, call_timeout: Duration) -> Result<Self, ErrorInfo> {
-        let launch_failed = |message: String| ErrorInfo::new(ErrorKind::LaunchFailed, message);
-        let profile = tempfile::Builder::new()
-            .prefix("chrome-cdp-profile-")
-            .tempdir()
-            .map_err(|e| launch_failed(format!("cannot create a profile directory: {e}")))?;
-
-        let mut cmd = Command::new(path);
-        cmd.args(CHROME_FLAGS)
-            .arg(format!("--user-data-dir={}", profile.path().display()))
-            .arg("about:blank")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        let (transport, mut child) = PipeTransport::spawn(cmd).map_err(|e| {
-            let info = launch_failed(format!("cannot start {}: {e}", path.display()));
-            match e.kind() {
-                io::ErrorKind::PermissionDenied => info.hint(format!(
-                    "make it executable: chmod +x {}",
-                    format::shell_quote(&path.to_string_lossy())
-                )),
-                _ => info.hint("check that --chrome points at a Chrome or Chromium binary"),
-            }
-        })?;
-        tracing::debug!(chrome = %path.display(), pid = child.id(), "launched Chrome");
-        let stderr = StderrTail::start(child.stderr.take());
-        let conn = Connection::with_options(
-            transport,
-            ConnectionOptions {
-                call_timeout,
-                ..ConnectionOptions::default()
-            },
-        );
-        let chrome = Self {
-            conn,
-            child,
-            profile,
-            stderr,
-        };
-
-        match chrome
-            .conn
-            .browser()
-            .call(browser::GetVersionParams::default())
-            .await
-        {
-            Ok(version) => {
-                tracing::info!(product = %version.product, "connected to Chrome");
-                Ok(chrome)
-            }
-            Err(e) => Err(chrome.startup_failure(&e).await),
-        }
-    }
-
-    /// Explains why Chrome did not answer its first call, using the tail of
-    /// its stderr, and cleans up.
-    async fn startup_failure(mut self, err: &CdpError) -> ErrorInfo {
-        let exited = matches!(err, CdpError::Disconnected { .. });
-        if !exited {
-            let _ = self.child.start_kill();
-        }
-        // Let Chrome finish exiting and its stderr drain.
-        let _ = timeout(EXIT_GRACE, self.child.wait()).await;
-        let lines = self.stderr.finish().await;
-        let last = lines.iter().rev().find_map(|l| chrome_message(l));
-
-        let mut info = if exited {
-            let mut message = "Chrome exited during startup".to_owned();
-            if let Some(last) = last {
-                message.push_str(": ");
-                message.push_str(last);
-            }
-            ErrorInfo::new(ErrorKind::LaunchFailed, message)
-        } else if let CdpError::Timeout { after, .. } = err {
-            // Name the wait, not the internal handshake call.
-            let mut info = errors::from_cdp(err);
-            info.message = format!(
-                "Chrome started but did not answer within {}",
-                format::duration(*after)
-            );
-            info
-        } else {
-            errors::from_cdp(err)
-        };
-        if lines.iter().any(|l| l.contains("No usable sandbox")) {
-            info = info.hint(
-                "the kernel blocks Chrome's sandbox for this binary; allow it with an AppArmor \
-                 profile granting `userns` (see /etc/apparmor.d/), or use a system Chrome",
-            );
-        } else if exited {
-            info = info.hint("run the command again with -vv to see Chrome's output");
-        }
-        self.cleanup().await;
-        info.details(json!({ "chrome_stderr": lines }))
-    }
-
-    /// Asks Chrome to exit, waits for it (killing it if it hangs), and deletes
-    /// the profile.
-    async fn close(self) {
-        let _ = timeout(
-            EXIT_GRACE,
-            self.conn.browser().call(browser::CloseParams::default()),
-        )
-        .await;
-        self.cleanup().await;
-    }
-
-    async fn cleanup(self) {
-        let Self {
-            conn,
-            mut child,
-            profile,
-            mut stderr,
-        } = self;
-        // Closing the pipe also makes Chrome exit.
-        drop(conn);
-        if timeout(EXIT_GRACE, child.wait()).await.is_err() {
-            tracing::warn!("Chrome did not exit; killing it");
-            let _ = child.kill().await;
-        }
-        stderr.finish().await;
-        let dir = profile.path().to_owned();
-        if let Err(e) = profile.close() {
-            tracing::warn!(dir = %dir.display(), "cannot delete the Chrome profile: {e}");
-        }
-    }
-}
-
-/// Strips Chrome's `[pid:tid:date/time:LEVEL:file(line)] ` log prefix.
-fn chrome_message(line: &str) -> Option<&str> {
-    let msg = match line.strip_prefix('[').and_then(|l| l.split_once("] ")) {
-        Some((_, rest)) => rest,
-        None => line,
-    };
-    let msg = msg.trim();
-    (!msg.is_empty()).then_some(msg)
-}
-
-/// Collects the last [`STDERR_TAIL`] lines of Chrome's stderr, and logs every
-/// line at debug level (`-vv`).
-struct StderrTail {
-    lines: Arc<Mutex<VecDeque<String>>>,
-    task: Option<JoinHandle<()>>,
-}
-
-impl StderrTail {
-    fn start(stderr: Option<ChildStderr>) -> Self {
-        let lines = Arc::new(Mutex::new(VecDeque::new()));
-        let task = stderr.map(|stderr| {
-            let lines = lines.clone();
-            tokio::spawn(async move {
-                let mut reader = BufReader::new(stderr);
-                let mut buf = Vec::new();
-                while let Ok(n) = reader.read_until(b'\n', &mut buf).await {
-                    if n == 0 {
-                        break;
-                    }
-                    let line = String::from_utf8_lossy(&buf).trim_end().to_owned();
-                    buf.clear();
-                    tracing::debug!(target: "chrome", "{line}");
-                    if let Ok(mut lines) = lines.lock() {
-                        if lines.len() == STDERR_TAIL {
-                            lines.pop_front();
-                        }
-                        lines.push_back(line);
-                    }
-                }
-            })
-        });
-        Self { lines, task }
-    }
-
-    /// Waits (briefly) for stderr to close and returns the collected lines.
-    async fn finish(&mut self) -> Vec<String> {
-        if let Some(task) = self.task.take() {
-            // Chrome's helper processes can keep stderr open after the
-            // browser exits; do not wait for them long.
-            let abort = task.abort_handle();
-            if timeout(Duration::from_secs(1), task).await.is_err() {
-                abort.abort();
-            }
-        }
-        self.lines
-            .lock()
-            .map(|l| l.iter().cloned().collect())
-            .unwrap_or_default()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use protocol::ErrorKind;
     use serde_json::json;
 
-    use super::{check_method, chrome_message, parse_params};
+    use super::{check_method, parse_params};
 
     #[test]
     fn method_names() {
@@ -440,17 +268,5 @@ mod tests {
             "{err}"
         );
         assert_eq!(err.exit_code(), 2);
-    }
-
-    #[test]
-    fn chrome_log_prefix_is_stripped() {
-        assert_eq!(
-            chrome_message(
-                "[1:1:0927/101010.123:FATAL:zygote_host_impl_linux.cc(128)] No usable sandbox!"
-            ),
-            Some("No usable sandbox!")
-        );
-        assert_eq!(chrome_message("plain"), Some("plain"));
-        assert_eq!(chrome_message("  "), None);
     }
 }

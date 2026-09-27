@@ -11,7 +11,7 @@ use std::process::Command;
 
 use browser::testing::FakeCft;
 use common::{cli, code, json_out, run, stderr, stdout};
-use serde_json::json;
+use serde_json::{Value, json};
 
 /// `cli()` using `server` as the index and `cache` as the cache dir.
 fn with_fake(server: &FakeCft, cache: &Path) -> Command {
@@ -175,7 +175,19 @@ fn auto_install_installs_when_no_chrome_is_found() {
     assert_eq!(error["kind"], json!("LaunchFailed"), "{error}");
     let installed = cache.join("browsers/stable-154.0.8037.57-linux64");
     assert!(installed.join("INSTALLATION_COMPLETE").is_file());
-    let note = error["notes"][0]["text"].as_str().unwrap();
+    // On Ubuntu 23.10+ the launch fails before starting it (no AppArmor
+    // profile covers the temp cache), with a `why` note first.
+    let warnings = |error: &Value| -> Vec<String> {
+        error["notes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|n| n["label"] == "warning")
+            .map(|n| n["text"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let notes = warnings(error);
+    let note = notes.first().expect("a warning note");
     assert!(
         note.starts_with("installed Chrome for Testing 154.0.8037.57 (")
             && note.ends_with("B) because --auto-install is set"),
@@ -185,6 +197,6 @@ fn auto_install_installs_when_no_chrome_is_found() {
     // Next time it is simply found.
     let out = direct(&[], &["--auto-install"]);
     assert_eq!(json_out(&out)["error"]["kind"], json!("LaunchFailed"));
-    assert_eq!(json_out(&out)["error"]["notes"], json!(null));
+    assert!(warnings(&json_out(&out)["error"]).is_empty());
     assert_eq!(zip_downloads(&server), 1);
 }

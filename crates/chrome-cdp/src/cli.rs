@@ -214,6 +214,8 @@ pub(crate) enum DirectCommand {
 Examples:
   chrome-cdp __direct cdp Browser.getVersion
   chrome-cdp __direct cdp Browser.getVersion --chrome /path/to/chrome
+  chrome-cdp __direct cdp Storage.getCookies --profile work
+  chrome-cdp __direct cdp Browser.getVersion --chrome-arg=--window-size=1280,800 --headed
   chrome-cdp __direct cdp --target page Runtime.evaluate '{\"expression\":\"1+1\"}'
   echo '{\"expression\":\"1+1\"}' | chrome-cdp __direct cdp --target page Runtime.evaluate -")]
     Cdp(DirectCdpArgs),
@@ -229,6 +231,23 @@ pub(crate) struct DirectCdpArgs {
     #[arg(value_name = "JSON")]
     pub(crate) params: Option<String>,
 
+    #[command(flatten)]
+    pub(crate) launch: LaunchArgs,
+
+    /// Send the call to the browser, or to a new about:blank page.
+    #[arg(long, value_enum, default_value_t = Target::Browser)]
+    pub(crate) target: Target,
+
+    /// Bound the output to this many characters (0 = no limit). With --json,
+    /// long strings and arrays in `data` are shortened instead.
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+/// How to find and launch Chrome. Shared by every command that starts a
+/// browser (`__direct cdp` now, plan 02's `open` next).
+#[derive(Debug, Args)]
+pub(crate) struct LaunchArgs {
     /// The Chrome or Chromium binary to launch. Default: $CHROME_CDP_CHROME,
     /// then browsers from `chrome-cdp install`, then a system Chrome.
     #[arg(long, value_name = "PATH")]
@@ -244,14 +263,41 @@ pub(crate) struct DirectCdpArgs {
     )]
     pub(crate) auto_install: bool,
 
-    /// Send the call to the browser, or to a new about:blank page.
-    #[arg(long, value_enum, default_value_t = Target::Browser)]
-    pub(crate) target: Target,
+    /// Open a browser window instead of running headless.
+    #[arg(long)]
+    pub(crate) headed: bool,
 
-    /// Bound the output to this many characters (0 = no limit). With --json,
-    /// long strings and arrays in `data` are shortened instead.
-    #[arg(long, default_value_t = 20_000, value_name = "N")]
-    pub(crate) max_chars: usize,
+    /// Keep the profile (logins, cookies, storage) between runs under this
+    /// name. Default: a temporary profile, deleted on close.
+    #[arg(long, value_name = "NAME", conflicts_with = "user_data_dir")]
+    pub(crate) profile: Option<String>,
+
+    /// Use this directory as Chrome's profile (never your everyday one).
+    #[arg(long, value_name = "PATH")]
+    pub(crate) user_data_dir: Option<PathBuf>,
+
+    /// An extra flag for Chrome, e.g. --chrome-arg=--window-size=1280,800;
+    /// repeat it for more. docs/chrome-flags.md lists chrome-cdp's own.
+    #[arg(long = "chrome-arg", value_name = "FLAG", allow_hyphen_values = true)]
+    pub(crate) chrome_args: Vec<String>,
+}
+
+impl LaunchArgs {
+    /// The launch options, with `timeout` for startup and each call.
+    pub(crate) fn options(&self, timeout: Duration) -> browser::LaunchOptions {
+        let profile = match (&self.profile, &self.user_data_dir) {
+            (Some(name), _) => browser::ProfileChoice::Named(name.clone()),
+            (None, Some(dir)) => browser::ProfileChoice::Dir(dir.clone()),
+            (None, None) => browser::ProfileChoice::Ephemeral,
+        };
+        browser::LaunchOptions {
+            headed: self.headed,
+            profile,
+            args: self.chrome_args.clone(),
+            log_file: None,
+            timeout,
+        }
+    }
 }
 
 /// Where a raw CDP call goes.

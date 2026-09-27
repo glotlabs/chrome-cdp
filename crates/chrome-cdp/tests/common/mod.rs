@@ -102,3 +102,30 @@ pub fn fake_chrome(dir: &tempfile::TempDir, body: &str) -> PathBuf {
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
     path
 }
+
+/// The processes whose command line mentions `marker` (from `ps`, so it
+/// works on Linux and macOS).
+pub fn processes_mentioning(marker: &Path) -> Vec<String> {
+    let out = Command::new("ps")
+        .args(["-eo", "pid=,args="])
+        .output()
+        .unwrap();
+    let marker = marker.to_string_lossy();
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|l| l.contains(marker.as_ref()))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Polls `done` every 50 ms for up to 15 s.
+pub fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
+    let start = std::time::Instant::now();
+    while !done() {
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(15),
+            "timed out waiting for {what}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
