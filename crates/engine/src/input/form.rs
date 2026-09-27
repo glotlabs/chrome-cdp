@@ -36,6 +36,10 @@ const SETTLE: Duration = Duration::from_secs(1);
 /// How often `select` and `check` look again.
 const POLL: Duration = Duration::from_millis(50);
 
+/// The least time left for `select` to look for its options again (the
+/// pipeline runs again first).
+const LOOK_AGAIN: Duration = Duration::from_millis(250);
+
 /// What `fillPrepare` answers.
 #[derive(Debug, Default, Deserialize)]
 struct Prepared {
@@ -230,8 +234,19 @@ impl Actor<'_> {
             ..Checks::default()
         };
         let retry = |l: &str| self.retry(l);
+        // The last answer, for the error when the time runs out while
+        // looking again.
+        let mut last: Option<(Selected, ActedElement)> = None;
         loop {
-            let ready = self.ready(&parsed, checks, &retry).await?;
+            let ready = match self.ready(&parsed, checks, &retry).await {
+                Ok(ready) => ready,
+                Err(err) => match last {
+                    Some((answer, element)) if err.kind == ErrorKind::Timeout => {
+                        return Err(self.no_option(locator, &element, &answer));
+                    }
+                    _ => return Err(err),
+                },
+            };
             let answer = self
                 .call(
                     &ready.ready.target,
@@ -286,9 +301,10 @@ impl Actor<'_> {
             }
             // A missing or disabled option may come: the page may still be
             // loading them.
-            if Instant::now() + POLL >= self.deadline {
+            if Instant::now() + LOOK_AGAIN >= self.deadline {
                 return Err(self.no_option(locator, &element, &answer));
             }
+            last = Some((answer, element));
             tokio::time::sleep(POLL).await;
         }
     }
@@ -454,7 +470,7 @@ impl Actor<'_> {
             return Err(ErrorInfo::new(
                 ErrorKind::BadArgs,
                 format!(
-                    "{} is a radio button: it cannot be unchecked, only another one of its group checked",
+                    "{} cannot be unchecked: check another radio button of its group",
                     describe(&element)
                 ),
             )
