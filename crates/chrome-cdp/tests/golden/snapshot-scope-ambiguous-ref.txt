@@ -1,0 +1,13 @@
+$ chrome-cdp snapshot --scope e3
+exit: 1
+--- stderr
+error: element e3 is no longer in the page
+  was: button "Delete"
+  note: 2 elements have its role and name now; not guessing which
+  hint: chrome-cdp snapshot   (shows the refs the page has now)
+
+$ chrome-cdp snapshot --scope e3 --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"RefDetached","message":"element e3 is no longer in the page","hint":"chrome-cdp snapshot   (shows the refs the page has now)","notes":[{"label":"was","text":"button \"Delete\""},{"label":"note","text":"2 elements have its role and name now; not guessing which"}],"details":{"matches":2,"name":"Delete","ref":"e3","role":"button"}}}
+

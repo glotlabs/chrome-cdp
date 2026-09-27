@@ -36,6 +36,9 @@ enum Fixture {
     SessionPerMode,
     /// Like `Session`, with the fixture site's page at this path loaded.
     SessionAt(&'static str),
+    /// A session sandbox with the real Chrome, after these commands
+    /// (`{site}` is the fixture site's origin). The first one opens it.
+    SessionAfter(&'static [&'static [&'static str]]),
     /// An empty session sandbox, with no Chrome.
     NoSessions,
     /// `{chrome}` is a stand-in that dies like a Chrome without a sandbox.
@@ -64,6 +67,20 @@ struct Case {
 
 const ALL: &[&str] = &["", "--json", "-q"];
 const ERR: &[&str] = &["", "--json"];
+
+/// The re-render fixture after a snapshot and a remount: every ref of the
+/// snapshot names a node that is gone.
+const REMOUNTED: &[&[&str]] = &[
+    &["open", "{site}/refs/rerender.html"],
+    &["snapshot"],
+    &[
+        "cdp",
+        "--target",
+        "page",
+        "Runtime.evaluate",
+        r#"{"expression": "remount(TODOS)"}"#,
+    ],
+];
 
 const CASES: &[Case] = &[
     Case {
@@ -466,6 +483,28 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/snapshot/login.html"),
     },
     Case {
+        name: "snapshot-scope-stale-ref",
+        args: &["snapshot", "--scope", "e1"],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/refs/rerender.html"],
+            &["snapshot"],
+            &["goto", "{site}/snapshot/simple.html"],
+        ]),
+    },
+    Case {
+        name: "snapshot-scope-detached-ref",
+        args: &["snapshot", "--scope", "e1", "--strict-refs"],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(REMOUNTED),
+    },
+    Case {
+        name: "snapshot-scope-ambiguous-ref",
+        args: &["snapshot", "--scope", "e3"],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(REMOUNTED),
+    },
+    Case {
         name: "snapshot-bad-scope",
         args: &["snapshot", "--scope", "role=button"],
         modes: ERR,
@@ -659,7 +698,8 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
         Fixture::Session
         | Fixture::FreshSession
         | Fixture::SessionPerMode
-        | Fixture::SessionAt(_) => {
+        | Fixture::SessionAt(_)
+        | Fixture::SessionAfter(_) => {
             let chrome = chrome_path()?;
             norm = norm.with(&chrome, "<chrome>");
             let sb = Sandbox::with_chrome(&chrome);
@@ -672,6 +712,15 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
                 let url = format!("{}{path}", Fixtures::shared().a());
                 let out = sb.cli().args(["open", &url]).output().unwrap();
                 assert!(out.status.success(), "{out:?}");
+            }
+            if let Fixture::SessionAfter(steps) = case.fixture {
+                let site = Fixtures::shared().a();
+                for step in steps {
+                    let args: Vec<String> =
+                        step.iter().map(|a| a.replace("{site}", site)).collect();
+                    let out = sb.cli().args(&args).output().unwrap();
+                    assert!(out.status.success(), "{step:?}: {out:?}");
+                }
             }
             sandbox = Some(sb);
             Some(chrome)

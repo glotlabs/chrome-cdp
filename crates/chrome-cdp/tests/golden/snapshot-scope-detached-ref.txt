@@ -1,0 +1,12 @@
+$ chrome-cdp snapshot --scope e1 --strict-refs
+exit: 1
+--- stderr
+error: element e1 is no longer in the page
+  was: button "Buy milk"
+  hint: chrome-cdp snapshot   (shows the refs the page has now)
+
+$ chrome-cdp snapshot --scope e1 --strict-refs --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"RefDetached","message":"element e1 is no longer in the page","hint":"chrome-cdp snapshot   (shows the refs the page has now)","notes":[{"label":"was","text":"button \"Buy milk\""}],"details":{"name":"Buy milk","ref":"e1","role":"button"}}}
+

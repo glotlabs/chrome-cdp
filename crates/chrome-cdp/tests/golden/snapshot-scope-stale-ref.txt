@@ -1,0 +1,11 @@
+$ chrome-cdp snapshot --scope e1
+exit: 1
+--- stderr
+error: ref e1 is from an earlier page of tab t1
+  hint: chrome-cdp snapshot   (gives the new document's refs)
+
+$ chrome-cdp snapshot --scope e1 --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"RefStale","message":"ref e1 is from an earlier page of tab t1","hint":"chrome-cdp snapshot   (gives the new document's refs)","details":{"ref":"e1"}}}
+
