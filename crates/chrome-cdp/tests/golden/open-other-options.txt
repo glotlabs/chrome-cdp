@@ -1,0 +1,12 @@
+$ chrome-cdp open --headed
+exit: 2
+--- stderr
+error: session default already runs a browser with other options: --headed
+  running: Chrome/<version>, headless, temporary profile, pid <pid>
+  hint: chrome-cdp open --restart …   (closes it and starts one with the new options), or use another session: chrome-cdp open --session <name> …
+
+$ chrome-cdp open --headed --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"session default already runs a browser with other options: --headed","hint":"chrome-cdp open --restart …   (closes it and starts one with the new options), or use another session: chrome-cdp open --session <name> …","notes":[{"label":"running","text":"Chrome/<version>, headless, temporary profile, pid <pid>"}],"details":{"differences":["--headed"],"running":{"headless":true,"kind":"launched","path":"<chrome>","pid":<pid>,"product":"Chrome/<version>","profile":{"dir":"<sandbox>/tmp/chrome-cdp-<rand>/profile","kind":"temporary"},"source":"given by CHROME_CDP_CHROME"}}}}
+

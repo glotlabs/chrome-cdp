@@ -10,12 +10,20 @@ use std::path::Path;
 use std::process::Command;
 
 use browser::testing::FakeCft;
-use common::{cli, code, json_out, run, stderr, stdout};
+use common::{Sandbox, cli, code, json_out, run, stderr, stdout};
 use serde_json::{Value, json};
 
 /// `cli()` using `server` as the index and `cache` as the cache dir.
 fn with_fake(server: &FakeCft, cache: &Path) -> Command {
     let mut cmd = cli();
+    cmd.env("CHROME_CDP_CFT_URL", &server.url)
+        .env("CHROME_CDP_CACHE", cache);
+    cmd
+}
+
+/// [`with_fake`] in a session sandbox, for commands that launch Chrome.
+fn with_fake_in(sandbox: &Sandbox, server: &FakeCft, cache: &Path) -> Command {
+    let mut cmd = sandbox.cli();
     cmd.env("CHROME_CDP_CFT_URL", &server.url)
         .env("CHROME_CDP_CACHE", cache);
     cmd
@@ -154,9 +162,10 @@ fn auto_install_installs_when_no_chrome_is_found() {
     let empty = dir.path().join("empty");
     std::fs::create_dir_all(&empty).unwrap();
     let cache = dir.path().join("cache");
-    let direct = |auto: &[(&str, &str)], args: &[&str]| {
-        let mut cmd = with_fake(&server, &cache);
-        cmd.args(["__direct", "cdp", "Browser.getVersion", "--json"])
+    let sandbox = Sandbox::new();
+    let open = |auto: &[(&str, &str)], args: &[&str]| {
+        let mut cmd = with_fake_in(&sandbox, &server, &cache);
+        cmd.args(["open", "--json"])
             .args(args)
             .env("PATH", &empty)
             .envs(auto.iter().copied());
@@ -164,13 +173,13 @@ fn auto_install_installs_when_no_chrome_is_found() {
     };
 
     // Without it: the hint says to install.
-    let out = direct(&[], &[]);
+    let out = open(&[], &[]);
     assert_eq!(json_out(&out)["error"]["kind"], json!("ChromeNotFound"));
     assert_eq!(zip_downloads(&server), 0);
 
     // With it, Chrome for Testing is installed and launched. The fake one
     // cannot speak CDP, so the launch fails, after the install.
-    let out = direct(&[("CHROME_CDP_AUTO_INSTALL", "1")], &[]);
+    let out = open(&[("CHROME_CDP_AUTO_INSTALL", "1")], &[]);
     let error = &json_out(&out)["error"];
     assert_eq!(error["kind"], json!("LaunchFailed"), "{error}");
     let installed = cache.join("browsers/stable-154.0.8037.57-linux64");
@@ -193,7 +202,7 @@ fn auto_install_installs_when_no_chrome_is_found() {
     );
 
     // Next time it is simply found.
-    let out = direct(&[], &["--auto-install"]);
+    let out = open(&[], &["--auto-install"]);
     assert_eq!(json_out(&out)["error"]["kind"], json!("LaunchFailed"));
     assert!(warnings(&json_out(&out)["error"]).is_empty());
     assert_eq!(zip_downloads(&server), 1);
@@ -229,8 +238,9 @@ fn the_apparmor_rule_is_reported_by_install_and_launch() {
     assert_eq!(warnings.iter().any(blocked), userns_restricted(), "{v}");
 
     // Launching it fails before it starts, with the same fix.
-    let out = run(with_fake(&server, &cache)
-        .args(["__direct", "cdp", "Browser.getVersion"])
+    let sandbox = Sandbox::new();
+    let out = run(with_fake_in(&sandbox, &server, &cache)
+        .args(["open"])
         .env_remove("CHROME_CDP_NO_USERNS_CHECK"));
     let err = stderr(&out);
     if userns_restricted() {
@@ -249,6 +259,6 @@ fn the_apparmor_rule_is_reported_by_install_and_launch() {
         );
     }
     // The escape hatch turns the check off: the fake then fails to speak CDP.
-    let out = run(with_fake(&server, &cache).args(["__direct", "cdp", "Browser.getVersion"]));
+    let out = run(with_fake_in(&sandbox, &server, &cache).args(["open"]));
     assert!(!stderr(&out).contains("AppArmor"), "{}", stderr(&out));
 }

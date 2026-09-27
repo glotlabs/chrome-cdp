@@ -40,6 +40,11 @@ use process::Watchdog;
 use profile::Profile;
 use stderr::{RotatingLog, StderrTail};
 
+/// The hint of a Chrome that exited during startup without saying why on
+/// stderr: its full output is in the session's `chrome.log`. A caller that
+/// knows the session replaces it with one naming `--session`.
+pub const OUTPUT_HINT: &str = "chrome-cdp status --logs   (shows Chrome's output)";
+
 /// How long Chrome gets to exit after `Browser.close` (or after its pipe
 /// closes) before it is killed.
 const EXIT_GRACE: Duration = Duration::from_secs(5);
@@ -425,7 +430,7 @@ impl Launched {
         let info = if lines.iter().any(|l| l.contains("No usable sandbox")) {
             sandbox_blocked(host, chrome, Some(info))
         } else if exited {
-            info.hint("run the command again with -vv to see Chrome's output")
+            info.hint(OUTPUT_HINT)
         } else {
             info
         };

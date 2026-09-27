@@ -1,0 +1,10 @@
+$ chrome-cdp sessions --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"sessions":[{"daemon_pid":<pid>,"kind":"launched","product":"Chrome/<version>","session":"default","state":"running","tabs":1,"uptime_ms":<ms>}]}}
+
+$ chrome-cdp sessions -q
+exit: 0
+--- stdout
+default
+

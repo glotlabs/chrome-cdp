@@ -62,8 +62,33 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<UninstallData>),
     },
     CommandSchema {
-        name: "__direct cdp",
-        summary: "the raw CDP result object (temporary; plan 02's cdp returns the same)",
+        name: "open",
+        summary: "the session and its browser, and the page opened",
+        schema: || schema_for!(Envelope<OpenData>),
+    },
+    CommandSchema {
+        name: "connect",
+        summary: "the session and the browser it attached to",
+        schema: || schema_for!(Envelope<OpenData>),
+    },
+    CommandSchema {
+        name: "close",
+        summary: "the sessions closed",
+        schema: || schema_for!(Envelope<CloseData>),
+    },
+    CommandSchema {
+        name: "status",
+        summary: "the session's state, browser, tabs and uptime",
+        schema: || schema_for!(Envelope<StatusData>),
+    },
+    CommandSchema {
+        name: "sessions",
+        summary: "every live session",
+        schema: || schema_for!(Envelope<SessionsData>),
+    },
+    CommandSchema {
+        name: "cdp",
+        summary: "the raw CDP result object",
         schema: || schema_for!(Envelope<Map<String, Value>>),
     },
 ];

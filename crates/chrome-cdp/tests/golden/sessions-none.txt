@@ -1,0 +1,13 @@
+$ chrome-cdp sessions
+exit: 0
+--- stdout
+no sessions; start one: chrome-cdp open
+
+$ chrome-cdp sessions --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"sessions":[]}}
+
+$ chrome-cdp sessions -q
+exit: 0
+

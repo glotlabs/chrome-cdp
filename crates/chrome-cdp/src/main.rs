@@ -13,16 +13,16 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Mode, Output};
 
 mod cli;
 mod config;
-mod direct;
 mod input;
 mod install;
 mod log;
 mod output;
 mod progress;
 mod schema;
+mod session;
 mod version;
 
-use cli::{Cli, Command, DirectCommand};
+use cli::{Cli, Command};
 
 fn main() -> ExitCode {
     let parsed = Cli::command()
@@ -32,6 +32,15 @@ fn main() -> ExitCode {
         Ok(parsed) => parsed,
         Err(e) => return ExitCode::from(usage_error(&e)),
     };
+    if let Some(Command::Daemon(args)) = &cli.command {
+        // The daemon logs to daemon.log (its stderr) at info level, and has
+        // no output to render.
+        log::init(cli.global.verbose.max(1));
+        return ExitCode::from(daemon::server::run(&daemon::server::ServeOptions {
+            session: cli.global.session.clone(),
+            build: args.build.clone(),
+        }));
+    }
     log::init(cli.global.verbose);
     let mode = cli.global.mode();
     let result = config::apply(&mut cli.global, &matches).and_then(|()| run(cli));
@@ -48,7 +57,14 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Schema(args)) => schema::run(&args),
         Some(Command::Install(args)) => install::install(&args, cli.global.timeout),
         Some(Command::Uninstall(args)) => install::uninstall(&args),
-        Some(Command::Direct(DirectCommand::Cdp(args))) => direct::cdp(&args, &cli.global),
+        Some(Command::Open(args)) => session::open(&args, &cli.global),
+        Some(Command::Connect(args)) => session::connect(&args, &cli.global),
+        Some(Command::Close(args)) => session::close(&args, &cli.global),
+        Some(Command::Status(args)) => session::status(&args, &cli.global),
+        Some(Command::Sessions(args)) => session::sessions(&args, &cli.global),
+        Some(Command::Cdp(args)) => session::cdp(&args, &cli.global),
+        // Handled in `main`.
+        Some(Command::Daemon(_)) => Ok(Output::new(serde_json::Value::Null, "")),
     }
 }
 
@@ -100,7 +116,7 @@ fn usage_info(e: &clap::Error) -> ErrorInfo {
     .hint(Cmd::new(&command).switch("help"))
 }
 
-/// `chrome-cdp __direct cdp [OPTIONS] <Domain.method>` → `__direct cdp`.
+/// `chrome-cdp tab close [OPTIONS] <N>` → `tab close`.
 fn command_path(usage: &str) -> String {
     usage
         .split_whitespace()
@@ -133,8 +149,8 @@ mod tests {
     #[test]
     fn command_path_from_usage() {
         assert_eq!(
-            command_path("chrome-cdp __direct cdp --json <Domain.method> [JSON]"),
-            "__direct cdp"
+            command_path("chrome-cdp cdp --json <Domain.method> [JSON]"),
+            "cdp"
         );
         assert_eq!(command_path("chrome-cdp [OPTIONS] [COMMAND]"), "");
         assert_eq!(

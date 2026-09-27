@@ -1,0 +1,13 @@
+$ chrome-cdp close
+exit: 0
+--- stdout
+session default was not running
+
+$ chrome-cdp close --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"sessions":[{"browser":"none","session":"default","was_running":false}]}}
+
+$ chrome-cdp close -q
+exit: 0
+

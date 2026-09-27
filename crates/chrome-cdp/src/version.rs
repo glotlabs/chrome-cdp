@@ -22,3 +22,16 @@ pub(crate) fn run() -> Output {
     )
     .quiet(VERSION)
 }
+
+/// Identifies this exact binary to the session daemon: the version, the
+/// git commit, and the binary's modification time, so a rebuilt or
+/// upgraded binary replaces a daemon started by the old one.
+pub(crate) fn build_id() -> String {
+    let modified = std::env::current_exe()
+        .and_then(|exe| exe.metadata())
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_secs());
+    format!("{VERSION}+{GIT_SHA}+{modified}")
+}

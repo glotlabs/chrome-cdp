@@ -1,0 +1,16 @@
+$ chrome-cdp open 'data:text/html,<title>Hello</title>'
+exit: 0
+--- stdout
+opened session default: Chrome/<version>, headless, temporary profile, pid <pid>
+page: data:text/html,<title>Hello</title> "Hello"
+
+$ chrome-cdp open 'data:text/html,<title>Hello</title>' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"browser":{"headless":true,"kind":"launched","path":"<chrome>","pid":<pid>,"product":"Chrome/<version>","profile":{"dir":"<sandbox>/tmp/chrome-cdp-<rand>/profile","kind":"temporary"},"source":"given by CHROME_CDP_CHROME"},"page":{"title":"Hello","url":"data:text/html,<title>Hello</title>"},"session":"default","started":true}}
+
+$ chrome-cdp open 'data:text/html,<title>Hello</title>' -q
+exit: 0
+--- stdout
+data:text/html,<title>Hello</title>
+

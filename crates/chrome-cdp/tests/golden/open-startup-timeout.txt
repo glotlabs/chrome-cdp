@@ -1,10 +1,10 @@
-$ chrome-cdp __direct cdp Browser.getVersion --chrome <tmp>/chrome --timeout 300ms
+$ chrome-cdp open --chrome <tmp>/chrome --timeout 300ms
 exit: 3
 --- stderr
 error: Chrome started but did not answer within 300ms
   hint: retry with a longer timeout, e.g. --timeout 600ms
 
-$ chrome-cdp __direct cdp Browser.getVersion --chrome <tmp>/chrome --timeout 300ms --json
+$ chrome-cdp open --chrome <tmp>/chrome --timeout 300ms --json
 exit: 3
 --- stdout
 {"ok":false,"error":{"kind":"Timeout","message":"Chrome started but did not answer within 300ms","hint":"retry with a longer timeout, e.g. --timeout 600ms","details":{"chrome_stderr":[]}}}

@@ -45,6 +45,10 @@ jobs:
       - name: Launch the installed browsers
         shell: bash
         run: |
-          target/release/chrome-cdp __direct cdp Browser.getVersion
-          target/release/chrome-cdp __direct cdp Browser.getVersion \
+          target/release/chrome-cdp open https://example.com
+          target/release/chrome-cdp cdp Browser.getVersion
+          target/release/chrome-cdp close
+          target/release/chrome-cdp open --session shell \
             --chrome "$(target/release/chrome-cdp install --headless-shell -q)"
+          target/release/chrome-cdp cdp Browser.getVersion --session shell
+          target/release/chrome-cdp close --session shell

@@ -1,0 +1,21 @@
+$ chrome-cdp status
+exit: 0
+--- stdout
+session default: running, up <uptime>
+browser: Chrome/<version>, headless, temporary profile, pid <pid>
+chrome: <chrome> (given by CHROME_CDP_CHROME)
+profile: <sandbox>/tmp/chrome-cdp-<rand>/profile (temporary)
+tabs: 1
+daemon: pid <pid>, idle timeout 2m
+dir: <sandbox>/run/chrome-cdp/default
+
+$ chrome-cdp status --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"browser":{"headless":true,"kind":"launched","path":"<chrome>","pid":<pid>,"product":"Chrome/<version>","profile":{"dir":"<sandbox>/tmp/chrome-cdp-<rand>/profile","kind":"temporary"},"source":"given by CHROME_CDP_CHROME"},"daemon_pid":<pid>,"dir":"<sandbox>/run/chrome-cdp/default","idle_timeout_ms":120000,"session":"default","state":"running","tabs":1,"uptime_ms":<ms>}}
+
+$ chrome-cdp status -q
+exit: 0
+--- stdout
+running
+

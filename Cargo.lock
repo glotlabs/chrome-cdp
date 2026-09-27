@@ -203,6 +203,7 @@ dependencies = [
  "browser",
  "cdp",
  "clap",
+ "daemon",
  "engine",
  "protocol",
  "serde",

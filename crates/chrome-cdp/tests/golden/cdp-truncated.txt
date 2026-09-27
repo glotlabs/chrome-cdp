@@ -1,4 +1,4 @@
-$ chrome-cdp __direct cdp --chrome <chrome> --target page Runtime.evaluate '{"expression":"'\''ab'\''.repeat(100)","returnByValue":true}' --max-chars 100
+$ chrome-cdp cdp --target page Runtime.evaluate '{"expression":"'\''ab'\''.repeat(100)","returnByValue":true}' --max-chars 100
 exit: 0
 --- stdout
 {
@@ -7,12 +7,12 @@ exit: 0
     "value": "abababababababababababababababababababababababab
 … truncated 159 chars; use --max-chars 0 for all of it
 
-$ chrome-cdp __direct cdp --chrome <chrome> --target page Runtime.evaluate '{"expression":"'\''ab'\''.repeat(100)","returnByValue":true}' --max-chars 100 --json
+$ chrome-cdp cdp --target page Runtime.evaluate '{"expression":"'\''ab'\''.repeat(100)","returnByValue":true}' --max-chars 100 --json
 exit: 0
 --- stdout
 {"ok":true,"data":{"result":{"type":"string","value":"abababababababababababababababababababababababababababababab…"}},"warnings":["data truncated to 100 chars: /result/value 200 → 60 chars; use --max-chars 0 for all of it"],"truncated":[{"path":"/result/value","kind":"string","len":200,"kept":60}]}
 
-$ chrome-cdp __direct cdp --chrome <chrome> --target page Runtime.evaluate '{"expression":"'\''ab'\''.repeat(100)","returnByValue":true}' --max-chars 100 -q
+$ chrome-cdp cdp --target page Runtime.evaluate '{"expression":"'\''ab'\''.repeat(100)","returnByValue":true}' --max-chars 100 -q
 exit: 0
 --- stdout
 {"result":{"type":"string","value":"abababababababababababababababababababababababababababababababab

@@ -1,0 +1,11 @@
+$ chrome-cdp connect wss://example.com/devtools
+exit: 2
+--- stderr
+error: `wss://example.com/devtools` is not a DevTools endpoint: TLS (wss://, https://) is not supported yet
+  hint: chrome-cdp connect 9222   (Chrome started with --remote-debugging-port=9222), or chrome-cdp connect ws://127.0.0.1:9222/devtools/browser/<id> with the URL from chrome://inspect or /json/version
+
+$ chrome-cdp connect wss://example.com/devtools --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"`wss://example.com/devtools` is not a DevTools endpoint: TLS (wss://, https://) is not supported yet","hint":"chrome-cdp connect 9222   (Chrome started with --remote-debugging-port=9222), or chrome-cdp connect ws://127.0.0.1:9222/devtools/browser/<id> with the URL from chrome://inspect or /json/version"}}
+

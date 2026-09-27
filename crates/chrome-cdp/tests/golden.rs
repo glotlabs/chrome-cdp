@@ -18,15 +18,23 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use common::{chrome_path, cli, fake_chrome};
+use common::{Sandbox, chrome_path, cli, fake_chrome};
 use serde_json::Value;
 
 /// What a case needs before it runs.
 #[derive(Clone, Copy, PartialEq)]
 enum Fixture {
     None,
-    /// A real Chrome; `{chrome}` in the args is its path.
-    Chrome,
+    /// A session sandbox whose sessions launch the real Chrome, and whose
+    /// `default` session is opened before the case runs.
+    Session,
+    /// A session sandbox with the real Chrome, closed after each mode so
+    /// each starts from nothing.
+    FreshSession,
+    /// Like `FreshSession`, but `default` is opened before each mode.
+    SessionPerMode,
+    /// An empty session sandbox, with no Chrome.
+    NoSessions,
     /// `{chrome}` is a stand-in that dies like a Chrome without a sandbox.
     SandboxlessChrome,
     /// `{chrome}` is a stand-in that never answers.
@@ -80,14 +88,8 @@ const CASES: &[Case] = &[
         fixture: Fixture::None,
     },
     Case {
-        name: "missing-subcommand",
-        args: &["__direct"],
-        modes: ERR,
-        fixture: Fixture::None,
-    },
-    Case {
         name: "mistyped-flag",
-        args: &["__direct", "cdp", "Browser.getVersion", "--jsn"],
+        args: &["cdp", "Browser.getVersion", "--jsn"],
         modes: &[""],
         fixture: Fixture::None,
     },
@@ -146,121 +148,136 @@ const CASES: &[Case] = &[
         fixture: Fixture::FakeCft,
     },
     Case {
-        name: "direct-bad-method",
-        args: &[
-            "__direct",
-            "cdp",
-            "getVersion",
-            "--chrome",
-            "/nonexistent/chrome",
-        ],
+        name: "cdp-bad-method",
+        args: &["cdp", "getVersion"],
         modes: ERR,
-        fixture: Fixture::None,
+        fixture: Fixture::NoSessions,
     },
     Case {
-        name: "direct-bad-params",
-        args: &[
-            "__direct",
-            "cdp",
-            "Runtime.evaluate",
-            "{expression:1}",
-            "--chrome",
-            "/nonexistent/chrome",
-        ],
+        name: "cdp-bad-params",
+        args: &["cdp", "Runtime.evaluate", "{expression:1}"],
         modes: ERR,
-        fixture: Fixture::None,
+        fixture: Fixture::NoSessions,
     },
     Case {
-        name: "direct-params-not-object",
-        args: &[
-            "__direct",
-            "cdp",
-            "Runtime.evaluate",
-            "[1]",
-            "--chrome",
-            "/nonexistent/chrome",
-        ],
+        name: "cdp-params-not-object",
+        args: &["cdp", "Runtime.evaluate", "[1]"],
         modes: ERR,
-        fixture: Fixture::None,
+        fixture: Fixture::NoSessions,
     },
     Case {
-        name: "direct-chrome-env-missing",
-        args: &["__direct", "cdp", "Browser.getVersion"],
+        name: "open-chrome-env-missing",
+        args: &["open"],
         modes: ERR,
         fixture: Fixture::MissingChromeEnv,
     },
     Case {
-        name: "direct-old-chrome",
-        args: &[
-            "__direct",
-            "cdp",
-            "Browser.getVersion",
-            "--chrome",
-            "{chrome}",
-        ],
+        name: "open-old-chrome",
+        args: &["open", "--chrome", "{chrome}"],
         modes: ERR,
         fixture: Fixture::OldChrome,
     },
     Case {
-        name: "direct-chrome-missing",
-        args: &[
-            "__direct",
-            "cdp",
-            "Browser.getVersion",
-            "--chrome",
-            "/nonexistent/chrome",
-        ],
+        name: "open-chrome-missing",
+        args: &["open", "--chrome", "/nonexistent/chrome"],
         modes: ERR,
-        fixture: Fixture::None,
+        fixture: Fixture::NoSessions,
     },
     Case {
-        name: "direct-no-sandbox",
-        args: &[
-            "__direct",
-            "cdp",
-            "Browser.getVersion",
-            "--chrome",
-            "{chrome}",
-        ],
+        name: "open-no-sandbox",
+        args: &["open", "--chrome", "{chrome}"],
         modes: ERR,
         fixture: Fixture::SandboxlessChrome,
     },
     Case {
-        name: "direct-startup-timeout",
-        args: &[
-            "__direct",
-            "cdp",
-            "Browser.getVersion",
-            "--chrome",
-            "{chrome}",
-            "--timeout",
-            "300ms",
-        ],
+        name: "open-startup-timeout",
+        args: &["open", "--chrome", "{chrome}", "--timeout", "300ms"],
         modes: ERR,
         fixture: Fixture::SilentChrome,
     },
     Case {
-        name: "direct-evaluate",
+        name: "open",
+        args: &["open", "data:text/html,<title>Hello</title>"],
+        modes: ALL,
+        fixture: Fixture::FreshSession,
+    },
+    Case {
+        name: "open-again",
+        args: &["open"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "open-other-options",
+        args: &["open", "--headed"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "open-bad-session-name",
+        args: &["open", "--session", "a/b"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
+        name: "connect-bad-endpoint",
+        args: &["connect", "wss://example.com/devtools"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
+        name: "status",
+        args: &["status"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "status-stopped",
+        args: &["status"],
+        modes: ALL,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
+        name: "sessions",
+        // The text table's widths depend on the pid.
+        args: &["sessions"],
+        modes: &["--json", "-q"],
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "sessions-none",
+        args: &["sessions"],
+        modes: ALL,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
+        name: "close",
+        args: &["close"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "close-not-running",
+        args: &["close"],
+        modes: ALL,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
+        name: "cdp-evaluate",
         args: &[
-            "__direct",
             "cdp",
-            "--chrome",
-            "{chrome}",
             "--target",
             "page",
             "Runtime.evaluate",
             r#"{"expression":"6*7","returnByValue":true}"#,
         ],
         modes: ALL,
-        fixture: Fixture::Chrome,
+        fixture: Fixture::Session,
     },
     Case {
-        name: "direct-truncated",
+        name: "cdp-truncated",
         args: &[
-            "__direct",
             "cdp",
-            "--chrome",
-            "{chrome}",
             "--target",
             "page",
             "Runtime.evaluate",
@@ -269,20 +286,13 @@ const CASES: &[Case] = &[
             "100",
         ],
         modes: ALL,
-        fixture: Fixture::Chrome,
+        fixture: Fixture::Session,
     },
     Case {
-        name: "direct-page-method-on-browser",
-        args: &[
-            "__direct",
-            "cdp",
-            "--chrome",
-            "{chrome}",
-            "Runtime.evaluate",
-            r#"{"expression":"1"}"#,
-        ],
+        name: "cdp-page-method-on-browser",
+        args: &["cdp", "Runtime.evaluate", r#"{"expression":"1"}"#],
         modes: ERR,
-        fixture: Fixture::Chrome,
+        fixture: Fixture::Session,
     },
 ];
 
@@ -344,10 +354,56 @@ impl Normalizer {
     }
 
     fn apply(&self, text: &str) -> String {
-        self.0
+        let text = self
+            .0
             .iter()
-            .fold(text.to_owned(), |text, (from, to)| text.replace(from, to))
+            .fold(text.to_owned(), |text, (from, to)| text.replace(from, to));
+        // What changes from run to run: pids, uptimes, the random part of
+        // Chrome's run dir, and the version of the Chrome under test.
+        let digits = |c: char| c.is_ascii_digit();
+        let uptime = |c: char| c.is_ascii_digit() || matches!(c, 'h' | 'm' | 's');
+        let version = |c: char| c.is_ascii_digit() || c == '.';
+        [
+            ("pid ", &digits as &dyn Fn(char) -> bool, "<pid>"),
+            ("\"pid\":", &digits, "<pid>"),
+            ("\"daemon_pid\":", &digits, "<pid>"),
+            ("\"uptime_ms\":", &digits, "<ms>"),
+            ("up ", &uptime, "<uptime>"),
+            (
+                "/chrome-cdp-",
+                &|c: char| c.is_ascii_alphanumeric(),
+                "<rand>",
+            ),
+            ("Chrome/", &version, "<version>"),
+        ]
+        .iter()
+        .fold(text, |text, (prefix, keep, to)| {
+            mask(&text, prefix, keep, to)
+        })
     }
+}
+
+/// Replaces the run of chars matching `keep` after each `prefix` with
+/// `to`, when that run starts with a digit (or letter, for `<rand>`).
+fn mask(text: &str, prefix: &str, keep: &dyn Fn(char) -> bool, to: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(at) = rest.find(prefix) {
+        let after = at + prefix.len();
+        out.push_str(&rest[..after]);
+        rest = &rest[after..];
+        let end = rest.find(|c| !keep(c)).unwrap_or(rest.len());
+        let starts_right = rest
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_digit() || to == "<rand>");
+        if end > 0 && starts_right {
+            out.push_str(to);
+            rest = &rest[end..];
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Runs every mode of `case`; `None` if it needs a Chrome we do not have.
@@ -357,12 +413,26 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
     let mut cwd = None;
     let mut env: Vec<(&str, String)> = Vec::new();
     let mut _server = None;
+    let mut sandbox = None;
     let chrome = match case.fixture {
         Fixture::None => None,
-        Fixture::Chrome => {
+        Fixture::Session | Fixture::FreshSession | Fixture::SessionPerMode => {
             let chrome = chrome_path()?;
             norm = norm.with(&chrome, "<chrome>");
+            let sb = Sandbox::with_chrome(&chrome);
+            norm = norm.with(sb.dir.path(), "<sandbox>");
+            if case.fixture == Fixture::Session {
+                let out = sb.cli().arg("open").output().unwrap();
+                assert!(out.status.success(), "{out:?}");
+            }
+            sandbox = Some(sb);
             Some(chrome)
+        }
+        Fixture::NoSessions => {
+            let sb = Sandbox::new();
+            norm = norm.with(sb.dir.path(), "<sandbox>");
+            sandbox = Some(sb);
+            None
         }
         Fixture::SandboxlessChrome => Some(fake_chrome(
             &dir,
@@ -382,6 +452,9 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
         }
         Fixture::MissingChromeEnv => {
             env.push(("CHROME_CDP_CHROME", "/nonexistent/chrome".into()));
+            let sb = Sandbox::new();
+            norm = norm.with(sb.dir.path(), "<sandbox>");
+            sandbox = Some(sb);
             None
         }
         Fixture::BadConfig => {
@@ -402,6 +475,15 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
         }
     };
 
+    if matches!(
+        case.fixture,
+        Fixture::SandboxlessChrome | Fixture::SilentChrome | Fixture::OldChrome
+    ) {
+        let sb = Sandbox::new();
+        norm = norm.with(sb.dir.path(), "<sandbox>");
+        sandbox = Some(sb);
+    }
+
     let mut out = String::new();
     for mode in case.modes {
         let mut args: Vec<String> = case
@@ -415,7 +497,13 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
         if !mode.is_empty() {
             args.push((*mode).to_owned());
         }
-        let mut cmd: Command = cli();
+        if case.fixture == Fixture::SessionPerMode
+            && let Some(sb) = &sandbox
+        {
+            let out = sb.cli().arg("open").output().unwrap();
+            assert!(out.status.success(), "{out:?}");
+        }
+        let mut cmd: Command = sandbox.as_ref().map_or_else(cli, Sandbox::cli);
         cmd.args(&args);
         if let Some(cwd) = &cwd {
             cmd.current_dir(cwd);
@@ -434,6 +522,14 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
             }
         }
         out.push('\n');
+        if matches!(
+            case.fixture,
+            Fixture::FreshSession | Fixture::SessionPerMode
+        ) && let Some(sb) = &sandbox
+        {
+            let closed = sb.cli().args(["close", "--all"]).output().unwrap();
+            assert!(closed.status.success(), "{closed:?}");
+        }
     }
     Some(norm.apply(&out))
 }

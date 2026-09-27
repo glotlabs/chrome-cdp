@@ -136,9 +136,71 @@ Examples:
   chrome-cdp uninstall stable-154.0.8037.57-linux64")]
     Uninstall(UninstallArgs),
 
-    /// Temporary daemon-less commands (plan 01). Plan 02 replaces them.
-    #[command(name = "__direct", hide = true, subcommand)]
-    Direct(DirectCommand),
+    /// Start the session's browser (or check the running one) and
+    /// optionally open a URL.
+    #[command(after_help = "\
+Each session (--session, default `default`) has its own background daemon
+and browser; later commands reuse them. Running open again is a no-op,
+unless it asks for other launch options: add --restart for those.
+The daemon closes the browser after --idle-timeout without commands.
+
+Examples:
+  chrome-cdp open https://example.com
+  chrome-cdp open --headed                          # with a window
+  chrome-cdp open --profile work https://app.test   # keeps logins
+  chrome-cdp open --session shop http://localhost:3000
+  chrome-cdp open --restart --chrome-arg=--window-size=1280,800")]
+    Open(OpenArgs),
+
+    /// Attach the session to a browser that is already running.
+    #[command(after_help = "\
+The browser must run with --remote-debugging-port. `close` then only
+detaches; the browser keeps running.
+
+Examples:
+  chrome-cdp connect 9222
+  chrome-cdp connect http://127.0.0.1:9222 --session mine
+  chrome-cdp connect ws://127.0.0.1:9222/devtools/browser/<id>")]
+    Connect(ConnectArgs),
+
+    /// Close the session: its daemon, and the browser it launched.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp close
+  chrome-cdp close --session shop
+  chrome-cdp close --all")]
+    Close(CloseArgs),
+
+    /// Show the session's state, browser, tabs and uptime.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp status
+  chrome-cdp status -q            # just the state: running, crashed, idle or stopped
+  chrome-cdp status --logs        # also the end of Chrome's log")]
+    Status(StatusArgs),
+
+    /// List the running sessions.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp sessions
+  chrome-cdp sessions -q          # one name per line")]
+    Sessions(SessionsArgs),
+
+    /// Make one raw CDP call on the session's browser or current page.
+    #[command(after_help = "\
+Starts the session's browser first if it has none.
+Methods: https://chromedevtools.github.io/devtools-protocol/
+
+Examples:
+  chrome-cdp cdp Browser.getVersion
+  chrome-cdp cdp --target page Runtime.evaluate '{\"expression\":\"1+1\"}'
+  echo '{\"expression\":\"1+1\"}' | chrome-cdp cdp --target page Runtime.evaluate -
+  chrome-cdp cdp Target.getTargets --session shop")]
+    Cdp(CdpArgs),
+
+    /// The session daemon; other commands start it.
+    #[command(name = "__daemon", hide = true)]
+    Daemon(DaemonArgs),
 }
 
 #[derive(Debug, Args)]
@@ -208,22 +270,70 @@ pub(crate) struct UninstallArgs {
     pub(crate) id: String,
 }
 
-#[derive(Debug, Subcommand)]
-pub(crate) enum DirectCommand {
-    /// Launch Chrome, make one raw CDP call, print the result and exit.
-    #[command(after_help = "\
-Examples:
-  chrome-cdp __direct cdp Browser.getVersion
-  chrome-cdp __direct cdp Browser.getVersion --chrome /path/to/chrome
-  chrome-cdp __direct cdp Storage.getCookies --profile work
-  chrome-cdp __direct cdp Browser.getVersion --chrome-arg=--window-size=1280,800 --headed
-  chrome-cdp __direct cdp --target page Runtime.evaluate '{\"expression\":\"1+1\"}'
-  echo '{\"expression\":\"1+1\"}' | chrome-cdp __direct cdp --target page Runtime.evaluate -")]
-    Cdp(DirectCdpArgs),
+#[derive(Debug, Args)]
+pub(crate) struct OpenArgs {
+    /// A URL to open in the current page; without a scheme, https:// (or
+    /// http:// for localhost) is added.
+    #[arg(value_name = "URL")]
+    pub(crate) url: Option<String>,
+
+    #[command(flatten)]
+    pub(crate) launch: LaunchArgs,
+
+    /// Close a running browser first and start one with these options.
+    #[arg(long)]
+    pub(crate) restart: bool,
+
+    #[command(flatten)]
+    pub(crate) idle: IdleArgs,
 }
 
 #[derive(Debug, Args)]
-pub(crate) struct DirectCdpArgs {
+pub(crate) struct IdleArgs {
+    /// Close the browser and stop the daemon after this long without
+    /// commands, e.g. 10m or 2h; 0 means never. Default 30m.
+    #[arg(
+        long,
+        env = "CHROME_CDP_IDLE_TIMEOUT",
+        value_parser = parse_idle_timeout,
+        value_name = "DURATION"
+    )]
+    pub(crate) idle_timeout: Option<Duration>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ConnectArgs {
+    /// A port (9222), host:port, http://host:port, or a ws:// DevTools URL.
+    #[arg(value_name = "ENDPOINT")]
+    pub(crate) endpoint: String,
+
+    #[command(flatten)]
+    pub(crate) idle: IdleArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct CloseArgs {
+    /// Close every running session.
+    #[arg(long)]
+    pub(crate) all: bool,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct StatusArgs {
+    /// Also show the last lines of Chrome's log (its stderr).
+    #[arg(long)]
+    pub(crate) logs: bool,
+
+    /// How many log lines --logs shows.
+    #[arg(long, default_value_t = 50, value_name = "N", requires = "logs")]
+    pub(crate) limit: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct SessionsArgs {}
+
+#[derive(Debug, Args)]
+pub(crate) struct CdpArgs {
     /// The CDP method, e.g. Browser.getVersion.
     #[arg(value_name = "Domain.method")]
     pub(crate) method: String,
@@ -232,10 +342,7 @@ pub(crate) struct DirectCdpArgs {
     #[arg(value_name = "JSON")]
     pub(crate) params: Option<String>,
 
-    #[command(flatten)]
-    pub(crate) launch: LaunchArgs,
-
-    /// Send the call to the browser, or to a new about:blank page.
+    /// Send the call to the browser, or to the current page.
     #[arg(long, value_enum, default_value_t = Target::Browser)]
     pub(crate) target: Target,
 
@@ -245,8 +352,14 @@ pub(crate) struct DirectCdpArgs {
     pub(crate) max_chars: usize,
 }
 
-/// How to find and launch Chrome. Shared by every command that starts a
-/// browser (`__direct cdp` now, plan 02's `open` next).
+#[derive(Debug, Args)]
+pub(crate) struct DaemonArgs {
+    /// The build of the CLI that starts it.
+    #[arg(long, value_name = "ID")]
+    pub(crate) build: String,
+}
+
+/// How to find and launch Chrome (`open`).
 #[derive(Debug, Args)]
 pub(crate) struct LaunchArgs {
     /// The Chrome or Chromium binary to launch. Default: $CHROME_CDP_CHROME,
@@ -284,19 +397,13 @@ pub(crate) struct LaunchArgs {
 }
 
 impl LaunchArgs {
-    /// The launch options, with `timeout` for startup and each call.
-    pub(crate) fn options(&self, timeout: Duration) -> browser::LaunchOptions {
-        let profile = match (&self.profile, &self.user_data_dir) {
-            (Some(name), _) => browser::ProfileChoice::Named(name.clone()),
-            (None, Some(dir)) => browser::ProfileChoice::Dir(dir.clone()),
-            (None, None) => browser::ProfileChoice::Ephemeral,
-        };
-        browser::LaunchOptions {
-            headed: self.headed,
-            profile,
-            args: self.chrome_args.clone(),
-            log_file: None,
-            timeout,
+    /// The profile asked for; `None` leaves it to the session (a temporary
+    /// one for a new browser).
+    pub(crate) fn profile(&self) -> Option<browser::ProfileChoice> {
+        match (&self.profile, &self.user_data_dir) {
+            (Some(name), _) => Some(browser::ProfileChoice::Named(name.clone())),
+            (None, Some(dir)) => Some(browser::ProfileChoice::Dir(dir.clone())),
+            (None, None) => None,
         }
     }
 }
@@ -306,8 +413,25 @@ impl LaunchArgs {
 pub(crate) enum Target {
     /// The browser session (Browser.*, Target.*, …).
     Browser,
-    /// A fresh page (Page.*, Runtime.*, DOM.*, …).
+    /// The current page (Page.*, Runtime.*, DOM.*, …).
     Page,
+}
+
+impl Target {
+    pub(crate) fn to_engine(self) -> engine::Target {
+        match self {
+            Self::Browser => engine::Target::Browser,
+            Self::Page => engine::Target::Page,
+        }
+    }
+}
+
+/// Parses `--idle-timeout`: a duration, or `0` for never.
+pub(crate) fn parse_idle_timeout(s: &str) -> Result<Duration, String> {
+    if s.trim() == "0" {
+        return Ok(Duration::ZERO);
+    }
+    parse_duration(s)
 }
 
 /// Parses `500ms`, `30s`, `1.5s`, `2m`. A unit is required so `5000` is
@@ -368,7 +492,6 @@ mod tests {
     fn global_flags_work_after_the_subcommand() {
         let cli = Cli::try_parse_from([
             "chrome-cdp",
-            "__direct",
             "cdp",
             "Browser.getVersion",
             "--json",
@@ -388,7 +511,17 @@ mod tests {
     /// Commands whose output cannot grow with the page, so they need no
     /// `--max-chars`/`--limit`. (`install --list` grows only with the
     /// browsers the user installed.)
-    const FIXED_SIZE: &[&str] = &["schema", "install", "uninstall"];
+    /// `open`, `connect` and `close` print a line or two; `sessions` grows
+    /// only with the sessions the user started.
+    const FIXED_SIZE: &[&str] = &[
+        "schema",
+        "install",
+        "uninstall",
+        "open",
+        "connect",
+        "close",
+        "sessions",
+    ];
 
     /// The plan 08 checklist: every command has an example in its help, a
     /// registered `--json` schema, the global flags, and a bounded output.
@@ -397,7 +530,11 @@ mod tests {
         fn leaves(cmd: &clap::Command, path: &str, out: &mut Vec<(String, clap::Command)>) {
             // Skip clap's generated `help` subcommands (plan 08.3 replaces
             // the top-level one with its own, which must then pass too).
-            for sub in cmd.get_subcommands().filter(|s| s.get_name() != "help") {
+            // Hidden `__` commands are internal (the daemon).
+            for sub in cmd
+                .get_subcommands()
+                .filter(|s| s.get_name() != "help" && !s.get_name().starts_with("__"))
+            {
                 let name = format!("{path} {}", sub.get_name()).trim().to_owned();
                 if sub.has_subcommands() {
                     leaves(sub, &name, out);
@@ -442,6 +579,16 @@ mod tests {
             problems.push("--version: no schema".into());
         }
         assert!(problems.is_empty(), "{problems:#?}");
+    }
+
+    #[test]
+    fn idle_timeout_takes_zero_for_never() {
+        let cli = Cli::try_parse_from(["chrome-cdp", "open", "--idle-timeout", "0"]).unwrap();
+        let Some(super::Command::Open(args)) = cli.command else {
+            panic!("not open")
+        };
+        assert_eq!(args.idle.idle_timeout, Some(Duration::ZERO));
+        assert!(Cli::try_parse_from(["chrome-cdp", "open", "--idle-timeout", "5"]).is_err());
     }
 
     #[test]

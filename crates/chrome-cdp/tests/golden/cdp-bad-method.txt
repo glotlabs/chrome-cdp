@@ -1,0 +1,11 @@
+$ chrome-cdp cdp getVersion
+exit: 2
+--- stderr
+error: `getVersion` is not a CDP method name
+  hint: chrome-cdp cdp Browser.getVersion   (methods are Domain.method)
+
+$ chrome-cdp cdp getVersion --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"`getVersion` is not a CDP method name","hint":"chrome-cdp cdp Browser.getVersion   (methods are Domain.method)"}}
+

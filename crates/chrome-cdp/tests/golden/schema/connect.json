@@ -1,5 +1,93 @@
 {
   "$defs": {
+    "BrowserInfo": {
+      "description": "The browser a session drives.",
+      "properties": {
+        "chrome_args": {
+          "description": "Extra flags from `--chrome-arg`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "endpoint": {
+          "description": "The DevTools WebSocket URL (connected browsers).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headless": {
+          "description": "Whether it runs without a window (launched browsers).",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/BrowserKind",
+          "description": "Launched or connected."
+        },
+        "path": {
+          "description": "The binary launched (launched browsers).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pid": {
+          "description": "The browser's pid, which is also its process group (launched\nbrowsers).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "product": {
+          "description": "`Browser.getVersion`'s product, e.g. `HeadlessChrome/154.0.8037.57`.",
+          "type": "string"
+        },
+        "profile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProfileInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The profile (launched browsers)."
+        },
+        "source": {
+          "description": "Why that binary was picked, e.g. `found google-chrome on PATH`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "product"
+      ],
+      "type": "object"
+    },
+    "BrowserKind": {
+      "description": "How a session got its browser.",
+      "oneOf": [
+        {
+          "const": "launched",
+          "description": "chrome-cdp launched it (`open`); `close` shuts it down.",
+          "type": "string"
+        },
+        {
+          "const": "connected",
+          "description": "An existing browser (`connect`); `close` only detaches.",
+          "type": "string"
+        }
+      ]
+    },
     "ErrEnvelope": {
       "properties": {
         "error": {
@@ -188,9 +276,8 @@
     "OkEnvelope": {
       "properties": {
         "data": {
-          "additionalProperties": true,
-          "description": "The command's result.",
-          "type": "object"
+          "$ref": "#/$defs/OpenData",
+          "description": "The command's result."
         },
         "events": {
           "default": [],
@@ -223,6 +310,83 @@
       "required": [
         "ok",
         "data"
+      ],
+      "type": "object"
+    },
+    "OpenData": {
+      "description": "`data` of `chrome-cdp open --json` and `chrome-cdp connect --json`.",
+      "properties": {
+        "browser": {
+          "$ref": "#/$defs/BrowserInfo",
+          "description": "The browser."
+        },
+        "page": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PageInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The page opened, when a URL was given."
+        },
+        "session": {
+          "description": "The session name.",
+          "type": "string"
+        },
+        "started": {
+          "description": "Whether this call started the browser (or attached to it); `false`\nwhen the session already had it.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "session",
+        "started",
+        "browser"
+      ],
+      "type": "object"
+    },
+    "PageInfo": {
+      "description": "A page, after `open <url>`.",
+      "properties": {
+        "title": {
+          "description": "The document title.",
+          "type": "string"
+        },
+        "url": {
+          "description": "The URL after navigation (redirects followed).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "title"
+      ],
+      "type": "object"
+    },
+    "ProfileInfo": {
+      "description": "A launched browser's profile.",
+      "properties": {
+        "dir": {
+          "description": "The profile directory.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "`temporary` (deleted on close), `named` (`--profile`) or `dir`\n(`--user-data-dir`).",
+          "type": "string"
+        },
+        "name": {
+          "description": "The `--profile` name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "dir"
       ],
       "type": "object"
     },
@@ -286,5 +450,5 @@
     }
   ],
   "description": "The `--json` envelope (see [`crate::Envelope`]) with `data: T`.",
-  "title": "chrome-cdp __direct cdp --json"
+  "title": "chrome-cdp connect --json"
 }

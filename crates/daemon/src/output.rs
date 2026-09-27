@@ -33,7 +33,7 @@ pub fn opened(opened: &Opened) -> Output {
     opened
         .warnings
         .iter()
-        .fold(Output::typed(data, text).quiet(quiet), |o, w| o.warning(w))
+        .fold(Output::typed(data, text).quiet(quiet), Output::warning)
 }
 
 /// `status`.

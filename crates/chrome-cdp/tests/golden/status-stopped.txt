@@ -1,0 +1,17 @@
+$ chrome-cdp status
+exit: 0
+--- stdout
+session default: stopped
+dir: <sandbox>/run/chrome-cdp/default
+start it: chrome-cdp open
+
+$ chrome-cdp status --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"dir":"<sandbox>/run/chrome-cdp/default","session":"default","state":"stopped"}}
+
+$ chrome-cdp status -q
+exit: 0
+--- stdout
+stopped
+

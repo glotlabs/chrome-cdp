@@ -1,0 +1,15 @@
+$ chrome-cdp open
+exit: 0
+--- stdout
+session default is already open: Chrome/<version>, headless, temporary profile, pid <pid>
+
+$ chrome-cdp open --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"browser":{"headless":true,"kind":"launched","path":"<chrome>","pid":<pid>,"product":"Chrome/<version>","profile":{"dir":"<sandbox>/tmp/chrome-cdp-<rand>/profile","kind":"temporary"},"source":"given by CHROME_CDP_CHROME"},"session":"default","started":false}}
+
+$ chrome-cdp open -q
+exit: 0
+--- stdout
+default
+

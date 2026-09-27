@@ -45,14 +45,15 @@ jobs:
           done
           echo "::warning::no Chrome on this runner; CDP integration tests are skipped"
       - run: cargo xtask ci
-      # Plan 02: no test may leave a Chrome it launched, or its watchdog,
-      # running. Only chrome-cdp starts Chrome with --remote-debugging-pipe.
-      - name: No leftover Chrome processes
+      # Plan 02: no test may leave a Chrome it launched, its watchdog, or a
+      # session daemon running. Only chrome-cdp starts Chrome with
+      # --remote-debugging-pipe.
+      - name: No leftover Chrome or daemon processes
         shell: bash
         run: |
           sleep 2
-          if pgrep -fl -- '--remote-debugging-pipe|chrome-cdp-watchdog'; then
-            echo "::error::Chrome processes outlived the tests"
+          if pgrep -fl -- '--remote-debugging-pipe|chrome-cdp-watchdog|chrome-cdp __daemon'; then
+            echo "::error::Chrome or daemon processes outlived the tests"
             exit 1
           fi
 

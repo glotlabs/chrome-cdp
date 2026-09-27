@@ -5,20 +5,34 @@ built first for AI agents working from a shell. It aims to replace Playwright
 for agents: one command per step, compact output, refs instead of selectors,
 and errors that say what to run next.
 
-**Status:** early development. Only `chrome-cdp --version`, `chrome-cdp
-schema`, `install`/`uninstall` and a temporary raw CDP call work so far:
+**Status:** early development. Sessions (`open`, `connect`, `status`,
+`sessions`, `close`), raw CDP calls, `install`/`uninstall` and `schema` work
+so far:
 
 ```sh
 chrome-cdp install                    # Chrome for Testing, if there is no Chrome
-chrome-cdp __direct cdp Browser.getVersion
-chrome-cdp __direct cdp --target page Runtime.evaluate '{"expression":"1+1"}'
-chrome-cdp schema version   # JSON Schema of `chrome-cdp --version --json`
+chrome-cdp open https://example.com   # starts the session's browser
+chrome-cdp cdp --target page Runtime.evaluate '{"expression":"document.title"}'
+chrome-cdp status
+chrome-cdp close
+chrome-cdp schema open      # JSON Schema of `chrome-cdp open --json`
 ```
+
+Each session (`--session <name>`, default `default`) has a background daemon
+that keeps its browser warm between commands; the first command that needs a
+browser starts it. The daemon closes the browser and exits after 30 minutes
+without commands (`open --idle-timeout 2h`, `0` for never), on `close`, or if
+killed, taking Chrome with it. `connect 9222` attaches a session to a Chrome
+you started with `--remote-debugging-port=9222` instead; `close` then leaves
+that browser running. Session files (socket, logs, `meta.json`) live in
+`$XDG_RUNTIME_DIR/chrome-cdp/<session>` on Linux and
+`$TMPDIR/chrome-cdp/<session>` on macOS; `status` shows the path and
+`status --logs` the end of Chrome's log.
 
 It finds Chrome by itself: `--chrome <path>`, then `$CHROME_CDP_CHROME`, then
 browsers installed in the chrome-cdp cache (`~/.cache/chrome-cdp`, or
 `~/Library/Caches/chrome-cdp` on macOS; `$CHROME_CDP_CACHE` overrides it),
-then a system Google Chrome or Chromium. `-v` logs which one it used.
+then a system Google Chrome or Chromium. `status` shows which one it used.
 
 `chrome-cdp install` downloads [Chrome for
 Testing](https://googlechromelabs.github.io/chrome-for-testing/) into that
@@ -33,10 +47,11 @@ installs Chrome when none is found. `CHROME_CDP_CFT_URL` points at a mirror of
 the Chrome for Testing index.
 
 Chrome runs headless with its sandbox on and a temporary profile that is
-deleted afterwards. `--headed` opens a window, `--profile <name>` keeps
-logins between runs, `--user-data-dir <path>` picks the directory, and
-`--chrome-arg=<flag>` adds a Chrome flag. Nothing outlives chrome-cdp, even
-`kill -9`. [docs/chrome-flags.md](docs/chrome-flags.md) lists the flags and
+deleted when the session closes. `open --headed` opens a window,
+`--profile <name>` keeps logins between runs, `--user-data-dir <path>` picks
+the directory, and `--chrome-arg=<flag>` adds a Chrome flag; `open --restart`
+applies new ones to a running session. Chrome never outlives its session
+daemon, even `kill -9`. [docs/chrome-flags.md](docs/chrome-flags.md) lists the flags and
 explains the sandbox and profile rules.
 
 Every command prints its result on stdout and notes and errors on stderr,

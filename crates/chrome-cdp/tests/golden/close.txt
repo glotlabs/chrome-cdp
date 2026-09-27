@@ -1,0 +1,15 @@
+$ chrome-cdp close
+exit: 0
+--- stdout
+closed session default and its browser
+
+$ chrome-cdp close --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"sessions":[{"browser":"closed","session":"default","was_running":true}]}}
+
+$ chrome-cdp close -q
+exit: 0
+--- stdout
+default
+

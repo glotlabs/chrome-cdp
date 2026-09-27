@@ -1,0 +1,11 @@
+$ chrome-cdp open --session a/b
+exit: 2
+--- stderr
+error: `a/b` is not a session name
+  hint: use letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 64 chars, e.g. chrome-cdp open --session shop
+
+$ chrome-cdp open --session a/b --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"`a/b` is not a session name","hint":"use letters, digits, `.`, `_` and `-`, starting with a letter or digit, at most 64 chars, e.g. chrome-cdp open --session shop"}}
+

@@ -1,10 +1,10 @@
-$ chrome-cdp __direct cdp Browser.getVersion --chrome <tmp>/chrome
+$ chrome-cdp open --chrome <tmp>/chrome
 exit: 4
 --- stderr
 error: Chrome exited during startup: No usable sandbox! If you are running on Ubuntu 23.10+ ...
   hint: the kernel blocks Chrome's sandbox for this binary; allow it with an AppArmor profile granting `userns` (see /etc/apparmor.d/), or use a system Chrome
 
-$ chrome-cdp __direct cdp Browser.getVersion --chrome <tmp>/chrome --json
+$ chrome-cdp open --chrome <tmp>/chrome --json
 exit: 4
 --- stdout
 {"ok":false,"error":{"kind":"LaunchFailed","message":"Chrome exited during startup: No usable sandbox! If you are running on Ubuntu 23.10+ ...","hint":"the kernel blocks Chrome's sandbox for this binary; allow it with an AppArmor profile granting `userns` (see /etc/apparmor.d/), or use a system Chrome","details":{"chrome_stderr":["[1:1:0927/101010.1:FATAL:zygote_host_impl_linux.cc(128)] No usable sandbox! If you are running on Ubuntu 23.10+ ..."]}}}

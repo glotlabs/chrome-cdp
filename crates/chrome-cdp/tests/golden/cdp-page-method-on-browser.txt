@@ -1,0 +1,11 @@
+$ chrome-cdp cdp Runtime.evaluate '{"expression":"1"}'
+exit: 4
+--- stderr
+error: Runtime.evaluate: 'Runtime.evaluate' wasn't found
+  hint: if Runtime.evaluate is a page method, send it to a page: chrome-cdp cdp --target page Runtime.evaluate …
+
+$ chrome-cdp cdp Runtime.evaluate '{"expression":"1"}' --json
+exit: 4
+--- stdout
+{"ok":false,"error":{"kind":"ProtocolError","message":"Runtime.evaluate: 'Runtime.evaluate' wasn't found","hint":"if Runtime.evaluate is a page method, send it to a page: chrome-cdp cdp --target page Runtime.evaluate …","details":{"code":-32601,"data":null,"method":"Runtime.evaluate"}}}
+

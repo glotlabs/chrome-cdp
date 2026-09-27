@@ -1,5 +1,5 @@
 //! End-to-end tests of the `chrome-cdp` binary: flags, output modes, exit
-//! codes, and `__direct cdp` against a real Chrome.
+//! codes, and `open` and `cdp` against a real Chrome.
 //!
 //! The real-Chrome tests need `CHROME_PATH`. Without it they pass as no-ops,
 //! unless `CHROME_CDP_REQUIRE_CHROME=1` (set in CI), in which case they fail.
@@ -14,7 +14,7 @@ use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use common::{chrome_path, cli, code, direct_cdp, fake_chrome, json_out, run, stderr, stdout};
+use common::{Sandbox, chrome_path, cli, code, fake_chrome, json_out, run, stderr, stdout};
 use serde_json::{Value, json};
 
 #[test]
@@ -49,14 +49,14 @@ fn version_names_crate_git_and_protocol() {
 }
 
 #[test]
-fn help_exits_zero_and_hides_direct() {
+fn help_exits_zero_and_hides_the_daemon() {
     let out = run(cli().arg("--help"));
     assert_eq!(code(&out), 0);
     let text = stdout(&out);
     for flag in ["--json", "--quiet", "--session", "--timeout", "--verbose"] {
         assert!(text.contains(flag), "{flag} missing from help");
     }
-    assert!(!text.contains("__direct"));
+    assert!(!text.contains("__daemon"));
 }
 
 #[test]
@@ -124,7 +124,12 @@ fn config_files_set_defaults_below_env_and_flags() {
             .unwrap()
             .to_owned()
     };
-    let call = || direct_cdp(&chrome, &["Browser.getVersion", "--json"]);
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let call = || {
+        let mut cmd = sandbox.cli();
+        cmd.args(["open", "--json"]);
+        cmd
+    };
 
     // The user config applies…
     assert_eq!(
@@ -170,17 +175,13 @@ fn bad_config_is_a_usage_error_naming_the_file() {
 }
 
 #[test]
-fn direct_checks_arguments_before_launching() {
-    // `/nonexistent` would fail with ChromeNotFound if it were launched.
-    let chrome = Path::new("/nonexistent/chrome");
-    let out = run(&mut direct_cdp(chrome, &["getVersion", "--json"]));
+fn cdp_checks_arguments_before_starting_a_daemon() {
+    let sandbox = Sandbox::new();
+    let out = sandbox.run(&["cdp", "getVersion", "--json"]);
     assert_eq!(code(&out), 2);
     assert_eq!(json_out(&out)["error"]["kind"], json!("BadArgs"));
 
-    let out = run(&mut direct_cdp(
-        chrome,
-        &["Runtime.evaluate", "{nope", "--json"],
-    ));
+    let out = sandbox.run(&["cdp", "Runtime.evaluate", "{nope", "--json"]);
     assert_eq!(code(&out), 2);
     let err = &json_out(&out)["error"];
     assert!(
@@ -195,52 +196,73 @@ fn direct_checks_arguments_before_launching() {
             .unwrap()
             .contains(r#"'{"expression":"1+1"}'"#)
     );
+    let out = sandbox.run(&["open", "--session", "a/b"]);
+    assert_eq!(code(&out), 2);
+    assert!(
+        stderr(&out).starts_with("error: `a/b` is not a session name\n"),
+        "{}",
+        stderr(&out)
+    );
+    let out = sandbox.run(&["connect", "chrome"]);
+    assert_eq!(code(&out), 2);
+    assert!(!sandbox.runtime_dir().join("chrome-cdp").exists());
+}
 
-    let out = run(&mut direct_cdp(chrome, &["Browser.getVersion"]));
+#[test]
+fn a_missing_chrome_leaves_no_daemon_behind() {
+    let sandbox = Sandbox::new();
+    let out = sandbox.run(&["open", "--chrome", "/nonexistent/chrome"]);
     assert_eq!(code(&out), 4);
     assert_eq!(
         stderr(&out),
         "error: no Chrome at /nonexistent/chrome\n  \
          hint: pass --chrome with the path of a Chrome or Chromium binary\n"
     );
+    assert!(sandbox.daemons().is_empty());
 
-    let out = run(cli()
-        .args(["__direct", "cdp", "Browser.getVersion"])
-        .env("CHROME_CDP_CHROME", chrome));
+    // `cdp` starts a browser for a new session, found the same way.
+    let out = run(sandbox
+        .cli()
+        .args(["cdp", "Browser.getVersion"])
+        .env("CHROME_CDP_CHROME", "/nonexistent/chrome"));
     assert_eq!(code(&out), 4);
     assert_eq!(
         stderr(&out),
         "error: no Chrome at /nonexistent/chrome (from CHROME_CDP_CHROME)\n  \
          hint: point CHROME_CDP_CHROME at a Chrome or Chromium binary, or unset it\n"
     );
+    assert!(sandbox.daemons().is_empty());
+    let out = sandbox.run(&["status", "-q"]);
+    assert_eq!(stdout(&out), "stopped\n");
 }
 
-/// `cli()` with no `--chrome`, an empty install cache and an empty `PATH`,
-/// so only the fixed system locations remain.
-fn discovery_cli(dir: &Path) -> Command {
+/// `open` in `sandbox` with no `--chrome`, an empty install cache and an
+/// empty `PATH`, so only the fixed system locations remain.
+fn discovery_cli(sandbox: &Sandbox) -> Command {
+    let dir = sandbox.dir.path();
     let empty = dir.join("empty");
     std::fs::create_dir_all(&empty).unwrap();
-    let mut cmd = cli();
-    cmd.args(["__direct", "cdp", "Browser.getVersion"])
+    let mut cmd = sandbox.cli();
+    cmd.args(["open"])
         .env("CHROME_CDP_CACHE", dir.join("cache"))
         .env("PATH", &empty);
     cmd
 }
 
 #[test]
-fn direct_says_where_it_looked_for_chrome() {
+fn open_says_where_it_looked_for_chrome() {
     let system = ["/opt/google/chrome/chrome", "/snap/bin/chromium"];
     if !cfg!(target_os = "linux") || system.iter().any(|p| Path::new(p).exists()) {
         eprintln!("skipping: this machine has a system Chrome");
         return;
     }
-    let dir = tempfile::tempdir().unwrap();
-    let out = run(discovery_cli(dir.path()).arg("--json"));
+    let sandbox = Sandbox::new();
+    let out = run(discovery_cli(&sandbox).arg("--json"));
     assert_eq!(code(&out), 4);
     let err = &json_out(&out)["error"];
     assert_eq!(err["kind"], json!("ChromeNotFound"));
     assert_eq!(err["message"], json!("no Chrome or Chromium found"));
-    let cache = dir.path().join("cache/browsers");
+    let cache = sandbox.dir.path().join("cache/browsers");
     assert_eq!(
         err["details"]["searched"],
         json!([
@@ -257,7 +279,7 @@ fn direct_says_where_it_looked_for_chrome() {
 }
 
 #[test]
-fn direct_notes_a_too_old_chrome_when_launch_fails() {
+fn open_notes_a_too_old_chrome_when_launch_fails() {
     let dir = tempfile::tempdir().unwrap();
     let chrome = dir.path().join("old-chrome");
     std::fs::write(
@@ -266,7 +288,8 @@ fn direct_notes_a_too_old_chrome_when_launch_fails() {
     )
     .unwrap();
     std::fs::set_permissions(&chrome, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let out = run(&mut direct_cdp(&chrome, &["Browser.getVersion"]));
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let out = sandbox.run(&["open"]);
     assert_eq!(code(&out), 4);
     assert!(
         stderr(&out).contains(&format!(
@@ -277,50 +300,53 @@ fn direct_notes_a_too_old_chrome_when_launch_fails() {
         "{}",
         stderr(&out)
     );
+    assert!(sandbox.daemons().is_empty());
 }
 
 #[test]
-fn direct_finds_chrome_without_being_told() {
+fn open_finds_chrome_without_being_told() {
     let Some(chrome) = chrome_path() else { return };
     // An install cache holding (a link to) the test Chrome, as
     // `chrome-cdp install` would lay it out.
-    let dir = tempfile::tempdir().unwrap();
+    let sandbox = Sandbox::new();
     let id = "stable-154.0.0.0-linux64";
-    let install = dir.path().join("cache/browsers").join(id);
+    let install = sandbox.dir.path().join("cache/browsers").join(id);
     std::fs::create_dir_all(install.join("chrome-linux64")).unwrap();
     std::os::unix::fs::symlink(&chrome, install.join("chrome-linux64/chrome")).unwrap();
     std::fs::write(install.join("INSTALLATION_COMPLETE"), "").unwrap();
 
     if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
-        let out = run(discovery_cli(dir.path()).args(["--json", "-v"]));
+        let out = run(discovery_cli(&sandbox).arg("--json"));
         assert_eq!(code(&out), 0);
-        assert!(json_out(&out)["data"]["product"].is_string());
-        assert!(
-            stderr(&out).contains(&format!(
-                "using Chrome installed by chrome-cdp install ({id})"
-            )),
-            "{}",
-            stderr(&out)
+        let browser = &json_out(&out)["data"]["browser"];
+        assert_eq!(
+            browser["source"],
+            json!(format!("installed by chrome-cdp install ({id})"))
         );
+        assert!(sandbox.run(&["close"]).status.success());
     }
 
     // The env var beats the cache.
-    let out = run(discovery_cli(dir.path())
+    let out = run(discovery_cli(&sandbox)
         .env("CHROME_CDP_CHROME", &chrome)
-        .args(["--json", "-v"]));
+        .arg("--json"));
     assert_eq!(code(&out), 0);
-    assert!(stderr(&out).contains("using Chrome given by CHROME_CDP_CHROME"));
+    assert_eq!(
+        json_out(&out)["data"]["browser"]["source"],
+        json!("given by CHROME_CDP_CHROME")
+    );
 }
 
 #[test]
-fn direct_reports_why_chrome_failed_to_start() {
+fn open_reports_why_chrome_failed_to_start() {
     let dir = tempfile::tempdir().unwrap();
     let chrome = fake_chrome(
         &dir,
         "echo '[1:1:0927/101010.1:FATAL:zygote_host_impl_linux.cc(128)] No usable sandbox! \
          If you are running on Ubuntu 23.10+ ...' >&2\nexit 1",
     );
-    let out = run(&mut direct_cdp(&chrome, &["Browser.getVersion"]));
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let out = sandbox.run(&["open"]);
     assert_eq!(code(&out), 4);
     let err = stderr(&out);
     assert!(
@@ -334,22 +360,27 @@ fn direct_reports_why_chrome_failed_to_start() {
         "{err}"
     );
 
-    let out = run(&mut direct_cdp(&chrome, &["Browser.getVersion", "--json"]));
+    let out = sandbox.run(&["open", "--json"]);
     let v = json_out(&out);
     assert_eq!(v["error"]["kind"], json!("LaunchFailed"));
     let lines = v["error"]["details"]["chrome_stderr"].as_array().unwrap();
     assert_eq!(lines.len(), 1);
+    // Chrome's stderr is in the session's chrome.log too.
+    let out = sandbox.run(&["status", "--logs"]);
+    assert!(
+        stdout(&out).contains("No usable sandbox!"),
+        "{}",
+        stdout(&out)
+    );
 }
 
 #[test]
-fn direct_times_out_on_a_silent_chrome() {
+fn open_times_out_on_a_silent_chrome() {
     let dir = tempfile::tempdir().unwrap();
     let chrome = fake_chrome(&dir, "exec sleep 30");
+    let sandbox = Sandbox::with_chrome(&chrome);
     let started = std::time::Instant::now();
-    let out = run(&mut direct_cdp(
-        &chrome,
-        &["Browser.getVersion", "--timeout", "300ms", "--json"],
-    ));
+    let out = sandbox.run(&["open", "--timeout", "300ms", "--json"]);
     assert_eq!(code(&out), 3);
     let v = json_out(&out);
     assert_eq!(v["error"]["kind"], json!("Timeout"));
@@ -359,36 +390,44 @@ fn direct_times_out_on_a_silent_chrome() {
     );
     // The hung child is killed, not waited for.
     assert!(started.elapsed() < std::time::Duration::from_secs(10));
+    sandbox.assert_all_gone();
 }
 
 #[test]
-fn direct_browser_get_version() {
+fn cdp_browser_get_version() {
     let Some(chrome) = chrome_path() else { return };
-    let out = run(&mut direct_cdp(&chrome, &["Browser.getVersion"]));
+    let sandbox = Sandbox::with_chrome(&chrome);
+    // A new session gets a browser, and says so.
+    let out = sandbox.run(&["cdp", "Browser.getVersion"]);
     assert_eq!(code(&out), 0);
     let v: Value = serde_json::from_str(&stdout(&out)).unwrap();
     assert!(v["product"].as_str().unwrap().contains("Chrome"), "{v}");
     assert_eq!(v["protocolVersion"], json!("1.3"));
-    assert!(stderr(&out).is_empty(), "{}", stderr(&out));
+    assert!(
+        stderr(&out).starts_with("warning: session default had no browser; started Chrome/"),
+        "{}",
+        stderr(&out)
+    );
 
-    let out = run(&mut direct_cdp(&chrome, &["Browser.getVersion", "--json"]));
+    let out = sandbox.run(&["cdp", "Browser.getVersion", "--json"]);
     let v = json_out(&out);
     assert_eq!(v["ok"], json!(true));
     assert_eq!(v["data"]["protocolVersion"], json!("1.3"));
+    assert!(v.get("warnings").is_none(), "{v}");
 }
 
 #[test]
-fn direct_page_evaluate_from_stdin() {
+fn cdp_page_evaluate_from_stdin() {
     let Some(chrome) = chrome_path() else { return };
-    let mut child = direct_cdp(
-        &chrome,
-        &["--target", "page", "Runtime.evaluate", "-", "-q"],
-    )
-    .stdin(Stdio::piped())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
-    .spawn()
-    .unwrap();
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let mut child = sandbox
+        .cli()
+        .args(["cdp", "--target", "page", "Runtime.evaluate", "-", "-q"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
     child
         .stdin
         .take()
@@ -404,34 +443,63 @@ fn direct_page_evaluate_from_stdin() {
 }
 
 #[test]
-fn direct_protocol_errors_and_timeouts() {
+fn cdp_page_state_lasts_between_calls() {
     let Some(chrome) = chrome_path() else { return };
-    // A page method sent to the browser.
-    let out = run(&mut direct_cdp(
-        &chrome,
-        &["Runtime.evaluate", r#"{"expression":"1"}"#],
-    ));
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let out = sandbox.run(&["open", "data:text/html,<title>kept</title>"]);
+    assert_eq!(code(&out), 0);
+    let eval = |expr: &str| {
+        let params = json!({"expression": expr, "returnByValue": true}).to_string();
+        let out = sandbox.run(&[
+            "cdp",
+            "--target",
+            "page",
+            "Runtime.evaluate",
+            &params,
+            "--json",
+        ]);
+        assert_eq!(code(&out), 0);
+        json_out(&out)["data"]["result"]["value"].clone()
+    };
+    assert_eq!(eval("document.title"), json!("kept"));
+    eval("window.counter = 41");
+    assert_eq!(eval("window.counter + 1"), json!(42));
+}
+
+#[test]
+fn cdp_protocol_errors_and_timeouts() {
+    let Some(chrome) = chrome_path() else { return };
+    let sandbox = Sandbox::with_chrome(&chrome);
+    assert_eq!(code(&sandbox.run(&["open", "--session", "s2"])), 0);
+    // A page method sent to the browser; the hint keeps the session.
+    let out = sandbox.run(&[
+        "cdp",
+        "Runtime.evaluate",
+        r#"{"expression":"1"}"#,
+        "--session",
+        "s2",
+    ]);
     assert_eq!(code(&out), 4);
     assert_eq!(
         stderr(&out),
         "error: Runtime.evaluate: 'Runtime.evaluate' wasn't found\n  \
          hint: if Runtime.evaluate is a page method, send it to a page: \
-         chrome-cdp __direct cdp --target page Runtime.evaluate …\n"
+         chrome-cdp cdp --session s2 --target page Runtime.evaluate …\n"
     );
 
     // Chrome answers, but only after the timeout.
-    let out = run(&mut direct_cdp(
-        &chrome,
-        &[
-            "--target",
-            "page",
-            "Runtime.evaluate",
-            r#"{"expression":"new Promise(() => {})","awaitPromise":true}"#,
-            "--timeout",
-            "500ms",
-            "--json",
-        ],
-    ));
+    let out = sandbox.run(&[
+        "cdp",
+        "--session",
+        "s2",
+        "--target",
+        "page",
+        "Runtime.evaluate",
+        r#"{"expression":"new Promise(() => {})","awaitPromise":true}"#,
+        "--timeout",
+        "500ms",
+        "--json",
+    ]);
     assert_eq!(code(&out), 3);
     let err = &json_out(&out)["error"];
     assert_eq!(err["kind"], json!("Timeout"));
@@ -442,17 +510,11 @@ fn direct_protocol_errors_and_timeouts() {
 }
 
 #[test]
-fn direct_output_is_bounded() {
+fn cdp_output_is_bounded() {
     let Some(chrome) = chrome_path() else { return };
-    let out = run(&mut direct_cdp(
-        &chrome,
-        &[
-            "--target",
-            "page",
-            "Runtime.evaluate",
-            r#"{"expression":"'x'.repeat(100000)","returnByValue":true}"#,
-        ],
-    ));
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let long = r#"{"expression":"'x'.repeat(100000)","returnByValue":true}"#;
+    let out = sandbox.run(&["cdp", "--target", "page", "Runtime.evaluate", long]);
     assert_eq!(code(&out), 0);
     let text = stdout(&out);
     let last = text.lines().last().unwrap();
@@ -463,16 +525,14 @@ fn direct_output_is_bounded() {
     assert!(text.chars().count() < 20_200);
 
     // --json stays valid JSON: the long string is shortened to fit.
-    let out = run(&mut direct_cdp(
-        &chrome,
-        &[
-            "--target",
-            "page",
-            "Runtime.evaluate",
-            r#"{"expression":"'x'.repeat(100000)","returnByValue":true}"#,
-            "--json",
-        ],
-    ));
+    let out = sandbox.run(&[
+        "cdp",
+        "--target",
+        "page",
+        "Runtime.evaluate",
+        long,
+        "--json",
+    ]);
     let v = json_out(&out);
     assert!(v["data"].to_string().chars().count() <= 20_000);
     let value = v["data"]["result"]["value"].as_str().unwrap();
@@ -491,18 +551,16 @@ fn direct_output_is_bounded() {
     );
 
     // --max-chars 0 turns the bound off.
-    let out = run(&mut direct_cdp(
-        &chrome,
-        &[
-            "--target",
-            "page",
-            "Runtime.evaluate",
-            r#"{"expression":"'x'.repeat(100000)","returnByValue":true}"#,
-            "--json",
-            "--max-chars",
-            "0",
-        ],
-    ));
+    let out = sandbox.run(&[
+        "cdp",
+        "--target",
+        "page",
+        "Runtime.evaluate",
+        long,
+        "--json",
+        "--max-chars",
+        "0",
+    ]);
     let v = json_out(&out);
     assert_eq!(
         v["data"]["result"]["value"].as_str().unwrap().len(),

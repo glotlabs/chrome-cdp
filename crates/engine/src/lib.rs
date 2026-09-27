@@ -257,7 +257,18 @@ impl Engine {
         tracing::info!(chrome = %chrome.path.display(), "launching Chrome {}", chrome.source.describe());
         // Called from a runtime worker (never `spawn_blocking`): on Linux,
         // Chrome dies with the thread that spawned it.
-        let launched = browser::launch(&chrome, &options, &host).await?;
+        let launched = browser::launch(&chrome, &options, &host)
+            .await
+            .map_err(|info| {
+                if info.hint.as_deref() == Some(browser::launch::OUTPUT_HINT) {
+                    info.hint(
+                        Hint::run(Cmd::new("status").session(&self.session).switch("logs"))
+                            .why("shows Chrome's output"),
+                    )
+                } else {
+                    info
+                }
+            })?;
         warnings.extend(launched.warnings.iter().cloned());
         let info = launched_info(&chrome, &launched, &options);
         let spec = Spec::Launched {

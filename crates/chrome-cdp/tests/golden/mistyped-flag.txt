@@ -1,7 +1,7 @@
-$ chrome-cdp __direct cdp Browser.getVersion --jsn
+$ chrome-cdp cdp Browser.getVersion --jsn
 exit: 2
 --- stderr
 error: unexpected argument '--jsn' found
   tip: a similar argument exists: '--json'
-  hint: chrome-cdp __direct cdp --help
+  hint: chrome-cdp cdp --help
 

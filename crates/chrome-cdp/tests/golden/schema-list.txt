@@ -1,16 +1,21 @@
 $ chrome-cdp schema
 exit: 0
 --- stdout
-version       chrome-cdp --version: version, git commit and CDP protocol revision
-schema        a command's JSON Schema, or the list of commands
-install       the browser installed, or with --list the installed and available ones
-uninstall     the browser removed
-__direct cdp  the raw CDP result object (temporary; plan 02's cdp returns the same)
+version    chrome-cdp --version: version, git commit and CDP protocol revision
+schema     a command's JSON Schema, or the list of commands
+install    the browser installed, or with --list the installed and available ones
+uninstall  the browser removed
+open       the session and its browser, and the page opened
+connect    the session and the browser it attached to
+close      the sessions closed
+status     the session's state, browser, tabs and uptime
+sessions   every live session
+cdp        the raw CDP result object
 
 $ chrome-cdp schema --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"commands":[{"name":"version","summary":"chrome-cdp --version: version, git commit and CDP protocol revision"},{"name":"schema","summary":"a command's JSON Schema, or the list of commands"},{"name":"install","summary":"the browser installed, or with --list the installed and available ones"},{"name":"uninstall","summary":"the browser removed"},{"name":"__direct cdp","summary":"the raw CDP result object (temporary; plan 02's cdp returns the same)"}]}}
+{"ok":true,"data":{"commands":[{"name":"version","summary":"chrome-cdp --version: version, git commit and CDP protocol revision"},{"name":"schema","summary":"a command's JSON Schema, or the list of commands"},{"name":"install","summary":"the browser installed, or with --list the installed and available ones"},{"name":"uninstall","summary":"the browser removed"},{"name":"open","summary":"the session and its browser, and the page opened"},{"name":"connect","summary":"the session and the browser it attached to"},{"name":"close","summary":"the sessions closed"},{"name":"status","summary":"the session's state, browser, tabs and uptime"},{"name":"sessions","summary":"every live session"},{"name":"cdp","summary":"the raw CDP result object"}]}}
 
 $ chrome-cdp schema -q
 exit: 0
@@ -19,5 +24,10 @@ version
 schema
 install
 uninstall
-__direct cdp
+open
+connect
+close
+status
+sessions
+cdp
 
