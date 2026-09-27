@@ -150,37 +150,51 @@ async fn pipe_version_attach_navigate_load() {
 async fn killing_chrome_fails_pending_calls_fast() {
     let Some(path) = chrome_path() else { return };
     let (conn, mut chrome) = launch_pipe(&path);
-    let page = timeout(STEP, new_page(&conn)).await.unwrap();
+    let pages = [
+        timeout(STEP, new_page(&conn)).await.unwrap(),
+        timeout(STEP, new_page(&conn)).await.unwrap(),
+    ];
 
-    // A call Chrome never answers.
-    let mut forever = runtime::EvaluateParams::new("new Promise(() => {})".into());
-    forever.await_promise = Some(true);
-    let pending = tokio::spawn({
-        let page = page.clone();
-        async move { page.call(forever).await }
-    });
-    let mut events = page.events();
-    // Give the call time to reach Chrome.
+    // Calls Chrome never answers, several per page session.
+    let mut pending = Vec::new();
+    for page in &pages {
+        for _ in 0..5 {
+            let mut forever = runtime::EvaluateParams::new("new Promise(() => {})".into());
+            forever.await_promise = Some(true);
+            let page = page.clone();
+            pending.push(tokio::spawn(async move { page.call(forever).await }));
+        }
+    }
+    let mut events = pages[0].events();
+    // Give the calls time to reach Chrome.
     tokio::time::sleep(Duration::from_millis(200)).await;
-    assert!(!pending.is_finished());
+    assert!(pending.iter().all(|p| !p.is_finished()));
 
     chrome.child.start_kill().unwrap();
     let killed = Instant::now();
-    let err = timeout(STEP, pending).await.unwrap().unwrap().unwrap_err();
+    for call in pending {
+        let err = timeout(STEP, call).await.unwrap().unwrap().unwrap_err();
+        assert!(matches!(err, CdpError::Disconnected { .. }), "{err:?}");
+    }
     let elapsed = killed.elapsed();
-    eprintln!("pending call failed {elapsed:?} after SIGKILL");
-    assert!(matches!(err, CdpError::Disconnected { .. }), "{err:?}");
+    eprintln!("all pending calls failed {elapsed:?} after SIGKILL");
     // Measured 6-55 ms when run alone. Nearly all of it is the kernel
     // tearing down Chrome's address space before it closes the pipe, which
     // can pass 100 ms on a loaded machine, so the bound here is loose. The
     // client's own reaction time is checked in the connection unit tests.
     assert!(
         elapsed < Duration::from_millis(500),
-        "pending call failed {elapsed:?} after the kill"
+        "pending calls failed {elapsed:?} after the kill"
     );
     assert!(timeout(STEP, events.next()).await.unwrap().is_none());
-    let err = page.call(page::EnableParams::default()).await.unwrap_err();
-    assert!(matches!(err, CdpError::Disconnected { .. }), "{err:?}");
+    // New calls on any session fail at once too.
+    for session in [conn.browser(), pages[1].clone()] {
+        let err = session
+            .call(page::EnableParams::default())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, CdpError::Disconnected { .. }), "{err:?}");
+    }
     chrome.wait().await;
 }
 
