@@ -1,0 +1,14 @@
+[package]
+name = "browser"
+description = "Chrome discovery, install (Chrome for Testing), launch flags and profiles"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+cdp.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,51 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "xtask"]
+default-members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+# Internal crates.
+cdp = { path = "crates/cdp" }
+browser = { path = "crates/browser" }
+engine = { path = "crates/engine" }
+daemon = { path = "crates/daemon" }
+protocol = { path = "crates/protocol" }
+
+[workspace.lints.rust]
+# Denied (not forbidden) so the fd-passing module in `cdp` can opt out with
+# `#[allow(unsafe_code)]`. Nothing else may.
+unsafe_code = "deny"
+unreachable_pub = "warn"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Curated pedantic allow-list: noisy lints that do not pay for themselves.
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+doc_markdown = "allow"
+similar_names = "allow"
+too_many_lines = "allow"
+struct_excessive_bools = "allow"
+# No unwrap()/expect() outside tests and `main` (see clippy.toml).
+unwrap_used = "warn"
+expect_used = "warn"
+dbg_macro = "warn"
+todo = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"

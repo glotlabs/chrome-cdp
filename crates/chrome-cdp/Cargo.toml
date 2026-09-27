@@ -1,0 +1,18 @@
+[package]
+name = "chrome-cdp"
+description = "Drive Chrome over the DevTools Protocol from a shell; built for AI agents"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "chrome-cdp"
+path = "src/main.rs"
+
+[dependencies]
+protocol.workspace = true
+
+[lints]
+workspace = true
