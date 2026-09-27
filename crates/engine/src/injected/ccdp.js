@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 06fd02fde0d0c453
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 4b89b41dd43bc205
 "use strict";
 (() => {
   // src/dom.ts
@@ -39,6 +39,12 @@
     const parent = node.parentNode;
     if (parent instanceof ShadowRoot) return parent.host;
     return null;
+  }
+  function contains(outer, inner) {
+    for (let n = inner; n; n = n instanceof Element ? parentOf(n) : n.parentNode) {
+      if (n === outer) return true;
+    }
+    return false;
   }
   function visible(el) {
     const box = el.getBoundingClientRect();
@@ -1255,18 +1261,18 @@ ${inner}
     const els = [];
     const active = activeElement();
     const modal = openModal(document);
-    function visit(node, parent, parentStyle, invisible, mute) {
+    function visit(node, parent, parentStyle, invisible2, mute) {
       if (nodes.length > 2e5) return;
       if (node.nodeType === Node.TEXT_NODE) {
         const data = node.data;
-        if (!invisible && !mute && data) nodes.push({ p: parent, t: 1, n: data });
+        if (!invisible2 && !mute && data) nodes.push({ p: parent, t: 1, n: data });
         return;
       }
       if (node.nodeType !== Node.ELEMENT_NODE) return;
       const el = node;
       if (SKIP.has(tag(el))) return;
       if (tag(el) === "br") {
-        if (!invisible && !mute) nodes.push({ p: parent, t: 1, n: "\n" });
+        if (!invisible2 && !mute) nodes.push({ p: parent, t: 1, n: "\n" });
         return;
       }
       const style = view.getComputedStyle(el);
@@ -1321,7 +1327,138 @@ ${inner}
     };
   }
 
+  // src/actionable.ts
+  function outline(el) {
+    const id = el.getAttribute("id");
+    if (id) return `<${tag(el)} id="${cut3(id, 30)}">`;
+    const cls = norm2(el.getAttribute("class"));
+    if (cls) return `<${tag(el)} class="${cut3(cls, 30)}">`;
+    return `<${tag(el)}>`;
+  }
+  var norm2 = (s) => (s || "").replace(/\s+/g, " ").trim();
+  var cut3 = (s, n) => s.length > n ? s.slice(0, n - 1) + "…" : s;
+  function closest(el, test) {
+    for (let a = el; a; a = parentOf(a)) {
+      if (test(a, getComputedStyle(a))) return a;
+    }
+    return null;
+  }
+  var on = (el, cause) => cause && cause !== el ? ` on ${outline(cause)}` : "";
+  function invisible(el) {
+    if (!visible(el)) {
+      const box = el.getBoundingClientRect();
+      if (box.width > 0 && box.height > 0) return "it has visibility: hidden";
+      const none = closest(el, (_, s) => s.display === "none");
+      if (none) return `it has display: none${on(el, none)}`;
+      return `its box is empty (${Math.round(box.width)}x${Math.round(box.height)})`;
+    }
+    const clear = closest(el, (_, s) => s.opacity === "0");
+    if (clear) return `it has opacity: 0${on(el, clear)}`;
+    return null;
+  }
+  var CONTROLS = /* @__PURE__ */ new Set(["button", "input", "select", "textarea", "optgroup", "option", "fieldset"]);
+  function disabled(el) {
+    if (CONTROLS.has(tag(el)) && el.matches(":disabled")) {
+      if (el.hasAttribute("disabled")) return "it has the disabled attribute";
+      const parent = closest(el, (a) => a !== el && a.matches("fieldset:disabled, select:disabled, optgroup:disabled"));
+      if (parent) return `it is inside a disabled ${outline(parent)}`;
+      return "it is disabled";
+    }
+    const aria = closest(el, (a) => a.getAttribute("aria-disabled") === "true");
+    if (aria) return `it has aria-disabled="true"${on(el, aria)}`;
+    return null;
+  }
+  var NOT_TEXT = /* @__PURE__ */ new Set(["checkbox", "radio", "file", "button", "submit", "reset", "image", "hidden"]);
+  function readOnly(el) {
+    const name = tag(el);
+    if (name === "input") {
+      const type = el.type;
+      if (NOT_TEXT.has(type)) return { why: `it is an <input type=${type}>, which takes no text`, final: true };
+    } else if (name !== "textarea" && !el.isContentEditable) {
+      const role = roleOf(el);
+      if (role !== "textbox" && role !== "searchbox" && role !== "combobox" && role !== "spinbutton") {
+        return { why: "it is not an input, textarea or contenteditable element", final: true };
+      }
+    }
+    if ((name === "input" || name === "textarea") && el.readOnly) {
+      return { why: "it has the readonly attribute" };
+    }
+    if (el.getAttribute("aria-readonly") === "true") return { why: 'it has aria-readonly="true"' };
+    return null;
+  }
+  var frame = () => new Promise((resolve) => {
+    requestAnimationFrame(() => resolve());
+    setTimeout(resolve, 100);
+  });
+  var rect = (el) => {
+    const r = el.getBoundingClientRect();
+    return [r.x, r.y, r.width, r.height];
+  };
+  async function checkActionable(el, needs) {
+    if (!el.isConnected) return { check: "attached", why: "it was removed from the page" };
+    const hidden2 = invisible(el);
+    if (hidden2) return { check: "visible", why: hidden2 };
+    await frame();
+    const before = rect(el);
+    await frame();
+    const after = rect(el);
+    if (!el.isConnected) return { check: "attached", why: "it was removed from the page" };
+    if (before.some((v, i) => v !== after[i])) {
+      const moved = before[0] !== after[0] || before[1] !== after[1];
+      return { check: "stable", why: moved ? "it is still moving" : "it is still changing size" };
+    }
+    if (needs.enabled || needs.editable) {
+      const why = disabled(el);
+      if (why) return { check: "enabled", why };
+    }
+    if (needs.editable) {
+      const why = readOnly(el);
+      if (why) return { check: "editable", ...why };
+    }
+    return null;
+  }
+  var DISMISS = /^(accept|agree|allow|ok|okay|got it|close|dismiss|continue|no,? thanks|reject|decline|×|✕|x)\b/i;
+  function covering(el, hit) {
+    const start = hit instanceof Element ? hit : hit.parentElement;
+    if (!start) return { json: "{}", els: [] };
+    const doc = start.ownerDocument;
+    let top = start;
+    for (let a = parentOf(start); a && a !== doc.body && a !== doc.documentElement; a = parentOf(a)) {
+      if (el && contains(a, el)) break;
+      top = a;
+    }
+    const inert = el !== null && contains(start, el);
+    if (inert) top = start;
+    let dismiss = null;
+    if (!inert) {
+      const buttons = Array.from(top.querySelectorAll("button, [role=button], a[href], input[type=button], input[type=submit]")).filter((b) => visible(b));
+      dismiss = buttons.find((b) => DISMISS.test(describe(b).name)) || buttons[0] || null;
+    }
+    const out = {
+      covering: describe(top),
+      dismiss: dismiss && describe(dismiss),
+      inert
+    };
+    if (inert && el) out.pointerEvents = getComputedStyle(el).pointerEvents;
+    return { json: JSON.stringify(out), els: [top, dismiss] };
+  }
+
   // src/index.ts
-  var api = { version: 1, query, one, describe, walk, visible, text, tidy, html, value, markdown };
+  var api = {
+    version: 1,
+    query,
+    one,
+    describe,
+    walk,
+    visible,
+    contains,
+    text,
+    tidy,
+    html,
+    value,
+    markdown,
+    checkActionable,
+    covering
+  };
   if (!globalThis.__ccdp) globalThis.__ccdp = api;
 })();
