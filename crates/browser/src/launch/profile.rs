@@ -96,6 +96,18 @@ fn valid_name(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
+/// Checks a `--profile` name, so a CLI can refuse it before launching.
+pub fn check_name(name: &str) -> Result<(), ErrorInfo> {
+    if valid_name(name) {
+        return Ok(());
+    }
+    Err(ErrorInfo::new(
+        ErrorKind::BadArgs,
+        format!("`{name}` is not a profile name"),
+    )
+    .hint("use letters, digits, `.`, `_` and `-` (at most 64), e.g. --profile work"))
+}
+
 /// The directory of the named profile.
 pub fn named_profile_dir(host: &Host, chrome: &Chrome, name: &str) -> Option<PathBuf> {
     let base = if chrome.snap {
@@ -165,13 +177,7 @@ pub(crate) fn prepare(
             dir
         }
         ProfileChoice::Named(name) => {
-            if !valid_name(name) {
-                return Err(ErrorInfo::new(
-                    ErrorKind::BadArgs,
-                    format!("`{name}` is not a profile name"),
-                )
-                .hint("use letters, digits, `.`, `_` and `-` (at most 64), e.g. --profile work"));
-            }
+            check_name(name)?;
             let dir = named_profile_dir(host, chrome, name).ok_or_else(|| {
                 launch_failed("cannot tell where to keep profiles: HOME is not set")
                     .hint("set HOME, or pass --user-data-dir <path>")

@@ -84,7 +84,7 @@ pub fn default_flags(os: Os, headed: bool) -> Vec<String> {
 
 /// Checks the `--chrome-arg` values: each must be a `--flag`, and must not
 /// take over what launch owns.
-pub(crate) fn check_extra(extra: &[String]) -> Result<(), ErrorInfo> {
+pub fn check_extra(extra: &[String]) -> Result<(), ErrorInfo> {
     for arg in extra {
         let name = arg.split_once('=').map_or(arg.as_str(), |(n, _)| n);
         let bad = |message: String, hint: &str| {

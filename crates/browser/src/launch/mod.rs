@@ -29,7 +29,7 @@ use serde_json::json;
 use tokio::process::Child;
 use tokio::time::timeout;
 
-pub use profile::{ProfileChoice, data_dir, named_profile_dir};
+pub use profile::{ProfileChoice, check_name as check_profile_name, data_dir, named_profile_dir};
 pub use sandbox::{AppArmorProfile, UsernsCheck, apparmor_profile, running_as_root, userns_check};
 pub use stderr::LOG_LIMIT;
 
