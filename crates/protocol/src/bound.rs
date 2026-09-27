@@ -102,8 +102,12 @@ pub fn bound_json(data: &mut Value, max_chars: usize) -> Vec<Truncation> {
     if max_chars == 0 || json_len(data) <= max_chars {
         return Vec::new();
     }
-    let (longest_string, longest_array) = longest(data);
-    let fits = |caps: Caps| json_len(&capped(data, caps, "", &mut None)) <= max_chars;
+    // Nothing longer than the budget can fit, so search on a copy capped
+    // at the budget: the same answer, without reserialising megabytes of
+    // screenshot per step. The cuts are then applied to the original.
+    let small = capped(data, Caps::both(max_chars, max_chars), "", &mut None);
+    let (longest_string, longest_array) = longest(&small);
+    let fits = |caps: Caps| json_len(&capped(&small, caps, "", &mut None)) <= max_chars;
 
     let caps = if fits(Caps::strings(MIN_STRING.min(longest_string))) {
         let s = last_fitting(MIN_STRING, longest_string, |s| fits(Caps::strings(s)));
@@ -347,6 +351,18 @@ mod tests {
         let warning = truncated_warning(&cuts, &Limit::new(20_000, "--limit 1000"));
         assert!(warning.contains("/items 1,000 → "), "{warning}");
         assert!(warning.contains(" more; use --limit 1000"), "{warning}");
+    }
+
+    #[test]
+    fn huge_values_are_cut_as_if_searched_in_full() {
+        let mut data = json!({"data": "q".repeat(3_000_000), "list": vec![1; 50_000]});
+        let cuts = bound_json(&mut data, 1000);
+        assert!(json_len(&data) <= 1000);
+        assert_eq!(cuts[0].path, "/data");
+        assert_eq!(cuts[0].len, 3_000_000);
+        assert_eq!(cuts[1].path, "/list");
+        assert_eq!(cuts[1].len, 50_000);
+        assert_eq!(data["list"].as_array().unwrap().len(), cuts[1].kept);
     }
 
     #[test]
