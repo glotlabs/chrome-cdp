@@ -130,6 +130,7 @@ pub(crate) enum DirectCommand {
     /// Launch Chrome, make one raw CDP call, print the result and exit.
     #[command(after_help = "\
 Examples:
+  chrome-cdp __direct cdp Browser.getVersion
   chrome-cdp __direct cdp Browser.getVersion --chrome /path/to/chrome
   chrome-cdp __direct cdp --target page Runtime.evaluate '{\"expression\":\"1+1\"}'
   echo '{\"expression\":\"1+1\"}' | chrome-cdp __direct cdp --target page Runtime.evaluate -")]
@@ -146,8 +147,9 @@ pub(crate) struct DirectCdpArgs {
     #[arg(value_name = "JSON")]
     pub(crate) params: Option<String>,
 
-    /// The Chrome or Chromium binary to launch.
-    #[arg(long, env = "CHROME_CDP_CHROME", value_name = "PATH")]
+    /// The Chrome or Chromium binary to launch. Default: $CHROME_CDP_CHROME,
+    /// then browsers from `chrome-cdp install`, then a system Chrome.
+    #[arg(long, value_name = "PATH")]
     pub(crate) chrome: Option<PathBuf>,
 
     /// Send the call to the browser, or to a new about:blank page.

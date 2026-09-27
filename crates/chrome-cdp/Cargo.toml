@@ -11,6 +11,7 @@ name = "chrome-cdp"
 path = "src/main.rs"
 
 [dependencies]
+browser.workspace = true
 cdp.workspace = true
 clap.workspace = true
 protocol.workspace = true

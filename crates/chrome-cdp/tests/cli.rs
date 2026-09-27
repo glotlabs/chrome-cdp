@@ -10,6 +10,7 @@
 mod common;
 
 use std::io::Write as _;
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -203,9 +204,115 @@ fn direct_checks_arguments_before_launching() {
          hint: pass --chrome with the path of a Chrome or Chromium binary\n"
     );
 
-    let out = run(cli().args(["__direct", "cdp", "Browser.getVersion", "--json"]));
+    let out = run(cli()
+        .args(["__direct", "cdp", "Browser.getVersion"])
+        .env("CHROME_CDP_CHROME", chrome));
     assert_eq!(code(&out), 4);
-    assert_eq!(json_out(&out)["error"]["kind"], json!("ChromeNotFound"));
+    assert_eq!(
+        stderr(&out),
+        "error: no Chrome at /nonexistent/chrome (from CHROME_CDP_CHROME)\n  \
+         hint: point CHROME_CDP_CHROME at a Chrome or Chromium binary, or unset it\n"
+    );
+}
+
+/// `cli()` with no `--chrome`, an empty install cache and an empty `PATH`,
+/// so only the fixed system locations remain.
+fn discovery_cli(dir: &Path) -> Command {
+    let empty = dir.join("empty");
+    std::fs::create_dir_all(&empty).unwrap();
+    let mut cmd = cli();
+    cmd.args(["__direct", "cdp", "Browser.getVersion"])
+        .env("CHROME_CDP_CACHE", dir.join("cache"))
+        .env("PATH", &empty);
+    cmd
+}
+
+#[test]
+fn direct_says_where_it_looked_for_chrome() {
+    let system = ["/opt/google/chrome/chrome", "/snap/bin/chromium"];
+    if !cfg!(target_os = "linux") || system.iter().any(|p| Path::new(p).exists()) {
+        eprintln!("skipping: this machine has a system Chrome");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let out = run(discovery_cli(dir.path()).arg("--json"));
+    assert_eq!(code(&out), 4);
+    let err = &json_out(&out)["error"];
+    assert_eq!(err["kind"], json!("ChromeNotFound"));
+    assert_eq!(err["message"], json!("no Chrome or Chromium found"));
+    let cache = dir.path().join("cache/browsers");
+    assert_eq!(
+        err["details"]["searched"],
+        json!([
+            cache.display().to_string(),
+            "PATH (google-chrome-stable, google-chrome, chromium, chromium-browser)",
+            "/opt/google/chrome/chrome",
+            "/snap/bin/chromium",
+        ])
+    );
+    assert_eq!(
+        err["hint"],
+        json!(
+            "install Google Chrome or Chromium, or pass --chrome /path/to/chrome, or set \
+             CHROME_CDP_CHROME"
+        )
+    );
+}
+
+#[test]
+fn direct_notes_a_too_old_chrome_when_launch_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let chrome = dir.path().join("old-chrome");
+    std::fs::write(
+        &chrome,
+        "#!/bin/sh\n[ \"$1\" = --version ] && { echo 'Chromium 120.0.6099.1'; exit 0; }\nexit 1\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&chrome, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = run(&mut direct_cdp(&chrome, &["Browser.getVersion"]));
+    assert_eq!(code(&out), 4);
+    assert!(
+        stderr(&out).contains(&format!(
+            "\n  warning: Chromium 120.0.6099.1 at {} is older than Chrome 150, the oldest \
+             chrome-cdp supports; some commands may fail\n",
+            chrome.display()
+        )),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn direct_finds_chrome_without_being_told() {
+    let Some(chrome) = chrome_path() else { return };
+    // An install cache holding (a link to) the test Chrome, as
+    // `chrome-cdp install` would lay it out.
+    let dir = tempfile::tempdir().unwrap();
+    let id = "stable-154.0.0.0-linux64";
+    let install = dir.path().join("cache/browsers").join(id);
+    std::fs::create_dir_all(install.join("chrome-linux64")).unwrap();
+    std::os::unix::fs::symlink(&chrome, install.join("chrome-linux64/chrome")).unwrap();
+    std::fs::write(install.join("INSTALLATION_COMPLETE"), "").unwrap();
+
+    if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        let out = run(discovery_cli(dir.path()).args(["--json", "-v"]));
+        assert_eq!(code(&out), 0);
+        assert!(json_out(&out)["data"]["product"].is_string());
+        assert!(
+            stderr(&out).contains(&format!(
+                "using Chrome installed by chrome-cdp install ({id})"
+            )),
+            "{}",
+            stderr(&out)
+        );
+    }
+
+    // The env var beats the cache.
+    let out = run(discovery_cli(dir.path())
+        .env("CHROME_CDP_CHROME", &chrome)
+        .args(["--json", "-v"]));
+    assert_eq!(code(&out), 0);
+    assert!(stderr(&out).contains("using Chrome given by CHROME_CDP_CHROME"));
 }
 
 #[test]

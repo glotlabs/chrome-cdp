@@ -9,10 +9,15 @@ and errors that say what to run next.
 schema` and a temporary raw CDP call work so far:
 
 ```sh
-chrome-cdp __direct cdp Browser.getVersion --chrome /path/to/chrome
-chrome-cdp __direct cdp --target page Runtime.evaluate '{"expression":"1+1"}' --chrome /path/to/chrome
+chrome-cdp __direct cdp Browser.getVersion
+chrome-cdp __direct cdp --target page Runtime.evaluate '{"expression":"1+1"}'
 chrome-cdp schema version   # JSON Schema of `chrome-cdp --version --json`
 ```
+
+It finds Chrome by itself: `--chrome <path>`, then `$CHROME_CDP_CHROME`, then
+browsers installed in the chrome-cdp cache (`~/.cache/chrome-cdp`, or
+`~/Library/Caches/chrome-cdp` on macOS; `$CHROME_CDP_CACHE` overrides it),
+then a system Google Chrome or Chromium. `-v` logs which one it used.
 
 Every command prints its result on stdout and notes and errors on stderr,
 takes `--json` (one `{"ok":…}` object) and `-q`, and exits 0 ok, 1 action

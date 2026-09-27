@@ -2,13 +2,14 @@
 //! (plan 01, milestone 1.4).
 //!
 //! It launches Chrome over `--remote-debugging-pipe` with a throwaway
-//! profile, makes one call, prints the result, and closes Chrome. Plan 02
-//! replaces it with the daemon-backed `chrome-cdp cdp` and moves discovery
-//! and the launch flags into the `browser` crate; delete this module then.
+//! profile, makes one call, prints the result, and closes Chrome. Chrome is
+//! found by `browser::discover` (milestone 2.1). Plan 02 replaces this with
+//! the daemon-backed `chrome-cdp cdp` and moves the launch flags into the
+//! `browser` crate; delete this module then.
 
 use std::collections::VecDeque;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -54,7 +55,15 @@ pub(crate) fn cdp(args: &DirectCdpArgs, global: &GlobalArgs) -> Result<Output, E
     // Check everything that needs no browser before starting one.
     check_method(&args.method)?;
     let params = parse_params(args.params.as_deref())?;
-    let chrome = chrome_path(args.chrome.as_deref())?;
+    let found = ::browser::discover(args.chrome.as_deref(), &::browser::Host::current())
+        .map_err(|e| e.to_error_info())?;
+    tracing::info!(
+        chrome = %found.path.display(),
+        version = found.version.as_ref().map(ToString::to_string),
+        "using Chrome {}",
+        found.source.describe()
+    );
+    let chrome = found.path;
 
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -65,18 +74,28 @@ pub(crate) fn cdp(args: &DirectCdpArgs, global: &GlobalArgs) -> Result<Output, E
                 format!("cannot start the runtime: {e}"),
             )
         })?;
-    let value = runtime.block_on(async {
-        let chrome = Chrome::launch(&chrome, global.timeout).await?;
-        let result = call(&chrome.conn, args, params).await;
-        chrome.close().await;
-        result
-    })?;
+    let value = runtime
+        .block_on(async {
+            let chrome = Chrome::launch(&chrome, global.timeout).await?;
+            let result = call(&chrome.conn, args, params).await;
+            chrome.close().await;
+            result
+        })
+        // An error has no warnings, so a warning such as "Chrome is too old"
+        // becomes a note: it may be the reason.
+        .map_err(|info| {
+            found
+                .warnings
+                .iter()
+                .fold(info, |info, w| info.note("warning", w))
+        })?;
 
     let pretty = serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string());
     let compact = value.to_string();
-    Ok(Output::new(value, pretty)
+    let output = Output::new(value, pretty)
         .quiet(compact)
-        .limit(args.max_chars, "--max-chars 0 for all of it"))
+        .limit(args.max_chars, "--max-chars 0 for all of it");
+    Ok(found.warnings.into_iter().fold(output, Output::warning))
 }
 
 fn bad_args(message: impl Into<String>) -> ErrorInfo {
@@ -130,25 +149,6 @@ fn json_type(v: &Value) -> &'static str {
         Value::String(_) => "a string",
         Value::Array(_) => "an array",
         Value::Object(_) => "an object",
-    }
-}
-
-fn chrome_path(arg: Option<&Path>) -> Result<PathBuf, ErrorInfo> {
-    let Some(path) = arg else {
-        return Err(
-            ErrorInfo::new(ErrorKind::ChromeNotFound, "no Chrome binary given")
-                .hint("pass --chrome /path/to/chrome or set CHROME_CDP_CHROME"),
-        );
-    };
-    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
-    if path.is_file() {
-        Ok(path)
-    } else {
-        Err(ErrorInfo::new(
-            ErrorKind::ChromeNotFound,
-            format!("no Chrome at {}", path.display()),
-        )
-        .hint("pass --chrome with the path of a Chrome or Chromium binary"))
     }
 }
 
@@ -399,12 +399,10 @@ impl StderrTail {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
     use protocol::ErrorKind;
     use serde_json::json;
 
-    use super::{check_method, chrome_message, chrome_path, parse_params};
+    use super::{check_method, chrome_message, parse_params};
 
     #[test]
     fn method_names() {
@@ -441,15 +439,6 @@ mod tests {
             "{err}"
         );
         assert_eq!(err.exit_code(), 2);
-    }
-
-    #[test]
-    fn chrome_path_must_exist() {
-        let err = chrome_path(None).unwrap_err();
-        assert_eq!(err.kind, ErrorKind::ChromeNotFound);
-        let err = chrome_path(Some(Path::new("/nonexistent/chrome"))).unwrap_err();
-        assert_eq!(err.message, "no Chrome at /nonexistent/chrome");
-        assert_eq!(err.exit_code(), 4);
     }
 
     #[test]

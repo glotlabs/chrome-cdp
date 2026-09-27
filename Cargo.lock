@@ -165,6 +165,7 @@ dependencies = [
 name = "chrome-cdp"
 version = "0.1.0"
 dependencies = [
+ "browser",
  "cdp",
  "clap",
  "protocol",

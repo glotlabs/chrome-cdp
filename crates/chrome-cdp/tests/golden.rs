@@ -31,6 +31,11 @@ enum Fixture {
     SandboxlessChrome,
     /// `{chrome}` is a stand-in that never answers.
     SilentChrome,
+    /// `{chrome}` is a stand-in older than the oldest supported Chrome
+    /// that dies at startup.
+    OldChrome,
+    /// `CHROME_CDP_CHROME` names a file that does not exist.
+    MissingChromeEnv,
     /// Runs in a directory whose `.chrome-cdp.toml` has a typo.
     BadConfig,
 }
@@ -146,10 +151,22 @@ const CASES: &[Case] = &[
         fixture: Fixture::None,
     },
     Case {
-        name: "direct-no-chrome-given",
+        name: "direct-chrome-env-missing",
         args: &["__direct", "cdp", "Browser.getVersion"],
         modes: ERR,
-        fixture: Fixture::None,
+        fixture: Fixture::MissingChromeEnv,
+    },
+    Case {
+        name: "direct-old-chrome",
+        args: &[
+            "__direct",
+            "cdp",
+            "Browser.getVersion",
+            "--chrome",
+            "{chrome}",
+        ],
+        modes: ERR,
+        fixture: Fixture::OldChrome,
     },
     Case {
         name: "direct-chrome-missing",
@@ -305,6 +322,7 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
     let dir = tempfile::tempdir().unwrap();
     let mut norm = base.with(dir.path(), "<tmp>");
     let mut cwd = None;
+    let mut env = None;
     let chrome = match case.fixture {
         Fixture::None => None,
         Fixture::Chrome => {
@@ -318,6 +336,20 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
              If you are running on Ubuntu 23.10+ ...' >&2\nexit 1",
         )),
         Fixture::SilentChrome => Some(fake_chrome(&dir, "exec sleep 30")),
+        Fixture::OldChrome => {
+            let chrome = fake_chrome(&dir, "exit 1");
+            let script = std::fs::read_to_string(&chrome).unwrap();
+            std::fs::write(
+                &chrome,
+                script.replace(common::FAKE_VERSION, "120.0.6099.1"),
+            )
+            .unwrap();
+            Some(chrome)
+        }
+        Fixture::MissingChromeEnv => {
+            env = Some(("CHROME_CDP_CHROME", "/nonexistent/chrome"));
+            None
+        }
         Fixture::BadConfig => {
             std::fs::write(dir.path().join(".chrome-cdp.toml"), "sesion = \"shop\"\n").unwrap();
             cwd = Some(dir.path().to_owned());
@@ -342,6 +374,9 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
         cmd.args(&args);
         if let Some(cwd) = &cwd {
             cmd.current_dir(cwd);
+        }
+        if let Some((key, value)) = env {
+            cmd.env(key, value);
         }
         let result = cmd.output().unwrap();
         let shown: Vec<_> = args.iter().map(|a| shell_words(a)).collect();

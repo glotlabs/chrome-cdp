@@ -84,11 +84,21 @@ pub fn direct_cdp(chrome: &Path, args: &[&str]) -> Command {
     cmd
 }
 
-/// A stand-in "Chrome": a shell script with the given body.
+/// The version [`fake_chrome`] reports.
+pub const FAKE_VERSION: &str = "154.0.0.0";
+
+/// A stand-in "Chrome": a shell script with the given body. It answers
+/// `--version` like a current Chrome, as discovery asks for it first.
 pub fn fake_chrome(dir: &tempfile::TempDir, body: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt as _;
     let path = dir.path().join("chrome");
-    std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+    std::fs::write(
+        &path,
+        format!(
+            "#!/bin/sh\n[ \"$1\" = --version ] && {{ echo 'Chromium {FAKE_VERSION}'; exit 0; }}\n{body}\n"
+        ),
+    )
+    .unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
     path
 }
