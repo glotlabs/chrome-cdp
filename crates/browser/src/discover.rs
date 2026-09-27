@@ -16,12 +16,13 @@
 
 use std::path::{Path, PathBuf};
 
-use protocol::{ErrorInfo, ErrorKind, Hint, format};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, format};
 use serde::Serialize;
 use serde_json::json;
 
+use crate::deps::{Distro, chromium_package_line};
 use crate::host::{CHROME_ENV, Host, Os, is_executable};
-use crate::installed::{cache_dir, installed};
+use crate::installed::{cache_dir, installed, platform_key};
 use crate::version::{self, ChromeVersion, MIN_CHROME_MAJOR};
 
 /// Linux browser names searched on `PATH`, in order.
@@ -129,7 +130,20 @@ pub enum DiscoverError {
     },
     /// No Chrome anywhere; `searched` lists where we looked.
     #[error("no Chrome or Chromium found")]
-    NotFound { searched: Vec<String> },
+    NotFound {
+        searched: Vec<String>,
+        remedy: Remedy,
+    },
+}
+
+/// How to get a Chrome when none is found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Remedy {
+    /// `chrome-cdp install` (Chrome for Testing has a build for this
+    /// machine).
+    Install,
+    /// The distro's Chromium package: its install command, if known.
+    Package(Option<&'static str>),
 }
 
 fn unusable_message(path: &Path, from: &Source, problem: Problem) -> String {
@@ -168,12 +182,16 @@ impl DiscoverError {
             Self::Unusable { .. } => {
                 info.hint("pass --chrome with the path of a Chrome or Chromium binary")
             }
-            Self::NotFound { searched } => {
-                // Milestone 2.2 adds `chrome-cdp install`; make it the hint
-                // (and --auto-install the fallback) then.
-                let hint = Hint::text("install Google Chrome or Chromium")
-                    .or("pass --chrome /path/to/chrome")
-                    .or(format!("set {CHROME_ENV}"));
+            Self::NotFound { searched, remedy } => {
+                let hint = match remedy {
+                    Remedy::Install => Hint::run(Cmd::new("install")),
+                    Remedy::Package(Some(line)) => Hint::text(format!("install Chromium: {line}")),
+                    Remedy::Package(None) => {
+                        Hint::text("install Chromium with the system package manager")
+                    }
+                }
+                .or("pass --chrome /path/to/chrome")
+                .or(format!("set {CHROME_ENV}"));
                 info.note("searched", searched.join(", "))
                     .hint(hint)
                     .details(json!({ "searched": searched }))
@@ -269,7 +287,11 @@ pub fn locate(explicit: Option<&Path>, host: &Host) -> Result<Chrome, DiscoverEr
             searched.push(format!("PATH ({})", names.join(", ")));
         }
     }
-    Err(DiscoverError::NotFound { searched })
+    let remedy = match platform_key(host) {
+        Some(_) => Remedy::Install,
+        None => Remedy::Package(chromium_package_line(Distro::detect(host).as_ref())),
+    };
+    Err(DiscoverError::NotFound { searched, remedy })
 }
 
 fn search_path(names: &[&str], host: &Host) -> Option<Chrome> {
@@ -345,7 +367,7 @@ mod tests {
 
     use protocol::ErrorKind;
 
-    use super::{DiscoverError, Problem, Source, discover, locate};
+    use super::{DiscoverError, Problem, Remedy, Source, discover, locate};
     use crate::host::{Arch, Host, Os};
     use crate::tests::{executable, install};
 
@@ -368,7 +390,7 @@ mod tests {
         let root = dir.path();
         let host = linux(root);
         let err = locate(None, &host).unwrap_err();
-        let DiscoverError::NotFound { searched } = &err else {
+        let DiscoverError::NotFound { searched, remedy } = &err else {
             panic!("{err:?}")
         };
         let cache = root.join("home/.cache/chrome-cdp/browsers");
@@ -381,6 +403,7 @@ mod tests {
                 root.join("snap/bin/chromium").display().to_string(),
             ]
         );
+        assert_eq!(remedy, &Remedy::Install);
 
         // Last resort first, then each better source hides the one before.
         executable(&root.join("snap/bin/chromium"));
@@ -513,7 +536,7 @@ mod tests {
         let root = dir.path();
         let home = root.join("Users/a");
         let host = Host::fake(Os::MacOs, Arch::Aarch64, root).with_var("HOME", &home);
-        let DiscoverError::NotFound { searched } = locate(None, &host).unwrap_err() else {
+        let DiscoverError::NotFound { searched, .. } = locate(None, &host).unwrap_err() else {
             panic!()
         };
         assert_eq!(searched.len(), 3, "{searched:?}");
@@ -541,14 +564,39 @@ mod tests {
     fn not_found_error_lists_where_it_looked() {
         let err = DiscoverError::NotFound {
             searched: vec!["/c/browsers".into(), "PATH (chromium)".into()],
+            remedy: Remedy::Install,
         };
         assert_eq!(
             err.to_error_info().to_text(),
             "error: no Chrome or Chromium found\n  \
              searched: /c/browsers, PATH (chromium)\n  \
-             hint: install Google Chrome or Chromium, or pass --chrome /path/to/chrome, or set \
+             hint: chrome-cdp install, or pass --chrome /path/to/chrome, or set \
              CHROME_CDP_CHROME\n"
         );
+    }
+
+    #[test]
+    fn without_a_chrome_for_testing_build_the_hint_is_the_distro_package() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("etc")).unwrap();
+        std::fs::write(root.join("etc/os-release"), "ID=debian\nVERSION_ID=12\n").unwrap();
+        let host = Host::fake(Os::Linux, Arch::Other, root).with_var("HOME", root);
+        let err = locate(None, &host).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                DiscoverError::NotFound {
+                    remedy: Remedy::Package(Some("sudo apt-get install -y chromium")),
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+        assert!(err.to_error_info().to_text().ends_with(
+            "hint: install Chromium: sudo apt-get install -y chromium, or pass --chrome \
+                 /path/to/chrome, or set CHROME_CDP_CHROME\n"
+        ));
     }
 
     #[test]

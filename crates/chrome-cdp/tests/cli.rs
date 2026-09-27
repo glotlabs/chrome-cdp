@@ -252,10 +252,7 @@ fn direct_says_where_it_looked_for_chrome() {
     );
     assert_eq!(
         err["hint"],
-        json!(
-            "install Google Chrome or Chromium, or pass --chrome /path/to/chrome, or set \
-             CHROME_CDP_CHROME"
-        )
+        json!("chrome-cdp install, or pass --chrome /path/to/chrome, or set CHROME_CDP_CHROME")
     );
 }
 
