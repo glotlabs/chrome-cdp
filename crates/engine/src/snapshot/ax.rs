@@ -437,10 +437,10 @@ fn role_name(chrome: &str) -> Option<String> {
             // Chrome's own.
             "Date" | "DateTime" | "InputTime" => "textbox",
             // A table Chrome judged to be for layout (no headers, a
-            // caption or other signs of data): its rows and cells are
-            // only boxes, and Chrome names each cell by its content.
-            "LayoutTable" | "LayoutTableRow" | "LayoutTableCell" | "LayoutTableColumn" => NONE,
-            "MenuListPopup" | "RootWebArea" | "WebArea" | "" => NONE,
+            // caption or other signs of data) is only boxes, and Chrome
+            // names each cell by its content.
+            "LayoutTable" | "LayoutTableRow" | "LayoutTableCell" | "LayoutTableColumn"
+            | "MenuListPopup" | "RootWebArea" | "WebArea" | "" => NONE,
             "MenuListOption" => "option",
             other => return Some(other.to_ascii_lowercase()),
         }
