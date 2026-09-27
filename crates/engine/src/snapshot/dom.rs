@@ -57,7 +57,7 @@ struct Flat {
     l: Option<u32>,
     #[serde(default)]
     h: Option<String>,
-    /// A password field.
+    /// The kind of input: 1 a password field, 2 a file input.
     #[serde(default)]
     w: u8,
     #[serde(default)]
@@ -335,6 +335,7 @@ fn convert(flat: &Flat, frame: &str, walk: &FrameWalk, base: &str) -> Node {
         level: flat.l,
         href: flat.h.as_deref().map(|h| relative_href(h, base)),
         password: flat.w == 1,
+        file: flat.w == 2,
         states,
         clickable: flat.c == 1,
         scrollable: flat.x == 1,

@@ -5,7 +5,7 @@ import { SKIP, attr, childrenOf, norm, parentOf, tag } from './dom';
 
 export const INTERACTIVE = new Set(['button', 'link', 'textbox', 'searchbox', 'checkbox', 'radio',
   'switch', 'combobox', 'listbox', 'option', 'menuitem', 'menuitemcheckbox', 'menuitemradio',
-  'tab', 'slider', 'spinbutton', 'treeitem', 'iframe']);
+  'tab', 'slider', 'spinbutton', 'colorwell', 'treeitem', 'iframe']);
 const FROM_CONTENT = new Set(['button', 'link', 'heading', 'tab', 'option', 'menuitem',
   'menuitemcheckbox', 'menuitemradio', 'treeitem', 'checkbox', 'radio', 'switch', 'cell',
   'gridcell', 'columnheader', 'rowheader', 'tooltip', 'row']);
@@ -20,7 +20,7 @@ const KNOWN = new Set([...INTERACTIVE, ...FROM_CONTENT, 'alert', 'alertdialog', 
 const INPUT: Record<string, string> = {
   button: 'button', submit: 'button', reset: 'button', image: 'button', file: 'button',
   checkbox: 'checkbox', radio: 'radio', range: 'slider', number: 'spinbutton',
-  search: 'searchbox', color: 'button',
+  search: 'searchbox', color: 'colorwell',
 };
 
 const ariaTrue = (el: Element, name: string) => attr(el, name) === 'true';
@@ -113,12 +113,25 @@ export function hidden(el: Element, style: CSSStyleDeclaration): boolean {
   return style.display === 'none' || ariaTrue(el, 'aria-hidden') || el.hasAttribute('inert');
 }
 
+/** The open modal `<dialog>` of the element's document, if any: it makes
+ * the rest of the page inert. */
+export function openModal(doc: Document): Element | null {
+  return doc.querySelector('dialog:modal');
+}
+
+/** Whether an open modal dialog makes `el` inert: it is neither in the
+ * dialog nor around it. */
+export function outsideModal(el: Element, modal: Element | null): boolean {
+  return !!modal && !modal.contains(el) && !el.contains(modal);
+}
+
 /** Whether the element is left out of the accessibility tree: it or an
- * ancestor is `display: none`, `aria-hidden` or inert, or it is
- * `visibility: hidden`. */
+ * ancestor is `display: none`, `aria-hidden` or inert (also by an open
+ * modal dialog), or it is `visibility: hidden`. */
 export function hiddenForAria(el: Element): boolean {
   const style = styleOf(el);
   if (style.visibility === 'hidden' || style.visibility === 'collapse') return true;
+  if (outsideModal(el, openModal(el.ownerDocument))) return true;
   for (let e: Element | null = el; e; e = parentOf(e)) {
     if (ariaTrue(e, 'aria-hidden') || e.hasAttribute('inert')) return true;
     if (styleOf(e).display === 'none') return true;

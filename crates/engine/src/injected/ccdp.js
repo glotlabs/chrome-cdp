@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: e8e59f38b7f673b9
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 06fd02fde0d0c453
 "use strict";
 (() => {
   // src/dom.ts
@@ -76,6 +76,7 @@
     "tab",
     "slider",
     "spinbutton",
+    "colorwell",
     "treeitem",
     "iframe"
   ]);
@@ -173,7 +174,7 @@
     range: "slider",
     number: "spinbutton",
     search: "searchbox",
-    color: "button"
+    color: "colorwell"
   };
   var ariaTrue = (el, name) => attr(el, name) === "true";
   var scoped = (el) => el.closest("article, aside, main, nav, section");
@@ -321,9 +322,16 @@
   function hidden(el, style) {
     return style.display === "none" || ariaTrue(el, "aria-hidden") || el.hasAttribute("inert");
   }
+  function openModal(doc) {
+    return doc.querySelector("dialog:modal");
+  }
+  function outsideModal(el, modal) {
+    return !!modal && !modal.contains(el) && !el.contains(modal);
+  }
   function hiddenForAria(el) {
     const style = styleOf(el);
     if (style.visibility === "hidden" || style.visibility === "collapse") return true;
+    if (outsideModal(el, openModal(el.ownerDocument))) return true;
     for (let e = el; e; e = parentOf(e)) {
       if (ariaTrue(e, "aria-hidden") || e.hasAttribute("inert")) return true;
       if (styleOf(e).display === "none") return true;
@@ -1246,6 +1254,7 @@ ${inner}
     const nodes = [];
     const els = [];
     const active = activeElement();
+    const modal = openModal(document);
     function visit(node, parent, parentStyle, invisible, mute) {
       if (nodes.length > 2e5) return;
       if (node.nodeType === Node.TEXT_NODE) {
@@ -1261,7 +1270,7 @@ ${inner}
         return;
       }
       const style = view.getComputedStyle(el);
-      if (hidden(el, style)) return;
+      if (hidden(el, style) || outsideModal(el, modal)) return;
       const role = roleOf(el);
       if (role === null) return;
       const vis = style.visibility !== "hidden" && style.visibility !== "collapse";
@@ -1282,7 +1291,11 @@ ${inner}
         const svg = href;
         n.h = String(svg.baseVal !== void 0 ? svg.baseVal : href);
       }
-      if (tag(el) === "input" && el.type === "password") n.w = 1;
+      if (tag(el) === "input") {
+        const type = el.type;
+        if (type === "password") n.w = 1;
+        else if (type === "file") n.w = 2;
+      }
       const s = statesOf(el, role, active);
       delete s.pm;
       if (Object.keys(s).length) n.s = s;

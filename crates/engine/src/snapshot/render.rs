@@ -80,7 +80,7 @@ pub(crate) fn line(node: &Node) -> String {
     line
 }
 
-/// What follows the ref: level, password, value, states, href.
+/// What follows the ref: level, password or file, value, states, href.
 fn details(node: &Node) -> Vec<String> {
     let mut parts = Vec::new();
     if let Some(level) = node.level {
@@ -88,6 +88,9 @@ fn details(node: &Node) -> Vec<String> {
     }
     if node.password {
         parts.push("(password)".to_owned());
+    }
+    if node.file {
+        parts.push("(file)".to_owned());
     }
     if let Some(value) = &node.value {
         parts.push(format!("value={}", quote(value)));
@@ -149,6 +152,7 @@ pub(crate) fn json(node: &Node) -> SnapshotNode {
         level: node.level,
         value: node.value.clone(),
         password: node.password,
+        file: node.file,
         states: states(node).into_iter().map(str::to_owned).collect(),
         href: node.href.clone(),
         more: node.more,
@@ -418,6 +422,9 @@ mod tests {
         let mut password = keyed("textbox", "Password", 4, Some(4), vec![]);
         password.password = true;
         assert_eq!(line(&password), r#"textbox "Password" [e4] (password)"#);
+        let mut file = keyed("button", "Avatar", 5, Some(5), vec![]);
+        file.file = true;
+        assert_eq!(line(&file), r#"button "Avatar" [e5] (file)"#);
     }
 
     #[test]

@@ -447,6 +447,10 @@
           },
           "type": "array"
         },
+        "file": {
+          "description": "A file input (`upload` sets it; a click opens a file chooser).",
+          "type": "boolean"
+        },
         "href": {
           "description": "A link's target; relative (`/pricing`) when on the frame's origin.",
           "type": [

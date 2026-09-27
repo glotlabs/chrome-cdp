@@ -4,7 +4,7 @@
 //! for every frame (on the session that owns it, so out-of-process iframes
 //! work), `DOMSnapshot.captureSnapshot` once per session for what the AX
 //! tree does not say (display, `cursor`, overflow and scroll sizes,
-//! `onclick`, `tabindex`, `type=password`), and `DOM.getFrameOwner` for
+//! `onclick`, `tabindex`, `type=password|file`), and `DOM.getFrameOwner` for
 //! every iframe, to put each frame's tree under its `<iframe>`. Chrome
 //! works out roles, names and hidden nodes, so they follow the specs.
 
@@ -35,6 +35,7 @@ struct DomFacts {
     onclick: bool,
     tabindex: Option<i64>,
     password: bool,
+    file: bool,
     scrollable: bool,
     /// `html` or `body`: never clickable or scrollable by our rules.
     document_element: bool,
@@ -183,6 +184,7 @@ fn dom_facts(snapshot: &dom_snapshot::CaptureSnapshotReturns) -> HashMap<i64, Do
                     }
                 }
                 f.password = name == "INPUT" && input_type.eq_ignore_ascii_case("password");
+                f.file = name == "INPUT" && input_type.eq_ignore_ascii_case("file");
             }
         }
         let layout = &doc.layout;
@@ -387,6 +389,7 @@ impl Builder<'_> {
                 .or_else(|| facts.valuetext.clone())
                 .or_else(|| str_value(node.value.as_ref())),
             password: facts.password,
+            file: facts.file,
             clickable: facts.clickable(),
             scrollable: facts.scrollable && !facts.document_element,
             inline: facts.inline,

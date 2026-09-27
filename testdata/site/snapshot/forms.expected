@@ -10,7 +10,13 @@
   - spinbutton "Age" [ref] value="36"
   - slider "Volume" [ref] value="7"
   - textbox "Birthday" [ref] value="1815-12-10"
+  - textbox "Alarm" [ref] value="07:30"
+  - textbox "Meeting" [ref] value="2026-03-01T09:00"
+  - textbox "Month" [ref] value="2026-03"
+  - textbox "Week" [ref] value="2026-W10"
+  - colorwell "Colour" [ref] value="#336699"
   - textbox "Password" [ref] (password)
+  - button "Avatar" [ref] (file)
   - textbox "Bio" [ref] value="Wrote the first program."
   - combobox "Country" [ref] value="United Kingdom" collapsed
     - option "Norway" [ref]
@@ -30,4 +36,6 @@
   - textbox "Rich text" [ref] value="Some bold text"
   - button "Save profile" [ref]
   - button "Reset" [ref]
+  - button "Send" [ref]
   - button "Delete account" [ref] disabled
+!text "Colour"

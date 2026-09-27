@@ -84,6 +84,8 @@ pub(crate) struct Node {
     /// A link's target, relative when on the frame's origin.
     pub(crate) href: Option<String>,
     pub(crate) password: bool,
+    /// A file input: `upload` sets it, a click opens a file chooser.
+    pub(crate) file: bool,
     pub(crate) states: States,
     /// Acts on clicks without being a control: a `div` with `onclick`,
     /// `tabindex` or `cursor: pointer` (the heuristic of 4.3).
@@ -175,6 +177,7 @@ pub(crate) fn is_interactive(role: &str) -> bool {
             | "tab"
             | "slider"
             | "spinbutton"
+            | "colorwell"
             | "treeitem"
             | CLICKABLE
             | IFRAME
@@ -267,6 +270,6 @@ pub(crate) fn is_text_field(role: &str) -> bool {
 pub(crate) fn shows_value(role: &str) -> bool {
     matches!(
         role,
-        "textbox" | "searchbox" | "combobox" | "slider" | "spinbutton"
+        "textbox" | "searchbox" | "combobox" | "slider" | "spinbutton" | "colorwell"
     )
 }

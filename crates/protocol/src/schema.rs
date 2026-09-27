@@ -647,6 +647,9 @@ pub struct SnapshotNode {
     /// A password field (its value is never shown).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub password: bool,
+    /// A file input (`upload` sets it; a click opens a file chooser).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub file: bool,
     /// States that carry information, in this order: `checked`,
     /// `unchecked`, `mixed`, `expanded`, `collapsed`, `selected`,
     /// `disabled`, `readonly`, `required`, `invalid`, `focused`, `pressed`,

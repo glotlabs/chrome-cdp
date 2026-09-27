@@ -320,7 +320,7 @@ Examples:
     /// Show the page as an accessibility tree, with refs (e12) to act on.
     #[command(after_help = "\
 One node per line, two spaces per level:
-  - role \"name\" [ref] (hN) value=\"…\" states… → href
+  - role \"name\" [ref] (hN) (password|file) value=\"…\" states… → href
 Refs go on what can be acted on (controls, links, clickable elements,
 scrollable boxes, iframes); a node keeps its ref while it stays in the
 page. Hidden content is left out, lists longer than 30 collapse, and text

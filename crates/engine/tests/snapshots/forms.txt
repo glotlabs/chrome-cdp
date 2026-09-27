@@ -8,24 +8,31 @@ page t4 "Every form control" {{ORIGIN_A}}/snapshot/forms.html
   - spinbutton "Age" [e6] value="36"
   - slider "Volume" [e7] value="7"
   - textbox "Birthday" [e8] value="1815-12-10"
-  - textbox "Password" [e9] (password)
-  - textbox "Bio" [e10] value="Wrote the first program."
-  - combobox "Country" [e11] value="United Kingdom" collapsed
-    - option "Norway" [e12]
-    - option "United Kingdom" [e13] selected
-    - option "France" [e14]
-  - listbox "Languages" [e15]
-    - option "English" [e16] selected
-    - option "French" [e17]
-    - option "Italian" [e18] selected
+  - textbox "Alarm" [e9] value="07:30"
+  - textbox "Meeting" [e10] value="2026-03-01T09:00"
+  - textbox "Month" [e11] value="2026-03"
+  - textbox "Week" [e12] value="2026-W10"
+  - colorwell "Colour" [e13] value="#336699"
+  - textbox "Password" [e14] (password)
+  - button "Avatar" [e15] (file)
+  - textbox "Bio" [e16] value="Wrote the first program."
+  - combobox "Country" [e17] value="United Kingdom" collapsed
+    - option "Norway" [e18]
+    - option "United Kingdom" [e19] selected
+    - option "France" [e20]
+  - listbox "Languages" [e21]
+    - option "English" [e22] selected
+    - option "French" [e23]
+    - option "Italian" [e24] selected
   - group "Plan"
-    - radio "Free" [e19] unchecked
-    - radio "Pro" [e20] checked
-  - checkbox "Newsletter" [e21] checked
-  - checkbox "Select all" [e22] mixed
-  - checkbox "Beta features" [e23] unchecked disabled
-  - textbox "Notes" [e24] required
-  - textbox "Rich text" [e25] value="Some bold text"
-  - button "Save profile" [e26]
-  - button "Reset" [e27]
-  - button "Delete account" [e28] disabled
+    - radio "Free" [e25] unchecked
+    - radio "Pro" [e26] checked
+  - checkbox "Newsletter" [e27] checked
+  - checkbox "Select all" [e28] mixed
+  - checkbox "Beta features" [e29] unchecked disabled
+  - textbox "Notes" [e30] required
+  - textbox "Rich text" [e31] value="Some bold text"
+  - button "Save profile" [e32]
+  - button "Reset" [e33]
+  - button "Send" [e34]
+  - button "Delete account" [e35] disabled

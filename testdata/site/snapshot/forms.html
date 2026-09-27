@@ -10,7 +10,13 @@
   <label>Age <input type="number" value="36"></label>
   <label>Volume <input type="range" min="0" max="10" value="7"></label>
   <label>Birthday <input type="date" value="1815-12-10"></label>
+  <label>Alarm <input type="time" value="07:30"></label>
+  <label>Meeting <input type="datetime-local" value="2026-03-01T09:00"></label>
+  <label>Month <input type="month" value="2026-03"></label>
+  <label>Week <input type="week" value="2026-W10"></label>
+  <label>Colour <input type="color" value="#336699"></label>
   <label>Password <input type="password" value="s3cret"></label>
+  <label>Avatar <input type="file" accept="image/*"></label>
   <label>Bio <textarea>Wrote the first program.</textarea></label>
   <label>Country
     <select>
@@ -39,6 +45,7 @@
   <input type="hidden" name="token" value="xyz">
   <input type="submit" value="Save profile">
   <input type="reset">
+  <input type="image" alt="Send" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
   <button type="button" disabled>Delete account</button>
 </form>
 <script>document.getElementById('mixed').indeterminate = true;</script>

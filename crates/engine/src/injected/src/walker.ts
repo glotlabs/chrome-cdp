@@ -9,7 +9,8 @@
 // the engine can get their backendNodeIds with DOM.describeNode.
 
 import {
-  INTERACTIVE, States, activeElement, hidden, level, roleOf, shownName, statesOf, valueOf,
+  INTERACTIVE, States, activeElement, hidden, level, openModal, outsideModal, roleOf, shownName,
+  statesOf, valueOf,
 } from './aria';
 import { SKIP, attr, childrenOf, tag } from './dom';
 
@@ -21,7 +22,7 @@ interface Flat {
   v?: string;
   l?: number;
   h?: string;
-  w?: 1;
+  w?: 1 | 2;
   s?: States;
   i?: 1;
   c?: 1;
@@ -41,6 +42,7 @@ export function walk(scope: Element | null): { json: string; els: Element[] } {
   const nodes: Flat[] = [];
   const els: Element[] = [];
   const active = activeElement();
+  const modal = openModal(document);
 
   // `invisible`: text right here is not shown (its element is visibility:
   // hidden). `mute`: text anywhere below is not shown: it is in a label
@@ -60,7 +62,7 @@ export function walk(scope: Element | null): { json: string; els: Element[] } {
       return;
     }
     const style = view.getComputedStyle(el);
-    if (hidden(el, style)) return;
+    if (hidden(el, style) || outsideModal(el, modal)) return;
     const role = roleOf(el);
     if (role === null) return;
     const vis = style.visibility !== 'hidden' && style.visibility !== 'collapse';
@@ -83,7 +85,11 @@ export function walk(scope: Element | null): { json: string; els: Element[] } {
       const svg = href as SVGAnimatedString;
       n.h = String(svg.baseVal !== undefined ? svg.baseVal : href);
     }
-    if (tag(el) === 'input' && (el as HTMLInputElement).type === 'password') n.w = 1;
+    if (tag(el) === 'input') {
+      const type = (el as HTMLInputElement).type;
+      if (type === 'password') n.w = 1;
+      else if (type === 'file') n.w = 2;
+    }
     const s = statesOf(el, role, active);
     delete s.pm;
     if (Object.keys(s).length) n.s = s;
