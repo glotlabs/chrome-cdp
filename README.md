@@ -7,13 +7,14 @@ and errors that say what to run next.
 
 **Status:** early development. Sessions (`open`, `connect`, `status`,
 `sessions`, `close`), tabs (`tabs`, `tab`), navigation (`goto`, `back`,
-`forward`, `reload`), `wait`, dialogs (`dialog`), `downloads`, raw CDP calls,
-`install`/`uninstall` and `schema` work so far:
+`forward`, `reload`), `wait`, `snapshot`, dialogs (`dialog`), `downloads`,
+raw CDP calls, `install`/`uninstall` and `schema` work so far:
 
 ```sh
 chrome-cdp install                    # Chrome for Testing, if there is no Chrome
 chrome-cdp open https://example.com   # starts the session's browser
 chrome-cdp goto example.com/about     # → 200 https://example.com/about "About" (412ms)
+chrome-cdp snapshot -i                # what can be acted on, with refs: button "Save" [e6]
 chrome-cdp wait --text 'Welcome back'  # instead of sleep
 chrome-cdp back
 chrome-cdp cdp --target page Runtime.evaluate '{"expression":"document.title"}'
@@ -74,6 +75,20 @@ command (`--response '**/api/save' --status 200`), or a download since the
 previous command (`--download`). On timeout (exit 3) it says what it saw
 instead: how many elements matched, the requests still in flight, the URL,
 the last value, and the page.
+
+`snapshot` shows the page as an accessibility tree, one node per line
+(`- role "name" [ref] (hN) value="…" states… → href`), with a ref (`e12`) on
+everything an agent can act on: controls, links, elements that only act like
+buttons (`clickable`: `onclick`, `tabindex`, `cursor: pointer`), scrollable
+boxes and iframes, whose content (cross-site too) is shown inside them.
+Hidden content is left out, a list is cut after 30 of a kind (`--all` shows
+them), text is cut at 200 characters (`--text-limit`) and the output at
+20,000 (`--max-chars`). `-i` keeps only what has a ref, with the landmarks,
+tables and rows around it; `--scope e12` (or a CSS/XPath locator) and
+`--depth 3` show a part; `--diff` shows what changed since the tab's last
+snapshot (`+` added, `-` removed, `~` changed). A node keeps its ref while it
+stays in the page, and the same page gives the same output. It reads Chrome's
+own accessibility tree; `--engine dom` uses chrome-cdp's DOM walker instead.
 
 JavaScript dialogs never hang a command. By default an `alert` and a
 `beforeunload` ("leave the page?") are accepted and mentioned in the output;
@@ -141,7 +156,11 @@ frames from one in the other run out of process) and on an HTTPS origin with
 a self-signed certificate; `cargo xtask fixtures`
 serves it for poking at by hand. Command output is pinned by golden files in
 `crates/chrome-cdp/tests/golden/`; after an intended change, rewrite them with
-`UPDATE_GOLDEN=1 cargo test -p chrome-cdp --test golden`.
+`UPDATE_GOLDEN=1 cargo test -p chrome-cdp --test golden`. The snapshot corpus
+(`testdata/site/snapshot/`: pages from five lines to 50,000 nodes, each with
+an `.expected` tree) is checked by `cargo test -p engine --test snapshot`,
+which also prints both engines' scores and output tokens; its golden outputs
+live in `crates/engine/tests/snapshots/`.
 
 ## Docs
 

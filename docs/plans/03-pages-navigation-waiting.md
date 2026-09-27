@@ -1,6 +1,6 @@
 # Plan 03 — Pages, navigation & waiting
 
-Status: DONE (3.1-3.5 closed out; the SPA snapshot acceptance check waits for plan 04's snapshot)
+Status: DONE
 Depends on: 02
 
 ## Goal
@@ -139,7 +139,7 @@ download, and a basic-auth route.
 
 ## Acceptance criteria
 
-- [ ] `goto` + default settle gives a correct snapshot on the SPA fixture with
+- [x] `goto` + default settle gives a correct snapshot on the SPA fixture with
       no extra wait, 50 runs in a row.
 - [x] Every navigation error type maps to a distinct `details.reason` and
       hint (all exit 1, `NavigationFailed`, per plan 08 §3).
@@ -196,3 +196,4 @@ _(append here)_
 - 3.5: The fixture server got `?download=<name>` (served as an attachment) and a basic-auth area `/auth/` (`fixtures::AUTH_USER`/`AUTH_PASSWORD`), plus `dialogs/on-load.html?kind=&message=&default=`, `dialogs/beforeunload.html` and `downloads/`. The golden normaliser now masks ` (…)` as a time only when it ends in `s`.
 - 3.5 (a 3.4 bug found while testing): a cross-site iframe's document request is sent on its parent's session but ends on the iframe's own, so the parent's tracker kept it in flight and every navigation to a page with an OOPIF waited out the 5 s settle with a warning. A frame that commits a document now ends the requests other sessions sent for it.
 - Close-out: every item of the Tests section was checked against the tests. The timeout cases missing for `--domcontentloaded` (a new `wait/slow-script.html` holds it up with a parser-blocking script), `--state enabled|detached|attached`, `--request` and the settle's in-flight note were added to `crates/engine/tests/wait.rs`; `wait <ms>` has no timeout by design. The reload test's one-page server now serves until stopped, since a connection Chrome opened without a request made the page load fail now and then. `goto_settles_by_default` passed 50 runs in a row again (`CHROME_CDP_SETTLE_RUNS=50`); the SPA box stays open until plan 04's `snapshot` can be checked the same way.
+- (from plan 04, 4.1/4.3) The SPA box is ticked: `goto_settles_by_default` now also checks that the `snapshot` right after `goto` ends with the heading and the three inbox items, and passed 50 runs in a row (`CHROME_CDP_SETTLE_RUNS=50`).
