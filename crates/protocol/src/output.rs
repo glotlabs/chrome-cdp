@@ -52,6 +52,13 @@ impl Output {
         }
     }
 
+    /// A result whose `data` is one of the typed [`schema`](crate::schema)
+    /// structs.
+    pub fn typed<T: Serialize>(data: &T, text: impl Into<String>) -> Self {
+        // Plain structs with string keys always serialise.
+        Self::new(serde_json::to_value(data).unwrap_or(Value::Null), text)
+    }
+
     /// Sets the `-q` form: only the essential value (a ref, a path, …).
     #[must_use]
     pub fn quiet(mut self, quiet: impl Into<String>) -> Self {

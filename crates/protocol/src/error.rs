@@ -3,6 +3,7 @@
 use std::fmt;
 use std::fmt::Write as _;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -12,7 +13,7 @@ use crate::style::Style;
 ///
 /// The name is part of the `--json` contract (`"kind":"Timeout"`) and each
 /// kind maps to one process exit code.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub enum ErrorKind {
     // Exit 1: an action or assertion failed on the page.
     /// No element matches the locator.
@@ -116,11 +117,7 @@ impl fmt::Display for ErrorKind {
 
 /// A command failure as the user sees it: what happened, and the next
 /// command to run.
-///
-/// Build one with [`ErrorInfo::new`] and chain [`note`](Self::note),
-/// [`hint`](Self::hint) (usually from a [`Hint`](crate::Hint)) and
-/// [`details`](Self::details).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ErrorInfo {
     /// The stable error name.
     pub kind: ErrorKind,
@@ -139,7 +136,7 @@ pub struct ErrorInfo {
 }
 
 /// One labelled line of an error's text form.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Note {
     /// A short lowercase label, e.g. `covering`.
     pub label: String,
@@ -147,6 +144,9 @@ pub struct Note {
     pub text: String,
 }
 
+/// Build an error with [`ErrorInfo::new`] and chain [`note`](Self::note),
+/// [`hint`](Self::hint) (usually from a [`Hint`](crate::Hint)) and
+/// [`details`](Self::details).
 impl ErrorInfo {
     /// An error with no hint, notes or details yet. Line breaks in `message`
     /// become spaces: the message is one line.

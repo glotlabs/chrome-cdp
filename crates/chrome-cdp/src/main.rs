@@ -16,6 +16,7 @@ mod direct;
 mod errors;
 mod log;
 mod output;
+mod schema;
 mod version;
 
 use cli::{Cli, Command, DirectCommand};
@@ -38,6 +39,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         None => {
             Err(ErrorInfo::new(ErrorKind::BadArgs, "no command given").hint("chrome-cdp --help"))
         }
+        Some(Command::Schema(args)) => schema::run(&args),
         Some(Command::Direct(DirectCommand::Cdp(args))) => direct::cdp(&args, &cli.global),
     }
 }

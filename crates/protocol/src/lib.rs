@@ -6,7 +6,8 @@
 //! - [`Output`], a command's result in every form, and [`render`], the one
 //!   renderer for text, `-q` and the `--json` [`Envelope`];
 //! - [`bound`]: how text and JSON output stay within a budget;
-//! - [`format`]: durations, sizes and shell quoting for text output.
+//! - [`format`]: durations, sizes and shell quoting for text output;
+//! - [`schema`]: each command's `data` type and its JSON Schema.
 //!
 //! The RPC request and response types join them with the daemon (plan 02).
 //! It has no I/O so both the CLI and the daemon can depend on it cheaply.
@@ -16,6 +17,7 @@ mod error;
 pub mod format;
 mod hint;
 mod output;
+pub mod schema;
 mod style;
 
 pub use bound::{Limit, TruncatedKind, Truncation};

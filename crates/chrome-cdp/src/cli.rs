@@ -100,9 +100,23 @@ impl GlobalArgs {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
+    /// Print the JSON Schema of a command's --json output.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp schema                 # list the commands that have one
+  chrome-cdp schema version         # the schema of chrome-cdp --version --json")]
+    Schema(SchemaArgs),
+
     /// Temporary daemon-less commands (plan 01). Plan 02 replaces them.
     #[command(name = "__direct", hide = true, subcommand)]
     Direct(DirectCommand),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct SchemaArgs {
+    /// The command, e.g. `version` or `tab close`; omit it to list them.
+    #[arg(value_name = "COMMAND")]
+    pub(crate) command: Vec<String>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -222,6 +236,64 @@ mod tests {
         assert_eq!(cli.global.timeout, Duration::from_secs(2));
         assert_eq!(cli.global.session, "s1");
         assert_eq!(cli.global.verbose, 2);
+    }
+
+    /// Commands whose output cannot grow with the page, so they need no
+    /// `--max-chars`/`--limit`.
+    const FIXED_SIZE: &[&str] = &["schema"];
+
+    /// The plan 08 checklist: every command has an example in its help, a
+    /// registered `--json` schema, the global flags, and a bounded output.
+    #[test]
+    fn every_command_follows_the_output_contract() {
+        fn leaves(cmd: &clap::Command, path: &str, out: &mut Vec<(String, clap::Command)>) {
+            // Skip clap's generated `help` subcommands (plan 08.3 replaces
+            // the top-level one with its own, which must then pass too).
+            for sub in cmd.get_subcommands().filter(|s| s.get_name() != "help") {
+                let name = format!("{path} {}", sub.get_name()).trim().to_owned();
+                if sub.has_subcommands() {
+                    leaves(sub, &name, out);
+                } else {
+                    out.push((name, sub.clone()));
+                }
+            }
+        }
+        let mut root = Cli::command();
+        root.build();
+        let mut commands = Vec::new();
+        leaves(&root, "", &mut commands);
+        assert!(!commands.is_empty());
+
+        let mut problems = Vec::new();
+        for (name, cmd) in &commands {
+            let help = cmd
+                .get_after_help()
+                .or(cmd.get_after_long_help())
+                .map(ToString::to_string)
+                .unwrap_or_default();
+            if !help.contains("Examples:\n  chrome-cdp ") {
+                problems.push(format!("{name}: no `Examples:` in its help"));
+            }
+            if protocol::schema::command(name).is_none() {
+                problems.push(format!("{name}: no entry in protocol::schema::COMMANDS"));
+            }
+            for flag in ["json", "quiet", "session", "timeout", "verbose"] {
+                if !cmd.get_arguments().any(|a| a.get_long() == Some(flag)) {
+                    problems.push(format!("{name}: no global --{flag}"));
+                }
+            }
+            let bounded = cmd
+                .get_arguments()
+                .any(|a| matches!(a.get_long(), Some("max-chars" | "limit")));
+            if !bounded && !FIXED_SIZE.contains(&name.as_str()) {
+                problems.push(format!("{name}: no --max-chars or --limit"));
+            }
+        }
+        // `--version` is a flag, not a command, but has a --json form too.
+        if protocol::schema::command("version").is_none() {
+            problems.push("--version: no schema".into());
+        }
+        assert!(problems.is_empty(), "{problems:#?}");
     }
 
     #[test]
