@@ -4,7 +4,6 @@ description = "Chrome discovery, install (Chrome for Testing), launch flags and 
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-license.workspace = true
 publish.workspace = true
 
 [dependencies]
