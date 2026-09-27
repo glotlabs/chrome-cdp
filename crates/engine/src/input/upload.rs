@@ -38,6 +38,14 @@ const POLL: Duration = Duration::from_millis(50);
 /// How many files the text output names.
 const SHOWN_FILES: usize = 10;
 
+/// What giving an input its files did.
+struct Filled {
+    /// It held other files before.
+    changed: bool,
+    /// Its `accept` attribute.
+    accept: String,
+}
+
 /// What the page says about the element `upload` got.
 #[derive(Debug, Default, Deserialize)]
 struct Probe {
@@ -178,8 +186,8 @@ impl Actor<'_> {
             };
             let note = target.note.clone();
             target.release();
-            let changed = set?;
-            let mut output = self.uploaded(locator, element, files, false, changed);
+            let filled = set?;
+            let mut output = self.uploaded(locator, element, files, false, &filled);
             if let Some(note) = note {
                 output = output.warning(note);
             }
@@ -206,14 +214,29 @@ impl Actor<'_> {
     }
 
     /// Gives the file input `input` (a handle in `context`, released
-    /// here) the files, or clears it for none. Whether it changed.
+    /// here) the files, or clears it for none.
     async fn fill_input(
         &self,
         context: &FrameContext,
         input: String,
         files: &[UploadedFile],
-    ) -> Result<bool, ErrorInfo> {
+    ) -> Result<Filled, ErrorInfo> {
         let session = context.session.with_timeout(self.timeout);
+        let mut params =
+            runtime::CallFunctionOnParams::new("function () { return this.accept; }".to_owned());
+        params.object_id = Some(input.clone());
+        params.return_by_value = Some(true);
+        let accept = match session.call(params).await {
+            Ok(r) => r
+                .result
+                .value
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_default(),
+            Err(e) => {
+                release(context, input);
+                return Err(from_cdp(&e, self.session()));
+            }
+        };
         let result = if files.is_empty() {
             // `DOM.setFileInputFiles` ignores an empty list.
             let mut params = runtime::CallFunctionOnParams::new(CLEAR.to_owned());
@@ -229,7 +252,8 @@ impl Actor<'_> {
             session.call(params).await.map(|_| true)
         };
         release(context, input);
-        result.map_err(|e| from_cdp(&e, self.session()))
+        let changed = result.map_err(|e| from_cdp(&e, self.session()))?;
+        Ok(Filled { changed, accept })
     }
 
     /// Clicks the element `locator` names, and gives the files to the file
@@ -314,8 +338,8 @@ impl Actor<'_> {
         let _ = session
             .call(SetInterceptFileChooserDialogParams::new(false))
             .await;
-        let changed = result?;
-        let mut output = self.uploaded(locator, element, files, true, changed);
+        let filled = result?;
+        let mut output = self.uploaded(locator, element, files, true, &filled);
         if let Some(note) = note {
             output = output.warning(note);
         }
@@ -329,10 +353,22 @@ impl Actor<'_> {
         element: ActedElement,
         files: Vec<UploadedFile>,
         chooser: bool,
-        changed: bool,
+        filled: &Filled,
     ) -> Output {
         let described = describe(&element);
-        let text = if files.is_empty() && !changed {
+        let refused: Vec<&str> = files
+            .iter()
+            .filter(|f| refused(&filled.accept, &f.name))
+            .map(|f| f.name.as_str())
+            .collect();
+        let warning = (!refused.is_empty()).then(|| {
+            format!(
+                "the input accepts {}; the page may refuse {}",
+                filled.accept.trim(),
+                refused.join(", ")
+            )
+        });
+        let text = if files.is_empty() && !filled.changed {
             format!("{described} had no files")
         } else if files.is_empty() {
             format!("cleared the files of {described}")
@@ -360,7 +396,11 @@ impl Actor<'_> {
             files,
             chooser,
         };
-        Output::typed(&data, text).quiet(quiet)
+        let output = Output::typed(&data, text).quiet(quiet);
+        match warning {
+            Some(warning) => output.warning(warning),
+            None => output,
+        }
     }
 
     /// More files than a single-file input takes.
@@ -404,6 +444,64 @@ impl Actor<'_> {
     }
 }
 
+/// Whether an input with this `accept` attribute surely does not take a
+/// file named `name` (a type it names by extension or MIME type; an
+/// extension this does not know is given the benefit of the doubt).
+fn refused(accept: &str, name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    let mime = name
+        .rsplit_once('.')
+        .and_then(|(_, extension)| mime_type(extension));
+    let mut tokens = accept
+        .split(',')
+        .map(|t| t.trim().to_ascii_lowercase())
+        .filter(|t| !t.is_empty())
+        .peekable();
+    if tokens.peek().is_none() {
+        return false;
+    }
+    !tokens.any(|token| {
+        if token.starts_with('.') {
+            name.ends_with(&token)
+        } else if let Some(mime) = mime {
+            match token.strip_suffix('*') {
+                Some(prefix) => mime.starts_with(prefix),
+                None => mime == token,
+            }
+        } else {
+            true
+        }
+    })
+}
+
+/// The MIME type of common file extensions.
+fn mime_type(extension: &str) -> Option<&'static str> {
+    Some(match extension {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "avif" => "image/avif",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "txt" => "text/plain",
+        "md" => "text/markdown",
+        "csv" => "text/csv",
+        "html" | "htm" => "text/html",
+        "json" => "application/json",
+        "pdf" => "application/pdf",
+        "zip" => "application/zip",
+        "xml" => "application/xml",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        _ => return None,
+    })
+}
+
 fn paths(files: &[UploadedFile]) -> Vec<String> {
     files.iter().map(|f| f.path.clone()).collect()
 }
@@ -441,6 +539,18 @@ mod tests {
         let listed = file_list(&many);
         assert!(listed.starts_with("0.txt (2KB), 1.txt (2KB)"), "{listed}");
         assert!(listed.ends_with("9.txt (2KB), … 2 more"), "{listed}");
+    }
+
+    #[test]
+    fn accept_rules_out_other_types() {
+        assert!(!refused("", "a.txt"));
+        assert!(!refused("image/*", "a.PNG"));
+        assert!(refused("image/*", "notes.md"));
+        assert!(!refused("image/png, .pdf", "report.pdf"));
+        assert!(refused("image/png,.pdf", "photo.jpg"));
+        assert!(!refused("application/vnd.custom", "data.bin"));
+        assert!(!refused("text/*", "data.bin"));
+        assert!(refused(".csv", "data.bin"));
     }
 
     #[test]

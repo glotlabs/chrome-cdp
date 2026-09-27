@@ -190,6 +190,11 @@ async fn uploads_into_file_inputs() {
 
     let out = act(&engine, upload("#avatar", &["hello.txt"])).await;
     assert_eq!(out.text, "uploaded hello.txt (6B) to e1 button \"Avatar\"");
+    // The avatar input only accepts images: the page may ignore text.
+    assert_eq!(
+        out.warnings,
+        ["the input accepts image/*; the page may refuse hello.txt"]
+    );
     assert_eq!(out.data["chooser"], json!(false));
     assert_eq!(out.data["files"][0]["path"], json!(file("hello.txt")));
     assert_eq!(out.data["files"][0]["size"], json!(6));
