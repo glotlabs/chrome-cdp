@@ -1,6 +1,6 @@
 # Plan 05 — Interaction & actionability
 
-Status: TODO
+Status: IN PROGRESS (5.1 done)
 Depends on: 04
 
 ## Goal
@@ -147,3 +147,13 @@ right-click handlers.
 ## Decisions log
 
 _(append here)_
+- 5.1: The pipeline lives in `engine::input::actionability`: `Engine::actionable` (for 5.2's actions, with a `retry` closure for hints) and the public `Engine::action_point`, which only tests use until 5.2's `click` exists. So the golden error files are engine-level for now (`crates/engine/tests/actionability/`), and the tests check each point by pressing the mouse there with raw `Input.dispatchMouseEvent` calls.
+- 5.1: Retries wait 0, 20, 100, 100, then every 500 ms (Playwright's schedule). A ref that is gone, `Ambiguous`, and an element that can never take text (a checkbox, a `<div>`) fail at once; only "no match yet" and failed checks are retried.
+- 5.1: Error kinds: disabled and read-only are `NotEnabled`, covered is `Obscured` (both exit 1); not visible, not stable and outside the viewport are `Timeout` (exit 3) naming the check in the message and `details.check`; a locator that never matched keeps its `NotFound` error. The `waited:` note shows the timeout, not the elapsed time, so messages are deterministic.
+- 5.1: The stable check (the same box on two consecutive animation frames, with a 100 ms fallback where frames do not run) runs in the page before scrolling, in the plan's order. `DOM.scrollIntoViewIfNeeded` scrolls instantly even under `scroll-behavior: smooth` (the scroll fixture uses it), so the point measured after it holds.
+- 5.1: `DOM.getNodeForLocation` takes document coordinates, not viewport ones: the hit test adds the local root's scroll offset (found by the far-below-the-fold fixture).
+- 5.1: Quads and hit tests are in the element's local root (its out-of-process iframe, or the main frame); Chrome hit-tests through same-process iframes itself. At each out-of-process boundary the point moves by the `<iframe>`'s content box, and the hit test in the parent must find that `<iframe>`.
+- 5.1: Scrolling inside an out-of-process iframe scrolls its parent later, asynchronously, and the browser routes input into the iframe by the last frame it drew. So the pipeline scrolls each `<iframe>` to the element's box in its parent itself, and waits for two animation frames in the tab before it returns the point; without that, clicks into a scrolled cross-origin iframe missed 3 times in 4.
+- 5.1: `--force` skips checks 2-5 and the hit test, but still scrolls the element into view and aims at its first quad (the plan said to skip 2-7): a click at an off-screen point lands on nothing. A `display: none` element has no point even with `--force`.
+- 5.1: The obscured error names the highest ancestor of the hit element that does not contain the target (the cookie banner, not the `<p>` in it), with a ref, and a button in it whose name looks like a dismissal (Accept, OK, Close, ...; else its first button) as the hint's `click`. When the target itself does not take pointer events (`pointer-events: none`), the error says so and names the element the click lands on instead.
+- 5.1: The opacity exception for inputs styled invisibly behind labels is left to 5.3, which clicks the `<label>` for those.
