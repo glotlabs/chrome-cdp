@@ -29,13 +29,28 @@ pub enum ProfileChoice {
     Dir(PathBuf),
 }
 
-/// A profile dir ready for launch.
+/// A profile dir ready for launch, and the launch's run dir.
+///
+/// Every launch gets a private run dir, deleted on close (and by the
+/// watchdog if chrome-cdp dies). It holds Chrome's `TMPDIR`, where Chrome
+/// keeps its process-singleton socket dir (`org.chromium.Chromium.*`),
+/// which would leak into `/tmp` whenever Chrome is killed, and, for a
+/// temporary profile, the profile itself.
 #[derive(Debug)]
 pub(crate) struct Profile {
     pub(crate) dir: PathBuf,
-    /// Deletes the dir when dropped; `None` for kept profiles.
-    pub(crate) temp: Option<TempDir>,
+    /// Whether `dir` is inside `run` and goes with it.
+    pub(crate) ephemeral: bool,
+    /// Deletes the run dir when dropped.
+    pub(crate) run: Option<TempDir>,
     pub(crate) warnings: Vec<String>,
+}
+
+impl Profile {
+    /// Chrome's `TMPDIR`.
+    pub(crate) fn tmp_dir(&self) -> Option<PathBuf> {
+        self.run.as_ref().map(|r| r.path().join("tmp"))
+    }
 }
 
 /// chrome-cdp's data dir: `$XDG_DATA_HOME/chrome-cdp` or
@@ -130,19 +145,22 @@ pub(crate) fn prepare(
     chrome: &Chrome,
 ) -> Result<Profile, ErrorInfo> {
     let mut warnings = Vec::new();
-    let (dir, temp) = match choice {
+    let mut builder = tempfile::Builder::new();
+    builder.prefix("chrome-cdp-");
+    let run = match chrome.snap.then(|| snap_dir(host, chrome)).flatten() {
+        Some(parent) => {
+            create_private(&parent)?;
+            builder.tempdir_in(&parent)
+        }
+        None => builder.tempdir(),
+    }
+    .map_err(|e| launch_failed(format!("cannot create a temporary directory: {e}")))?;
+    create_private(&run.path().join("tmp"))?;
+    let dir = match choice {
         ProfileChoice::Ephemeral => {
-            let mut builder = tempfile::Builder::new();
-            builder.prefix("chrome-cdp-profile-");
-            let temp = match chrome.snap.then(|| snap_dir(host, chrome)).flatten() {
-                Some(parent) => {
-                    create_private(&parent)?;
-                    builder.tempdir_in(&parent)
-                }
-                None => builder.tempdir(),
-            }
-            .map_err(|e| launch_failed(format!("cannot create a temporary profile: {e}")))?;
-            (temp.path().to_owned(), Some(temp))
+            let dir = run.path().join("profile");
+            create_private(&dir)?;
+            dir
         }
         ProfileChoice::Named(name) => {
             if !valid_name(name) {
@@ -157,7 +175,7 @@ pub(crate) fn prepare(
                     .hint("set HOME, or pass --user-data-dir <path>")
             })?;
             create_private(&dir)?;
-            (dir, None)
+            dir
         }
         ProfileChoice::Dir(path) => {
             let dir = normalize(path);
@@ -186,15 +204,17 @@ pub(crate) fn prepare(
             }
             std::fs::create_dir_all(&dir)
                 .map_err(|e| launch_failed(format!("cannot create {}: {e}", dir.display())))?;
-            (dir, None)
+            dir
         }
     };
-    if temp.is_none() {
+    let ephemeral = *choice == ProfileChoice::Ephemeral;
+    if !ephemeral {
         check_not_in_use(&dir, choice)?;
     }
     Ok(Profile {
         dir,
-        temp,
+        ephemeral,
+        run: Some(run),
         warnings,
     })
 }
@@ -341,8 +361,13 @@ mod tests {
         let p = prepare(&ProfileChoice::Ephemeral, &h, &chrome("/c", false)).unwrap();
         let dir = p.dir.clone();
         assert!(dir.is_dir());
+        assert!(p.ephemeral);
+        let tmp = p.tmp_dir().unwrap();
+        assert!(tmp.is_dir());
+        assert_eq!(tmp.parent(), dir.parent());
         drop(p);
         assert!(!dir.exists());
+        assert!(!tmp.exists());
 
         let snap = chrome(
             &root.path().join("snap/bin/chromium").to_string_lossy(),
@@ -368,11 +393,14 @@ mod tests {
             &chrome("/c", false),
         )
         .unwrap();
-        assert!(p.temp.is_none());
-        assert_eq!(
-            p.dir.metadata().unwrap().permissions().mode() & 0o777,
-            0o700
-        );
+        assert!(!p.ephemeral);
+        let run = p.tmp_dir().unwrap();
+        drop(p);
+        assert!(!run.exists());
+        let kept = root
+            .path()
+            .join("home/.local/share/chrome-cdp/profiles/work");
+        assert_eq!(kept.metadata().unwrap().permissions().mode() & 0o777, 0o700);
         let err = prepare(
             &ProfileChoice::Named("../x".into()),
             &h,

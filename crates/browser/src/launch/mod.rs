@@ -146,13 +146,16 @@ pub async fn launch(
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
+    if let Some(tmp) = profile.tmp_dir() {
+        cmd.env("TMPDIR", tmp);
+    }
     process::configure(&mut cmd);
     let (transport, mut child) =
         PipeTransport::spawn(cmd).map_err(|e| spawn_failed(&chrome.path, &e))?;
     let pgid = child.id().unwrap_or_default();
     tracing::debug!(chrome = %chrome.path.display(), pid = pgid, ?args, "launched Chrome");
 
-    let watchdog = Watchdog::start(pgid, profile.temp.as_ref().map(tempfile::TempDir::path))
+    let watchdog = Watchdog::start(pgid, profile.run.as_ref().map(tempfile::TempDir::path))
         .map_err(|e| tracing::warn!("cannot start the Chrome watchdog: {e}"))
         .ok();
     let stderr = StderrTail::start(child.stderr.take(), log);
@@ -311,7 +314,7 @@ impl Launched {
 
     /// Whether the profile is deleted on close.
     pub fn ephemeral_profile(&self) -> bool {
-        self.profile.temp.is_some()
+        self.profile.ephemeral
     }
 
     /// Chrome's arguments, after the program name.
@@ -355,7 +358,7 @@ impl Launched {
         if let Some(mut dog) = self.watchdog.take() {
             dog.disarm();
         }
-        if let Some(temp) = self.profile.temp.take() {
+        if let Some(temp) = self.profile.run.take() {
             let dir = temp.path().to_owned();
             if let Err(e) = temp.close() {
                 tracing::warn!(dir = %dir.display(), "cannot delete the Chrome profile: {e}");

@@ -93,7 +93,7 @@ pub(crate) fn check_extra(extra: &[String]) -> Result<(), ErrorInfo> {
         if !arg.starts_with("--") || arg.len() == 2 {
             return bad(
                 format!("--chrome-arg `{arg}` is not a Chrome flag"),
-                "pass flags in their --name=value form, e.g. --chrome-arg=--lang=de",
+                "pass flags in their --name=value form, e.g. --chrome-arg=--window-size=1280,800",
             );
         }
         match name {

@@ -6,9 +6,10 @@
 //! - On Linux, `PR_SET_PDEATHSIG` kills the browser the moment its parent
 //!   dies, even from `kill -9`.
 //! - On every OS, a [`Watchdog`] (`sh`) reads a pipe from us. If we die,
-//!   the pipe closes; the watchdog kills the group and deletes a
-//!   temporary profile. This stands in for plan 02's macOS kqueue
-//!   watchdog: it needs no `unsafe` and is tested on Linux too.
+//!   the pipe closes; the watchdog kills the group and deletes the
+//!   launch's run dir (and with it a temporary profile). This stands in
+//!   for plan 02's macOS kqueue watchdog: it needs no `unsafe` and is
+//!   tested on Linux too.
 
 use std::io::{self, Write as _};
 use std::os::unix::process::CommandExt as _;
@@ -19,7 +20,7 @@ use crate::launch::sys;
 
 /// The watchdog: waits for a line on stdin. `done` means we cleaned up;
 /// anything else (EOF, because we died) kills the group and deletes the
-/// temporary profile. It ignores terminal signals so Ctrl-C reaches only
+/// run dir. It ignores terminal signals so Ctrl-C reaches only
 /// chrome-cdp, which then cleans up itself.
 const WATCHDOG: &str = "\
 trap '' INT HUP TERM QUIT

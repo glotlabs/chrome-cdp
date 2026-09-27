@@ -3,7 +3,7 @@
 chrome-cdp starts Chrome with a fixed set of flags. They live in one
 place, `crates/browser/src/launch/flags.rs`, and a test checks that this page
 lists every flag in that file. Add your own flags with `--chrome-arg`, e.g.
-`--chrome-arg=--lang=de`. A `--disable-features` or `--enable-features` you
+`--chrome-arg=--window-size=1280,800`. A `--disable-features` or `--enable-features` you
 pass is merged with chrome-cdp's list, because Chrome only honours the last
 one of each. Features you enable are removed from the disabled list.
 
@@ -105,8 +105,13 @@ whole group, so no helper process stays behind. If chrome-cdp itself dies
 
 - on Linux, `PR_SET_PDEATHSIG` kills Chrome at once;
 - everywhere, a small watchdog (`sh`) holds a pipe to chrome-cdp. When the
-  pipe closes, it kills Chrome's process group and deletes a temporary
-  profile.
+  pipe closes, it kills Chrome's process group and deletes the launch's
+  temporary directory.
+
+Each launch has its own temporary directory (`chrome-cdp-*` in the temp
+dir). It holds the temporary profile and serves as Chrome's `TMPDIR`, so the
+socket directory Chrome keeps there (`org.chromium.Chromium.*`) goes away
+with it even when Chrome is killed.
 
 Chrome's stderr is kept in the session's `chrome.log` (rotated at 8 MB, one
 old file kept as `chrome.log.1`). `-vv` also prints it.
