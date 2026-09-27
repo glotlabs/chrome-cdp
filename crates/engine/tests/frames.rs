@@ -40,7 +40,7 @@ fn chrome_path() -> Option<PathBuf> {
 }
 
 async fn open(path: &std::path::Path, url: String) -> Arc<Engine> {
-    let engine = Engine::new("engine-frames-test", None);
+    let engine = Engine::new("engine-frames-test", None, None);
     let chrome = browser::discover(Some(path), &Host::current()).unwrap();
     engine
         .open(OpenRequest {
@@ -386,7 +386,7 @@ fn debug_chrome(path: &std::path::Path, url: &str) -> (std::process::Child, Path
 }
 
 async fn connect(port: &str) -> Arc<Engine> {
-    let engine = Engine::new("engine-frames-connect", None);
+    let engine = Engine::new("engine-frames-connect", None, None);
     engine
         .connect(engine::ConnectRequest {
             endpoint: port.to_owned(),

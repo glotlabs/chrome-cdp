@@ -77,6 +77,8 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         }
         Some(Command::Reload(args)) => session::reload(&args, &cli.global),
         Some(Command::Wait(args)) => session::wait(&args, &cli.global),
+        Some(Command::Dialog(args)) => session::dialog(&args, &cli.global),
+        Some(Command::Downloads(args)) => session::downloads(&args, &cli.global),
         // Handled in `main`.
         Some(Command::Daemon(_)) => Ok(Output::new(serde_json::Value::Null, "")),
     }

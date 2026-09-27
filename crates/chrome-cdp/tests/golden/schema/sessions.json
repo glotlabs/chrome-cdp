@@ -15,6 +15,59 @@
         }
       ]
     },
+    "DownloadInfo": {
+      "description": "A file the browser downloaded (or is downloading) into the session's\n`downloads` directory.",
+      "properties": {
+        "file": {
+          "description": "The file's name, as the server suggested it (made unique in the\ndirectory).",
+          "type": "string"
+        },
+        "path": {
+          "description": "The absolute path of the file, once it completed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "received_bytes": {
+          "description": "Bytes received so far.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "description": "`in_progress`, `completed` or `canceled`.",
+          "type": "string"
+        },
+        "tab": {
+          "description": "The tab whose page started it, if known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "total_bytes": {
+          "description": "The size the server announced, if it did.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "The URL downloaded.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "file",
+        "state",
+        "received_bytes"
+      ],
+      "type": "object"
+    },
     "ErrEnvelope": {
       "properties": {
         "error": {
@@ -163,6 +216,11 @@
           "type": "string"
         },
         {
+          "const": "PageCrashed",
+          "description": "A tab's page crashed (its renderer process died); `reload` brings\nit back.",
+          "type": "string"
+        },
+        {
           "const": "DaemonUnavailable",
           "description": "The session daemon cannot be reached or started.",
           "type": "string"
@@ -219,6 +277,58 @@
             "tab",
             "url",
             "active"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A JavaScript dialog closed without a `chrome-cdp dialog` command:\nthe session's `--dialogs` policy answered it (an `alert` or\n`beforeunload` by default), or a navigation dismissed it.",
+          "properties": {
+            "accepted": {
+              "description": "Whether it was accepted (else dismissed).",
+              "type": "boolean"
+            },
+            "by": {
+              "description": "`policy` (the session's `--dialogs` answered it) or `other`\n(it closed without `chrome-cdp dialog`: a navigation dismissed\nit, or a raw CDP call answered it).",
+              "type": "string"
+            },
+            "kind": {
+              "description": "`alert`, `confirm`, `prompt` or `beforeunload`.",
+              "type": "string"
+            },
+            "message": {
+              "description": "The text it showed.",
+              "type": "string"
+            },
+            "tab": {
+              "description": "The tab it opened in.",
+              "type": "string"
+            },
+            "type": {
+              "const": "dialog",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tab",
+            "kind",
+            "message",
+            "accepted",
+            "by"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/DownloadInfo",
+          "description": "A download started, or finished, while the command ran.",
+          "properties": {
+            "type": {
+              "const": "download",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
           ],
           "type": "object"
         }

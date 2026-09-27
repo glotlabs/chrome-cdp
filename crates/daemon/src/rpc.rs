@@ -21,6 +21,8 @@ pub const TAB_SELECT: &str = "tab_select";
 pub const TAB_CLOSE: &str = "tab_close";
 pub const NAVIGATE: &str = "navigate";
 pub const WAIT: &str = "wait";
+pub const DIALOG: &str = "dialog";
+pub const DOWNLOADS: &str = "downloads";
 
 /// `hello`: the first call on every connection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

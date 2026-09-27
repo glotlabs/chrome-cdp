@@ -53,8 +53,61 @@ pub struct OpenRequest {
     /// errors; `None` keeps the session's setting (off at first).
     #[serde(default)]
     pub ignore_https_errors: Option<bool>,
+    /// `--dialogs`: how JavaScript dialogs are answered; `None` keeps the
+    /// session's policy ([`DialogPolicy::Auto`] at first).
+    #[serde(default)]
+    pub dialogs: Option<DialogPolicy>,
+    /// `--http-credentials`: what to answer HTTP authentication challenges
+    /// with; `None` keeps the session's (none at first).
+    #[serde(default)]
+    pub http_credentials: Option<HttpCredentials>,
     /// Bounds the launch and the page load.
     pub timeout_ms: u64,
+}
+
+/// How the session answers JavaScript dialogs (`open --dialogs`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DialogPolicy {
+    /// Accept `alert` and `beforeunload`; `confirm` and `prompt` wait for
+    /// `chrome-cdp dialog`.
+    #[default]
+    Auto,
+    /// Accept every dialog (a prompt with its default answer).
+    Accept,
+    /// Dismiss every dialog.
+    Dismiss,
+    /// Every dialog waits for `chrome-cdp dialog`.
+    Manual,
+}
+
+impl DialogPolicy {
+    /// The `--dialogs` value.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Accept => "accept",
+            Self::Dismiss => "dismiss",
+            Self::Manual => "manual",
+        }
+    }
+}
+
+/// A user name and password for HTTP authentication (basic, digest, …).
+/// `Debug` does not show the password.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HttpCredentials {
+    pub username: String,
+    pub password: String,
+}
+
+impl std::fmt::Debug for HttpCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HttpCredentials")
+            .field("username", &self.username)
+            .field("password", &"…")
+            .finish()
+    }
 }
 
 /// `connect`: attach the session to a running browser.
@@ -253,6 +306,9 @@ pub enum WaitFor {
     },
     /// `wait <ms>`: a fixed delay.
     Delay { ms: u64 },
+    /// `--download`: a download that started since the previous command
+    /// began has finished.
+    Download,
 }
 
 /// The state `wait <locator>` waits for.
@@ -295,6 +351,28 @@ pub struct WaitRequest {
     /// Bounds the wait.
     pub timeout_ms: u64,
     /// The output budget (0 = none), for `--fn`'s value.
+    pub max_chars: usize,
+}
+
+/// `dialog accept [text]` and `dialog dismiss`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DialogRequest {
+    /// Accept (else dismiss) the dialog.
+    pub accept: bool,
+    /// The text to type into a prompt before accepting it.
+    #[serde(default)]
+    pub text: Option<String>,
+    /// `--tab`: the tab whose dialog to answer; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    pub timeout_ms: u64,
+}
+
+/// `downloads`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadsRequest {
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
     pub max_chars: usize,
 }
 

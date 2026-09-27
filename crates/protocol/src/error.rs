@@ -52,6 +52,9 @@ pub enum ErrorKind {
     LaunchFailed,
     /// Chrome exited or the connection to it dropped.
     BrowserCrashed,
+    /// A tab's page crashed (its renderer process died); `reload` brings
+    /// it back.
+    PageCrashed,
     /// The session daemon cannot be reached or started.
     DaemonUnavailable,
     /// Chrome rejected a CDP call.
@@ -66,7 +69,7 @@ pub enum ErrorKind {
 
 impl ErrorKind {
     /// Every kind, in exit-code order.
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::NotFound,
         Self::Ambiguous,
         Self::Obscured,
@@ -82,6 +85,7 @@ impl ErrorKind {
         Self::ChromeNotFound,
         Self::LaunchFailed,
         Self::BrowserCrashed,
+        Self::PageCrashed,
         Self::DaemonUnavailable,
         Self::ProtocolError,
         Self::InstallFailed,
@@ -105,6 +109,7 @@ impl ErrorKind {
             Self::ChromeNotFound
             | Self::LaunchFailed
             | Self::BrowserCrashed
+            | Self::PageCrashed
             | Self::DaemonUnavailable
             | Self::ProtocolError
             | Self::InstallFailed => 4,
@@ -255,6 +260,7 @@ mod tests {
         assert_eq!(ErrorKind::Timeout.exit_code(), 3);
         assert_eq!(ErrorKind::ChromeNotFound.exit_code(), 4);
         assert_eq!(ErrorKind::ProtocolError.exit_code(), 4);
+        assert_eq!(ErrorKind::PageCrashed.exit_code(), 4);
         assert_eq!(ErrorKind::DialogOpen.exit_code(), 5);
     }
 

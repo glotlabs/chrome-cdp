@@ -10,6 +10,12 @@
 //! load is a `NavigationFailed` error whose `details.reason` says why (see
 //! [`failure`]); an HTTP 4xx/5xx is only a warning, and so is a page that
 //! does not settle.
+//!
+//! A navigation returns at once with `DialogOpen` when the page opens a
+//! dialog that waits for an answer (a `confirm` while it loads), or
+//! `PageCrashed` (see [`crate::interrupt`]); a dialog already open is
+//! dismissed by Chrome, and a crashed page loads again. `goto` to a URL
+//! the browser downloads waits for the file instead.
 
 mod failure;
 mod url;
@@ -26,6 +32,7 @@ use tokio::time::Instant;
 
 pub use self::url::normalize_url;
 use self::watch::Watch;
+use crate::downloads;
 use crate::errors::from_cdp;
 use crate::network::InFlight;
 use crate::request::{NavigateRequest, Navigation, WaitUntil, millis};
@@ -38,6 +45,9 @@ const DESCRIBE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// How long a failed navigation waits for Chrome's error page.
 const ERROR_PAGE_WAIT: Duration = Duration::from_secs(2);
+
+/// How long `goto` to a download waits for the download to begin.
+const DOWNLOAD_START_WAIT: Duration = Duration::from_secs(5);
 
 /// A navigation that ended well: what `goto` and the like report, and
 /// the warnings (an HTTP error status).
@@ -58,8 +68,16 @@ impl Navigated {
     }
 
     /// The command's output: `→ 200 https://x/ "Title" (412ms)`.
-    fn output(self, navigation: &Navigation) -> Output {
+    fn output(self, navigation: &Navigation, session: &str) -> Output {
         let data = &self.data;
+        if let Some(download) = &data.download {
+            let text = downloads::line(download, session);
+            let quiet = download.path.clone().unwrap_or_default();
+            return self.warnings.into_iter().fold(
+                Output::typed(&self.data, text).quiet(quiet),
+                Output::warning,
+            );
+        }
         let text = if data.navigated {
             arrow(data)
         } else {
@@ -106,12 +124,16 @@ impl Engine {
             self.navigate_page(&running, &page, &req.navigation, req.wait, timeout)
                 .await?
         };
-        let output = navigated.output(&req.navigation);
-        Ok(self.report_opened(&running, mark, output).await)
+        let download = navigated.data.download.clone();
+        let output = navigated.output(&req.navigation, &self.session);
+        Ok(self
+            .report_events(&running, mark, output, download.as_ref())
+            .await)
     }
 
     /// Runs `navigation` in `page` and waits (up to `timeout` in all) for
-    /// `wait`. The caller holds the tab's lock.
+    /// `wait`, unless the page opens a dialog or crashes first. The caller
+    /// holds the tab's lock.
     pub(crate) async fn navigate_page(
         &self,
         running: &Running,
@@ -119,6 +141,51 @@ impl Engine {
         navigation: &Navigation,
         wait: WaitUntil,
         timeout: Duration,
+    ) -> Result<Navigated, ErrorInfo> {
+        let since = running.tabs.mark();
+        let navigate = self.navigate_unguarded(running, page, navigation, wait, timeout, since);
+        tokio::select! {
+            biased;
+            result = self.unless_blocked(running, page, since, navigate) => result,
+            () = running.tabs.stayed(page.id, since) => Err(self.stayed_error(running, page)),
+        }
+    }
+
+    /// `NavigationFailed`: the page asked before it is left, and the
+    /// session's `--dialogs` policy said stay.
+    fn stayed_error(&self, running: &Running, page: &Page) -> ErrorInfo {
+        let url = running
+            .tabs
+            .info(page.id)
+            .map(|t| t.url)
+            .unwrap_or_default();
+        ErrorInfo::new(
+            ErrorKind::NavigationFailed,
+            "the page asks before it is left (beforeunload), and the session dismisses \
+             dialogs, so the tab stayed",
+        )
+        .note("page", url.clone())
+        .hint(
+            Hint::run(
+                Cmd::new("open")
+                    .flag("dialogs", "auto")
+                    .session(&self.session),
+            )
+            .why("accepts beforeunload; then navigate again"),
+        )
+        .details(json!({ "reason": "beforeunload", "url": url }))
+    }
+
+    /// [`Engine::navigate_page`] without the guard; `since` is the event
+    /// mark from before it began.
+    async fn navigate_unguarded(
+        &self,
+        running: &Running,
+        page: &Page,
+        navigation: &Navigation,
+        wait: WaitUntil,
+        timeout: Duration,
+        since: u64,
     ) -> Result<Navigated, ErrorInfo> {
         let start = Instant::now();
         let deadline = start + timeout;
@@ -154,6 +221,18 @@ impl Engine {
                     Err(e) => return Err(cdp_err(e)),
                 };
                 if let Some(error) = nav.error_text.filter(|e| !e.is_empty()) {
+                    let download = nav.is_download.unwrap_or(false);
+                    if download
+                        && running.tabs.downloads_dir().is_some()
+                        && running
+                            .tabs
+                            .download_began(since, DOWNLOAD_START_WAIT)
+                            .await
+                    {
+                        return self
+                            .downloaded(running, page, &url, since, start, deadline, timeout)
+                            .await;
+                    }
                     // Chrome still commits its error page; let it, so the
                     // next command does not race it.
                     if let Some(loader) = &nav.loader_id {
@@ -164,7 +243,7 @@ impl Engine {
                     return Err(failure::navigation_failed(
                         &url,
                         &error,
-                        nav.is_download.unwrap_or(false),
+                        download,
                         &self.session,
                     ));
                 }
@@ -282,6 +361,66 @@ impl Engine {
                 restored: watch.restored,
                 wait: wait.as_str().to_owned(),
                 elapsed_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
+                download: None,
+            },
+            warnings,
+        })
+    }
+
+    /// `goto <url>` started a download (after event mark `since`): waits
+    /// until it finished. The page stays as it was.
+    #[allow(clippy::too_many_arguments)]
+    async fn downloaded(
+        &self,
+        running: &Running,
+        page: &Page,
+        url: &str,
+        since: u64,
+        start: Instant,
+        deadline: Instant,
+        timeout: Duration,
+    ) -> Result<Navigated, ErrorInfo> {
+        let download = match running.tabs.download_done(since, None, deadline).await {
+            Ok(download) => download,
+            Err(partial) => {
+                let mut info = ErrorInfo::new(
+                    ErrorKind::Timeout,
+                    format!(
+                        "the download of {url} did not finish within {}",
+                        format::duration(timeout)
+                    ),
+                );
+                if let Some(partial) = &partial {
+                    info = info.note("downloading", downloads::line(partial, &self.session));
+                }
+                return Err(info
+                    .hint(
+                        Hint::run(Cmd::new("wait").switch("download").session(&self.session))
+                            .why("it goes on in the background"),
+                    )
+                    .details(json!({ "url": url, "download": partial })));
+            }
+        };
+        let mut warnings = Vec::new();
+        if download.state == "canceled" {
+            warnings.push(format!("the browser canceled the download of {url}"));
+        }
+        let shown = describe(&page.session.with_timeout(DESCRIBE_TIMEOUT))
+            .await
+            .map_err(|e| from_cdp(&e, &self.session))?;
+        Ok(Navigated {
+            data: NavigateData {
+                tab: tab_name(page.id),
+                requested_url: Some(url.to_owned()),
+                url: shown.url,
+                title: shown.title,
+                status: None,
+                navigated: false,
+                same_document: false,
+                restored: false,
+                wait: "download".to_owned(),
+                elapsed_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+                download: Some(download),
             },
             warnings,
         })
@@ -309,6 +448,7 @@ impl Engine {
                 restored: false,
                 wait: wait.as_str().to_owned(),
                 elapsed_ms: u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX),
+                download: None,
             },
             warnings: Vec::new(),
         })
@@ -560,6 +700,7 @@ mod tests {
             restored: false,
             wait: "load".into(),
             elapsed_ms: 412,
+            download: None,
         }
     }
 

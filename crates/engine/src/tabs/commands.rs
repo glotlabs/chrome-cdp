@@ -5,12 +5,14 @@
 use std::fmt::Write as _;
 use std::time::Duration;
 
-use protocol::schema::{TabCloseData, TabData, TabInfo, TabsData};
+use protocol::schema::{DownloadInfo, Event, TabCloseData, TabData, TabInfo, TabsData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde_json::json;
 
 use super::{BLANK, Page, TabError, parse_tab_id, tab_name};
+use crate::downloads;
 use crate::errors::from_cdp;
+use crate::interrupt::{describe, describe_kind};
 use crate::request::{
     Navigation, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, WaitUntil, millis,
 };
@@ -78,42 +80,81 @@ impl Engine {
         }
     }
 
-    /// Adds the tabs that opened since `mark` (popups) to `output`: as
-    /// events, and as warnings so the text forms mention them.
-    pub(crate) async fn report_opened(
+    /// Adds what happened since `mark` to `output`, as events and as
+    /// warnings so the text forms mention them: the tabs that opened
+    /// (popups), dialogs answered without a command, and downloads that
+    /// began (except `shown`, a download the output already is about).
+    pub(crate) async fn report_events(
         &self,
         running: &Running,
         mark: u64,
         mut output: Output,
+        shown: Option<&DownloadInfo>,
     ) -> Output {
         let ids: Vec<u32> = running
             .tabs
             .opened_since(mark)
             .iter()
-            .filter_map(|protocol::schema::Event::TabOpened { tab, .. }| parse_tab_id(tab).ok())
+            .filter_map(|event| match event {
+                Event::TabOpened { tab, .. } => parse_tab_id(tab).ok(),
+                _ => None,
+            })
             .collect();
-        if ids.is_empty() {
-            return output;
+        if !ids.is_empty() {
+            // A popup has no URL until its first navigation commits.
+            running.tabs.wait_for_urls(&ids, POPUP_URL_WAIT).await;
+            let _ = running.tabs.refresh(Duration::from_secs(2)).await;
         }
-        // A popup has no URL until its first navigation commits.
-        running.tabs.wait_for_urls(&ids, POPUP_URL_WAIT).await;
-        let _ = running.tabs.refresh(Duration::from_secs(2)).await;
-        for event in running.tabs.opened_since(mark) {
-            let protocol::schema::Event::TabOpened {
-                tab, url, active, ..
-            } = &event;
-            let url = if url.is_empty() { BLANK } else { url };
-            output = output.warning(if *active {
-                format!("opened tab {tab} ({url}) and switched to it")
-            } else {
-                format!(
-                    "opened tab {tab} ({url}); switch to it: {}",
-                    Cmd::new("tab").arg(tab).session(&self.session)
-                )
-            });
+        let happened = running.tabs.opened_since(mark).into_iter().chain(
+            running
+                .tabs
+                .happened_since(mark)
+                .into_iter()
+                .filter(|event| match (event, shown) {
+                    (Event::Download(d), Some(shown)) => d.url != shown.url || d.file != shown.file,
+                    _ => true,
+                }),
+        );
+        for event in happened {
+            output = output.warning(self.event_line(&event));
             output = output.event(event);
         }
         output
+    }
+
+    /// The warning line for `event`.
+    fn event_line(&self, event: &Event) -> String {
+        match event {
+            Event::TabOpened {
+                tab, url, active, ..
+            } => {
+                let url = if url.is_empty() { BLANK } else { url };
+                if *active {
+                    format!("opened tab {tab} ({url}) and switched to it")
+                } else {
+                    format!(
+                        "opened tab {tab} ({url}); switch to it: {}",
+                        Cmd::new("tab").arg(tab).session(&self.session)
+                    )
+                }
+            }
+            Event::Dialog {
+                kind,
+                message,
+                accepted,
+                by,
+                ..
+            } => {
+                let how = match (*accepted, by.as_str()) {
+                    (true, "policy") => "accepted",
+                    (false, "policy") => "dismissed",
+                    (true, _) => "accepted outside chrome-cdp dialog",
+                    (false, _) => "dismissed by a navigation or outside chrome-cdp dialog",
+                };
+                format!("dialog: {} ({how})", describe_kind(kind, message))
+            }
+            Event::Download(download) => downloads::line(download, &self.session),
+        }
     }
 
     /// `tabs`: every tab, the active one marked.
@@ -137,6 +178,12 @@ impl Engine {
                     if let Some(opener) = &t.opener {
                         let _ = write!(title, " (opened by {opener})");
                     }
+                    if t.crashed {
+                        title.push_str(" (crashed)");
+                    }
+                    if t.dialog.is_some() {
+                        title.push_str(" (dialog open)");
+                    }
                     vec![
                         format!("{} {}", if t.active { "*" } else { " " }, t.id),
                         shown_url(&t.url).to_owned(),
@@ -144,7 +191,33 @@ impl Engine {
                     ]
                 })
                 .collect();
-            format::table(&rows)
+            let mut text = format::table(&rows);
+            // What blocks a tab, and how to unblock it, under the table
+            // (its last column is cut to fit).
+            for t in &tabs {
+                let on_tab = |cmd: Cmd| {
+                    let cmd = if t.active {
+                        cmd
+                    } else {
+                        cmd.flag("tab", &t.id)
+                    };
+                    cmd.session(&self.session)
+                };
+                if t.crashed {
+                    let _ = write!(text, "\n{} crashed: {}", t.id, on_tab(Cmd::new("reload")));
+                }
+                if let Some(dialog) = &t.dialog {
+                    let _ = write!(
+                        text,
+                        "\n{} has a dialog open: {}; {}, or {}",
+                        t.id,
+                        describe(dialog),
+                        on_tab(Cmd::new("dialog").arg("accept")),
+                        on_tab(Cmd::new("dialog").arg("dismiss"))
+                    );
+                }
+            }
+            text
         };
         let quiet: Vec<&str> = tabs.iter().map(|t| t.id.as_str()).collect();
         let quiet = quiet.join("\n");
@@ -186,7 +259,7 @@ impl Engine {
             Output::typed(&TabData { tab: tab.clone() }, text).quiet(tab.id),
             Output::warning,
         );
-        Ok(self.report_opened(&running, mark, output).await)
+        Ok(self.report_events(&running, mark, output, None).await)
     }
 
     /// `tab <id>`: makes a tab active (and brings it to the front).
@@ -288,6 +361,8 @@ impl Engine {
             title: String::new(),
             url: String::new(),
             opener: None,
+            crashed: false,
+            dialog: None,
         })
     }
 }

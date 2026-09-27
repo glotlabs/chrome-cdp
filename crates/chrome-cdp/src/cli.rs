@@ -165,7 +165,9 @@ Examples:
   chrome-cdp open --profile work https://app.test   # keeps logins
   chrome-cdp open --session shop http://localhost:3000
   chrome-cdp open --restart --chrome-arg=--window-size=1280,800
-  chrome-cdp open --follow-popups                   # popups become the active tab")]
+  chrome-cdp open --follow-popups                   # popups become the active tab
+  chrome-cdp open --dialogs dismiss                 # answer every dialog with Cancel
+  chrome-cdp open --http-credentials ada:s3cret http://localhost:8080/admin")]
     Open(OpenArgs),
 
     /// Attach the session to a browser that is already running.
@@ -290,6 +292,8 @@ Give exactly one condition. It is checked against the active tab (or
   --settle            (network idle and no DOM changes for 300ms)
   --fn                a JavaScript expression that becomes truthy
   --request, --response [--status]  since the previous command began
+  --download          a download started since the previous command began
+                      has finished (prints its path with -q)
   <MS>                a fixed sleep, e.g. 500 or 2s (prefer a condition)
 
 Examples:
@@ -300,8 +304,36 @@ Examples:
   chrome-cdp wait --url /dashboard
   chrome-cdp wait --idle
   chrome-cdp wait --fn 'window.app && window.app.ready'
-  chrome-cdp wait --response '**/api/save' --status 200")]
+  chrome-cdp wait --response '**/api/save' --status 200
+  chrome-cdp wait --download")]
     Wait(WaitCmdArgs),
+
+    /// Answer the JavaScript dialog (confirm, prompt, …) the page waits on.
+    #[command(
+        subcommand_required = true,
+        arg_required_else_help = true,
+        after_help = "\
+By default an alert, and a beforeunload (\"leave the page?\"), are accepted
+at once; a confirm or prompt waits for this command, and the command that
+ran into it fails with exit code 5 (see `open --dialogs`).
+
+Examples:
+  chrome-cdp dialog accept
+  chrome-cdp dialog dismiss
+  chrome-cdp dialog accept 'Ada Lovelace'     # a prompt's answer"
+    )]
+    Dialog(DialogArgs),
+
+    /// List the files the session's pages downloaded.
+    #[command(after_help = "\
+Downloads go to the session's downloads directory, named as the server
+suggests (made unique). A command that starts one says so; `wait
+--download` waits for it to finish.
+
+Examples:
+  chrome-cdp downloads
+  chrome-cdp downloads -q         # one path per line")]
+    Downloads(DownloadsArgs),
 
     /// Make one raw CDP call on the session's browser or current page.
     #[command(after_help = "\
@@ -414,8 +446,89 @@ pub(crate) struct OpenArgs {
     #[arg(long)]
     pub(crate) ignore_https_errors: bool,
 
+    /// How to answer JavaScript dialogs. The session keeps this setting.
+    #[arg(long, value_enum, value_name = "POLICY")]
+    pub(crate) dialogs: Option<Dialogs>,
+
+    /// Answer HTTP authentication (basic, digest) with USER:PASSWORD; `-`
+    /// reads it from stdin. The session keeps it; it applies to a running
+    /// browser too.
+    #[arg(
+        long,
+        env = "CHROME_CDP_HTTP_CREDENTIALS",
+        hide_env_values = true,
+        value_name = "USER:PASSWORD"
+    )]
+    pub(crate) http_credentials: Option<String>,
+
     #[command(flatten)]
     pub(crate) idle: IdleArgs,
+}
+
+/// How the session answers JavaScript dialogs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum Dialogs {
+    /// Accept alerts and beforeunload; confirm and prompt wait for
+    /// `chrome-cdp dialog` (the default).
+    Auto,
+    /// Accept every dialog (a prompt with its default answer).
+    Accept,
+    /// Dismiss every dialog.
+    Dismiss,
+    /// Every dialog waits for `chrome-cdp dialog`.
+    Manual,
+}
+
+impl Dialogs {
+    pub(crate) fn to_engine(self) -> engine::DialogPolicy {
+        match self {
+            Self::Auto => engine::DialogPolicy::Auto,
+            Self::Accept => engine::DialogPolicy::Accept,
+            Self::Dismiss => engine::DialogPolicy::Dismiss,
+            Self::Manual => engine::DialogPolicy::Manual,
+        }
+    }
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct DialogArgs {
+    #[command(subcommand)]
+    pub(crate) command: DialogCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum DialogCommand {
+    /// Accept the dialog (OK); a prompt gets TEXT, else its default.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp dialog accept
+  chrome-cdp dialog accept 'Ada Lovelace'     # a prompt's answer
+  chrome-cdp dialog accept --tab t2")]
+    Accept(DialogAcceptArgs),
+
+    /// Dismiss the dialog (Cancel; stay on the page for beforeunload).
+    #[command(after_help = "\
+Examples:
+  chrome-cdp dialog dismiss
+  chrome-cdp dialog dismiss --tab t2")]
+    Dismiss(DialogDismissArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct DialogAcceptArgs {
+    /// The answer to a prompt; `-` reads it from stdin.
+    #[arg(value_name = "TEXT")]
+    pub(crate) text: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct DialogDismissArgs {}
+
+#[derive(Debug, Args)]
+pub(crate) struct DownloadsArgs {
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
 }
 
 #[derive(Debug, Args)]
@@ -561,7 +674,7 @@ impl Wait {
             .required(true)
             .args([
                 "target", "load", "domcontentloaded", "idle", "settle", "text", "text_gone",
-                "url", "function", "request", "response",
+                "url", "function", "request", "response", "download",
             ])
     )
 )]
@@ -627,6 +740,10 @@ pub(crate) struct WaitCmdArgs {
     /// The status the --response must have.
     #[arg(long, value_name = "CODE")]
     pub(crate) status: Option<u16>,
+
+    /// A download, started since the previous command began, to finish.
+    #[arg(long)]
+    pub(crate) download: bool,
 
     /// Bound the output (--fn's value) to this many characters (0 = no
     /// limit).
@@ -889,6 +1006,7 @@ mod tests {
     /// only with the sessions the user started.
     /// `tab`, `tab new` and `tab close` describe one or two tabs.
     /// `goto`, `back`, `forward` and `reload` print one line.
+    /// `dialog accept|dismiss` print one line (the dialog's text is cut).
     const FIXED_SIZE: &[&str] = &[
         "schema",
         "install",
@@ -904,6 +1022,8 @@ mod tests {
         "back",
         "forward",
         "reload",
+        "dialog accept",
+        "dialog dismiss",
     ];
 
     /// The plan 08 checklist: every command has an example in its help, a

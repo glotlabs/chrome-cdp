@@ -13,13 +13,19 @@
 //! navigation (`navigate`: `goto`, `back`, `forward`, `reload`, and the
 //! page load of `open` and `tab new`). Milestone 3.4 adds the wait engine
 //! (`wait`, fed by each tab's `network` tracker), which navigations use
-//! for their settle. Later plans add modules
+//! for their settle. Milestone 3.5 handles what else can happen to a
+//! page: JavaScript dialogs (`dialog`, and `interrupt` for the commands
+//! they stall), downloads (`downloads`), crashes, and HTTP
+//! authentication. Later plans add modules
 //! next to `tabs` and `navigate`: `page`, `snapshot`, `locator`, `input`,
 //! `observe`, `emulate`, `route`.
 
+mod dialog;
+mod downloads;
 mod endpoint;
 mod errors;
 mod frames;
+mod interrupt;
 mod locator;
 mod navigate;
 mod network;
@@ -48,9 +54,9 @@ pub use frames::{FrameInfo, WORLD_NAME, World};
 pub use locator::{Locator, parse_locator};
 pub use navigate::normalize_url;
 pub use request::{
-    CdpRequest, ConnectRequest, ElementState, NavigateRequest, Navigation, OpenRequest,
-    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target, WaitFor, WaitRequest,
-    WaitUntil,
+    CdpRequest, ConnectRequest, DialogPolicy, DialogRequest, DownloadsRequest, ElementState,
+    HttpCredentials, NavigateRequest, Navigation, OpenRequest, TabCloseRequest, TabNewRequest,
+    TabSelectRequest, TabsRequest, Target, WaitFor, WaitRequest, WaitUntil,
 };
 pub use tabs::commands::TabClosed;
 pub use tabs::parse_tab_id;
@@ -156,8 +162,14 @@ impl Closed {
 }
 
 impl Engine {
-    /// An engine with no browser yet.
-    pub fn new(session: impl Into<String>, chrome_log: Option<PathBuf>) -> Arc<Self> {
+    /// An engine with no browser yet. Downloads go to `downloads` (made
+    /// when a browser starts); with `None`, the browser's own download
+    /// behaviour stays.
+    pub fn new(
+        session: impl Into<String>,
+        chrome_log: Option<PathBuf>,
+        downloads: Option<PathBuf>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             session: session.into(),
             chrome_log,
@@ -165,7 +177,7 @@ impl Engine {
             state: Mutex::new(State::Empty),
             generation: AtomicU64::new(0),
             tabs: TabLocks::default(),
-            settings: Arc::default(),
+            settings: Arc::new(Settings::new(downloads)),
         })
     }
 
@@ -223,6 +235,12 @@ impl Engine {
         if let Some(ignore) = req.ignore_https_errors {
             self.settings.set_ignore_https_errors(ignore);
         }
+        if let Some(policy) = req.dialogs {
+            self.settings.set_dialogs(policy);
+        }
+        if let Some(credentials) = &req.http_credentials {
+            self.settings.set_http_credentials(credentials.clone());
+        }
         let mut warnings = Vec::new();
         let current = match &*self.lock_state() {
             State::Running(running) => Some(running.clone()),
@@ -245,6 +263,9 @@ impl Engine {
                         .apply_security(timeout)
                         .await
                         .map_err(|e| from_cdp(&e, &self.session))?;
+                }
+                if req.http_credentials.is_some() {
+                    running.tabs.apply_credentials(timeout).await;
                 }
                 (running, false)
             }
@@ -670,6 +691,10 @@ impl Engine {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
+        if launched.is_none() {
+            // A connected browser keeps running: give it its downloads back.
+            running.tabs.release(Duration::from_secs(2)).await;
+        }
         drop(running);
         match launched {
             Some(launched) => {

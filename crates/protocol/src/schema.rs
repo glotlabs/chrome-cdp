@@ -136,6 +136,21 @@ pub const COMMANDS: &[CommandSchema] = &[
         summary: "the condition that held, the page's URL and the time it took",
         schema: || schema_for!(Envelope<WaitData>),
     },
+    CommandSchema {
+        name: "dialog accept",
+        summary: "the dialog accepted, and the text typed into a prompt",
+        schema: || schema_for!(Envelope<DialogData>),
+    },
+    CommandSchema {
+        name: "dialog dismiss",
+        summary: "the dialog dismissed",
+        schema: || schema_for!(Envelope<DialogData>),
+    },
+    CommandSchema {
+        name: "downloads",
+        summary: "the session's downloads, oldest first",
+        schema: || schema_for!(Envelope<DownloadsData>),
+    },
 ];
 
 /// The registry entry for `name` (`"tab close"`), if any.
@@ -471,6 +486,73 @@ pub struct TabInfo {
     /// The tab that opened this one (a popup), if chrome-cdp knows it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub opener: Option<String>,
+    /// Whether its page crashed; `chrome-cdp reload` brings it back.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub crashed: bool,
+    /// A dialog that waits for `chrome-cdp dialog accept|dismiss`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dialog: Option<DialogInfo>,
+}
+
+/// A JavaScript dialog (`alert`, `confirm`, `prompt`, `beforeunload`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DialogInfo {
+    /// `alert`, `confirm`, `prompt` or `beforeunload`.
+    pub kind: String,
+    /// The text it shows (empty for `beforeunload`).
+    pub message: String,
+    /// A prompt's default answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_prompt: Option<String>,
+    /// The URL of the frame that opened it.
+    pub url: String,
+}
+
+/// `data` of `chrome-cdp dialog accept|dismiss --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DialogData {
+    /// The tab whose dialog it was, e.g. `t1`.
+    pub tab: String,
+    /// The dialog.
+    pub dialog: DialogInfo,
+    /// Whether it was accepted (else dismissed).
+    pub accepted: bool,
+    /// The text typed into a prompt before accepting it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_text: Option<String>,
+}
+
+/// A file the browser downloaded (or is downloading) into the session's
+/// `downloads` directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DownloadInfo {
+    /// The tab whose page started it, if known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab: Option<String>,
+    /// The URL downloaded.
+    pub url: String,
+    /// The file's name, as the server suggested it (made unique in the
+    /// directory).
+    pub file: String,
+    /// The absolute path of the file, once it completed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// `in_progress`, `completed` or `canceled`.
+    pub state: String,
+    /// Bytes received so far.
+    pub received_bytes: u64,
+    /// The size the server announced, if it did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_bytes: Option<u64>,
+}
+
+/// `data` of `chrome-cdp downloads --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DownloadsData {
+    /// The session's downloads directory.
+    pub dir: String,
+    /// Every download of the session, oldest first.
+    pub downloads: Vec<DownloadInfo>,
 }
 
 /// `data` of `chrome-cdp tabs --json`.
@@ -534,10 +616,14 @@ pub struct NavigateData {
     pub restored: bool,
     /// What the command waited for: `settle` (the load event, then the
     /// page settled), `load`, `domcontentloaded`, `networkidle`, `commit`
-    /// or `none`.
+    /// or `none`; `download` when `goto`'s URL was a download.
     pub wait: String,
     /// Milliseconds from the start of the navigation until that.
     pub elapsed_ms: u64,
+    /// `goto` to a URL the browser downloads instead of showing: the file
+    /// (the page stays where it was, and `navigated` is `false`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download: Option<DownloadInfo>,
 }
 
 /// `data` of `chrome-cdp wait --json`.
@@ -564,6 +650,9 @@ pub struct WaitData {
     /// `--request` and `--response`: the one that matched.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request: Option<RequestInfo>,
+    /// `--download`: the file downloaded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download: Option<DownloadInfo>,
 }
 
 /// A request or response a wait matched.
@@ -596,6 +685,25 @@ pub enum Event {
         /// Whether it became the active tab.
         active: bool,
     },
+    /// A JavaScript dialog closed without a `chrome-cdp dialog` command:
+    /// the session's `--dialogs` policy answered it (an `alert` or
+    /// `beforeunload` by default), or a navigation dismissed it.
+    Dialog {
+        /// The tab it opened in.
+        tab: String,
+        /// `alert`, `confirm`, `prompt` or `beforeunload`.
+        kind: String,
+        /// The text it showed.
+        message: String,
+        /// Whether it was accepted (else dismissed).
+        accepted: bool,
+        /// `policy` (the session's `--dialogs` answered it) or `other`
+        /// (it closed without `chrome-cdp dialog`: a navigation dismissed
+        /// it, or a raw CDP call answered it).
+        by: String,
+    },
+    /// A download started, or finished, while the command ran.
+    Download(DownloadInfo),
 }
 
 /// The `--json` envelope (see [`crate::Envelope`]) with `data: T`.

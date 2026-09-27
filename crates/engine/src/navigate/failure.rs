@@ -23,6 +23,7 @@ pub(crate) enum Reason {
     FileNotFound,
     InvalidUrl,
     BadResponse,
+    Auth,
     Download,
     Aborted,
     Other,
@@ -75,6 +76,7 @@ impl Reason {
             | "ERR_RESPONSE_HEADERS_MULTIPLE_LOCATION"
             | "ERR_RESPONSE_HEADERS_MULTIPLE_CONTENT_LENGTH"
             | "ERR_RESPONSE_HEADERS_MULTIPLE_CONTENT_DISPOSITION" => Self::BadResponse,
+            "ERR_INVALID_AUTH_CREDENTIALS" | "ERR_UNEXPECTED_PROXY_AUTH" => Self::Auth,
             "ERR_ABORTED" => Self::Aborted,
             _ if code.starts_with("ERR_CERT_") => Self::Certificate,
             _ if code.starts_with("ERR_SSL_") || code == "ERR_BAD_SSL_CLIENT_AUTH_CERT" => {
@@ -100,6 +102,7 @@ impl Reason {
             Self::FileNotFound => "file_not_found",
             Self::InvalidUrl => "invalid_url",
             Self::BadResponse => "bad_response",
+            Self::Auth => "auth",
             Self::Download => "download",
             Self::Aborted => "aborted",
             Self::Other => "other",
@@ -213,8 +216,22 @@ pub(crate) fn navigation_failed(
             format!("{host_port} sent an invalid response ({error})"),
             Hint::text("the server's response is malformed; check its logs"),
         ),
+        Reason::Auth => (
+            format!(
+                "{} asks for a user name and password (HTTP authentication)",
+                parsed
+                    .as_ref()
+                    .map_or_else(|| host_port.clone(), |u| u.origin().ascii_serialization())
+            ),
+            Hint::run(
+                Cmd::new("open")
+                    .flag("http-credentials", "USER:PASSWORD")
+                    .session(session),
+            )
+            .why("then goto again; if the session has some, the server refused them"),
+        ),
         Reason::Download => (
-            format!("{url} is a download, not a page"),
+            format!("{url} is a download, not a page, and the browser did not save it"),
             Hint::text(format!("fetch the file directly, e.g. curl -O {url}")),
         ),
         Reason::Aborted => (
@@ -303,6 +320,11 @@ mod tests {
             "http://localhost:3000/",
         ),
         ("aborted", "net::ERR_ABORTED", "http://localhost:3000/empty"),
+        (
+            "auth",
+            "net::ERR_INVALID_AUTH_CREDENTIALS",
+            "http://localhost:3000/admin",
+        ),
         ("other", "net::ERR_SOMETHING_NEW", "https://example.com/"),
     ];
 

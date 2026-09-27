@@ -1,5 +1,88 @@
 {
   "$defs": {
+    "DialogInfo": {
+      "description": "A JavaScript dialog (`alert`, `confirm`, `prompt`, `beforeunload`).",
+      "properties": {
+        "default_prompt": {
+          "description": "A prompt's default answer.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "`alert`, `confirm`, `prompt` or `beforeunload`.",
+          "type": "string"
+        },
+        "message": {
+          "description": "The text it shows (empty for `beforeunload`).",
+          "type": "string"
+        },
+        "url": {
+          "description": "The URL of the frame that opened it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "message",
+        "url"
+      ],
+      "type": "object"
+    },
+    "DownloadInfo": {
+      "description": "A file the browser downloaded (or is downloading) into the session's\n`downloads` directory.",
+      "properties": {
+        "file": {
+          "description": "The file's name, as the server suggested it (made unique in the\ndirectory).",
+          "type": "string"
+        },
+        "path": {
+          "description": "The absolute path of the file, once it completed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "received_bytes": {
+          "description": "Bytes received so far.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "state": {
+          "description": "`in_progress`, `completed` or `canceled`.",
+          "type": "string"
+        },
+        "tab": {
+          "description": "The tab whose page started it, if known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "total_bytes": {
+          "description": "The size the server announced, if it did.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "The URL downloaded.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "file",
+        "state",
+        "received_bytes"
+      ],
+      "type": "object"
+    },
     "ErrEnvelope": {
       "properties": {
         "error": {
@@ -148,6 +231,11 @@
           "type": "string"
         },
         {
+          "const": "PageCrashed",
+          "description": "A tab's page crashed (its renderer process died); `reload` brings\nit back.",
+          "type": "string"
+        },
+        {
           "const": "DaemonUnavailable",
           "description": "The session daemon cannot be reached or started.",
           "type": "string"
@@ -204,6 +292,58 @@
             "tab",
             "url",
             "active"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A JavaScript dialog closed without a `chrome-cdp dialog` command:\nthe session's `--dialogs` policy answered it (an `alert` or\n`beforeunload` by default), or a navigation dismissed it.",
+          "properties": {
+            "accepted": {
+              "description": "Whether it was accepted (else dismissed).",
+              "type": "boolean"
+            },
+            "by": {
+              "description": "`policy` (the session's `--dialogs` answered it) or `other`\n(it closed without `chrome-cdp dialog`: a navigation dismissed\nit, or a raw CDP call answered it).",
+              "type": "string"
+            },
+            "kind": {
+              "description": "`alert`, `confirm`, `prompt` or `beforeunload`.",
+              "type": "string"
+            },
+            "message": {
+              "description": "The text it showed.",
+              "type": "string"
+            },
+            "tab": {
+              "description": "The tab it opened in.",
+              "type": "string"
+            },
+            "type": {
+              "const": "dialog",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tab",
+            "kind",
+            "message",
+            "accepted",
+            "by"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/DownloadInfo",
+          "description": "A download started, or finished, while the command ran.",
+          "properties": {
+            "type": {
+              "const": "download",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
           ],
           "type": "object"
         }
@@ -288,6 +428,21 @@
         "active": {
           "description": "Whether commands act on this tab when no `--tab` is given.",
           "type": "boolean"
+        },
+        "crashed": {
+          "description": "Whether its page crashed; `chrome-cdp reload` brings it back.",
+          "type": "boolean"
+        },
+        "dialog": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DialogInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A dialog that waits for `chrome-cdp dialog accept|dismiss`."
         },
         "id": {
           "description": "The tab's id, `t1`, `t2`, …: given in the order tabs open and never\nreused within a session. `--tab` takes it.",

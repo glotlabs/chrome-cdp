@@ -91,7 +91,11 @@ async fn serve(opts: &ServeOptions) -> Result<u8, String> {
     std::fs::write(&paths.pid, format!("{pid}\n"))
         .map_err(|e| format!("cannot write the pid: {e}"))?;
     let daemon = Arc::new(Daemon {
-        engine: Engine::new(&opts.session, Some(paths.chrome_log.clone())),
+        engine: Engine::new(
+            &opts.session,
+            Some(paths.chrome_log.clone()),
+            Some(paths.dir.join("downloads")),
+        ),
         build: opts.build.clone(),
         pid,
         started_at: SystemTime::now()
@@ -324,6 +328,14 @@ impl Daemon {
                 Ok(p) => output(self.engine.wait(p).await),
                 Err(e) => Err(e),
             },
+            rpc::DIALOG => match params(req.params) {
+                Ok(p) => output(self.engine.dialog(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::DOWNLOADS => match params(req.params) {
+                Ok(p) => output(self.engine.downloads(p)),
+                Err(e) => Err(e),
+            },
             rpc::TAB_CLOSE => match params(req.params) {
                 Ok(p) => match self.engine.tab_close(p).await {
                     Ok(closed) => {
@@ -382,6 +394,10 @@ impl Daemon {
                     launch: Some(record),
                     endpoint: None,
                 };
+            } else if let Some(launch) = &mut with.launch {
+                // Session settings given to a running browser apply at
+                // once; keep them for an upgrade too.
+                keep_settings(launch, &record);
             }
         }
         self.write_meta();
@@ -418,6 +434,23 @@ impl Daemon {
             dir: self.paths.dir.display().to_string(),
             logs: p.logs.map(|n| output::log_tail(&self.paths.chrome_log, n)),
         }
+    }
+}
+
+/// Copies the session settings `newer` gives (not the launch options) into
+/// `launch`.
+fn keep_settings(launch: &mut OpenRequest, newer: &OpenRequest) {
+    if newer.follow_popups.is_some() {
+        launch.follow_popups = newer.follow_popups;
+    }
+    if newer.ignore_https_errors.is_some() {
+        launch.ignore_https_errors = newer.ignore_https_errors;
+    }
+    if newer.dialogs.is_some() {
+        launch.dialogs = newer.dialogs;
+    }
+    if newer.http_credentials.is_some() {
+        launch.http_credentials.clone_from(&newer.http_credentials);
     }
 }
 
@@ -466,5 +499,31 @@ async fn serve_connection(daemon: &Daemon, stream: Stream) {
         if !sent {
             break;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use engine::{DialogPolicy, OpenRequest};
+
+    use super::keep_settings;
+
+    #[test]
+    fn settings_for_a_running_browser_are_kept() {
+        let mut launch = OpenRequest {
+            headed: Some(true),
+            follow_popups: Some(true),
+            ..OpenRequest::default()
+        };
+        let newer = OpenRequest {
+            headed: Some(false),
+            dialogs: Some(DialogPolicy::Dismiss),
+            ..OpenRequest::default()
+        };
+        keep_settings(&mut launch, &newer);
+        assert_eq!(launch.dialogs, Some(DialogPolicy::Dismiss));
+        assert_eq!(launch.follow_popups, Some(true));
+        // Launch options are not settings.
+        assert_eq!(launch.headed, Some(true));
     }
 }

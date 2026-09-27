@@ -1,8 +1,8 @@
 //! The session commands (plan 02, milestone 2.4): `open`, `connect`,
 //! `close`, `status`, `sessions` and `cdp`; the tab commands (plan 03,
 //! milestone 3.1): `tabs`, `tab <id>`, `tab new` and `tab close`; and
-//! navigation (milestone 3.3): `goto`, `back`, `forward` and `reload`; and
-//! `wait` (milestone 3.4).
+//! navigation (milestone 3.3): `goto`, `back`, `forward` and `reload`;
+//! `wait` (milestone 3.4); and `dialog` and `downloads` (milestone 3.5).
 //!
 //! Each one finds the session's daemon (starting it when the command needs
 //! a browser), sends one call, and returns the daemon's `Output` or
@@ -17,8 +17,9 @@ use daemon::meta::Meta;
 use daemon::paths::{Env, SessionPaths, check_name};
 use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
-    CdpRequest, ConnectRequest, ElementState, NavigateRequest, Navigation, OpenRequest,
-    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, WaitFor, WaitRequest,
+    CdpRequest, ConnectRequest, DialogRequest, DownloadsRequest, ElementState, HttpCredentials,
+    NavigateRequest, Navigation, OpenRequest, TabCloseRequest, TabNewRequest, TabSelectRequest,
+    TabsRequest, WaitFor, WaitRequest,
 };
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
@@ -26,9 +27,10 @@ use serde_json::{Map, Value, json};
 use tokio::runtime::Runtime;
 
 use crate::cli::{
-    CdpArgs, CloseArgs, ConnectArgs, DEFAULT_TIMEOUT, ElementStateArg, GlobalArgs, GotoArgs,
-    HistoryArgs, IdleArgs, OpenArgs, ReloadArgs, SessionsArgs, StatusArgs, TabArgs, TabCommand,
-    TabsArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    CdpArgs, CloseArgs, ConnectArgs, DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs,
+    ElementStateArg, GlobalArgs, GotoArgs, HistoryArgs, IdleArgs, OpenArgs, ReloadArgs,
+    SessionsArgs, StatusArgs, TabArgs, TabCommand, TabsArgs, WAIT_TIMEOUT, WaitCmdArgs,
+    parse_duration,
 };
 use crate::{input, version};
 
@@ -130,6 +132,11 @@ fn with_warnings_as_notes(info: ErrorInfo, warnings: &[String]) -> ErrorInfo {
 pub(crate) fn open(args: &OpenArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     let url = args.url.as_deref().map(engine::normalize_url).transpose()?;
     check_tab(global.tab.as_deref())?;
+    let credentials = args
+        .http_credentials
+        .as_deref()
+        .map(http_credentials)
+        .transpose()?;
     let launch = &args.launch;
     browser::launch::flags::check_extra(&launch.chrome_args)?;
     if let Some(name) = &launch.profile {
@@ -137,7 +144,7 @@ pub(crate) fn open(args: &OpenArgs, global: &GlobalArgs) -> Result<Output, Error
     }
     let ctx = Ctx::new(global)?;
     let mut session = ctx.start()?;
-    let result = open_in(&ctx, &mut session, args, url);
+    let result = open_in(&ctx, &mut session, args, url, credentials);
     if result.is_err() {
         ctx.abandon(&mut session);
     }
@@ -149,6 +156,7 @@ fn open_in(
     session: &mut Session,
     args: &OpenArgs,
     url: Option<String>,
+    http_credentials: Option<HttpCredentials>,
 ) -> Result<Output, ErrorInfo> {
     let tab = ctx.tab.clone();
     let launch = &args.launch;
@@ -180,6 +188,8 @@ fn open_in(
         tab,
         follow_popups: args.follow_popups.then_some(true),
         ignore_https_errors: args.ignore_https_errors.then_some(true),
+        dialogs: args.dialogs.map(crate::cli::Dialogs::to_engine),
+        http_credentials,
         timeout_ms: millis(ctx.timeout),
     };
     if let Some(previous) = session.replaced.as_ref().and_then(|m| m.launch.as_ref()) {
@@ -220,6 +230,31 @@ fn keep_previous_options(request: &mut OpenRequest, previous: &OpenRequest) {
     }
     if request.ignore_https_errors.is_none() {
         request.ignore_https_errors = previous.ignore_https_errors;
+    }
+    if request.dialogs.is_none() {
+        request.dialogs = previous.dialogs;
+    }
+    if request.http_credentials.is_none() {
+        request
+            .http_credentials
+            .clone_from(&previous.http_credentials);
+    }
+}
+
+/// Parses `--http-credentials USER:PASSWORD` (`-` reads it from stdin).
+fn http_credentials(arg: &str) -> Result<HttpCredentials, ErrorInfo> {
+    let text = input::text_arg(arg, "USER:PASSWORD")?;
+    let text = text.trim_end_matches(['\r', '\n']);
+    match text.split_once(':') {
+        Some((username, password)) if !username.is_empty() => Ok(HttpCredentials {
+            username: username.to_owned(),
+            password: password.to_owned(),
+        }),
+        _ => Err(
+            bad_args("--http-credentials needs USER:PASSWORD").hint(Hint::run(
+                Cmd::new("open").flag("http-credentials", "ada:s3cret"),
+            )),
+        ),
     }
 }
 
@@ -455,6 +490,44 @@ pub(crate) fn wait(args: &WaitCmdArgs, global: &GlobalArgs) -> Result<Output, Er
         .block_on(client.call_output(rpc::WAIT, &request, wait))
 }
 
+/// `dialog accept [text]` and `dialog dismiss`: need a running session.
+pub(crate) fn dialog(args: &DialogArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let (accept, text) = match &args.command {
+        DialogCommand::Accept(accept) => (
+            true,
+            accept
+                .text
+                .as_deref()
+                .map(|t| input::text_arg(t, "TEXT"))
+                .transpose()?,
+        ),
+        DialogCommand::Dismiss(_) => (false, None),
+    };
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let request = DialogRequest {
+        accept,
+        text,
+        tab: ctx.tab.clone(),
+        timeout_ms: millis(ctx.timeout),
+    };
+    ctx.runtime
+        .block_on(client.call_output(rpc::DIALOG, &request, ctx.timeout + QUICK))
+}
+
+/// `downloads`: needs a running session.
+pub(crate) fn downloads(args: &DownloadsArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let request = DownloadsRequest {
+        timeout_ms: millis(ctx.timeout),
+        max_chars: args.max_chars,
+    };
+    ctx.runtime
+        .block_on(client.call_output(rpc::DOWNLOADS, &request, ctx.timeout + QUICK))
+}
+
 /// The one condition `wait`'s arguments name (clap makes sure there is
 /// exactly one).
 fn wait_condition(args: &WaitCmdArgs) -> Result<WaitFor, ErrorInfo> {
@@ -543,6 +616,8 @@ fn wait_condition(args: &WaitCmdArgs) -> Result<WaitFor, ErrorInfo> {
             pattern: pattern.clone(),
             status: args.status,
         }
+    } else if args.download {
+        WaitFor::Download
     } else {
         return Err(
             bad_args("wait needs a condition").hint(Cmd::new("wait").switch("help").to_string())

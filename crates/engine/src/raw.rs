@@ -1,5 +1,11 @@
 //! `cdp <Domain.method> [json]`: one raw CDP call on the session's
 //! browser or current page, the escape hatch (overview principle 6).
+//!
+//! A page call returns at once when the page opens a dialog or crashes
+//! meanwhile (see [`crate::interrupt`]). One sent to a tab that already
+//! has a dialog open (or crashed) goes out as is, since it may be what
+//! answers it (`Page.handleJavaScriptDialog`, `Page.reload`); if the tab
+//! is still blocked afterwards, the output says so.
 
 use cdp::CdpError;
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
@@ -40,6 +46,7 @@ impl Engine {
         }
         let mark = running.tabs.mark();
         let params = Value::Object(params);
+        let mut blocked = None;
         let result = match target {
             Target::Browser => {
                 running
@@ -52,33 +59,50 @@ impl Engine {
             Target::Page => {
                 let page = self.page(&running, tab.as_deref(), timeout).await?;
                 let _tab = self.tabs.lock(&page.target_id).await;
-                match frame.as_deref() {
-                    Some(frame) => {
-                        let call = |context: &FrameContext| {
-                            let params = in_context(&method, params.clone(), context.context_id);
-                            let session = context.session.with_timeout(timeout);
-                            session.call_raw(&method, params)
-                        };
-                        let frame = Some(frame);
-                        self.in_frame(&running, &page, frame, World::Main, timeout, call)
-                            .await?
-                    }
-                    None => {
-                        page.session
-                            .with_timeout(timeout)
-                            .call_raw(&method, params)
-                            .await
-                    }
-                }
+                let call = async {
+                    Ok(match frame.as_deref() {
+                        Some(frame) => {
+                            let call = |context: &FrameContext| {
+                                let params =
+                                    in_context(&method, params.clone(), context.context_id);
+                                let session = context.session.with_timeout(timeout);
+                                session.call_raw(&method, params)
+                            };
+                            let frame = Some(frame);
+                            self.in_frame(&running, &page, frame, World::Main, timeout, call)
+                                .await?
+                        }
+                        None => {
+                            page.session
+                                .with_timeout(timeout)
+                                .call_raw(&method, params)
+                                .await
+                        }
+                    })
+                };
+                let result = self.unless_blocked(&running, &page, mark, call).await?;
+                // Still blocked after the call (it did not answer the
+                // dialog or reload the page): say so.
+                blocked = self.blocked_warning(&running, &page);
+                result
             }
         };
-        let value = result.map_err(|e| self.cdp_error(&e, &method, target))?;
+        let value = result.map_err(|e| {
+            let info = self.cdp_error(&e, &method, target);
+            match &blocked {
+                Some(blocked) => info.note("page", blocked.clone()),
+                None => info,
+            }
+        })?;
         let pretty = serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string());
         let compact = value.to_string();
-        let output = Output::new(value, pretty)
+        let mut output = Output::new(value, pretty)
             .quiet(compact)
             .limit(max_chars, "--max-chars 0 for all of it");
-        Ok(self.report_opened(&running, mark, output).await)
+        if let Some(blocked) = blocked {
+            output = output.warning(blocked);
+        }
+        Ok(self.report_events(&running, mark, output, None).await)
     }
 
     fn cdp_error(&self, e: &CdpError, method: &str, target: Target) -> ErrorInfo {

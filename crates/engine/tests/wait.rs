@@ -38,7 +38,7 @@ fn chrome_path() -> Option<PathBuf> {
 }
 
 async fn start(path: &std::path::Path) -> Arc<Engine> {
-    let engine = Engine::new("engine-wait-test", None);
+    let engine = Engine::new("engine-wait-test", None, None);
     let chrome = browser::discover(Some(path), &Host::current()).unwrap();
     engine
         .open(OpenRequest {

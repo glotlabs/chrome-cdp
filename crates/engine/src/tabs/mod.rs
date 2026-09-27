@@ -16,22 +16,37 @@
 //! command asked for (a popup) is recorded, so the command that caused it
 //! can report `opened tab t3`; it becomes active only when the session
 //! follows popups.
+//!
+//! Milestone 3.5 adds what can happen to a tab besides navigating: a
+//! JavaScript dialog (see [`dialogs`]), a download (see [`downloads`]), a
+//! crash of its page, and HTTP authentication (see [`auth`]). Tab
+//! openings, dialogs answered without a command, and downloads share one
+//! event sequence, so a command reports what happened since its
+//! [`Tabs::mark`].
 
+mod auth;
 pub(crate) mod commands;
+pub(crate) mod dialogs;
+mod downloads;
 mod locks;
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use cdp::domains::{network, page, runtime, security, target};
+use cdp::domains::{browser, network, page, runtime, security, target};
 use cdp::{Connection, Event as _, RawEvent, RawEventStream, Session};
 use protocol::schema::{Event, TabInfo};
 
+use self::auth::Auth;
+use self::dialogs::OpenDialog;
+use self::downloads::Download;
 use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
 use crate::network::{Exchange, Idle, InFlight, Network};
+use crate::request::{DialogPolicy, HttpCredentials};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 use tokio::sync::watch;
 use tokio::task::AbortHandle;
@@ -46,7 +61,7 @@ pub(crate) const BLANK: &str = "about:blank";
 /// the setup ends, so a hung call must not hold it forever.
 const SETUP_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// How many unreported tab openings are kept.
+/// How many unreported tab openings (and logged dialogs) are kept.
 const OPENED_MEMORY: usize = 64;
 
 /// A tab commands can act on.
@@ -90,9 +105,39 @@ pub(crate) struct Settings {
     /// Whether pages load despite certificate errors
     /// (`Security.setIgnoreCertificateErrors`, browser-wide).
     ignore_https_errors: AtomicBool,
+    /// How JavaScript dialogs are answered.
+    dialogs: Mutex<DialogPolicy>,
+    /// What HTTP authentication challenges are answered with.
+    http_credentials: Mutex<Option<HttpCredentials>>,
+    /// Where downloads go; `None` leaves Chrome's download behaviour alone.
+    pub(crate) downloads_dir: Option<PathBuf>,
 }
 
 impl Settings {
+    /// Settings with downloads going to `downloads_dir`.
+    pub(crate) fn new(downloads_dir: Option<PathBuf>) -> Self {
+        Self {
+            downloads_dir,
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn set_dialogs(&self, policy: DialogPolicy) {
+        *lock(&self.dialogs) = policy;
+    }
+
+    pub(crate) fn dialogs(&self) -> DialogPolicy {
+        *lock(&self.dialogs)
+    }
+
+    pub(crate) fn set_http_credentials(&self, credentials: HttpCredentials) {
+        *lock(&self.http_credentials) = Some(credentials);
+    }
+
+    fn http_credentials(&self) -> Option<HttpCredentials> {
+        lock(&self.http_credentials).clone()
+    }
+
     pub(crate) fn set_follow_popups(&self, follow: bool) {
         self.follow_popups.store(follow, Ordering::Relaxed);
     }
@@ -145,6 +190,13 @@ struct State {
     ours: HashSet<String>,
     /// Tabs that opened, newest last, with a sequence number.
     opened: VecDeque<(u64, u32)>,
+    /// Dialogs answered without a command, newest last, with a sequence
+    /// number.
+    logged: VecDeque<(u64, Event)>,
+    /// The session's downloads, oldest first.
+    downloads: Vec<Download>,
+    /// The last sequence number given to a tab opening, dialog or
+    /// download.
     seq: u64,
     /// Until `init` ends: tabs that attach are the browser's own, not new.
     starting: bool,
@@ -166,6 +218,13 @@ struct Tab {
     /// The network log's marks when the page command before the current
     /// one, and the current one, began.
     command_marks: (u64, u64),
+    /// The same for the event sequence (downloads).
+    event_marks: (u64, u64),
+    /// A dialog waiting for `chrome-cdp dialog`.
+    dialog: Option<OpenDialog>,
+    /// When its page crashed (in the event sequence), until it is loaded
+    /// again.
+    crashed: Option<u64>,
 }
 
 /// A page or iframe session.
@@ -202,6 +261,8 @@ impl Tabs {
                 hosts: HashMap::new(),
                 ours: HashSet::new(),
                 opened: VecDeque::new(),
+                logged: VecDeque::new(),
+                downloads: Vec::new(),
                 seq: 0,
                 starting: true,
             }),
@@ -223,6 +284,7 @@ impl Tabs {
     pub(crate) async fn init(&self, timeout: Duration) -> cdp::Result<()> {
         let browser = self.conn.browser().with_timeout(timeout);
         self.apply_security(timeout).await?;
+        self.manage_downloads(timeout).await;
         browser
             .call(target::SetDiscoverTargetsParams::new(true))
             .await?;
@@ -278,6 +340,65 @@ impl Tabs {
                 .await?;
         }
         Ok(())
+    }
+
+    /// Sends downloads to the session's directory (created, user-only),
+    /// with events. A browser that refuses keeps its own behaviour.
+    async fn manage_downloads(&self, timeout: Duration) {
+        let Some(dir) = &self.shared.settings.downloads_dir else {
+            return;
+        };
+        let mut builder = std::fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        if let Err(e) = builder.create(dir) {
+            tracing::warn!("cannot create {}: {e}", dir.display());
+            return;
+        }
+        let mut params = browser::SetDownloadBehaviorParams::new(
+            browser::SetDownloadBehaviorBehavior::AllowAndName,
+        );
+        params.download_path = Some(dir.display().to_string());
+        params.events_enabled = Some(true);
+        let result = self.conn.browser().with_timeout(timeout).call(params).await;
+        if let Err(e) = result {
+            tracing::warn!("cannot send downloads to {}: {e}", dir.display());
+        }
+    }
+
+    /// Gives a browser we leave running (`close` of a connected session)
+    /// its own download behaviour back.
+    pub(crate) async fn release(&self, timeout: Duration) {
+        if self.shared.settings.downloads_dir.is_none() || self.conn.is_closed() {
+            return;
+        }
+        let params =
+            browser::SetDownloadBehaviorParams::new(browser::SetDownloadBehaviorBehavior::Default);
+        let result = self.conn.browser().with_timeout(timeout).call(params).await;
+        if let Err(e) = result {
+            tracing::debug!("cannot reset the download behaviour: {e}");
+        }
+    }
+
+    /// Turns on answering HTTP authentication challenges in every page and
+    /// frame session (new ones get it during [`setup`]).
+    pub(crate) async fn apply_credentials(&self, timeout: Duration) {
+        if self.shared.settings.http_credentials().is_none() {
+            return;
+        }
+        let hosts: Vec<Session> = self
+            .shared
+            .lock()
+            .hosts
+            .values()
+            .map(|h| h.session.clone())
+            .collect();
+        for host in hosts {
+            if let Err(e) = host.with_timeout(timeout).call(auth::enable()).await {
+                tracing::debug!("cannot intercept requests of a target: {e}");
+            }
+        }
     }
 
     /// Waits up to `timeout` for `done` to hold; `false` if it did not.
@@ -476,6 +597,21 @@ impl Tabs {
             .collect()
     }
 
+    /// Dialogs answered without a command after `mark`, and downloads
+    /// that began after it (as they are now).
+    pub(crate) fn happened_since(&self, mark: u64) -> Vec<Event> {
+        let state = self.shared.lock();
+        let dialogs = state
+            .logged
+            .iter()
+            .filter(|(seq, _)| *seq > mark)
+            .map(|(_, event)| event.clone());
+        let downloads = state
+            .downloads_since(mark)
+            .map(|d| Event::Download(d.info()));
+        dialogs.chain(downloads).collect()
+    }
+
     /// Tab `id`'s frames, parents before their children.
     pub(crate) fn frames(&self, id: u32) -> Vec<FrameInfo> {
         self.shared
@@ -600,11 +736,26 @@ impl Tabs {
         }
     }
 
-    /// Marks the start of a page command on tab `id` in its network log.
+    /// Marks the start of a page command on tab `id` in its network log
+    /// and the event sequence.
     pub(crate) fn begin_command(&self, id: u32) {
-        if let Some(tab) = self.shared.lock().tabs.get_mut(&id) {
+        let mut state = self.shared.lock();
+        let seq = state.seq;
+        if let Some(tab) = state.tabs.get_mut(&id) {
             tab.command_marks = (tab.command_marks.1, tab.network.seq());
+            tab.event_marks = (tab.event_marks.1, seq);
         }
+    }
+
+    /// The event mark when the page command before the current one on tab
+    /// `id` began: `wait --download` also accepts a download that command
+    /// started.
+    pub(crate) fn previous_event_mark(&self, id: u32) -> u64 {
+        self.shared
+            .lock()
+            .tabs
+            .get(&id)
+            .map_or(0, |t| t.event_marks.0)
     }
 
     /// The network log's mark when the page command before the current
@@ -860,6 +1011,18 @@ impl State {
                 .as_deref()
                 .and_then(|t| self.id_of(t))
                 .map(tab_name),
+            crashed: tab.crashed.is_some(),
+            dialog: tab.dialog.as_ref().map(|d| d.info.clone()),
+        }
+    }
+
+    /// Logs `event` (a dialog answered without a command) for the command
+    /// that runs meanwhile to report.
+    fn log(&mut self, event: Event) {
+        self.seq += 1;
+        self.logged.push_back((self.seq, event));
+        if self.logged.len() > OPENED_MEMORY {
+            self.logged.pop_front();
         }
     }
 }
@@ -901,20 +1064,25 @@ async fn watch_browser(shared: Arc<Shared>, mut events: RawEventStream) {
                     shared.lock().update(&changed.target_info);
                 }
             }
+            browser::DownloadWillBegin::NAME => downloads::will_begin(&shared, &event),
+            browser::DownloadProgress::NAME => downloads::progress(&shared, &event),
             _ => {}
         }
     }
 }
 
 /// Handles a page or iframe session's events: its own auto-attached
-/// targets (OOPIFs, workers) and their detaching, and the frame and
-/// execution context events of tab `tab`'s frames it owns.
+/// targets (OOPIFs, workers) and their detaching, the frame and execution
+/// context events of tab `tab`'s frames it owns, its dialogs, its crash,
+/// and its intercepted requests.
 async fn watch_host(
     shared: Arc<Shared>,
     mut events: RawEventStream,
-    session_id: String,
+    session: Session,
     tab: Option<u32>,
 ) {
+    let session_id = session.id().unwrap_or_default().to_owned();
+    let mut auth = Auth::default();
     while let Some(event) = events.next().await {
         match event.method.as_str() {
             target::AttachedToTarget::NAME => attached(&shared, &event, Parent::Host(tab)),
@@ -923,9 +1091,31 @@ async fn watch_host(
                     detached(&shared, session_id);
                 }
             }
+            "Fetch.requestPaused" => Auth::request_paused(&shared, &session, &event),
+            "Fetch.authRequired" => auth.auth_required(&shared, &session, &event),
             method if method.starts_with("Network.") => {
                 if let Some(tab) = tab {
                     network_event(&shared, &session_id, tab, method, &event);
+                }
+            }
+            page::JavascriptDialogOpening::NAME => {
+                if let Some(tab) = tab {
+                    dialogs::opening(&shared, &session, tab, &event);
+                }
+            }
+            page::JavascriptDialogClosed::NAME => {
+                if let Some(tab) = tab {
+                    dialogs::closed(&shared, tab, &event);
+                }
+            }
+            "Inspector.targetCrashed" => {
+                if let Some(tab) = tab {
+                    crashed(&shared, &session_id, tab);
+                }
+            }
+            "Inspector.targetReloadedAfterCrash" => {
+                if let Some(tab) = tab {
+                    recovered(&shared, &session_id, tab);
                 }
             }
             method => {
@@ -935,6 +1125,40 @@ async fn watch_host(
             }
         }
     }
+}
+
+/// The page of tab `tab` crashed, if `session_id` is its own session (an
+/// out-of-process iframe's crash leaves the page running): its scripts,
+/// dialog and requests are gone.
+fn crashed(shared: &Shared, session_id: &str, tab: u32) {
+    let mut state = shared.lock();
+    state.seq += 1;
+    let seq = state.seq;
+    let Some(tab) = state.tabs.get_mut(&tab) else {
+        return;
+    };
+    if tab.session.id() != Some(session_id) {
+        return;
+    }
+    tracing::warn!("the page of tab {} crashed", tab.target_id);
+    tab.crashed = Some(seq);
+    tab.dialog = None;
+    tab.frames.contexts_cleared(session_id);
+    tab.network.session_gone(session_id);
+    drop(state);
+    shared.bump();
+}
+
+/// Tab `tab`'s page loads again after a crash.
+fn recovered(shared: &Shared, session_id: &str, tab: u32) {
+    let mut state = shared.lock();
+    if let Some(tab) = state.tabs.get_mut(&tab)
+        && tab.session.id() == Some(session_id)
+    {
+        tab.crashed = None;
+    }
+    drop(state);
+    shared.bump();
 }
 
 /// Applies a frame or execution context event of `session_id` to tab
@@ -952,6 +1176,10 @@ fn frame_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event:
             let main = e.frame.parent_id.is_none();
             tab.network
                 .navigated(session_id, &e.frame.id, &e.frame.loader_id, main);
+            if main && session_id == tab.session.id().unwrap_or_default() {
+                // A new document: the page runs again after a crash.
+                tab.crashed = None;
+            }
             if e.r#type == page::NavigationType::BackForwardCacheRestore {
                 frames.restored(session_id, &e.frame);
             } else {
@@ -1036,6 +1264,9 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
                 frames: FrameTree::new(&info.target_id, &session_id),
                 network: Network::default(),
                 command_marks: (0, 0),
+                event_marks: (0, 0),
+                dialog: None,
+                crashed: None,
             },
         );
         Some(id)
@@ -1065,7 +1296,7 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
                 tab,
             },
         );
-        shared.spawn(watch_host(shared.clone(), events, session_id, tab));
+        shared.spawn(watch_host(shared.clone(), events, session.clone(), tab));
     }
     let waiting = attached.waiting_for_debugger;
     let task_shared = shared.clone();
@@ -1143,6 +1374,10 @@ async fn setup(
         for source in shared.settings.init_scripts() {
             let add = page::AddScriptToEvaluateOnNewDocumentParams::new(source);
             steps.push(("an init script", step(session.call(add))));
+        }
+        // Answers HTTP authentication challenges (see `auth`).
+        if shared.settings.http_credentials().is_some() {
+            steps.push(("Fetch.enable", step(session.call(auth::enable()))));
         }
     }
     if waiting {

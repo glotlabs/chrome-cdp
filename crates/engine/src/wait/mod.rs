@@ -18,11 +18,12 @@ mod probe;
 
 use std::time::Duration;
 
-use protocol::schema::{RequestInfo, WaitData};
+use protocol::schema::{DownloadInfo, RequestInfo, WaitData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde_json::{Map, Value, json};
 use tokio::time::Instant;
 
+use crate::downloads;
 use crate::locator::{Locator, parse_locator};
 use crate::navigate::describe;
 use crate::network::{Exchange, IDLE_QUIET, InFlight};
@@ -74,6 +75,7 @@ pub(crate) enum Condition {
         status: Option<u16>,
     },
     Delay(Duration),
+    Download,
 }
 
 /// Checks a condition's arguments (locators, URL patterns, empty text)
@@ -136,7 +138,21 @@ impl Condition {
                 status: *status,
             },
             WaitFor::Delay { ms } => Self::Delay(Duration::from_millis(*ms)),
+            WaitFor::Download => Self::Download,
         })
+    }
+
+    /// Whether it needs the page's scripts to run (so an open dialog or a
+    /// crashed page fails it at once).
+    fn runs_script(&self) -> bool {
+        matches!(
+            self,
+            Self::Load { .. }
+                | Self::Settle
+                | Self::Element { .. }
+                | Self::Text { .. }
+                | Self::Function(_)
+        )
     }
 
     /// `WaitData::condition`.
@@ -160,6 +176,7 @@ impl Condition {
             } => "request",
             Self::Exchange { response: true, .. } => "response",
             Self::Delay(_) => "delay",
+            Self::Download => "download",
         }
     }
 
@@ -204,6 +221,7 @@ impl Condition {
                 format!("a response from {:?}{status}", pattern.to_string())
             }
             Self::Delay(delay) => format::duration(*delay),
+            Self::Download => "a download to finish".into(),
         }
     }
 }
@@ -216,6 +234,7 @@ pub(crate) struct Met {
     pub(crate) count: Option<u64>,
     pub(crate) value: Option<Value>,
     pub(crate) exchange: Option<Exchange>,
+    pub(crate) download: Option<DownloadInfo>,
 }
 
 impl Met {
@@ -310,12 +329,15 @@ impl Engine {
         let running = self.running()?;
         let timeout = millis(req.timeout_ms);
         let page = self.page(&running, req.tab.as_deref(), timeout).await?;
+        if condition.runs_script() {
+            self.check_not_blocked(&running, &page)?;
+        }
         let mark = running.tabs.mark();
         let start = Instant::now();
         let met = {
             let _tab = self.tabs.lock(&page.target_id).await;
-            self.wait_until(&running, &page, &condition, start, timeout, &req)
-                .await?
+            let wait = self.wait_until(&running, &page, &condition, start, timeout, &req);
+            self.unless_blocked(&running, &page, mark, wait).await?
         };
         let elapsed = start.elapsed();
         let url = running
@@ -332,6 +354,12 @@ impl Engine {
         });
         let quiet = match (&condition, &met) {
             (Condition::Url(_), _) => url.clone(),
+            (
+                Condition::Download,
+                Met {
+                    download: Some(d), ..
+                },
+            ) => d.path.clone().unwrap_or_default(),
             (
                 Condition::Exchange { .. },
                 Met {
@@ -356,6 +384,7 @@ impl Engine {
             count: met.count,
             value: met.value,
             request,
+            download: met.download.clone(),
         };
         let mut output = Output::typed(&data, text)
             .quiet(quiet)
@@ -366,7 +395,9 @@ impl Engine {
                  chrome-cdp wait <locator>, --text, --url, --idle or --fn",
             );
         }
-        Ok(self.report_opened(&running, mark, output).await)
+        Ok(self
+            .report_events(&running, mark, output, met.download.as_ref())
+            .await)
     }
 
     /// Waits up to `timeout` for `condition` in `page`: the one primitive
@@ -458,6 +489,22 @@ impl Engine {
                             },
                         ),
                     })
+                }
+            }
+            Condition::Download => {
+                let after = running.tabs.previous_event_mark(page.id);
+                match running.tabs.download_done(after, None, deadline).await {
+                    Ok(download) => Ok(Met {
+                        text: downloads::line(&download, &self.session),
+                        download: Some(download),
+                        ..Met::default()
+                    }),
+                    Err(Some(partial)) => Err(Unmet::default()
+                        .note("downloading", downloads::line(&partial, &self.session))
+                        .observed("download", json!(partial))),
+                    Err(None) => Err(Unmet::default()
+                        .note("observed", "no download started")
+                        .observed("download", Value::Null)),
                 }
             }
             Condition::Load { .. }
@@ -554,6 +601,11 @@ impl Engine {
             Condition::Exchange { .. } => Hint::run(again).why(
                 "only requests since the previous command count; run the action that sends it first",
             ),
+            Condition::Download if unmet.observed.get("download") == Some(&Value::Null) => {
+                Hint::run(again).why(
+                    "only downloads since the previous command count; run the action that starts it first",
+                )
+            }
             _ => Hint::run(again),
         };
         info.hint(hint).details(details)
@@ -606,6 +658,7 @@ fn retry(condition: &WaitFor, tab: Option<&str>) -> Cmd {
             }
         }
         WaitFor::Delay { ms } => cmd.arg(ms.to_string()),
+        WaitFor::Download => cmd.switch("download"),
     };
     match tab {
         Some(tab) => cmd.flag("tab", tab),
