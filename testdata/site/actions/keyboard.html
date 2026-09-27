@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Keyboard</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  input, textarea { display: block; margin: 4px 8px; }
+  #editor { border: 1px solid #999; margin: 4px 8px; min-height: 24px; }
+</style>
+<!-- Every key event (in the capture phase, on the document) and every
+     input event is logged into #keys, one per line: type, key (JSON),
+     code, keyCode, location, modifiers held, target id, and whether it
+     was trusted; input events log their inputType and data instead. -->
+<label>Field <input id="field"></label>
+<label>Area <textarea id="area"></textarea></label>
+<div id="editor" contenteditable="true" role="textbox" aria-label="Editor">Hello <b>world</b></div>
+<label>Filled <input id="filled" value="start"></label>
+<label>Locked <input id="locked" value="fixed" readonly></label>
+<label>Off <input id="off" disabled></label>
+<div id="plain">Plain text</div>
+<button id="btn">Button</button>
+<p id="palette" hidden>Command palette</p>
+<pre id="keys"></pre>
+<script>
+  const out = document.getElementById('keys');
+  const mods = (e) => ['alt', 'ctrl', 'meta', 'shift'].filter((k) => e[k + 'Key']).join('+') || '-';
+  const who = (e) => e.target.id || e.target.localName;
+  const trust = (e) => (e.isTrusted ? 'trusted' : 'synthetic');
+  for (const type of ['keydown', 'keypress', 'keyup']) {
+    document.addEventListener(type, (e) => {
+      out.textContent += `${type} ${JSON.stringify(e.key)} ${e.code} ${e.keyCode} L${e.location} ${mods(e)} ${who(e)} ${trust(e)}\n`;
+    }, true);
+  }
+  document.addEventListener('input', (e) => {
+    out.textContent += `input ${e.inputType} ${JSON.stringify(e.data)} ${who(e)} ${trust(e)}\n`;
+  }, true);
+  // A shortcut an app would bind: Control+K, or Command+K on macOS.
+  document.addEventListener('keydown', (e) => {
+    const mac = /Mac/.test(navigator.platform);
+    if (e.key === 'k' && (mac ? e.metaKey : e.ctrlKey)) {
+      e.preventDefault();
+      document.getElementById('palette').hidden = false;
+    }
+  });
+</script>

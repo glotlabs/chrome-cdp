@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Frameworks</title>
+<style>body { margin: 0; font: 16px sans-serif; } label, input { display: block; margin: 4px 8px; }</style>
+<!-- Controlled inputs of real React, Vue and Svelte builds (see
+     vendor/README.md). Each echoes its state below it, so a test can
+     tell that fill updated the framework's state, not only the DOM. -->
+<div id="react-app"></div>
+<div id="vue-app">
+  <label for="vue-name">Vue name</label>
+  <input id="vue-name" v-model="name">
+  <p id="vue-echo">{{ name }}</p>
+</div>
+<div id="svelte-app"></div>
+<script src="vendor/react.production.min.js"></script>
+<script src="vendor/react-dom.production.min.js"></script>
+<script src="vendor/vue.global.prod.js"></script>
+<script src="vendor/svelte-echo.js"></script>
+<script>
+  const e = React.createElement;
+  function App() {
+    const [name, setName] = React.useState('');
+    const [agree, setAgree] = React.useState(false);
+    const [size, setSize] = React.useState('m');
+    return e('div', null,
+      e('label', { htmlFor: 'react-name' }, 'React name'),
+      e('input', { id: 'react-name', value: name, onChange: (ev) => setName(ev.target.value) }),
+      e('p', { id: 'react-echo' }, name),
+      e('label', null,
+        e('input', { id: 'react-agree', type: 'checkbox', checked: agree, onChange: (ev) => setAgree(ev.target.checked) }),
+        ' Agree'),
+      e('p', { id: 'react-agreed' }, agree ? 'agreed' : 'not agreed'),
+      e('label', { htmlFor: 'react-size' }, 'React size'),
+      e('select', { id: 'react-size', value: size, onChange: (ev) => setSize(ev.target.value) },
+        e('option', { value: 's' }, 'Small'), e('option', { value: 'm' }, 'Medium'), e('option', { value: 'l' }, 'Large')),
+      e('p', { id: 'react-sized' }, size));
+  }
+  ReactDOM.createRoot(document.getElementById('react-app')).render(e(App));
+  Vue.createApp({ data: () => ({ name: '' }) }).mount('#vue-app');
+</script>

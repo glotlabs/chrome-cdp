@@ -1,0 +1,79 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Form</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  label { display: block; margin: 4px 8px; }
+  /* A native checkbox styled away behind its label. */
+  .fancy input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .fancy span { display: inline-block; width: 14px; height: 14px; border: 1px solid #333; }
+  .fancy input:checked + span { background: #333; }
+  /* The screen-reader-only pattern. */
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  [role=checkbox], [role=switch] { display: inline-block; margin: 4px 8px; border: 1px solid #333; padding: 2px; }
+</style>
+<!-- Every input and change event of the form's fields is logged into
+     #log, one per line: type, target id, value (checked for checkboxes
+     and radios), trusted. -->
+<form id="form" onsubmit="event.preventDefault(); document.getElementById('submitted').textContent = 'submitted'">
+  <label>Email <input id="email" type="email"></label>
+  <label>Password <input id="pw" type="password"></label>
+  <label>Age <input id="age" type="number"></label>
+  <label>Code <input id="code" maxlength="4"></label>
+  <label>Birthday <input id="birthday" type="date"></label>
+  <label>Alarm <input id="alarm" type="time"></label>
+  <label>Meeting <input id="meeting" type="datetime-local"></label>
+  <label>Month <input id="month" type="month"></label>
+  <label>Week <input id="week" type="week"></label>
+  <label>Colour <input id="colour" type="color"></label>
+  <label>Volume <input id="volume" type="range" min="0" max="10"></label>
+  <label>Notes <textarea id="notes">old notes</textarea></label>
+  <label>Name <input id="name" value="Old name"></label>
+  <label>Colour choice <select id="choice">
+    <option value="">Pick one</option>
+    <option value="r">Red</option>
+    <option value="g">Green</option>
+    <option value="b" disabled>Blue</option>
+  </select></label>
+  <label>Toppings <select id="toppings" multiple>
+    <option value="cheese">Cheese</option>
+    <option value="olives">Olives</option>
+    <option value="ham">Ham</option>
+  </select></label>
+  <label>Late <select id="late"><option value="">Loading…</option></select></label>
+  <div id="combo" role="combobox" aria-label="Fruit" aria-expanded="false" tabindex="0">Pick a fruit</div>
+  <label><input id="remember" type="checkbox"> Remember me</label>
+  <label class="fancy" id="offers-label"><input id="offers" type="checkbox"><span></span> Send offers</label>
+  <input id="terms" type="checkbox" class="sr-only"><label for="terms" id="terms-label">Accept the terms</label>
+  <label><input id="stubborn" type="checkbox" onclick="event.preventDefault()"> Stubborn</label>
+  <label><input id="locked-box" type="checkbox" disabled> Locked</label>
+  <label><input id="standard" type="radio" name="ship" value="standard" checked> Standard</label>
+  <label><input id="express" type="radio" name="ship" value="express"> Express</label>
+  <div id="custom" role="checkbox" aria-checked="false" tabindex="0">Custom box</div>
+  <div id="dark" role="switch" aria-checked="true" tabindex="0">Dark mode</div>
+  <button id="submit">Submit</button>
+</form>
+<p id="submitted"></p>
+<pre id="log"></pre>
+<script>
+  const log = document.getElementById('log');
+  const state = (el) => (el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.multiple
+    ? Array.from(el.selectedOptions, (o) => o.value).join(',') : el.value);
+  for (const type of ['input', 'change']) {
+    document.getElementById('form').addEventListener(type, (e) => {
+      log.textContent += `${type} ${e.target.id} ${JSON.stringify(state(e.target))} ${e.isTrusted ? 'trusted' : 'synthetic'}\n`;
+    });
+  }
+  for (const id of ['custom', 'dark']) {
+    const el = document.getElementById(id);
+    el.addEventListener('click', () => {
+      // A framework's render comes a little later.
+      setTimeout(() => el.setAttribute('aria-checked', String(el.getAttribute('aria-checked') !== 'true')), 50);
+    });
+  }
+  setTimeout(() => {
+    const late = document.getElementById('late');
+    late.innerHTML = '<option value="">Pick</option><option value="soon">Soon</option>';
+  }, 400);
+</script>

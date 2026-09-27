@@ -2,3 +2,5 @@
 crates/cdp/src/domains/** linguist-generated=true
 # Vendored protocol (see crates/cdp/protocol/README.md).
 crates/cdp/protocol/*.json linguist-vendored=true
+# Vendored framework builds for fixtures (see their README.md).
+testdata/site/actions/vendor/*.js linguist-vendored=true
