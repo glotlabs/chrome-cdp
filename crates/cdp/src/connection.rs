@@ -259,41 +259,37 @@ impl Connection {
 }
 
 /// Waits for the response to a request [`Connection::send`] queued.
-fn response(
+async fn response(
     sent: Result<(oneshot::Receiver<Response>, PendingGuard)>,
     method: String,
     timeout: Duration,
-) -> impl Future<Output = Result<Value>> + Send + 'static {
-    async move {
-        let (rx, guard) = sent?;
-        let response = tokio::time::timeout(timeout, rx).await;
-        let shared = &guard.shared;
-        match response {
-            Err(_) => Err(CdpError::Timeout {
-                method,
-                after: timeout,
-            }),
-            Ok(Err(_)) => Err(CdpError::disconnected(
-                shared
-                    .closed_reason()
-                    .as_deref()
-                    .unwrap_or("connection dropped"),
-            )),
-            Ok(Ok(Ok(result))) => Ok(result),
-            Ok(Ok(Err(ResponseError::Protocol {
-                code,
-                message,
-                data,
-            }))) => Err(CdpError::Protocol {
-                method,
-                code,
-                message,
-                data,
-            }),
-            Ok(Ok(Err(ResponseError::Disconnected(reason)))) => {
-                Err(CdpError::disconnected(&*reason))
-            }
-        }
+) -> Result<Value> {
+    let (rx, guard) = sent?;
+    let response = tokio::time::timeout(timeout, rx).await;
+    let shared = &guard.shared;
+    match response {
+        Err(_) => Err(CdpError::Timeout {
+            method,
+            after: timeout,
+        }),
+        Ok(Err(_)) => Err(CdpError::disconnected(
+            shared
+                .closed_reason()
+                .as_deref()
+                .unwrap_or("connection dropped"),
+        )),
+        Ok(Ok(Ok(result))) => Ok(result),
+        Ok(Ok(Err(ResponseError::Protocol {
+            code,
+            message,
+            data,
+        }))) => Err(CdpError::Protocol {
+            method,
+            code,
+            message,
+            data,
+        }),
+        Ok(Ok(Err(ResponseError::Disconnected(reason)))) => Err(CdpError::disconnected(&*reason)),
     }
 }
 

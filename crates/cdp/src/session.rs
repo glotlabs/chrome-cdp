@@ -65,6 +65,8 @@ impl Session {
     /// first polled: calls made one after another reach Chrome in that
     /// order even when awaited together (e.g. setting up a paused target
     /// and resuming it, where an early answer would wait for the resume).
+    // Owned, as the callers build the params for this one call.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn call<C: Command>(
         &self,
         params: C,
@@ -83,6 +85,7 @@ impl Session {
 
     /// Calls any method with JSON params and returns the raw JSON result.
     /// Sent at once, like [`Session::call`].
+    #[allow(clippy::needless_pass_by_value)]
     pub fn call_raw(
         &self,
         method: &str,
