@@ -29,6 +29,21 @@ jobs:
       # rustup reads rust-toolchain.toml and installs the pinned toolchain.
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      # CDP integration tests run against the runner's preinstalled Google
+      # Chrome. Ubuntu ships an AppArmor profile for /opt/google/chrome, so the
+      # sandbox works there. There is no Google Chrome for Linux arm64; that
+      # runner only covers the pipe transport with a stand-in child.
+      - name: Locate Chrome
+        shell: bash
+        run: |
+          for c in /opt/google/chrome/chrome "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"; do
+            if [ -x "$c" ]; then
+              echo "CHROME_PATH=$c" >> "$GITHUB_ENV"
+              echo "CHROME_CDP_REQUIRE_CHROME=1" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          done
+          echo "::warning::no Chrome on this runner; CDP integration tests are skipped"
       - run: cargo xtask ci
 
   dist:

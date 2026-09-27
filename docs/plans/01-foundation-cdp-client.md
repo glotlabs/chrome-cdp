@@ -1,6 +1,6 @@
 # Plan 01 — Foundation & CDP client
 
-Status: IN PROGRESS (1.1-1.2 done)
+Status: IN PROGRESS (1.1-1.3 done)
 Depends on: 00-overview (read first), 08 §2–§4 (output conventions)
 
 ## Goal
@@ -101,7 +101,7 @@ launches. The daemon does not exist yet; this plan uses a direct connection.
 - [ ] `cargo xtask ci` is green on all 4 CI runners.
 - [ ] The pipe transport works on Linux and macOS. Killing Chrome makes all
       pending calls fail within 100 ms, without panics.
-- [ ] 10,000 sequential `Runtime.evaluate("1+1")` calls finish in < 3 s locally
+- [x] 10,000 sequential `Runtime.evaluate("1+1")` calls finish in < 3 s locally
       (a latency baseline for plan 10).
 - [x] No `unwrap()`/`expect()` outside tests and `main` (enforced by a clippy
       lint).
@@ -131,3 +131,13 @@ _(append here)_
 - 1.2: `integer` → `i64`, `number` → `f64`, an `object` with no properties → `serde_json::Map`. Named primitive types are `pub type` aliases, not newtypes, to keep the generated code small.
 - 1.2: The generated code is 22 modules and 21.9k lines. The `cdp` crate builds in about 9 s (debug or release, 4 cores).
 - 1.2: The drift check also runs as a `cdp-gen` unit test, so plain `cargo test` catches stale generated code as well as `cargo xtask ci`.
+- 1.3: `Transport` is split into `TransportSender`/`TransportReceiver` halves (`fn split(self)`) using native async fns in traits (`impl Future + Send`), not `#[async_trait]` with `&self`. Each I/O task owns one half, so there is no locking or boxing.
+- 1.3: The fd passing is our own `pre_exec` + `dup2` (`libc`) in `transport/pipe/fd.rs`, not `command-fds`. The child's pipe ends are first moved to fds >= 5 with `F_DUPFD_CLOEXEC`, so a `dup2` onto 3 or 4 can never clobber the other source. `PipeTransport::spawn` takes a `tokio::process::Command` whose flags the caller supplies; plan 02 owns the flag list.
+- 1.3: Per-session event channels are created on first `listen`/`events` and removed on `Target.detachedFromTarget` or disconnect, so streams end instead of hanging. A listener more than `event_buffer` (1024) events behind skips the oldest with a warning. An event that fails to decode into its typed struct is skipped with a warning.
+- 1.3: The per-call timeout override is `Session::with_timeout(d)`, which returns a handle copy, not an extra parameter on every call.
+- 1.3: `CdpError` = `Protocol { method, code, message, data }`, `Disconnected { reason }`, `Timeout { method, after }`, `Serialize`, `Decode`. Mapping these to plan 08 error kinds and exit codes is left to the `protocol` crate.
+- 1.3: Kill latency: on Linux, pending calls fail 6-55 ms after SIGKILL (Chrome 154, test run alone). Nearly all of that is the kernel tearing down Chrome before the pipe closes, and with parallel tests it passed 100 ms. So the Chrome test asserts < 500 ms, and a unit test asserts that the client itself reacts to a closed transport in < 100 ms.
+- 1.3: 10,000 sequential `Runtime.evaluate("1+1")` calls over the pipe took 1.6 s in release (160 µs/call) on the dev machine. The benchmark is an `#[ignore]` test: `cargo test -p cdp --release --test chrome -- --ignored --nocapture`.
+- 1.3: The Chrome tests are not `#[ignore]`. Without `CHROME_PATH` they pass as no-ops. CI sets `CHROME_PATH` and `CHROME_CDP_REQUIRE_CHROME=1` on runners with Google Chrome preinstalled, so there a missing Chrome fails the run. The Linux arm64 runner has no Google Chrome and covers the pipe only through a stand-in `sh` child. The stand-in child tests run on every Unix runner, macOS included.
+- 1.3: `WsTransport` supports `ws://` only (no TLS feature). Add rustls in plan 02 if `connect` needs `wss://`.
+- 1.3: The library only emits tracing events (targets `cdp::wire` and `cdp::connection`). The binary installs the `CHROME_CDP_LOG` subscriber (milestone 1.4); the Chrome tests already do.
