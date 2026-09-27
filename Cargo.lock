@@ -102,6 +102,11 @@ name = "browser"
 version = "0.1.0"
 dependencies = [
  "cdp",
+ "protocol",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
 ]
 
 [[package]]
