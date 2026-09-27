@@ -5,10 +5,10 @@
 //!   `cargo xtask gen-cdp` from the vendored protocol in `crates/cdp/protocol`
 //!   (milestone 1.2). Each command's params struct implements [`Command`];
 //!   each event struct implements [`Event`].
-//! - `transport` (milestone 1.3): the pipe (fd 3/4, NUL-delimited) and
-//!   WebSocket transports. The fd-passing code is the only module in the
-//!   workspace allowed to use `unsafe` (via `#[allow(unsafe_code)]`); the
-//!   workspace denies it elsewhere.
+//! - [`transport`]: the pipe (fd 3/4, NUL-delimited) and WebSocket
+//!   transports, plus an in-memory one for tests. The fd-passing code
+//!   (`transport::pipe::fd`) is the only module in the workspace allowed to
+//!   use `unsafe`; the workspace denies it elsewhere.
 //! - `connection` / `session` (milestone 1.3): request correlation, event
 //!   routing by `sessionId`, timeouts and cancellation.
 
@@ -18,10 +18,14 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 pub mod domains;
+mod error;
+pub mod transport;
+
+pub use error::{CdpError, Result, TransportError};
 
 /// A CDP command: its params struct, method name and result type.
 ///
-/// `Session::call` (milestone 1.3) serialises `self` as the `params` and
+/// `Session::call` serialises `self` as the `params` and
 /// deserialises the `result` into [`Command::Returns`].
 pub trait Command: Serialize + Debug + Send + Sync {
     /// The wire method name, e.g. `"Page.navigate"`.
