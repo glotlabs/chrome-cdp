@@ -16,7 +16,7 @@ use cdp::domains::{accessibility as ax, dom, dom_snapshot};
 use futures_util::future::join_all;
 use serde_json::Value;
 
-use super::tree::{Checked, IFRAME, NONE, Node, NodeKey, States, TEXT};
+use super::tree::{Checked, IFRAME, NONE, Node, NodeKey, States, TEXT, is_interactive};
 use super::{Capture, FrameSource, relative_href};
 
 /// The computed styles read per node, in this order.
@@ -273,8 +273,9 @@ impl Builder<'_> {
 
     /// Chrome leaves elements with no role of their own out of the tree
     /// (a `<span>` or a `role=presentation` `<div>`), and with them the
-    /// fact that they act on clicks. Puts a clickable one back around the
-    /// text it held, found through the DOM snapshot's parents.
+    /// fact that they act on clicks. Puts a clickable one back around what
+    /// it held (text, an icon, an image), found through the DOM snapshot's
+    /// parents. Controls are left as they are: they have refs already.
     fn restore_clickables(&self, children: Vec<Node>, frame: &FrameSource) -> Vec<Node> {
         let Some(facts) = self.facts.get(frame.session.id().unwrap_or_default()) else {
             return children;
@@ -287,7 +288,7 @@ impl Builder<'_> {
         // The nearest clickable ancestor with no AX node, below the
         // nearest one that has one.
         let lost = |node: &Node| -> Option<i64> {
-            if !node.is_text() {
+            if is_interactive(&node.role) {
                 return None;
             }
             let mut current = facts.get(&node.key.as_ref()?.backend)?.parent;

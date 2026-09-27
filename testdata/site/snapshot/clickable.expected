@@ -15,7 +15,12 @@
     - listitem "Second entry" [ref]
   - link "Link with a pointer span" [ref] → /nav/a.html
   - clickable "Presentation div" [ref]
+  - clickable "Settings" [ref]
+  - clickable "Profile picture Ada Lovelace" [ref]
+  - clickable "info" [ref]
 !clickable "Programmatic focus only"
 !clickable "Listener without pointer"
 !clickable "nested pointer"
 !clickable "Link with a pointer span"
+!img "Settings"
+!img "Profile picture"

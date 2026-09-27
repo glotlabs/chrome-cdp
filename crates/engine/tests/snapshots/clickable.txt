@@ -13,3 +13,8 @@ page t6 "Clickable elements" {{ORIGIN_A}}/snapshot/clickable.html
     - listitem "Second entry" [e8]
   - link "Link with a pointer span" [e9] → /nav/a.html
   - clickable "Presentation div" [e10]
+  - clickable "Settings" [e11]
+  - clickable "Profile picture Ada Lovelace" [e12]
+  - text "Text with an"
+  - clickable "info" [e13]
+  - text "icon."
