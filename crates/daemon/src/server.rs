@@ -98,6 +98,7 @@ async fn serve(opts: &ServeOptions) -> Result<u8, String> {
         idle_timeout: Mutex::new(DEFAULT_IDLE_TIMEOUT),
         last_activity: Mutex::new(Instant::now()),
         in_flight: AtomicUsize::new(0),
+        connections: AtomicUsize::new(0),
         shutdown: Notify::new(),
         opened_with: Mutex::new(Opened::default()),
         paths,
@@ -118,7 +119,9 @@ async fn serve(opts: &ServeOptions) -> Result<u8, String> {
                 break;
             }
             Some(deadline) => deadline,
-            None => Instant::now() + Duration::from_secs(60),
+            // Busy: check again soon, as nothing wakes this loop when the
+            // last call or connection ends.
+            None => Instant::now() + Duration::from_secs(1),
         };
         tokio::select! {
             accepted = listener.accept() => match accepted {
@@ -177,6 +180,9 @@ struct Daemon {
     idle_timeout: Mutex<Duration>,
     last_activity: Mutex<Instant>,
     in_flight: AtomicUsize,
+    /// Open client connections. A CLI keeps its connection while it
+    /// finds or downloads Chrome before `open`, so none counts as idle.
+    connections: AtomicUsize,
     shutdown: Notify,
     opened_with: Mutex<Opened>,
 }
@@ -222,7 +228,8 @@ impl Daemon {
 
     /// When the daemon should exit if nothing happens; `None` for never.
     fn idle_deadline(&self) -> Option<Instant> {
-        if self.in_flight.load(Ordering::SeqCst) > 0 {
+        if self.in_flight.load(Ordering::SeqCst) > 0 || self.connections.load(Ordering::SeqCst) > 0
+        {
             return None;
         }
         let limit = match self.engine.state() {
@@ -391,6 +398,12 @@ fn output(result: Result<Output, ErrorInfo>) -> Result<Value, RpcError> {
 
 /// Serves one client connection: one request per line, answered in order.
 async fn handle(daemon: Arc<Daemon>, stream: Stream) {
+    daemon.connections.fetch_add(1, Ordering::SeqCst);
+    serve_connection(&daemon, stream).await;
+    daemon.connections.fetch_sub(1, Ordering::SeqCst);
+}
+
+async fn serve_connection(daemon: &Daemon, stream: Stream) {
     let (read, mut write) = stream.into_split();
     let mut lines = BufReader::new(read).lines();
     while let Ok(Some(line)) = lines.next_line().await {
