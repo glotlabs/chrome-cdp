@@ -197,10 +197,18 @@ impl Network {
     /// Frame `frame` of `session` committed document `loader`: the
     /// requests of the documents it replaced are over, though Chrome does
     /// not always say so. When the main frame navigates, that is every
-    /// other request of the session (its subframes went too).
+    /// other request of the session (its subframes went too). Requests
+    /// other sessions sent for the frame are over too: a cross-site
+    /// iframe's document is requested on its parent's session, but ends
+    /// on the iframe's own, where the parent never hears of it.
     pub(crate) fn navigated(&mut self, session: &str, frame: &str, loader: &str, main: bool) {
-        self.in_flight
-            .retain(|(s, _), r| s != session || r.loader == loader || !(main || r.frame == frame));
+        self.in_flight.retain(|(s, _), r| {
+            if s == session {
+                r.loader == loader || !(main || r.frame == frame)
+            } else {
+                r.frame != frame
+            }
+        });
     }
 
     /// Forgets the requests of a session that went away (an OOPIF).
@@ -351,6 +359,25 @@ mod tests {
         assert_eq!(net.busy(Instant::now()).len(), 1);
         net.navigated("s1", "main", "doc2", true);
         assert!(net.busy(Instant::now()).is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_iframe_s_own_session_ends_its_document_request() {
+        let mut net = Network::default();
+        let params = json!({
+            "requestId": "9",
+            "type": "Document",
+            "frameId": "child",
+            "loaderId": "doc3",
+            "request": { "method": "GET", "url": "http://y/child.html" },
+        });
+        net.event("s1", "Network.requestWillBeSent", &params);
+        sent(&mut net, "1", "Fetch", "http://x/slow");
+        // The out-of-process iframe commits it on its session, s2.
+        net.navigated("s2", "child", "doc3", false);
+        let busy = net.busy(Instant::now());
+        assert_eq!(busy.len(), 1);
+        assert_eq!(busy[0].url, "http://x/slow");
     }
 
     #[test]

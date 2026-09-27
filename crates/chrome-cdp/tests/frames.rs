@@ -38,6 +38,9 @@ fn cdp_reaches_same_and_cross_site_frames() {
     let sandbox = Sandbox::with_chrome(&chrome);
     let out = sandbox.run(&["open", &site.url("/frames/nested.html")]);
     assert_eq!(code(&out), 0, "{}", stderr(&out));
+    // Cross-site frames' document requests end on their own sessions:
+    // the settle does not wait for them until it gives up.
+    assert!(!stderr(&out).contains("still loading"), "{}", stderr(&out));
     // The innermost cross-site frame loads last.
     wait_until("the deep frame", || {
         code(&eval_in(&sandbox, "deep", "where")) == 0
