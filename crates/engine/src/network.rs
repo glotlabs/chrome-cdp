@@ -1,7 +1,8 @@
 //! A tab's network activity (plan 03, milestone 3.4): the requests in
-//! flight, for network idle (`wait --idle`, the settle after navigations),
-//! and a short log of recent requests and responses, for
-//! `wait --request` and `wait --response`.
+//! flight, for network idle (`wait --idle`, the settle after navigations
+//! and actions), a short log of recent requests and responses, for
+//! `wait --request` and `wait --response`, and of failed requests, for
+//! the post-action report (5.5).
 //!
 //! The tab's page session and its OOPIF sessions feed it their `Network`
 //! events (see `tabs::watch_host`). Requests are keyed by session and
@@ -63,6 +64,23 @@ pub(crate) struct Exchange {
     pub(crate) status: Option<u16>,
 }
 
+/// A request that failed: an HTTP error status (400 or more), or no
+/// response at all (`net::ERR_…`). Requests the page or a navigation
+/// canceled are not failures.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Failure {
+    /// Its place in the tab's log (shared with [`Exchange::seq`]).
+    pub(crate) seq: u64,
+    pub(crate) method: String,
+    pub(crate) url: String,
+    /// Chrome's resource type (`Document`, `Fetch`, `Script`, …).
+    pub(crate) kind: String,
+    /// The HTTP status, if it answered.
+    pub(crate) status: Option<u16>,
+    /// Chrome's error, if it did not: `net::ERR_CONNECTION_REFUSED`.
+    pub(crate) error: Option<String>,
+}
+
 /// The network activity of one tab.
 #[derive(Debug)]
 pub(crate) struct Network {
@@ -71,6 +89,7 @@ pub(crate) struct Network {
     last_activity: Instant,
     requests: VecDeque<Exchange>,
     responses: VecDeque<Exchange>,
+    failures: VecDeque<Failure>,
     seq: u64,
 }
 
@@ -81,6 +100,7 @@ impl Default for Network {
             last_activity: Instant::now(),
             requests: VecDeque::new(),
             responses: VecDeque::new(),
+            failures: VecDeque::new(),
             seq: 0,
         }
     }
@@ -149,24 +169,52 @@ impl Network {
                     .get(&key)
                     .map(|r| r.method.clone())
                     .unwrap_or_default();
+                let status = response["status"]
+                    .as_u64()
+                    .and_then(|s| u16::try_from(s).ok());
                 self.seq += 1;
-                push(
-                    &mut self.responses,
-                    Exchange {
-                        seq: self.seq,
-                        method,
-                        url: text(&response["url"]),
-                        status: response["status"]
-                            .as_u64()
-                            .and_then(|s| u16::try_from(s).ok()),
-                    },
-                );
+                let exchange = Exchange {
+                    seq: self.seq,
+                    method,
+                    url: text(&response["url"]),
+                    status,
+                };
+                if status.is_some_and(|s| s >= 400) {
+                    push(
+                        &mut self.failures,
+                        Failure {
+                            seq: self.seq,
+                            method: exchange.method.clone(),
+                            url: exchange.url.clone(),
+                            kind: params["type"].as_str().unwrap_or("Other").to_owned(),
+                            status,
+                            error: None,
+                        },
+                    );
+                }
+                push(&mut self.responses, exchange);
             }
             "Network.loadingFinished" | "Network.loadingFailed" => {
-                if let Some(done) = self.in_flight.remove(&key)
-                    && done.counts(now)
-                {
+                let Some(done) = self.in_flight.remove(&key) else {
+                    return true;
+                };
+                if done.counts(now) {
                     self.last_activity = now;
+                }
+                let canceled = params["canceled"].as_bool() == Some(true);
+                if method == "Network.loadingFailed" && !canceled {
+                    self.seq += 1;
+                    push(
+                        &mut self.failures,
+                        Failure {
+                            seq: self.seq,
+                            method: done.method,
+                            url: done.url,
+                            kind: done.kind,
+                            status: None,
+                            error: Some(text(&params["errorText"])),
+                        },
+                    );
                 }
             }
             _ => return false,
@@ -220,10 +268,24 @@ impl Network {
     /// request that counts in flight, and none started or ended for
     /// [`IDLE_QUIET`].
     pub(crate) fn idle(&self, since: Instant, now: Instant) -> Idle {
+        self.idle_for(since, now, IDLE_QUIET, false)
+    }
+
+    /// Like [`Network::idle`], for the brief settle after an action: the
+    /// network must be quiet for `quiet`, and with `own`, only requests
+    /// that started since `since` count (a page's long-poll from before
+    /// is not the action's doing).
+    pub(crate) fn idle_for(
+        &self,
+        since: Instant,
+        now: Instant,
+        quiet: Duration,
+        own: bool,
+    ) -> Idle {
         let mut quiet_since = since.max(self.last_activity);
         let mut busy_until: Option<Instant> = None;
         for request in self.in_flight.values() {
-            if IGNORED.contains(&request.kind.as_str()) {
+            if IGNORED.contains(&request.kind.as_str()) || (own && request.started < since) {
                 continue;
             }
             let long_lived = request.started + LONG_LIVED;
@@ -237,7 +299,7 @@ impl Network {
         if let Some(until) = busy_until {
             return Idle::Busy(until);
         }
-        let at = quiet_since + IDLE_QUIET;
+        let at = quiet_since + quiet;
         if now >= at { Idle::Now } else { Idle::At(at) }
     }
 
@@ -276,13 +338,23 @@ impl Network {
             .find(|e| e.seq > after && matches(e))
             .cloned()
     }
+
+    /// The failed requests logged after mark `after` (a [`Network::seq`]),
+    /// oldest first.
+    pub(crate) fn failures_since(&self, after: u64) -> Vec<Failure> {
+        self.failures
+            .iter()
+            .filter(|f| f.seq > after)
+            .cloned()
+            .collect()
+    }
 }
 
-fn push(log: &mut VecDeque<Exchange>, exchange: Exchange) {
+fn push<T>(log: &mut VecDeque<T>, entry: T) {
     if log.len() >= LOG_LEN {
         log.pop_front();
     }
-    log.push_back(exchange);
+    log.push_back(entry);
 }
 
 #[cfg(test)]
@@ -378,6 +450,59 @@ mod tests {
         let busy = net.busy(Instant::now());
         assert_eq!(busy.len(), 1);
         assert_eq!(busy[0].url, "http://x/slow");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn failures_are_error_statuses_and_errors_not_cancels() {
+        let mut net = Network::default();
+        let mark = net.seq();
+        sent(&mut net, "1", "Fetch", "http://x/api/save");
+        let response = json!({
+            "requestId": "1",
+            "type": "Fetch",
+            "response": { "url": "http://x/api/save", "status": 500 },
+        });
+        net.event("s1", "Network.responseReceived", &response);
+        finished(&mut net, "1");
+        sent(&mut net, "2", "Script", "http://x/app.js");
+        let failed = json!({ "requestId": "2", "errorText": "net::ERR_CONNECTION_REFUSED" });
+        net.event("s1", "Network.loadingFailed", &failed);
+        sent(&mut net, "3", "Fetch", "http://x/aborted");
+        let canceled =
+            json!({ "requestId": "3", "errorText": "net::ERR_ABORTED", "canceled": true });
+        net.event("s1", "Network.loadingFailed", &canceled);
+        let failures = net.failures_since(mark);
+        assert_eq!(failures.len(), 2, "{failures:?}");
+        assert_eq!(failures[0].status, Some(500));
+        assert_eq!(failures[0].kind, "Fetch");
+        assert_eq!(failures[1].url, "http://x/app.js");
+        assert_eq!(
+            failures[1].error.as_deref(),
+            Some("net::ERR_CONNECTION_REFUSED")
+        );
+        assert!(net.failures_since(failures[1].seq).is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn own_requests_are_those_since_the_action() {
+        let mut net = Network::default();
+        sent(&mut net, "1", "XHR", "http://x/poll");
+        tokio::time::advance(IDLE_QUIET).await;
+        let since = Instant::now();
+        let quiet = std::time::Duration::from_millis(150);
+        assert_eq!(
+            net.idle_for(since, since, quiet, true),
+            Idle::At(since + quiet)
+        );
+        assert!(matches!(
+            net.idle_for(since, since, quiet, false),
+            Idle::Busy(_)
+        ));
+        sent(&mut net, "2", "Fetch", "http://x/api");
+        assert!(matches!(
+            net.idle_for(since, since, quiet, true),
+            Idle::Busy(_)
+        ));
     }
 
     #[test]

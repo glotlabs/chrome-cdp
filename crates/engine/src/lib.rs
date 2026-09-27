@@ -25,6 +25,7 @@
 //! `observe`, `emulate`, `route`.
 
 mod clipboard;
+mod console;
 mod dialog;
 mod downloads;
 mod endpoint;

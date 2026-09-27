@@ -44,10 +44,11 @@ use protocol::schema::{Event, TabInfo};
 use self::auth::Auth;
 use self::dialogs::OpenDialog;
 use self::downloads::Download;
+use crate::console::{Console, ConsoleError};
 use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
 use crate::injected;
 use crate::input::Pointer;
-use crate::network::{Exchange, Idle, InFlight, Network};
+use crate::network::{Exchange, Failure, Idle, InFlight, Network};
 use crate::request::{DialogPolicy, HttpCredentials};
 use crate::snapshot::{FrameSource, Memory as SnapshotMemory};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
@@ -218,6 +219,8 @@ struct Tab {
     frames: FrameTree,
     /// Its requests, also those of its OOPIF sessions.
     network: Network,
+    /// Its console errors, also those of its OOPIF sessions.
+    console: Console,
     /// The network log's marks when the page command before the current
     /// one, and the current one, began.
     command_marks: (u64, u64),
@@ -844,6 +847,59 @@ impl Tabs {
         }
     }
 
+    /// Waits until the requests tab `id` started since `since` are done
+    /// and its network was quiet for `quiet` (see [`Network::idle_for`]);
+    /// `false` if `deadline` passed first.
+    pub(crate) async fn own_requests_done(
+        &self,
+        id: u32,
+        since: Instant,
+        quiet: Duration,
+        deadline: Instant,
+    ) -> bool {
+        self.watch(deadline, |state, now| {
+            let Some(tab) = state.tabs.get(&id) else {
+                return Check::Done(());
+            };
+            match tab.network.idle_for(since, now, quiet, true) {
+                Idle::Now => Check::Done(()),
+                Idle::At(at) | Idle::Busy(at) => Check::Later(Some(at)),
+            }
+        })
+        .await
+        .is_some()
+    }
+
+    /// Tab `id`'s network log and console marks now, for
+    /// [`Tabs::failures_since`] and [`Tabs::console_errors_since`].
+    pub(crate) fn log_marks(&self, id: u32) -> (u64, u64) {
+        self.shared
+            .lock()
+            .tabs
+            .get(&id)
+            .map_or((0, 0), |t| (t.network.seq(), t.console.seq()))
+    }
+
+    /// Tab `id`'s failed requests since network mark `after`.
+    pub(crate) fn failures_since(&self, id: u32, after: u64) -> Vec<Failure> {
+        self.shared
+            .lock()
+            .tabs
+            .get(&id)
+            .map(|t| t.network.failures_since(after))
+            .unwrap_or_default()
+    }
+
+    /// Tab `id`'s console errors since console mark `after`.
+    pub(crate) fn console_errors_since(&self, id: u32, after: u64) -> Vec<ConsoleError> {
+        self.shared
+            .lock()
+            .tabs
+            .get(&id)
+            .map(|t| t.console.errors_since(after))
+            .unwrap_or_default()
+    }
+
     /// The requests that keep tab `id`'s network busy now.
     pub(crate) fn busy(&self, id: u32) -> Vec<InFlight> {
         self.shared
@@ -1147,6 +1203,11 @@ async fn watch_host(
                     network_event(&shared, &session_id, tab, method, &event);
                 }
             }
+            "Runtime.consoleAPICalled" | "Runtime.exceptionThrown" => {
+                if let Some(tab) = tab {
+                    console_event(&shared, tab, &event);
+                }
+            }
             page::JavascriptDialogOpening::NAME => {
                 if let Some(tab) = tab {
                     dialogs::opening(&shared, &session, tab, &event);
@@ -1280,6 +1341,19 @@ fn network_event(shared: &Shared, session_id: &str, tab: u32, method: &str, even
     }
 }
 
+/// Applies a console call or uncaught exception to tab `tab`'s console
+/// errors.
+fn console_event(shared: &Shared, tab: u32, event: &RawEvent) {
+    let logged = shared
+        .lock()
+        .tabs
+        .get_mut(&tab)
+        .is_some_and(|t| t.console.event(&event.method, &event.params));
+    if logged {
+        shared.bump();
+    }
+}
+
 fn decode<E: cdp::Event>(event: &RawEvent) -> Result<E, serde_json::Error> {
     E::deserialize(&event.params)
 }
@@ -1320,6 +1394,7 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
                 ready: false,
                 frames: FrameTree::new(&info.target_id, &session_id),
                 network: Network::default(),
+                console: Console::default(),
                 command_marks: (0, 0),
                 event_marks: (0, 0),
                 dialog: None,
