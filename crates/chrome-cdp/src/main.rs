@@ -121,8 +121,22 @@ fn usage_info(e: &clap::Error) -> ErrorInfo {
     let message = if missing.contains(&e.kind()) {
         format!("{} needs a subcommand", Cmd::new(&command))
     } else {
-        let first = rendered.lines().next().unwrap_or_default();
-        first.trim_start_matches("error: ").to_owned()
+        let mut lines = rendered.lines();
+        let first = lines
+            .next()
+            .unwrap_or_default()
+            .trim_start_matches("error: ");
+        if first.ends_with(':') {
+            // "the following required arguments were not provided:" lists
+            // them on the lines below.
+            let listed: Vec<&str> = lines
+                .take_while(|l| !l.trim().is_empty())
+                .map(str::trim)
+                .collect();
+            format!("{first} {}", listed.join(", "))
+        } else {
+            first.to_owned()
+        }
     };
     let tips = rendered
         .lines()
