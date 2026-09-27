@@ -1,6 +1,6 @@
 # Plan 01 — Foundation & CDP client
 
-Status: TODO
+Status: IN PROGRESS (1.1 done)
 Depends on: 00-overview (read first), 08 §2–§4 (output conventions)
 
 ## Goal
@@ -103,7 +103,7 @@ launches. The daemon does not exist yet; this plan uses a direct connection.
       pending calls fail within 100 ms, without panics.
 - [ ] 10,000 sequential `Runtime.evaluate("1+1")` calls finish in < 3 s locally
       (a latency baseline for plan 10).
-- [ ] No `unwrap()`/`expect()` outside tests and `main` (enforced by a clippy
+- [x] No `unwrap()`/`expect()` outside tests and `main` (enforced by a clippy
       lint).
 
 ## Out of scope
@@ -113,3 +113,11 @@ The daemon, Chrome discovery, and the install command are in plan 02.
 ## Decisions log
 
 _(append here)_
+
+- 1.1: Toolchain pinned to `1.98.1` (current stable) with `rust-version = "1.98"`; bump both together.
+- 1.1: CI uses `macos-15-intel` instead of `macos-13` for macOS x86_64, because GitHub retired the `macos-13` runner image in late 2025.
+- 1.1: Release binary size: 301KB (x86_64 Linux stub, no dependencies yet). Budget is 15 MB, enforced by `cargo xtask dist` and the CI `dist` job.
+- 1.1: No `license` field in the workspace yet (no license has been chosen); `deny.toml` ignores unpublished crates in the license check.
+- 1.1: No-`unwrap`/`expect` is enforced with `clippy::unwrap_used`/`expect_used` (warn, `-D warnings` in `xtask ci`); `clippy.toml` allows them in tests. `main` must opt out explicitly with `#[allow]`.
+- 1.1: Library crates also warn on `print_stdout`/`print_stderr` so only the binary writes to stdout (plan 08 §2); the binary and xtask opt out.
+- 1.1: `xtask` is std-only so `cargo xtask ci` starts fast. CI runs `cargo xtask ci` itself, so local and CI checks cannot diverge. `gen-cdp` and `fixtures` are placeholders that exit non-zero until milestone 1.2 and the fixture server exist.
