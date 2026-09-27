@@ -646,46 +646,7 @@ impl Engine {
         retry: Option<&(dyn Fn(&str) -> Cmd + Sync)>,
         generation: Option<u64>,
     ) -> ErrorInfo {
-        let session = &place.context.session;
-        let read = async {
-            let properties = own_properties(session, object_id).await?;
-            let json = properties
-                .iter()
-                .find(|p| p.name == "json")
-                .and_then(|p| {
-                    p.value
-                        .as_ref()?
-                        .value
-                        .as_ref()?
-                        .as_str()
-                        .map(str::to_owned)
-                })
-                .unwrap_or_default();
-            let els = properties
-                .iter()
-                .find(|p| p.name == "els")
-                .and_then(|p| p.value.as_ref()?.object_id.clone());
-            let mut keys = vec![None; LISTED];
-            if let Some(els) = els {
-                for property in own_properties(session, &els).await? {
-                    let (Ok(index), Some(id)) = (
-                        property.name.parse::<usize>(),
-                        property.value.and_then(|v| v.object_id),
-                    ) else {
-                        continue;
-                    };
-                    if index < LISTED
-                        && let Ok(node) = describe(session, &id).await
-                    {
-                        keys[index] = Some(NodeKey {
-                            frame: place.frame.clone(),
-                            backend: node.backend_node_id,
-                        });
-                    }
-                }
-            }
-            cdp::Result::Ok((json, keys))
-        };
+        let read = read_listed(&place.context.session, object_id, &place.frame, LISTED);
         let (json, keys) = match read.await {
             Ok(read) => read,
             Err(e) => return from_cdp(&e, &self.session),
@@ -802,6 +763,54 @@ fn ambiguous(
     }))
 }
 
+/// Reads a bundle answer of the form `{json, els}`: the JSON text, and
+/// the keys of the first `max` elements of `els` (`None` for a missing
+/// one, or one that is `null`).
+pub(crate) async fn read_listed(
+    session: &cdp::Session,
+    object_id: &str,
+    frame: &str,
+    max: usize,
+) -> cdp::Result<(String, Vec<Option<NodeKey>>)> {
+    let properties = own_properties(session, object_id).await?;
+    let json = properties
+        .iter()
+        .find(|p| p.name == "json")
+        .and_then(|p| {
+            p.value
+                .as_ref()?
+                .value
+                .as_ref()?
+                .as_str()
+                .map(str::to_owned)
+        })
+        .unwrap_or_default();
+    let els = properties
+        .iter()
+        .find(|p| p.name == "els")
+        .and_then(|p| p.value.as_ref()?.object_id.clone());
+    let mut keys = vec![None; max];
+    if let Some(els) = els {
+        for property in own_properties(session, &els).await? {
+            let (Ok(index), Some(id)) = (
+                property.name.parse::<usize>(),
+                property.value.and_then(|v| v.object_id),
+            ) else {
+                continue;
+            };
+            if index < max
+                && let Ok(node) = describe(session, &id).await
+            {
+                keys[index] = Some(NodeKey {
+                    frame: frame.to_owned(),
+                    backend: node.backend_node_id,
+                });
+            }
+        }
+    }
+    Ok((json, keys))
+}
+
 fn steps_argument(locator: &Locator) -> runtime::CallArgument {
     value(serde_json::to_value(locator.in_frame_steps()).unwrap_or(Value::Null))
 }
@@ -846,7 +855,7 @@ async fn describe(session: &cdp::Session, object_id: &str) -> cdp::Result<dom::N
     Ok(session.call(params).await?.node)
 }
 
-fn release(context: &FrameContext, object_id: String) {
+pub(crate) fn release(context: &FrameContext, object_id: String) {
     let session = context.session.clone();
     tokio::spawn(async move {
         let _ = session
