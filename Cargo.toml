@@ -38,6 +38,7 @@ tempfile = "3"
 toml = { version = "1", default-features = false, features = ["parse", "serde", "std"] }
 thiserror = "2"
 tokio = "1"
+tokio-rustls = { version = "0.26", default-features = false }
 tokio-stream = { version = "0.1", default-features = false }
 schemars = "1.2"
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }

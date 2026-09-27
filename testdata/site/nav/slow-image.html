@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Slow image</title>
+<h1>Slow image</h1>
+<p>The DOM is ready at once; the load event waits for the image
+(<code>?img_delay=</code> is passed on as its <code>?delay=</code>, default 5000 ms).</p>
+<script>
+  const delay = new URLSearchParams(location.search).get('img_delay') || '5000';
+  document.write(`<img src="/nav/pixel.svg?delay=${delay}" alt="slow">`);
+</script>

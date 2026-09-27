@@ -439,7 +439,9 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "rustls",
  "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]

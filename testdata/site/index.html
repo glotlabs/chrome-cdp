@@ -7,6 +7,11 @@
   <li><a href="/tabs/popup.html">tabs/popup.html</a>: window.open and target=_blank popups</li>
   <li><a href="/frames/cross-origin.html">frames/cross-origin.html</a>: an iframe from the other site (an OOPIF)</li>
   <li><a href="/frames/nested.html">frames/nested.html</a>: same-site and cross-site iframes, nested two deep</li>
+  <li><a href="/nav/a.html">nav/a.html</a> and <a href="/nav/b.html">nav/b.html</a>: two plain pages that link to each other</li>
+  <li><a href="/nav/spa.html">nav/spa.html</a>: a pushState router whose views render late</li>
+  <li><a href="/nav/slow-image.html">nav/slow-image.html</a>: DOMContentLoaded at once, load after a slow image</li>
+  <li><a href="/nav/js-redirect.html">nav/js-redirect.html</a>: location.replace to nav/b.html while loading</li>
+  <li><a href="/redirect?to=/nav/a.html&amp;n=3">/redirect?to=&lt;path&gt;&amp;n=&lt;hops&gt;</a>: a chain of 302 redirects</li>
   <li><a href="/workers/worker.html">workers/worker.html</a>: a dedicated worker</li>
 </ul>
-<p>Any path takes <code>?delay=&lt;ms&gt;</code>.</p>
+<p>Any path takes <code>?delay=&lt;ms&gt;</code> and <code>?status=&lt;code&gt;</code>.</p>

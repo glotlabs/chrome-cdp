@@ -1,0 +1,33 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>SPA: home</title>
+<nav>
+  <a href="?view=home" data-view="home">Home</a>
+  <a href="?view=about" data-view="about">About</a>
+</nav>
+<main id="view"></main>
+<script>
+  // Client-side routing with pushState: the links never load a document.
+  // Views render a moment after the route changes, like data fetched late.
+  const views = {
+    home: '<h1>Home</h1><p>Welcome to the SPA.</p>',
+    about: '<h1>About</h1><p>A pushState router.</p>',
+  };
+  function render() {
+    const view = new URLSearchParams(location.search).get('view') || 'home';
+    document.getElementById('view').innerHTML = '<p>Loading…</p>';
+    setTimeout(() => {
+      document.title = `SPA: ${view}`;
+      document.getElementById('view').innerHTML = views[view] || '<h1>Not found</h1>';
+    }, 100);
+  }
+  document.querySelector('nav').addEventListener('click', (e) => {
+    const view = e.target.dataset.view;
+    if (!view) return;
+    e.preventDefault();
+    history.pushState({ view }, '', `?view=${view}`);
+    render();
+  });
+  window.addEventListener('popstate', render);
+  render();
+</script>

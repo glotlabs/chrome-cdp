@@ -6,7 +6,8 @@ const USAGE: &str = "\
 usage: fixtures [--port <A>] [--port-b <B>]
 
 Serves testdata/site on two origins, http://127.0.0.1:<A> and
-http://localhost:<B> (free ports unless given), until Ctrl-C.
+http://localhost:<B> (free ports unless given), and on
+https://127.0.0.1:<free port> with a self-signed certificate, until Ctrl-C.
 ";
 
 #[allow(clippy::print_stdout, clippy::print_stderr)]
@@ -33,6 +34,7 @@ fn main() -> ExitCode {
     println!("serving {}", fixtures::site_dir().display());
     println!("origin A: {}/", fixtures.a());
     println!("origin B: {}/", fixtures.b());
+    println!("HTTPS:    {}/ (self-signed)", fixtures.https());
     println!("press Ctrl-C to stop");
     loop {
         std::thread::park();
