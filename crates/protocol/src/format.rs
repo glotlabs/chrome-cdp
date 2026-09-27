@@ -1,9 +1,51 @@
-//! Units and quoting shared by every text renderer (plan 08 §2): durations
-//! in human units (`340ms`, `1.2s`), sizes as `12KB`, counts with thousands
-//! separators, and shell-safe arguments for hints.
+//! Units, tables and quoting shared by every text renderer (plan 08 §2):
+//! durations in human units (`340ms`, `1.2s`), sizes as `12KB`, counts with
+//! thousands separators, tables no wider than [`MAX_WIDTH`], and shell-safe
+//! arguments for hints.
 
 use std::borrow::Cow;
 use std::time::Duration;
+
+/// The widest a table row may be, in characters.
+pub const MAX_WIDTH: usize = 120;
+
+/// Aligns `rows` into columns two spaces apart. The last column is cut
+/// (ending in `…`) so no line is wider than [`MAX_WIDTH`]; trailing spaces
+/// are trimmed. Rows may have different lengths.
+pub fn table<S: AsRef<str>>(rows: &[Vec<S>]) -> String {
+    let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
+    let mut widths = vec![0; columns];
+    for row in rows {
+        // The last cell of each row is not padded, so it does not widen.
+        for (i, cell) in row.iter().enumerate().take(row.len().saturating_sub(1)) {
+            widths[i] = widths[i].max(cell.as_ref().chars().count());
+        }
+    }
+    let mut out = String::new();
+    for row in rows {
+        let mut line = String::new();
+        for (i, cell) in row.iter().enumerate() {
+            let cell = cell.as_ref();
+            if i + 1 < row.len() {
+                let pad = widths[i] - cell.chars().count();
+                line.push_str(cell);
+                line.extend(std::iter::repeat_n(' ', pad + 2));
+            } else {
+                let room = MAX_WIDTH.saturating_sub(line.chars().count());
+                if cell.chars().count() > room {
+                    line.extend(cell.chars().take(room.saturating_sub(1)));
+                    line.push('…');
+                } else {
+                    line.push_str(cell);
+                }
+            }
+        }
+        out.push_str(line.trim_end());
+        out.push('\n');
+    }
+    out.pop();
+    out
+}
 
 /// Human units: `340ms`, `1.2s`, `30s`, `2m`, `2m30s`.
 pub fn duration(d: Duration) -> String {
@@ -76,7 +118,23 @@ pub fn shell_quote(arg: &str) -> Cow<'_, str> {
 mod tests {
     use std::time::Duration;
 
-    use super::{duration, shell_quote, size, thousands};
+    use super::{MAX_WIDTH, duration, shell_quote, size, table, thousands};
+
+    #[test]
+    fn tables_align_and_stay_narrow() {
+        let rows = vec![
+            vec!["e1", "button", "Sign in"],
+            vec!["e12", "link", "Home"],
+            vec!["e3", "", ""],
+        ];
+        assert_eq!(table(&rows), "e1   button  Sign in\ne12  link    Home\ne3");
+        let long = "x".repeat(200);
+        let rows = vec![vec!["e1", long.as_str()]];
+        let out = table(&rows);
+        assert_eq!(out.chars().count(), MAX_WIDTH);
+        assert!(out.starts_with("e1  xxx") && out.ends_with("x…"));
+        assert_eq!(table::<&str>(&[]), "");
+    }
 
     #[test]
     fn durations_use_human_units() {

@@ -1,10 +1,8 @@
 //! `chrome-cdp schema [command]`: the JSON Schema of a command's `--json`
 //! output, from the registry in `protocol::schema`.
 
-use std::fmt::Write as _;
-
 use protocol::schema::{self, COMMANDS, SchemaData, SchemaListEntry};
-use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 
 use crate::cli::SchemaArgs;
 
@@ -29,11 +27,7 @@ pub(crate) fn run(args: &SchemaArgs) -> Result<Output, ErrorInfo> {
 }
 
 fn list() -> Output {
-    let width = COMMANDS.iter().map(|c| c.name.len()).max().unwrap_or(0);
-    let mut text = String::new();
-    for c in COMMANDS {
-        let _ = writeln!(text, "{:width$}  {}", c.name, c.summary);
-    }
+    let rows: Vec<_> = COMMANDS.iter().map(|c| vec![c.name, c.summary]).collect();
     let names: Vec<_> = COMMANDS.iter().map(|c| c.name).collect();
     let data = SchemaData::List {
         commands: COMMANDS
@@ -44,5 +38,5 @@ fn list() -> Output {
             })
             .collect(),
     };
-    Output::typed(&data, text.trim_end()).quiet(names.join("\n"))
+    Output::typed(&data, format::table(&rows)).quiet(names.join("\n"))
 }
