@@ -1,0 +1,7 @@
+# Expected snapshot of simple.html (plan 04 corpus). Lines must appear in
+# this order and at this depth (other lines may come between); [ref]
+# stands for any ref. A line starting with ! is text no line may contain.
+- heading "Hello, fixtures" (h1)
+- text "A short paragraph with"
+- link "a link" [ref] → /nav/a.html
+- text "in it."

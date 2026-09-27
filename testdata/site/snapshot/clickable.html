@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Clickable elements</title>
+<style>
+  .btn { cursor: pointer; display: inline-block; padding: 4px; }
+  .card { cursor: pointer; border: 1px solid #ccc; margin: 4px; }
+  ul.menu li { cursor: pointer; }
+</style>
+<main>
+  <div onclick="void 0">Inline onclick</div>
+  <div class="btn" id="delegated">Delegated handler</div>
+  <span tabindex="0">Focusable span</span>
+  <span tabindex="-1">Programmatic focus only</span>
+  <div role="button" aria-pressed="true">Bold</div>
+  <div id="listener">Listener without pointer</div>
+  <button aria-label="Close"><svg width="10" height="10"><title>Close icon</title><path d="M0 0L10 10"></path></svg></button>
+  <div class="card">
+    <h2>Product card</h2>
+    <p>A clickable card with a <span>nested pointer</span> span.</p>
+  </div>
+  <ul class="menu">
+    <li>First entry</li>
+    <li>Second entry</li>
+  </ul>
+  <a href="/nav/a.html"><span class="btn">Link with a pointer span</span></a>
+  <div role="presentation" style="cursor:pointer" onclick="void 0">Presentation div</div>
+</main>
+<script>
+  document.body.addEventListener('click', () => {});
+  document.getElementById('listener').addEventListener('click', () => {});
+</script>

@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Big app</title>
+<style>
+  .row-link { cursor: pointer; }
+  #sidebar { height: 300px; overflow: auto; }
+</style>
+<header>
+  <a href="/">Big app</a>
+  <nav aria-label="Main" id="nav"></nav>
+  <input type="search" aria-label="Search orders">
+</header>
+<div id="layout">
+  <aside id="sidebar" aria-label="Folders"><ul id="folders"></ul></aside>
+  <main>
+    <h1>Orders</h1>
+    <div role="toolbar" aria-label="Bulk actions">
+      <button>Export</button><button>Archive</button>
+    </div>
+    <table>
+      <thead><tr><th><input type="checkbox" aria-label="Select all"></th><th>Order</th><th>Customer</th><th>Status</th><th>Total</th><th>Actions</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </main>
+</div>
+<footer><p>Big app footer</p></footer>
+<script>
+  const nav = document.getElementById('nav');
+  for (let i = 1; i <= 40; i++) {
+    const a = document.createElement('a');
+    a.href = '/section/' + i;
+    a.textContent = 'Section ' + i;
+    nav.appendChild(a);
+  }
+  const folders = document.getElementById('folders');
+  for (let i = 1; i <= 60; i++) {
+    const li = document.createElement('li');
+    li.innerHTML = '<span class="row-link">Folder ' + i + '</span> <span class="count">(' + (i * 7 % 23) + ')</span>';
+    folders.appendChild(li);
+  }
+  const rows = document.getElementById('rows');
+  const statuses = ['Paid', 'Pending', 'Refunded'];
+  for (let i = 1; i <= 300; i++) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><input type="checkbox" aria-label="Select order ' + i + '"></td>' +
+      '<td><a href="/orders/' + i + '">#' + (1000 + i) + '</a></td>' +
+      '<td><div><span>Customer ' + i + '</span></div></td>' +
+      '<td><span class="badge">' + statuses[i % 3] + '</span></td>' +
+      '<td>$' + (i * 13 % 997) + '.00</td>' +
+      '<td><button>Edit</button> <button aria-label="Delete order ' + i + '">×</button></td>';
+    rows.appendChild(tr);
+  }
+</script>

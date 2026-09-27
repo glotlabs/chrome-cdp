@@ -1,0 +1,13 @@
+# Expected snapshot of frames.html (plan 04 corpus). Lines must appear in
+# this order and at this depth (other lines may come between); [ref]
+# stands for any ref. A line starting with ! is text no line may contain.
+- heading "Frames" (h1)
+- iframe "Same site" [ref]
+  - text "Inside a frame."
+  - button "Frame button" [ref]
+  - link "Frame link" [ref] → /snapshot/simple.html
+- iframe "Other site" [ref]
+  - text "Inside a frame."
+  - button "Frame button" [ref]
+  - link "Frame link" [ref] → /snapshot/simple.html
+- text "After the frames."

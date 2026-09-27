@@ -1,0 +1,22 @@
+# Expected snapshot of login.html (plan 04 corpus). Lines must appear in
+# this order and at this depth (other lines may come between); [ref]
+# stands for any ref. A line starting with ! is text no line may contain.
+- banner
+  - link "Acme" [ref] → /
+  - navigation "Main"
+    - link "Pricing" [ref] → /pricing
+    - link "Docs" [ref] → /docs
+- main
+  - heading "Sign in" (h1)
+  - form "Login"
+    - textbox "Email" [ref] required
+    - textbox "Password" [ref] (password)
+    - checkbox "Remember me" [ref] unchecked
+    - button "Sign in" [ref]
+    - alert "Invalid password"
+  - link "Forgot password?" [ref] → /forgot
+- iframe "Payment" [ref]
+  - textbox "Card number" [ref]
+- contentinfo
+  - text "© 2026 Acme"
+  - link "Terms" [ref] → https://example.com/terms

@@ -1,0 +1,36 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Lists and tables</title>
+<h1>Lists and tables</h1>
+<h2>Fruit</h2>
+<ul>
+  <li>Apples</li>
+  <li>Pears
+    <ul><li>Conference</li><li>Williams</li></ul>
+  </li>
+</ul>
+<h2>Numbers</h2>
+<ol id="numbers"></ol>
+<h2>Invoices</h2>
+<table>
+  <caption>Invoices</caption>
+  <thead><tr><th>Number</th><th>Customer</th><th>Total</th><th>Actions</th></tr></thead>
+  <tbody>
+    <tr><td>12</td><td>Ada</td><td>$120</td><td><button>Edit</button> <button>Delete</button></td></tr>
+    <tr><td>13</td><td>Grace</td><td>$80</td><td><button>Edit</button> <button>Delete</button></td></tr>
+    <tr><td>14</td><td>Linus</td><td>$42</td><td><button>Edit</button> <button>Delete</button></td></tr>
+  </tbody>
+</table>
+<h2>Glossary</h2>
+<dl>
+  <dt>CDP</dt><dd>Chrome DevTools Protocol</dd>
+  <dt>AX</dt><dd>Accessibility</dd>
+</dl>
+<script>
+  const ol = document.getElementById('numbers');
+  for (let i = 1; i <= 200; i++) {
+    const li = document.createElement('li');
+    li.textContent = 'Number ' + i;
+    ol.appendChild(li);
+  }
+</script>

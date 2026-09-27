@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sign in – Acme</title>
+<style>
+  body { font: 16px sans-serif; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+<header>
+  <a href="/"><img src="/nav/pixel.svg" alt="Acme"></a>
+  <nav aria-label="Main">
+    <a href="/pricing">Pricing</a>
+    <a href="/docs">Docs</a>
+  </nav>
+</header>
+<main>
+  <h1>Sign in</h1>
+  <form aria-label="Login" onsubmit="return false">
+    <label for="email">Email</label>
+    <input id="email" type="email" required autocomplete="off">
+    <label>Password <input type="password" value="hunter2"></label>
+    <label><input type="checkbox"> Remember me</label>
+    <button>Sign in</button>
+    <div role="alert">Invalid password</div>
+  </form>
+  <a href="/forgot">Forgot password?</a>
+</main>
+<iframe title="Payment" src="/snapshot/payment.html"></iframe>
+<footer><p>© 2026 Acme <a href="https://example.com/terms">Terms</a></p></footer>

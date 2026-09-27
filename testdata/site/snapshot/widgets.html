@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ARIA widgets</title>
+<main>
+  <div role="tablist" aria-label="Sections">
+    <button role="tab" aria-selected="true" aria-controls="p1">Overview</button>
+    <button role="tab" aria-selected="false">Settings</button>
+  </div>
+  <div role="tabpanel" id="p1" aria-label="Overview"><p>Overview panel</p></div>
+  <button aria-expanded="false" aria-haspopup="menu">Account</button>
+  <button aria-expanded="true">Filters</button>
+  <ul role="menu" aria-label="Filters menu">
+    <li role="menuitemcheckbox" aria-checked="true">Unread</li>
+    <li role="menuitem">Archive</li>
+  </ul>
+  <button aria-pressed="false">Italic</button>
+  <div role="switch" aria-checked="true" tabindex="0" aria-label="Dark mode"></div>
+  <div role="slider" aria-label="Zoom" aria-valuemin="50" aria-valuemax="200" aria-valuenow="150" aria-valuetext="150%" tabindex="0"></div>
+  <div role="progressbar" aria-label="Upload" aria-valuenow="40"></div>
+  <label for="city">City</label>
+  <input id="city" role="combobox" aria-expanded="true" aria-controls="cities" value="Os">
+  <ul role="listbox" id="cities" aria-label="Cities">
+    <li role="option" aria-selected="true">Oslo</li>
+    <li role="option">Osaka</li>
+  </ul>
+  <ul role="tree" aria-label="Files">
+    <li role="treeitem" aria-expanded="true">src
+      <ul role="group"><li role="treeitem">main.rs</li></ul>
+    </li>
+  </ul>
+  <div role="status">Saved 2 minutes ago</div>
+  <div role="alertdialog" aria-label="Confirm delete">
+    <p>Delete this file?</p>
+    <button>Cancel</button><button>Delete</button>
+  </div>
+  <div style="height:60px; overflow:auto" aria-label="Log">
+    <p>Line 1</p><p>Line 2</p><p>Line 3</p><p>Line 4</p><p>Line 5</p>
+  </div>
+</main>

@@ -1,0 +1,33 @@
+# Expected snapshot of forms.html (plan 04 corpus). Lines must appear in
+# this order and at this depth (other lines may come between); [ref]
+# stands for any ref. A line starting with ! is text no line may contain.
+- form "Profile"
+  - textbox "Name" [ref] value="Ada Lovelace"
+  - textbox "Email" [ref]
+  - textbox "Phone" [ref] value="555-0100" readonly
+  - textbox "Website" [ref] value="not a url" invalid
+  - searchbox "Search" [ref]
+  - spinbutton "Age" [ref] value="36"
+  - slider "Volume" [ref] value="7"
+  - textbox "Birthday" [ref] value="1815-12-10"
+  - textbox "Password" [ref] (password)
+  - textbox "Bio" [ref] value="Wrote the first program."
+  - combobox "Country" [ref] value="United Kingdom" collapsed
+    - option "Norway" [ref]
+    - option "United Kingdom" [ref] selected
+    - option "France" [ref]
+  - listbox "Languages" [ref]
+    - option "English" [ref] selected
+    - option "French" [ref]
+    - option "Italian" [ref] selected
+  - group "Plan"
+    - radio "Free" [ref] unchecked
+    - radio "Pro" [ref] checked
+  - checkbox "Newsletter" [ref] checked
+  - checkbox "Select all" [ref] mixed
+  - checkbox "Beta features" [ref] unchecked disabled
+  - textbox "Notes" [ref] required
+  - textbox "Rich text" [ref] value="Some bold text"
+  - button "Save profile" [ref]
+  - button "Reset" [ref]
+  - button "Delete account" [ref] disabled

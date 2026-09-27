@@ -1,0 +1,21 @@
+# Expected snapshot of clickable.html (plan 04 corpus). Lines must appear in
+# this order and at this depth (other lines may come between); [ref]
+# stands for any ref. A line starting with ! is text no line may contain.
+- main
+  - clickable "Inline onclick" [ref]
+  - clickable "Delegated handler" [ref]
+  - clickable "Focusable span" [ref]
+  - text "Programmatic focus only"
+  - button "Bold" [ref] pressed
+  - text "Listener without pointer"
+  - button "Close" [ref]
+  - clickable "Product card A clickable card with a nested pointer span." [ref]
+  - list
+    - listitem "First entry" [ref]
+    - listitem "Second entry" [ref]
+  - link "Link with a pointer span" [ref] → /nav/a.html
+  - clickable "Presentation div" [ref]
+!clickable "Programmatic focus only"
+!clickable "Listener without pointer"
+!clickable "nested pointer"
+!clickable "Link with a pointer span"

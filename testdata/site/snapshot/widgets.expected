@@ -1,0 +1,36 @@
+# Expected snapshot of widgets.html (plan 04 corpus). Lines must appear in
+# this order and at this depth (other lines may come between); [ref]
+# stands for any ref. A line starting with ! is text no line may contain.
+- main
+  - tablist "Sections"
+    - tab "Overview" [ref] selected
+    - tab "Settings" [ref]
+  - tabpanel "Overview"
+    - text "Overview panel"
+  - button "Account" [ref] collapsed
+  - button "Filters" [ref] expanded
+  - menu "Filters menu"
+    - menuitemcheckbox "Unread" [ref] checked
+    - menuitem "Archive" [ref]
+  - button "Italic" [ref]
+  - switch "Dark mode" [ref] checked
+  - slider "Zoom" [ref] value="150%"
+  - progressbar "Upload"
+  - combobox "City" [ref] value="Os" expanded
+  - listbox "Cities" [ref]
+    - option "Oslo" [ref] selected
+    - option "Osaka" [ref]
+  - tree "Files"
+    - treeitem "src" [ref] expanded
+      - treeitem "main.rs" [ref]
+  - status "Saved 2 minutes ago"
+  - alertdialog "Confirm delete"
+    - text "Delete this file?"
+    - button "Cancel" [ref]
+    - button "Delete" [ref]
+  - generic "Log" [ref] scrollable
+    - text "Line 1"
+    - text "Line 2"
+    - text "Line 3"
+    - text "Line 4"
+    - text "Line 5"

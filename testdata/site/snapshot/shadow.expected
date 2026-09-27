@@ -1,0 +1,7 @@
+# Expected snapshot of shadow.html (plan 04 corpus). Lines must appear in
+# this order and at this depth (other lines may come between); [ref]
+# stands for any ref. A line starting with ! is text no line may contain.
+- heading "Shadow DOM" (h1)
+- heading "Slotted title" (h2)
+- button "Open shadow button" [ref]
+- textbox "Closed shadow input" [ref]

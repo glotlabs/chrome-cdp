@@ -1,0 +1,18 @@
+# Expected snapshot of huge.html (plan 04 corpus). Lines must appear in
+# this order and at this depth (other lines may come between); [ref]
+# stands for any ref. A line starting with ! is text no line may contain.
+- heading "Huge page" (h1)
+- main [ref]
+  - region "Section 1"
+    - heading "Section 1" (h2)
+    - list
+      - listitem
+        - text "Item 1.1"
+        - link "open" [ref] → /item/1/1
+      - listitem
+        - text "Item 1.2"
+        - link "open" [ref] → /item/1/2
+      - listitem
+    - text "Section 30 footer text"
+  - … 470 more region (use --scope [ref] --all)
+!Section 31"

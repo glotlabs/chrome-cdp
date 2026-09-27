@@ -1,0 +1,18 @@
+# Expected snapshot of article.html (plan 04 corpus). Lines must appear in
+# this order and at this depth (other lines may come between); [ref]
+# stands for any ref. A line starting with ! is text no line may contain.
+- article
+  - heading "The Analytical Engine" (h1)
+  - text "By"
+  - link "Ada Lovelace" [ref] → /authors/ada
+  - text ", 1843"
+  - text "The Analytical Engine has no pretensions whatever to originate anything. It can do whatever we know how to order it to perform. It can follow analysis; but it has no power of anticipating any analytic…"
+  - heading "Notes" (h2)
+  - text "Note G describes an algorithm for Bernoulli numbers."
+  - blockquote "We may say most aptly that the Analytical Engine weaves algebraical patterns just as the Jacquard loom weaves flowers and leaves."
+  - figure
+    - img "Diagram of the engine"
+    - text "The engine's mill and store."
+  - text "for n in 1..=7 { b(n) }"
+  - text "Line one Line two"
+!img ""

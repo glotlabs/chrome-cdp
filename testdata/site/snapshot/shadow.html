@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Shadow DOM</title>
+<h1>Shadow DOM</h1>
+<open-card><span slot="title">Slotted title</span></open-card>
+<closed-field></closed-field>
+<script>
+  customElements.define('open-card', class extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: 'open' }).innerHTML =
+        '<h2><slot name="title">Default title</slot></h2><button>Open shadow button</button>';
+    }
+  });
+  customElements.define('closed-field', class extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({ mode: 'closed' }).innerHTML =
+        '<label>Closed shadow input <input></label>';
+    }
+  });
+</script>

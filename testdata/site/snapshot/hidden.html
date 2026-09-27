@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Hidden content</title>
+<style>
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .offscreen { position: absolute; left: -9999px; }
+</style>
+<h1>Visibility</h1>
+<p>Visible text.</p>
+<p style="display:none">Display none text</p>
+<p hidden>Hidden attribute text</p>
+<p aria-hidden="true">Aria hidden text <button>Aria hidden button</button></p>
+<div style="visibility:hidden">Visibility hidden text
+  <span style="visibility:visible">Visible again inside hidden</span>
+</div>
+<div inert><button>Inert button</button></div>
+<p class="offscreen">Off-screen text</p>
+<a class="sr-only" href="#main">Skip to content</a>
+<button style="opacity:0">Transparent button</button>
+<details>
+  <summary>More details</summary>
+  <p>Collapsed details text</p>
+</details>
+<details open>
+  <summary>Open details</summary>
+  <p>Expanded details text</p>
+</details>
+<dialog><p>Closed dialog text</p></dialog>
+<template><p>Template text</p></template>
+<noscript>Noscript text</noscript>

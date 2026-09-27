@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Every form control</title>
+<form aria-label="Profile" onsubmit="return false">
+  <label>Name <input value="Ada Lovelace"></label>
+  <label>Email <input type="email" placeholder="you@example.com"></label>
+  <label>Phone <input type="tel" readonly value="555-0100"></label>
+  <label>Website <input type="url" aria-invalid="true" value="not a url"></label>
+  <label>Search <input type="search"></label>
+  <label>Age <input type="number" value="36"></label>
+  <label>Volume <input type="range" min="0" max="10" value="7"></label>
+  <label>Birthday <input type="date" value="1815-12-10"></label>
+  <label>Password <input type="password" value="s3cret"></label>
+  <label>Bio <textarea>Wrote the first program.</textarea></label>
+  <label>Country
+    <select>
+      <option>Norway</option>
+      <option selected>United Kingdom</option>
+      <option>France</option>
+    </select>
+  </label>
+  <label>Languages
+    <select multiple size="3">
+      <option selected>English</option>
+      <option>French</option>
+      <option selected>Italian</option>
+    </select>
+  </label>
+  <fieldset>
+    <legend>Plan</legend>
+    <label><input type="radio" name="plan" value="free"> Free</label>
+    <label><input type="radio" name="plan" value="pro" checked> Pro</label>
+  </fieldset>
+  <label><input type="checkbox" checked> Newsletter</label>
+  <label><input type="checkbox" id="mixed"> Select all</label>
+  <label><input type="checkbox" disabled> Beta features</label>
+  <label>Notes <input required></label>
+  <div contenteditable="true" aria-label="Rich text">Some <b>bold</b> text</div>
+  <input type="hidden" name="token" value="xyz">
+  <input type="submit" value="Save profile">
+  <input type="reset">
+  <button type="button" disabled>Delete account</button>
+</form>
+<script>document.getElementById('mixed').indeterminate = true;</script>

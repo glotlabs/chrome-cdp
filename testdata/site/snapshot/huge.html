@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Huge page</title>
+<h1>Huge page</h1>
+<main id="main"></main>
+<script>
+  // About 50,000 DOM nodes: 500 sections of nested divs, text and links.
+  const main = document.getElementById('main');
+  const parts = [];
+  for (let s = 1; s <= 500; s++) {
+    let html = '<section aria-label="Section ' + s + '"><h2>Section ' + s + '</h2><ul>';
+    for (let i = 1; i <= 12; i++) {
+      html += '<li><div class="item"><span>Item ' + s + '.' + i + '</span> <a href="/item/' + s + '/' + i + '">open</a></div></li>';
+    }
+    html += '</ul><div><div><div><p>Section ' + s + ' footer text</p></div></div></div></section>';
+    parts.push(html);
+  }
+  main.innerHTML = parts.join('');
+</script>

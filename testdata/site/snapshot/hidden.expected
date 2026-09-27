@@ -1,0 +1,21 @@
+# Expected snapshot of hidden.html (plan 04 corpus). Lines must appear in
+# this order and at this depth (other lines may come between); [ref]
+# stands for any ref. A line starting with ! is text no line may contain.
+- heading "Visibility" (h1)
+- text "Visible text."
+- text "Visible again inside hidden"
+- text "Off-screen text"
+- link "Skip to content" [ref] → /snapshot/hidden.html#main
+- button "Transparent button" [ref]
+- button "More details" [ref] collapsed
+- button "Open details" [ref] expanded
+- text "Expanded details text"
+!Display none text
+!Hidden attribute text
+!Aria hidden
+!Visibility hidden text
+!Inert button
+!Collapsed details text
+!Closed dialog text
+!Template text
+!Noscript text

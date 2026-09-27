@@ -1,0 +1,78 @@
+# Expected snapshot of big-app.html (plan 04 corpus). Lines must appear in
+# this order and at this depth (other lines may come between); [ref]
+# stands for any ref. A line starting with ! is text no line may contain.
+- banner
+  - link "Big app" [ref] → /
+  - navigation "Main" [ref]
+    - link "Section 1" [ref] → /section/1
+    - link "Section 2" [ref] → /section/2
+    - link "Section 3" [ref] → /section/3
+    - link "Section 4" [ref] → /section/4
+    - link "Section 5" [ref] → /section/5
+    - link "Section 6" [ref] → /section/6
+    - link "Section 7" [ref] → /section/7
+    - link "Section 8" [ref] → /section/8
+    - link "Section 9" [ref] → /section/9
+    - link "Section 10" [ref] → /section/10
+    - link "Section 11" [ref] → /section/11
+    - link "Section 12" [ref] → /section/12
+    - link "Section 13" [ref] → /section/13
+    - link "Section 14" [ref] → /section/14
+    - link "Section 15" [ref] → /section/15
+    - link "Section 16" [ref] → /section/16
+    - link "Section 17" [ref] → /section/17
+    - link "Section 18" [ref] → /section/18
+    - link "Section 19" [ref] → /section/19
+    - link "Section 20" [ref] → /section/20
+    - link "Section 21" [ref] → /section/21
+    - link "Section 22" [ref] → /section/22
+    - link "Section 23" [ref] → /section/23
+    - link "Section 24" [ref] → /section/24
+    - link "Section 25" [ref] → /section/25
+    - link "Section 26" [ref] → /section/26
+    - link "Section 27" [ref] → /section/27
+    - link "Section 28" [ref] → /section/28
+    - link "Section 29" [ref] → /section/29
+    - link "Section 30" [ref] → /section/30
+    - … 10 more link (use --scope [ref] --all)
+  - searchbox "Search orders" [ref]
+- complementary "Folders" [ref] scrollable
+  - list [ref]
+    - listitem
+      - clickable "Folder 1" [ref]
+      - text "(7)"
+    - listitem
+      - clickable "Folder 2" [ref]
+      - text "(14)"
+    - listitem
+    - … 30 more listitem (use --scope [ref] --all)
+- main
+  - heading "Orders" (h1)
+  - toolbar "Bulk actions"
+    - button "Export" [ref]
+    - button "Archive" [ref]
+  - table [ref]
+    - row
+      - columnheader
+        - checkbox "Select all" [ref] unchecked
+      - columnheader "Order"
+      - columnheader "Customer"
+      - columnheader "Status"
+      - columnheader "Total"
+      - columnheader "Actions"
+    - row
+      - cell
+        - checkbox "Select order 1" [ref] unchecked
+      - cell
+        - link "#1001" [ref] → /orders/1
+      - cell "Customer 1"
+      - cell "Pending"
+      - cell "$13.00"
+      - cell
+        - button "Edit" [ref]
+        - button "Delete order 1" [ref]
+    - … 271 more row (use --scope [ref] --all)
+- contentinfo "Big app footer"
+!Section 31"
+!Folder 31"
+!Delete order 30"
