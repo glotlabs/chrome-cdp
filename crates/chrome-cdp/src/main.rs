@@ -42,37 +42,69 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         return Ok(version::run());
     }
     match cli.command {
-        None => Err(ErrorInfo::new(ErrorKind::BadArgs, "no command given").hint(help_cmd())),
+        None => Err(ErrorInfo::new(ErrorKind::BadArgs, "no command given")
+            .hint(Cmd::new("").switch("help"))),
         Some(Command::Schema(args)) => schema::run(&args),
         Some(Command::Direct(DirectCommand::Cdp(args))) => direct::cdp(&args, &cli.global),
     }
 }
 
 /// Reports a clap error (or prints `--help`) and returns the exit code.
-/// With `--json`, a usage error is a `BadArgs` envelope on stdout like any
-/// other error.
+/// A usage error is a `BadArgs` error like any other: the §3 text form on
+/// stderr, or an envelope on stdout with `--json`.
 fn usage_error(e: &clap::Error) -> u8 {
-    let help = matches!(
+    if matches!(
         e.kind(),
         ClapErrorKind::DisplayHelp | ClapErrorKind::DisplayVersion
-    );
-    if help || !json_requested() {
+    ) {
         let _ = e.print();
-        return u8::try_from(e.exit_code()).unwrap_or(2);
+        return u8::try_from(e.exit_code()).unwrap_or(0);
     }
-    let rendered = e.render().to_string();
-    let message = rendered
-        .lines()
-        .next()
-        .unwrap_or_default()
-        .trim_start_matches("error: ");
-    let info = ErrorInfo::new(ErrorKind::BadArgs, message).hint(help_cmd());
-    output::print(Mode::Json, Err(info))
+    let mode = if json_requested() {
+        Mode::Json
+    } else {
+        Mode::Text
+    };
+    output::print(mode, Err(usage_info(e)))
 }
 
-/// `chrome-cdp --help`.
-fn help_cmd() -> Cmd {
-    Cmd::new("").switch("help")
+/// Turns clap's error text into an [`ErrorInfo`]: its first line is the
+/// message, its `tip:` lines ("a similar argument exists: '--json'") are
+/// notes, and the hint is the failing command's `--help`.
+fn usage_info(e: &clap::Error) -> ErrorInfo {
+    let rendered = e.render().to_string();
+    let command = rendered
+        .lines()
+        .find_map(|l| l.strip_prefix("Usage: "))
+        .map(command_path)
+        .unwrap_or_default();
+    let missing = [
+        ClapErrorKind::DisplayHelpOnMissingArgumentOrSubcommand,
+        ClapErrorKind::MissingSubcommand,
+    ];
+    let message = if missing.contains(&e.kind()) {
+        format!("{} needs a subcommand", Cmd::new(&command))
+    } else {
+        let first = rendered.lines().next().unwrap_or_default();
+        first.trim_start_matches("error: ").to_owned()
+    };
+    let tips = rendered
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("tip: "));
+    tips.fold(ErrorInfo::new(ErrorKind::BadArgs, message), |info, tip| {
+        info.note("tip", tip)
+    })
+    .hint(Cmd::new(&command).switch("help"))
+}
+
+/// `chrome-cdp __direct cdp [OPTIONS] <Domain.method>` → `__direct cdp`.
+fn command_path(usage: &str) -> String {
+    usage
+        .split_whitespace()
+        .skip(1)
+        .take_while(|w| !w.starts_with(['[', '<', '-']))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Whether `--json` was asked for, from the raw arguments (clap failed to
@@ -89,4 +121,22 @@ fn json_requested() -> bool {
         )
     });
     flag || env
+}
+
+#[cfg(test)]
+mod tests {
+    use super::command_path;
+
+    #[test]
+    fn command_path_from_usage() {
+        assert_eq!(
+            command_path("chrome-cdp __direct cdp --json <Domain.method> [JSON]"),
+            "__direct cdp"
+        );
+        assert_eq!(command_path("chrome-cdp [OPTIONS] [COMMAND]"), "");
+        assert_eq!(
+            command_path("chrome-cdp schema [OPTIONS] [COMMAND]..."),
+            "schema"
+        );
+    }
 }
