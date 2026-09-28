@@ -33,6 +33,10 @@ use engine::{
     TabNewRequest, TabSelectRequest, TabsRequest, TraceStartRequest, TraceStopRequest,
     UnrouteRequest, WaitFor, WaitRequest,
 };
+use engine::{
+    CookieFilter, CookieSpec, CookiesOp, CookiesRequest, StateLoadRequest, StateSaveRequest,
+    StorageArea, StorageOp, StorageRequest,
+};
 use engine::{EmulateRequest, EmulationChange, PermissionsOp, PermissionsRequest};
 use engine::{ExposeRequest, InitScriptAddRequest, InitScriptListRequest, InitScriptRemoveRequest};
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
@@ -41,14 +45,15 @@ use serde_json::{Map, Value, json};
 use tokio::runtime::Runtime;
 
 use crate::cli::{
-    AfterArgs, BlockArgs, CdpArgs, CloseArgs, ConnectArgs, CoverageArgs, CoverageCommand,
-    DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, FindArgs,
-    GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs,
-    ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs, LogReadArgs,
-    NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs, PermissionsCommand,
-    ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs, StatusArgs,
-    StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs, TraceCommand, UnrouteArgs,
-    WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    AfterArgs, BlockArgs, CdpArgs, CloseArgs, ConnectArgs, CookieFilterArgs, CookieSetArgs,
+    CookiesArgs, CookiesCommand, CoverageArgs, CoverageCommand, DEFAULT_TIMEOUT, DialogArgs,
+    DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, FindArgs, GlobalArgs, GotoArgs,
+    HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs, ImageFormatArg, InitScriptAddArgs,
+    InitScriptArgs, InitScriptCommand, InspectArgs, LogReadArgs, NetworkArgs, NetworkCommand,
+    OpenArgs, PdfArgs, PermissionsArgs, PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs,
+    ScreenshotArgs, SessionsArgs, SnapshotArgs, StateArgs, StateCommand, StatusArgs,
+    StorageActionArg, StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs,
+    TraceArgs, TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -163,9 +168,15 @@ pub(crate) fn open(args: &OpenArgs, global: &GlobalArgs) -> Result<Output, Error
     if let Some(name) = &launch.profile {
         browser::launch::check_profile_name(name)?;
     }
+    // The state file is read before a browser starts.
+    let state = args
+        .state
+        .as_deref()
+        .map(|p| read_state(p, &global.session))
+        .transpose()?;
     let ctx = Ctx::new(global)?;
     let mut session = ctx.start()?;
-    let result = open_in(&ctx, &mut session, args, url, credentials);
+    let result = open_in(&ctx, &mut session, args, url, credentials, state);
     if result.is_err() {
         ctx.abandon(&mut session);
     }
@@ -178,6 +189,7 @@ fn open_in(
     args: &OpenArgs,
     url: Option<String>,
     http_credentials: Option<HttpCredentials>,
+    state: Option<StateLoadRequest>,
 ) -> Result<Output, ErrorInfo> {
     let tab = ctx.tab.clone();
     let launch = &args.launch;
@@ -211,6 +223,10 @@ fn open_in(
         ignore_https_errors: args.ignore_https_errors.then_some(true),
         bypass_service_worker: args.bypass_service_worker.then_some(true),
         device: args.device.clone(),
+        state: state.map(|state| StateLoadRequest {
+            timeout_ms: millis(ctx.timeout),
+            ..state
+        }),
         dialogs: args.dialogs.map(crate::cli::Dialogs::to_engine),
         http_credentials,
         console_buffer: args
@@ -1088,6 +1104,188 @@ pub(crate) fn permissions(
         output.warning("permissions apply to every tab of the session; --tab is ignored")
     } else {
         output
+    })
+}
+
+/// `cookies`, `cookies set` and `cookies clear`: need a running session.
+pub(crate) fn cookies(args: &CookiesArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let op = match &args.command {
+        None => CookiesOp::List {
+            filter: cookie_filter(&args.filter),
+        },
+        Some(CookiesCommand::Set(set)) => CookiesOp::Set {
+            cookie: cookie_spec(set)?,
+        },
+        Some(CookiesCommand::Clear(filter)) => CookiesOp::Clear {
+            filter: cookie_filter(filter),
+        },
+    };
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let request = CookiesRequest {
+        op,
+        max_chars: args.max_chars,
+        timeout_ms: millis(ctx.timeout),
+    };
+    let output =
+        ctx.runtime
+            .block_on(client.call_output(rpc::COOKIES, &request, ctx.timeout + QUICK))?;
+    Ok(every_tab(output, &ctx, "cookies"))
+}
+
+fn cookie_filter(args: &CookieFilterArgs) -> CookieFilter {
+    CookieFilter {
+        url: args.url.clone(),
+        domain: args.domain.clone(),
+        name: args.name.clone(),
+    }
+}
+
+/// `cookies set`'s cookie: NAME=VALUE and the flags.
+fn cookie_spec(args: &CookieSetArgs) -> Result<CookieSpec, ErrorInfo> {
+    let (name, value) = args
+        .cookie
+        .split_once('=')
+        .filter(|(name, _)| !name.trim().is_empty())
+        .ok_or_else(|| {
+            ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("`{}` is not a cookie; use NAME=VALUE", args.cookie),
+            )
+            .hint(Hint::run(Cmd::new("cookies").arg("set").arg("theme=dark")))
+        })?;
+    Ok(CookieSpec {
+        name: name.trim().to_owned(),
+        value: value.to_owned(),
+        url: args.url.clone(),
+        domain: args.domain.clone(),
+        path: args.path.clone(),
+        secure: args.secure,
+        http_only: args.httponly,
+        same_site: args.samesite.map(|s| s.as_str().to_owned()),
+        expires: args.expires,
+    })
+}
+
+/// `storage local|session [ACTION] [KEY] [VALUE]`: needs a running
+/// session.
+pub(crate) fn storage(args: &StorageArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let area = match args.area {
+        StorageAreaArg::Local => StorageArea::Local,
+        StorageAreaArg::Session => StorageArea::Session,
+    };
+    let action = format!("{:?}", args.action).to_lowercase();
+    let usage = |what: &str| {
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("storage {} {action} {what}", area.as_str()),
+        )
+        .hint(Hint::run(Cmd::new("storage").switch("help")))
+    };
+    let key = || args.key.clone().ok_or_else(|| usage("needs a KEY"));
+    if args.value.is_some() && args.action != StorageActionArg::Set {
+        return Err(usage("takes no VALUE"));
+    }
+    let op = match args.action {
+        StorageActionArg::List | StorageActionArg::Clear if args.key.is_some() => {
+            return Err(usage("takes no KEY"));
+        }
+        StorageActionArg::List => StorageOp::List,
+        StorageActionArg::Clear => StorageOp::Clear,
+        StorageActionArg::Get => StorageOp::Get { key: key()? },
+        StorageActionArg::Remove => StorageOp::Remove { key: key()? },
+        StorageActionArg::Set => {
+            let key = key()?;
+            let value = args
+                .value
+                .as_deref()
+                .ok_or_else(|| usage("needs a KEY and a VALUE"))?;
+            StorageOp::Set {
+                key,
+                value: input::text_arg(value, "VALUE")?,
+            }
+        }
+    };
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let request = StorageRequest {
+        area,
+        op,
+        origin: args.origin.clone(),
+        tab: ctx.tab.clone(),
+        max_chars: args.max_chars,
+        timeout_ms: millis(ctx.timeout),
+    };
+    ctx.runtime
+        .block_on(client.call_output(rpc::STORAGE, &request, ctx.timeout + QUICK))
+}
+
+/// `state save` and `state load`: need a running session.
+pub(crate) fn state(args: &StateArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let timeout_ms = millis(ctx.timeout);
+    // The file is read before the session is looked for.
+    let (method, request) = match &args.command {
+        StateCommand::Save(save) => (
+            rpc::STATE_SAVE,
+            json!(StateSaveRequest {
+                path: PathBuf::from(input::absolute_path(&save.file)?),
+                indexed_db: save.indexeddb,
+                timeout_ms,
+            }),
+        ),
+        StateCommand::Load(load) => {
+            let mut request = read_state(&load.file, &global.session)?;
+            request.timeout_ms = timeout_ms;
+            (rpc::STATE_LOAD, json!(request))
+        }
+    };
+    let mut client = running_session(&ctx)?;
+    let output = ctx
+        .runtime
+        .block_on(client.call_output(method, &request, ctx.timeout + QUICK))?;
+    Ok(every_tab(output, &ctx, "cookies and storage state"))
+}
+
+/// Reads a storage state file (`-`: stdin) into `state load`'s request,
+/// without its timeout.
+fn read_state(path: &Path, session: &str) -> Result<StateLoadRequest, ErrorInfo> {
+    let (text, file) = if path.as_os_str() == "-" {
+        (input::text_arg("-", "the storage state")?, None)
+    } else {
+        let absolute = PathBuf::from(input::absolute_path(path)?);
+        let text = std::fs::read_to_string(&absolute).map_err(|e| {
+            ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("cannot read {}: {e}", absolute.display()),
+            )
+            .hint(
+                Hint::run(Cmd::new("state").arg("save").raw("<file>").session(session))
+                    .why("writes one"),
+            )
+        })?;
+        (text, Some(absolute))
+    };
+    let where_ = file
+        .as_ref()
+        .map_or_else(|| "stdin".to_owned(), |f| f.display().to_string());
+    let state = engine::StorageState::parse(&text).map_err(|e| {
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("{where_} is not a storage state file: {e}"),
+        )
+        .hint(
+            Hint::run(Cmd::new("state").arg("save").raw("<file>").session(session))
+                .why("writes one, as does Playwright's storageState()"),
+        )
+    })?;
+    Ok(StateLoadRequest {
+        state,
+        path: file,
+        timeout_ms: 0,
     })
 }
 

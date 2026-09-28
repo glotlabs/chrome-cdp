@@ -1,0 +1,17 @@
+$ chrome-cdp cookies
+exit: 0
+--- stdout
+session=ada-42  127.0.0.1/     HttpOnly session
+consent=yes     .example.com/  Secure SameSite=None session
+
+$ chrome-cdp cookies --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"cookies":[{"domain":"127.0.0.1","http_only":true,"name":"session","path":"/","secure":false,"value":"ada-42"},{"domain":".example.com","http_only":false,"name":"consent","path":"/","same_site":"None","secure":true,"value":"yes"}]}}
+
+$ chrome-cdp cookies -q
+exit: 0
+--- stdout
+session=ada-42
+consent=yes
+

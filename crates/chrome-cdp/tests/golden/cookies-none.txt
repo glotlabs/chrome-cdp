@@ -1,0 +1,5 @@
+$ chrome-cdp cookies --domain example.org
+exit: 0
+--- stdout
+no cookies of example.org; chrome-cdp cookies set <name>=<value> sets one
+

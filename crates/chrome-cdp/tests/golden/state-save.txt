@@ -1,0 +1,20 @@
+$ chrome-cdp state save <sandbox>/auth.json
+exit: 0
+--- stdout
+saved <sandbox>/auth.json: 2 cookies, 1 origin
+<site>  localStorage 2, sessionStorage 1
+--- stderr
+warning: <sandbox>/auth.json holds the session's cookies and tokens; it is readable by you only, keep it out of version control
+
+$ chrome-cdp state save <sandbox>/auth.json --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"cookies":2,"origins":[{"local_storage":2,"origin":"<site>","session_storage":1}],"path":"<sandbox>/auth.json"},"warnings":["<sandbox>/auth.json holds the session's cookies and tokens; it is readable by you only, keep it out of version control"]}
+
+$ chrome-cdp state save <sandbox>/auth.json -q
+exit: 0
+--- stdout
+<sandbox>/auth.json
+--- stderr
+warning: <sandbox>/auth.json holds the session's cookies and tokens; it is readable by you only, keep it out of version control
+

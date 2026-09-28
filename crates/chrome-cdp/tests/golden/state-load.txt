@@ -1,0 +1,16 @@
+$ chrome-cdp state load <sandbox>/auth.json
+exit: 0
+--- stdout
+loaded <sandbox>/auth.json: 1 cookie, 1 origin
+<site>  localStorage 1  given to its next page load
+
+$ chrome-cdp state load <sandbox>/auth.json --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"cookies":1,"origins":[{"applied":"next-load","local_storage":1,"origin":"<site>","session_storage":0}],"path":"<sandbox>/auth.json"}}
+
+$ chrome-cdp state load <sandbox>/auth.json -q
+exit: 0
+--- stdout
+1
+

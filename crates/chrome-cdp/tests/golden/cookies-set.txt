@@ -1,0 +1,15 @@
+$ chrome-cdp cookies set theme=dark --path /state
+exit: 0
+--- stdout
+set theme for 127.0.0.1/state (session)
+
+$ chrome-cdp cookies set theme=dark --path /state --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"cookie":{"domain":"127.0.0.1","http_only":false,"name":"theme","path":"/state","secure":false,"value":"dark"}}}
+
+$ chrome-cdp cookies set theme=dark --path /state -q
+exit: 0
+--- stdout
+theme
+

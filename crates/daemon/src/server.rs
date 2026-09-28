@@ -407,6 +407,22 @@ impl Daemon {
                 Ok(p) => output(self.engine.permissions(p).await),
                 Err(e) => Err(e),
             },
+            rpc::COOKIES => match params(req.params) {
+                Ok(p) => output(self.engine.cookies(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::STORAGE => match params(req.params) {
+                Ok(p) => output(self.engine.storage(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::STATE_SAVE => match params(req.params) {
+                Ok(p) => output(self.engine.state_save(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::STATE_LOAD => match params(req.params) {
+                Ok(p) => output(self.engine.state_load(p).await),
+                Err(e) => Err(e),
+            },
             rpc::SCREENSHOT => match params(req.params) {
                 Ok(p) => output(Box::pin(self.engine.screenshot(p)).await),
                 Err(e) => Err(e),

@@ -19,7 +19,8 @@ for a human watching (`highlight`, `inspect`), mocking and blocking requests
 (`route`, `block`, `routes`, `unroute`), devices and the environment
 (`emulate`, `viewport`, `geo`, `tz`, `locale`, `ua`, `media`, `offline`,
 `throttle`, `cpu-throttle`, `time`, `permissions`), scripts and functions
-for every page (`init-script`, `expose`, `unexpose`), raw CDP calls,
+for every page (`init-script`, `expose`, `unexpose`), cookies, storage and
+saved logins (`cookies`, `storage`, `state`), raw CDP calls,
 `install`/`uninstall` and `schema` work so far:
 
 ```sh
@@ -355,6 +356,28 @@ not compile is refused. Its errors name its file (or `init-script-s1.js`) at
 its own line numbers. `--world isolated` runs it where `eval --world
 isolated` runs: the same DOM, out of the page's reach. An exposed function
 takes any arguments (sent as JSON) and returns a promise.
+
+Cookies are the browser's, so they belong to every tab; Web Storage belongs
+to a page's origin. `state save` writes both to a file in Playwright's
+`storageState` format, so a login done once can be loaded into a new
+session, and Playwright's auth files load as they are:
+
+```sh
+chrome-cdp cookies                              # session=ab12  app.example.com/  HttpOnly Secure session
+chrome-cdp cookies set theme=dark               # for the active tab's URL, or --url/--domain
+chrome-cdp cookies clear --domain example.com   # or --name, --url, or everything
+chrome-cdp storage local                        # localStorage of https://app.example.com: 2 items
+chrome-cdp storage session set draft 7          # get, set, remove, clear; --origin for an iframe's
+chrome-cdp state save auth.json                 # cookies + storage of the open origins (--indexeddb)
+chrome-cdp open --state auth.json https://app.example.com   # logged in from the first load
+```
+
+A state file holds secrets (session cookies, tokens): it is written readable
+by you only; keep it out of version control. `state load` adds the cookies
+and gives each origin its storage, at once if a tab has it open, else before
+the scripts of its next page load. chrome-cdp adds `sessionStorage` to the
+format (Playwright ignores it). For a whole persistent profile instead, use
+`open --profile <name>`.
 
 `screenshot` saves an image of the viewport, the whole page (`--full`) or one
 element (`screenshot e12`, scrolled into view first) and prints its path:

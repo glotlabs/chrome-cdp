@@ -716,6 +716,17 @@
         "started": {
           "description": "Whether this call started the browser (or attached to it); `false`\nwhen the session already had it.",
           "type": "boolean"
+        },
+        "state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StateData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The storage state loaded (`--state`)."
         }
       },
       "required": [
@@ -775,6 +786,77 @@
       "required": [
         "kind",
         "dir"
+      ],
+      "type": "object"
+    },
+    "StateData": {
+      "description": "`data` of `chrome-cdp state save --json` and `state load --json`.",
+      "properties": {
+        "cookies": {
+          "description": "How many cookies.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "origins": {
+          "items": {
+            "$ref": "#/$defs/StateOriginInfo"
+          },
+          "type": "array"
+        },
+        "path": {
+          "description": "The file written or read (absolute); none for stdin.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "cookies",
+        "origins"
+      ],
+      "type": "object"
+    },
+    "StateOriginInfo": {
+      "description": "One origin of a storage state file.",
+      "properties": {
+        "applied": {
+          "description": "`state load`: `now` when a page of the origin was open and got it at\nonce; `next-load` when the origin's next document gets it, before\nits scripts.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "indexed_db": {
+          "description": "How many IndexedDB databases (`--indexeddb`).",
+          "format": "uint",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "local_storage": {
+          "description": "How many `localStorage` items.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "origin": {
+          "type": "string"
+        },
+        "session_storage": {
+          "description": "How many `sessionStorage` items (chrome-cdp's extension).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "origin",
+        "local_storage",
+        "session_storage"
       ],
       "type": "object"
     },

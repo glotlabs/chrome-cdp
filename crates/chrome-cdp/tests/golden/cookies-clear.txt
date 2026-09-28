@@ -1,0 +1,5 @@
+$ chrome-cdp cookies clear --domain example.com
+exit: 0
+--- stdout
+removed 1 cookie of example.com
+

@@ -1,0 +1,15 @@
+$ chrome-cdp storage session get draft
+exit: 0
+--- stdout
+draft-7
+
+$ chrome-cdp storage session get draft --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"action":"get","area":"session","key":"draft","origin":"<site>","tab":"t1","value":"draft-7"}}
+
+$ chrome-cdp storage session get draft -q
+exit: 0
+--- stdout
+draft-7
+

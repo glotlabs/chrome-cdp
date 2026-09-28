@@ -1,0 +1,11 @@
+$ chrome-cdp storage local get nope
+exit: 1
+--- stderr
+error: localStorage of <site> has no key `nope`
+  hint: chrome-cdp storage local   (lists the keys)
+
+$ chrome-cdp storage local get nope --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"localStorage of <site> has no key `nope`","hint":"chrome-cdp storage local   (lists the keys)"}}
+

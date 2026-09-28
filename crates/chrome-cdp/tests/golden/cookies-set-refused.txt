@@ -1,0 +1,11 @@
+$ chrome-cdp cookies set x=1 --samesite none
+exit: 2
+--- stderr
+error: Chrome refused cookie x
+  hint: SameSite=None needs --secure
+
+$ chrome-cdp cookies set x=1 --samesite none --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"Chrome refused cookie x","hint":"SameSite=None needs --secure"}}
+

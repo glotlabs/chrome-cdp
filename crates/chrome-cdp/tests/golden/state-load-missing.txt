@@ -1,0 +1,11 @@
+$ chrome-cdp state load <sandbox>/nope.json
+exit: 2
+--- stderr
+error: cannot read <sandbox>/nope.json: No such file or directory (os error 2)
+  hint: chrome-cdp state save <file>   (writes one)
+
+$ chrome-cdp state load <sandbox>/nope.json --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"cannot read <sandbox>/nope.json: No such file or directory (os error 2)","hint":"chrome-cdp state save <file>   (writes one)"}}
+

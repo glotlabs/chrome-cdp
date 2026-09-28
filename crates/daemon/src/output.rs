@@ -26,6 +26,18 @@ pub fn opened(opened: &Opened) -> Output {
     if let Some(device) = &data.device {
         let _ = write!(text, "\ndevice: {device}");
     }
+    if let Some(state) = &data.state {
+        let plural = |n: usize, what: &str| format!("{n} {what}{}", if n == 1 { "" } else { "s" });
+        let _ = write!(
+            text,
+            "\nstate: {}, {}",
+            plural(state.cookies, "cookie"),
+            plural(state.origins.len(), "origin")
+        );
+        if let Some(path) = &state.path {
+            let _ = write!(text, " from {path}");
+        }
+    }
     let quiet = match &data.page {
         Some(page) => {
             let _ = write!(text, "\npage: {} {:?}", page.url, page.title);

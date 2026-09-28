@@ -1,0 +1,18 @@
+$ chrome-cdp storage local
+exit: 0
+--- stdout
+localStorage of <site>: 2 items
+theme  dark
+token  tok-ada-42
+
+$ chrome-cdp storage local --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"action":"list","area":"local","items":[{"name":"theme","value":"dark"},{"name":"token","value":"tok-ada-42"}],"origin":"<site>","tab":"t1"}}
+
+$ chrome-cdp storage local -q
+exit: 0
+--- stdout
+theme
+token
+

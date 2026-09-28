@@ -1,0 +1,12 @@
+$ chrome-cdp storage local --origin https://example.com
+exit: 1
+--- stderr
+error: tab t1 has no frame of https://example.com
+  origins: <site>
+  hint: chrome-cdp goto https://example.com   (storage is read in a page of its origin)
+
+$ chrome-cdp storage local --origin https://example.com --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"tab t1 has no frame of https://example.com","hint":"chrome-cdp goto https://example.com   (storage is read in a page of its origin)","notes":[{"label":"origins","text":"<site>"}]}}
+

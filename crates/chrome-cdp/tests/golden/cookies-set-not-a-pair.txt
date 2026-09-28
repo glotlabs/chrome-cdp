@@ -1,0 +1,11 @@
+$ chrome-cdp cookies set theme
+exit: 2
+--- stderr
+error: `theme` is not a cookie; use NAME=VALUE
+  hint: chrome-cdp cookies set theme=dark
+
+$ chrome-cdp cookies set theme --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"`theme` is not a cookie; use NAME=VALUE","hint":"chrome-cdp cookies set theme=dark"}}
+

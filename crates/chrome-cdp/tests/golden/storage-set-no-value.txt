@@ -1,0 +1,11 @@
+$ chrome-cdp storage local set token
+exit: 2
+--- stderr
+error: storage local set needs a KEY and a VALUE
+  hint: chrome-cdp storage --help
+
+$ chrome-cdp storage local set token --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"storage local set needs a KEY and a VALUE","hint":"chrome-cdp storage --help"}}
+

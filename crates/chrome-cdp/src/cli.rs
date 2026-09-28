@@ -1008,6 +1008,59 @@ Examples:
   chrome-cdp permissions reset")]
     Permissions(PermissionsArgs),
 
+    /// List, set or clear the browser's cookies.
+    #[command(
+        args_conflicts_with_subcommands = true,
+        after_help = "\
+Without a subcommand, lists the cookies of every tab (they are the
+browser's): name=value (cut at 60 characters; --json has all of it),
+domain and path, and flags. A domain with a leading dot (.example.com)
+is sent to subdomains too; without one, to that host only.
+
+Examples:
+  chrome-cdp cookies
+  chrome-cdp cookies --domain example.com
+  chrome-cdp cookies --url https://app.example.com/api
+  chrome-cdp cookies set theme=dark
+  chrome-cdp cookies clear --name session"
+    )]
+    Cookies(CookiesArgs),
+
+    /// Read or change a page's localStorage or sessionStorage.
+    #[command(after_help = "\
+AREA is local (localStorage) or session (sessionStorage); ACTION is list
+(the default), get KEY, set KEY VALUE (VALUE `-` reads stdin), remove KEY
+or clear. It works in the tab's main frame, or with --origin in its first
+frame of that origin (an iframe's). sessionStorage belongs to the tab.
+
+Examples:
+  chrome-cdp storage local
+  chrome-cdp storage local get token
+  chrome-cdp storage local set feature-x on
+  chrome-cdp storage session clear
+  chrome-cdp storage local --origin https://auth.example.com")]
+    Storage(StorageArgs),
+
+    /// Save or load cookies and storage, e.g. a login (Playwright's format).
+    #[command(
+        subcommand_required = true,
+        arg_required_else_help = true,
+        after_help = "\
+A state file is Playwright's storageState JSON: the cookies, and each
+origin's localStorage. chrome-cdp adds sessionStorage, and IndexedDB with
+`state save --indexeddb` (as Playwright's indexedDB option has it), so
+Playwright's auth files load here and ours load in Playwright. The file
+holds secrets (session cookies, tokens): it is written readable by you
+only; keep it out of version control. For a whole persistent browser
+profile instead, use `open --profile <name>`.
+
+Examples:
+  chrome-cdp state save auth.json
+  chrome-cdp state load auth.json
+  chrome-cdp open --state auth.json https://app.example.com"
+    )]
+    State(StateArgs),
+
     /// Freeze the time pages see, move it on, or give the real one back.
     #[command(
         subcommand_required = true,
@@ -1292,6 +1345,11 @@ pub(crate) struct OpenArgs {
     /// The session keeps it, like `emulate`.
     #[arg(long, value_name = "DEVICE")]
     pub(crate) device: Option<String>,
+
+    /// Load cookies and storage from a state file (as `state load`)
+    /// before loading URL.
+    #[arg(long, value_name = "FILE")]
+    pub(crate) state: Option<PathBuf>,
 
     /// Make popups (window.open, target=_blank) the active tab as they
     /// open. The session keeps this setting.
@@ -2821,6 +2879,240 @@ pub(crate) struct PermissionResetArgs {
 }
 
 #[derive(Debug, Args)]
+pub(crate) struct CookiesArgs {
+    #[command(subcommand)]
+    pub(crate) command: Option<CookiesCommand>,
+
+    #[command(flatten)]
+    pub(crate) filter: CookieFilterArgs,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum CookiesCommand {
+    /// Set a cookie, for the active tab's URL unless given --url or
+    /// --domain.
+    #[command(after_help = "\
+Prints the cookie as Chrome stored it. --expires takes seconds since 1970
+(as Playwright's expires), an ISO time (2026-12-31T23:59:00Z), or a time
+from now (90s, 30m, 12h, 30d); without it the cookie lasts the browser
+session. Chrome cuts expiry to at most 400 days. It refuses some cookies: SameSite=None needs --secure, and
+__Host- cookies need --secure, --path / and a --url.
+
+Examples:
+  chrome-cdp cookies set theme=dark
+  chrome-cdp cookies set session=abc123 --url https://app.example.com --httponly --secure
+  chrome-cdp cookies set consent=yes --domain .example.com --expires 30d")]
+    Set(CookieSetArgs),
+
+    /// Remove cookies: all of them, or those the filters pick.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp cookies clear
+  chrome-cdp cookies clear --domain example.com
+  chrome-cdp cookies clear --name session")]
+    Clear(CookieFilterArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct CookieFilterArgs {
+    /// Only the cookies a request to this URL carries.
+    #[arg(long, value_name = "URL")]
+    pub(crate) url: Option<String>,
+
+    /// Only cookies of this domain and its subdomains.
+    #[arg(long, value_name = "DOMAIN")]
+    pub(crate) domain: Option<String>,
+
+    /// Only cookies with this name.
+    #[arg(long, value_name = "NAME")]
+    pub(crate) name: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct CookieSetArgs {
+    /// The cookie: NAME=VALUE.
+    #[arg(value_name = "NAME=VALUE")]
+    pub(crate) cookie: String,
+
+    /// The URL it is for (host, path and scheme).
+    #[arg(long, value_name = "URL", conflicts_with = "domain")]
+    pub(crate) url: Option<String>,
+
+    /// Its domain: example.com for that host only, .example.com for its
+    /// subdomains too.
+    #[arg(long, value_name = "DOMAIN")]
+    pub(crate) domain: Option<String>,
+
+    /// Its path (default: /, or the --url's directory).
+    #[arg(long, value_name = "PATH")]
+    pub(crate) path: Option<String>,
+
+    /// Sent over HTTPS only.
+    #[arg(long)]
+    pub(crate) secure: bool,
+
+    /// Hidden from page scripts (document.cookie).
+    #[arg(long, alias = "http-only")]
+    pub(crate) httponly: bool,
+
+    /// When it goes with cross-site requests.
+    #[arg(long, value_enum, value_name = "POLICY")]
+    pub(crate) samesite: Option<SameSiteArg>,
+
+    /// When it expires: seconds since 1970, an ISO time, or from now (30d).
+    #[arg(long, value_name = "TIME", value_parser = parse_expires, allow_hyphen_values = true)]
+    pub(crate) expires: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum SameSiteArg {
+    Strict,
+    Lax,
+    None,
+}
+
+impl SameSiteArg {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Strict => "Strict",
+            Self::Lax => "Lax",
+            Self::None => "None",
+        }
+    }
+}
+
+/// `cookies set --expires`: seconds since 1970, an ISO 8601 time, or a
+/// time from now with a unit (s, m, h, d). Returns seconds since 1970.
+pub(crate) fn parse_expires(text: &str) -> Result<f64, String> {
+    let text = text.trim();
+    if !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit()) {
+        return text.parse::<f64>().map_err(|e| format!("`{text}`: {e}"));
+    }
+    let unit = text.trim_start_matches(|c: char| c.is_ascii_digit() || c == '.');
+    let number = &text[..text.len() - unit.len()];
+    let scale = match unit {
+        "s" => Some(1.0),
+        "m" => Some(60.0),
+        "h" => Some(3600.0),
+        "d" => Some(86_400.0),
+        _ => None,
+    };
+    if let (Some(scale), Ok(number)) = (scale, number.parse::<f64>()) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0.0, |d| d.as_secs_f64());
+        return Ok((now + number * scale).floor());
+    }
+    #[allow(clippy::cast_precision_loss)]
+    engine::parse_time(text)
+        .map(|ms| (ms / 1000) as f64)
+        .map_err(|_| {
+            format!(
+                "`{text}` is not a time; use seconds since 1970, an ISO time (2026-12-31T23:59:00Z) or a time from now (30d)"
+            )
+        })
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct StorageArgs {
+    /// local (localStorage) or session (sessionStorage).
+    #[arg(value_enum, value_name = "AREA")]
+    pub(crate) area: StorageAreaArg,
+
+    /// list, get, set, remove or clear.
+    #[arg(value_enum, value_name = "ACTION", default_value_t = StorageActionArg::List)]
+    pub(crate) action: StorageActionArg,
+
+    /// The key (get, set, remove).
+    #[arg(value_name = "KEY")]
+    pub(crate) key: Option<String>,
+
+    /// The value (set); `-` reads stdin.
+    #[arg(value_name = "VALUE", allow_hyphen_values = true)]
+    pub(crate) value: Option<String>,
+
+    /// Use the tab's first frame of this origin (e.g. an iframe's).
+    #[arg(long, value_name = "ORIGIN")]
+    pub(crate) origin: Option<String>,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub(crate) enum StorageAreaArg {
+    Local,
+    Session,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum StorageActionArg {
+    List,
+    Get,
+    Set,
+    Remove,
+    Clear,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct StateArgs {
+    #[command(subcommand)]
+    pub(crate) command: StateCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum StateCommand {
+    /// Write the cookies and storage to a file (readable by you only).
+    #[command(after_help = "\
+Saves the browser's cookies and the storage of every origin a tab has
+open (a page or an iframe): localStorage, sessionStorage (a chrome-cdp
+extension Playwright ignores) and, with --indexeddb, IndexedDB. Origins
+visited earlier but not open now are not saved: save while the app is
+open.
+
+Examples:
+  chrome-cdp state save auth.json
+  chrome-cdp state save auth.json --indexeddb")]
+    Save(StateSaveArgs),
+
+    /// Load cookies and storage from a file (ours or Playwright's).
+    #[command(after_help = "\
+Adds the file's cookies, and gives each origin its storage: at once if a
+tab has it open, else its next page load gets it before the page's
+scripts run. The storage of those origins is replaced; other cookies and
+origins stay. `open --state <file>` does the same before the first page
+loads.
+
+Examples:
+  chrome-cdp state load auth.json
+  chrome-cdp state load playwright/.auth/user.json")]
+    Load(StateLoadArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct StateSaveArgs {
+    /// The file to write.
+    #[arg(value_name = "FILE")]
+    pub(crate) file: PathBuf,
+
+    /// Also save each origin's IndexedDB databases.
+    #[arg(long)]
+    pub(crate) indexeddb: bool,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct StateLoadArgs {
+    /// The file to read; `-` reads stdin.
+    #[arg(value_name = "FILE")]
+    pub(crate) file: PathBuf,
+}
+
+#[derive(Debug, Args)]
 pub(crate) struct TimeArgs {
     #[command(subcommand)]
     pub(crate) command: TimeCommand,
@@ -3820,7 +4112,9 @@ mod tests {
     /// the fixed device table); `permissions` a line per permission the
     /// user set. `init-script add` prints a line about the script (its
     /// first line cut at 60 characters) and `remove` its ids; `expose`
-    /// and `unexpose` a line of names.
+    /// and `unexpose` a line of names. `cookies set` and `cookies clear`
+    /// print a line; `state save` and `state load` a line per origin of
+    /// the file the user chose.
     const FIXED_SIZE: &[&str] = &[
         "emulate",
         "viewport",
@@ -3875,6 +4169,10 @@ mod tests {
         "dialog accept",
         "dialog dismiss",
         "clipboard write",
+        "cookies set",
+        "cookies clear",
+        "state save",
+        "state load",
     ];
 
     /// The plan 08 checklist: every command has an example in its help, a

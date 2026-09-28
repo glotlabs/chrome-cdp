@@ -37,7 +37,8 @@ enum Fixture {
     /// Like `Session`, with the fixture site's page at this path loaded.
     SessionAt(&'static str),
     /// A session sandbox with the real Chrome, after these commands
-    /// (`{site}` is the fixture site's origin). The first one opens it.
+    /// (`{site}` is the fixture site's origin, `{sandbox}` the sandbox's
+    /// directory). The first one opens it.
     SessionAfter(&'static [&'static [&'static str]]),
     /// An empty session sandbox, with no Chrome.
     NoSessions,
@@ -83,6 +84,35 @@ const REMOUNTED: &[&[&str]] = &[
 ];
 
 /// A session with two init scripts, s1 (main world) and s2 (isolated).
+/// A page with cookies and storage of its own, for `cookies`, `storage`
+/// and `state`.
+const LOGGED_IN: &[&[&str]] = &[
+    &["open", "{site}/state/app.html"],
+    &["cookies", "set", "session=ada-42", "--httponly"],
+    &[
+        "cookies",
+        "set",
+        "consent=yes",
+        "--domain",
+        ".example.com",
+        "--secure",
+        "--samesite",
+        "none",
+    ],
+    &["storage", "local", "set", "token", "tok-ada-42"],
+    &["storage", "local", "set", "theme", "dark"],
+    &["storage", "session", "set", "draft", "draft-7"],
+];
+
+/// [`LOGGED_IN`], saved to `{sandbox}/auth.json`.
+const SAVED: &[&[&str]] = &[
+    &["open", "{site}/state/app.html"],
+    &["cookies", "set", "session=ada-42", "--httponly"],
+    &["storage", "local", "set", "token", "tok-ada-42"],
+    &["state", "save", "{sandbox}/auth.json"],
+    &["goto", "about:blank"],
+];
+
 const TWO_SCRIPTS: &[&[&str]] = &[
     &["open"],
     &["init-script", "add", "--code", "window.__a = 1;"],
@@ -763,6 +793,90 @@ const CASES: &[Case] = &[
         ],
         modes: ALL,
         fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "cookies",
+        args: &["cookies"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(LOGGED_IN),
+    },
+    Case {
+        name: "cookies-none",
+        args: &["cookies", "--domain", "example.org"],
+        modes: &[""],
+        fixture: Fixture::SessionAfter(LOGGED_IN),
+    },
+    Case {
+        name: "cookies-set",
+        args: &["cookies", "set", "theme=dark", "--path", "/state"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/state/app.html"),
+    },
+    Case {
+        name: "cookies-set-refused",
+        args: &["cookies", "set", "x=1", "--samesite", "none"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/state/app.html"),
+    },
+    Case {
+        name: "cookies-set-not-a-pair",
+        args: &["cookies", "set", "theme"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
+        name: "cookies-clear",
+        args: &["cookies", "clear", "--domain", "example.com"],
+        modes: &[""],
+        fixture: Fixture::SessionAfter(LOGGED_IN),
+    },
+    Case {
+        name: "storage",
+        args: &["storage", "local"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(LOGGED_IN),
+    },
+    Case {
+        name: "storage-get",
+        args: &["storage", "session", "get", "draft"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(LOGGED_IN),
+    },
+    Case {
+        name: "storage-get-missing",
+        args: &["storage", "local", "get", "nope"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/state/app.html"),
+    },
+    Case {
+        name: "storage-no-origin",
+        args: &["storage", "local", "--origin", "https://example.com"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/state/app.html"),
+    },
+    Case {
+        name: "storage-set-no-value",
+        args: &["storage", "local", "set", "token"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
+        name: "state-save",
+        args: &["state", "save", "{sandbox}/auth.json"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(LOGGED_IN),
+    },
+    Case {
+        name: "state-load",
+        args: &["state", "load", "{sandbox}/auth.json"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(SAVED),
+    },
+    Case {
+        name: "state-load-missing",
+        args: &["state", "load", "{sandbox}/nope.json"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
     },
     Case {
         name: "init-script-add",
@@ -1641,8 +1755,11 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
             if let Fixture::SessionAfter(steps) = case.fixture {
                 let site = Fixtures::shared().a();
                 for step in steps {
-                    let args: Vec<String> =
-                        step.iter().map(|a| a.replace("{site}", site)).collect();
+                    let dir = sb.dir.path().display().to_string();
+                    let args: Vec<String> = step
+                        .iter()
+                        .map(|a| a.replace("{site}", site).replace("{sandbox}", &dir))
+                        .collect();
                     let out = sb.cli().args(&args).output().unwrap();
                     assert!(out.status.success(), "{step:?}: {out:?}");
                 }
@@ -1721,6 +1838,10 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
             })
             .map(|a| a.replace("{site}", site.a()))
             .map(|a| a.replace("{files}", &files.display().to_string()))
+            .map(|a| match &sandbox {
+                Some(sb) => a.replace("{sandbox}", &sb.dir.path().display().to_string()),
+                None => a,
+            })
             .collect();
         if !mode.is_empty() {
             args.push((*mode).to_owned());

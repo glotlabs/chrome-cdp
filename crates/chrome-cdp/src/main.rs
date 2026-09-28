@@ -118,6 +118,9 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         }
         Some(Command::Time(args)) => session::emulate(emulate::time(&args.command)?, &cli.global),
         Some(Command::Permissions(args)) => session::permissions(&args, &cli.global),
+        Some(Command::Cookies(args)) => session::cookies(&args, &cli.global),
+        Some(Command::Storage(args)) => session::storage(&args, &cli.global),
+        Some(Command::State(args)) => session::state(&args, &cli.global),
         Some(Command::Screenshot(args)) => session::screenshot(&args, &cli.global),
         Some(Command::Pdf(args)) => session::pdf(&args, &cli.global),
         Some(Command::Eval(args)) => session::eval(&args, &cli.global),
