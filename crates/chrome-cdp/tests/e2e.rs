@@ -445,3 +445,27 @@ fn requests_unmatched_requests_and_console_errors() {
     let (_, value) = project.json(&["scenarios/checks/checks.cdp:22"]);
     assert_eq!(value["ok"], true, "{value}");
 }
+
+#[test]
+fn tests_see_a_frozen_clock_seeded_random_values_and_no_animations() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let out = project.test(&["scenarios/determinism", "--jobs", "2"]);
+    let text = stdout(&out);
+    assert_eq!(out.status.code(), Some(0), "{text}{}", stderr(&out));
+    assert!(text.contains("\n4 tests: 4 passed ("), "{text}");
+
+    // [e2e.determinism] turns each of them off.
+    let config = project.root.join("chrome-cdp.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(
+        &config,
+        format!(
+            "{text}\n[e2e.determinism]\nfreeze_time = false\nrandom_seed = false\n\
+             disable_animations = false\nlocale = false\ntimezone = false\n"
+        ),
+    )
+    .unwrap();
+    let out = project.test(&["scenarios/determinism-off"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+}

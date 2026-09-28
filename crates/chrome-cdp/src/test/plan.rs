@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use e2e::Config;
+use e2e::config::Fixed;
 use e2e::scenario::select::{self, Filter, Selected};
 use e2e::scenario::{self, Scenario, Settings, Step};
 use protocol::script::{ScriptError, Span};
@@ -71,6 +72,8 @@ pub(super) struct Plan {
     pub(super) retries: u32,
     /// `expect-snapshot` baselines' directory.
     pub(super) snapshots: PathBuf,
+    /// What every test's context gets before its steps (11.6).
+    pub(super) determinism: Fixed,
 }
 
 impl Plan {
@@ -189,6 +192,7 @@ impl Plan {
         let jobs = args.jobs.unwrap_or_else(|| config.jobs.count()).max(1);
         let retries = args.retries.unwrap_or(config.retries);
         let snapshots = config.root.join(SNAPSHOTS);
+        let determinism = config.determinism.resolve();
         Ok(Self {
             config,
             scenarios,
@@ -197,6 +201,7 @@ impl Plan {
             jobs,
             retries,
             snapshots,
+            determinism,
         })
     }
 

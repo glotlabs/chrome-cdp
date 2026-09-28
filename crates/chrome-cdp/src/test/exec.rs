@@ -2,8 +2,10 @@
 //!
 //! `jobs` worker threads take the tests in order. Each test runs in a
 //! fresh browser context of the worker's session (`context new`), which
-//! gets the test's mock sets and viewport before its `@before` steps, its
-//! own steps and its `@after` steps run; the context is closed after.
+//! gets the test's mock sets, its viewport and the settings that make it
+//! behave the same in every run ([`super::determinism`], 11.6) before its
+//! `@before` steps, its own steps and its `@after` steps run; the context
+//! is closed after.
 //! Every step goes through the same code as a CLI command
 //! ([`crate::run`]), with `--session` and `--context` set. A failed test
 //! runs again up to its retries; one that then passes is flaky.
@@ -31,6 +33,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 
 use e2e::scenario::Settings;
 
+use super::determinism;
 use super::plan::{Plan, Planned, Prepared};
 use crate::cli::{Command, GlobalArgs, WAIT_TIMEOUT};
 use crate::script;
@@ -306,7 +309,8 @@ impl Runner<'_> {
         }
     }
 
-    /// Gives a fresh context its mock sets and viewport.
+    /// Gives a fresh context its mock sets, viewport and the settings
+    /// that make it behave the same in every run.
     fn settle(
         &self,
         context: &str,
@@ -325,12 +329,17 @@ impl Runner<'_> {
             .viewport
             .unwrap_or(self.plan.config.viewport)
             .to_string();
-        let words = settings
-            .device
-            .as_deref()
-            .map_or(["viewport", size.as_str()], |device| ["emulate", device]);
-        self.invoke(&words, Some(context), Some(deadline))
+        let words: &[&str] = match settings.device.as_deref() {
+            Some(device) => &["emulate", device],
+            None => &["viewport", size.as_str(), "--dpr", "1"],
+        };
+        self.invoke(words, Some(context), Some(deadline))
             .map_err(|e| setup_failure(span, &words.join(" "), e))?;
+        for words in determinism::commands(&self.plan.determinism) {
+            let words: Vec<&str> = words.iter().map(String::as_str).collect();
+            self.invoke(&words, Some(context), Some(deadline))
+                .map_err(|e| setup_failure(span, &setup_text(&words), e))?;
+        }
         Ok(())
     }
 
@@ -637,6 +646,18 @@ fn with_unmatched(mut error: ErrorInfo, unmatched: &[RoutedRequest]) -> ErrorInf
 
 /// How many unmatched requests a failure lists.
 const UNMATCHED_LISTED: usize = 3;
+
+/// A setup command as a failure names it: an init script by its first
+/// line, not its whole code.
+fn setup_text(words: &[&str]) -> String {
+    match words {
+        ["init-script", "add", "--code", code] => format!(
+            "init-script add --code '{}…'",
+            code.lines().next().unwrap_or_default()
+        ),
+        _ => words.join(" "),
+    }
+}
 
 /// A failure of what the runner does around a test's steps.
 fn setup_failure(at: &str, step: &str, error: ErrorInfo) -> Box<TestFailure> {

@@ -1,0 +1,7 @@
+# Plan 11.6: with [e2e.determinism] turned off, the browser's own.
+@mocks determinism
+
+@test "the real clock, random values and animations"
+  goto /e2e/determinism.html
+  expect '#server' text server
+  eval "(() => { const s = getComputedStyle(document.querySelector('#spinner')); const seen = [document.querySelector('#now').textContent.slice(0, 16), s.animationDuration, matchMedia('(prefers-reduced-motion: reduce)').matches]; if (seen[0] === '2026-01-01T10:00' || seen[1] !== '10s' || seen[2]) throw new Error(seen.join(' ')); })()"

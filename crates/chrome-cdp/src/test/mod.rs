@@ -12,6 +12,7 @@
 //! the end, and the web servers stopped, also when one exits early or on
 //! Ctrl-C.
 
+mod determinism;
 mod exec;
 mod plan;
 mod report;

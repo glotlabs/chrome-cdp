@@ -1,0 +1,6 @@
+# The determinism page's API (testdata/site/e2e/determinism.html): the
+# time the mocks see.
+[[mock]]
+name = "now"
+match = { method = "GET", path = "/e2e/api/now" }
+respond = { json = { now = "{{now}}" } }
