@@ -149,6 +149,8 @@ fn scaffolds_a_vite_project() {
         "npm run dev -- --port 5173 --strictPort"
     );
     assert!(config.mocks.join("base.toml").is_file());
+    // A Vite app renders in the browser: no mock_server to suggest.
+    assert!(!read(dir.path(), "chrome-cdp.toml").contains("mock_server"));
     // The mock set and its data parse.
     let mocks: toml::Table = toml::from_str(&read(dir.path(), MOCKS_PATH)).unwrap();
     assert!(mocks["mock"].as_array().is_some_and(|m| m.len() == 2));
@@ -201,6 +203,29 @@ fn never_overwrites_and_a_second_run_keeps_everything() {
 }
 
 #[test]
+fn ssr_frameworks_get_a_mock_server_suggested() {
+    let dir = project(&[("package.json", &package(r#""next": "15""#))]);
+    run(dir.path(), FrameworkChoice::Detect).unwrap();
+    let text = read(dir.path(), "chrome-cdp.toml");
+    assert!(text.contains("# mock_server = { port = 4010 }\n"), "{text}");
+    // Uncommented, it is a valid config.
+    let enabled = text
+        .replace("# mock_server = ", "mock_server = ")
+        .replace("# env = { API_URL", "env = { API_URL");
+    let config = Config::parse(&enabled, &dir.path().join("chrome-cdp.toml"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        config.web_servers[0].mock_server.as_ref().unwrap().port,
+        4010
+    );
+    assert_eq!(
+        config.web_servers[0].env["API_URL"],
+        "http://localhost:4010"
+    );
+}
+
+#[test]
 fn appends_to_an_existing_config_and_gitignore() {
     let dir = project(&[
         (".chrome-cdp.toml", "session = \"shop\" # mine"),
@@ -216,6 +241,7 @@ fn appends_to_an_existing_config_and_gitignore() {
     );
     assert!(text.contains("command = \"npm start\"\n"), "{text}");
     assert!(text.contains("env = { PORT = \"3000\" }\n"), "{text}");
+    assert!(!text.contains("mock_server"), "{text}");
     let config = Config::find(dir.path()).unwrap();
     assert_eq!(config.web_servers[0].env["PORT"], "3000");
     assert_eq!(

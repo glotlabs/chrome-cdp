@@ -336,6 +336,8 @@ struct Server {
     command: String,
     url: String,
     env: Vec<(&'static str, String)>,
+    /// It renders on the server, whose fetches only `mock_server` mocks.
+    ssr: bool,
 }
 
 fn web_server(framework: Framework, pm: PackageManager, package: Option<&Package>) -> Server {
@@ -358,6 +360,10 @@ fn web_server(framework: Framework, pm: PackageManager, package: Option<&Package
         } else {
             Vec::new()
         },
+        ssr: matches!(
+            framework,
+            Framework::Next | Framework::SvelteKit | Framework::Astro
+        ),
     }
 }
 
@@ -410,6 +416,14 @@ fn config_section(server: Option<&Server>) -> String {
                     .map(|(k, v)| format!("{k} = {}", toml_string(v)))
                     .collect();
                 let _ = writeln!(text, "env = {{ {} }}", pairs.join(", "));
+            }
+            if s.ssr {
+                text.push_str(
+                    "# Server-side fetches never pass through the browser: serve the mocks\n\
+                     # there too, and point the app's server at them (docs/e2e/beyond-fetch.md):\n\
+                     # mock_server = { port = 4010 }\n\
+                     # env = { API_URL = \"http://localhost:4010\" }\n",
+                );
             }
         }
         None => text.push_str(
