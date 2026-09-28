@@ -1,0 +1,69 @@
+$ chrome-cdp convert <scripts>/login.spec.ts
+exit: 0
+--- stdout
+# Converted from <scripts>/login.spec.ts by chrome-cdp convert: check the TODO lines.
+# The tests run one after another, in one session.
+
+# test: sign in > welcomes the user
+viewport 1024x768
+locale en-GB
+route '**/api/flags' --json-body '{"beta":true}'
+goto /script/login.html
+fill label=Email ada@example.com
+fill label=Password "${env:APP_PASSWORD}"
+click 'role=button[name=Sign in]'
+expect '#welcome' text 'Welcome, ada@example.com' --exact
+expect label=Email value ada@example.com
+expect --title '/Sign in/'
+
+# test: sign in > asks for the password
+viewport 1024x768
+locale en-GB
+route '**/api/flags' --json-body '{"beta":true}'
+goto /script/login.html
+fill label=Email ada@example.com
+press Enter
+expect 'text=Password required' visible
+expect 'role=heading[level=1]' hidden --not
+# TODO line 27 (textContent() gives a value: read it with text LOC, or check it with expect): const heading = await page.locator('h1').textContent();
+# TODO line 28 (toBe on a value, not a locator: compare a command's -q output in a shell): expect(heading).toBe('Sign in');
+--- stderr
+warning: 2 TODO lines: statements convert could not translate; rewrite them before running the script
+
+$ chrome-cdp convert <scripts>/login.spec.ts --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"file":"<scripts>/login.spec.ts","script":"# Converted from <scripts>/login.spec.ts by chrome-cdp convert: check the TODO lines.\n# The tests run one after another, in one session.\n\n# test: sign in > welcomes the user\nviewport 1024x768\nlocale en-GB\nroute '**/api/flags' --json-body '{\"beta\":true}'\ngoto /script/login.html\nfill label=Email ada@example.com\nfill label=Password \"${env:APP_PASSWORD}\"\nclick 'role=button[name=Sign in]'\nexpect '#welcome' text 'Welcome, ada@example.com' --exact\nexpect label=Email value ada@example.com\nexpect --title '/Sign in/'\n\n# test: sign in > asks for the password\nviewport 1024x768\nlocale en-GB\nroute '**/api/flags' --json-body '{\"beta\":true}'\ngoto /script/login.html\nfill label=Email ada@example.com\npress Enter\nexpect 'text=Password required' visible\nexpect 'role=heading[level=1]' hidden --not\n# TODO line 27 (textContent() gives a value: read it with text LOC, or check it with expect): const heading = await page.locator('h1').textContent();\n# TODO line 28 (toBe on a value, not a locator: compare a command's -q output in a shell): expect(heading).toBe('Sign in');\n","steps":18,"tests":2,"todos":[{"code":"const heading = await page.locator('h1').textContent();","line":27,"reason":"textContent() gives a value: read it with text LOC, or check it with expect"},{"code":"expect(heading).toBe('Sign in');","line":28,"reason":"toBe on a value, not a locator: compare a command's -q output in a shell"}]},"warnings":["2 TODO lines: statements convert could not translate; rewrite them before running the script"]}
+
+$ chrome-cdp convert <scripts>/login.spec.ts -q
+exit: 0
+--- stdout
+# Converted from <scripts>/login.spec.ts by chrome-cdp convert: check the TODO lines.
+# The tests run one after another, in one session.
+
+# test: sign in > welcomes the user
+viewport 1024x768
+locale en-GB
+route '**/api/flags' --json-body '{"beta":true}'
+goto /script/login.html
+fill label=Email ada@example.com
+fill label=Password "${env:APP_PASSWORD}"
+click 'role=button[name=Sign in]'
+expect '#welcome' text 'Welcome, ada@example.com' --exact
+expect label=Email value ada@example.com
+expect --title '/Sign in/'
+
+# test: sign in > asks for the password
+viewport 1024x768
+locale en-GB
+route '**/api/flags' --json-body '{"beta":true}'
+goto /script/login.html
+fill label=Email ada@example.com
+press Enter
+expect 'text=Password required' visible
+expect 'role=heading[level=1]' hidden --not
+# TODO line 27 (textContent() gives a value: read it with text LOC, or check it with expect): const heading = await page.locator('h1').textContent();
+# TODO line 28 (toBe on a value, not a locator: compare a command's -q output in a shell): expect(heading).toBe('Sign in');
+--- stderr
+warning: 2 TODO lines: statements convert could not translate; rewrite them before running the script
+

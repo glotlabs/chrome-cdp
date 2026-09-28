@@ -181,6 +181,18 @@ const CASES: &[Case] = &[
         fixture: Fixture::None,
     },
     Case {
+        name: "convert",
+        args: &["convert", "{scripts}/login.spec.ts"],
+        modes: ALL,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "convert-missing",
+        args: &["convert", "{scripts}/missing.spec.ts"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
         name: "skill-agents-md",
         args: &["skill", "--format", "agents-md"],
         modes: ALL,

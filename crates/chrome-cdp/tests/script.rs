@@ -398,3 +398,46 @@ fn run_reads_a_file_with_vars_and_data() {
     let out = sandbox.run(&["status", "--session", "other", "-q"]);
     assert_eq!(stdout(&out), "running\n");
 }
+
+#[test]
+fn a_converted_playwright_test_runs() {
+    let Some(chrome) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let spec = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../testdata/scripts/login.spec.ts");
+    let script = sandbox.dir.path().join("login.cdp");
+    let out = sandbox.run(&[
+        "convert",
+        spec.to_str().unwrap(),
+        "-o",
+        script.to_str().unwrap(),
+    ]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert!(
+        stdout(&out).contains(": 2 tests, 18 steps, 2 TODOs → "),
+        "{}",
+        stdout(&out)
+    );
+    assert!(
+        stderr(&out).starts_with("warning: 2 TODO lines"),
+        "{}",
+        stderr(&out)
+    );
+
+    // `goto /script/login.html` resolves against the page open before.
+    let out = sandbox.run(&["open", &site.url("/")]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = common::run(
+        sandbox
+            .cli()
+            .args(["run", script.to_str().unwrap()])
+            .env("APP_PASSWORD", "s3cret"),
+    );
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert!(
+        stdout(&out).contains("[18/18] expect 'role=heading[level=1]' hidden --not ✓\n"),
+        "{}",
+        stdout(&out)
+    );
+}
