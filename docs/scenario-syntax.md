@@ -217,6 +217,11 @@ error: flow.cdp:12:5: a single quote without its closing quote
 Syntax errors are all reported at once; the script does not start while
 any remain.
 
+`chrome-cdp lint` checks files without running them (for scenarios, also
+refs, sleeps and more; see docs/e2e/authoring.md), `chrome-cdp fmt` lays
+them out in one style, and `chrome-cdp schema scenario` prints the
+directives, commands, flags and variables as JSON.
+
 ## Versioning
 
 The syntax is versioned by `@syntax N`. Changes that would make an existing

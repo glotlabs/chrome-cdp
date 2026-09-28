@@ -562,6 +562,10 @@ jobs:
         with:
           path: ~/.cache/chrome-cdp
           key: chrome-cdp-${{{{ runner.os }}}}-${{{{ runner.arch }}}}
+      - name: Check the scenario and mock files
+        run: |
+          chrome-cdp fmt --check
+          chrome-cdp lint --format github
       - name: E2E tests
         run: chrome-cdp test --reporter text,junit --shard ${{{{ matrix.shard }}}}
       - uses: actions/upload-artifact@v4

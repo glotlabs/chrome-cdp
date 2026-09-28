@@ -1,4 +1,4 @@
-# Writing tests and mocks: history, record, import, check
+# Writing tests and mocks: history, record, import, check, fmt, lint
 
 Tests and mocks are plain files, but nobody has to write them from
 scratch. The core workflow is: explore the app with the usual commands,
@@ -138,3 +138,84 @@ Errors exit 1, warnings alone 0; `--json` has every problem with its
 `file`, `line`, `col`, `severity`, `rule`, `message` and `hint`.
 `chrome-cdp test` runs the check on the sets it uses before it starts a
 browser, stops on errors and shows the warnings.
+
+## Tidy files: `fmt`
+
+```
+$ chrome-cdp fmt
+formatted e2e/scenarios/checkout.cdp
+12 files, 1 formatted
+```
+
+`fmt` lays out every `.cdp` file below the project root and every mock
+file of the mocks directory (or the files and folders named) the same way:
+
+- `.cdp` files: bodies indented 2 spaces; one blank line before each
+  `@test` and hook (and the comments right above it); quoted words in
+  single quotes unless they need `${…}` or contain a `'` (test names and
+  other directive arguments take double quotes); long flags instead of
+  short ones (`-o` becomes `--output`); settings in a stable order
+  (`@skip @only @mocks @tags @backend @safe @timeout @retries
+  @viewport/@device @allow-console-errors`); trailing comments lined up.
+- Mock files: the keys of each `[[mock]]` in the order `name`, `match`,
+  `respond`, `sequence`, … (likewise for `[[collection]]` and
+  `[[websocket]]`), `key = value` spacing, inline tables kept inline.
+
+Comments stay, and so does the meaning: the file is read again after
+formatting and must be the same scenario (each changed line must parse to
+the same command), or `fmt` leaves it alone with an error. A file with
+syntax errors is not formatted; `lint` lists them. `fmt --check` writes
+nothing, prints a diff and exits 1 when a file would change, for CI.
+
+## Catch mistakes before a run: `lint`
+
+```
+$ chrome-cdp lint
+error: e2e/scenarios/cart.cdp:3:3: error [ref] `e12` is a ref: refs name elements of one session's snapshot, so they break in a scenario
+  fix: use a stable locator such as role=button[name="Save"], label=Email or text=Sign in; `chrome-cdp history --as-scenario` writes them for the refs of a session
+  also: e2e/scenarios/cart.cdp:9:3: error [unknown-command] unrecognized subcommand 'clik'
+  also: e2e/scenarios/cart.cdp:4:3: warning [sleep] `wait 500` sleeps 500ms whatever the page does: slow when it is quick, flaky when it is slow
+  checked: 2 files: 2 errors, 1 warning
+```
+
+`lint` checks the same files without running anything; mock files get
+the `mock check` rules above. Scenario rules:
+
+| Rule | Severity | What |
+|---|---|---|
+| `syntax` | error | the grammar, and directives used wrongly (`@timeout soon`) |
+| `unknown-command`, `unknown-flag`, `bad-args` | error | a line clap refuses, with the corrected line as the hint |
+| `unknown-directive` | error | `@tag` (did you mean `@tags`?) |
+| `unknown-device`, `unknown-backend` | error | `@device` or `@backend` naming none |
+| `locator` | error | a locator that does not parse |
+| `include-missing`, `include-cycle` | error | an `@include` file that is not there, or includes itself |
+| `include-param` | error | a step file's `${name}` its `@include` line does not pass |
+| `undefined-var` | error | a `${var:x}` missing from the vars of a backend that runs the test; a `${saved.x}` no `http --save` saves; a missing `data:` file |
+| `ref` | error | a ref (`e12`): refs belong to one session's snapshot |
+| `duplicate-test` | error | two tests of a file with one name |
+| `mock-only` | warning | `mock state`, `mock seed`, `mock ws send` or `expect mock-state` in a test a real backend runs (mark it `@backend mock`) |
+| `mock-literal` | warning | a value of the mock data files written into a test a real backend runs; the real data may differ (use `${var:…}`) |
+| `sleep` | warning | `wait 500`: wait for a condition instead |
+| `no-expect` | warning | a test with no `expect` step |
+
+Each step is checked for every backend that runs its test, so a variable
+missing from one backend's vars file is found before that backend's run.
+`${env:…}` and `${secret:…}` are not read, so `lint` needs no secrets.
+Errors exit 1, warnings alone 0. `--format github` prints GitHub workflow
+annotations, so the problems show up on the pull request's lines;
+`--format json` (or `--json`) has each problem's `file`, `line`, `col`,
+`severity`, `rule`, `message` and `hint`. `chrome-cdp test` runs the
+scenario rules first and does not start on errors; it counts the
+warnings in one line. The workflow `init e2e` writes runs `fmt --check`
+and `lint --format github` before the tests.
+
+## The format as data: `schema scenario`
+
+`chrome-cdp schema scenario` prints, as JSON, what a `.cdp` file may hold:
+the directives (with their usage and kind), every command a line may run
+with its arguments and flags (short and long forms, value names, allowed
+values), the global flags, the variable forms and the mock-only commands.
+It is generated from the binary's own command definitions, so it matches
+the chrome-cdp that prints it. Editors and agents can build completion and
+checks on it; `chrome-cdp schema mocks` is the mock files' JSON Schema.
+

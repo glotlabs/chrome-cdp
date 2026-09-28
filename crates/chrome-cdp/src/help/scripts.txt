@@ -11,6 +11,9 @@ goes on), and print `[n/total] <line> ✓|✗` plus each step's output.
   ${data:users.json#/0/email} from a JSON file next to the script.
 - Lines inherit --session, --timeout, --tab, -q and -v.
 - No loops or conditions, by design: call chrome-cdp from a shell for that.
+- `chrome-cdp lint f.cdp` checks a file without running it, `chrome-cdp
+  fmt f.cdp` tidies it, `chrome-cdp schema scenario` lists what a line
+  may hold.
 The full grammar is docs/scenario-syntax.md in the chrome-cdp repository.
 
 Examples:
@@ -18,3 +21,4 @@ Examples:
     'fill label=Password ${env:PW}' "click 'text=Sign in'" \
     'wait --url /dashboard' | chrome-cdp batch
   chrome-cdp run login.cdp --var user=ada
+  chrome-cdp lint login.cdp
