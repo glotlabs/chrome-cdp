@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Script: Sign in</title>
+</head>
+<body>
+  <h1>Sign in</h1>
+  <form id="login">
+    <label>Email <input name="email" type="email"></label>
+    <label>Password <input name="password" type="password"></label>
+    <button type="submit">Sign in</button>
+  </form>
+  <p id="welcome" hidden></p>
+  <script>
+    document.getElementById('login').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const welcome = document.getElementById('welcome');
+      welcome.textContent = form.password.value
+        ? `Welcome, ${form.email.value}`
+        : 'Password required';
+      welcome.hidden = false;
+    });
+  </script>
+</body>
+</html>

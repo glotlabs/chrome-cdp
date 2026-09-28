@@ -1,0 +1,32 @@
+$ chrome-cdp run <scripts>/fails.cdp --continue
+exit: 1
+--- stdout
+[1/3] text css=h1 ✓
+Sign in
+[2/3] click '#nope' --timeout 300ms ✗
+[3/3] count 'role=textbox' ✓
+2
+--- stderr
+error: <scripts>/fails.cdp:2:1: no element matches #nope
+  waited: 300ms
+  hint: chrome-cdp snapshot   (shows the page; use a ref from it)
+1 of 3 steps failed: 2
+
+$ chrome-cdp run <scripts>/fails.cdp --continue --json
+exit: 1
+--- stdout
+{"step":1,"total":3,"at":"<scripts>/fails.cdp:1:1","command":"text css=h1","ok":true,"data":{"locator":"css=h1","tab":"t1","texts":["Sign in"]}}
+{"step":2,"total":3,"at":"<scripts>/fails.cdp:2:1","command":"click '#nope' --timeout 300ms","ok":false,"error":{"kind":"NotFound","message":"<scripts>/fails.cdp:2:1: no element matches #nope","hint":"chrome-cdp snapshot   (shows the page; use a ref from it)","notes":[{"label":"waited","text":"300ms"}],"details":{"count":0,"locator":"#nope","tab":"t1"}}}
+{"step":3,"total":3,"at":"<scripts>/fails.cdp:3:1","command":"count 'role=textbox'","ok":true,"data":{"count":2,"locator":"role=textbox","tab":"t1","visible":2}}
+
+$ chrome-cdp run <scripts>/fails.cdp --continue -q
+exit: 1
+--- stdout
+Sign in
+2
+--- stderr
+error: <scripts>/fails.cdp:2:1: no element matches #nope
+  waited: 300ms
+  hint: chrome-cdp snapshot   (shows the page; use a ref from it)
+1 of 3 steps failed: 2
+

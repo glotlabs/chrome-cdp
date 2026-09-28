@@ -470,6 +470,7 @@ fn collect(items: &[Item], out: &mut Vec<super::Span>) {
             }
             Item::Directive(d) => {
                 out.push(d.span.clone());
+                out.extend(d.comment.iter().map(|c| c.span.clone()));
                 for w in &d.args {
                     out.push(w.span.clone());
                     out.extend(w.vars().map(|v| v.span.clone()));

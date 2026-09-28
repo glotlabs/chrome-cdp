@@ -488,6 +488,24 @@ to 10 s for `wait` and 30 s for everything else. Defaults for
 `--session`, `--timeout`, `base_url` and `testid_attribute` can live in
 `~/.config/chrome-cdp/config.toml` or a project's `.chrome-cdp.toml`.
 
+`batch` runs many commands in one call, one per line from stdin, and
+`run login.cdp --var email=ada@example.com` does the same from a file, with
+`${name}`, `${env:NAME}` and `${data:users.json#/0/email}` filled in. Every
+line is checked before the first one runs, and each step prints
+`[3/7] click e6 ✓` and its usual output (`--json`: one line per step); the
+first failure stops the script unless `--continue`. The syntax is specified
+in [docs/scenario-syntax.md](docs/scenario-syntax.md):
+
+```sh
+chrome-cdp batch <<'EOF'
+goto localhost:3000/login
+fill label=Email ada@example.com
+fill label=Password "${env:APP_PASSWORD}"
+click 'role=button[name="Sign in"]'
+wait --url /dashboard
+EOF
+```
+
 ## Development
 
 ```sh
@@ -497,6 +515,7 @@ cargo xtask build-js # rebuild the injected helper from TypeScript (needs npx)
 cargo xtask dist    # release binary in dist/ (size budget: 15 MB)
 cargo xtask fixtures # serve testdata/site on two local origins
 cargo deny check    # licenses and advisories
+cargo +nightly fuzz run parse_script  # fuzz the .cdp parser (needs cargo-fuzz)
 ```
 
 Integration tests need a real Chrome: set `CHROME_PATH` to a Chrome or

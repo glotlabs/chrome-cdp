@@ -5,8 +5,9 @@
 
 use std::io;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use protocol::{ErrorInfo, ErrorKind};
+use protocol::{ErrorInfo, ErrorKind, Hint};
 
 /// The argument's text, or all of stdin for `-`. `what` names the argument
 /// in errors (`params`).
@@ -14,6 +15,25 @@ pub(crate) fn text_arg(arg: &str, what: &str) -> Result<String, ErrorInfo> {
     if arg != "-" {
         return Ok(arg.to_owned());
     }
+    if STDIN_TAKEN.load(Ordering::Relaxed) {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("cannot read {what} from stdin: it holds the batch script"),
+        )
+        .hint(Hint::text(format!(
+            "put the {what} on the line, quoted, or use chrome-cdp run <file.cdp>"
+        ))));
+    }
+    read_stdin(&mut io::stdin().lock(), what)
+}
+
+/// Set once `batch` has read its script from stdin, so `-` arguments of
+/// its steps fail instead of reading nothing.
+static STDIN_TAKEN: AtomicBool = AtomicBool::new(false);
+
+/// All of stdin, which `-` arguments can no longer read (`batch`).
+pub(crate) fn take_stdin(what: &str) -> Result<String, ErrorInfo> {
+    STDIN_TAKEN.store(true, Ordering::Relaxed);
     read_stdin(&mut io::stdin().lock(), what)
 }
 

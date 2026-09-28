@@ -1602,6 +1602,24 @@ const CASES: &[Case] = &[
         modes: ERR,
         fixture: Fixture::None,
     },
+    Case {
+        name: "run-invalid",
+        args: &["run", "{scripts}/bad.cdp"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
+        name: "run",
+        args: &["run", "{scripts}/read.cdp"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/script/login.html"),
+    },
+    Case {
+        name: "run-failed-step",
+        args: &["run", "{scripts}/fails.cdp", "--continue"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/script/login.html"),
+    },
 ];
 
 fn golden_dir() -> PathBuf {
@@ -1827,6 +1845,8 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
     norm = norm.with(Path::new(site.a()), "<site>");
     let files = upload_files();
     norm = norm.with(&files, "<files>");
+    let scripts = testdata("scripts");
+    norm = norm.with(&scripts, "<scripts>");
     let mut out = String::new();
     for mode in case.modes {
         let mut args: Vec<String> = case
@@ -1838,6 +1858,7 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
             })
             .map(|a| a.replace("{site}", site.a()))
             .map(|a| a.replace("{files}", &files.display().to_string()))
+            .map(|a| a.replace("{scripts}", &scripts.display().to_string()))
             .map(|a| match &sandbox {
                 Some(sb) => a.replace("{sandbox}", &sb.dir.path().display().to_string()),
                 None => a,
@@ -1885,8 +1906,14 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
 
 /// The files the upload cases upload (`{files}`).
 fn upload_files() -> PathBuf {
+    testdata("site/actions/upload")
+}
+
+/// A directory of `testdata/`, e.g. the `run` cases' scripts (`{scripts}`).
+fn testdata(dir: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../testdata/site/actions/upload")
+        .join("../../testdata")
+        .join(dir)
         .canonicalize()
         .unwrap()
 }

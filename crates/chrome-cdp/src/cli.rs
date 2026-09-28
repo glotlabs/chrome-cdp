@@ -1258,6 +1258,42 @@ Examples:
   chrome-cdp cdp --target page --listen 'Network.*' --count 0 --timeout 5s")]
     Cdp(CdpArgs),
 
+    /// Run commands from stdin, one per line, in one call.
+    #[command(after_help = "\
+Each line is a command as you would type it after `chrome-cdp`, with the
+same quoting; `#` starts a comment. Every line is checked before the first
+runs, then they run in order and stop at the first failure (--continue
+runs the rest). Each step prints `[3/7] click e6 ✓` and its usual output;
+with --json, one JSON line per step. Lines inherit --session, --timeout,
+--tab, --json and -q. ${name} takes a --var, ${env:NAME} an environment
+variable. The full syntax: docs/scenario-syntax.md.
+
+Examples:
+  chrome-cdp batch <<'EOF'
+    goto localhost:3000/login
+    fill label=Email ada@example.com
+    fill label=Password \"${env:APP_PASSWORD}\"
+    click 'role=button[name=\"Sign in\"]'
+    wait --url /dashboard
+  EOF
+  printf 'goto example.com\\ntext h1\\n' | chrome-cdp batch --json
+  chrome-cdp batch --continue --var user=ada < steps.cdp")]
+    Batch(BatchArgs),
+
+    /// Run a .cdp script: commands one per line, with ${var} substitution.
+    #[command(after_help = "\
+The same syntax as `batch` (docs/scenario-syntax.md), read from a file.
+${name} takes a --var, ${env:NAME} an environment variable, and
+${data:file.json#/a/0} a value from a JSON file next to the script.
+Errors name the place: flow.cdp:12:5.
+
+Examples:
+  chrome-cdp run login.cdp
+  chrome-cdp run login.cdp --var email=ada@example.com --var plan=pro
+  chrome-cdp run smoke.cdp --continue --session ci
+  chrome-cdp run login.cdp --json    # one JSON line per step")]
+    Run(RunArgs),
+
     /// The session daemon; other commands start it.
     #[command(name = "__daemon", hide = true)]
     Daemon(DaemonArgs),
@@ -1268,6 +1304,48 @@ pub(crate) struct SchemaArgs {
     /// The command, e.g. `version` or `tab close`; omit it to list them.
     #[arg(value_name = "COMMAND")]
     pub(crate) command: Vec<String>,
+}
+
+/// What `batch` and `run` share.
+#[derive(Debug, Args)]
+pub(crate) struct ScriptArgs {
+    /// Run every step even after one fails; the exit code is the first
+    /// failure's.
+    #[arg(long = "continue")]
+    pub(crate) keep_going: bool,
+
+    /// Set ${KEY} in the script; repeat for more.
+    #[arg(long = "var", value_name = "KEY=VALUE", value_parser = parse_var)]
+    pub(crate) vars: Vec<(String, String)>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct BatchArgs {
+    #[command(flatten)]
+    pub(crate) script: ScriptArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct RunArgs {
+    /// The script, e.g. login.cdp.
+    #[arg(value_name = "FILE")]
+    pub(crate) file: PathBuf,
+
+    #[command(flatten)]
+    pub(crate) script: ScriptArgs,
+}
+
+/// `--var KEY=VALUE`.
+fn parse_var(arg: &str) -> Result<(String, String), String> {
+    let (key, value) = arg
+        .split_once('=')
+        .ok_or_else(|| format!("expected KEY=VALUE, got `{arg}`"))?;
+    if !protocol::script::is_name(key) {
+        return Err(format!(
+            "`{key}` is not a variable name: use letters, digits, _ and -, starting with a letter or _"
+        ));
+    }
+    Ok((key.to_owned(), value.to_owned()))
 }
 
 #[derive(Debug, Args)]
@@ -4182,6 +4260,9 @@ mod tests {
         "cookies clear",
         "state save",
         "state load",
+        // Each step is bounded by its own command's flags.
+        "batch",
+        "run",
     ];
 
     /// The plan 08 checklist: every command has an example in its help, a

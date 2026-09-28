@@ -6,18 +6,26 @@
 
 use std::io::{IsTerminal as _, Write as _};
 
-use protocol::{ErrorInfo, Mode, Output, Style};
+use protocol::{ErrorInfo, Mode, Output, Rendered, Style};
 
 /// Prints `result` in `mode` and returns the process exit code.
 pub(crate) fn print(mode: Mode, result: Result<Output, ErrorInfo>) -> u8 {
-    let rendered = protocol::render(mode, result, stderr_style());
-    // A closed stdout (`| head`) is not an error worth reporting.
-    let mut out = std::io::stdout().lock();
-    let _ = out
-        .write_all(rendered.stdout.as_bytes())
-        .and_then(|()| out.flush());
+    let rendered = render(mode, result);
+    stdout(&rendered.stdout);
     stderr(&rendered.stderr);
     rendered.exit_code
+}
+
+/// Renders `result` in `mode` with this terminal's stderr style.
+pub(crate) fn render(mode: Mode, result: Result<Output, ErrorInfo>) -> Rendered {
+    protocol::render(mode, result, stderr_style())
+}
+
+/// Writes `text` to stdout as is, and flushes it.
+pub(crate) fn stdout(text: &str) {
+    // A closed stdout (`| head`) is not an error worth reporting.
+    let mut out = std::io::stdout().lock();
+    let _ = out.write_all(text.as_bytes()).and_then(|()| out.flush());
 }
 
 /// Writes `text` to stderr as is.

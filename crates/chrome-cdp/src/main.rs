@@ -21,6 +21,7 @@ mod output;
 mod progress;
 mod route;
 mod schema;
+mod script;
 mod session;
 mod version;
 
@@ -48,8 +49,16 @@ fn main() -> ExitCode {
     }
     log::init(cli.global.verbose);
     let mode = cli.global.mode();
-    let result = config::apply(&mut cli.global, &matches).and_then(|()| run(cli));
-    ExitCode::from(output::print(mode, result))
+    if let Err(info) = config::apply(&mut cli.global, &matches) {
+        return ExitCode::from(output::print(mode, Err(info)));
+    }
+    // `batch` and `run` print each step as it ends.
+    match &cli.command {
+        Some(Command::Batch(args)) => return ExitCode::from(script::batch(args, &cli.global)),
+        Some(Command::Run(args)) => return ExitCode::from(script::run(args, &cli.global)),
+        _ => {}
+    }
+    ExitCode::from(output::print(mode, run(cli)))
 }
 
 fn run(cli: Cli) -> Result<Output, ErrorInfo> {
@@ -378,8 +387,12 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             &args.after,
             &cli.global,
         ),
-        // Handled in `main`.
+        // Handled in `main`; a script cannot hold them (`script` checks).
         Some(Command::Daemon(_)) => Ok(Output::new(serde_json::Value::Null, "")),
+        Some(Command::Batch(_) | Command::Run(_)) => Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            "batch and run cannot run inside a script",
+        )),
     }
 }
 
@@ -412,19 +425,21 @@ fn usage_error(e: &clap::Error) -> u8 {
     } else {
         Mode::Text
     };
-    output::print(mode, Err(usage_info(e)))
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    output::print(mode, Err(usage_info(e, &args)))
 }
 
 /// Turns clap's error text into an [`ErrorInfo`]: its first line is the
 /// message, its `tip:` lines ("a similar argument exists: '--json'") are
-/// notes, and the hint is the failing command's `--help`.
-fn usage_info(e: &clap::Error) -> ErrorInfo {
+/// notes, and the hint is the failing command's `--help`. `args` are the
+/// arguments clap parsed, without the program name.
+fn usage_info(e: &clap::Error, args: &[String]) -> ErrorInfo {
     let rendered = e.render().to_string();
     let command = rendered
         .lines()
         .find_map(|l| l.strip_prefix("Usage: "))
         // An invalid value's error shows no usage.
-        .map_or_else(typed_command, command_path);
+        .map_or_else(|| typed_command(args), command_path);
     let missing = [
         ClapErrorKind::DisplayHelpOnMissingArgumentOrSubcommand,
         ClapErrorKind::MissingSubcommand,
@@ -471,20 +486,20 @@ fn command_path(usage: &str) -> String {
 /// The subcommand typed (`mouse move`), from the raw arguments: the words
 /// that name a subcommand of the one before (values of flags before it do
 /// not).
-fn typed_command() -> String {
+fn typed_command(args: &[String]) -> String {
     let mut cmd = Cli::command();
     let mut path = Vec::new();
-    for arg in std::env::args().skip(1).take_while(|a| a != "--") {
+    for arg in args.iter().take_while(|a| *a != "--") {
         if arg.starts_with('-') {
             continue;
         }
-        let Some(sub) = cmd.find_subcommand(&arg).cloned() else {
+        let Some(sub) = cmd.find_subcommand(arg).cloned() else {
             if path.is_empty() {
                 continue;
             }
             break;
         };
-        path.push(arg);
+        path.push(arg.as_str());
         cmd = sub;
     }
     path.join(" ")

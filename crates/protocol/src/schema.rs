@@ -546,6 +546,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         summary: "how much text was put on the clipboard",
         schema: || schema_for!(Envelope<ClipboardWriteData>),
     },
+    CommandSchema {
+        name: "batch",
+        summary: "one line per step: its place, its command, and that command's envelope",
+        schema: || schema_for!(StepLine),
+    },
+    CommandSchema {
+        name: "run",
+        summary: "one line per step: its place, its command, and that command's envelope",
+        schema: || schema_for!(StepLine),
+    },
 ];
 
 /// The registry entry for `name` (`"tab close"`), if any.
@@ -2740,6 +2750,53 @@ pub enum Event {
         tab: String,
         element: ActedElement,
     },
+}
+
+/// Where a step of `batch` or `run` is. Each `--json` line of those
+/// commands is this, followed by the step command's own envelope fields.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct StepInfo {
+    /// The step's number, from 1.
+    pub step: usize,
+    /// How many steps the script has.
+    pub total: usize,
+    /// `file:line:column` of the step's line (`<stdin>` for `batch`).
+    pub at: String,
+    /// The command as written, without `chrome-cdp`.
+    pub command: String,
+}
+
+/// A line of `batch --json` or `run --json`: a step's place and its
+/// command's envelope, or (when the script does not parse) one plain error
+/// envelope before any step runs.
+#[derive(JsonSchema)]
+#[serde(untagged)]
+#[allow(dead_code)] // Only its schema is used.
+enum StepLine {
+    /// The step succeeded; `data` is its command's `data`.
+    Ok(StepOk),
+    /// The step failed.
+    Err(StepErr),
+    /// The script was not run: a syntax error or a bad command line.
+    Invalid(ErrEnvelope),
+}
+
+#[derive(JsonSchema)]
+#[allow(dead_code)]
+struct StepOk {
+    #[serde(flatten)]
+    step: StepInfo,
+    #[serde(flatten)]
+    envelope: OkEnvelope<Value>,
+}
+
+#[derive(JsonSchema)]
+#[allow(dead_code)]
+struct StepErr {
+    #[serde(flatten)]
+    step: StepInfo,
+    #[serde(flatten)]
+    envelope: ErrEnvelope,
 }
 
 /// The `--json` envelope (see [`crate::Envelope`]) with `data: T`.

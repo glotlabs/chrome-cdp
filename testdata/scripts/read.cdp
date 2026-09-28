@@ -1,0 +1,6 @@
+@syntax 1
+# Reads the sign-in page.
+text css=h1
+count 'role=textbox'   # email and password
+fill label=Email \
+  ada@example.com

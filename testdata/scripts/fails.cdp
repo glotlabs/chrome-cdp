@@ -1,0 +1,3 @@
+text css=h1
+click '#nope' --timeout 300ms
+count 'role=textbox'

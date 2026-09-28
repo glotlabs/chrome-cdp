@@ -1,0 +1,17 @@
+$ chrome-cdp run <scripts>/bad.cdp
+exit: 2
+--- stderr
+error: <scripts>/bad.cdp:3:1: unrecognized subcommand 'clik'
+  tip: a similar subcommand exists: 'click'
+  also: <scripts>/bad.cdp:4:18: a single quote without its closing quote
+  also: <scripts>/bad.cdp:5:1: unexpected indentation: 2 spaces where 0 were expected
+  also: <scripts>/bad.cdp:6:1: the following required arguments were not provided: <LOCATOR> (#submit starts a comment; quote it to pass it: '#submit')
+  also: <scripts>/bad.cdp:7:17: ${name} is not set
+  also: <scripts>/bad.cdp:8:1: unknown directive @test
+  hint: chrome-cdp --help
+
+$ chrome-cdp run <scripts>/bad.cdp --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"<scripts>/bad.cdp:3:1: unrecognized subcommand 'clik'","hint":"chrome-cdp --help","notes":[{"label":"tip","text":"a similar subcommand exists: 'click'"},{"label":"also","text":"<scripts>/bad.cdp:4:18: a single quote without its closing quote"},{"label":"also","text":"<scripts>/bad.cdp:5:1: unexpected indentation: 2 spaces where 0 were expected"},{"label":"also","text":"<scripts>/bad.cdp:6:1: the following required arguments were not provided: <LOCATOR> (#submit starts a comment; quote it to pass it: '#submit')"},{"label":"also","text":"<scripts>/bad.cdp:7:17: ${name} is not set"},{"label":"also","text":"<scripts>/bad.cdp:8:1: unknown directive @test"}],"details":{"problems":[{"at":"<scripts>/bad.cdp:3:1","message":"unrecognized subcommand 'clik'"},{"at":"<scripts>/bad.cdp:4:18","message":"a single quote without its closing quote"},{"at":"<scripts>/bad.cdp:5:1","message":"unexpected indentation: 2 spaces where 0 were expected"},{"at":"<scripts>/bad.cdp:6:1","message":"the following required arguments were not provided: <LOCATOR> (#submit starts a comment; quote it to pass it: '#submit')"},{"at":"<scripts>/bad.cdp:7:17","message":"${name} is not set"},{"at":"<scripts>/bad.cdp:8:1","message":"unknown directive @test"}]}}}
+

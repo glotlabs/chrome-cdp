@@ -1,0 +1,24 @@
+$ chrome-cdp run <scripts>/read.cdp
+exit: 0
+--- stdout
+[1/3] text css=h1 ✓
+Sign in
+[2/3] count 'role=textbox' ✓
+2
+[3/3] fill label=Email ada@example.com ✓
+filled e1 textbox "Email"
+
+$ chrome-cdp run <scripts>/read.cdp --json
+exit: 0
+--- stdout
+{"step":1,"total":3,"at":"<scripts>/read.cdp:3:1","command":"text css=h1","ok":true,"data":{"locator":"css=h1","tab":"t1","texts":["Sign in"]}}
+{"step":2,"total":3,"at":"<scripts>/read.cdp:4:1","command":"count 'role=textbox'","ok":true,"data":{"count":2,"locator":"role=textbox","tab":"t1","visible":2}}
+{"step":3,"total":3,"at":"<scripts>/read.cdp:5:1","command":"fill label=Email ada@example.com","ok":true,"data":{"element":{"name":"Email","ref":"e1","role":"textbox","tag":"input"},"locator":"label=Email","tab":"t1","value":"ada@example.com"}}
+
+$ chrome-cdp run <scripts>/read.cdp -q
+exit: 0
+--- stdout
+Sign in
+2
+e1
+

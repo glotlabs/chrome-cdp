@@ -616,7 +616,7 @@ fn var(inner: &str) -> Result<Var, (String, String)> {
 }
 
 /// `[A-Za-z_][A-Za-z0-9_-]*`.
-pub(crate) fn is_ident(s: &str) -> bool {
+pub(super) fn is_ident(s: &str) -> bool {
     let mut chars = s.chars();
     chars
         .next()

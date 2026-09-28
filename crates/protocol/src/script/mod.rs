@@ -14,13 +14,16 @@
 use std::fmt;
 use std::sync::Arc;
 
-use crate::{ErrorInfo, ErrorKind};
-
 mod parse;
 #[cfg(test)]
 mod tests;
 
 pub use parse::parse;
+
+/// Whether `s` can name a `${name}` variable: `[A-Za-z_][A-Za-z0-9_-]*`.
+pub fn is_name(s: &str) -> bool {
+    parse::is_ident(s)
+}
 
 /// The newest syntax version this build reads (`@syntax 1`).
 pub const SYNTAX_VERSION: u32 = 1;
@@ -272,17 +275,6 @@ impl fmt::Display for ScriptError {
 }
 
 impl std::error::Error for ScriptError {}
-
-impl From<ScriptError> for ErrorInfo {
-    /// A `BadArgs` error whose message starts with the place.
-    fn from(e: ScriptError) -> Self {
-        let info = ErrorInfo::new(ErrorKind::BadArgs, e.to_string());
-        match e.hint {
-            Some(hint) => info.hint(hint),
-            None => info,
-        }
-    }
-}
 
 /// What [`parse`] returns: the tree, and every syntax error found. Lines
 /// with errors are left out of the tree, so check `errors` first.
