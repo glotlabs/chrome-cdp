@@ -156,7 +156,9 @@ chrome-cdp test [PATH…] [--grep RE] [--tags smoke,!slow] [--jobs N]
   anything starts; a problem fails the run with its `file:line:col`
   (exit code 2).
 - The `[e2e.web_server]`s start first, unless something answers on their
-  URLs already. The run opens a browser session of its own and closes it
+  URLs already. A web server with `static = "dist"` instead of `command`
+  is a built app that chrome-cdp serves itself (client-side routes get
+  `index.html`), so the run needs no Node. The run opens a browser session of its own and closes it
   at the end.
 - Each test gets a new browser context: its own cookies, storage, cache,
   routes, mock sets (and their state), init scripts and emulation. Mock
