@@ -1,6 +1,6 @@
 # Plan 11 — End-to-end testing with a mocked backend
 
-Status: IN PROGRESS (11.1-11.9, 11.11, 11.12 done)
+Status: DONE (11.1-11.12; the runner-overhead criterion runs with the benchmarks after all plans, the agent benchmark is plan 10's, and "all CI runners" waits for a first GitHub CI run: e2e-shop passes locally with `--jobs 4` and `--repeat 20`)
 Depends on: 07 §7.1 (routing engine), 08 §8.2 (`.cdp` script syntax), 09 §9.1–9.2 (`expect`)
 Supersedes: 09 §9.3 (test runner). That milestone is now specified here.
 
@@ -675,12 +675,12 @@ commands (reset a database, run migrations, seed data).
 
 - [ ] `examples/e2e-shop` passes on all CI runners, with `--jobs 4`, and
       20× repeated with no flaky results.
-- [ ] The same `examples/e2e-shop` scenario files pass against the real fixture
+- [x] The same `examples/e2e-shop` scenario files pass against the real fixture
       backend (`--backend local`), with only the tests marked `@backend mock`
       skipped.
 - [x] `--verify-mocks` detects every deliberately introduced drift in the
       drift fixture set.
-- [ ] A fresh clone plus `chrome-cdp test` in `examples/e2e-shop` works with no
+- [x] A fresh clone plus `chrome-cdp test` in `examples/e2e-shop` works with no
       other setup beyond installing chrome-cdp.
 - [ ] Overhead of the runner itself (excluding page work): < 100 ms per test.
       The 30-test example suite finishes in < 15 s with `--jobs 4`.
@@ -690,8 +690,8 @@ commands (reset a database, run migrations, seed data).
 - [ ] The agent benchmark (plan 10) includes "write E2E tests with mocks for
       this frontend", "make this suite also pass against the real backend", and "a change broke the checkout E2E test; fix the app".
       With only `chrome-cdp skill`, Claude Code completes both.
-- [ ] `docs/e2e/` is complete, and the mock file JSON Schema is published.
-- [ ] `chrome-cdp fmt --check` and `chrome-cdp check` pass on
+- [x] `docs/e2e/` is complete, and the mock file JSON Schema is published.
+- [x] `chrome-cdp fmt --check` and `chrome-cdp check` pass on
       `examples/e2e-shop`, and the `init e2e` CI template runs both before
       `test`.
 
@@ -818,3 +818,12 @@ commands (reset a database, run migrations, seed data).
 - 11.12: `test` runs `lint`'s scenario rules on its files for the run's backend after reading them and before the mock check and web servers; errors stop the run (exit 1, the lint error), warnings are one line on stderr ("N lint warnings; `chrome-cdp lint` lists them") so a run's output stays about the run.
 - 11.12: `schema scenario` is a JSON description, not a JSON Schema: `directives` (name, usage, kind, summary, from `e2e::scenario::DIRECTIVE_DOCS`, which a test keeps equal to `DIRECTIVES`), `commands` (every leaf of the clap tree a line may run, with `arguments` and `flags`: long, short, value name, allowed values, repeatable, env), `global_flags`, `variables` (`protocol::script::VARIABLES`) and `mock_only`. A unit test checks its shape rather than a golden file, which would change with every command.
 - 11.12: The `init e2e` workflow runs `chrome-cdp fmt --check` and `chrome-cdp lint --format github` before `test`, and a test keeps the files `init e2e` writes formatted. Editor support (tree-sitter grammar, VS Code extension, `lsp`) is the stretch goal and was not built; it is a follow-up. The acceptance criterion on `examples/e2e-shop` waits for 11.10's example project.
+- 11.10: The example is Vite + React as planned, with `dist/` committed. To make "CI needs no Node" true for the runner too, a web server can be `static = "dist"` instead of `command`: chrome-cdp serves the folder itself (`e2e::static_server`) on the `url`'s port (`http://localhost:PORT` or `127.0.0.1`, written out), answering paths without a file extension with `index.html` for client-side routes. `npm run dev` on the same port is reused while working on the app.
+- 11.10: The real backend is `fixtures::Shop` (`crates/fixtures/src/shop.rs`): the built app and the shop's `/api` on one origin, a cart per `cart` cookie so parallel tests in their own contexts do not meet, and a fourth product the vars files account for (`${var:products}`). `[e2e.backends.local]` starts it with `cargo run -p fixtures -- --shop dist --port 4174`; the integration test (`tests/e2e_shop.rs`) starts it in-process on a free port and the run reuses it. No hybrid backend in the example: hybrid mode is covered on `testdata/e2e`.
+- 11.10: Chrome logs a failed same-origin load (4xx/5xx) as a console error, which the runner's automatic `expect --no-errors` counts. So the shop's `/api/me` answers 200 `{"user": null}` when signed out, and the tests that expect a failed request (404 product, 401 login, 503 checkout, API down) say `@allow-console-errors`; the recipes and the migration guide say why.
+- 11.10: The "intentionally unmatched request" is `e2e/fixtures/unmatched.cdp`, outside `tests`, so a plain run passes; it asks for `/api/prodcts` with `eval` and the integration test checks the closest-mock diagnosis in the output and `report.md`.
+- 11.10: Running the example against its real API showed two `--verify-mocks` bugs, now fixed: an item a collection creates takes the id the real API gave it (`Mocks::adopt_id`), since the requests that follow name the real id; and a `ws://` request is matched against the `[[websocket]]` mocks instead of being reported as having no mock.
+- 11.10: "Generated from the schema": `mock::reference` renders `docs/e2e/mocks.md` from `chrome-cdp schema mocks`, and a test keeps it and the published `docs/e2e/mocks.schema.json` current (`UPDATE_GOLDEN=1 cargo test -p mock reference`). "Published" is that file at `https://raw.githubusercontent.com/glotlabs/chrome-cdp/main/docs/e2e/mocks.schema.json`, which the `#:schema` line of `init e2e`'s mock file (and the example's) names; a schema store entry can come with plan 10's release. The docs' mock and scenario blocks that name their file are linted and fmt-checked by `tests/docs.rs`.
+- 11.10: The Next.js example is `examples/e2e-ssr`: one server component that fetches from `mock_server` (port 4010) and forwards `x-chrome-cdp-test`, so a sequence-like counter and a layered set are per test. Its build is not committed; the `e2e-ssr` CI job installs Node, builds it and runs its scenarios. The nightly workflow runs e2e-shop with `--repeat 20` and `--backend local --verify-mocks` on Linux and macOS; `cargo xtask ci` runs `tests/e2e_shop.rs` on every runner with Chrome.
+- 11.10: `chrome-cdp skill` has an "E2E tests with mocks" section (explore with `mock use`, `history --as-scenario`, mocks, `lint`, `test`, `report.md`), and AGENTS.md a line; SKILL.md stays under 2k tokens. The Playwright migration guide's test runner section was brought up to date, and `docs/e2e/migrating.md` covers moving suites and `page.route` handlers.
+- 11.10: The example has 17 tests, not the "30-test suite" the timing criterion names; that criterion is a timing: deferred, benchmarks run after all plans.
