@@ -1,0 +1,13 @@
+$ chrome-cdp expect --url /dashboard --timeout 300ms
+exit: 1
+--- stderr
+error: expect failed: --url /dashboard
+  expected: a URL matching "/dashboard"
+  actual: "<site>/expect/index.html" (after 300ms)
+  hint: chrome-cdp expect --url /dashboard --timeout 600ms   (if the page needs longer to get there), or chrome-cdp snapshot shows the page as it is
+
+$ chrome-cdp expect --url /dashboard --timeout 300ms --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect failed: --url /dashboard","hint":"chrome-cdp expect --url /dashboard --timeout 600ms   (if the page needs longer to get there), or chrome-cdp snapshot shows the page as it is","notes":[{"label":"expected","text":"a URL matching \"/dashboard\""},{"label":"actual","text":"\"<site>/expect/index.html\" (after 300ms)"}],"details":{"actual":"<site>/expect/index.html","assertion":"--url /dashboard","expected":"a URL matching \"/dashboard\"","timeout_ms":300}}}
+

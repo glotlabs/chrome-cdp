@@ -1,0 +1,20 @@
+$ chrome-cdp expect --a11y
+exit: 1
+--- stderr
+error: expect failed: --a11y
+  expected: no violations of 11 accessibility rules (WCAG level AA)
+  actual: 7 violations of 7 rules
+  html-has-lang: <html> has no lang attribute (WCAG 3.1.1 A)
+  image-alt: img [e1] has no alt text (WCAG 1.1.1 A)
+  button-name: button [e2] is a button with no name (WCAG 4.1.2 A)
+  label: textbox [e3] is a form field with no label (WCAG 4.1.2 A)
+  aria-hidden-focus: link "Hidden link" [e4] can take focus inside aria-hidden="true" (WCAG 4.1.2 A)
+  meta-viewport: the viewport meta tag has user-scalable=no (WCAG 1.4.4 AA)
+  color-contrast: paragraph "Fine print nobody can read" [e5] has text with too little contrast: contrast 1.92:1, needs 4.5:1 (WCAG 1.4.3 AA)
+  hint: chrome-cdp html e1 --outer   (the first one's markup, to fix)
+
+$ chrome-cdp expect --a11y --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect failed: --a11y","hint":"chrome-cdp html e1 --outer   (the first one's markup, to fix)","notes":[{"label":"expected","text":"no violations of 11 accessibility rules (WCAG level AA)"},{"label":"actual","text":"7 violations of 7 rules"},{"label":"html-has-lang","text":"<html> has no lang attribute (WCAG 3.1.1 A)"},{"label":"image-alt","text":"img [e1] has no alt text (WCAG 1.1.1 A)"},{"label":"button-name","text":"button [e2] is a button with no name (WCAG 4.1.2 A)"},{"label":"label","text":"textbox [e3] is a form field with no label (WCAG 4.1.2 A)"},{"label":"aria-hidden-focus","text":"link \"Hidden link\" [e4] can take focus inside aria-hidden=\"true\" (WCAG 4.1.2 A)"},{"label":"meta-viewport","text":"the viewport meta tag has user-scalable=no (WCAG 1.4.4 AA)"},{"label":"color-contrast","text":"paragraph \"Fine print nobody can read\" [e5] has text with too little contrast: contrast 1.92:1, needs 4.5:1 (WCAG 1.4.3 AA)"}],"details":{"assertion":"--a11y","expected":"no violations of 11 accessibility rules (WCAG level AA)","rules":11,"violations":[{"count":1,"elements":[],"help":"<html> has no lang attribute","level":"A","page":"<html> has no lang attribute","rule":"html-has-lang","wcag":"3.1.1"},{"count":1,"elements":[{"name":"","ref":"e1","role":"img","tag":"img","why":null}],"help":"has no alt text","level":"A","page":null,"rule":"image-alt","wcag":"1.1.1"},{"count":1,"elements":[{"name":"","ref":"e2","role":"button","tag":"button","why":null}],"help":"is a button with no name","level":"A","page":null,"rule":"button-name","wcag":"4.1.2"},{"count":1,"elements":[{"name":"","ref":"e3","role":"textbox","tag":"input","why":null}],"help":"is a form field with no label","level":"A","page":null,"rule":"label","wcag":"4.1.2"},{"count":1,"elements":[{"name":"Hidden link","ref":"e4","role":"link","tag":"a","why":null}],"help":"can take focus inside aria-hidden=\"true\"","level":"A","page":null,"rule":"aria-hidden-focus","wcag":"4.1.2"},{"count":1,"elements":[],"help":"the viewport meta tag stops zooming","level":"AA","page":"the viewport meta tag has user-scalable=no","rule":"meta-viewport","wcag":"1.4.4"},{"count":1,"elements":[{"name":"Fine print nobody can read","ref":"e5","role":"paragraph","tag":"p","why":"contrast 1.92:1, needs 4.5:1"}],"help":"has text with too little contrast","level":"AA","page":null,"rule":"color-contrast","wcag":"1.4.3"}]}}}
+

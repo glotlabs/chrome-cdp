@@ -1,0 +1,14 @@
+$ chrome-cdp expect '#save' enabled --timeout 300ms
+exit: 1
+--- stderr
+error: expect failed: '#save' enabled
+  expected: enabled
+  actual: disabled (it has the disabled attribute) (after 300ms, <n> retries)
+  element: button "Save" [e1]
+  hint: chrome-cdp expect '#save' enabled --timeout 600ms   (if the page needs longer to get there), or chrome-cdp snapshot shows the page as it is
+
+$ chrome-cdp expect '#save' enabled --timeout 300ms --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect failed: '#save' enabled","hint":"chrome-cdp expect '#save' enabled --timeout 600ms   (if the page needs longer to get there), or chrome-cdp snapshot shows the page as it is","notes":[{"label":"expected","text":"enabled"},{"label":"actual","text":"disabled (it has the disabled attribute) (after 300ms, <n> retries)"},{"label":"element","text":"button \"Save\" [e1]"}],"details":{"actual":"disabled (it has the disabled attribute)","assertion":"'#save' enabled","count":1,"elements":[{"name":"Save","ref":"e1","role":"button","tag":"button"}],"expected":"enabled","observed":{"count":1,"pass":false,"state":"disabled (it has the disabled attribute)","tries":<n>},"retries":<n>,"timeout_ms":300}}}
+

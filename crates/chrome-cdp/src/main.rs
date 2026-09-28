@@ -15,6 +15,7 @@ mod cli;
 mod completions;
 mod config;
 mod emulate;
+mod expect;
 mod help;
 mod input;
 mod install;
@@ -94,6 +95,8 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         }
         Some(Command::Reload(args)) => session::reload(&args, &cli.global),
         Some(Command::Wait(args)) => session::wait(&args, &cli.global),
+        Some(Command::Expect(args)) => session::expect(&args, &cli.global),
+        Some(Command::Mark(args)) => session::mark(&args, &cli.global),
         Some(Command::Dialog(args)) => session::dialog(&args, &cli.global),
         Some(Command::Downloads(args)) => session::downloads(&args, &cli.global),
         Some(Command::Console(args)) => {

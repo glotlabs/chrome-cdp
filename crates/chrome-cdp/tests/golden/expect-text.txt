@@ -1,0 +1,15 @@
+$ chrome-cdp expect '#status' text Loading
+exit: 0
+--- stdout
+passed: '#status' text Loading (<ms>)
+
+$ chrome-cdp expect '#status' text Loading --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"actual":"Loading…","assertion":"'#status' text Loading","count":1,"elapsed_ms":<ms>,"expected":"text containing \"Loading\"","retries":<n>,"tab":"t1"}}
+
+$ chrome-cdp expect '#status' text Loading -q
+exit: 0
+--- stdout
+Loading…
+

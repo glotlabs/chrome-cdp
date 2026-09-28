@@ -1,0 +1,15 @@
+$ chrome-cdp expect .row count --min 2
+exit: 0
+--- stdout
+passed: .row count --min 2 (<ms>)
+
+$ chrome-cdp expect .row count --min 2 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"actual":3,"assertion":".row count --min 2","count":3,"elapsed_ms":<ms>,"expected":"at least 2 elements","retries":<n>,"tab":"t1"}}
+
+$ chrome-cdp expect .row count --min 2 -q
+exit: 0
+--- stdout
+3
+

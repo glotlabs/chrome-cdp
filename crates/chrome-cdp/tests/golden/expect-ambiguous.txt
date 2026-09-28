@@ -1,0 +1,14 @@
+$ chrome-cdp expect .row visible --timeout 300ms
+exit: 1
+--- stderr
+error: expect failed: .row visible
+  expected: visible
+  actual: 3 elements match (after 300ms, <n> retries)
+  elements: listitem "One" [e1], listitem "Two" [e2], listitem "Three" [e3]
+  hint: chrome-cdp expect e1 visible   (the first of 3 matches; or add >> nth=<index> to the locator)
+
+$ chrome-cdp expect .row visible --timeout 300ms --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect failed: .row visible","hint":"chrome-cdp expect e1 visible   (the first of 3 matches; or add >> nth=<index> to the locator)","notes":[{"label":"expected","text":"visible"},{"label":"actual","text":"3 elements match (after 300ms, <n> retries)"},{"label":"elements","text":"listitem \"One\" [e1], listitem \"Two\" [e2], listitem \"Three\" [e3]"}],"details":{"actual":null,"assertion":".row visible","count":3,"elements":[{"name":"One","ref":"e1","role":"listitem","tag":"li"},{"name":"Two","ref":"e2","role":"listitem","tag":"li"},{"name":"Three","ref":"e3","role":"listitem","tag":"li"}],"expected":"visible","observed":{"count":3,"invalid":"3 elements match","pass":false,"tries":<n>},"retries":<n>,"timeout_ms":300}}}
+

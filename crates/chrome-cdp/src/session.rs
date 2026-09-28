@@ -623,6 +623,47 @@ pub(crate) fn wait(args: &WaitCmdArgs, global: &GlobalArgs) -> Result<Output, Er
         .block_on(client.call_output(rpc::WAIT, &request, wait))
 }
 
+/// `expect`: needs a running session.
+pub(crate) fn expect(
+    args: &crate::cli::ExpectArgs,
+    global: &GlobalArgs,
+) -> Result<Output, ErrorInfo> {
+    let expectation = crate::expect::expectation(args)?;
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::with_default(global, crate::expect::EXPECT_TIMEOUT)?;
+    let request = engine::ExpectRequest {
+        expectation,
+        not: args.not,
+        tab: ctx.tab.clone(),
+        strict_refs: args.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(ctx.timeout),
+        max_chars: args.max_chars,
+    };
+    engine::check_expect(&request)?;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::EXPECT, &request, ctx.timeout + QUICK))
+}
+
+/// `mark <name>`: needs a running session.
+pub(crate) fn mark(args: &crate::cli::MarkArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    if args.name.trim().is_empty() {
+        return Err(bad_args("the mark's name is empty")
+            .hint(Hint::run(Cmd::new("mark").arg("before-save"))));
+    }
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let request = engine::MarkRequest {
+        name: args.name.clone(),
+        tab: ctx.tab.clone(),
+        timeout_ms: millis(ctx.timeout),
+    };
+    ctx.runtime
+        .block_on(client.call_output(rpc::MARK, &request, ctx.timeout + QUICK))
+}
+
 /// `snapshot`: needs a running session.
 pub(crate) fn snapshot(args: &SnapshotArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     check_tab(global.tab.as_deref())?;

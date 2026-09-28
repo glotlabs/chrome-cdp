@@ -1,0 +1,13 @@
+$ chrome-cdp expect '#nope' visible --timeout 300ms
+exit: 1
+--- stderr
+error: expect failed: '#nope' visible
+  expected: visible
+  actual: no element matches (after 300ms, <n> retries)
+  hint: chrome-cdp snapshot   (no element matches #nope; find it there)
+
+$ chrome-cdp expect '#nope' visible --timeout 300ms --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect failed: '#nope' visible","hint":"chrome-cdp snapshot   (no element matches #nope; find it there)","notes":[{"label":"expected","text":"visible"},{"label":"actual","text":"no element matches (after 300ms, <n> retries)"}],"details":{"actual":"no element matches","assertion":"'#nope' visible","count":0,"elements":[],"expected":"visible","observed":{"count":0,"pass":false,"state":"no element matches","tries":<n>},"retries":<n>,"timeout_ms":300}}}
+

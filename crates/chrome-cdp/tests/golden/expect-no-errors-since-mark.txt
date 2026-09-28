@@ -1,0 +1,15 @@
+$ chrome-cdp expect --no-errors --since loaded
+exit: 0
+--- stdout
+passed: --no-errors --since loaded (<ms>)
+
+$ chrome-cdp expect --no-errors --since loaded --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"actual":0,"assertion":"--no-errors --since loaded","count":0,"elapsed_ms":<ms>,"expected":"no uncaught exceptions or console errors","retries":<n>,"tab":"t1"}}
+
+$ chrome-cdp expect --no-errors --since loaded -q
+exit: 0
+--- stdout
+0
+

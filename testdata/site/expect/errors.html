@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Errors while loading</title>
+<link rel="icon" href="data:,">
+</head>
+<body>
+<p>This page logs an error, throws, and asks for a file that is not there.</p>
+<script>
+  console.error('boom: the widget failed to start');
+  fetch('/expect/missing.json');
+  window.addEventListener('load', () => { throw new TypeError('late trouble'); });
+</script>
+</body>
+</html>

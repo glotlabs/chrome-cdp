@@ -1,0 +1,12 @@
+$ chrome-cdp expect e1 visble
+exit: 2
+--- stderr
+error: "visble" is not a matcher of expect
+  matchers: visible, hidden, attached, detached, enabled, disabled, editable, checked, unchecked, focused, text, value, values, attr, class, css, count, in-viewport
+  hint: chrome-cdp expect e1 visible   (did you mean this?)
+
+$ chrome-cdp expect e1 visble --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"\"visble\" is not a matcher of expect","hint":"chrome-cdp expect e1 visible   (did you mean this?)","notes":[{"label":"matchers","text":"visible, hidden, attached, detached, enabled, disabled, editable, checked, unchecked, focused, text, value, values, attr, class, css, count, in-viewport"}]}}
+

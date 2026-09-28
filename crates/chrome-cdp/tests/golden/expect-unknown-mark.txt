@@ -1,0 +1,11 @@
+$ chrome-cdp expect --no-errors --since nope
+exit: 2
+--- stderr
+error: tab t1 has no mark "nope"
+  hint: chrome-cdp mark nope   (sets it; then act, then expect … --since it)
+
+$ chrome-cdp expect --no-errors --since nope --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"tab t1 has no mark \"nope\"","hint":"chrome-cdp mark nope   (sets it; then act, then expect … --since it)"}}
+

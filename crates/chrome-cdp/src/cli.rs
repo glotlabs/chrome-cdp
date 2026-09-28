@@ -329,6 +329,61 @@ Examples:
   chrome-cdp wait --download")]
     Wait(WaitCmdArgs),
 
+    /// Assert something about the page, retrying until it holds: an element's state, text, value, count, …
+    #[command(after_help = "\
+Checks the active tab (or --tab) again on every animation frame until the
+assertion holds or --timeout (default 5s) passes, like Playwright's
+expect(). A failure exits 1 (ExpectFailed) and says what it expected, what
+it saw, the element (with a ref) and what to run next. --not inverts
+element matchers, --url and --title. Needs a running session.
+
+Element matchers (expect <LOCATOR> <MATCHER> [VALUE…]):
+  visible, hidden, attached, detached, enabled, disabled, editable,
+  checked, unchecked, focused, in-viewport
+  text <TEXT>          its text contains TEXT (all of it with --exact);
+                       case counts, spaces are collapsed
+  value <V>, values <V…>   a field's value; a multiple select's values
+  attr <NAME> [V], class <NAME>, css <PROPERTY> <V>
+  count <N> (or --min/--max)   how many elements match
+  A TEXT or V written /regex/flags is a regex. Matchers that look at one
+  element fail when several match (add >> nth=0, or use a ref).
+
+Page checks:
+  --url, --title       retried like the matchers
+  --no-errors          no uncaught exception or console.error since the
+                       page loaded (or --since <mark>; see `mark`)
+  --no-failed-requests no request failed or got a 4xx/5xx since then
+                       (--origin self: only to the page's origin; the
+                       browser's own /favicon.ico does not count)
+  --a11y [--level A]   built-in accessibility rules (WCAG A and AA), in
+                       the page or the element LOCATOR names
+The last three look once: what they find does not go away by waiting.
+
+Examples:
+  chrome-cdp expect e6 visible
+  chrome-cdp expect 'role=alert' text Saved
+  chrome-cdp expect '#email' value alice@example.com
+  chrome-cdp expect '.row' count 3
+  chrome-cdp expect '.spinner' visible --not
+  chrome-cdp expect 'role=button[name=\"Save\"]' enabled --timeout 10s
+  chrome-cdp expect h1 text '/^Welcome, \\w+$/'
+  chrome-cdp expect --url '**/dashboard'
+  chrome-cdp expect --no-errors --since before-save
+  chrome-cdp expect --a11y --level A")]
+    Expect(ExpectArgs),
+
+    /// Name this point in the tab's console and network logs, for expect --no-errors --since.
+    #[command(after_help = "\
+A mark belongs to the tab (the active one, or --tab). Setting a name again
+moves it. `expect --no-errors --since <name>` and `expect
+--no-failed-requests --since <name>` look only at what happened after it.
+
+Examples:
+  chrome-cdp mark before-save
+  chrome-cdp click 'role=button[name=\"Save\"]'
+  chrome-cdp expect --no-errors --since before-save")]
+    Mark(MarkArgs),
+
     /// Show the page as an accessibility tree, with refs (e12) to act on.
     #[command(after_help = "\
 One node per line, two spaces per level:
@@ -4005,6 +4060,122 @@ pub(crate) struct WaitCmdArgs {
     pub(crate) max_chars: usize,
 }
 
+/// `expect`.
+#[derive(Debug, Args)]
+#[command(
+    group(
+        ArgGroup::new("assertion")
+            .required(true)
+            .args(["target", "url", "title", "no_errors", "no_failed_requests", "a11y"])
+            .multiple(true)
+    )
+)]
+pub(crate) struct ExpectArgs {
+    /// The element(s) to check (any locator: e12, #id, text=…, role=…);
+    /// with --a11y, where to check.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) target: Option<String>,
+
+    /// What to check: visible, hidden, attached, detached, enabled,
+    /// disabled, editable, checked, unchecked, focused, text, value,
+    /// values, attr, class, css, count or in-viewport.
+    #[arg(value_name = "MATCHER")]
+    pub(crate) matcher: Option<String>,
+
+    /// The matcher's values: text, value(s), attribute name and value,
+    /// class, CSS property and value, or count; `-` reads one from stdin.
+    #[arg(value_name = "VALUE")]
+    pub(crate) values: Vec<String>,
+
+    /// The assertion must not hold (element matchers, --url, --title).
+    #[arg(long)]
+    pub(crate) not: bool,
+
+    /// `text` and --title: all of the text, not a part of it.
+    #[arg(long)]
+    pub(crate) exact: bool,
+
+    /// `count`: at least this many.
+    #[arg(long, value_name = "N")]
+    pub(crate) min: Option<u64>,
+
+    /// `count`: at most this many.
+    #[arg(long, value_name = "N")]
+    pub(crate) max: Option<u64>,
+
+    /// The page URL matches: a part of it, a glob (* and **) or /regex/.
+    #[arg(long, value_name = "PATTERN", conflicts_with_all = ["matcher", "title", "no_errors", "no_failed_requests", "a11y"])]
+    pub(crate) url: Option<String>,
+
+    /// The page title contains this (all of it with --exact), or matches
+    /// /regex/.
+    #[arg(long, value_name = "TEXT", conflicts_with_all = ["matcher", "no_errors", "no_failed_requests", "a11y"])]
+    pub(crate) title: Option<String>,
+
+    /// No uncaught exception or console error since the page loaded (or
+    /// --since).
+    #[arg(long, conflicts_with_all = ["matcher", "no_failed_requests", "a11y"])]
+    pub(crate) no_errors: bool,
+
+    /// No request failed or got a status of 400 or more since the page
+    /// loaded (or --since).
+    #[arg(long, conflicts_with_all = ["matcher", "a11y"])]
+    pub(crate) no_failed_requests: bool,
+
+    /// --no-errors and --no-failed-requests: only after this mark (see
+    /// `mark`), not since the page loaded.
+    #[arg(long, value_name = "MARK")]
+    pub(crate) since: Option<String>,
+
+    /// --no-failed-requests: only requests to this origin; `self` is the
+    /// page's.
+    #[arg(long, value_name = "ORIGIN", requires = "no_failed_requests")]
+    pub(crate) origin: Option<String>,
+
+    /// Check the page (or LOCATOR's element) against built-in
+    /// accessibility rules.
+    #[arg(long, conflicts_with = "matcher")]
+    pub(crate) a11y: bool,
+
+    /// --a11y: the WCAG level to check.
+    #[arg(long, value_enum, value_name = "LEVEL", requires = "a11y")]
+    pub(crate) level: Option<A11yLevelArg>,
+
+    /// A ref whose element is gone fails, instead of being re-resolved
+    /// to the one element with its role and name.
+    #[arg(
+        long,
+        env = "CHROME_CDP_STRICT_REFS",
+        action = ArgAction::SetTrue,
+        value_parser = BoolishValueParser::new(),
+        hide_env_values = true
+    )]
+    pub(crate) strict_refs: bool,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+/// `expect --a11y --level`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum A11yLevelArg {
+    /// WCAG level A rules only.
+    #[value(name = "A", alias = "a")]
+    A,
+    /// Level A and AA rules.
+    #[value(name = "AA", alias = "aa")]
+    Aa,
+}
+
+/// `mark`.
+#[derive(Debug, Args)]
+pub(crate) struct MarkArgs {
+    /// The mark's name, e.g. before-save.
+    #[arg(value_name = "NAME")]
+    pub(crate) name: String,
+}
+
 /// `wait <locator> --state`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum ElementStateArg {
@@ -4302,8 +4473,10 @@ mod tests {
     /// first line cut at 60 characters) and `remove` its ids; `expose`
     /// and `unexpose` a line of names. `cookies set` and `cookies clear`
     /// print a line; `state save` and `state load` a line per origin of
-    /// the file the user chose.
+    /// the file the user chose; `mark` a line with the name the user
+    /// chose.
     const FIXED_SIZE: &[&str] = &[
+        "mark",
         "emulate",
         "viewport",
         "geo",

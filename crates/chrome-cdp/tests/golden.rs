@@ -494,6 +494,93 @@ const CASES: &[Case] = &[
         fixture: Fixture::Session,
     },
     Case {
+        name: "expect-text",
+        args: &["expect", "#status", "text", "Loading"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/expect/index.html"),
+    },
+    Case {
+        name: "expect-text-fails",
+        args: &["expect", "#status", "text", "Saved", "--timeout", "300ms"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/expect/index.html"),
+    },
+    Case {
+        name: "expect-ambiguous",
+        args: &["expect", ".row", "visible", "--timeout", "300ms"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/expect/index.html"),
+    },
+    Case {
+        name: "expect-state-fails",
+        args: &["expect", "#save", "enabled", "--timeout", "300ms"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/expect/index.html"),
+    },
+    Case {
+        name: "expect-count",
+        args: &["expect", ".row", "count", "--min", "2"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/expect/index.html"),
+    },
+    Case {
+        name: "expect-missing",
+        args: &["expect", "#nope", "visible", "--timeout", "300ms"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/expect/index.html"),
+    },
+    Case {
+        name: "expect-url-fails",
+        args: &["expect", "--url", "/dashboard", "--timeout", "300ms"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/expect/index.html"),
+    },
+    Case {
+        name: "expect-bad-matcher",
+        args: &["expect", "e1", "visble"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "expect-no-errors-fails",
+        args: &["expect", "--no-errors"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/expect/errors.html"),
+    },
+    Case {
+        name: "expect-no-failed-requests-fails",
+        args: &["expect", "--no-failed-requests", "--origin", "self"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/expect/errors.html"),
+    },
+    Case {
+        name: "expect-no-errors-since-mark",
+        args: &["expect", "--no-errors", "--since", "loaded"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/expect/errors.html"],
+            &["mark", "loaded"],
+        ]),
+    },
+    Case {
+        name: "expect-unknown-mark",
+        args: &["expect", "--no-errors", "--since", "nope"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/expect/index.html"),
+    },
+    Case {
+        name: "expect-a11y-fails",
+        args: &["expect", "--a11y"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/expect/a11y.html"),
+    },
+    Case {
+        name: "mark",
+        args: &["mark", "before-save"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/expect/index.html"),
+    },
+    Case {
         name: "wait-fn",
         args: &["wait", "--fn", "6 * 7"],
         modes: ALL,
@@ -1792,6 +1879,10 @@ impl Normalizer {
             ("\"daemon_pid\":", &digits, "<pid>"),
             ("\"uptime_ms\":", &digits, "<ms>"),
             ("\"elapsed_ms\":", &digits, "<ms>"),
+            // How many times `expect` tried: `(after 300ms, 18 retries)`.
+            ("\"retries\":", &digits, "<n>"),
+            ("\"tries\":", &digits, "<n>"),
+            ("ms, ", &digits, "<n>"),
             ("\"time_ms\":", &digits, "<ms>"),
             // A navigation's or wait's time: `"Title" (412ms)`.
             (

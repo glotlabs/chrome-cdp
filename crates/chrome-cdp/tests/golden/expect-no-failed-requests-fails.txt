@@ -1,0 +1,14 @@
+$ chrome-cdp expect --no-failed-requests --origin self
+exit: 1
+--- stderr
+error: expect failed: --no-failed-requests --origin self
+  expected: no failed requests to the page's origin since the page loaded
+  actual: 1 failed request
+  failed: #2 GET /expect/missing.json (404)
+  hint: chrome-cdp network show 2   (the first one, with its headers and body)
+
+$ chrome-cdp expect --no-failed-requests --origin self --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect failed: --no-failed-requests --origin self","hint":"chrome-cdp network show 2   (the first one, with its headers and body)","notes":[{"label":"expected","text":"no failed requests to the page's origin since the page loaded"},{"label":"actual","text":"1 failed request"},{"label":"failed","text":"#2 GET /expect/missing.json (404)"}],"details":{"assertion":"--no-failed-requests --origin self","expected":"no failed requests to the page's origin since the page loaded","requests":[{"id":2,"method":"GET","resource_type":"Fetch","status":404,"tab":"t1","type":"request_failed","url":"<site>/expect/missing.json"}]}}}
+

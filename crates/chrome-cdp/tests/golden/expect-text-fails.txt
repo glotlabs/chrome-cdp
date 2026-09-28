@@ -1,0 +1,14 @@
+$ chrome-cdp expect '#status' text Saved --timeout 300ms
+exit: 1
+--- stderr
+error: expect failed: '#status' text Saved
+  expected: text containing "Saved"
+  actual: text "Loading…" (after 300ms, <n> retries)
+  element: status "Loading…" [e1]
+  hint: chrome-cdp text e1   (shows all of it), or --timeout 600ms to wait longer
+
+$ chrome-cdp expect '#status' text Saved --timeout 300ms --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect failed: '#status' text Saved","hint":"chrome-cdp text e1   (shows all of it), or --timeout 600ms to wait longer","notes":[{"label":"expected","text":"text containing \"Saved\""},{"label":"actual","text":"text \"Loading…\" (after 300ms, <n> retries)"},{"label":"element","text":"status \"Loading…\" [e1]"}],"details":{"actual":"Loading…","assertion":"'#status' text Saved","count":1,"elements":[{"name":"Loading…","ref":"e1","role":"status","tag":"p"}],"expected":"text containing \"Saved\"","observed":{"actual":"Loading…","count":1,"pass":false,"state":"","tries":<n>},"retries":<n>,"timeout_ms":300}}}
+

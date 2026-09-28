@@ -1,0 +1,15 @@
+$ chrome-cdp mark before-save
+exit: 0
+--- stdout
+set mark "before-save" in t1; check what happened after it: chrome-cdp expect --no-errors --since before-save
+
+$ chrome-cdp mark before-save --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"console":1,"name":"before-save","replaced":true,"tab":"t1"}}
+
+$ chrome-cdp mark before-save -q
+exit: 0
+--- stdout
+before-save
+

@@ -1,0 +1,15 @@
+$ chrome-cdp expect --no-errors
+exit: 1
+--- stderr
+error: expect failed: --no-errors
+  expected: no uncaught exceptions or console errors since the page loaded
+  actual: 2 errors
+  error: boom: the widget failed to start (errors.html:11)
+  error: TypeError: late trouble (errors.html:13)
+  hint: chrome-cdp errors --since 0   (shows them with their stacks)
+
+$ chrome-cdp expect --no-errors --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect failed: --no-errors","hint":"chrome-cdp errors --since 0   (shows them with their stacks)","notes":[{"label":"expected","text":"no uncaught exceptions or console errors since the page loaded"},{"label":"actual","text":"2 errors"},{"label":"error","text":"boom: the widget failed to start (errors.html:11)"},{"label":"error","text":"TypeError: late trouble (errors.html:13)"}],"details":{"assertion":"--no-errors","errors":[{"column":11,"line":11,"message":"boom: the widget failed to start","tab":"t1","type":"console_error","uncaught":false,"url":"<site>/expect/errors.html"},{"column":49,"line":13,"message":"TypeError: late trouble","tab":"t1","type":"console_error","uncaught":true,"url":"<site>/expect/errors.html"}],"expected":"no uncaught exceptions or console errors since the page loaded"}}}
+

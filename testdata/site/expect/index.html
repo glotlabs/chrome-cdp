@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Expect fixture</title>
+<style>
+  body { font: 16px sans-serif; }
+  #far { margin-top: 3000px; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="heading" class="title big">Welcome, Alice</h1>
+  <p id="status" role="status">Loading…</p>
+  <button id="save" disabled>Save</button>
+  <button id="ghost" style="display: none">Ghost</button>
+  <input id="email" aria-label="Email" value="alice@example.com">
+  <input id="locked" aria-label="Locked" value="fixed" readonly>
+  <label><input type="checkbox" id="agree" checked> I agree</label>
+  <label><input type="checkbox" id="news"> News</label>
+  <select id="colours" multiple aria-label="Colours">
+    <option value="red" selected>Red</option>
+    <option value="green" selected>Green</option>
+    <option value="blue">Blue</option>
+  </select>
+  <a id="home" href="/" data-kind="nav" aria-expanded="false">Home</a>
+  <span id="paint" style="color: red">Painted text</span>
+  <ul id="list">
+    <li class="row">One</li>
+    <li class="row">Two</li>
+    <li class="row">Three</li>
+  </ul>
+  <div id="far">Far away</div>
+</main>
+<script>
+  // Everything the expect matrix waits for, 400ms after `later()`.
+  window.later = () => setTimeout(() => {
+    document.getElementById('status').textContent = 'Saved';
+    document.getElementById('save').disabled = false;
+    document.getElementById('ghost').style.display = '';
+    document.getElementById('email').value = 'bob@example.com';
+    document.getElementById('news').checked = true;
+    document.getElementById('agree').checked = false;
+    const home = document.getElementById('home');
+    home.setAttribute('aria-expanded', 'true');
+    home.classList.add('active');
+    document.getElementById('paint').style.color = 'green';
+    const row = document.createElement('li');
+    row.className = 'row';
+    row.textContent = 'Four';
+    document.getElementById('list').append(row);
+    document.getElementById('colours').options[2].selected = true;
+    document.getElementById('locked').readOnly = false;
+    document.getElementById('heading').remove();
+    document.getElementById('email').focus();
+    document.getElementById('far').scrollIntoView();
+    document.title = 'Done';
+    history.pushState({}, '', '#done');
+  }, 400);
+
+  // Errors and failed requests, for --no-errors and --no-failed-requests.
+  window.fail = () => {
+    console.error('boom: the save failed');
+    fetch('/expect/missing.json').catch(() => {});
+    setTimeout(() => { throw new TypeError('late trouble'); }, 0);
+  };
+</script>
+</body>
+</html>
