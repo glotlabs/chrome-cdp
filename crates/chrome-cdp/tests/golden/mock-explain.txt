@@ -1,0 +1,25 @@
+$ chrome-cdp mock explain GET <site>/mock/api/products/7
+exit: 0
+--- stdout
+GET <site>/mock/api/products/7
+→ base.toml:10 "product by id": fulfill 200 json_file data/products/7.json
+  params: id=7
+mocks, in the order they are tried:
+  ✗ sale.toml:2 "on sale": path differs: expects /mock/api/products, got /mock/api/products/7
+  ✗ base.toml:5 "list products": path differs: expects /mock/api/products, got /mock/api/products/7
+  ✓ base.toml:10 "product by id"
+  ✗ base.toml:15 "login": method differs: expects POST, got GET
+  ✗ base.toml:20 "order": method differs: expects POST, got GET
+  ✗ base.toml:25 "reset": path differs: expects /mock/api/down, got /mock/api/products/7
+  ✗ base.toml:30 "echo, patched": path differs: expects /echo/patched, got /mock/api/products/7
+
+$ chrome-cdp mock explain GET <site>/mock/api/products/7 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"answer":{"at":"base.toml:10","file":"<mocks>/base.toml","line":10,"name":"product by id","set":"base"},"checked":[{"at":"sale.toml:2","file":"<mocks>/sale.toml","line":2,"matches":false,"name":"on sale","reason":"path differs: expects /mock/api/products, got /mock/api/products/7","set":"sale"},{"at":"base.toml:5","file":"<mocks>/base.toml","line":5,"matches":false,"name":"list products","reason":"path differs: expects /mock/api/products, got /mock/api/products/7","set":"base"},{"at":"base.toml:10","file":"<mocks>/base.toml","line":10,"matches":true,"name":"product by id","set":"base"},{"at":"base.toml:15","file":"<mocks>/base.toml","line":15,"matches":false,"name":"login","reason":"method differs: expects POST, got GET","set":"base"},{"at":"base.toml:20","file":"<mocks>/base.toml","line":20,"matches":false,"name":"order","reason":"method differs: expects POST, got GET","set":"base"},{"at":"base.toml:25","file":"<mocks>/base.toml","line":25,"matches":false,"name":"reset","reason":"path differs: expects /mock/api/down, got /mock/api/products/7","set":"base"},{"at":"base.toml:30","file":"<mocks>/base.toml","line":30,"matches":false,"name":"echo, patched","reason":"path differs: expects /echo/patched, got /mock/api/products/7","set":"base"}],"method":"GET","outcome":"fulfill 200 json_file data/products/7.json","params":{"id":"7"},"scope":"base","url":"<site>/mock/api/products/7"}}
+
+$ chrome-cdp mock explain GET <site>/mock/api/products/7 -q
+exit: 0
+--- stdout
+base.toml:10
+

@@ -14,6 +14,8 @@
 //! event were dropped would hang its page.
 
 use std::sync::Arc;
+
+use base64::Engine as _;
 use std::time::Duration;
 
 use cdp::domains::{fetch, network};
@@ -174,6 +176,8 @@ fn paused(
         return;
     }
     let request = &params["request"];
+    let mocks = routes.has_mocks();
+    let body = if mocks { post_data(request) } else { None };
     let (decision, emptied) = routes.decide(&route::Request {
         url: request["url"].as_str().unwrap_or_default(),
         method: request["method"].as_str().unwrap_or("GET"),
@@ -181,9 +185,15 @@ fn paused(
         headers: &request["headers"],
         context,
         tab,
+        body: body.as_deref(),
+        now_ms: if mocks { now_ms(shared) } else { 0 },
     });
-    if let Decision::Route { rule, .. } = &decision {
-        tracing::debug!(url = %request["url"], "routed by rule r{rule}");
+    match &decision {
+        Decision::Route { rule, .. } => {
+            tracing::debug!(url = %request["url"], "routed by rule r{rule}");
+        }
+        Decision::Mock { .. } => tracing::debug!(url = %request["url"], "answered by a mock"),
+        Decision::Pass | Decision::Preflight => {}
     }
     patches.expect(&event, &decision);
     shared.spawn(route::carry_out(session, event.clone(), decision));
@@ -192,4 +202,36 @@ fn paused(
         let shared_task = shared.clone();
         shared.spawn(async move { apply(&shared_task, super::SETUP_TIMEOUT).await });
     }
+}
+
+/// A paused request's body: `postDataEntries` (base64 parts), or the older
+/// `postData`. Chrome leaves large bodies out of both.
+fn post_data(request: &serde_json::Value) -> Option<Vec<u8>> {
+    if let Some(entries) = request["postDataEntries"].as_array() {
+        let mut body = Vec::new();
+        for entry in entries {
+            if let Some(bytes) = entry["bytes"].as_str() {
+                body.extend(
+                    base64::engine::general_purpose::STANDARD
+                        .decode(bytes)
+                        .unwrap_or_default(),
+                );
+            }
+        }
+        return Some(body);
+    }
+    request["postData"].as_str().map(|s| s.as_bytes().to_vec())
+}
+
+/// Now for mock templates: the session's frozen time (`time freeze`), or
+/// the real one.
+fn now_ms(shared: &Shared) -> i64 {
+    shared.settings.emulation.get().time.map_or_else(
+        || {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+        },
+        |t| t.epoch_ms,
+    )
 }

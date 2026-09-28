@@ -1,0 +1,16 @@
+$ chrome-cdp mock reset
+exit: 0
+--- stdout
+reset sale, base: hit counters and random values start over
+
+$ chrome-cdp mock reset --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"sets":[{"cors":"auto","count":1,"file":"<mocks>/sale.toml","latency":"0ms","name":"sale","unmatched":"fail"},{"cors":"auto","count":6,"file":"<mocks>/base.toml","latency":"0ms","name":"base","scope":["/mock/api/**"],"unmatched":"fail"}]}}
+
+$ chrome-cdp mock reset -q
+exit: 0
+--- stdout
+sale
+base
+

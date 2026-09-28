@@ -1,0 +1,13 @@
+$ chrome-cdp mock list
+exit: 0
+--- stdout
+no mock sets in use; chrome-cdp mock use <set> applies one
+
+$ chrome-cdp mock list --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"sets":[]}}
+
+$ chrome-cdp mock list -q
+exit: 0
+

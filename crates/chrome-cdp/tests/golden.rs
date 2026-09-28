@@ -71,6 +71,20 @@ struct Case {
 const ALL: &[&str] = &["", "--json", "-q"];
 const ERR: &[&str] = &["", "--json"];
 
+/// The mock fixture page with the `base` and `sale` sets in use, after a
+/// mocked, an unmatched and an unmocked request.
+const MOCKED: &[&[&str]] = &[
+    &["open", "{site}/mock/index.html"],
+    &["mock", "use", "--dir", "{mocks}", "base", "sale"],
+    &["eval", "fetch('/mock/api/products').then((r) => r.status)"],
+    &[
+        "eval",
+        "fetch('/mock/api/products/9').then((r) => r.status)",
+    ],
+    &["eval", "fetch('/mock/api/cart').then((r) => r.status)"],
+    &["eval", "fetch('/items?n=1').then((r) => r.status)"],
+];
+
 /// The baseline fixture after its snapshot and box were stored as
 /// baselines (in `{sandbox}/b`) and the page changed: the button reads
 /// "Continue" and the box is red.
@@ -1244,6 +1258,132 @@ const CASES: &[Case] = &[
         modes: ALL,
         fixture: Fixture::Session,
     },
+    Case {
+        name: "mock-use",
+        args: &["mock", "use", "--dir", "{mocks}", "base", "sale"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "mock-use-unknown",
+        args: &["mock", "use", "--dir", "{mocks}", "bsae"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "mock-use-nothing",
+        args: &["mock", "use"],
+        modes: ERR,
+        fixture: Fixture::Project(&[
+            ("chrome-cdp.toml", "[e2e]\n"),
+            ("e2e/mocks/base.toml", ""),
+            ("e2e/mocks/errors/api-down.toml", ""),
+        ]),
+    },
+    Case {
+        name: "mock-list",
+        args: &["mock", "list"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(MOCKED),
+    },
+    Case {
+        name: "mock-list-none",
+        args: &["mock", "list"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "mock-list-available",
+        args: &["mock", "list", "--available", "--dir", "{mocks}"],
+        modes: ALL,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "mock-log",
+        args: &["mock", "log"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(MOCKED),
+    },
+    Case {
+        name: "mock-log-unmatched",
+        args: &["mock", "log", "--unmatched"],
+        modes: &[""],
+        fixture: Fixture::SessionAfter(MOCKED),
+    },
+    Case {
+        name: "mock-reset",
+        args: &["mock", "reset"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(MOCKED),
+    },
+    // Each mode would turn off what the one before did: one mode a case.
+    Case {
+        name: "mock-off",
+        args: &["mock", "off", "sale"],
+        modes: &[""],
+        fixture: Fixture::SessionAfter(MOCKED),
+    },
+    Case {
+        name: "mock-off-all",
+        args: &["mock", "off"],
+        modes: &["--json"],
+        fixture: Fixture::SessionAfter(MOCKED),
+    },
+    Case {
+        name: "mock-off-unknown",
+        args: &["mock", "off", "nope"],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(MOCKED),
+    },
+    Case {
+        name: "mock-explain",
+        args: &["mock", "explain", "GET", "{site}/mock/api/products/7"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(MOCKED),
+    },
+    Case {
+        name: "mock-explain-unmatched",
+        args: &["mock", "explain", "DELETE", "{site}/mock/api/cart?user=7"],
+        modes: &[""],
+        fixture: Fixture::SessionAfter(MOCKED),
+    },
+    Case {
+        name: "mock-explain-files",
+        args: &[
+            "mock",
+            "explain",
+            "POST",
+            "/api/login",
+            "--json-body",
+            "{\"email\":\"ada@corp.test\"}",
+        ],
+        modes: ALL,
+        fixture: Fixture::Project(&[
+            (
+                "chrome-cdp.toml",
+                "[e2e]\nbase_url = \"http://localhost:5173\"\ndefault_mocks = [\"base\"]\n",
+            ),
+            (
+                "e2e/mocks/base.toml",
+                "[settings]\nscope = [\"/api/**\"]\n\n[[mock]]\nname = \"login\"\nmatch = { method = \"POST\", path = \"/api/login\", json = { email = \"*@example.com\" } }\nrespond = { json = { ok = true } }\n",
+            ),
+        ]),
+    },
+    Case {
+        name: "mock-explain-bad-file",
+        args: &["mock", "explain", "GET", "/api/items", "--mocks", "base"],
+        modes: ERR,
+        fixture: Fixture::Project(&[
+            (
+                "chrome-cdp.toml",
+                "[e2e]\nbase_url = \"http://localhost:5173\"\n",
+            ),
+            (
+                "e2e/mocks/base.toml",
+                "[[mock]]\nname = \"items\"\nmatch = { path = \"/api/items\" }\nrespond = { json_file = \"data/items.json\" }\n",
+            ),
+        ]),
+    },
     // Each mode would remove what the one before did: one mode a case.
     Case {
         name: "unroute",
@@ -2092,7 +2232,11 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
                     let dir = sb.dir.path().display().to_string();
                     let args: Vec<String> = step
                         .iter()
-                        .map(|a| a.replace("{site}", site).replace("{sandbox}", &dir))
+                        .map(|a| {
+                            a.replace("{site}", site)
+                                .replace("{sandbox}", &dir)
+                                .replace("{mocks}", &mocks_dir().display().to_string())
+                        })
                         .collect();
                     let out = sb.cli().args(&args).output().unwrap();
                     assert!(out.status.success(), "{step:?}: {out:?}");
@@ -2167,6 +2311,8 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
     norm = norm.with(&files, "<files>");
     let scripts = testdata("scripts");
     norm = norm.with(&scripts, "<scripts>");
+    let mocks = mocks_dir();
+    norm = norm.with(&mocks, "<mocks>");
     let mut out = String::new();
     for mode in case.modes {
         let mut args: Vec<String> = case
@@ -2179,6 +2325,7 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
             .map(|a| a.replace("{site}", site.a()))
             .map(|a| a.replace("{files}", &files.display().to_string()))
             .map(|a| a.replace("{scripts}", &scripts.display().to_string()))
+            .map(|a| a.replace("{mocks}", &mocks.display().to_string()))
             .map(|a| match &sandbox {
                 Some(sb) => a.replace("{sandbox}", &sb.dir.path().display().to_string()),
                 None => a,
@@ -2230,6 +2377,11 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
         }
     }
     Some(norm.apply(&out))
+}
+
+/// The fixture site's mocks directory (`{mocks}`).
+fn mocks_dir() -> PathBuf {
+    testdata("site/mock/mocks")
 }
 
 /// The files the upload cases upload (`{files}`).

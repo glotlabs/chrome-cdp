@@ -1068,6 +1068,67 @@ pub struct UnrouteRequest {
     pub timeout_ms: u64,
 }
 
+/// `mock use`: apply mock sets (plan 11, milestone 11.2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MockUseRequest {
+    /// The sets, in layering order (later ones are tried first).
+    pub sets: Vec<mock::Source>,
+    /// `--add`: layer them on the sets in use instead of replacing them.
+    #[serde(default)]
+    pub add: bool,
+    /// Seeds `{{uuid}}`, `{{faker.*}}` and latency ranges.
+    #[serde(default)]
+    pub seed: u64,
+    pub timeout_ms: u64,
+}
+
+/// `mock off`: turn mock sets off.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MockOffRequest {
+    /// The sets' names; none turns every set off.
+    #[serde(default)]
+    pub sets: Vec<String>,
+    pub timeout_ms: u64,
+}
+
+/// `mock list`: the sets in use and their mocks.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MockListRequest {
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
+/// `mock log`: the requests the mocks saw.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MockLogRequest {
+    /// `--unmatched`: only unmatched requests.
+    #[serde(default)]
+    pub unmatched: bool,
+    /// `--all`: requests no mock set had anything to do with too.
+    #[serde(default)]
+    pub all: bool,
+    /// The newest this many (0 = all).
+    pub limit: usize,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
+/// `mock explain`: which mock answers a request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MockExplainRequest {
+    pub method: String,
+    /// An absolute URL.
+    pub url: String,
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
+    #[serde(default)]
+    pub body: Option<String>,
+    /// Show at most this many mocks (0 = all).
+    pub limit: usize,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
 /// `init-script add`: a script for every new document (plan 07,
 /// milestone 7.3).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -15,11 +15,18 @@
 //! request journals). A rule with `--times N` is removed after its N-th
 //! match.
 //!
+//! After the rules come the session's mock sets (plan 11, milestone
+//! 11.2; see the `mock` crate): a request no rule handles goes to
+//! [`mock::Mocks::decide`], which answers it from a mock, handles it as
+//! unmatched (it is in a set's scope), or lets it go on. The journal says
+//! which mock answered each request.
+//!
 //! [`act`] carries a decision out on the request's session: fulfil, fail,
 //! continue (changed), or continue and patch the JSON response.
 
 mod act;
 mod commands;
+mod mocking;
 
 use std::collections::VecDeque;
 use std::fmt::Write as _;
@@ -29,7 +36,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
 use cdp::domains::network::ErrorReason;
-use protocol::schema::{RouteInfo, RoutedRequest};
+use mock::{Mocks, Outcome, Response};
+use protocol::schema::{MockRef, RouteInfo, RoutedRequest};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, format};
 use serde_json::Value;
 
@@ -44,38 +52,40 @@ use crate::tabs::tab_name;
 const JOURNAL: usize = 1000;
 
 /// The largest `--body-file` a rule takes.
-const MAX_BODY: u64 = 50 * 1024 * 1024;
+const MAX_BODY: u64 = mock::MAX_FILE;
 
 /// Chrome's network errors, as `--abort` takes them (any case).
-const ABORT_REASONS: &[&str] = &[
-    "Failed",
-    "Aborted",
-    "TimedOut",
-    "AccessDenied",
-    "ConnectionClosed",
-    "ConnectionReset",
-    "ConnectionRefused",
-    "ConnectionAborted",
-    "ConnectionFailed",
-    "NameNotResolved",
-    "InternetDisconnected",
-    "AddressUnreachable",
-    "BlockedByClient",
-    "BlockedByResponse",
-];
+const ABORT_REASONS: &[&str] = mock::NETWORK_ERRORS;
 
-/// The session's routing rules and journal.
-#[derive(Debug, Default)]
+/// The session's routing rules, mock sets and journal.
+#[derive(Debug)]
 pub(crate) struct Router {
     table: Mutex<Table>,
 }
 
-#[derive(Debug, Default)]
+impl Default for Router {
+    fn default() -> Self {
+        Self {
+            table: Mutex::new(Table {
+                last_id: 0,
+                rules: Vec::new(),
+                mocks: Mocks::new(0),
+                journal: VecDeque::new(),
+                seq: 0,
+            }),
+        }
+    }
+}
+
+#[derive(Debug)]
 struct Table {
     /// The last rule id given.
     last_id: u32,
     /// In the order they are tried.
     rules: Vec<Rule>,
+    /// The mock sets in use (session-wide; plan 11.4 adds per-context
+    /// sets for parallel tests), tried after the rules.
+    mocks: Mocks,
     /// The newest requests routing saw, oldest first.
     journal: VecDeque<RoutedRequest>,
     /// The last journal sequence number given.
@@ -130,6 +140,9 @@ pub(crate) struct Fulfill {
     pub(crate) body: String,
     /// The body's size in bytes.
     pub(crate) size: usize,
+    /// Whether a cross-origin request's answer is allowed by CORS headers
+    /// (rules always; mocks unless their set says `cors = "off"`).
+    pub(crate) cors: bool,
 }
 
 impl Fulfill {
@@ -155,6 +168,10 @@ pub(crate) struct Request<'a> {
     pub(crate) context: Option<&'a str>,
     /// Its tab.
     pub(crate) tab: Option<u32>,
+    /// Its body, for mocks that match on it.
+    pub(crate) body: Option<&'a [u8]>,
+    /// `{{now}}` of mock templates (ms since the epoch).
+    pub(crate) now_ms: i64,
 }
 
 impl Request<'_> {
@@ -184,8 +201,12 @@ pub(crate) enum Decision {
         handler: Arc<Handler>,
         seq: u64,
     },
-    /// A CORS preflight for a request a rule answers itself: allow it.
+    /// A CORS preflight for a request a rule or mock answers itself:
+    /// allow it.
     Preflight,
+    /// A mock answers it (or its set's `unmatched` policy does); `seq` is
+    /// its journal entry.
+    Mock { handler: Arc<Handler>, seq: u64 },
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -193,9 +214,17 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl Router {
-    /// Whether any rule exists (and requests must be intercepted).
+    /// Whether any rule or mock set exists (and requests must be
+    /// intercepted).
     pub(crate) fn is_active(&self) -> bool {
-        !lock(&self.table).rules.is_empty()
+        let table = lock(&self.table);
+        !table.rules.is_empty() || !table.mocks.is_empty()
+    }
+
+    /// Whether mock sets are in use (and paused requests need their
+    /// bodies and the time).
+    pub(crate) fn has_mocks(&self) -> bool {
+        !lock(&self.table).mocks.is_empty()
     }
 
     /// How many rules exist.
@@ -280,8 +309,7 @@ impl Router {
             }
         }
         let Some(index) = table.rules.iter().position(|r| r.matches(req, req.method)) else {
-            table.log(req, None, "continue".into());
-            return (Decision::Pass, false);
+            return (table.mock(req), false);
         };
         let rule = &mut table.rules[index];
         rule.hits += 1;
@@ -321,7 +349,75 @@ impl Router {
 }
 
 impl Table {
+    /// What the mock sets do with a request no rule handles.
+    fn mock(&mut self, req: &Request<'_>) -> Decision {
+        if self.mocks.is_empty() {
+            self.log(req, None, "continue".into());
+            return Decision::Pass;
+        }
+        self.mocks.refresh();
+        let headers: Vec<(String, String)> = req
+            .headers
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter_map(|(n, v)| Some((n.clone(), v.as_str()?.to_owned())))
+            .collect();
+        let request = mock::Request {
+            method: req.method,
+            url: req.url,
+            headers: &headers,
+            body: req.body,
+        };
+        match self.mocks.decide(&request, req.now_ms) {
+            Outcome::Pass => {
+                self.log(req, None, "continue".into());
+                Decision::Pass
+            }
+            Outcome::Preflight { mock } => {
+                self.log_mock(req, mock, None, "preflight allowed".into());
+                Decision::Preflight
+            }
+            Outcome::Answer(answer) => {
+                let handler = mock_handler(answer.response, answer.delay);
+                let seq = self.log_mock(req, Some(answer.mock), None, answer.outcome);
+                Decision::Mock {
+                    handler: Arc::new(handler),
+                    seq,
+                }
+            }
+            Outcome::Unmatched {
+                set,
+                response,
+                outcome,
+            } => {
+                let seq = self.log_mock(req, None, Some(set), outcome);
+                if matches!(response, Response::Passthrough { patch: None }) {
+                    return Decision::Pass;
+                }
+                Decision::Mock {
+                    handler: Arc::new(mock_handler(response, Duration::ZERO)),
+                    seq,
+                }
+            }
+        }
+    }
+
     fn log(&mut self, req: &Request<'_>, rule: Option<u32>, outcome: String) -> u64 {
+        let seq = self.log_mock(req, None, None, outcome);
+        if let Some(entry) = self.journal.back_mut() {
+            entry.route = rule.map(route_name);
+        }
+        seq
+    }
+
+    fn log_mock(
+        &mut self,
+        req: &Request<'_>,
+        mock: Option<MockRef>,
+        unmatched: Option<String>,
+        outcome: String,
+    ) -> u64 {
         self.seq += 1;
         if self.journal.len() == JOURNAL {
             self.journal.pop_front();
@@ -333,9 +429,9 @@ impl Table {
             method: req.method.to_owned(),
             url: req.url.to_owned(),
             resource_type: req.resource_type.to_ascii_lowercase(),
-            route: rule.map(route_name),
-            mock: None,
-            unmatched: None,
+            route: None,
+            mock,
+            unmatched,
             outcome,
         });
         self.seq
@@ -577,11 +673,7 @@ fn compile(spec: &RouteSpec) -> Result<Rule, ErrorInfo> {
 }
 
 fn check_header_name(name: &str) -> Result<(), ErrorInfo> {
-    let valid = !name.is_empty()
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b));
-    if valid {
+    if mock::is_header_name(name) {
         Ok(())
     } else {
         Err(
@@ -626,6 +718,7 @@ fn fulfill(
         headers,
         size: bytes.len(),
         body: base64::engine::general_purpose::STANDARD.encode(&bytes),
+        cors: true,
     })
 }
 
@@ -651,62 +744,24 @@ fn read_body(path: &Path) -> Result<Vec<u8>, ErrorInfo> {
 
 /// The `Content-Type` for a file, by its extension.
 fn content_type(path: &Path) -> &'static str {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_ascii_lowercase)
-        .unwrap_or_default();
-    match ext.as_str() {
-        "html" | "htm" => "text/html; charset=utf-8",
-        "json" => "application/json",
-        "js" | "mjs" => "text/javascript; charset=utf-8",
-        "css" => "text/css; charset=utf-8",
-        "txt" | "text" => "text/plain; charset=utf-8",
-        "csv" => "text/csv; charset=utf-8",
-        "xml" => "application/xml",
-        "svg" => "image/svg+xml",
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "avif" => "image/avif",
-        "ico" => "image/x-icon",
-        "woff" => "font/woff",
-        "woff2" => "font/woff2",
-        "ttf" => "font/ttf",
-        "otf" => "font/otf",
-        "mp4" => "video/mp4",
-        "webm" => "video/webm",
-        "mp3" => "audio/mpeg",
-        "wav" => "audio/wav",
-        "pdf" => "application/pdf",
-        "wasm" => "application/wasm",
-        _ => "application/octet-stream",
-    }
+    mock::content_type(path)
 }
 
 fn parse_reason(text: &str) -> Result<ErrorReason, ErrorInfo> {
-    let key: String = text
-        .chars()
-        .filter(|c| !matches!(c, '-' | '_' | ' '))
-        .collect();
-    let name = ABORT_REASONS
-        .iter()
-        .find(|r| r.eq_ignore_ascii_case(&key))
-        .ok_or_else(|| {
-            let names: Vec<String> = ABORT_REASONS
-                .iter()
-                .map(|r| r.to_ascii_lowercase())
-                .collect();
-            bad(format!(
-                "`{text}` is not a network error; they are {}",
-                names.join(", ")
-            ))
-            .hint(Hint::text(
-                "e.g. --abort blockedbyclient, or --abort alone for `failed`",
-            ))
-        })?;
-    serde_json::from_value(Value::String((*name).to_owned()))
+    let name = mock::network_error(text).ok_or_else(|| {
+        let names: Vec<String> = ABORT_REASONS
+            .iter()
+            .map(|r| r.to_ascii_lowercase())
+            .collect();
+        bad(format!(
+            "`{text}` is not a network error; they are {}",
+            names.join(", ")
+        ))
+        .hint(Hint::text(
+            "e.g. --abort blockedbyclient, or --abort alone for `failed`",
+        ))
+    })?;
+    serde_json::from_value(Value::String(name.to_owned()))
         .map_err(|e| bad(format!("`{text}`: {e}")))
 }
 
@@ -717,6 +772,34 @@ fn reason_name(reason: ErrorReason) -> &'static str {
         .find(|r| name.as_ref().and_then(Value::as_str) == Some(**r))
         .copied()
         .unwrap_or("Failed")
+}
+
+/// What carries a mock's answer out.
+fn mock_handler(response: Response, delay: Duration) -> Handler {
+    let act = match response {
+        Response::Fulfill {
+            status,
+            headers,
+            body,
+            cors,
+        } => Act::Fulfill(Fulfill {
+            status,
+            headers,
+            size: body.len(),
+            body: base64::engine::general_purpose::STANDARD.encode(&body),
+            cors,
+        }),
+        Response::Abort { reason } => {
+            Act::Abort(parse_reason(reason).unwrap_or(ErrorReason::Failed))
+        }
+        Response::Passthrough { patch: None } => Act::Continue {
+            set_headers: Vec::new(),
+            remove_headers: Vec::new(),
+            url: None,
+        },
+        Response::Passthrough { patch: Some(patch) } => Act::PatchJson(patch),
+    };
+    Handler { delay, act }
 }
 
 /// Applies a JSON merge patch (RFC 7396) to `target`: objects merge key by
@@ -789,13 +872,15 @@ mod tests {
             headers: NO_HEADERS,
             context: None,
             tab: Some(1),
+            body: None,
+            now_ms: 0,
         }
     }
 
     fn rule_of(decision: &Decision) -> Option<u32> {
         match decision {
             Decision::Route { rule, .. } => Some(*rule),
-            Decision::Pass | Decision::Preflight => None,
+            Decision::Pass | Decision::Preflight | Decision::Mock { .. } => None,
         }
     }
 

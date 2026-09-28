@@ -190,7 +190,7 @@ fn later_sets_win_and_unmatched_requests_in_scope_fail() {
             outcome,
         } => {
             assert_eq!((set.as_str(), status), ("base", 501));
-            assert_eq!(outcome, "unmatched: fulfill 501");
+            assert_eq!(outcome, "unmatched, fulfill 501");
             assert!(
                 headers
                     .iter()
@@ -224,9 +224,9 @@ fn unmatched_policies() {
         )
     };
     for (policy, expected) in [
-        ("passthrough", "unmatched: passthrough"),
-        ("abort", "unmatched: abort failed"),
-        ("fail", "unmatched: fulfill 501"),
+        ("passthrough", "unmatched, passthrough"),
+        ("abort", "unmatched, abort failed"),
+        ("fail", "unmatched, fulfill 501"),
     ] {
         let d = dir(&[("base.toml", &files(policy))]);
         let mut m = mocks(d.path(), &["base"]);

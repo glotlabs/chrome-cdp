@@ -288,7 +288,7 @@ impl Mocks {
             return Outcome::Pass;
         };
         let response = unmatched_response(set, parsed);
-        let outcome = format!("unmatched: {}", response.outcome());
+        let outcome = format!("unmatched, {}", response.outcome());
         Outcome::Unmatched {
             set: set.name().to_owned(),
             response,
@@ -344,7 +344,7 @@ impl Mocks {
             let outcome = match scope {
                 Some(set) => match set.unmatched {
                     Unmatched::Fail => format!(
-                        "unmatched: in scope of {}, whose unmatched = \"fail\" answers 501 and fails the test",
+                        "unmatched: in scope of {}, whose unmatched = \"fail\" answers 501, which fails a test",
                         set.name()
                     ),
                     Unmatched::Passthrough => format!(

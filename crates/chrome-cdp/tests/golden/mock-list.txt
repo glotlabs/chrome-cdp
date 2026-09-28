@@ -1,0 +1,25 @@
+$ chrome-cdp mock list
+exit: 0
+--- stdout
+sale  1 mock  <mocks>/sale.toml
+  sale.toml:2 "on sale" GET /mock/api/products → fulfill 200 json [{"id":1,"name":"Keyboard","sale":true}] (1 hit)
+base  6 mocks  scope /mock/api/** (unmatched: fail)  <mocks>/base.toml
+  base.toml:5 "list products" GET /mock/api/products → fulfill 200 json_file data/products.json (0 hits)
+  base.toml:10 "product by id" GET /mock/api/products/:id → fulfill 200 json_file data/products/{{params.id}}.json (1 hit)
+  base.toml:15 "login" POST /mock/api/login (json) → fulfill 200 json {"ok":true,"user":"{{json.email}}"} (0 hits)
+  base.toml:20 "order" POST /mock/api/orders → fulfill 201 json {"at":"{{now}}","n":"{{seq}}","qty":"{{json.qty}}"} (0 hits)
+  base.toml:25 "reset" /mock/api/down → abort connectionreset (0 hits)
+  base.toml:30 "echo, patched" /echo/patched → passthrough, patch {"patched":true} (0 hits)
+(tried top to bottom, after any `route` rules)
+
+$ chrome-cdp mock list --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"sets":[{"cors":"auto","count":1,"file":"<mocks>/sale.toml","latency":"0ms","mocks":[{"at":"sale.toml:2","file":"<mocks>/sale.toml","hits":1,"line":2,"matches":"GET /mock/api/products","name":"on sale","responds":"fulfill 200 json [{\"id\":1,\"name\":\"Keyboard\",\"sale\":true}]","set":"sale"}],"name":"sale","unmatched":"fail"},{"cors":"auto","count":6,"file":"<mocks>/base.toml","latency":"0ms","mocks":[{"at":"base.toml:5","file":"<mocks>/base.toml","hits":0,"line":5,"matches":"GET /mock/api/products","name":"list products","responds":"fulfill 200 json_file data/products.json","set":"base"},{"at":"base.toml:10","file":"<mocks>/base.toml","hits":1,"line":10,"matches":"GET /mock/api/products/:id","name":"product by id","responds":"fulfill 200 json_file data/products/{{params.id}}.json","set":"base"},{"at":"base.toml:15","file":"<mocks>/base.toml","hits":0,"line":15,"matches":"POST /mock/api/login (json)","name":"login","responds":"fulfill 200 json {\"ok\":true,\"user\":\"{{json.email}}\"}","set":"base"},{"at":"base.toml:20","file":"<mocks>/base.toml","hits":0,"line":20,"matches":"POST /mock/api/orders","name":"order","responds":"fulfill 201 json {\"at\":\"{{now}}\",\"n\":\"{{seq}}\",\"qty\":\"{{json.qty}}\"}","set":"base"},{"at":"base.toml:25","file":"<mocks>/base.toml","hits":0,"line":25,"matches":"/mock/api/down","name":"reset","responds":"abort connectionreset","set":"base"},{"at":"base.toml:30","file":"<mocks>/base.toml","hits":0,"line":30,"matches":"/echo/patched","name":"echo, patched","responds":"passthrough, patch {\"patched\":true}","set":"base"}],"name":"base","scope":["/mock/api/**"],"unmatched":"fail"}]}}
+
+$ chrome-cdp mock list -q
+exit: 0
+--- stdout
+sale
+base
+

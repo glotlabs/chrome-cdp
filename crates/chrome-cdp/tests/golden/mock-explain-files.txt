@@ -1,0 +1,20 @@
+$ chrome-cdp mock explain POST /api/login --json-body '{"email":"ada@corp.test"}'
+exit: 0
+--- stdout
+POST http://localhost:5173/api/login
+→ no mock matches; unmatched: in scope of base, whose unmatched = "fail" answers 501, which fails a test
+mocks, in the order they are tried:
+  ✗ base.toml:4 "login": json $.email: expects "*@example.com", got "ada@corp.test"
+--- stderr
+warning: explained with the project's default_mocks (base), since no session uses mock sets
+
+$ chrome-cdp mock explain POST /api/login --json-body '{"email":"ada@corp.test"}' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"checked":[{"at":"base.toml:4","file":"<tmp>/app/e2e/mocks/base.toml","line":4,"matches":false,"name":"login","reason":"json $.email: expects \"*@example.com\", got \"ada@corp.test\"","set":"base"}],"method":"POST","outcome":"unmatched: in scope of base, whose unmatched = \"fail\" answers 501, which fails a test","scope":"base","url":"http://localhost:5173/api/login"},"warnings":["explained with the project's default_mocks (base), since no session uses mock sets"]}
+
+$ chrome-cdp mock explain POST /api/login --json-body '{"email":"ada@corp.test"}' -q
+exit: 0
+--- stderr
+warning: explained with the project's default_mocks (base), since no session uses mock sets
+

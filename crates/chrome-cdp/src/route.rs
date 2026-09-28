@@ -180,7 +180,7 @@ fn ads_pattern() -> String {
 }
 
 /// `Name: value` (or `Name:value`).
-fn header(text: &str, flag: &str) -> Result<(String, String), ErrorInfo> {
+pub(crate) fn header(text: &str, flag: &str) -> Result<(String, String), ErrorInfo> {
     match text.split_once(':') {
         Some((name, value)) if !name.trim().is_empty() => {
             Ok((name.trim().to_owned(), value.trim().to_owned()))
@@ -218,7 +218,7 @@ fn body(args: &RouteArgs) -> Result<RouteBody, ErrorInfo> {
 }
 
 /// Parses a JSON argument (`-` reads stdin).
-fn json(arg: &str, flag: &str) -> Result<Value, ErrorInfo> {
+pub(crate) fn json(arg: &str, flag: &str) -> Result<Value, ErrorInfo> {
     let text = input::text_arg(arg, flag)?;
     serde_json::from_str(&text).map_err(|e| {
         ErrorInfo::new(

@@ -29,7 +29,7 @@ impl PendingPatches {
     /// Remembers to patch the response of the request `event` paused, if
     /// `decision` says so. Call before carrying the decision out.
     pub(crate) fn expect(&mut self, event: &RawEvent, decision: &Decision) {
-        if let Decision::Route { handler, seq, .. } = decision
+        if let Decision::Route { handler, seq, .. } | Decision::Mock { handler, seq } = decision
             && matches!(handler.act, Act::PatchJson(_))
             && let Some(id) = event.params["requestId"].as_str()
         {
@@ -86,7 +86,7 @@ pub(crate) fn carry_out(
                 params.response_headers = Some(entries(headers));
                 session.call(params).await.map(drop)
             }
-            Decision::Route { handler, .. } => {
+            Decision::Route { handler, .. } | Decision::Mock { handler, .. } => {
                 if !handler.delay.is_zero() {
                     tokio::time::sleep(handler.delay).await;
                 }
@@ -206,9 +206,10 @@ pub(crate) async fn patch_response(
     }
 }
 
-/// `Fetch.fulfillRequest` for a rule's response. A cross-origin request
-/// (it has an `Origin`) is allowed by CORS unless the rule's headers say
-/// otherwise: the mocked server is the rule, not a server that could.
+/// `Fetch.fulfillRequest` for a rule's or mock's response. A cross-origin
+/// request (it has an `Origin`) is allowed by CORS unless the answer's
+/// headers say otherwise (or its mock set has `cors = "off"`): the mocked
+/// server is the rule, not a server that could.
 fn fulfill_params(
     request_id: String,
     fulfill: &Fulfill,
@@ -216,9 +217,22 @@ fn fulfill_params(
 ) -> fetch::FulfillRequestParams {
     let mut headers = fulfill.headers.clone();
     if let Some(origin) = origin
+        && fulfill.cors
         && fulfill.header("Access-Control-Allow-Origin").is_none()
     {
         headers.extend(allow_origin(origin));
+        // The page may read the headers the answer was made with.
+        let exposed: Vec<&str> = fulfill
+            .headers
+            .iter()
+            .map(|(n, _)| n.as_str())
+            .filter(|n| {
+                !n.eq_ignore_ascii_case("Content-Type") && !n.eq_ignore_ascii_case("Set-Cookie")
+            })
+            .collect();
+        if !exposed.is_empty() && fulfill.header("Access-Control-Expose-Headers").is_none() {
+            headers.push(("Access-Control-Expose-Headers".into(), exposed.join(", ")));
+        }
     }
     let mut params = fetch::FulfillRequestParams::new(request_id, i64::from(fulfill.status));
     params.response_headers = Some(entries(headers));

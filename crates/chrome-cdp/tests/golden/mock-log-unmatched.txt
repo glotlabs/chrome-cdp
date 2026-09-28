@@ -1,0 +1,5 @@
+$ chrome-cdp mock log --unmatched
+exit: 0
+--- stdout
+#3 t1 GET <site>/mock/api/cart xhr → unmatched, fulfill 501 (scope of base)
+

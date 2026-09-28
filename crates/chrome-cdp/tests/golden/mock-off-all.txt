@@ -1,0 +1,5 @@
+$ chrome-cdp mock off --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"removed":["base","sale"],"sets":[]}}
+

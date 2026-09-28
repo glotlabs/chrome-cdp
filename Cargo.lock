@@ -242,6 +242,7 @@ dependencies = [
  "e2e",
  "engine",
  "fixtures",
+ "mock",
  "protocol",
  "regex",
  "serde",
@@ -251,6 +252,7 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -471,6 +473,7 @@ dependencies = [
  "fixtures",
  "flate2",
  "futures-util",
+ "mock",
  "png",
  "protocol",
  "regex",

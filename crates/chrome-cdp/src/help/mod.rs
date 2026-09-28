@@ -144,6 +144,7 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
             "block",
             "routes",
             "unroute",
+            "mock",
             "init-script",
             "expose",
             "unexpose",

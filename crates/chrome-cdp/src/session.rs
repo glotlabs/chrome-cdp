@@ -1085,6 +1085,47 @@ pub(crate) fn unroute(args: &UnrouteArgs, global: &GlobalArgs) -> Result<Output,
     Ok(every_tab(output, &ctx, "routes"))
 }
 
+/// A call of a command that needs a running session and applies to all
+/// of its tabs (the `mock` commands): `what` names them in the warning
+/// about `--tab`.
+pub(crate) fn call_session<T: serde::Serialize>(
+    global: &GlobalArgs,
+    method: &str,
+    request: &T,
+    what: &str,
+) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let output = ctx
+        .runtime
+        .block_on(client.call_output(method, request, ctx.timeout + QUICK))?;
+    Ok(every_tab(output, &ctx, what))
+}
+
+/// As [`call_session`], but `None` when the session is not running.
+pub(crate) fn call_if_running<T: serde::Serialize>(
+    global: &GlobalArgs,
+    method: &str,
+    request: &T,
+) -> Result<Option<Output>, ErrorInfo> {
+    let ctx = Ctx::new(global)?;
+    let Some(mut client) = ctx
+        .runtime
+        .block_on(client::connect(&ctx.paths, &ctx.build))?
+    else {
+        return Ok(None);
+    };
+    ctx.runtime
+        .block_on(client.call_output(method, request, ctx.timeout + QUICK))
+        .map(Some)
+}
+
+/// The command's `--timeout` in ms.
+pub(crate) fn timeout_ms(global: &GlobalArgs) -> u64 {
+    millis(global.timeout_or(DEFAULT_TIMEOUT))
+}
+
 /// `init-script add|list|remove`: need a running session.
 pub(crate) fn init_script(args: &InitScriptArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     check_tab(global.tab.as_deref())?;

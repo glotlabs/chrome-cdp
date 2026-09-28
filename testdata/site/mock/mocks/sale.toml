@@ -1,0 +1,5 @@
+# Layered onto base: one product is on sale.
+[[mock]]
+name = "on sale"
+match = { method = "GET", path = "/mock/api/products" }
+respond = { json = [{ id = 1, name = "Keyboard", sale = true }] }

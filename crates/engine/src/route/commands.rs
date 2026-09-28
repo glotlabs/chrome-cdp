@@ -159,7 +159,7 @@ impl Engine {
 
     /// Makes the running browser (if any) intercept requests as the rules
     /// now need; a browser started later gets it at its setup.
-    async fn apply_routes(&self, timeout: std::time::Duration) {
+    pub(super) async fn apply_routes(&self, timeout: std::time::Duration) {
         let running = match &*self.lock_state() {
             State::Running(running) => Some(running.clone()),
             State::Crashed(_) | State::Empty => None,

@@ -399,6 +399,27 @@ impl Daemon {
                 Ok(p) => output(self.engine.unroute(p).await),
                 Err(e) => Err(e),
             },
+            rpc::MOCK_USE => match params(req.params) {
+                Ok(p) => output(self.engine.mock_use(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::MOCK_OFF => match params(req.params) {
+                Ok(p) => output(self.engine.mock_off(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::MOCK_LIST => match params(req.params) {
+                Ok(p) => output(Ok(self.engine.mock_list(&p))),
+                Err(e) => Err(e),
+            },
+            rpc::MOCK_LOG => match params(req.params) {
+                Ok(p) => output(Ok(self.engine.mock_log(&p))),
+                Err(e) => Err(e),
+            },
+            rpc::MOCK_RESET => output(Ok(self.engine.mock_reset())),
+            rpc::MOCK_EXPLAIN => match params(req.params) {
+                Ok(p) => output(Ok(self.engine.mock_explain(&p))),
+                Err(e) => Err(e),
+            },
             rpc::INIT_SCRIPT_ADD => match params(req.params) {
                 Ok(p) => output(self.engine.init_script_add(p).await),
                 Err(e) => Err(e),

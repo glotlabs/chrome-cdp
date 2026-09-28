@@ -1,0 +1,11 @@
+$ chrome-cdp mock explain GET /api/items --mocks base
+exit: 2
+--- stderr
+error: <tmp>/app/e2e/mocks/base.toml:4:25: respond.json_file: <tmp>/app/e2e/mocks/data/items.json does not exist (data files are relative to <tmp>/app/e2e/mocks)
+  hint: fix it in <tmp>/app/e2e/mocks/base.toml; `chrome-cdp mock --help` shows the format, `chrome-cdp schema mocks` its JSON Schema
+
+$ chrome-cdp mock explain GET /api/items --mocks base --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"<tmp>/app/e2e/mocks/base.toml:4:25: respond.json_file: <tmp>/app/e2e/mocks/data/items.json does not exist (data files are relative to <tmp>/app/e2e/mocks)","hint":"fix it in <tmp>/app/e2e/mocks/base.toml; `chrome-cdp mock --help` shows the format, `chrome-cdp schema mocks` its JSON Schema"}}
+

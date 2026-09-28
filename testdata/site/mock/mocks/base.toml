@@ -1,0 +1,33 @@
+# The mock set the engine tests use (plan 11, milestone 11.2).
+[settings]
+scope = ["/mock/api/**"]
+
+[[mock]]
+name = "list products"
+match = { method = "GET", path = "/mock/api/products" }
+respond = { json_file = "data/products.json" }
+
+[[mock]]
+name = "product by id"
+match = { method = "GET", path = "/mock/api/products/:id" }
+respond = { json_file = "data/products/{{params.id}}.json" }
+
+[[mock]]
+name = "login"
+match = { method = "POST", path = "/mock/api/login", json = { email = "*@example.com" } }
+respond = { headers = { "x-mock" = "login" }, json = { ok = true, user = "{{json.email}}" } }
+
+[[mock]]
+name = "order"
+match = { method = "POST", path = "/mock/api/orders" }
+respond = { status = 201, json = { n = "{{seq}}", qty = "{{json.qty}}", at = "{{now}}" } }
+
+[[mock]]
+name = "reset"
+match = { path = "/mock/api/down" }
+respond = { abort = "connectionreset" }
+
+[[mock]]
+name = "echo, patched"
+match = { path = "/echo/patched" }
+respond = { passthrough = true, patch = { patched = true } }

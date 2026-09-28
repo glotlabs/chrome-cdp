@@ -15,7 +15,8 @@
 //! - `matcher`: conditions on a request, with the reason one fails;
 //! - `respond`: answers, data files, content types;
 //! - `template`: `{{params.id}}` and friends (`minijinja`);
-//! - `engine`: [`Mocks`].
+//! - `engine`: [`Mocks`];
+//! - [`text`]: the text form of the `mock` commands' output.
 
 mod engine;
 pub mod file;
@@ -24,6 +25,7 @@ mod load;
 mod matcher;
 mod respond;
 mod template;
+pub mod text;
 
 pub use engine::{Answer, Mocks, Outcome};
 pub use file::{Cors, Unmatched, schema};

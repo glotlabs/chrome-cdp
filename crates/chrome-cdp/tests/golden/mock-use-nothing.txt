@@ -1,0 +1,12 @@
+$ chrome-cdp mock use
+exit: 2
+--- stderr
+error: no mock set named, and the project has no default_mocks
+  sets: base, errors/api-down
+  hint: chrome-cdp mock use base
+
+$ chrome-cdp mock use --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"no mock set named, and the project has no default_mocks","hint":"chrome-cdp mock use base","notes":[{"label":"sets","text":"base, errors/api-down"}]}}
+

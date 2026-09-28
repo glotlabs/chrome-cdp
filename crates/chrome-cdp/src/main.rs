@@ -22,6 +22,7 @@ mod init;
 mod input;
 mod install;
 mod log;
+mod mock;
 mod output;
 mod progress;
 mod route;
@@ -119,6 +120,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Block(args)) => session::block(&args, &cli.global),
         Some(Command::Routes(args)) => session::routes(&args, &cli.global),
         Some(Command::Unroute(args)) => session::unroute(&args, &cli.global),
+        Some(Command::Mock(args)) => mock::run(&args, &cli.global),
         Some(Command::InitScript(args)) => session::init_script(&args, &cli.global),
         Some(Command::Expose(args)) => session::expose(&args.names, false, false, &cli.global),
         Some(Command::Unexpose(args)) => session::expose(&args.names, true, args.all, &cli.global),

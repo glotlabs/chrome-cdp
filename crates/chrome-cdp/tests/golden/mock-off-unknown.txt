@@ -1,0 +1,11 @@
+$ chrome-cdp mock off nope
+exit: 1
+--- stderr
+error: mock set nope is not in use
+  hint: chrome-cdp mock list   (lists the sets in use)
+
+$ chrome-cdp mock off nope --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"mock set nope is not in use","hint":"chrome-cdp mock list   (lists the sets in use)"}}
+

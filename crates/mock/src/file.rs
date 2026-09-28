@@ -74,6 +74,7 @@ pub(crate) struct RawFile {
 /// `[settings]`.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "Settings")]
 pub(crate) struct RawSettings {
     /// The requests the set owns: path globs (`/api/**`) or full-URL globs
     /// (`https://api.example.com/**`). An owned request no mock answers is
@@ -147,6 +148,7 @@ impl<T> OneOrMany<T> {
 /// `[[mock]]`: a request it matches and the answer.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "Mock")]
 pub(crate) struct RawMock {
     /// What `mock list`, `mock log` and `mock explain` call it; `METHOD
     /// path` when not set.
@@ -162,6 +164,7 @@ pub(crate) struct RawMock {
 /// `match`: conditions on the request, all of which must hold.
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "Match")]
 pub(crate) struct RawMatch {
     /// The HTTP method, or a list of them (any case); any method when not
     /// set.
@@ -254,6 +257,7 @@ pub(crate) enum BodyMatch {
 /// `match.graphql`.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "Graphql")]
 pub(crate) struct RawGraphql {
     /// The operation's name: `operationName`, or the name in the query.
     #[serde(default)]
@@ -266,6 +270,7 @@ pub(crate) struct RawGraphql {
 /// `respond`: the answer.
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[schemars(rename = "Respond")]
 pub(crate) struct RawRespond {
     /// The HTTP status; 200 when not set.
     #[serde(default)]

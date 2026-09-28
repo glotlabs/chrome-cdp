@@ -1,0 +1,14 @@
+$ chrome-cdp mock explain DELETE '<site>/mock/api/cart?user=7'
+exit: 0
+--- stdout
+DELETE <site>/mock/api/cart?user=7
+→ no mock matches; unmatched: in scope of base, whose unmatched = "fail" answers 501, which fails a test
+mocks, in the order they are tried:
+  ✗ sale.toml:2 "on sale": method differs: expects GET, got DELETE
+  ✗ base.toml:5 "list products": method differs: expects GET, got DELETE
+  ✗ base.toml:10 "product by id": method differs: expects GET, got DELETE
+  ✗ base.toml:15 "login": method differs: expects POST, got DELETE
+  ✗ base.toml:20 "order": method differs: expects POST, got DELETE
+  ✗ base.toml:25 "reset": path differs: expects /mock/api/down, got /mock/api/cart
+  ✗ base.toml:30 "echo, patched": path differs: expects /echo/patched, got /mock/api/cart
+

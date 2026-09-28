@@ -12,6 +12,7 @@ browser.workspace = true
 cdp.workspace = true
 flate2.workspace = true
 png.workspace = true
+mock.workspace = true
 protocol.workspace = true
 regex.workspace = true
 serde.workspace = true

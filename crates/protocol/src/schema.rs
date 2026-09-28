@@ -264,6 +264,36 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<UnrouteData>),
     },
     CommandSchema {
+        name: "mock use",
+        summary: "the mock sets in use after applying some, in the order they are tried",
+        schema: || schema_for!(Envelope<MockSetsData>),
+    },
+    CommandSchema {
+        name: "mock off",
+        summary: "the mock sets turned off, and the ones still in use",
+        schema: || schema_for!(Envelope<MockOffData>),
+    },
+    CommandSchema {
+        name: "mock list",
+        summary: "the mock sets in use with their mocks and hits, or with --available the sets found",
+        schema: || schema_for!(Envelope<MockSetsData>),
+    },
+    CommandSchema {
+        name: "mock log",
+        summary: "the requests the mocks answered or left unmatched, with the mock that answered",
+        schema: || schema_for!(Envelope<MockLogData>),
+    },
+    CommandSchema {
+        name: "mock reset",
+        summary: "the mock sets whose state (counters, random values) was reset",
+        schema: || schema_for!(Envelope<MockSetsData>),
+    },
+    CommandSchema {
+        name: "mock explain",
+        summary: "which mock would answer a request, and why each other one would not",
+        schema: || schema_for!(Envelope<MockExplainData>),
+    },
+    CommandSchema {
         name: "init-script add",
         summary: "the init script added, and how many the session has",
         schema: || schema_for!(Envelope<InitScriptAddData>),

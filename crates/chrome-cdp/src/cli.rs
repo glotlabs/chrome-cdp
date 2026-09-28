@@ -955,6 +955,44 @@ Examples:
   chrome-cdp unroute --all")]
     Unroute(UnrouteArgs),
 
+    /// Answer the page's requests from mock files: use, list, log, explain.
+    #[command(
+        subcommand_required = true,
+        arg_required_else_help = true,
+        after_help = "\
+A mock set is a TOML file in the project's mocks directory (`mocks` of
+[e2e] in chrome-cdp.toml, else ./e2e/mocks): `mock use base` reads
+e2e/mocks/base.toml. Each [[mock]] matches requests and answers them. Data
+files are relative to the mocks directory:
+
+  [settings]
+  scope = [\"/api/**\"]      # requests the set owns; unmatched ones get a 501
+  [[mock]]
+  name = \"product by id\"
+  match = { method = \"GET\", path = \"/api/products/:id\" }
+  respond = { json_file = \"data/products/{{params.id}}.json\" }
+
+Match on: method, path (:param, *, **), url, regex, query, headers, json
+(a subset; \"*\" matches anything), form, body, graphql. Answer with
+status, headers and one of json, json_file, body, body_file or file; or
+with abort, or passthrough (plus patch); delay holds the answer. Templates:
+{{params.x}} {{query.x}} {{headers.x}} {{json.x}} {{uuid}} {{now}}
+{{seq}} {{faker.name}}. A json_file that does not exist answers 404.
+`chrome-cdp schema mocks` prints the file format's JSON Schema.
+
+Sets applied later are tried first, and `route` rules come before any
+mock. Mock files are read again when they change. The commands need a
+running session, except `mock explain` and `mock list --available`.
+
+Examples:
+  chrome-cdp mock use base checkout
+  chrome-cdp mock list
+  chrome-cdp mock log --unmatched
+  chrome-cdp mock explain GET /api/products/7
+  chrome-cdp mock off"
+    )]
+    Mock(MockArgs),
+
     /// Run scripts in every page before its own: add, list or remove.
     #[command(
         subcommand_required = true,
@@ -2990,6 +3028,192 @@ pub(crate) struct UnrouteArgs {
 }
 
 #[derive(Debug, Args)]
+pub(crate) struct MockArgs {
+    #[command(subcommand)]
+    pub(crate) command: MockCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum MockCommand {
+    /// Answer requests with mock sets, instead of the sets in use.
+    #[command(after_help = "\
+The sets are the project's `default_mocks` ([e2e] in chrome-cdp.toml)
+followed by the SETs named, so `mock use checkout` layers checkout onto the
+defaults, as a scenario's `@mocks checkout` does. A SET is a name in the
+mocks directory (`errors/api-down` is errors/api-down.toml) or a path to a
+.toml file. Later sets are tried first. Every file is checked before any
+is used; a problem is reported at file:line:col.
+
+Examples:
+  chrome-cdp mock use                      # the default_mocks
+  chrome-cdp mock use checkout
+  chrome-cdp mock use --add errors/api-down
+  chrome-cdp mock use --no-defaults ./tmp/experiment.toml")]
+    Use(MockUseArgs),
+
+    /// Stop answering requests with mock sets (all, or those named).
+    #[command(after_help = "\
+Without mock sets or routes left, requests are no longer intercepted.
+
+Examples:
+  chrome-cdp mock off
+  chrome-cdp mock off errors/api-down")]
+    Off(MockOffArgs),
+
+    /// List the mock sets in use, their mocks and hits.
+    #[command(after_help = "\
+Sets are listed in the order they are tried, each with its mocks:
+file:line, name, what it matches, what it answers, and how many requests
+it answered. --available lists the sets in the mocks directory instead;
+it needs no session.
+
+Examples:
+  chrome-cdp mock list
+  chrome-cdp mock list --available")]
+    List(MockListArgs),
+
+    /// The requests the mocks answered, and those no mock answered.
+    #[command(after_help = "\
+Each line reads: request number, tab, method, URL, type, then the mock
+that answered it (file:line and name) and what it answered; or `no mock
+in SET` for a request in a set's scope that no mock matched. --all adds
+the requests no set had anything to do with.
+
+Examples:
+  chrome-cdp mock log
+  chrome-cdp mock log --unmatched
+  chrome-cdp mock log --all --limit 100")]
+    Log(MockLogArgs),
+
+    /// Start the mocks' state over: hit counters and random values.
+    #[command(after_help = "\
+`{{seq}}` counts from 1 again, and `{{uuid}}` and `{{faker.*}}` give the
+same values as after `mock use`.
+
+Examples:
+  chrome-cdp mock reset")]
+    Reset(MockResetArgs),
+
+    /// Which mock answers a request, and why the others do not.
+    #[command(after_help = "\
+Checks every mock of the sets in use, in the order they are tried, and
+says which one answers the request and, for each other one, the first
+condition that does not hold. A URL starting with / is relative to
+base_url. Without a session using mock sets, it explains with --mocks, or
+the project's default_mocks. Nothing is sent, and no hit is counted.
+
+Examples:
+  chrome-cdp mock explain GET /api/products/7
+  chrome-cdp mock explain POST /api/login --json-body '{\"email\":\"ada@example.com\"}'
+  chrome-cdp mock explain GET 'https://api.example.com/v1/cart?user=7' --mocks base")]
+    Explain(MockExplainArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MockUseArgs {
+    /// Mock sets to apply after the defaults: names in the mocks
+    /// directory, or paths to .toml files.
+    #[arg(value_name = "SET")]
+    pub(crate) sets: Vec<String>,
+
+    /// Layer the sets onto the ones in use (without the defaults).
+    #[arg(long)]
+    pub(crate) add: bool,
+
+    /// Leave out the project's default_mocks.
+    #[arg(long)]
+    pub(crate) no_defaults: bool,
+
+    /// The mocks directory (default: `mocks` of [e2e], else ./e2e/mocks).
+    #[arg(long, value_name = "DIR")]
+    pub(crate) dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MockOffArgs {
+    /// The sets to turn off; all when none is named.
+    #[arg(value_name = "SET")]
+    pub(crate) sets: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MockListArgs {
+    /// List the sets in the mocks directory instead (needs no session).
+    #[arg(long)]
+    pub(crate) available: bool,
+
+    /// With --available: the mocks directory.
+    #[arg(long, value_name = "DIR", requires = "available")]
+    pub(crate) dir: Option<PathBuf>,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MockLogArgs {
+    /// Only the requests no mock answered (in a set's scope).
+    #[arg(long, conflicts_with = "all")]
+    pub(crate) unmatched: bool,
+
+    /// Every request routing saw, not only mocked and unmatched ones.
+    #[arg(long)]
+    pub(crate) all: bool,
+
+    /// Show at most this many requests, the newest (0 = all).
+    #[arg(long, default_value_t = 20, value_name = "N")]
+    pub(crate) limit: usize,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MockResetArgs {}
+
+#[derive(Debug, Args)]
+pub(crate) struct MockExplainArgs {
+    /// The request's method: GET, POST, …
+    #[arg(value_name = "METHOD")]
+    pub(crate) method: String,
+
+    /// Its URL: absolute, or a path relative to base_url.
+    #[arg(value_name = "URL")]
+    pub(crate) url: String,
+
+    /// A JSON body (sent as application/json); `-` reads stdin.
+    #[arg(long, value_name = "JSON", conflicts_with = "body")]
+    pub(crate) json_body: Option<String>,
+
+    /// A text body; `-` reads stdin.
+    #[arg(long, value_name = "TEXT")]
+    pub(crate) body: Option<String>,
+
+    /// A request header, `Name: value` (repeatable).
+    #[arg(long = "header", value_name = "HEADER")]
+    pub(crate) headers: Vec<String>,
+
+    /// Explain with these sets (repeatable, or comma-separated) instead
+    /// of the session's.
+    #[arg(long, value_name = "SET", value_delimiter = ',')]
+    pub(crate) mocks: Vec<String>,
+
+    /// With --mocks or the defaults: the mocks directory.
+    #[arg(long, value_name = "DIR")]
+    pub(crate) dir: Option<PathBuf>,
+
+    /// Show at most this many mocks (0 = all).
+    #[arg(long, default_value_t = 30, value_name = "N")]
+    pub(crate) limit: usize,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
 pub(crate) struct InitScriptArgs {
     #[command(subcommand)]
     pub(crate) command: InitScriptCommand,
@@ -4722,6 +4946,9 @@ mod tests {
         "route",
         "block",
         "unroute",
+        "mock use",
+        "mock off",
+        "mock reset",
         "init-script add",
         "init-script remove",
         "expose",
