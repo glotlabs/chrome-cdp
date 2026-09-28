@@ -1,6 +1,6 @@
 # Plan 11 — End-to-end testing with a mocked backend
 
-Status: TODO
+Status: IN PROGRESS (11.1 done)
 Depends on: 07 §7.1 (routing engine), 08 §8.2 (`.cdp` script syntax), 09 §9.1–9.2 (`expect`)
 Supersedes: 09 §9.3 (test runner). That milestone is now specified here.
 
@@ -706,3 +706,13 @@ commands (reset a database, run migrations, seed data).
   because the Rust YAML crates are poorly maintained. Response bodies live in
   separate JSON data files, so TOML's weakness with nested data rarely
   matters. Revisit if agents write TOML mocks unreliably in the benchmark.
+
+- 11.1: The code lives in a new crate, `crates/e2e` (config, web servers, `init`), so the mock engine and the runner of later milestones get a home outside the 5k-line `cli.rs`. The binary only renders `init e2e`.
+- 11.1: The project config may be named `chrome-cdp.toml` (this plan) or `.chrome-cdp.toml` (plan 08 §4, as built). Both are found walking up; one directory with both is an error, since which wins would be a guess. `init e2e` writes `chrome-cdp.toml`, or appends to the one that exists.
+- 11.1: `[e2e]` is checked by the commands that use it (`e2e::Config`), not on every command as plan 08's keys are, so a typo in it cannot break `click`. Its errors point at `file:line:col`. The CLI's config loader reads only `[e2e].base_url`, which is also the `goto /path` base when the file has no top-level `base_url`. `[e2e]` in the user config is an error.
+- 11.1: The whole documented `[e2e]` schema parses now, including `determinism`, `backends` and `default_backend` (which must name `mock` or a backend). Values are checked for shape only; e.g. `freeze_time`'s timestamp is parsed by 11.6. Keys of later milestones (`openapi`, `allow_console_errors`, `mock_server`) are added by those milestones, so until then they are unknown-key errors.
+- 11.1: Web server details the plan left open: `reuse_existing` defaults to true, as in the example; a server that answers while `reuse_existing = false` is an error, not a second start. A `cwd` key (relative to the config) serves monorepos. `BROWSER=none` is set unless `env` sets it, so create-react-app opens no window. The readiness GET follows no redirects (a 3xx counts as up), accepts self-signed certificates and ignores proxy variables. Several servers start in order; each gets `web-server-N.log`.
+- 11.1: Teardown is SIGTERM to the group, then SIGKILL after 5 s. Dropping `WebServers` kills the groups, and each group has the Chrome watchdog (`browser::launch::Watchdog`, now public), so even a SIGKILL of chrome-cdp leaves no dev server. Ctrl-C is handled by `WebServers::run(work, interrupt)`, which also stops the work when a server exits; the runner (11.4) passes `tokio::signal::ctrl_c()`. No command starts web servers until the runner lands.
+- 11.1: `init e2e` takes `--dir` and `--framework vite|next|cra|astro|sveltekit|none`. Frameworks are checked in the order Next, SvelteKit, Astro, CRA, Vite (SvelteKit and Astro apps depend on Vite too). The package manager comes from `packageManager`, then the lock file, else npm. Vite and SvelteKit get `--strictPort`, so a taken port fails instead of moving away from `url`. Beyond the plan's list it writes a data file for the mock set and adds `e2e/.results/` to `.gitignore`; both the config and `.gitignore` are only appended to.
+- 11.1: The CI template installs chrome-cdp with `cargo install --locked chrome-cdp` until plan 10 publishes release installers, sets `CHROME_CDP_AUTO_INSTALL=1` (the runner's own Chrome is used when it has one) and caches `~/.cache/chrome-cdp`. The `fmt --check` and `check` steps (11.12) and the `#:schema` comment in the mock file (the schema is published in 11.10) wait for their milestones.
+- 11.1: The example scenario uses 11.4's `@test` syntax; a test checks each of its steps with the CLI's script checker.

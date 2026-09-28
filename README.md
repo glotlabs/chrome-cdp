@@ -21,7 +21,8 @@ for a human watching (`highlight`, `inspect`), mocking and blocking requests
 `throttle`, `cpu-throttle`, `time`, `permissions`), scripts and functions
 for every page (`init-script`, `expose`, `unexpose`), cookies, storage and
 saved logins (`cookies`, `storage`, `state`), raw CDP calls, scripts
-(`batch`, `run`, `convert`), `install`/`uninstall`, and help for people and agents
+(`batch`, `run`, `convert`), E2E project setup (`init e2e`),
+`install`/`uninstall`, and help for people and agents
 (`help`, `skill`, `completions`, `schema`) work so far:
 
 ```sh
@@ -512,6 +513,13 @@ maps its API (locators, actions, waits, `expect`, mocking, contexts) to
 commands, and `chrome-cdp convert tests/login.spec.ts -o login.cdp`
 translates a simple test file into a script, with a `# TODO` line for each
 statement it cannot translate.
+
+For E2E tests of a web frontend against a mocked backend (plan 11, in
+progress), `chrome-cdp init e2e` scaffolds a project: an `[e2e]` section in
+`chrome-cdp.toml` whose web server and `base_url` come from `package.json`
+(Vite, Next.js, Create React App, Astro, SvelteKit), an example scenario in
+`e2e/scenarios/`, a mock set in `e2e/mocks/`, and a GitHub Actions workflow.
+It never overwrites a file. `chrome-cdp help config` lists the `[e2e]` keys.
 
 `chrome-cdp --help` fits on one screen: the commands most tasks need, by
 task, and the locator grammar. `help commands` lists every command, `help
