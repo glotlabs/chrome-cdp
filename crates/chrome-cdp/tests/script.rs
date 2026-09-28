@@ -107,7 +107,8 @@ fn lines_are_checked_against_the_commands() {
         err.starts_with("error: <stdin>:1:1: unexpected argument '--forse' found\n"),
         "{err}"
     );
-    assert!(err.contains("hint: chrome-cdp click --help"), "{err}");
+    // The hint is the line with the flag clap suggests.
+    assert!(err.contains("hint: chrome-cdp click e1 --force\n"), "{err}");
 
     // A bare #id is a comment, as in a shell; the error says so.
     let err = check("click #submit\n");
