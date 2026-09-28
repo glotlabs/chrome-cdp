@@ -1,0 +1,11 @@
+$ chrome-cdp init e2e
+exit: 2
+--- stderr
+error: <tmp>/app/package.json:1:20: EOF while parsing a value
+  hint: fix package.json; init reads its dependencies and scripts
+
+$ chrome-cdp init e2e --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"<tmp>/app/package.json:1:20: EOF while parsing a value","hint":"fix package.json; init reads its dependencies and scripts"}}
+

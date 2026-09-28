@@ -1,0 +1,16 @@
+# Mock set "base": default_mocks in chrome-cdp.toml applies it to every
+# test. Requests in scope that no mock answers fail the test.
+
+[settings]
+scope = ["/api/**"]              # the requests these mocks own
+unmatched = "fail"               # fail | passthrough | abort
+
+[[mock]]
+name = "list items"
+match = { method = "GET", path = "/api/items" }
+respond = { json_file = "data/items.json" }
+
+[[mock]]
+name = "item by id"
+match = { method = "GET", path = "/api/items/:id" }
+respond = { json = { id = "{{params.id}}", name = "Item {{params.id}}" } }

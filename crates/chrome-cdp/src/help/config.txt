@@ -72,5 +72,6 @@ Environment variables:
 
 Examples:
   printf 'base_url = "http://localhost:3000"\n' > chrome-cdp.toml
+  chrome-cdp init e2e                   # an [e2e] section and an e2e/ folder
   CHROME_CDP_SESSION=shop chrome-cdp goto /cart
   chrome-cdp open --help                # the launch options

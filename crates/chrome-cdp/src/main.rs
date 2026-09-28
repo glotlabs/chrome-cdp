@@ -18,6 +18,7 @@ mod convert;
 mod emulate;
 mod expect;
 mod help;
+mod init;
 mod input;
 mod install;
 mod log;
@@ -77,6 +78,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Help(args)) => help::run(&args),
         Some(Command::Skill(args)) => skill::run(&args),
         Some(Command::Convert(args)) => convert::run(&args),
+        Some(Command::Init(args)) => init::run(&args),
         Some(Command::Completions(args)) => Ok(completions::run(&args)),
         Some(Command::Install(args)) => {
             install::install(&args, cli.global.timeout_or(cli::DEFAULT_TIMEOUT))

@@ -1,0 +1,21 @@
+$ chrome-cdp init e2e
+exit: 0
+--- stdout
+created  <tmp>/app/chrome-cdp.toml            web server: npm run dev -- --port 5173 --strictPort
+created  <tmp>/app/e2e/scenarios/example.cdp
+created  <tmp>/app/e2e/mocks/base.toml
+created  <tmp>/app/e2e/mocks/data/items.json
+created  <tmp>/app/.github/workflows/e2e.yml
+created  <tmp>/app/.gitignore                 e2e/.results/
+next: start the app, then chrome-cdp open / opens http://localhost:5173
+
+$ chrome-cdp init e2e --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"base_url":"http://localhost:5173","dir":"<tmp>/app","files":[{"action":"created","path":"<tmp>/app/chrome-cdp.toml"},{"action":"created","path":"<tmp>/app/e2e/scenarios/example.cdp"},{"action":"created","path":"<tmp>/app/e2e/mocks/base.toml"},{"action":"created","path":"<tmp>/app/e2e/mocks/data/items.json"},{"action":"created","path":"<tmp>/app/.github/workflows/e2e.yml"},{"action":"created","path":"<tmp>/app/.gitignore","reason":"e2e/.results/"}],"framework":"vite","package_manager":"npm","web_server":{"command":"npm run dev -- --port 5173 --strictPort","url":"http://localhost:5173"}}}
+
+$ chrome-cdp init e2e -q
+exit: 0
+--- stdout
+<tmp>/app
+

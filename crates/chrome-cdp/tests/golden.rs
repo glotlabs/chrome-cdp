@@ -53,6 +53,8 @@ enum Fixture {
     MissingChromeEnv,
     /// Runs in a directory whose `.chrome-cdp.toml` has a typo.
     BadConfig,
+    /// Runs in `<tmp>/app`, made afresh with these files before each mode.
+    Project(&'static [(&'static str, &'static str)]),
     /// A fake Chrome for Testing index (`<cft>`) and an empty cache in the
     /// temp dir. Linux x86_64 only: it serves `linux64` builds.
     FakeCft,
@@ -191,6 +193,31 @@ const CASES: &[Case] = &[
         args: &["convert", "{scripts}/missing.spec.ts"],
         modes: ERR,
         fixture: Fixture::None,
+    },
+    Case {
+        name: "init-e2e",
+        args: &["init", "e2e"],
+        modes: ALL,
+        fixture: Fixture::Project(&[(
+            "package.json",
+            r#"{"scripts": {"dev": "vite"}, "devDependencies": {"vite": "^6"}}"#,
+        )]),
+    },
+    Case {
+        name: "init-e2e-kept",
+        args: &["init", "e2e", "--framework", "none"],
+        modes: &["", "--json"],
+        fixture: Fixture::Project(&[
+            (".chrome-cdp.toml", "[e2e]\nbase_url = \"http://localhost:8080\"\n"),
+            (".gitignore", "node_modules/\n"),
+            ("e2e/scenarios/example.cdp", "# mine\n"),
+        ]),
+    },
+    Case {
+        name: "init-e2e-bad-package",
+        args: &["init", "e2e"],
+        modes: ERR,
+        fixture: Fixture::Project(&[("package.json", "{\"devDependencies\": ")]),
     },
     Case {
         name: "skill-agents-md",
@@ -2105,6 +2132,10 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
             cwd = Some(dir.path().to_owned());
             None
         }
+        Fixture::Project(_) => {
+            cwd = Some(dir.path().join("app"));
+            None
+        }
         Fixture::FakeCft => {
             if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
                 return None;
@@ -2158,6 +2189,14 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
         {
             let out = sb.cli().arg("open").output().unwrap();
             assert!(out.status.success(), "{out:?}");
+        }
+        if let (Fixture::Project(files), Some(cwd)) = (case.fixture, &cwd) {
+            let _ = std::fs::remove_dir_all(cwd);
+            for (path, text) in files {
+                let path = cwd.join(path);
+                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+                std::fs::write(path, text).unwrap();
+            }
         }
         let mut cmd: Command = sandbox.as_ref().map_or_else(cli, Sandbox::cli);
         cmd.args(&args);

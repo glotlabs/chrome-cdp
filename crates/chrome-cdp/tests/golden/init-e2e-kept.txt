@@ -1,0 +1,16 @@
+$ chrome-cdp init e2e --framework none
+exit: 0
+--- stdout
+kept      <tmp>/app/.chrome-cdp.toml           has an [e2e] section
+kept      <tmp>/app/e2e/scenarios/example.cdp  exists
+created   <tmp>/app/e2e/mocks/base.toml
+created   <tmp>/app/e2e/mocks/data/items.json
+created   <tmp>/app/.github/workflows/e2e.yml
+appended  <tmp>/app/.gitignore                 e2e/.results/
+next: chrome-cdp help config shows the project's [e2e] keys
+
+$ chrome-cdp init e2e --framework none --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"dir":"<tmp>/app","files":[{"action":"kept","path":"<tmp>/app/.chrome-cdp.toml","reason":"has an [e2e] section"},{"action":"kept","path":"<tmp>/app/e2e/scenarios/example.cdp","reason":"exists"},{"action":"created","path":"<tmp>/app/e2e/mocks/base.toml"},{"action":"created","path":"<tmp>/app/e2e/mocks/data/items.json"},{"action":"created","path":"<tmp>/app/.github/workflows/e2e.yml"},{"action":"appended","path":"<tmp>/app/.gitignore","reason":"e2e/.results/"}]}}
+

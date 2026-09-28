@@ -1423,6 +1423,17 @@ Examples:
   chrome-cdp convert tests/login.spec.ts --json    # the script and each TODO")]
     Convert(ConvertArgs),
 
+    /// Set up a project for chrome-cdp: `init e2e` scaffolds E2E tests with mocks.
+    #[command(
+        subcommand_required = true,
+        arg_required_else_help = true,
+        after_help = "\
+Examples:
+  chrome-cdp init e2e
+  chrome-cdp init e2e --framework vite --dir web"
+    )]
+    Init(InitArgs),
+
     /// Show help: an overview, every command by task, a command in full, or a topic.
     #[command(after_help = "\
 Topics: locators, refs, waiting, errors, config, scripts. `help commands`
@@ -1467,6 +1478,63 @@ Examples:
     /// The session daemon; other commands start it.
     #[command(name = "__daemon", hide = true)]
     Daemon(DaemonArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct InitArgs {
+    #[command(subcommand)]
+    pub(crate) command: InitCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum InitCommand {
+    /// Scaffold E2E tests: the [e2e] config, a scenario, a mock set and a CI workflow.
+    #[command(after_help = "\
+Writes, in the project directory (the current one, or --dir):
+
+  chrome-cdp.toml               the [e2e] section (added to an existing
+                                chrome-cdp.toml or .chrome-cdp.toml)
+  e2e/scenarios/example.cdp     a scenario: steps are chrome-cdp commands
+  e2e/mocks/base.toml           the mock set every test gets
+  e2e/mocks/data/items.json     data the mocks answer with
+  .github/workflows/e2e.yml     runs the tests on GitHub Actions
+  .gitignore                    ignores e2e/.results/ (test artifacts)
+
+The web server command and base_url come from package.json: Vite, Next.js,
+Create React App, Astro or SvelteKit, run with npm, pnpm, yarn or bun (from
+packageManager or the lock file). An existing file is never overwritten;
+running it again changes nothing. `chrome-cdp help config` lists the [e2e]
+keys.
+
+Examples:
+  chrome-cdp init e2e
+  chrome-cdp init e2e --dir frontend
+  chrome-cdp init e2e --framework next      # instead of reading package.json
+  chrome-cdp init e2e --json                # each file and what was done")]
+    E2e(InitE2eArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct InitE2eArgs {
+    /// The project's directory (default: the current one).
+    #[arg(long, value_name = "DIR")]
+    pub(crate) dir: Option<PathBuf>,
+
+    /// The app's framework, instead of the one package.json names.
+    #[arg(long, value_enum, value_name = "NAME")]
+    pub(crate) framework: Option<FrameworkArg>,
+}
+
+/// `init e2e --framework`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum FrameworkArg {
+    Vite,
+    Next,
+    Cra,
+    Astro,
+    Sveltekit,
+    /// No framework: the web server is left for you to fill in.
+    None,
 }
 
 #[derive(Debug, Args)]
@@ -4691,6 +4759,8 @@ mod tests {
         "cookies clear",
         "state save",
         "state load",
+        // A line per file of the layout.
+        "init e2e",
         // Fixed texts: the help, the skill file, completion scripts.
         "help",
         "skill",

@@ -62,6 +62,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<SkillData>),
     },
     CommandSchema {
+        name: "init e2e",
+        summary: "the project's E2E layout: the framework found and each file written or kept",
+        schema: || schema_for!(Envelope<InitData>),
+    },
+    CommandSchema {
         name: "completions",
         summary: "the shell completion script",
         schema: || schema_for!(Envelope<CompletionsData>),
@@ -701,6 +706,64 @@ pub enum SkillWrite {
     Updated,
     /// It was the same already.
     Unchanged,
+}
+
+/// `data` of `chrome-cdp init e2e --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InitData {
+    /// The project root, absolute: where the files were written.
+    pub dir: String,
+    /// The framework found in `package.json` (or given with
+    /// `--framework`): `vite`, `next`, `cra`, `astro` or `sveltekit`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub framework: Option<String>,
+    /// `npm`, `pnpm`, `yarn` or `bun`, when there is a `package.json` or a
+    /// framework.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub package_manager: Option<String>,
+    /// The `[e2e]` `base_url` written; none when the config had an
+    /// `[e2e]` section already.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    /// The `[e2e.web_server]` written, if a framework was found (and the
+    /// section was written).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub web_server: Option<InitWebServer>,
+    /// Every file `init` looked at, in the order written.
+    pub files: Vec<InitFile>,
+}
+
+/// The web server `init e2e` wrote into the config.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InitWebServer {
+    /// The shell command that serves the app.
+    pub command: String,
+    /// The URL that answers when it is up.
+    pub url: String,
+}
+
+/// A file of the layout, and what `init e2e` did to it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InitFile {
+    /// Its absolute path.
+    pub path: String,
+    pub action: InitAction,
+    /// Why it was kept or added to, e.g. `has an [e2e] section`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// What `init e2e` did to a file. It never overwrites one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum InitAction {
+    /// It did not exist.
+    Created,
+    /// Lines were added at its end (the `[e2e]` section, a `.gitignore`
+    /// entry).
+    Appended,
+    /// It exists and was left as it is.
+    Kept,
 }
 
 /// `data` of `chrome-cdp completions --json`.

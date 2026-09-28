@@ -1,0 +1,9 @@
+# An example scenario. `chrome-cdp test` runs every file in e2e/scenarios.
+# Each step is a chrome-cdp command as typed after `chrome-cdp`; a URL
+# path is relative to base_url in chrome-cdp.toml. The mock set "base"
+# (e2e/mocks/base.toml) answers the app's API calls in every test.
+
+@test "the home page loads without errors"
+  goto /
+  expect 'css=body' visible
+  expect --no-errors

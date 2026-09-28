@@ -111,7 +111,13 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
     ),
     (
         "Verifying",
-        &["expect", "expect-snapshot", "expect-screenshot", "mark"],
+        &[
+            "expect",
+            "expect-snapshot",
+            "expect-screenshot",
+            "mark",
+            "init",
+        ],
     ),
     (
         "Observing and debugging",
