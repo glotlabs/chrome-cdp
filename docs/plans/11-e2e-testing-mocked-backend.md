@@ -1,6 +1,6 @@
 # Plan 11 — End-to-end testing with a mocked backend
 
-Status: DONE (11.1-11.12; the runner-overhead criterion runs with the benchmarks after all plans, the agent benchmark is plan 10's, and "all CI runners" waits for a first GitHub CI run: e2e-shop passes locally with `--jobs 4` and `--repeat 20`)
+Status: DONE (11.1-11.12, closed out against the code and tests. Three criteria stay open for reasons outside this plan: the runner-overhead timing runs with the benchmarks after all plans; the agent benchmark is plan 10's; and "all CI runners" waits for a first GitHub CI run. e2e-shop passes locally with `--jobs 4` and with `--repeat 20`.)
 Depends on: 07 §7.1 (routing engine), 08 §8.2 (`.cdp` script syntax), 09 §9.1–9.2 (`expect`)
 Supersedes: 09 §9.3 (test runner). That milestone is now specified here.
 
@@ -828,3 +828,4 @@ commands (reset a database, run migrations, seed data).
 - 11.10: `chrome-cdp skill` has an "E2E tests with mocks" section (explore with `mock use`, `history --as-scenario`, mocks, `lint`, `test`, `report.md`), and AGENTS.md a line; SKILL.md stays under 2k tokens. The Playwright migration guide's test runner section was brought up to date, and `docs/e2e/migrating.md` covers moving suites and `page.route` handlers.
 - 11.10: The example has 17 tests, not the "30-test suite" the timing criterion names; that criterion is a timing: deferred, benchmarks run after all plans.
 - Close-out: the determinism test (`twenty_runs_record_the_same_steps_and_screenshots` in `tests/e2e.rs`) runs `scenarios/determinism` with `--repeat 20 --jobs 4 --trace` and compares each run's `steps.jsonl` and `--trace` screenshots with the first run's, byte for byte. "Timestamps excluded" covers each step's `start_ms`/`duration_ms` and the durations step outputs report (`goto`'s `(865ms)`), which stay in the file because they help debugging.
+- Close-out: the test list's gaps were filled: `lint` has a `bad-args` fixture; the `--verify-mocks` fixture drifts by a true rename (`title` → `name`) and a mocked endpoint the real API lacks (status drift), next to the changed type and the unmocked endpoint; the `mock record` round trip replays with the backend off (the page from a `static` web server with no API); mock files get a formatter property test like `.cdp` files; and a test keeps `examples/e2e-shop/dist` built from its current sources. Hybrid mode stays covered on `testdata/e2e` (see 11.11), since the shop has no third-party service to mock.
