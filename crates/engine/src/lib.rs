@@ -25,7 +25,6 @@
 //! `observe`, `emulate`, `route`.
 
 mod clipboard;
-mod console;
 mod dialog;
 mod downloads;
 mod endpoint;
@@ -37,6 +36,7 @@ mod interrupt;
 mod locator;
 mod navigate;
 mod network;
+mod observe;
 mod pattern;
 mod raw;
 mod read;
@@ -67,10 +67,10 @@ pub use navigate::normalize_url;
 pub use read::check_read;
 pub use request::{
     Action, ActionRequest, Button, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
-    DialogPolicy, DialogRequest, DownloadsRequest, ElementState, FindRequest, HttpCredentials,
-    Modifier, MouseOp, NavigateRequest, Navigation, OpenRequest, Read, ReadRequest, ScrollTo,
-    SnapshotEngine, SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
-    Target, WaitFor, WaitRequest, WaitUntil,
+    ConsoleRequest, DialogPolicy, DialogRequest, DownloadsRequest, ElementState, FindRequest,
+    HttpCredentials, Modifier, MouseOp, NavigateRequest, Navigation, OpenRequest, Read,
+    ReadRequest, ScrollTo, Since, SnapshotEngine, SnapshotRequest, TabCloseRequest, TabNewRequest,
+    TabSelectRequest, TabsRequest, Target, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use tabs::commands::TabClosed;
@@ -124,6 +124,8 @@ struct Running {
     /// Whether the browser runs on macOS (for `Mod` and editing
     /// commands), once asked.
     mac: std::sync::OnceLock<bool>,
+    /// The source maps console stack frames were resolved with.
+    sourcemaps: observe::SourceMaps,
 }
 
 /// What the running browser was started with, to compare with a later
@@ -258,6 +260,9 @@ impl Engine {
         }
         if let Some(credentials) = &req.http_credentials {
             self.settings.set_http_credentials(credentials.clone());
+        }
+        if let Some(entries) = req.console_buffer {
+            self.settings.set_console_buffer(entries);
         }
         let mut warnings = Vec::new();
         let current = match &*self.lock_state() {
@@ -503,6 +508,7 @@ impl Engine {
             launched: Mutex::new(launched),
             stop: stop.clone(),
             mac: std::sync::OnceLock::new(),
+            sourcemaps: observe::SourceMaps::default(),
         });
         *self.lock_state() = State::Running(running.clone());
         let engine = Arc::downgrade(self);

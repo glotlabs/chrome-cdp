@@ -434,7 +434,7 @@ fn origins(before: &Before, events: &[Event]) -> Vec<String> {
 }
 
 /// A URL's origin, `http://x:8080` (`None` for `about:`, `data:`, …).
-fn origin(url: &str) -> Option<&str> {
+pub(crate) fn origin(url: &str) -> Option<&str> {
     let (scheme, rest) = url.split_once("://")?;
     if !matches!(scheme, "http" | "https" | "file") {
         return None;

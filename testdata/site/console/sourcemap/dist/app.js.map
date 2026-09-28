@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../src/cart.ts", "../src/main.ts"],
+  "sourcesContent": ["export interface Cart {\n  items: string[];\n  coupon?: { code: string };\n}\n\nexport function checkout(cart: Cart): string {\n  const code = cart.coupon!.code;\n  return `${cart.items.length} items, coupon ${code}`;\n}\n", "import { checkout, type Cart } from './cart';\n\nconst cart: Cart = { items: ['book'] };\n\ndocument.querySelector('#checkout')?.addEventListener('click', () => {\n  console.log('checking out', cart.items.length);\n  checkout(cart);\n});\n"],
+  "mappings": "MAKO,SAASA,EAASC,EAAoB,CAC3C,IAAMC,EAAOD,EAAK,OAAQ,KAC1B,MAAO,GAAGA,EAAK,MAAM,MAAM,kBAAkBC,CAAI,EACnD,CCNA,IAAMC,EAAa,CAAE,MAAO,CAAC,MAAM,CAAE,EAErC,SAAS,cAAc,WAAW,GAAG,iBAAiB,QAAS,IAAM,CACnE,QAAQ,IAAI,eAAgBA,EAAK,MAAM,MAAM,EAC7CC,EAASD,CAAI,CACf,CAAC",
+  "names": ["checkout", "cart", "code", "cart", "checkout"]
+}

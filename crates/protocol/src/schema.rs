@@ -152,6 +152,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<DownloadsData>),
     },
     CommandSchema {
+        name: "console",
+        summary: "the tab's console entries the agent has not seen yet (or --since), oldest first",
+        schema: || schema_for!(Envelope<ConsoleData>),
+    },
+    CommandSchema {
+        name: "errors",
+        summary: "the tab's unseen errors: uncaught exceptions, console.error and failed requests to its origin",
+        schema: || schema_for!(Envelope<ConsoleData>),
+    },
+    CommandSchema {
         name: "snapshot",
         summary: "the page's accessibility tree, with refs on what can be acted on",
         schema: || schema_for!(Envelope<SnapshotData>),
@@ -703,6 +713,114 @@ pub struct DownloadsData {
     pub dir: String,
     /// Every download of the session, oldest first.
     pub downloads: Vec<DownloadInfo>,
+}
+
+/// How severe a console entry is, most severe first. `--level warn`
+/// shows `error` and `warn` entries.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum Level {
+    Error,
+    Warn,
+    Info,
+    Debug,
+}
+
+impl Level {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warn => "warn",
+            Self::Info => "info",
+            Self::Debug => "debug",
+        }
+    }
+}
+
+/// `data` of `chrome-cdp console --json` and `chrome-cdp errors --json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ConsoleData {
+    /// The tab, e.g. `t1`.
+    pub tab: String,
+    /// The entries shown, oldest first.
+    pub entries: Vec<ConsoleEntry>,
+    /// Older entries that matched but `--limit` left out.
+    pub skipped: usize,
+    /// Entries the tab's buffer dropped before anyone read them (it keeps
+    /// the newest `open --console-buffer`, 1,000 by default).
+    pub dropped: u64,
+    /// The read cursor now: the next `--since last` shows entries after
+    /// this sequence number.
+    pub cursor: u64,
+}
+
+/// One console message, uncaught exception or browser message (a failed
+/// load, a CSP violation, an intervention).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ConsoleEntry {
+    /// Its place in the tab's console; later ones are larger
+    /// (`--since <seq>`).
+    pub seq: u64,
+    /// When the daemon received it, in ms since the Unix epoch.
+    pub time_ms: u64,
+    pub level: Level,
+    /// `console` (a `console.*` call), `exception` (thrown, never
+    /// caught), or where Chrome's own message came from: `network`,
+    /// `security`, `violation`, `intervention`, `deprecation`, …
+    pub source: String,
+    /// The `console` method (`log`, `error`, `table`, …), or for an
+    /// exception `uncaught` or `uncaught (in promise)`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// The message, its arguments formatted like DevTools does (objects
+    /// from their preview).
+    pub text: String,
+    /// The script (or, for a failed load, the resource) it is about, with
+    /// line and column (1-based).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column: Option<u32>,
+    /// The top of the stack (5 frames at most), innermost first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stack: Vec<StackFrame>,
+    /// The worker's script, for a message of a dedicated worker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker: Option<String>,
+}
+
+/// One frame of a stack trace.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct StackFrame {
+    /// The function; empty at a script's top level.
+    pub function: String,
+    pub url: String,
+    /// 1-based.
+    pub line: u32,
+    pub column: u32,
+    /// Where it is in the original source, when a source map says so
+    /// (`--sourcemaps`, on by default for localhost pages).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original: Option<SourcePosition>,
+}
+
+/// A place in an original source file, from a source map.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SourcePosition {
+    /// The source file as the map names it, resolved against the map's
+    /// URL (`http://localhost:5173/src/app.ts`) unless it has its own
+    /// scheme (`webpack://app/./src/app.ts`).
+    pub source: String,
+    /// 1-based.
+    pub line: u32,
+    pub column: u32,
+    /// The original name at that place, if the map has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 /// `data` of `chrome-cdp snapshot --json`.

@@ -24,6 +24,8 @@ mod keyboard;
 mod keys;
 mod mouse;
 mod report;
+
+pub(crate) use report::origin;
 mod scroll;
 mod upload;
 

@@ -61,6 +61,10 @@ pub struct OpenRequest {
     /// with; `None` keeps the session's (none at first).
     #[serde(default)]
     pub http_credentials: Option<HttpCredentials>,
+    /// `--console-buffer`: how many console entries each tab keeps; `None`
+    /// keeps the session's (1,000 at first).
+    #[serde(default)]
+    pub console_buffer: Option<usize>,
     /// Bounds the launch and the page load.
     pub timeout_ms: u64,
 }
@@ -378,6 +382,51 @@ pub struct DialogRequest {
 /// `downloads`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadsRequest {
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
+/// Where `console` and `errors` start (`--since`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Since {
+    /// After the entries this command showed last time (per tab).
+    #[default]
+    Last,
+    /// After entry `seq` (`0`: all of them).
+    Seq { seq: u64 },
+    /// Logged in the last `ms` milliseconds.
+    Ago { ms: u64 },
+}
+
+/// `console` and `errors`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConsoleRequest {
+    /// `errors`: only uncaught exceptions, `console.error`s and other
+    /// errors, and failed loads from the page's own origin.
+    #[serde(default)]
+    pub errors: bool,
+    /// `--tab`: the tab to read; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// `--level`: the least severe level shown (`console` only).
+    pub level: protocol::schema::Level,
+    #[serde(default)]
+    pub since: Since,
+    /// `--grep`: a regular expression the text (or URL) must match.
+    #[serde(default)]
+    pub grep: Option<String>,
+    /// `--limit`: the most entries shown, the newest (0 = all).
+    pub limit: usize,
+    /// For `--follow`: with nothing new, wait up to this long for an
+    /// entry before answering.
+    #[serde(default)]
+    pub wait_ms: u64,
+    /// `--sourcemaps`: resolve stack frames with source maps (always on
+    /// for localhost pages).
+    #[serde(default)]
+    pub sourcemaps: bool,
     pub timeout_ms: u64,
     /// The output budget (0 = none).
     pub max_chars: usize,

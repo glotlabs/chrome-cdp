@@ -47,7 +47,7 @@ impl Engine {
         Ok(page)
     }
 
-    fn tab_error(&self, running: &Running, err: TabError) -> ErrorInfo {
+    pub(crate) fn tab_error(&self, running: &Running, err: TabError) -> ErrorInfo {
         match err {
             TabError::NoSuchTab(id) => {
                 let open: Vec<String> = running
@@ -456,7 +456,7 @@ fn file_name(url: &str) -> &str {
 
 /// A URL without its origin, `/api/save?x=1` (the whole URL if it has
 /// none).
-fn path_of(url: &str) -> &str {
+pub(crate) fn path_of(url: &str) -> &str {
     let Some((scheme, rest)) = url.split_once("://") else {
         return url;
     };

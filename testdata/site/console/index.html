@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Console</title>
+</head>
+<body>
+  <h1>Console</h1>
+  <!-- Each button causes one kind of console entry (see app.js). -->
+  <button id="sync" onclick="failSync()">Throw</button>
+  <button id="later" onclick="failLater()">Throw later</button>
+  <button id="reject" onclick="rejectPromise()">Reject</button>
+  <button id="handled" onclick="rejectHandledLate()">Reject, handle later</button>
+  <button id="missing" onclick="fetchMissing()">Fetch a 404</button>
+  <button id="cors" onclick="fetchCors()">Fetch across origins</button>
+  <button id="dns" onclick="fetchUnknownHost()">Fetch an unknown host</button>
+  <button id="abort" onclick="fetchAborted()">Fetch and abort</button>
+  <button id="third" onclick="fetchThirdParty()">Fetch a third party's 404</button>
+  <button id="burst" onclick="burst(1500)">Log 1,500 lines</button>
+  <button id="worker" onclick="startWorker()">Start a worker</button>
+  <script src="app.js"></script>
+  <script>
+    console.debug('debug %s', 'details');
+    console.log('page loaded', 42, { a: 1, b: 'x' }, [1, 2, 3]);
+    console.info('info message');
+    console.warn('deprecated call');
+    console.error('failed to save', new Error('disk full'));
+    console.assert(1 === 2, 'one is not two');
+  </script>
+</body>
+</html>

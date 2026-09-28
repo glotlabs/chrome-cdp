@@ -33,7 +33,7 @@ mod locks;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -44,11 +44,11 @@ use protocol::schema::{Event, TabInfo};
 use self::auth::Auth;
 use self::dialogs::OpenDialog;
 use self::downloads::Download;
-use crate::console::{Console, ConsoleError};
 use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
 use crate::injected;
 use crate::input::Pointer;
 use crate::network::{Exchange, Failure, Idle, InFlight, Network};
+use crate::observe::console::{self, Console, ConsoleError};
 use crate::request::{DialogPolicy, HttpCredentials};
 use crate::snapshot::{FrameSource, Memory as SnapshotMemory};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
@@ -115,6 +115,8 @@ pub(crate) struct Settings {
     http_credentials: Mutex<Option<HttpCredentials>>,
     /// Where downloads go; `None` leaves Chrome's download behaviour alone.
     pub(crate) downloads_dir: Option<PathBuf>,
+    /// How many console entries each tab keeps (`open --console-buffer`).
+    console_buffer: AtomicUsize,
 }
 
 impl Settings {
@@ -122,7 +124,19 @@ impl Settings {
     pub(crate) fn new(downloads_dir: Option<PathBuf>) -> Self {
         Self {
             downloads_dir,
+            console_buffer: AtomicUsize::new(console::DEFAULT_CAPACITY),
             ..Self::default()
+        }
+    }
+
+    pub(crate) fn set_console_buffer(&self, entries: usize) {
+        self.console_buffer.store(entries.max(1), Ordering::Relaxed);
+    }
+
+    pub(crate) fn console_buffer(&self) -> usize {
+        match self.console_buffer.load(Ordering::Relaxed) {
+            0 => console::DEFAULT_CAPACITY,
+            n => n,
         }
     }
 
@@ -219,7 +233,8 @@ struct Tab {
     frames: FrameTree,
     /// Its requests, also those of its OOPIF sessions.
     network: Network,
-    /// Its console errors, also those of its OOPIF sessions.
+    /// Its console, also that of its OOPIF sessions and dedicated
+    /// workers.
     console: Console,
     /// The network log's marks when the page command before the current
     /// one, and the current one, began.
@@ -900,6 +915,26 @@ impl Tabs {
             .unwrap_or_default()
     }
 
+    /// Calls `f` with tab `id`'s console (`None` if the tab is gone).
+    pub(crate) fn console<R>(&self, id: u32, f: impl FnOnce(&mut Console) -> R) -> Option<R> {
+        self.shared
+            .lock()
+            .tabs
+            .get_mut(&id)
+            .map(|tab| f(&mut tab.console))
+    }
+
+    /// Waits until tab `id`'s console has an entry after mark `after` (or
+    /// the tab is gone); `false` if `deadline` passed first.
+    pub(crate) async fn console_logged(&self, id: u32, after: u64, deadline: Instant) -> bool {
+        self.watch(deadline, |state, _| match state.tabs.get(&id) {
+            Some(tab) if tab.console.seq() <= after => Check::Later(None),
+            _ => Check::Done(()),
+        })
+        .await
+        .is_some()
+    }
+
     /// The requests that keep tab `id`'s network busy now.
     pub(crate) fn busy(&self, id: u32) -> Vec<InFlight> {
         self.shared
@@ -1203,9 +1238,12 @@ async fn watch_host(
                     network_event(&shared, &session_id, tab, method, &event);
                 }
             }
-            "Runtime.consoleAPICalled" | "Runtime.exceptionThrown" => {
+            "Runtime.consoleAPICalled"
+            | "Runtime.exceptionThrown"
+            | "Runtime.exceptionRevoked"
+            | "Log.entryAdded" => {
                 if let Some(tab) = tab {
-                    console_event(&shared, tab, &event);
+                    console_event(&shared, tab, &event, None);
                 }
             }
             page::JavascriptDialogOpening::NAME => {
@@ -1341,16 +1379,33 @@ fn network_event(shared: &Shared, session_id: &str, tab: u32, method: &str, even
     }
 }
 
-/// Applies a console call or uncaught exception to tab `tab`'s console
-/// errors.
-fn console_event(shared: &Shared, tab: u32, event: &RawEvent) {
-    let logged = shared
-        .lock()
-        .tabs
-        .get_mut(&tab)
-        .is_some_and(|t| t.console.event(&event.method, &event.params));
+/// Applies a console call, uncaught exception or browser message (of the
+/// dedicated worker whose script is `worker`, if given) to tab `tab`'s
+/// console.
+fn console_event(shared: &Shared, tab: u32, event: &RawEvent, worker: Option<&str>) {
+    let capacity = shared.settings.console_buffer();
+    let logged = shared.lock().tabs.get_mut(&tab).is_some_and(|t| {
+        t.console
+            .event(&event.method, &event.params, worker, capacity)
+    });
     if logged {
         shared.bump();
+    }
+}
+
+/// Handles a dedicated worker's events: its console calls, uncaught
+/// exceptions and browser messages go to tab `tab`'s console.
+async fn watch_worker(shared: Arc<Shared>, mut events: RawEventStream, tab: u32, url: String) {
+    while let Some(event) = events.next().await {
+        if matches!(
+            event.method.as_str(),
+            "Runtime.consoleAPICalled"
+                | "Runtime.exceptionThrown"
+                | "Runtime.exceptionRevoked"
+                | "Log.entryAdded"
+        ) {
+            console_event(&shared, tab, &event, Some(&url));
+        }
     }
 }
 
@@ -1432,21 +1487,45 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
         );
         shared.spawn(watch_host(shared.clone(), events, session.clone(), tab));
     }
+    // A dedicated worker of a tab: its console goes to the tab's.
+    let worker = info.r#type == "worker" && matches!(parent, Parent::Host(Some(_)));
+    if worker && let Some(tab) = tab {
+        let events = session.events();
+        shared.spawn(watch_worker(shared.clone(), events, tab, info.url.clone()));
+    }
+    let kind = if host {
+        Kind::Host
+    } else if worker {
+        Kind::Worker
+    } else {
+        Kind::Other
+    };
     let waiting = attached.waiting_for_debugger;
     let task_shared = shared.clone();
     shared.spawn(async move {
         let session = session.with_timeout(SETUP_TIMEOUT);
-        setup(&task_shared, &session, host, tab, waiting).await;
+        setup(&task_shared, &session, kind, tab, waiting).await;
         if let Some(id) = new_tab {
             ready(&task_shared, id);
         }
     });
 }
 
+/// What a target is to [`setup`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    /// A page or iframe session.
+    Host,
+    /// A tab's dedicated worker.
+    Worker,
+    Other,
+}
+
 /// Prepares a new target before it runs: auto-attach for its children,
 /// the domains commands need, frame tracking and chrome-cdp's isolated
-/// world, the session's settings; then resumes it. `host` is set for page
-/// and iframe sessions, with `tab` the tab whose frames they have.
+/// world, the session's settings; then resumes it. `kind` is
+/// [`Kind::Host`] for page and iframe sessions, with `tab` the tab whose
+/// frames they have; a tab's dedicated worker gets only its console.
 ///
 /// Every step and the resume are sent at once and only then awaited. Chrome
 /// runs them in order, but some answers (`Page.enable` in a popup's new
@@ -1458,12 +1537,23 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
 async fn setup(
     shared: &Arc<Shared>,
     session: &Session,
-    host: bool,
+    kind: Kind,
     tab: Option<u32>,
     waiting: bool,
 ) {
     let mut steps: Vec<(&str, Step)> = Vec::new();
-    if host {
+    if kind == Kind::Worker {
+        // Console calls and exceptions, and the browser's messages.
+        steps.push((
+            "Runtime.enable",
+            step(session.call(runtime::EnableParams::default())),
+        ));
+        steps.push((
+            "Log.enable",
+            step(session.call(cdp::domains::log::EnableParams::default())),
+        ));
+    }
+    if kind == Kind::Host {
         steps.push(("auto-attach", step(session.call(auto_attach()))));
         steps.push((
             "Page.enable",
@@ -1475,10 +1565,16 @@ async fn setup(
             "Page.setLifecycleEventsEnabled",
             step(session.call(page::SetLifecycleEventsEnabledParams::new(true))),
         ));
-        // Reports every execution context, the existing ones too.
+        // Reports every execution context, the existing ones too, and
+        // console calls and exceptions (for the console).
         steps.push((
             "Runtime.enable",
             step(session.call(runtime::EnableParams::default())),
+        ));
+        // The browser's messages: failed loads, CSP violations, …
+        steps.push((
+            "Log.enable",
+            step(session.call(cdp::domains::log::EnableParams::default())),
         ));
         // Requests, for network idle and `wait --request/--response`.
         steps.push((

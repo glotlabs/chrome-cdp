@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Source maps</title>
+</head>
+<body>
+  <h1>Checkout</h1>
+  <!-- dist/app.js is a minified esbuild bundle of src/ with an external
+       map (build.sh); ?inline loads dist/inline.js, whose map is a data:
+       URL. -->
+  <button id="checkout">Check out</button>
+  <script>
+    const script = document.createElement('script');
+    script.src = location.search === '?inline' ? 'dist/inline.js' : 'dist/app.js';
+    document.body.append(script);
+  </script>
+</body>
+</html>
