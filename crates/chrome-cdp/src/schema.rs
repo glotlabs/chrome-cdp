@@ -2,7 +2,7 @@
 //! output, from the registry in `protocol::schema`.
 
 use protocol::schema::{self, COMMANDS, SchemaData, SchemaListEntry};
-use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format, suggest};
 
 use crate::cli::SchemaArgs;
 
@@ -12,10 +12,15 @@ pub(crate) fn run(args: &SchemaArgs) -> Result<Output, ErrorInfo> {
     }
     let name = args.command.join(" ");
     let Some(entry) = schema::command(&name) else {
-        return Err(
-            ErrorInfo::new(ErrorKind::BadArgs, format!("no schema for `{name}`"))
+        let info = ErrorInfo::new(ErrorKind::BadArgs, format!("no schema for `{name}`"));
+        let close = suggest::similar(&name, COMMANDS.iter().map(|c| c.name), 3);
+        return Err(match close.first() {
+            Some(first) => info
+                .note("did you mean", close.join(", "))
+                .hint(Hint::run(Cmd::new("schema").raw(*first))),
+            None => info
                 .hint(Hint::run(Cmd::new("schema")).why("lists the commands that have one")),
-        );
+        });
     };
     let schema = entry.schema();
     let text = serde_json::to_string_pretty(&schema).unwrap_or_else(|_| schema.to_string());

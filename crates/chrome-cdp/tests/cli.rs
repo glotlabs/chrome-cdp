@@ -115,6 +115,9 @@ fn typos_hint_the_corrected_command() {
     assert_eq!(hint(&["scheme", "version"]), "chrome-cdp schema version");
     // Nothing close: the help.
     assert_eq!(hint(&["frobnicate"]), "chrome-cdp --help");
+    // Names that are values, not subcommands, get suggestions too.
+    assert_eq!(hint(&["schema", "tab", "clos"]), "chrome-cdp schema tab close");
+    assert_eq!(hint(&["help", "waitng"]), "chrome-cdp help waiting");
 }
 
 #[test]
