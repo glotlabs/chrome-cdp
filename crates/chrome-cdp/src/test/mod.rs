@@ -60,6 +60,7 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
         sessions,
         update_snapshots: args.update_snapshots,
         bail: args.bail,
+        own_sessions: !explicit_session,
     };
     let started = Instant::now();
     if mode == Mode::Text {
@@ -126,7 +127,7 @@ fn run_tests(
     };
     let result = failed.map_or_else(|| Ok(exec::execute(plan, options, stop, &print)), Err);
     for session in &opened {
-        close(&options.global, session);
+        close(&options.global, session, options.own_sessions);
     }
     result
 }
@@ -146,13 +147,26 @@ fn open(global: &GlobalArgs, session: &str, headed: bool) -> Result<bool, ErrorI
     Ok(out.data["started"].as_bool().unwrap_or(true))
 }
 
-fn close(global: &GlobalArgs, session: &str) {
+/// `close` in `session`; a session the run named itself (`test-<pid>`)
+/// has its directory removed too, so runs leave none behind.
+fn close(global: &GlobalArgs, session: &str, own: bool) {
     let mut global = global.clone();
     session.clone_into(&mut global.session);
     global.context = None;
     let result = script::command(&["close".to_owned()], &global).and_then(crate::run);
     if let Err(e) = result {
         tracing::warn!("cannot close session {session}: {}", e.message);
+        return;
+    }
+    if own {
+        let paths = daemon::paths::SessionPaths::new(&daemon::paths::Env::current(), session);
+        for dir in [&paths.dir, &paths.home] {
+            if let Err(e) = std::fs::remove_dir_all(dir)
+                && e.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::warn!("cannot remove {}: {e}", dir.display());
+            }
+        }
     }
 }
 

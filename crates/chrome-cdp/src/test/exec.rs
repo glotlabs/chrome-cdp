@@ -59,6 +59,8 @@ pub(super) struct Options {
     pub(super) sessions: Vec<String>,
     pub(super) update_snapshots: bool,
     pub(super) bail: bool,
+    /// Whether the run named the sessions itself (and removes them).
+    pub(super) own_sessions: bool,
 }
 
 /// Where a file's `@before-all` is.

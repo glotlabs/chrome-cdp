@@ -106,8 +106,13 @@ fn the_passing_suite_passes_in_parallel_contexts() {
         "{text}"
     );
     assert!(text.contains("\n7 tests: 7 passed ("), "{text}");
-    // The run's session is closed: no daemon is left.
+    // The run's session is closed and gone: no daemon, no session dir.
     assert!(project.sandbox.daemons().is_empty());
+    let sessions = project.sandbox.runtime_dir().join("chrome-cdp");
+    let left: Vec<_> = std::fs::read_dir(&sessions)
+        .map(|d| d.flatten().map(|e| e.file_name()).collect())
+        .unwrap_or_default();
+    assert!(left.is_empty(), "{left:?}");
 }
 
 #[test]
