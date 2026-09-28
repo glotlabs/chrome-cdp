@@ -151,6 +151,17 @@ fn scaffolds_a_vite_project() {
     assert!(config.mocks.join("base.toml").is_file());
     // A Vite app renders in the browser: no mock_server to suggest.
     assert!(!read(dir.path(), "chrome-cdp.toml").contains("mock_server"));
+    // The mock set names the published schema, for editors (11.10).
+    let schema = read(dir.path(), MOCKS_PATH);
+    let url = schema
+        .strip_prefix("#:schema ")
+        .and_then(|rest| rest.lines().next())
+        .unwrap();
+    let published = url
+        .strip_prefix("https://raw.githubusercontent.com/glotlabs/chrome-cdp/main/")
+        .unwrap();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    assert!(root.join(published).is_file(), "{url}");
     // The mock set and its data parse.
     let mocks: toml::Table = toml::from_str(&read(dir.path(), MOCKS_PATH)).unwrap();
     assert!(mocks["mock"].as_array().is_some_and(|m| m.len() == 2));

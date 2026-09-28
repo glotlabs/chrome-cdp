@@ -1,3 +1,4 @@
+#:schema https://raw.githubusercontent.com/glotlabs/chrome-cdp/main/docs/e2e/mocks.schema.json
 # Mock set "base": default_mocks in chrome-cdp.toml applies it to every
 # test. Requests in scope that no mock answers fail the test.
 

@@ -1,0 +1,765 @@
+{
+  "$defs": {
+    "AfterSequence": {
+      "description": "`after_sequence`.",
+      "enum": [
+        "repeat-last",
+        "cycle",
+        "unmatched"
+      ],
+      "type": "string"
+    },
+    "BodyMatch": {
+      "anyOf": [
+        {
+          "description": "A glob on the whole body.",
+          "type": "string"
+        },
+        {
+          "description": "A regular expression searched in the body.",
+          "properties": {
+            "regex": {
+              "description": "The regular expression.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "regex"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "`match.body`."
+    },
+    "Collection": {
+      "additionalProperties": false,
+      "description": "`[[collection]]`: a fake REST resource. `GET path` lists the items,\n`GET path/:id` gets one, `POST path` adds one, `PUT` and `PATCH\npath/:id` replace and change one, and `DELETE path/:id` removes it.",
+      "properties": {
+        "id": {
+          "description": "The items' id field; `id` when not set.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "items": {
+          "description": "The items it starts with, written here instead of a `seed` file.",
+          "items": true,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "list": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CollectionList"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How `GET path` lists the items."
+        },
+        "name": {
+          "description": "What `mock state`, `mock seed` and `expect mock-state` call it.",
+          "type": "string"
+        },
+        "new_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NewId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How a POST without an id gets one: `increment` (the highest number\nplus one) or `uuid`. When not set: `increment` if the starting\nitems' ids are numbers, else `uuid`."
+        },
+        "path": {
+          "description": "The list's path, e.g. `/api/todos`; items are at `/api/todos/:id`.",
+          "type": "string"
+        },
+        "seed": {
+          "description": "A data file (a JSON array of objects) with the items it starts\nwith, relative to the mocks directory.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "path"
+      ],
+      "type": "object"
+    },
+    "CollectionList": {
+      "additionalProperties": false,
+      "description": "`[[collection]] list`.",
+      "properties": {
+        "filter_query": {
+          "default": null,
+          "description": "Query parameters filter the items by the field of the same name\n(`?done=true`); parameters no item has are ignored.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "page_param": {
+          "default": null,
+          "description": "The query parameter with the page number (from 1); pages only when\nset.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "page_size": {
+          "description": "The page size when the request gives none; 20 when not set.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "page_size_param": {
+          "default": null,
+          "description": "The query parameter with the page size.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "wrap": {
+          "default": null,
+          "description": "Answer `{ \"<wrap>\": [items], \"total\": N }` instead of the bare\narray. Lists always carry an `X-Total-Count` header.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Cors": {
+      "description": "`[settings] cors`.",
+      "enum": [
+        "auto",
+        "off"
+      ],
+      "type": "string"
+    },
+    "Graphql": {
+      "additionalProperties": false,
+      "description": "`match.graphql`.",
+      "properties": {
+        "operation": {
+          "default": null,
+          "description": "The operation's name: `operationName`, or the name in the query.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "variables": {
+          "default": null,
+          "description": "Variables the request must have, matched as `json` is."
+        }
+      },
+      "type": "object"
+    },
+    "JsonMode": {
+      "description": "`json_mode`.",
+      "enum": [
+        "exact",
+        "contains"
+      ],
+      "type": "string"
+    },
+    "Match": {
+      "additionalProperties": false,
+      "description": "`match`: conditions on the request, all of which must hold.",
+      "properties": {
+        "body": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BodyMatch"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The body as text: a glob, or `{ regex = \"…\" }`."
+        },
+        "form": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Scalar"
+          },
+          "description": "Fields of a form body (`application/x-www-form-urlencoded`) that must\nbe present; values are globs.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "graphql": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Graphql"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A GraphQL request (a POST body, or a GET query string)."
+        },
+        "headers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Scalar"
+          },
+          "description": "Request headers that must be present (any case); values are globs.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "json": {
+          "description": "The JSON body must contain this: objects match a subset of keys,\n`\"*\"` matches any value and strings are globs. Arrays must match\nelement by element unless `json_mode = \"contains\"`."
+        },
+        "json_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/JsonMode"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How `json` matches arrays: `exact` (the default) or `contains` (each\nexpected element matches some element)."
+        },
+        "method": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OneOrMany"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The HTTP method, or a list of them (any case); any method when not\nset."
+        },
+        "path": {
+          "description": "A glob on the URL's path: `/api/products/:id` captures `id`\n(`{{params.id}}`), `*` matches within a segment, `**` across\nsegments. Any host.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "query": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Scalar"
+          },
+          "description": "Query parameters that must be present (others may be too); values\nare globs (`\"*\"` for any value).",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "regex": {
+          "description": "A regular expression searched in the full URL (query included);\nnamed groups are parameters.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "A glob on the full URL without its query, e.g.\n`https://api.example.com/v1/**`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Mock": {
+      "additionalProperties": false,
+      "description": "`[[mock]]`: a request it matches and the answer.",
+      "properties": {
+        "after_sequence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AfterSequence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "With `sequence`, what comes after its last answer:\n`repeat-last` (the default), `cycle` (from the first again) or\n`unmatched` (the mock stops matching, so the next one answers)."
+        },
+        "match": {
+          "$ref": "#/$defs/Match",
+          "description": "The requests it answers. Every condition given must hold."
+        },
+        "name": {
+          "default": null,
+          "description": "What `mock list`, `mock log` and `mock explain` call it; `METHOD\npath` when not set.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "respond": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Respond"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The answer."
+        },
+        "sequence": {
+          "description": "Answers given in turn instead of `respond`: the first to the first\nrequest, the second to the next, … (`mock reset` starts over).",
+          "items": {
+            "$ref": "#/$defs/Respond"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "set_state": {
+          "additionalProperties": true,
+          "description": "Named values to change after answering: `{ logged_in = true,\nuser = \"{{json.email}}\" }`. Strings may be templates.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "unset_state": {
+          "description": "Named values to remove after answering (a `when` of `\"*\"` then no\nlonger holds), e.g. `[\"user\"]`.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "when": {
+          "additionalProperties": true,
+          "description": "Named values (`[state]`) that must hold for the mock to match:\n`{ logged_in = true }`. `\"*\"` means any value but none; other\nvalues match as `match.json` does.",
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "match"
+      ],
+      "type": "object"
+    },
+    "NewId": {
+      "description": "`[[collection]] new_id`.",
+      "enum": [
+        "increment",
+        "uuid"
+      ],
+      "type": "string"
+    },
+    "OneOrMany": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      ],
+      "description": "One value or a list of them."
+    },
+    "Respond": {
+      "additionalProperties": false,
+      "description": "`respond`: the answer.",
+      "properties": {
+        "abort": {
+          "description": "Fail the request with a network error instead: `failed`,\n`connectionreset`, `timedout`, `connectionrefused`, …",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "body": {
+          "description": "A text body (a template), `text/plain` unless `headers` says\notherwise.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "body_file": {
+          "description": "A body from a data file, typed by its extension. Files with\n`.tmpl.` in their name are rendered as templates.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "delay": {
+          "description": "How long to wait before answering (`300ms`, `2s`); replaces the\nset's latency.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "file": {
+          "description": "A file served as it is, typed by its extension (images, fonts, …).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Response headers. Values may be templates.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "json": {
+          "description": "A JSON body; its strings may be templates."
+        },
+        "json_file": {
+          "description": "A JSON body from a data file (relative to the mocks directory). The\npath may be a template; a file that does not exist answers 404. Files\nnamed `*.tmpl.json` have their strings rendered as templates.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "passthrough": {
+          "description": "Send the request to the real server.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "patch": {
+          "description": "With `passthrough`: deep-merge this into the real JSON response\n(`null` removes a key)."
+        },
+        "sse": {
+          "description": "Server-Sent Events, sent in order (`text/event-stream`), each after\nits own `delay`; the stream then stays open. A page's `EventSource`\nand `mock serve` get them one by one; a `fetch` gets them all at\nonce.",
+          "items": {
+            "$ref": "#/$defs/SseEvent"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "status": {
+          "description": "The HTTP status; 200 when not set.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Scalar": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "format": "int64",
+          "type": "integer"
+        },
+        {
+          "format": "double",
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        }
+      ],
+      "description": "A query, header or form value: text, a number or a boolean."
+    },
+    "Settings": {
+      "additionalProperties": false,
+      "description": "`[settings]`.",
+      "properties": {
+        "cors": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Cors"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`auto`: answers carry CORS headers and preflights for mocked\nrequests are allowed, so cross-origin API hosts work. `off`: CORS is\nleft to the mocks' own headers."
+        },
+        "latency": {
+          "description": "The delay every answer of the set gets: `0ms`, `100ms`, or a range\nsuch as `50ms..200ms` (seeded, so reruns match). A mock's `delay`\nwins.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OneOrMany"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The requests the set owns: path globs (`/api/**`) or full-URL globs\n(`https://api.example.com/**`). An owned request no mock answers is\nhandled by `unmatched`; other requests no mock answers go to the\nnetwork."
+        },
+        "unmatched": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Unmatched"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What an owned request that no mock answers gets: `fail` (a 501\nanswer, and the request counts as unmatched), `passthrough` (it\ngoes to the real server) or `abort` (a network error)."
+        }
+      },
+      "type": "object"
+    },
+    "SseEvent": {
+      "additionalProperties": false,
+      "description": "A Server-Sent Event of `respond.sse`.",
+      "properties": {
+        "comment": {
+          "default": null,
+          "description": "A comment line (`: text`), which pages do not see.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "data": {
+          "description": "The event's data: a string is sent as it is (a line each), anything\nelse as JSON text. Strings may be templates."
+        },
+        "delay": {
+          "description": "How long to wait before sending it (`1s`), after the event before\nit.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "event": {
+          "description": "The event's type (`addEventListener(\"price\", …)`); `message` when\nnot set.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "The event's id (`lastEventId`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "retry": {
+          "description": "The reconnection time the event sets, in ms.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Unmatched": {
+      "description": "`[settings] unmatched`.",
+      "enum": [
+        "fail",
+        "passthrough",
+        "abort"
+      ],
+      "type": "string"
+    },
+    "WebSocket": {
+      "additionalProperties": false,
+      "description": "`[[websocket]]`: a fake WebSocket server. A page's `WebSocket` to a\nURL it matches opens at once and talks to it: `on_open` sends its\nmessages, and each message the page sends gets the answer of the first\n`on_message` rule that matches it. Scenarios push more with `mock ws\nsend`.",
+      "properties": {
+        "name": {
+          "default": null,
+          "description": "What `mock list` and `mock log` call it; `WS <url>` when not set.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "on_message": {
+          "description": "Answers to the page's messages: the first rule whose `match` fits a\nmessage answers it; a message no rule fits gets no answer.",
+          "items": {
+            "$ref": "#/$defs/WebSocketRule"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "on_open": {
+          "description": "What the server does once the socket is open, in order.",
+          "items": {
+            "$ref": "#/$defs/WebSocketAction"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "protocol": {
+          "default": null,
+          "description": "The subprotocol the socket reports (`ws.protocol`); the first one\nthe page asked for when not set.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "The sockets it answers: a glob on the URL's path (`/ws/**`,\n`/ws/rooms/:room`), or on the full URL (`wss://push.example.com/**`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    },
+    "WebSocketAction": {
+      "additionalProperties": false,
+      "description": "A WebSocket mock's action: send a message, or close the socket.",
+      "properties": {
+        "close": {
+          "description": "Close the socket with this code (1000, or 3000-4999).",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "delay": {
+          "description": "How long to wait first (`300ms`, `2s`), after the action before it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "default": null,
+          "description": "With `close`: the reason the page sees.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "send": {
+          "description": "The message: a string is sent as it is, anything else as JSON text.\nStrings may be templates (`{{json.id}}` is the page's message's)."
+        }
+      },
+      "type": "object"
+    },
+    "WebSocketRule": {
+      "additionalProperties": false,
+      "description": "An `on_message` rule: the messages it answers, and the answer.",
+      "properties": {
+        "close": {
+          "description": "Close the socket with this code (1000, or 3000-4999) instead.",
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "delay": {
+          "description": "How long to wait before answering.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "match": {
+          "description": "Which messages: a table matches JSON messages as `match.json` does\n(a subset; `\"*\"` for any value), a string is a glob on the text.\nEvery message when not set."
+        },
+        "reason": {
+          "default": null,
+          "description": "With `close`: the reason the page sees.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "send": {
+          "description": "The answer: a string is sent as it is, anything else as JSON text."
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A chrome-cdp mock file: one mock set. Each `[[mock]]` answers the\nrequests it matches; within a file the first match wins, then the\n`[[collection]]`s are tried, and sets applied later are tried first.\nData files (`json_file`, `body_file`, `file`, `seed`) are relative to\nthe mocks directory.",
+  "properties": {
+    "collection": {
+      "description": "Fake REST resources kept in memory, tried after the set's mocks.",
+      "items": {
+        "$ref": "#/$defs/Collection"
+      },
+      "type": "array"
+    },
+    "mock": {
+      "description": "The mocks, tried in the order written.",
+      "items": {
+        "$ref": "#/$defs/Mock"
+      },
+      "type": "array"
+    },
+    "settings": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Settings"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Settings for the whole set."
+    },
+    "state": {
+      "additionalProperties": true,
+      "description": "Named values and where they start, e.g. `logged_in = false`.\nMocks require them (`when`) and change them (`set_state`); every\nset in use shares them, and `mock reset` starts them over.",
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "websocket": {
+      "description": "Fake WebSocket servers: the page's `WebSocket`s to these URLs talk\nto the mocks instead of the network.",
+      "items": {
+        "$ref": "#/$defs/WebSocket"
+      },
+      "type": "array"
+    }
+  },
+  "title": "chrome-cdp mock file",
+  "type": "object"
+}

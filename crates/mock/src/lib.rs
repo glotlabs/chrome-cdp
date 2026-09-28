@@ -26,7 +26,8 @@
 //! - `engine`: [`Mocks`];
 //! - `ws`: `[[websocket]]` mocks (milestone 11.9), for the page's
 //!   `WebSocket` stand-in;
-//! - [`text`]: the text form of the `mock` commands' output.
+//! - [`text`]: the text form of the `mock` commands' output;
+//! - [`reference`]: the mock file reference page, from the schema.
 
 pub mod check;
 mod closest;
@@ -41,6 +42,7 @@ mod load;
 mod matcher;
 pub mod openapi;
 pub mod record;
+pub mod reference;
 mod respond;
 mod template;
 pub mod text;
