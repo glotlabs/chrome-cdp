@@ -592,3 +592,47 @@ async fn state_load_gives_open_pages_their_storage_at_once() {
     assert_eq!(eval(&engine, "localStorage.getItem('b')").await, json!("2"));
     engine.close().await;
 }
+
+/// A state file real Playwright (1.64) saved after logging in on the
+/// fixture (`bench/playwright/storage-state.mjs`) loads as it is; only its
+/// origin is replaced by this run's fixture origin (the port differs).
+#[tokio::test(flavor = "multi_thread")]
+async fn playwright_state_files_load_unchanged() {
+    let Some(path) = chrome_path() else { return };
+    let f = Fixtures::shared();
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/state/playwright.json");
+    let text = std::fs::read_to_string(&file).unwrap();
+    let recorded: Value = serde_json::from_str(&text).unwrap();
+    let origin = recorded["origins"][0]["origin"].as_str().unwrap();
+    let state = StorageState::parse(&text.replace(origin, f.a())).unwrap();
+
+    let engine = Engine::new("state-playwright", None, None);
+    let mut open = open_request(&path);
+    open.url = Some(f.url("/state/app.html"));
+    open.state = Some(StateLoadRequest {
+        state,
+        path: None,
+        timeout_ms: TIMEOUT_MS,
+    });
+    let opened = engine
+        .open(open)
+        .await
+        .unwrap_or_else(|e| panic!("{}", e.to_text()));
+    // The theme cookie expires a day after the file was made.
+    assert!((1..=2).contains(&opened.data.state.unwrap().cookies));
+    assert_eq!(eval(&engine, "window.checked").await, json!(true));
+    assert_eq!(
+        eval(&engine, "window.first").await,
+        json!({"token": "tok-ada-42", "draft": null})
+    );
+    assert_eq!(
+        eval(&engine, "drafts()").await,
+        json!({
+            "version": 2,
+            "draft": {"id": 1, "title": "Hello", "words": 2},
+            "saved": "2026-01-31T09:30:00.000Z",
+            "settings": {"theme": "dark"},
+        })
+    );
+    engine.close().await;
+}

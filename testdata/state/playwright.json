@@ -1,0 +1,90 @@
+{
+  "cookies": [
+    {
+      "name": "theme",
+      "value": "dark",
+      "domain": "127.0.0.1",
+      "path": "/",
+      "expires": 1790665746.104091,
+      "httpOnly": false,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "session",
+      "value": "ada-42",
+      "domain": "127.0.0.1",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "http://127.0.0.1:47311",
+      "localStorage": [
+        {
+          "name": "token",
+          "value": "tok-ada-42"
+        }
+      ],
+      "indexedDB": [
+        {
+          "name": "app",
+          "version": 2,
+          "stores": [
+            {
+              "name": "drafts",
+              "autoIncrement": false,
+              "keyPath": "id",
+              "records": [
+                {
+                  "value": {
+                    "id": 1,
+                    "title": "Hello",
+                    "words": 2
+                  }
+                }
+              ],
+              "indexes": [
+                {
+                  "name": "by_title",
+                  "keyPath": "title",
+                  "multiEntry": false,
+                  "unique": false
+                }
+              ]
+            },
+            {
+              "name": "kv",
+              "autoIncrement": false,
+              "records": [
+                {
+                  "key": "saved",
+                  "valueEncoded": {
+                    "d": "2026-01-31T09:30:00.000Z"
+                  }
+                },
+                {
+                  "key": "settings",
+                  "valueEncoded": {
+                    "m": [
+                      {
+                        "k": "theme",
+                        "v": "dark"
+                      }
+                    ],
+                    "id": 1
+                  }
+                }
+              ],
+              "indexes": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
