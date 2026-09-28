@@ -1,0 +1,25 @@
+Refs: short names for elements (e12)
+
+`snapshot` shows the page as an accessibility tree and gives a ref to
+everything you can act on (controls, links, clickable elements, scroll
+boxes, iframes); `find` prints the refs of what it matches. Commands take
+a ref where they take a locator: `click e12`, `fill e7 hello`.
+
+- A ref names one node for as long as its document lives. A new node
+  gets the next number; numbers are never reused within a tab.
+- A new page (a navigation) drops the old refs. Using one then fails with
+  RefStale: take a new `snapshot` (or `snapshot -i`).
+- If a framework re-rendered the node, the ref falls back to the one node
+  with the same role and name; with none or several it fails with
+  RefDetached. --strict-refs (CHROME_CDP_STRICT_REFS=1) turns the
+  fallback off.
+- Refs belong to a tab: use them with the same --tab.
+- `snapshot --diff` shows what changed since the last snapshot, and
+  `--snap` on an action adds that diff to its report, so you rarely need
+  a whole new snapshot after acting.
+
+Examples:
+  chrome-cdp snapshot -i                  # only what can be acted on
+  chrome-cdp find 'sign in' --role button # the refs of matching elements
+  chrome-cdp click e12 --snap             # act, then see what changed
+  chrome-cdp snapshot --scope e40         # the part of the page under e40

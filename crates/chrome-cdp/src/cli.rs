@@ -18,7 +18,10 @@ use protocol::Mode;
 #[command(
     name = "chrome-cdp",
     disable_version_flag = true,
-    after_help = "Exit codes: 0 ok, 1 action failed, 2 usage, 3 timeout, 4 browser/daemon, 5 dialog."
+    // `help` is ours (topics, `help commands`), and `--help` is short: the
+    // top commands and the locator grammar (plan 08.3).
+    disable_help_subcommand = true,
+    override_help = crate::help::SHORT
 )]
 pub(crate) struct Cli {
     #[command(flatten)]
@@ -1294,9 +1297,29 @@ Examples:
   chrome-cdp run login.cdp --json    # one JSON line per step")]
     Run(RunArgs),
 
+    /// Show help: an overview, every command by task, a command in full, or a topic.
+    #[command(after_help = "\
+Topics: locators, refs, waiting, errors, config, scripts. `help commands`
+lists every command by task; `help <command>` is the command's --help.
+
+Examples:
+  chrome-cdp help                  # the overview, as --help
+  chrome-cdp help commands
+  chrome-cdp help locators
+  chrome-cdp help tab close")]
+    Help(HelpArgs),
+
     /// The session daemon; other commands start it.
     #[command(name = "__daemon", hide = true)]
     Daemon(DaemonArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct HelpArgs {
+    /// A topic (locators, refs, waiting, errors, config, scripts),
+    /// `commands`, or a command (`click`, `tab close`).
+    #[arg(value_name = "TOPIC")]
+    pub(crate) topic: Vec<String>,
 }
 
 #[derive(Debug, Args)]
@@ -4260,6 +4283,8 @@ mod tests {
         "cookies clear",
         "state save",
         "state load",
+        // Fixed texts: the help, the skill file, completion scripts.
+        "help",
         // Each step is bounded by its own command's flags.
         "batch",
         "run",
@@ -4270,12 +4295,13 @@ mod tests {
     #[test]
     fn every_command_follows_the_output_contract() {
         fn leaves(cmd: &clap::Command, path: &str, out: &mut Vec<(String, clap::Command)>) {
-            // Skip clap's generated `help` subcommands (plan 08.3 replaces
-            // the top-level one with its own, which must then pass too).
+            // Skip clap's generated `help` subcommands of commands with
+            // subcommands (the top-level `help` is ours and must pass).
             // Hidden `__` commands are internal (the daemon).
             for sub in cmd
                 .get_subcommands()
-                .filter(|s| s.get_name() != "help" && !s.get_name().starts_with("__"))
+                .filter(|s| s.get_name() != "help" || path.is_empty())
+                .filter(|s| !s.get_name().starts_with("__"))
             {
                 let name = format!("{path} {}", sub.get_name()).trim().to_owned();
                 // A command with subcommands that also takes arguments

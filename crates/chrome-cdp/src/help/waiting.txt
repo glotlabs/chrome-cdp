@@ -1,0 +1,27 @@
+Waiting: chrome-cdp waits for you, so never sleep
+
+- Navigation (open, goto, back, forward, reload) waits for the page's load
+  event; --wait domcontentloaded|load|commit changes that.
+- Every action (click, fill, select, check, …) first waits until its
+  element is attached, visible, stable, enabled and not covered, then
+  acts, then waits for what it caused (a navigation, the requests it sent)
+  and reports it. --no-wait-after skips the second wait; --force skips the
+  checks.
+- Waits end at --timeout: 10s for actions and `wait`, 30s for navigation.
+  A timeout exits 3 and says what the page showed instead.
+- When the page updates later on its own, wait for the change itself:
+
+  wait <loc>              an element appears (--state hidden|attached|
+                          detached|enabled for the others)
+  wait --text 'Saved'     text appears anywhere (or --in <loc>)
+  wait --text-gone …      text disappears
+  wait --url /dashboard   the URL matches (part, glob or /regex/)
+  wait --idle             no requests for 500ms
+  wait --settle           network idle and no DOM changes for 300ms
+  wait --response '**/api/save' --status 200
+  wait --fn 'window.app?.ready'   a JavaScript expression is truthy
+
+Examples:
+  chrome-cdp click e6 && chrome-cdp wait --text 'Order placed'
+  chrome-cdp wait .spinner --state hidden
+  chrome-cdp goto /slow --timeout 60s

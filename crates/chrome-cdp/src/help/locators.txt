@@ -1,0 +1,40 @@
+Locators: how commands name elements
+
+Every command that takes an element (<LOCATOR>, <loc>) takes the same
+syntax. Prefer refs: they come from `snapshot` and `find`, are short, and
+name exactly one element.
+
+  e12, @e12             a ref (see `chrome-cdp help refs`)
+  #id  .class  [attr]   CSS; any CSS selector with css=…
+  xpath=//form//button  XPath; a bare //… is XPath too
+  text=Sign in          an element whose visible text matches
+  "Sign in"             (quoted, alone) the exact text
+  role=button           an ARIA role, with optional attributes:
+    role=button[name="Save"]  role=checkbox[checked=true]
+    role=heading[level=2]     role=tab[selected=true]
+    also disabled=, expanded=, pressed=, include-hidden=true
+  label=Email           a form control by its label
+  placeholder=Search    by placeholder
+  alt=Logo  title=Help  by alt text or title
+  testid=submit         by data-testid (testid_attribute in the config)
+
+Text values (text=, name=, label=, placeholder=, alt=, title=, has-text=)
+match a case-insensitive part of the text; "quoted" matches the whole
+text, case-sensitive; /regex/i is a regex. Whitespace is collapsed.
+
+Chains: A >> B finds B inside what A found. Filters narrow the list:
+  >> nth=0 (first), nth=-1 (last)   >> visible=true   >> has-text=Total
+Frames: frame=<name, URL part or id> >> … looks inside an iframe; an
+iframe's ref works too (e30 >> text=Pay).
+
+An action needs exactly one match: several are `Ambiguous` (exit 1) and
+the error lists them with refs; none are `NotFound`. `count` and `text`
+accept any number.
+
+Examples:
+  chrome-cdp click e12
+  chrome-cdp click 'role=button[name="Sign in"]'
+  chrome-cdp fill label=Email ada@example.com
+  chrome-cdp click '#list >> text=Delete >> nth=-1'
+  chrome-cdp fill 'frame=payment >> placeholder=Card number' 4242424242424242
+  chrome-cdp count 'role=row'

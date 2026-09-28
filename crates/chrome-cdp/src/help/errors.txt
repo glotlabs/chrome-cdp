@@ -1,0 +1,42 @@
+Errors and exit codes
+
+Every error prints one `error:` line saying what happened, labelled notes
+(what covers the element, the candidates, what the page showed), and a
+`hint:` with the next command to run. With --json, stdout holds
+{"ok":false,"error":{"kind","message","hint","notes","details"}}.
+
+Exit 1, the action or check failed on the page:
+  NotFound          nothing matches the locator (hint: find, snapshot)
+  Ambiguous         several match; the notes list them with refs
+  Obscured          another element covers it; the hint clicks the cover's
+                    button (a cookie banner's Accept) or adds --force
+  NotEnabled        the element is disabled
+  RefStale          the ref is from an earlier page; take a new snapshot
+  RefDetached       the ref's element was removed; take a new snapshot
+  ExpectFailed      an expect assertion failed
+  EvalError         the JavaScript threw
+  NavigationFailed  the page could not load (DNS, refused, certificate)
+Exit 2, the command line is wrong:
+  BadArgs           a flag or argument; typos get "did you mean"
+  BadLocator        the locator does not parse (help locators)
+Exit 3:
+  Timeout           something did not happen in --timeout; says what did
+Exit 4, the browser, daemon or machine:
+  ChromeNotFound    no Chrome; run chrome-cdp install
+  LaunchFailed      Chrome would not start; the notes say why
+  BrowserCrashed    Chrome exited; run chrome-cdp open again
+  PageCrashed       the tab's page crashed; run chrome-cdp reload
+  DaemonUnavailable the session's daemon could not be reached or started
+  ProtocolError     Chrome rejected a CDP call
+  InstallFailed     chrome-cdp install could not download or unpack
+Exit 5:
+  DialogOpen        an alert/confirm/prompt blocks the page; answer it
+                    with chrome-cdp dialog accept|dismiss
+
+The page's own errors are another thing: `chrome-cdp errors` lists its
+uncaught exceptions and failed loads (see chrome-cdp errors --help).
+
+Examples:
+  chrome-cdp click e6 || chrome-cdp errors     # why did it fail?
+  chrome-cdp click e6 --json | jq -r .error.hint
+  chrome-cdp schema click                      # the --json envelope

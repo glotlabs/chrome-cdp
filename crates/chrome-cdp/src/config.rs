@@ -32,7 +32,7 @@ use crate::cli::{GlobalArgs, parse_duration};
 pub(crate) const PROJECT_FILE: &str = ".chrome-cdp.toml";
 
 /// The keys a config file may set.
-const KEYS: &str = "session, timeout, base_url, testid_attribute, snap_after_action";
+pub(crate) const KEYS: &str = "session, timeout, base_url, testid_attribute, snap_after_action";
 
 /// One config file as written.
 #[derive(Debug, Default, Deserialize)]

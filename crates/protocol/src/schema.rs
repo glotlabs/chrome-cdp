@@ -52,6 +52,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<SchemaData>),
     },
     CommandSchema {
+        name: "help",
+        summary: "the help text asked for: the overview, a topic or a command",
+        schema: || schema_for!(Envelope<HelpData>),
+    },
+    CommandSchema {
         name: "install",
         summary: "the browser installed, or with --list the installed and available ones",
         schema: || schema_for!(Envelope<InstallData>),
@@ -594,6 +599,16 @@ pub struct SchemaListEntry {
     pub name: String,
     /// What its `data` holds.
     pub summary: String,
+}
+
+/// `data` of `chrome-cdp help --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HelpData {
+    /// What was asked for: `chrome-cdp` (the overview), `commands`, a
+    /// topic (`locators`) or a command (`tab close`).
+    pub topic: String,
+    /// The help text, as printed.
+    pub text: String,
 }
 
 /// `data` of `chrome-cdp install --json`.

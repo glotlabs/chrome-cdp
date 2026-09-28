@@ -14,6 +14,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Mode, Output};
 mod cli;
 mod config;
 mod emulate;
+mod help;
 mod input;
 mod install;
 mod log;
@@ -69,6 +70,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         None => Err(ErrorInfo::new(ErrorKind::BadArgs, "no command given")
             .hint(Cmd::new("").switch("help"))),
         Some(Command::Schema(args)) => schema::run(&args),
+        Some(Command::Help(args)) => help::run(&args),
         Some(Command::Install(args)) => {
             install::install(&args, cli.global.timeout_or(cli::DEFAULT_TIMEOUT))
         }

@@ -155,6 +155,18 @@ const CASES: &[Case] = &[
         fixture: Fixture::None,
     },
     Case {
+        name: "help-topic",
+        args: &["help", "refs"],
+        modes: ALL,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "help-unknown",
+        args: &["help", "locator"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
         name: "mistyped-command",
         args: &["scheme"],
         modes: ERR,

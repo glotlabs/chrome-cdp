@@ -1,0 +1,20 @@
+Scripts: many commands in one call
+
+`batch` reads commands from stdin, one per line, written as on the command
+line without `chrome-cdp`; `run` reads them from a .cdp file. Both check
+every line before the first runs, stop at the first failure (--continue
+goes on), and print `[n/total] <line> ✓|✗` plus each step's output.
+
+- # starts a comment; quote as in a shell ('…' literal, "…" with \" \\ \n
+  and ${…}); a trailing ` \` continues the line.
+- ${name} comes from --var name=value, ${env:HOME} from the environment,
+  ${data:users.json#/0/email} from a JSON file next to the script.
+- Lines inherit --session, --timeout, --tab, -q and -v.
+- No loops or conditions, by design: call chrome-cdp from a shell for that.
+The full grammar is docs/scenario-syntax.md in the chrome-cdp repository.
+
+Examples:
+  printf '%s\n' 'goto /login' 'fill label=Email ada@example.com' \
+    'fill label=Password ${env:PW}' "click 'text=Sign in'" \
+    'wait --url /dashboard' | chrome-cdp batch
+  chrome-cdp run login.cdp --var user=ada

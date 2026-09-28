@@ -1,0 +1,33 @@
+Configuration: flags, environment variables and config files
+
+A setting comes from, first hit wins: the flag, its CHROME_CDP_* env var,
+the project's .chrome-cdp.toml (the nearest one walking up from the current
+directory), the user's config.toml, then the built-in default.
+
+User config: $XDG_CONFIG_HOME/chrome-cdp/config.toml, else
+~/.config/chrome-cdp/config.toml (macOS: ~/Library/Application
+Support/chrome-cdp/config.toml). Keys (unknown keys are errors):
+
+  session = "shop"               --session
+  timeout = "20s"                --timeout
+  base_url = "http://localhost:3000"   so `goto /login` works
+  testid_attribute = "data-test" what testid= reads (data-testid)
+  snap_after_action = "diff"     every action adds --snap ("off")
+
+Environment variables:
+  CHROME_CDP_JSON, CHROME_CDP_QUIET, CHROME_CDP_SESSION,
+  CHROME_CDP_TIMEOUT, CHROME_CDP_TAB    the global flags
+  CHROME_CDP_LOG                        log filter, e.g. cdp=trace
+  CHROME_CDP_SNAP, CHROME_CDP_NO_WAIT_AFTER, CHROME_CDP_STRICT_REFS
+  CHROME_CDP_TESTID_ATTRIBUTE           as testid_attribute
+  CHROME_CDP_CHROME                     the Chrome to launch (open --chrome)
+  CHROME_CDP_CACHE                      where install puts browsers
+  CHROME_CDP_CFT_URL                    a Chrome for Testing index mirror
+  CHROME_CDP_AUTO_INSTALL, CHROME_CDP_IDLE_TIMEOUT,
+  CHROME_CDP_HTTP_CREDENTIALS, CHROME_CDP_CONSOLE_BUFFER,
+  CHROME_CDP_NETWORK_BUFFER             open's flags of those names
+
+Examples:
+  printf 'base_url = "http://localhost:3000"\n' > .chrome-cdp.toml
+  CHROME_CDP_SESSION=shop chrome-cdp goto /cart
+  chrome-cdp open --help                # the launch options

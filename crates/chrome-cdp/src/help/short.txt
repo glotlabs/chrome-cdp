@@ -1,0 +1,37 @@
+chrome-cdp: drive Chrome from the shell over the DevTools Protocol. Built for
+AI agents: one command per step, compact output, refs instead of selectors.
+
+Usage: chrome-cdp <COMMAND> [ARGS] [--json] [-q] [--session NAME] [--tab ID]
+
+Start      open [url]           start the session's browser and open a page
+           goto <url>           load a URL and wait for it
+           close                close the session and its browser
+Look       snapshot -i          the page as a tree, with refs (e12) to act on
+           find <words>         search for elements; prints their refs
+           text [loc]           the visible text of the page or an element
+           screenshot [loc]     save an image (-o file.png)
+Act        click <loc>          wait until it can be clicked, then click
+           fill <loc> <text>    replace a field's content
+           press <keys>         keys and shortcuts: Enter, Control+A
+           select <loc> <val>   choose options of a <select>
+Check      wait <cond>          an element, --text, --url, --idle, …
+           errors               uncaught exceptions and failed loads
+           eval <js>            run JavaScript and print its value
+Script     batch                run commands from stdin, one per line
+
+Locators (<loc>):  e12 (a ref from snapshot/find; prefer these)
+  #id  .cls  [attr]  css=…  xpath=//…   text=Sign in  ("…" exact, /re/i regex)
+  role=button[name="Save"]  label=Email  placeholder=…  testid=…  alt=…
+  A >> B finds B inside A; filters: >> nth=0, >> visible=true, >> has-text=…
+  frame=payment >> #card  looks inside an iframe (by name, URL part or id)
+
+Flags: --json one JSON object on stdout; -q/--quiet only the result;
+  --session NAME (default: default); --tab t2; --timeout 30s; -v/--verbose;
+  -V/--version; -h/--help. Each has a CHROME_CDP_* env var (help config).
+
+More: chrome-cdp help <command>     one command in full, with examples
+      chrome-cdp help commands      every command, grouped by task
+      chrome-cdp help locators|refs|waiting|errors|config|scripts
+      chrome-cdp skill              a SKILL.md that teaches an agent the tool
+
+Exit codes: 0 ok, 1 failed, 2 usage, 3 timeout, 4 browser/daemon, 5 dialog.
