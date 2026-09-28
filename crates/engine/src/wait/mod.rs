@@ -80,6 +80,17 @@ pub(crate) enum Condition {
     },
     Delay(Duration),
     Download,
+    /// `expect`'s polled checks (plan 09): `check` (see `expect.ts`) on
+    /// what `locator` matches, or on the page without one. It is met when
+    /// the check passes, or fails with `not`; `absent` is whether it
+    /// passes while the locator's frame or ref element is gone (`None`:
+    /// neither way).
+    Expect {
+        locator: Option<Locator>,
+        check: Value,
+        not: bool,
+        absent: Option<bool>,
+    },
 }
 
 /// Checks a condition's arguments (locators, URL patterns, empty text)
@@ -100,6 +111,17 @@ impl Condition {
                 text,
                 within: within.map(|l| l.with_testid_attribute(attribute)),
                 gone,
+            },
+            Self::Expect {
+                locator,
+                check,
+                not,
+                absent,
+            } => Self::Expect {
+                locator: locator.map(|l| l.with_testid_attribute(attribute)),
+                check,
+                not,
+                absent,
             },
             other => other,
         }
@@ -172,6 +194,7 @@ impl Condition {
                 | Self::Element { .. }
                 | Self::Text { .. }
                 | Self::Function(_)
+                | Self::Expect { .. }
         )
     }
 
@@ -197,6 +220,7 @@ impl Condition {
             Self::Exchange { response: true, .. } => "response",
             Self::Delay(_) => "delay",
             Self::Download => "download",
+            Self::Expect { .. } => "expect",
         }
     }
 
@@ -242,6 +266,7 @@ impl Condition {
             }
             Self::Delay(delay) => format::duration(*delay),
             Self::Download => "a download to finish".into(),
+            Self::Expect { .. } => "the assertion".into(),
         }
     }
 }
@@ -536,7 +561,8 @@ impl Engine {
             Condition::Load { .. }
             | Condition::Element { .. }
             | Condition::Text { .. }
-            | Condition::Function(_) => {
+            | Condition::Function(_)
+            | Condition::Expect { .. } => {
                 let options = LocateOptions {
                     strict_refs: req.strict_refs,
                     testid_attribute: req.testid_attribute.clone(),

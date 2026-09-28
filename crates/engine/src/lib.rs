@@ -34,6 +34,7 @@ mod downloads;
 mod emulate;
 mod endpoint;
 mod errors;
+mod expect;
 mod extensions;
 mod frames;
 mod inject;
@@ -74,6 +75,7 @@ pub use emulate::{
 };
 pub use endpoint::{Endpoint, parse_endpoint};
 pub use errors::from_cdp;
+pub use expect::{MATCHERS, check_expect, parse_matcher};
 pub use frames::{FrameInfo, WORLD_NAME, World};
 pub use inject::{MAX_SCRIPT, check_binding_name};
 pub use input::{ActionPoint, Checks, check_action, parse_modifiers};
@@ -83,19 +85,20 @@ pub use observe::{RESOURCE_TYPES, check_eval, check_screenshot};
 pub use raw::check_cdp;
 pub use read::check_read;
 pub use request::{
-    Action, ActionRequest, Button, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
-    ConsoleRequest, CookieFilter, CookieSpec, CookiesOp, CookiesRequest, CoverageStartRequest,
-    CoverageStopRequest, DialogPolicy, DialogRequest, DownloadsRequest, ElementState,
-    EmulateRequest, EmulationChange, EvalRequest, EvalWorld, ExposeRequest, FindRequest,
-    HarContent, HarStartRequest, HarStopRequest, HighlightRequest, HttpCredentials, ImageFormat,
-    InitScriptAddRequest, InitScriptListRequest, InitScriptRemoveRequest, InspectRequest, Margins,
-    Modifier, MouseOp, NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest,
-    NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest, PerfRequest, PermissionsOp,
-    PermissionsRequest, Read, ReadRequest, RouteAction, RouteBody, RouteRequest, RouteSpec,
-    RoutesRequest, ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest,
-    StateLoadRequest, StateSaveRequest, StatusRange, StorageArea, StorageOp, StorageRequest,
-    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest,
-    TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WaitUntil,
+    A11yLevel, Action, ActionRequest, Button, CdpRequest, ClipboardOp, ClipboardRequest,
+    ConnectRequest, ConsoleRequest, CookieFilter, CookieSpec, CookiesOp, CookiesRequest,
+    CoverageStartRequest, CoverageStopRequest, DialogPolicy, DialogRequest, DownloadsRequest,
+    ElementState, EmulateRequest, EmulationChange, EvalRequest, EvalWorld, ExpectRequest,
+    Expectation, ExposeRequest, FindRequest, HarContent, HarStartRequest, HarStopRequest,
+    HighlightRequest, HttpCredentials, ImageFormat, InitScriptAddRequest, InitScriptListRequest,
+    InitScriptRemoveRequest, InspectRequest, Margins, MarkRequest, Matcher, Modifier, MouseOp,
+    NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest, NetworkShowRequest,
+    OpenRequest, PaperFormat, PdfRequest, PerfRequest, PermissionsOp, PermissionsRequest, Read,
+    ReadRequest, RouteAction, RouteBody, RouteRequest, RouteSpec, RoutesRequest, ScreenshotRequest,
+    ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest, StateLoadRequest,
+    StateSaveRequest, StatusRange, StorageArea, StorageOp, StorageRequest, TabCloseRequest,
+    TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest, TraceStopRequest,
+    UnrouteRequest, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use state::{OriginState, StateCookie, StorageState};

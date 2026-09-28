@@ -152,6 +152,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<WaitData>),
     },
     CommandSchema {
+        name: "expect",
+        summary: "the assertion that held: expected, actual, and how long it took",
+        schema: || schema_for!(Envelope<ExpectData>),
+    },
+    CommandSchema {
+        name: "mark",
+        summary: "the mark set in the tab's console and network logs",
+        schema: || schema_for!(Envelope<MarkData>),
+    },
+    CommandSchema {
         name: "dialog accept",
         summary: "the dialog accepted, and the text typed into a prompt",
         schema: || schema_for!(Envelope<DialogData>),
@@ -2690,6 +2700,41 @@ pub struct WaitData {
     /// `--download`: the file downloaded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub download: Option<DownloadInfo>,
+}
+
+/// `data` of `chrome-cdp expect --json`: the assertion held.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ExpectData {
+    /// The tab checked, e.g. `t1`.
+    pub tab: String,
+    /// The assertion as typed after `expect`: `'role=alert' text Saved`.
+    pub assertion: String,
+    /// What it expected, in words: `text containing "Saved"`.
+    pub expected: String,
+    /// What it saw when it held: the text, value or attribute compared, a
+    /// count, the state in words (`visible`), or the URL. `--no-errors`,
+    /// `--no-failed-requests` and `--a11y`: 0 (none found).
+    pub actual: Value,
+    /// How many elements matched (element matchers), or were found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u64>,
+    /// Milliseconds until it held.
+    pub elapsed_ms: u64,
+    /// How many times it was checked again before it held.
+    pub retries: u64,
+}
+
+/// `data` of `chrome-cdp mark --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MarkData {
+    /// The tab marked, e.g. `t1`.
+    pub tab: String,
+    pub name: String,
+    /// The console entry the mark comes after (`console --since` takes
+    /// it).
+    pub console: u64,
+    /// Whether it replaced a mark of the same name.
+    pub replaced: bool,
 }
 
 /// A request or response a wait matched.

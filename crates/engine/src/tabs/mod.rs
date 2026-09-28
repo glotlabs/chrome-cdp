@@ -281,6 +281,11 @@ struct Tab {
     command_marks: (u64, u64),
     /// The same for the event sequence (downloads).
     event_marks: (u64, u64),
+    /// The network and console marks when the main frame's document
+    /// committed: where `expect --no-errors` starts by default.
+    document_marks: (u64, u64),
+    /// `mark <name>`: named network and console marks.
+    marks: HashMap<String, (u64, u64)>,
     /// A dialog waiting for `chrome-cdp dialog`.
     dialog: Option<OpenDialog>,
     /// When its page crashed (in the event sequence), until it is loaded
@@ -959,6 +964,38 @@ impl Tabs {
             .map_or((0, 0), |t| (t.network.seq(), t.console.seq()))
     }
 
+    /// Tab `id`'s network log and console marks when its main frame's
+    /// document committed.
+    pub(crate) fn document_marks(&self, id: u32) -> (u64, u64) {
+        self.shared
+            .lock()
+            .tabs
+            .get(&id)
+            .map_or((0, 0), |t| t.document_marks)
+    }
+
+    /// Sets tab `id`'s mark `name` to its log marks now; the marks it
+    /// replaces, if it had one (`None` also if the tab is gone).
+    pub(crate) fn set_mark(&self, id: u32, name: &str) -> Option<(u64, u64)> {
+        let mut state = self.shared.lock();
+        let tab = state.tabs.get_mut(&id)?;
+        let now = (tab.network.seq(), tab.console.seq());
+        tab.marks.insert(name.to_owned(), now)
+    }
+
+    /// Tab `id`'s mark `name`, or the names it has (sorted).
+    pub(crate) fn named_mark(&self, id: u32, name: &str) -> Result<(u64, u64), Vec<String>> {
+        let state = self.shared.lock();
+        let Some(tab) = state.tabs.get(&id) else {
+            return Err(Vec::new());
+        };
+        tab.marks.get(name).copied().ok_or_else(|| {
+            let mut names: Vec<String> = tab.marks.keys().cloned().collect();
+            names.sort();
+            names
+        })
+    }
+
     /// Tab `id`'s failed requests since network mark `after`.
     pub(crate) fn failures_since(&self, id: u32, after: u64) -> Vec<Failure> {
         self.shared
@@ -1420,6 +1457,7 @@ fn frame_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event:
             if main && session_id == tab.session.id().unwrap_or_default() {
                 // A new document: the page runs again after a crash.
                 tab.crashed = None;
+                tab.document_marks = (tab.network.seq(), tab.console.seq());
             }
             let gone = if e.r#type == page::NavigationType::BackForwardCacheRestore {
                 frames.restored(session_id, &e.frame)
@@ -1547,6 +1585,8 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
                 netlog: NetLog::default(),
                 console: Console::default(),
                 command_marks: (0, 0),
+                document_marks: (0, 0),
+                marks: HashMap::new(),
                 event_marks: (0, 0),
                 dialog: None,
                 crashed: None,

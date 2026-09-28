@@ -18,7 +18,7 @@ use super::{Condition, Met, Unmet};
 use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::injected;
-use crate::locator::{FrameOnly, LocateOptions, Place, bad_locator};
+use crate::locator::{FrameOnly, LocateOptions, Locator, Place, bad_locator};
 use crate::request::ElementState;
 use crate::tabs::{FrameContext, Page};
 use crate::{Engine, Running};
@@ -28,6 +28,10 @@ const PROBE_JS: &str = include_str!("probe.js");
 
 /// Resolves once the DOM has not changed for a while.
 const QUIET_JS: &str = include_str!("quiet.js");
+
+/// Marks a probe's `fatal` error as one in the command's arguments (an
+/// `expect` regex), not in its locator.
+pub(crate) const ARG_ERROR: &str = "bad_args";
 
 /// How much longer than its budget a probe call may take to answer.
 const CALL_SLACK: Duration = Duration::from_secs(2);
@@ -44,7 +48,7 @@ impl Engine {
     /// Polls `condition` (a load, element, text or `--fn` condition) in
     /// `page` until it holds or `deadline` passes: in the main frame, or
     /// where the condition's locator points (a ref's element, `frame=`).
-    pub(super) async fn probe_until(
+    pub(crate) async fn probe_until(
         &self,
         running: &Running,
         page: &Page,
@@ -153,6 +157,9 @@ impl Engine {
             }
             let value = result.result.value.unwrap_or(Value::Null);
             if let Some(fatal) = value["fatal"].as_str() {
+                if value[ARG_ERROR] == json!(true) {
+                    return Err(ErrorInfo::new(ErrorKind::BadArgs, fatal.to_owned()));
+                }
                 return Err(bad_selector(condition, fatal));
             }
             last = Probed {
@@ -262,6 +269,20 @@ fn spec<'a>(condition: &'a Condition, place: Option<&Place>) -> (Value, Option<&
             )
         }
         Condition::Function(expression) => (json!({ "kind": "fn" }), Some(expression)),
+        Condition::Expect {
+            locator,
+            check,
+            not,
+            ..
+        } => (
+            json!({
+                "kind": "expect",
+                "steps": locator.as_ref().map(Locator::in_frame_steps),
+                "check": check,
+                "not": not,
+            }),
+            None,
+        ),
         _ => (Value::Null, None),
     }
 }
@@ -291,7 +312,11 @@ impl Engine {
     ) -> Result<At, ErrorInfo> {
         let left = left.max(Duration::from_millis(1));
         let (locator, frame_only) = match condition {
-            Condition::Element { locator, .. } => (locator, FrameOnly::Owner),
+            Condition::Element { locator, .. }
+            | Condition::Expect {
+                locator: Some(locator),
+                ..
+            } => (locator, FrameOnly::Owner),
             Condition::Text {
                 within: Some(within),
                 ..
@@ -306,7 +331,12 @@ impl Engine {
             .await
         {
             Ok(place) => Ok(At::Place(place.context.clone(), Some(place))),
-            Err(e) if is_absent(&e) || (gone_is_met(condition) && is_gone_ref(&e)) => {
+            Err(e)
+                if is_absent(&e)
+                    || ((gone_is_met(condition)
+                        || matches!(condition, Condition::Expect { .. }))
+                        && is_gone_ref(&e)) =>
+            {
                 let observed = if is_gone_ref(&e) {
                     json!({ "count": 0, "ref": "gone" })
                 } else {
@@ -346,7 +376,10 @@ fn gone_is_met(condition: &Condition) -> bool {
 
 /// Whether the condition holds while its frame or element is absent.
 fn absent_is_met(condition: &Condition) -> bool {
-    gone_is_met(condition)
+    match condition {
+        Condition::Expect { not, absent, .. } => absent.is_some_and(|pass| pass != *not),
+        _ => gone_is_met(condition),
+    }
 }
 
 /// A locator the injected bundle rejected (a bad selector or regex).
@@ -354,6 +387,7 @@ fn bad_selector(condition: &Condition, why: &str) -> ErrorInfo {
     let locator = match condition {
         Condition::Element { locator, .. } => Some(locator),
         Condition::Text { within, .. } => within.as_ref(),
+        Condition::Expect { locator, .. } => locator.as_ref(),
         _ => None,
     };
     let first = why.lines().next().unwrap_or_default();
@@ -397,6 +431,11 @@ fn met(condition: &Condition, probed: Probed) -> Met {
                 ..Met::default()
             }
         }
+        Condition::Expect { .. } => Met {
+            count: probed.observed["count"].as_u64(),
+            value: Some(probed.observed),
+            ..Met::default()
+        },
         _ => Met::default(),
     }
 }
@@ -407,6 +446,10 @@ fn unmet(condition: &Condition, observed: &Value) -> Unmet {
         observed: observed.as_object().cloned().unwrap_or_default(),
         ..Unmet::default()
     };
+    if matches!(condition, Condition::Expect { .. }) {
+        // `expect` words its own failure from what was observed.
+        return unmet;
+    }
     if observed["document"].is_string() {
         return unmet.note("observed", "the page has no document to look in yet");
     }

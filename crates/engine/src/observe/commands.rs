@@ -225,9 +225,20 @@ impl Engine {
         info: ErrorInfo,
         details: &mut serde_json::Value,
     ) -> ErrorInfo {
-        let Ok(running) = self.running() else {
+        let Some((unread, cmd)) = self.unread_errors(id) else {
             return info;
         };
+        details["console_errors"] = serde_json::json!(unread);
+        info.note(
+            "console errors",
+            format!("{unread} unread; {cmd} shows them"),
+        )
+    }
+
+    /// How many errors `errors` has not shown yet on tab `id`, and the
+    /// command that shows them; `None` if there are none.
+    pub(crate) fn unread_errors(&self, id: u32) -> Option<(usize, Cmd)> {
+        let running = self.running().ok()?;
         let main_url = running
             .tabs
             .frames(id)
@@ -246,17 +257,13 @@ impl Engine {
             })
             .unwrap_or(0);
         if unread == 0 {
-            return info;
+            return None;
         }
-        details["console_errors"] = serde_json::json!(unread);
         let mut cmd = Cmd::new("errors");
         if running.tabs.active() != Some(id) {
             cmd = cmd.flag("tab", tab_name(id));
         }
-        info.note(
-            "console errors",
-            format!("{unread} unread; {} shows them", cmd.session(&self.session)),
-        )
+        Some((unread, cmd.session(&self.session)))
     }
 }
 

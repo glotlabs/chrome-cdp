@@ -455,6 +455,161 @@ pub struct WaitRequest {
     pub max_chars: usize,
 }
 
+/// What `expect <locator> <matcher>` checks of the element(s).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "matcher", rename_all = "kebab-case")]
+pub enum Matcher {
+    Visible,
+    /// Not visible, or no element matches.
+    Hidden,
+    /// At least one element matches.
+    Attached,
+    /// No element matches.
+    Detached,
+    Enabled,
+    Disabled,
+    /// Enabled and not read-only.
+    Editable,
+    Checked,
+    Unchecked,
+    Focused,
+    /// Some of the element is in the viewport.
+    InViewport,
+    /// Its text contains `text` (all of it with `exact`); `/re/` is a
+    /// regex.
+    Text {
+        text: String,
+        #[serde(default)]
+        exact: bool,
+    },
+    /// A field's value is `value` (or matches `/re/`).
+    Value {
+        value: String,
+    },
+    /// A multiple `<select>`'s values are these, in any order.
+    Values {
+        values: Vec<String>,
+    },
+    /// The attribute is there (with this value, or matching `/re/`).
+    Attr {
+        name: String,
+        #[serde(default)]
+        value: Option<String>,
+    },
+    /// It has these classes (space-separated), or its `class` matches
+    /// `/re/`.
+    Class {
+        name: String,
+    },
+    /// A computed style property has this value (colours compare by
+    /// colour: `red` is `rgb(255, 0, 0)`), or matches `/re/`.
+    Css {
+        property: String,
+        value: String,
+    },
+    /// How many elements match: exactly `count`, and at least `min`, at
+    /// most `max`.
+    Count {
+        #[serde(default)]
+        count: Option<u64>,
+        #[serde(default)]
+        min: Option<u64>,
+        #[serde(default)]
+        max: Option<u64>,
+    },
+}
+
+/// The accessibility level `expect --a11y` checks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum A11yLevel {
+    A,
+    #[default]
+    AA,
+}
+
+impl A11yLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::A => "A",
+            Self::AA => "AA",
+        }
+    }
+}
+
+/// What `expect` asserts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Expectation {
+    /// `expect <locator> <matcher> [args]`.
+    Element { locator: String, matcher: Matcher },
+    /// `--url`: the main frame's URL matches (a part, a glob or `/re/`).
+    Url { pattern: String },
+    /// `--title`: the page's title contains `text` (all of it with
+    /// `exact`), or matches `/re/`.
+    Title {
+        text: String,
+        #[serde(default)]
+        exact: bool,
+    },
+    /// `--no-errors`: no uncaught exception or console error since
+    /// `since` (a mark; the current document if `None`).
+    NoErrors {
+        #[serde(default)]
+        since: Option<String>,
+    },
+    /// `--no-failed-requests`: no request failed or got a status of 400
+    /// or more since `since`; only those to `origin` (`self`: the page's)
+    /// if given.
+    NoFailedRequests {
+        #[serde(default)]
+        since: Option<String>,
+        #[serde(default)]
+        origin: Option<String>,
+    },
+    /// `--a11y`: the built-in accessibility rules of `level`, in the
+    /// page or the first element `scope` matches.
+    A11y {
+        #[serde(default)]
+        scope: Option<String>,
+        #[serde(default)]
+        level: A11yLevel,
+    },
+}
+
+/// `expect`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExpectRequest {
+    pub expectation: Expectation,
+    /// `--not`: the matcher must not hold.
+    #[serde(default)]
+    pub not: bool,
+    /// `--tab`: the tab to check; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// `--strict-refs`: a ref whose element is gone fails instead of
+    /// being re-resolved by role and name.
+    #[serde(default)]
+    pub strict_refs: bool,
+    /// The attribute `testid=` locators read; `data-testid` if `None`.
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    /// How long it retries until the assertion holds.
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
+/// `mark <name>`: a named point in a tab's console and network logs, for
+/// `expect --no-errors --since <name>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MarkRequest {
+    pub name: String,
+    /// `--tab`: the tab to mark; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    pub timeout_ms: u64,
+}
+
 /// `dialog accept [text]` and `dialog dismiss`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DialogRequest {

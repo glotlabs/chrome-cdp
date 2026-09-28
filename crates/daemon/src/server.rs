@@ -331,6 +331,14 @@ impl Daemon {
                 Ok(p) => output(self.engine.wait(p).await),
                 Err(e) => Err(e),
             },
+            rpc::EXPECT => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.expect(p)).await),
+                Err(e) => Err(e),
+            },
+            rpc::MARK => match params(req.params) {
+                Ok(p) => output(self.engine.mark(p).await),
+                Err(e) => Err(e),
+            },
             rpc::DIALOG => match params(req.params) {
                 Ok(p) => output(self.engine.dialog(p).await),
                 Err(e) => Err(e),
