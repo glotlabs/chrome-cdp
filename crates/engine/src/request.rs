@@ -639,6 +639,32 @@ pub struct HarStopRequest {
     pub timeout_ms: u64,
 }
 
+/// `trace start`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TraceStartRequest {
+    /// `--tab`: the tab whose session records; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// `--screenshots`: film strip frames in the trace.
+    #[serde(default)]
+    pub screenshots: bool,
+    /// `--categories`: trace categories (`-name` leaves one out); the
+    /// Performance panel's if empty.
+    #[serde(default)]
+    pub categories: Vec<String>,
+    pub timeout_ms: u64,
+}
+
+/// `trace stop`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TraceStopRequest {
+    /// `-o`: an absolute path; `<session dir>/traces/<n>.json` if `None`.
+    /// A path ending in `.gz` gets a gzipped trace.
+    #[serde(default)]
+    pub path: Option<PathBuf>,
+    pub timeout_ms: u64,
+}
+
 /// An image format (`screenshot --format`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

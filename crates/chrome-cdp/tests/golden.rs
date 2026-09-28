@@ -812,6 +812,18 @@ const CASES: &[Case] = &[
         fixture: Fixture::Session,
     },
     Case {
+        name: "trace-start",
+        args: &["trace", "start", "--categories", "-*,devtools.timeline"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "trace-stop-not-recording",
+        args: &["trace", "stop"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
         name: "goto-auth-required",
         args: &["goto", "{site}/auth/"],
         modes: ERR,

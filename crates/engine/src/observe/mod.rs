@@ -18,9 +18,11 @@ mod pdf;
 mod save;
 mod screenshot;
 mod sourcemaps;
+mod trace;
 
 pub use eval::check_eval;
 pub(crate) use har::HarRecording;
 pub use network::RESOURCE_TYPES;
 pub use screenshot::check_screenshot;
 pub(crate) use sourcemaps::SourceMaps;
+pub(crate) use trace::TraceRecording;

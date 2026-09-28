@@ -441,6 +441,7 @@ dependencies = [
  "browser",
  "cdp",
  "fixtures",
+ "flate2",
  "futures-util",
  "png",
  "protocol",

@@ -1,0 +1,11 @@
+$ chrome-cdp trace stop
+exit: 2
+--- stderr
+error: session default is not recording a trace
+  hint: chrome-cdp trace start   (then act, then trace stop)
+
+$ chrome-cdp trace stop --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"session default is not recording a trace","hint":"chrome-cdp trace start   (then act, then trace stop)"}}
+

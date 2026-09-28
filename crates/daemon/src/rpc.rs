@@ -37,6 +37,8 @@ pub const PDF: &str = "pdf";
 pub const EVAL: &str = "eval";
 pub const HAR_START: &str = "har_start";
 pub const HAR_STOP: &str = "har_stop";
+pub const TRACE_START: &str = "trace_start";
+pub const TRACE_STOP: &str = "trace_stop";
 
 /// `hello`: the first call on every connection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

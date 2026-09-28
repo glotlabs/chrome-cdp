@@ -77,8 +77,8 @@ pub use request::{
     ImageFormat, Margins, Modifier, MouseOp, NavigateRequest, Navigation, NetworkClearRequest,
     NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest, Read, ReadRequest,
     ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest, StatusRange,
-    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target, WaitFor, WaitRequest,
-    WaitUntil,
+    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest,
+    TraceStopRequest, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use tabs::commands::TabClosed;
@@ -139,6 +139,8 @@ struct Running {
     sourcemaps: observe::SourceMaps,
     /// The `har start` recording, if one runs.
     har: Mutex<Option<observe::HarRecording>>,
+    /// The `trace start` recording, if one runs.
+    trace: Mutex<Option<observe::TraceRecording>>,
 }
 
 /// What the running browser was started with, to compare with a later
@@ -542,6 +544,7 @@ impl Engine {
             mac: std::sync::OnceLock::new(),
             sourcemaps: observe::SourceMaps::default(),
             har: Mutex::new(None),
+            trace: Mutex::new(None),
         });
         *self.lock_state() = State::Running(running.clone());
         let engine = Arc::downgrade(self);

@@ -1,10 +1,10 @@
-//! Where `screenshot` and `pdf` save their files: the path given with
-//! `-o`, or the next number in a directory of the session
+//! Where `screenshot`, `pdf`, `har` and `trace` save their files: the
+//! path given with `-o`, or the next number in a directory of the session
 //! (`<session dir>/shots/1.png`, `2.png`, …). Numbers go on from the
 //! highest file there, so they survive a daemon restart and never
 //! overwrite an earlier capture.
 
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
@@ -21,22 +21,31 @@ pub(crate) fn save(
     dir: &Path,
     ext: &str,
 ) -> Result<PathBuf, ErrorInfo> {
+    let (mut file, path) = create(path, dir, ext)?;
+    file.write_all(bytes).map_err(|e| failed(&path, &e))?;
+    Ok(path)
+}
+
+/// Creates the file [`save`] would write, for writing in parts. Returns
+/// it and its path.
+pub(crate) fn create(
+    path: Option<&Path>,
+    dir: &Path,
+    ext: &str,
+) -> Result<(File, PathBuf), ErrorInfo> {
     if let Some(path) = path {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| failed(parent, &e))?;
         }
-        fs::write(path, bytes).map_err(|e| failed(path, &e))?;
-        return Ok(path.to_owned());
+        let file = File::create(path).map_err(|e| failed(path, &e))?;
+        return Ok((file, path.to_owned()));
     }
     fs::create_dir_all(dir).map_err(|e| failed(dir, &e))?;
     let mut n = highest(dir).map_err(|e| failed(dir, &e))? + 1;
     for _ in 0..ATTEMPTS {
         let path = dir.join(format!("{n}.{ext}"));
         match OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(mut file) => {
-                file.write_all(bytes).map_err(|e| failed(&path, &e))?;
-                return Ok(path);
-            }
+            Ok(file) => return Ok((file, path)),
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => n += 1,
             Err(e) => return Err(failed(&path, &e)),
         }
@@ -63,7 +72,7 @@ fn highest(dir: &Path) -> io::Result<u64> {
     Ok(highest)
 }
 
-fn failed(path: &Path, err: &io::Error) -> ErrorInfo {
+pub(crate) fn failed(path: &Path, err: &io::Error) -> ErrorInfo {
     ErrorInfo::new(
         ErrorKind::BadArgs,
         format!("cannot write {}: {err}", path.display()),

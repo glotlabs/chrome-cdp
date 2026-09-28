@@ -1,0 +1,15 @@
+$ chrome-cdp trace start --categories '-*,devtools.timeline'
+exit: 0
+--- stdout
+recording a trace of t1; chrome-cdp trace stop -o trace.json saves it
+
+$ chrome-cdp trace start --categories '-*,devtools.timeline' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"already":false,"categories":["-*","devtools.timeline"],"screenshots":false,"tab":"t1"}}
+
+$ chrome-cdp trace start --categories '-*,devtools.timeline' -q
+exit: 0
+--- stdout
+t1
+

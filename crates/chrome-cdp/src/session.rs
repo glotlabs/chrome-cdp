@@ -28,7 +28,7 @@ use engine::{
     HarStartRequest, HarStopRequest, HttpCredentials, ImageFormat, NavigateRequest, Navigation,
     NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PdfRequest, Read,
     ReadRequest, ScreenshotRequest, SnapshotRequest, TabCloseRequest, TabNewRequest,
-    TabSelectRequest, TabsRequest, WaitFor, WaitRequest,
+    TabSelectRequest, TabsRequest, TraceStartRequest, TraceStopRequest, WaitFor, WaitRequest,
 };
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
@@ -40,7 +40,8 @@ use crate::cli::{
     DownloadsArgs, ElementStateArg, EvalArgs, FindArgs, GlobalArgs, GotoArgs, HarArgs, HarCommand,
     HistoryArgs, IdleArgs, ImageFormatArg, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs,
     PdfArgs, ReloadArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs,
-    TabArgs, TabCommand, TabsArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    TabArgs, TabCommand, TabsArgs, TraceArgs, TraceCommand, WAIT_TIMEOUT, WaitCmdArgs,
+    parse_duration,
 };
 use crate::{input, version};
 
@@ -844,6 +845,40 @@ pub(crate) fn har(args: &HarArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
             let request = HarStopRequest { path, timeout_ms };
             ctx.runtime
                 .block_on(client.call_output(rpc::HAR_STOP, &request, ctx.timeout + QUICK))
+        }
+    }
+}
+
+/// `trace start` and `trace stop`: need a running session.
+pub(crate) fn trace(args: &TraceArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let timeout_ms = millis(ctx.timeout);
+    match &args.command {
+        TraceCommand::Start(start) => {
+            let request = TraceStartRequest {
+                tab: ctx.tab.clone(),
+                screenshots: start.screenshots,
+                categories: start.categories.clone(),
+                timeout_ms,
+            };
+            ctx.runtime.block_on(client.call_output(
+                rpc::TRACE_START,
+                &request,
+                ctx.timeout + QUICK,
+            ))
+        }
+        TraceCommand::Stop(stop) => {
+            let path = stop
+                .output
+                .as_deref()
+                .map(input::absolute_path)
+                .transpose()?
+                .map(PathBuf::from);
+            let request = TraceStopRequest { path, timeout_ms };
+            ctx.runtime
+                .block_on(client.call_output(rpc::TRACE_STOP, &request, ctx.timeout + QUICK))
         }
     }
 }

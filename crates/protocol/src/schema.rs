@@ -202,6 +202,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<HarStopData>),
     },
     CommandSchema {
+        name: "trace start",
+        summary: "the tab whose performance trace is recording, and its categories",
+        schema: || schema_for!(Envelope<TraceStartData>),
+    },
+    CommandSchema {
+        name: "trace stop",
+        summary: "the Chrome performance trace file saved",
+        schema: || schema_for!(Envelope<TraceStopData>),
+    },
+    CommandSchema {
         name: "snapshot",
         summary: "the page's accessibility tree, with refs on what can be acted on",
         schema: || schema_for!(Envelope<SnapshotData>),
@@ -1167,6 +1177,34 @@ pub struct HarStopData {
     pub dropped: u64,
     /// How long it recorded, in ms.
     pub duration_ms: u64,
+}
+
+/// `data` of `chrome-cdp trace start --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TraceStartData {
+    /// The tab whose session records, e.g. `t1`.
+    pub tab: String,
+    /// The trace categories (`-name`: left out).
+    pub categories: Vec<String>,
+    /// Whether film strip screenshots are recorded.
+    pub screenshots: bool,
+    /// Whether a trace was running already (it goes on as it was).
+    pub already: bool,
+}
+
+/// `data` of `chrome-cdp trace stop --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TraceStopData {
+    /// The trace file (absolute), JSON (gzipped if it ends in `.gz`).
+    pub path: String,
+    /// The file's size in bytes.
+    pub bytes: u64,
+    /// The tab whose session recorded, e.g. `t1`.
+    pub tab: String,
+    /// How long it recorded, in ms.
+    pub duration_ms: u64,
+    /// Chrome's trace buffer filled up and events were lost.
+    pub data_loss: bool,
 }
 
 /// `data` of `chrome-cdp cdp --json`.

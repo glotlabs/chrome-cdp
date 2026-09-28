@@ -1,6 +1,6 @@
 //! Recordings against a real Chrome (`CHROME_PATH`; skipped without it
 //! unless `CHROME_CDP_REQUIRE_CHROME` is set) and the fixture site: `har`
-//! (plan 06, milestone 6.5).
+//! and `trace` (plan 06, milestone 6.5).
 
 #![allow(clippy::unwrap_used, clippy::print_stderr)]
 
@@ -10,11 +10,12 @@ use std::sync::Arc;
 use browser::Host;
 use engine::{
     Action, ActionRequest, Button, Engine, HarContent, HarStartRequest, HarStopRequest,
-    NavigateRequest, Navigation, OpenRequest, TabNewRequest, WaitUntil,
+    NavigateRequest, Navigation, OpenRequest, TabNewRequest, TraceStartRequest, TraceStopRequest,
+    WaitUntil,
 };
 use fixtures::Fixtures;
 use protocol::ErrorKind;
-use protocol::schema::{HarStartData, HarStopData};
+use protocol::schema::{HarStartData, HarStopData, TraceStartData, TraceStopData};
 use serde_json::Value;
 
 const TIMEOUT_MS: u64 = 30_000;
@@ -274,5 +275,100 @@ async fn har_records_every_tab_from_the_start() {
     let post = entry(&har, "/items?n=2");
     assert!(post["response"]["content"].get("text").is_none());
     assert!(post["response"]["content"]["size"].as_i64().unwrap() > 0);
+    engine.close().await;
+}
+
+async fn trace_start(engine: &Engine, screenshots: bool, categories: &[&str]) -> TraceStartData {
+    let out = engine
+        .trace_start(TraceStartRequest {
+            tab: None,
+            screenshots,
+            categories: categories.iter().map(|&c| c.to_owned()).collect(),
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("trace start: {}", e.to_text()));
+    serde_json::from_value(out.data).unwrap()
+}
+
+async fn trace_stop(engine: &Engine, path: &Path) -> TraceStopData {
+    let out = engine
+        .trace_stop(TraceStopRequest {
+            path: Some(path.to_owned()),
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("trace stop: {}", e.to_text()));
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
+    serde_json::from_value(out.data).unwrap()
+}
+
+/// The names of the trace's events.
+fn event_names(trace: &Value) -> Vec<&str> {
+    trace["traceEvents"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no traceEvents"))
+        .iter()
+        .filter_map(|e| e["name"].as_str())
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn trace_saves_a_performance_trace() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let dir = tempfile::tempdir().unwrap();
+    let engine = start(&path, "record-trace").await;
+    goto(&engine, &site.url("/har/index.html")).await;
+
+    let err = engine
+        .trace_stop(TraceStopRequest {
+            path: None,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::BadArgs);
+    assert!(err.to_text().contains("trace start"), "{}", err.to_text());
+
+    let started = trace_start(&engine, true, &[]).await;
+    assert_eq!(started.tab, "t1");
+    assert!(!started.already);
+    assert!(
+        started
+            .categories
+            .contains(&"disabled-by-default-devtools.screenshot".to_owned())
+    );
+    assert!(trace_start(&engine, false, &[]).await.already);
+    goto(&engine, &site.url("/har/index.html?again")).await;
+    click(&engine, "#post").await;
+    let file = dir.path().join("load.json");
+    let stopped = trace_stop(&engine, &file).await;
+    assert_eq!(stopped.path, file.display().to_string());
+    assert!(!stopped.data_loss);
+    let bytes = std::fs::read(&file).unwrap();
+    assert_eq!(stopped.bytes, bytes.len() as u64);
+    let trace: Value = serde_json::from_slice(&bytes).unwrap();
+    let names = event_names(&trace);
+    // What the Performance panel needs to open it on the page.
+    assert!(names.contains(&"TracingStartedInBrowser"), "{names:?}");
+    assert!(names.contains(&"EventDispatch"));
+    assert!(names.contains(&"Screenshot"));
+
+    // Categories of one's own, gzipped.
+    trace_start(&engine, false, &["-*", "devtools.timeline"]).await;
+    goto(&engine, &site.url("/har/index.html?third")).await;
+    let file = dir.path().join("trace.json.gz");
+    trace_stop(&engine, &file).await;
+    let mut json = Vec::new();
+    std::io::Read::read_to_end(
+        &mut flate2::read::GzDecoder::new(std::fs::File::open(&file).unwrap()),
+        &mut json,
+    )
+    .unwrap();
+    let trace: Value = serde_json::from_slice(&json).unwrap();
+    let names = event_names(&trace);
+    assert!(!names.contains(&"Screenshot"));
+    assert!(names.contains(&"ParseHTML"), "{names:?}");
     engine.close().await;
 }

@@ -851,6 +851,24 @@ Examples:
     )]
     Har(HarArgs),
 
+    /// Record a Chrome performance trace, for DevTools or Perfetto.
+    #[command(
+        subcommand_required = true,
+        arg_required_else_help = true,
+        after_help = "\
+`trace start` starts Chrome's tracing on the tab (the Performance panel's
+categories by default); `trace stop` saves the trace as JSON, which
+DevTools' Performance panel (Load profile) and https://ui.perfetto.dev
+open. For a quick look at a page's speed, `chrome-cdp perf` is cheaper.
+Needs a running session.
+
+Examples:
+  chrome-cdp trace start --screenshots
+  chrome-cdp reload && chrome-cdp trace stop -o load.json
+  chrome-cdp trace stop -o trace.json.gz        # gzipped"
+    )]
+    Trace(TraceArgs),
+
     /// Make one raw CDP call on the session's browser or current page.
     #[command(after_help = "\
 Starts the session's browser first if it has none. --tab and --frame send
@@ -2130,6 +2148,62 @@ pub(crate) struct HarStopArgs {
 }
 
 #[derive(Debug, Args)]
+pub(crate) struct TraceArgs {
+    #[command(subcommand)]
+    pub(crate) command: TraceCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum TraceCommand {
+    /// Start a performance trace of the tab.
+    #[command(after_help = "\
+Starting while a trace runs changes nothing and says so.
+
+Examples:
+  chrome-cdp trace start
+  chrome-cdp trace start --screenshots                     # with a film strip
+  chrome-cdp trace start --categories devtools.timeline,v8")]
+    Start(TraceStartArgs),
+
+    /// Stop the trace and save it.
+    #[command(after_help = "\
+Prints the file's path (-q: only the path); the trace goes to the
+session's traces/ directory (1.json, 2.json, …) unless -o names a file. A
+path ending in .gz is gzipped.
+
+Examples:
+  chrome-cdp trace stop -o trace.json
+  chrome-cdp trace stop -o trace.json.gz
+  chrome-cdp trace stop --timeout 2m          # a long trace takes a while")]
+    Stop(TraceStopArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct TraceStartArgs {
+    /// Also record screenshots of the page as it renders (the film strip).
+    #[arg(long)]
+    pub(crate) screenshots: bool,
+
+    /// Trace categories instead of the Performance panel's,
+    /// comma-separated; `-name` leaves one out (`-*` all others).
+    #[arg(
+        long,
+        value_delimiter = ',',
+        value_name = "LIST",
+        allow_hyphen_values = true
+    )]
+    pub(crate) categories: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct TraceStopArgs {
+    /// Where to save it (`.gz`: gzipped); a numbered file in the session's
+    /// traces/ directory if not given.
+    #[arg(short, long, value_name = "PATH")]
+    pub(crate) output: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
 pub(crate) struct PdfArgs {
     /// Where to save it (`-` for stdout); a numbered file in the session's
     /// pdfs/ directory if not given.
@@ -2798,6 +2872,8 @@ mod tests {
         "pdf",
         "har start",
         "har stop",
+        "trace start",
+        "trace stop",
         "network clear",
         "count",
         "box",
