@@ -607,3 +607,42 @@ async fn credentials_still_work_with_and_after_routes() {
     let page = goto(&engine, &site.url("/auth/index.html")).await;
     assert_eq!((page.status, page.title.as_str()), (Some(200), "Members"));
 }
+
+/// Plan 07's goal: routing adds under 1 ms per request at p95 with 20
+/// rules. The page times 300 sequential fetches of `/echo` without routes
+/// and with 20 rules that match other URLs, so every request is paused,
+/// checked against all 20 and sent on.
+///
+/// Ignored: benchmarks run on a quiet machine after all plans are in. Run
+/// it with `CHROME_PATH=… cargo test -p engine --release --test route --
+/// --ignored`.
+#[tokio::test]
+#[ignore = "benchmark; run after all plans are implemented"]
+async fn overhead_with_20_rules() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "route-bench").await;
+    goto(&engine, &site.url("/route/index.html")).await;
+    let timings = "(async () => { const t = []; for (let i = 0; i < 300; i++) { \
+                   const s = performance.now(); await (await fetch('/echo?i=' + i)).text(); \
+                   t.push(performance.now() - s); } t.sort((a, b) => a - b); \
+                   return [t[150], t[285]]; })()";
+    // Warm up the connection and the page's code.
+    eval(&engine, timings).await;
+    let without = eval(&engine, timings).await;
+    let rules = (0..20)
+        .map(|i| rule(&format!("**/api/v{i}/**"), text("mocked")))
+        .collect();
+    add(&engine, rules).await;
+    let with = eval(&engine, timings).await;
+    let ms = |v: &Value, i: usize| v[i].as_f64().unwrap();
+    let overhead = ms(&with, 1) - ms(&without, 1);
+    eprintln!(
+        "p50 {:.2} → {:.2} ms, p95 {:.2} → {:.2} ms: {overhead:.2} ms a request at p95",
+        ms(&without, 0),
+        ms(&with, 0),
+        ms(&without, 1),
+        ms(&with, 1)
+    );
+    assert!(overhead < 1.0, "routing added {overhead:.2} ms at p95");
+}

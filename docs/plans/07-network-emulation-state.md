@@ -1,6 +1,6 @@
 # Plan 07 — Network control, emulation & state
 
-Status: TODO
+Status: IN PROGRESS (7.1 done)
 Depends on: 03 (parallel with 04–06)
 
 ## Goal
@@ -122,3 +122,17 @@ every routed request and the rule that handled it.
 ## Decisions log
 
 _(append here)_
+- 7.1: One `Fetch` pattern (`*`, request stage) per page and iframe session while any rule exists; the daemon matches rules itself. Our patterns (globs where `*` stops at `/`, `/regex/`, parts of URLs, as `wait --url` takes them) do not map onto Fetch's wildcards, and one pattern keeps rule changes to a single `Fetch.enable` per session. `--patch-json` asks for the response stage per request (`continueRequest` with `interceptResponse`), so other responses are never paused.
+- 7.1: `route`'s JSON answer is `--json-body`, not the plan's `--json`: `--json` is the global output flag (plan 08 §4) on every command. `--delay` takes a duration with a unit (`2s`, `500ms`), like `--timeout`.
+- 7.1: A rule has exactly one action; the CLI refuses two (e.g. `--abort` with `--json-body`). `--delay` combines with any action (a slow 500 is one rule); alone it delays and continues.
+- 7.1: `block` takes patterns and the presets as flags (`block --images --fonts --media --ads`), one rule each, shown by their label in `routes`. Images, fonts and media go by resource type; `--ads` is a regular expression over 25 well-known ad and tracking hosts and their subdomains.
+- 7.1: Rules live in the daemon's session settings, not the browser: they apply to every tab, popup and OOPIF (set up while the target is paused, so before its first script) and survive `open --restart`. They do not survive a daemon replaced by a CLI upgrade (the old daemon's rules are not handed over); a follow-up. The commands take no tab lock; `--tab` gets a warning, since rules are no tab's.
+- 7.1: `Fetch` reports a `fetch()` as `XHR`, so for `--resource-type` `xhr` and `fetch` are one type; the journal shows Chrome's name (`xhr`).
+- 7.1: While routes exist, requests skip service workers (`Network.setBypassServiceWorker`) and the HTTP cache (`Network.setCacheDisabled`), as Playwright does: a cache hit or a service worker's answer never reaches `Fetch`. `open --bypass-service-worker` is a session setting (kept like `--ignore-https-errors`) that skips service workers without routes too.
+- 7.1: A fulfilled request with an `Origin` gets `Access-Control-Allow-Origin: <origin>` and `-Allow-Credentials: true` unless the rule sets its own, and a CORS preflight for a request a fulfilling rule matches is answered 204 allowing what it asks, so mocking another origin's API needs no CORS headers. Preflights are no hits.
+- 7.1: `--times N` removes the rule after its N-th match; when the last rule goes, interception stops. Ids (`r1`) are never reused in a session.
+- 7.1: The request journal (1,000 entries, `routes --log`) records every request routing saw, matched or not, with the rule and outcome (`fulfill 200`, `abort blockedbyclient`, `continue`, `patch json (not JSON; not patched)`, `preflight allowed`). Rules carry an optional browser context (unset by the CLI) and are added in bulk (`route` and `block` send a list), for plan 11's per-context mock sets.
+- 7.1: `Fetch` events now come through a lossless stream (`Session::events_lossless`, an unbounded channel per listener) in their own task per session: a dropped `Fetch.requestPaused` would hang the page. `--http-credentials` shares that task and the same `Fetch.enable`.
+- 7.1: Requests of dedicated and shared workers are not routed yet (their sessions get no `Fetch.enable`); service workers are bypassed instead. A follow-up.
+- 7.1: The overhead benchmark is `overhead_with_20_rules` in `crates/engine/tests/route.rs` (`#[ignore]`; 300 sequential fetches with and without 20 non-matching rules, p95 difference). Not run: deferred, benchmarks run after all plans. The acceptance criterion stays unticked.
+- 7.1: The first acceptance criterion stays unticked until 7.2's emulation settings are applied the same way; routes are (tested for a request fired by an inline script on first load, a popup, and an OOPIF).

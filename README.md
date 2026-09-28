@@ -15,7 +15,8 @@ forms (`press`, `type`, `fill`, `select`, `check`, `uncheck`, `focus`,
 `downloads`, what the page logged (`console`, `errors`) and requested
 (`network`), what it looks like (`screenshot`, `pdf`), JavaScript (`eval`),
 recordings and measurements (`har`, `trace`, `perf`, `coverage`), helpers
-for a human watching (`highlight`, `inspect`), raw CDP calls,
+for a human watching (`highlight`, `inspect`), mocking and blocking requests
+(`route`, `block`, `routes`, `unroute`), raw CDP calls,
 `install`/`uninstall` and `schema` work so far:
 
 ```sh
@@ -31,6 +32,7 @@ chrome-cdp markdown                   # the article, as Markdown
 chrome-cdp wait --text 'Welcome back'  # instead of sleep
 chrome-cdp errors                     # exceptions and error logs not seen yet
 chrome-cdp network --failed           # #42 POST 500 /api/login xhr 12KB 340ms
+chrome-cdp route '**/api/cart' --json-body '{"items":[]}'  # mock an API for every tab
 chrome-cdp screenshot --annotate      # …/shots/1.png: 1280x720 png, 48KB; refs labelled
 chrome-cdp eval --in e9 'el.value'   # ada@example.com
 chrome-cdp perf                       # load timing, LCP/CLS/INP rated, blocking time, heap
@@ -268,6 +270,33 @@ body) and `--request-body` add the rest; `-o file` saves the response body
 while, also after the page navigates away, and the output says when it no
 longer has one. Each tab keeps its newest 2,000 requests (`open
 --network-buffer N`); `network clear` empties the log.
+
+`route <pattern>` mocks, blocks or changes requests whose URL matches (a glob
+such as `**/api/*`, a `/regex/`, or a part of the URL), in every tab, popup
+and frame of the session, the ones opened later too, before the page's first
+script runs. A rule has one action: answer (`--json-body`, `--body`,
+`--body-file`, `--status`, `--header`), `--abort [reason]`, change
+(`--set-header`, `--remove-header`, `--rewrite-url`), or `--patch-json`,
+which lets the real response through with a JSON merge patch applied ("what
+if the API returned an empty list"). `--method`, `--resource-type`, `--times
+N` and `--delay 2s` narrow and shape it. The first rule that matches, in the
+order they were added, handles a request; others go on untouched:
+
+```sh
+chrome-cdp route /api/login --method POST --status 401 --json-body '{"error":"bad password"}'
+chrome-cdp route '**/api/cart' --patch-json '{"items": [], "total": 0}'
+chrome-cdp route /api/ --status 503 --times 1   # fail once, then the real server
+chrome-cdp block --images --fonts --ads          # faster loads
+chrome-cdp routes                                # r1 POST /api/login → fulfill 401 application/json 24B (2 hits)
+chrome-cdp routes --log                          # each request routing saw, and the rule that handled it
+chrome-cdp unroute r1                            # or --all
+```
+
+Requests are intercepted only while routes exist. Meanwhile they skip service
+workers (which would answer before the routes) and the HTTP cache; `open
+--bypass-service-worker` skips service workers without routes too. A mocked
+response to another origin allows the page's origin, and CORS preflights for
+it are answered, so mocking a cross-origin API just works.
 
 `screenshot` saves an image of the viewport, the whole page (`--full`) or one
 element (`screenshot e12`, scrolled into view first) and prints its path:
