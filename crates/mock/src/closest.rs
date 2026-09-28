@@ -13,10 +13,6 @@ use serde_json::Value;
 use crate::glob::{Glob, PathGlob};
 use crate::matcher::{BodyMatcher, Matcher, Parsed, Request, Target, check_body};
 
-/// How close a path must come (0 to 100) for a mock or request to be
-/// named as close: more than a shared first segment (`/api`).
-pub(crate) const CLOSE_PATH: u32 = 60;
-
 /// How many close mocks an unmatched request names.
 pub(crate) const CLOSEST: usize = 2;
 
@@ -25,33 +21,50 @@ pub(crate) const CLOSEST: usize = 2;
 pub(crate) struct Closeness {
     /// How alike the path (or URL) is, 0 to 100 (100: it matches).
     pub(crate) path: u32,
+    /// Whether the path is close enough to be named (see [`Similarity`]).
+    pub(crate) close: bool,
     /// Higher is closer; ranks candidates.
     pub(crate) score: u32,
 }
 
-impl Closeness {
-    /// Close enough to be named.
-    pub(crate) fn is_close(self) -> bool {
-        self.path >= CLOSE_PATH
-    }
+/// How alike a path is to a pattern.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Similarity {
+    /// 0 to 100 (100: it matches).
+    pub(crate) percent: u32,
+    /// Close enough to be named: as many segments (give or take one), each
+    /// matching or a few letters away. A shared `/api` alone is not.
+    pub(crate) close: bool,
+}
+
+impl Similarity {
+    const SAME: Self = Self {
+        percent: 100,
+        close: true,
+    };
+    const NONE: Self = Self {
+        percent: 0,
+        close: false,
+    };
 }
 
 impl Matcher {
     /// How close `req` comes to matching.
     pub(crate) fn closeness(&self, req: &Parsed) -> Closeness {
-        let path = match &self.target {
-            None => 100,
+        let similarity = match &self.target {
+            None => Similarity::SAME,
             Some(Target::Path(glob)) => glob_similarity(glob, &req.path),
             Some(Target::Url(glob)) => glob_similarity(glob, &req.base),
             Some(Target::Regex(regex)) => {
                 if regex.is_match(&req.url) {
-                    100
+                    Similarity::SAME
                 } else {
-                    0
+                    Similarity::NONE
                 }
             }
         };
-        let method = self.methods.is_empty() || self.methods.iter().any(|m| *m == req.method);
+        let path = similarity.percent;
+        let method = self.methods.is_empty() || self.methods.contains(&req.method);
         // The same path is closer than a path a letter away, whatever the
         // method.
         let mut score = path * 4 + if path == 100 { 100 } else { 0 } + if method { 50 } else { 0 };
@@ -67,23 +80,31 @@ impl Matcher {
             .map(|ok| if ok { 30 } else { 0 })
             .sum::<u32>();
         }
-        Closeness { path, score }
+        Closeness {
+            path,
+            close: similarity.close,
+            score,
+        }
     }
 }
 
 /// How alike `subject` is to `glob` (100 when it matches).
-pub(crate) fn glob_similarity(glob: &PathGlob, subject: &str) -> u32 {
+pub(crate) fn glob_similarity(glob: &PathGlob, subject: &str) -> Similarity {
     if glob.matches(subject) {
-        100
+        Similarity::SAME
     } else {
-        path_similarity(&glob.to_string(), subject).min(99)
+        let similarity = path_similarity(&glob.to_string(), subject);
+        Similarity {
+            percent: similarity.percent.min(99),
+            ..similarity
+        }
     }
 }
 
-/// How alike two paths (or URLs) are, 0 to 100, segment by segment: a
-/// segment the pattern's matches (`:id`, a glob, the same text) counts
-/// one, a segment a few letters away counts less, others nothing.
-pub(crate) fn path_similarity(pattern: &str, subject: &str) -> u32 {
+/// How alike two paths (or URLs) are, segment by segment: a segment the
+/// pattern's matches (`:id`, a glob, the same text) counts one, a segment
+/// a few letters away counts less, others nothing.
+pub(crate) fn path_similarity(pattern: &str, subject: &str) -> Similarity {
     let segments = |text: &str| -> Vec<String> {
         let text = text.split_once("://").map_or(text, |(_, rest)| rest);
         text.split('/')
@@ -94,9 +115,9 @@ pub(crate) fn path_similarity(pattern: &str, subject: &str) -> u32 {
     let (want, got) = (segments(pattern), segments(subject));
     let n = want.len().max(got.len());
     if n == 0 {
-        return 100;
+        return Similarity::SAME;
     }
-    let total: f64 = want
+    let alike: Vec<f64> = want
         .iter()
         .zip(&got)
         .map(|(w, g)| {
@@ -106,22 +127,26 @@ pub(crate) fn path_similarity(pattern: &str, subject: &str) -> u32 {
             let longest = w.chars().count().max(g.chars().count()).max(1);
             #[allow(clippy::cast_precision_loss)]
             let alike = 1.0 - strsim::levenshtein(w, g) as f64 / longest as f64;
-            if alike >= 0.5 { alike } else { 0.0 }
+            if alike >= 0.6 { alike } else { 0.0 }
         })
-        .sum();
+        .collect();
+    let lengths_close = want.len().abs_diff(got.len()) <= 1 || want.iter().any(|w| w == "**");
     #[allow(
         clippy::cast_precision_loss,
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss
     )]
-    let similarity = (total / n as f64 * 100.0).round() as u32;
-    similarity.min(100)
+    let percent = (alike.iter().sum::<f64>() / n as f64 * 100.0).round() as u32;
+    Similarity {
+        percent: percent.min(100),
+        close: lengths_close && !alike.is_empty() && alike.iter().all(|a| *a > 0.0),
+    }
 }
 
 /// The closest of `candidates` (each with its closeness), best first:
 /// those close enough, at most `max`; ties keep their order.
 pub(crate) fn closest(mut candidates: Vec<(Closeness, MockCheck)>, max: usize) -> Vec<MockCheck> {
-    candidates.retain(|(c, _)| c.is_close());
+    candidates.retain(|(c, _)| c.close);
     candidates.sort_by_key(|(c, _)| std::cmp::Reverse(c.score));
     candidates.into_iter().take(max).map(|(_, m)| m).collect()
 }
@@ -142,6 +167,8 @@ pub struct Verdict {
     pub reason: Option<String>,
     /// How alike its path is, 0 to 100.
     pub path: u32,
+    /// Whether it comes close enough to be listed when nothing matches.
+    pub close: bool,
     /// Higher is closer.
     pub score: u32,
 }
@@ -153,7 +180,7 @@ impl Verdict {
 
     /// Close enough to be listed when nothing matches.
     pub fn is_close(&self) -> bool {
-        self.path >= CLOSE_PATH
+        self.close
     }
 }
 
@@ -234,6 +261,7 @@ impl RequestFilter {
         Verdict {
             reason: self.matcher.check(&parsed, &parsed.method, false).err(),
             path: closeness.path,
+            close: closeness.close,
             score: closeness.score,
         }
     }
@@ -262,17 +290,22 @@ mod tests {
 
     #[test]
     fn paths_alike_segment_by_segment() {
-        assert_eq!(path_similarity("/api/carts", "/api/cart"), 90);
-        assert_eq!(path_similarity("/api/products/:id", "/api/products/7"), 100);
-        assert_eq!(path_similarity("/api/users", "/api/cart"), 50);
-        assert_eq!(path_similarity("/api/cart", "/api/cart/items/3"), 50);
-        assert_eq!(path_similarity("/login", "/api/cart"), 0);
+        let alike = |a, b| {
+            let s = path_similarity(a, b);
+            (s.percent, s.close)
+        };
+        assert_eq!(alike("/api/carts", "/api/cart"), (90, true));
+        assert_eq!(alike("/api/products/:id", "/api/product"), (63, true));
+        assert_eq!(alike("/api/users", "/api/cart"), (50, false));
+        assert_eq!(alike("/mock/api/orders", "/mock/api/cart"), (67, false));
+        assert_eq!(alike("/api/cart", "/api/cart/items/3"), (50, false));
+        assert_eq!(alike("/login", "/api/cart"), (0, false));
         assert_eq!(
-            path_similarity(
+            alike(
                 "https://api.example.com/v1/cart",
                 "https://api.example.com/v1/carts"
             ),
-            93
+            (93, true)
         );
     }
 

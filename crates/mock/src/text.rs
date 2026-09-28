@@ -4,7 +4,8 @@
 use std::fmt::Write as _;
 
 use protocol::schema::{
-    MockCollectionInfo, MockExplainData, MockInfo, MockSetInfo, MockStateData, RoutedRequest,
+    MockCheck, MockCollectionInfo, MockExplainData, MockInfo, MockSetInfo, MockStateData,
+    RoutedRequest,
 };
 use serde_json::Value;
 
@@ -115,21 +116,15 @@ pub fn log_line(entry: &RoutedRequest) -> String {
     line
 }
 
-/// The closest mocks of an unmatched journal entry, a line each:
-/// `closest mock: base.toml:31 "cart": path differs: expects /api/carts,
-/// got /api/cart`; none if no mock came close.
-pub fn closest_lines(entry: &RoutedRequest) -> Vec<String> {
-    entry
-        .closest
-        .iter()
-        .map(|check| {
-            let mut line = format!("closest mock: {} \"{}\"", check.mock.at, check.mock.name);
-            if let Some(reason) = &check.reason {
-                let _ = write!(line, ": {reason}");
-            }
-            line
-        })
-        .collect()
+/// A mock that came close to an unmatched request, and why it did not
+/// match: `base.toml:31 "cart": path differs: expects /api/carts, got
+/// /api/cart`.
+pub fn closest_line(check: &MockCheck) -> String {
+    let mut line = format!("{} \"{}\"", check.mock.at, check.mock.name);
+    if let Some(reason) = &check.reason {
+        let _ = write!(line, ": {reason}");
+    }
+    line
 }
 
 /// `mock explain`: the answer, then every mock checked (at most `limit`,

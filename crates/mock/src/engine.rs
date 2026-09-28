@@ -643,6 +643,7 @@ impl Mocks {
                     Ok(_) => (
                         Closeness {
                             path: 100,
+                            close: true,
                             score: u32::MAX,
                         },
                         holds(&mock.when, &self.state).err().unwrap_or_else(|| {
@@ -667,11 +668,18 @@ impl Mocks {
                     continue;
                 };
                 let item = format!("{}/:id", coll.path.to_string().trim_end_matches('/'));
-                let path = glob_similarity(&coll.path, &parsed.path)
-                    .max(path_similarity(&item, &parsed.path).min(99));
+                let list = glob_similarity(&coll.path, &parsed.path);
+                let one = path_similarity(&item, &parsed.path);
+                let best = if one.percent > list.percent {
+                    one
+                } else {
+                    list
+                };
+                let path = best.percent.min(99);
                 candidates.push((
                     Closeness {
                         path,
+                        close: best.close,
                         score: path * 4 + 50,
                     },
                     MockCheck {
