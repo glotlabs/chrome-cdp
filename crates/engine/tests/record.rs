@@ -275,6 +275,31 @@ async fn har_records_every_tab_from_the_start() {
     assert_eq!(data.entries, entries.len());
     assert_eq!(data.bodies, entries.len());
 
+    // Starting one of another tab drops the running one, and says so.
+    har_start(&engine, HarContent::Embed).await;
+    let out = engine
+        .har_start(HarStartRequest {
+            tab: Some("t1".to_owned()),
+            content: HarContent::Embed,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap();
+    assert!(
+        out.warnings
+            .iter()
+            .any(|w| w.contains("recording of every tab was dropped")),
+        "{:?}",
+        out.warnings
+    );
+    engine
+        .har_stop(HarStopRequest {
+            path: Some(dir.path().join("t1.har")),
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap();
+
     // The recording ended; `--content omit` keeps bodies out.
     assert!(!har_start(&engine, HarContent::Omit).await.already);
     click(&engine, "#post").await;

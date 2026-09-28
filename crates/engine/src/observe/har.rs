@@ -61,6 +61,11 @@ impl Engine {
             None => None,
         };
         let mut recording = lock(&running.har);
+        // A recording of other tabs is dropped, and said so.
+        let replaced = recording
+            .as_ref()
+            .filter(|current| current.tab != tab)
+            .map(|current| current.tab.map_or_else(|| "every tab".to_owned(), tab_name));
         let already = match &mut *recording {
             Some(current) if current.tab == tab => {
                 current.content = req.content;
@@ -105,7 +110,13 @@ impl Engine {
             content: req.content.as_str().to_owned(),
             already,
         };
-        Ok(Output::typed(&data, text).quiet(req.content.as_str()))
+        let mut output = Output::typed(&data, text).quiet(req.content.as_str());
+        if let Some(replaced) = replaced {
+            output = output.warning(format!(
+                "the HAR recording of {replaced} was dropped; this one starts from now"
+            ));
+        }
+        Ok(output)
     }
 
     /// `har stop`: writes what the network log has recorded since `har
