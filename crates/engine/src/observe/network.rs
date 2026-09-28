@@ -645,7 +645,10 @@ fn show_text(
     let mut sizes = Vec::new();
     if let Some(size) = entry.size {
         let mut s = format!("size: {}", units::size(size));
-        if let Some(body) = entry.body_size.filter(|b| *b != size) {
+        if let Some(body) = entry
+            .body_size
+            .filter(|b| units::size(*b) != units::size(size))
+        {
             let _ = write!(s, " ({} decoded)", units::size(body));
         }
         sizes.push(s);
@@ -807,11 +810,69 @@ fn body_text(text: &mut String, side: &str, body: &Body, mime: Option<&str>) {
         return;
     }
     let _ = writeln!(text, "{side} ({size}):");
-    let pretty = serde_json::from_str::<serde_json::Value>(content)
-        .ok()
-        .filter(|v| v.is_object() || v.is_array())
-        .and_then(|v| serde_json::to_string_pretty(&v).ok());
+    let json = serde_json::from_str::<serde_json::Value>(content)
+        .is_ok_and(|v| v.is_object() || v.is_array());
+    let pretty = json.then(|| indent_json(content));
     let _ = writeln!(text, "{}", pretty.as_deref().unwrap_or(content));
+}
+
+/// Valid JSON `json` indented by two spaces a level, its keys in their
+/// order (parsing it into a `Value` would sort them).
+fn indent_json(json: &str) -> String {
+    let mut out = String::with_capacity(json.len() * 2);
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut chars = json.chars().peekable();
+    let newline = |out: &mut String, depth: usize| {
+        out.push('\n');
+        out.push_str(&"  ".repeat(depth));
+    };
+    while let Some(c) = chars.next() {
+        if in_string {
+            out.push(c);
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match c {
+            '"' => {
+                in_string = true;
+                out.push(c);
+            }
+            '{' | '[' => {
+                out.push(c);
+                while chars.peek().is_some_and(|c| c.is_whitespace()) {
+                    chars.next();
+                }
+                // `{}` and `[]` stay as they are.
+                if chars.peek().is_some_and(|n| matches!(n, '}' | ']')) {
+                    out.extend(chars.next());
+                } else {
+                    depth += 1;
+                    newline(&mut out, depth);
+                }
+            }
+            '}' | ']' => {
+                depth = depth.saturating_sub(1);
+                newline(&mut out, depth);
+                out.push(c);
+            }
+            ',' => {
+                out.push(c);
+                newline(&mut out, depth);
+            }
+            ':' => out.push_str(": "),
+            c if c.is_whitespace() => {}
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -955,6 +1016,14 @@ mod tests {
         let picked = select(&mut log, &filter, u64::MAX);
         assert_eq!(picked.skipped, 3);
         assert_eq!(picked.requests[0].id, 4);
+    }
+
+    #[test]
+    fn json_keeps_its_key_order() {
+        assert_eq!(
+            super::indent_json(r#"{"user":"ada", "tags":[],"o":{},"n":[1,{"a":"x,\"}"}]}"#),
+            "{\n  \"user\": \"ada\",\n  \"tags\": [],\n  \"o\": {},\n  \"n\": [\n    1,\n    {\n      \"a\": \"x,\\\"}\"\n    }\n  ]\n}"
+        );
     }
 
     #[test]
