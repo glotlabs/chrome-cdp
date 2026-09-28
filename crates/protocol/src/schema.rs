@@ -3550,6 +3550,10 @@ pub struct TestResult {
     /// does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failed_runs: Option<u32>,
+    /// What its steps warned about, e.g. a screenshot baseline made on
+    /// another OS only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
     /// Why it was skipped (`@skip`) or not run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,

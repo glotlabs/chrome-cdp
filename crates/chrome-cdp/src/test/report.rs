@@ -49,6 +49,9 @@ pub(super) fn line(plan: &Plan, test: &Planned, outcome: &Outcome) -> String {
         ),
         Status::NotRun => format!("- {place} {} (not run)\n", test.name),
     };
+    for warning in &outcome.warnings {
+        let _ = writeln!(text, "    warning: {warning}");
+    }
     if let Some(failure) = &outcome.failure {
         let label = if outcome.status == Status::Flaky {
             "first try failed"
@@ -131,6 +134,7 @@ fn result(plan: &Plan, test: &Planned, outcome: &Outcome) -> TestResult {
         tries: outcome.tries,
         reason: outcome.reason.clone(),
         failed_runs: outcome.failed_runs,
+        warnings: outcome.warnings.clone(),
         error: outcome.failure.as_deref().cloned(),
     }
 }
@@ -233,6 +237,7 @@ pub(super) fn listed(plan: &Plan, shard: Option<&str>, max_chars: usize) -> Outp
             tries: 0,
             reason: test.skipped().map(str::to_owned),
             failed_runs: None,
+            warnings: Vec::new(),
             error: None,
         });
     }

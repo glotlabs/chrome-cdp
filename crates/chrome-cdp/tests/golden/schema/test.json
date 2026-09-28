@@ -699,6 +699,13 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "warnings": {
+          "description": "What its steps warned about, e.g. a screenshot baseline made on\nanother OS only.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [

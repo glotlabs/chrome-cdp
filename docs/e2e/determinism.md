@@ -1,0 +1,90 @@
+# Determinism: the same result in every run
+
+Flaky suites are the main reason teams give up on E2E tests. `chrome-cdp
+test` removes the usual sources of flakiness before a test's first step:
+every test's browser context gets the settings below, unless
+`[e2e.determinism]` turns them off.
+
+| What | By default | `[e2e.determinism]` |
+|---|---|---|
+| Time: `Date`, `Intl.DateTimeFormat`, and the mocks' `{{now}}` | frozen at 2026-01-01T10:00:00Z | `freeze_time = "…"`, or `false` |
+| `Math.random`, `crypto.getRandomValues`, `crypto.randomUUID` | seeded (seed 0): the same values in every run and every page load | `random_seed = 42`, or `false` |
+| CSS animations and transitions | animations end at once (in their final state, still firing `animationend`), no transitions, no caret, no smooth scrolling; `prefers-reduced-motion: reduce` | `disable_animations = false` |
+| Locale | `en-US` (`navigator.language`, `Intl`, `Accept-Language`) | `locale = "de-DE"`, or `false` |
+| Time zone | `UTC` | `timezone = "Europe/Oslo"`, or `false` |
+| Viewport and pixel ratio | `viewport` of `[e2e]` (1280x800), pixel ratio 1 | `viewport`; `@viewport` or `@device` in a scenario |
+
+```toml
+[e2e.determinism]
+freeze_time = "2026-01-01T10:00:00Z"
+random_seed = 42
+disable_animations = true
+locale = "en-US"
+timezone = "UTC"
+```
+
+Mock sets' random values (`{{uuid}}`, `{{faker.*}}`, a `latency` range)
+use the same `random_seed`, and start over in every test, so a rerun gets
+the same answers after the same delays.
+
+## Moving the time on
+
+Timers keep running in real time, so a page never stalls. `time advance`
+moves the frozen time on, moves `performance.now()` on by as much, and
+runs the `setTimeout` and `setInterval` callbacks due by then, each once,
+in the order they are due. Expiry, polling and debounce can be tested
+without waiting:
+
+```
+@test "the session expires after five minutes"
+  goto /account
+  time advance 5m
+  expect text="Your session has expired" visible
+```
+
+A step can change any of these for its test: `time freeze
+2026-12-24T18:00:00Z`, `time reset`, `locale de-DE`, `tz Asia/Tokyo`,
+`media --reduced-motion no-preference`.
+
+## Finding flaky tests
+
+```
+chrome-cdp test e2e/scenarios/cart.cdp --repeat 20
+```
+
+runs each test 20 times (spread over `--jobs`), without retries, since
+retries would hide what `--repeat` looks for. A test fails if one of its
+runs fails; its line says how many did, with the first failure under it:
+
+```
+✗ e2e/scenarios/cart.cdp:6 adds an item (failed 2 of 20 runs, slowest 2.1s)
+    first failure at e2e/scenarios/cart.cdp:9:3: expect text=1 item visible
+```
+
+Run it before committing a new test.
+
+## Fonts and screenshot baselines
+
+Fonts render differently on each OS, so `expect-screenshot` keeps a
+baseline per OS (`home-linux.png`, `home-macos.png`). When a baseline
+exists only for another OS, the test gets a warning and a baseline of
+its own (in CI, where no baseline is made, it fails and says why):
+
+```
+✓ e2e/scenarios/home.cdp:3 looks right (1.4s)
+    warning: the baseline home was made on macos only; fonts render differently on each OS, so linux needs one of its own …
+```
+
+For baselines that match on every machine, run the tests in one image
+everywhere, on laptops and in CI. [`Dockerfile`](Dockerfile) builds one:
+Node for the web servers, a fixed set of fonts, and a pinned Chrome for
+Testing.
+
+```
+docker build -f docs/e2e/Dockerfile -t chrome-cdp-e2e .      # in the chrome-cdp checkout
+docker run --rm -v "$PWD":/app -w /app chrome-cdp-e2e test   # in your app
+docker run --rm -v "$PWD":/app -w /app chrome-cdp-e2e test --update-snapshots
+```
+
+The container runs as root, so Chrome runs without its sandbox there
+(`chrome-cdp` warns about it); that is fine for tests of your own app.

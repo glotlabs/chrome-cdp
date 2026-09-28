@@ -347,6 +347,36 @@ pub(crate) fn screenshot_baseline(dir: Option<&Path>, name: &str) -> Result<Path
     baseline_path(dir, "screenshots", name, ".png", &suffix)
 }
 
+/// The operating systems whose screenshot baselines may sit side by side.
+const OSES: [&str; 3] = ["linux", "macos", "windows"];
+
+/// When screenshot baseline `path` (this OS's) does not exist but another
+/// OS's does, the warning that says so (plan 11.6): fonts render
+/// differently on each OS, so this one cannot be compared with it.
+pub(crate) fn other_os_baselines(path: &Path) -> Option<String> {
+    if path.exists() {
+        return None;
+    }
+    let name = path.file_name()?.to_str()?;
+    let stem = name.strip_suffix(&format!("-{}.png", std::env::consts::OS))?;
+    let others: Vec<&str> = OSES
+        .into_iter()
+        .filter(|&os| {
+            os != std::env::consts::OS && path.with_file_name(format!("{stem}-{os}.png")).exists()
+        })
+        .collect();
+    if others.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "the baseline {stem} was made on {} only; fonts render differently on each OS, so \
+         {} needs one of its own (or run the tests in the Docker image of docs/e2e/determinism.md \
+         everywhere)",
+        others.join(" and "),
+        std::env::consts::OS
+    ))
+}
+
 /// Whether a missing baseline is stored (the first run) rather than a
 /// failure: not in CI, where it would pass without checking anything.
 pub(crate) fn create_missing() -> bool {
@@ -359,7 +389,9 @@ mod tests {
     use engine::{Expectation, Matcher};
     use protocol::ErrorKind;
 
-    use super::{expectation, project_baselines, screenshot_baseline, snapshot_baseline};
+    use super::{
+        expectation, other_os_baselines, project_baselines, screenshot_baseline, snapshot_baseline,
+    };
     use crate::cli::{Cli, Command};
 
     fn parse(args: &[&str]) -> Result<Expectation, protocol::ErrorInfo> {
@@ -670,5 +702,25 @@ mod tests {
             screenshot_baseline(Some(dir), "home.png").unwrap(),
             dir.join(format!("home-{os}.png"))
         );
+    }
+
+    #[test]
+    fn a_baseline_of_another_os_only_is_a_warning() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = screenshot_baseline(Some(dir.path()), "home").unwrap();
+        assert_eq!(other_os_baselines(&path), None);
+        let other = if std::env::consts::OS == "macos" {
+            "linux"
+        } else {
+            "macos"
+        };
+        std::fs::write(dir.path().join(format!("home-{other}.png")), b"png").unwrap();
+        let warning = other_os_baselines(&path).unwrap();
+        assert!(
+            warning.starts_with(&format!("the baseline home was made on {other} only;")),
+            "{warning}"
+        );
+        std::fs::write(&path, b"png").unwrap();
+        assert_eq!(other_os_baselines(&path), None);
     }
 }

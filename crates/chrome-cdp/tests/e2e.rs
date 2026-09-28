@@ -372,6 +372,58 @@ fn a_chrome_per_job_and_snapshot_baselines_in_the_project() {
     std::fs::write(&baseline, "- paragraph: Price: 1\n").unwrap();
     let out = project.test(&["scenarios/pass/snap.cdp"]);
     assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+
+    // A screenshot baseline made on another OS only: this OS gets its
+    // own, with a warning (plan 11.6); in CI, a failure that says why.
+    let other = if std::env::consts::OS == "macos" {
+        "linux"
+    } else {
+        "macos"
+    };
+    let snapshots = project.root.join("e2e/snapshots");
+    for name in ["price", "price-ci"] {
+        std::fs::copy(
+            testdata().join("../site/har/dot.png"),
+            snapshots.join(format!("{name}-{other}.png")),
+        )
+        .unwrap();
+    }
+    let shot = |name: &str, ci: bool| {
+        std::fs::write(
+            project.root.join("scenarios/pass/shot.cdp"),
+            format!(
+                "@test \"the price\"\n  goto /e2e/shop.html\n  expect-screenshot {name} '#price'\n"
+            ),
+        )
+        .unwrap();
+        let mut cmd = project.sandbox.cli();
+        cmd.current_dir(&project.root)
+            .args(["test", "scenarios/pass/shot.cdp"]);
+        if ci {
+            cmd.env("CI", "1");
+        } else {
+            cmd.env_remove("CI");
+        }
+        common::run(&mut cmd)
+    };
+    let out = shot("price", false);
+    let text = stdout(&out);
+    assert_eq!(out.status.code(), Some(0), "{text}");
+    assert!(
+        text.contains(&format!(
+            "\n    warning: the baseline price was made on {other} only; fonts render differently on each OS"
+        )),
+        "{text}"
+    );
+    let out = shot("price-ci", true);
+    let text = stdout(&out);
+    assert_eq!(out.status.code(), Some(1), "{text}");
+    assert!(
+        text.contains(&format!(
+            "other OS: the baseline price-ci was made on {other} only;"
+        )),
+        "{text}"
+    );
 }
 
 #[test]

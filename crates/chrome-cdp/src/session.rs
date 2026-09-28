@@ -748,9 +748,13 @@ pub(crate) fn expect_screenshot(
 ) -> Result<Output, ErrorInfo> {
     check_tab(global.tab.as_deref())?;
     let ctx = Ctx::with_default(global, crate::expect::EXPECT_TIMEOUT)?;
+    let path = crate::expect::screenshot_baseline(args.dir.as_deref(), &args.name)?;
+    let other_os = (!args.update)
+        .then(|| crate::expect::other_os_baselines(&path))
+        .flatten();
     let request = engine::ExpectScreenshotRequest {
         name: args.name.clone(),
-        path: crate::expect::screenshot_baseline(args.dir.as_deref(), &args.name)?,
+        path,
         locator: args.locator.clone(),
         full: args.full,
         mask: args.mask.clone(),
@@ -766,8 +770,16 @@ pub(crate) fn expect_screenshot(
     };
     engine::check_expect_screenshot(&request)?;
     let mut client = running_session(&ctx)?;
-    ctx.runtime
-        .block_on(client.call_output(rpc::EXPECT_SCREENSHOT, &request, ctx.timeout + QUICK))
+    let result = ctx.runtime.block_on(client.call_output(
+        rpc::EXPECT_SCREENSHOT,
+        &request,
+        ctx.timeout + QUICK,
+    ));
+    match (result, other_os) {
+        (Ok(out), Some(warning)) => Ok(out.warning(warning)),
+        (Err(info), Some(warning)) => Err(info.note("other OS", warning)),
+        (result, None) => result,
+    }
 }
 
 /// `mark <name>`: needs a running session.

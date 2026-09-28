@@ -134,8 +134,8 @@ relative to it. `${env:X}` reads an environment variable.
 ```
 chrome-cdp test [PATH…] [--grep RE] [--tags smoke,!slow] [--jobs N]
                 [--jobs-isolation context|browser] [--shard 2/4]
-                [--retries N] [--bail] [--headed] [--update-snapshots]
-                [--list] [--json]
+                [--retries N | --repeat N] [--bail] [--headed]
+                [--update-snapshots] [--list] [--json]
 ```
 
 - Without paths, the `tests` globs of `[e2e]` find the files (default
@@ -153,6 +153,11 @@ chrome-cdp test [PATH…] [--grep RE] [--tags smoke,!slow] [--jobs N]
   routes, mock sets (and their state), init scripts and emulation. Mock
   state starts over in every test. `--jobs N` runs N tests at once in one
   Chrome; `--jobs-isolation browser` gives each job its own Chrome.
+- Every test sees the same time (frozen at 2026-01-01T10:00:00Z), the
+  same random values, `en-US`, `UTC`, a pixel ratio of 1 and no
+  animations; `time advance 5m` moves the time on and runs the timers due
+  by then. `--repeat 20` runs each test 20 times to find flaky ones. See
+  [determinism.md](determinism.md).
 - A step runs as `chrome-cdp <line> --session <run's> --context <test's>`.
   Its timeout is cut to what is left of the test's time limit.
 - `expect-snapshot` and `expect-screenshot` baselines are in

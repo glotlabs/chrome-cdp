@@ -23,7 +23,7 @@
 //! `expect --no-errors --all-tabs` runs unless `allow_console_errors`
 //! (config) or `@allow-console-errors` (test) allows them.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -62,6 +62,9 @@ pub(super) struct Outcome {
     pub(super) reason: Option<String>,
     /// `--repeat`: how many of its runs failed.
     pub(super) failed_runs: Option<u32>,
+    /// What its steps warned about that the report shows (a screenshot
+    /// baseline of another OS only).
+    pub(super) warnings: Vec<String>,
 }
 
 /// How a run's steps are made.
@@ -143,6 +146,7 @@ pub(super) fn execute(
                             failure: None,
                             reason: Some(reason.to_owned()),
                             failed_runs: None,
+                            warnings: Vec::new(),
                         }
                     } else {
                         let runner = Runner {
@@ -150,6 +154,7 @@ pub(super) fn execute(
                             options,
                             session,
                             seen: Cell::new(0),
+                            warnings: RefCell::new(Vec::new()),
                         };
                         let outcome = match runner.before_all(test, &before_all[test.file]) {
                             Err(failure) => Outcome {
@@ -159,15 +164,18 @@ pub(super) fn execute(
                                 failure: Some(failure),
                                 reason: None,
                                 failed_runs: None,
+                                warnings: Vec::new(),
                             },
                             Ok(()) => runner.test(test),
                         };
                         let last = left[test.file].fetch_sub(1, Ordering::SeqCst) == 1;
-                        if last {
+                        let mut outcome = if last {
                             runner.after_all(test, outcome)
                         } else {
                             outcome
-                        }
+                        };
+                        outcome.warnings = runner.warnings.take();
+                        outcome
                     };
                     if outcome.status == Status::Failed && options.bail {
                         stop.store(true, Ordering::SeqCst);
@@ -233,6 +241,15 @@ fn merge(mut runs: Vec<Outcome>, repeat: usize) -> Outcome {
             .find(|o| o.status == status)
             .and_then(|o| o.reason.clone()),
         failed_runs: Some(u32::try_from(failed).unwrap_or(u32::MAX)),
+        warnings: {
+            let mut warnings: Vec<String> = Vec::new();
+            for warning in runs.iter().flat_map(|o| &o.warnings) {
+                if !warnings.contains(warning) {
+                    warnings.push(warning.clone());
+                }
+            }
+            warnings
+        },
     }
 }
 
@@ -248,6 +265,7 @@ fn not_run(options: &Options) -> Outcome {
             "the run was stopped".into()
         }),
         failed_runs: None,
+        warnings: Vec::new(),
     }
 }
 
@@ -258,6 +276,8 @@ struct Runner<'a> {
     session: &'a str,
     /// The last mock log entry looked at for unmatched requests.
     seen: Cell<u64>,
+    /// The warnings of steps the report shows.
+    warnings: RefCell<Vec<String>>,
 }
 
 /// A step's place in a test, for its failure.
@@ -290,6 +310,7 @@ impl Runner<'_> {
                         failure: first_failure,
                         reason: None,
                         failed_runs: None,
+                        warnings: Vec::new(),
                     };
                 }
                 Err(failure) if attempt == tries => {
@@ -300,6 +321,7 @@ impl Runner<'_> {
                         failure: Some(failure),
                         reason: None,
                         failed_runs: None,
+                        warnings: Vec::new(),
                     };
                 }
                 Err(failure) => {
@@ -510,7 +532,16 @@ impl Runner<'_> {
             }
             _ => {}
         }
-        crate::run(cli)?;
+        let screenshot = matches!(cli.command, Some(Command::ExpectScreenshot(_)));
+        let out = crate::run(cli)?;
+        if screenshot {
+            let mut warnings = self.warnings.borrow_mut();
+            for warning in out.warnings {
+                if !warnings.contains(&warning) {
+                    warnings.push(warning);
+                }
+            }
+        }
         if Instant::now() > deadline {
             return Err(over());
         }
