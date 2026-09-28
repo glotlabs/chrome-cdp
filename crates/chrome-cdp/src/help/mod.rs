@@ -161,7 +161,7 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
         ],
     ),
     ("Cookies and storage", &["cookies", "storage", "state"]),
-    ("Scripts and raw CDP", &["batch", "run", "cdp"]),
+    ("Scripts and raw CDP", &["batch", "run", "convert", "cdp"]),
     (
         "Help and tooling",
         &["help", "skill", "completions", "schema"],

@@ -591,6 +591,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         summary: "one line per step: its place, its command, and that command's envelope",
         schema: || schema_for!(StepLine),
     },
+    CommandSchema {
+        name: "convert",
+        summary: "the .cdp script translated from a Playwright test file, and its TODO lines",
+        schema: || schema_for!(Envelope<ConvertData>),
+    },
 ];
 
 /// The registry entry for `name` (`"tab close"`), if any.
@@ -655,6 +660,35 @@ pub struct SkillData {
     /// With `--install`: what happened to the file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub write: Option<SkillWrite>,
+}
+
+/// `data` of `chrome-cdp convert --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ConvertData {
+    /// The Playwright file, as given (`stdin` for `-`).
+    pub file: String,
+    /// The `.cdp` script.
+    pub script: String,
+    /// How many tests it has.
+    pub tests: usize,
+    /// How many command lines it has.
+    pub steps: usize,
+    /// The statements it could not translate, in the script as TODO lines.
+    pub todos: Vec<ConvertTodo>,
+    /// With `-o`: the absolute path of the script.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+}
+
+/// A statement `convert` left as a TODO line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ConvertTodo {
+    /// Its line in the Playwright file.
+    pub line: usize,
+    /// Why it was not translated, often with what to use instead.
+    pub reason: String,
+    /// Its source, on one line.
+    pub code: String,
 }
 
 /// What `skill --install` did to the file.

@@ -118,7 +118,7 @@ impl From<ScriptError> for Problem {
 fn prepare(
     file: &str,
     src: &str,
-    vars: &Vars,
+    vars: &dyn Resolve,
     global: &GlobalArgs,
 ) -> Result<Vec<Step>, Vec<Problem>> {
     let parsed = protocol::script::parse(file, src);
@@ -166,10 +166,32 @@ fn prepare(
     Ok(steps)
 }
 
+/// Checks a generated script (`convert`'s) as `run` would, every
+/// variable standing for `x`: its steps' text, or each problem.
+#[cfg(test)]
+pub(crate) fn check(src: &str) -> Result<Vec<String>, Vec<String>> {
+    struct Any;
+    impl Resolve for Any {
+        fn resolve(&self, _: &Var) -> Result<String, Unresolved> {
+            Ok("x".into())
+        }
+    }
+    let global = <Cli as clap::Parser>::try_parse_from([protocol::PROGRAM])
+        .expect("no arguments parse")
+        .global;
+    match prepare("generated.cdp", src, &Any, &global) {
+        Ok(steps) => Ok(steps.into_iter().map(|s| s.text).collect()),
+        Err(problems) => Err(problems
+            .into_iter()
+            .map(|p| format!("line {}: {}", p.span.line, p.info.message))
+            .collect()),
+    }
+}
+
 /// Expands and checks one command line.
 // Checked once per line before anything runs; the size does not matter.
 #[allow(clippy::result_large_err)]
-fn step(line: &Line, vars: &Vars, global: &GlobalArgs) -> Result<Step, Problem> {
+fn step(line: &Line, vars: &dyn Resolve, global: &GlobalArgs) -> Result<Step, Problem> {
     let words = line
         .words
         .iter()
