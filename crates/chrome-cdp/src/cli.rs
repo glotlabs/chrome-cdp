@@ -144,7 +144,9 @@ pub(crate) enum Command {
     #[command(after_help = "\
 Examples:
   chrome-cdp schema                 # list the commands that have one
-  chrome-cdp schema version         # the schema of chrome-cdp --version --json")]
+  chrome-cdp schema version         # the schema of chrome-cdp --version --json
+  chrome-cdp schema scenario        # .cdp directives, commands, flags, variables
+  chrome-cdp schema mocks           # the mock file format")]
     Schema(SchemaArgs),
 
     /// Download Chrome for Testing into chrome-cdp's cache.

@@ -329,16 +329,6 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<MockWsSendData>),
     },
     CommandSchema {
-        name: "fmt",
-        summary: "the .cdp and mock files looked at, and those formatted (or, with --check, not formatted)",
-        schema: || schema_for!(Envelope<FmtData>),
-    },
-    CommandSchema {
-        name: "lint",
-        summary: "the problems found in scenario and mock files: file:line:col, severity, rule, message and hint",
-        schema: || schema_for!(Envelope<LintData>),
-    },
-    CommandSchema {
         name: "mock check",
         summary: "the problems found in the mock files: file:line:col, severity, rule and message",
         schema: || schema_for!(Envelope<MockCheckData>),
@@ -707,6 +697,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         name: "convert",
         summary: "the .cdp script translated from a Playwright test file, and its TODO lines",
         schema: || schema_for!(Envelope<ConvertData>),
+    },
+    CommandSchema {
+        name: "fmt",
+        summary: "the .cdp and mock files looked at, and those formatted (or, with --check, not formatted)",
+        schema: || schema_for!(Envelope<FmtData>),
+    },
+    CommandSchema {
+        name: "lint",
+        summary: "the problems found in scenario and mock files: file:line:col, severity, rule, message and hint",
+        schema: || schema_for!(Envelope<LintData>),
     },
 ];
 

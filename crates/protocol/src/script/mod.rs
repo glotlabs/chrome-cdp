@@ -25,6 +25,36 @@ pub fn is_name(s: &str) -> bool {
     parse::is_ident(s)
 }
 
+/// Every form of `${…}`, and what fills it in (`chrome-cdp schema
+/// scenario`).
+pub const VARIABLES: &[(&str, &str)] = &[
+    (
+        "${name}",
+        "a --var of run or batch, or an @include parameter",
+    ),
+    ("${env:NAME}", "the environment variable NAME"),
+    (
+        "${data:file.json#/pointer}",
+        "a value of a JSON file (relative to the script), at a JSON pointer; the whole file without one",
+    ),
+    (
+        "${var:name}",
+        "the test backend's vars files (chrome-cdp test)",
+    ),
+    (
+        "${secret:NAME}",
+        "the environment variable NAME, masked in all output (chrome-cdp test)",
+    ),
+    (
+        "${saved.NAME.field}",
+        "a field of the answer an earlier `http … --save NAME` step saved (chrome-cdp test)",
+    ),
+    ("${test.id}", "unique per test try (chrome-cdp test)"),
+    ("${run.id}", "unique per run (chrome-cdp test)"),
+    ("${backend}", "the test backend's name (chrome-cdp test)"),
+    ("$${", "a literal ${"),
+];
+
 /// The newest syntax version this build reads (`@syntax 1`).
 pub const SYNTAX_VERSION: u32 = 1;
 

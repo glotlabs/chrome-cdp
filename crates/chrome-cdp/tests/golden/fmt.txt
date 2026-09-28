@@ -1,0 +1,18 @@
+$ chrome-cdp fmt
+exit: 0
+--- stdout
+formatted e2e/scenarios/cart.cdp
+formatted e2e/mocks/base.toml
+2 files, 2 formatted
+
+$ chrome-cdp fmt --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"changed":["<tmp>/app/e2e/scenarios/cart.cdp","<tmp>/app/e2e/mocks/base.toml"],"check":false,"files":2}}
+
+$ chrome-cdp fmt -q
+exit: 0
+--- stdout
+e2e/scenarios/cart.cdp
+e2e/mocks/base.toml
+

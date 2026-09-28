@@ -68,6 +68,130 @@ pub const DIRECTIVES: &[&str] = &[
     "syntax",
 ];
 
+/// What a directive is, for `chrome-cdp schema scenario`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirectiveDoc {
+    pub name: &'static str,
+    /// How it is written.
+    pub usage: &'static str,
+    /// `block` (indented steps below it), `setting` (for the file, or a
+    /// test when in its body or after its name), `include` or `syntax`.
+    pub kind: &'static str,
+    pub summary: &'static str,
+}
+
+/// Every directive of [`DIRECTIVES`], documented.
+pub const DIRECTIVE_DOCS: &[DirectiveDoc] = &[
+    DirectiveDoc {
+        name: "test",
+        usage: "@test \"name\" [@setting args…]…",
+        kind: "block",
+        summary: "a test: its steps are indented 2 spaces below; settings may follow the name",
+    },
+    DirectiveDoc {
+        name: "before",
+        usage: "@before",
+        kind: "block",
+        summary: "steps run before each test of the file, in the test's browser context",
+    },
+    DirectiveDoc {
+        name: "after",
+        usage: "@after",
+        kind: "block",
+        summary: "steps run after each test of the file, failed ones too",
+    },
+    DirectiveDoc {
+        name: "before-all",
+        usage: "@before-all",
+        kind: "block",
+        summary: "steps run once before the file's first test, in a context of their own",
+    },
+    DirectiveDoc {
+        name: "after-all",
+        usage: "@after-all",
+        kind: "block",
+        summary: "steps run once after the file's last test",
+    },
+    DirectiveDoc {
+        name: "include",
+        usage: "@include path/to/steps.cdp [name=value…]",
+        kind: "include",
+        summary: "the steps of a step file (relative to this file), its ${name} set by the parameters",
+    },
+    DirectiveDoc {
+        name: "mocks",
+        usage: "@mocks set…",
+        kind: "setting",
+        summary: "mock sets layered onto default_mocks (a set named again moves last)",
+    },
+    DirectiveDoc {
+        name: "tags",
+        usage: "@tags tag…",
+        kind: "setting",
+        summary: "tags for --tags",
+    },
+    DirectiveDoc {
+        name: "skip",
+        usage: "@skip [reason…]",
+        kind: "setting",
+        summary: "skip the test (or every test of the file)",
+    },
+    DirectiveDoc {
+        name: "only",
+        usage: "@only",
+        kind: "setting",
+        summary: "run only the tests marked @only",
+    },
+    DirectiveDoc {
+        name: "timeout",
+        usage: "@timeout 60s",
+        kind: "setting",
+        summary: "the test's time limit",
+    },
+    DirectiveDoc {
+        name: "viewport",
+        usage: "@viewport 390x844",
+        kind: "setting",
+        summary: "the page size (replaces @device)",
+    },
+    DirectiveDoc {
+        name: "device",
+        usage: "@device \"iPhone 15\"",
+        kind: "setting",
+        summary: "a device of `chrome-cdp emulate list` (replaces @viewport)",
+    },
+    DirectiveDoc {
+        name: "retries",
+        usage: "@retries 2",
+        kind: "setting",
+        summary: "retries of a failed test (one that then passes is flaky)",
+    },
+    DirectiveDoc {
+        name: "allow-console-errors",
+        usage: "@allow-console-errors",
+        kind: "setting",
+        summary: "console errors do not fail the test",
+    },
+    DirectiveDoc {
+        name: "backend",
+        usage: "@backend mock|real|name…",
+        kind: "setting",
+        summary: "the backends that run the test; the others skip it",
+    },
+    DirectiveDoc {
+        name: "safe",
+        usage: "@safe",
+        kind: "setting",
+        summary: "the test only reads, so it may run against a protected backend",
+    },
+    DirectiveDoc {
+        name: "syntax",
+        usage: "@syntax 1",
+        kind: "syntax",
+        summary: "the grammar version; the first line of the file when written",
+    },
+];
+
 /// The directives that hold indented steps.
 const BLOCKS: &[&str] = &["test", "before", "after", "before-all", "after-all"];
 

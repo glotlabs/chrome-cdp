@@ -248,7 +248,7 @@ fn lint_prints_github_annotations() {
     let out = lint_in(&fixture(), &["--format", "github"]);
     assert_eq!(code(&out), 1);
     let root = fixture().canonicalize().unwrap().display().to_string();
-    golden("lint-github.txt", &stdout(&out).replace(&root, "<fixture>"));
+    golden("lint/github.txt", &stdout(&out).replace(&root, "<fixture>"));
     assert!(
         stderr(&out).contains("9 files: 15 errors, 5 warnings"),
         "{}",

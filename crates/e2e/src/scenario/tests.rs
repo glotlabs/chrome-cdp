@@ -428,3 +428,9 @@ fn shards_cover_every_test_once() {
         assert!(parse_shard(bad).is_err(), "{bad}");
     }
 }
+
+#[test]
+fn every_directive_is_documented() {
+    let documented: Vec<&str> = super::DIRECTIVE_DOCS.iter().map(|d| d.name).collect();
+    assert_eq!(documented, super::DIRECTIVES);
+}

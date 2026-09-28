@@ -1,0 +1,37 @@
+$ chrome-cdp fmt --check
+exit: 1
+--- stderr
+error: 2 files are not formatted: e2e/scenarios/cart.cdp, e2e/mocks/base.toml
+  diff:
+    --- a/e2e/scenarios/cart.cdp
+    +++ b/e2e/scenarios/cart.cdp
+    @@ -1,7 +1,8 @@
+    +@mocks base
+     @tags smoke
+    -@mocks base
+    -@test 'adds an item'
+    +
+    +@test "adds an item"
+       goto /
+    -  click "role=button[name='Add']"   # the first
+    -  screenshot -o cart.png
+    -  expect "text=1 item" visible
+    +  click "role=button[name='Add']"  # the first
+    +  screenshot --output cart.png
+    +  expect 'text=1 item' visible
+    --- a/e2e/mocks/base.toml
+    +++ b/e2e/mocks/base.toml
+    @@ -1,4 +1,4 @@
+     [[mock]]
+    -respond={status=204}
+    +name = "cart"
+     match = { path = "/api/cart" }
+    -name = "cart"
+    +respond = { status = 204 }
+  hint: chrome-cdp fmt   (formats them)
+
+$ chrome-cdp fmt --check --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"2 files are not formatted: e2e/scenarios/cart.cdp, e2e/mocks/base.toml","hint":"chrome-cdp fmt   (formats them)","notes":[{"label":"diff","text":"--- a/e2e/scenarios/cart.cdp\n+++ b/e2e/scenarios/cart.cdp\n@@ -1,7 +1,8 @@\n+@mocks base\n @tags smoke\n-@mocks base\n-@test 'adds an item'\n+\n+@test \"adds an item\"\n   goto /\n-  click \"role=button[name='Add']\"   # the first\n-  screenshot -o cart.png\n-  expect \"text=1 item\" visible\n+  click \"role=button[name='Add']\"  # the first\n+  screenshot --output cart.png\n+  expect 'text=1 item' visible\n--- a/e2e/mocks/base.toml\n+++ b/e2e/mocks/base.toml\n@@ -1,4 +1,4 @@\n [[mock]]\n-respond={status=204}\n+name = \"cart\"\n match = { path = \"/api/cart\" }\n-name = \"cart\"\n+respond = { status = 204 }"}],"details":{"changed":["<tmp>/app/e2e/scenarios/cart.cdp","<tmp>/app/e2e/mocks/base.toml"],"check":true,"diff":"--- a/e2e/scenarios/cart.cdp\n+++ b/e2e/scenarios/cart.cdp\n@@ -1,7 +1,8 @@\n+@mocks base\n @tags smoke\n-@mocks base\n-@test 'adds an item'\n+\n+@test \"adds an item\"\n   goto /\n-  click \"role=button[name='Add']\"   # the first\n-  screenshot -o cart.png\n-  expect \"text=1 item\" visible\n+  click \"role=button[name='Add']\"  # the first\n+  screenshot --output cart.png\n+  expect 'text=1 item' visible\n--- a/e2e/mocks/base.toml\n+++ b/e2e/mocks/base.toml\n@@ -1,4 +1,4 @@\n [[mock]]\n-respond={status=204}\n+name = \"cart\"\n match = { path = \"/api/cart\" }\n-name = \"cart\"\n+respond = { status = 204 }\n","files":2}}}
+

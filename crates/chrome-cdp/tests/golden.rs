@@ -68,6 +68,23 @@ struct Case {
     fixture: Fixture,
 }
 
+/// A project whose scenario and mock file `fmt` changes.
+const FMT_PROJECT: &[(&str, &str)] = &[
+    (
+        "chrome-cdp.toml",
+        "[e2e]\nbase_url = \"http://localhost:5173\"\n",
+    ),
+    (
+        "e2e/scenarios/cart.cdp",
+        "@tags smoke\n@mocks base\n@test 'adds an item'\n  goto /\n  click \"role=button[name='Add']\"   # the first\n  screenshot -o cart.png\n  expect \"text=1 item\" visible\n",
+    ),
+    (
+        "e2e/mocks/base.toml",
+        "[[mock]]\nrespond={status=204}\nmatch = { path = \"/api/cart\" }\nname = \"cart\"\n",
+    ),
+    ("e2e/mocks/data/items.json", "[]\n"),
+];
+
 const ALL: &[&str] = &["", "--json", "-q"];
 const ERR: &[&str] = &["", "--json"];
 
@@ -1679,6 +1696,52 @@ const CASES: &[Case] = &[
             (
                 "e2e/mocks/base.toml",
                 "[settings]\nscope = [\"/api/**\"]\n\n[[mock]]\nname = \"product by id\"\nmatch = { method = \"GET\", path = \"/api/products/:id\" }\nrespond = { json = { id = 1, name = \"Keyboard\", price = 12 } }\n\n[[mock]]\nname = \"gone\"\nmatch = { method = \"GET\", path = \"/api/products/0\" }\nrespond = { status = 410 }\n\n[[mock]]\nname = \"cart\"\nmatch = { method = \"GET\", path = \"/api/cart\" }\nrespond = { json = [] }\n",
+            ),
+        ]),
+    },
+    Case {
+        name: "fmt",
+        args: &["fmt"],
+        modes: ALL,
+        fixture: Fixture::Project(FMT_PROJECT),
+    },
+    Case {
+        name: "fmt-check",
+        args: &["fmt", "--check"],
+        modes: ERR,
+        fixture: Fixture::Project(FMT_PROJECT),
+    },
+    Case {
+        name: "lint",
+        args: &["lint"],
+        modes: ERR,
+        fixture: Fixture::Project(&[
+            (
+                "chrome-cdp.toml",
+                "[e2e]\nbase_url = \"http://localhost:5173\"\n",
+            ),
+            (
+                "e2e/scenarios/cart.cdp",
+                "@test \"adds an item\"\n  goto /\n  click e12\n  wait 500\n  expect text=1 item visible\n\n@test \"adds an item\"\n  goto /\n  clik text=Add\n",
+            ),
+            (
+                "e2e/mocks/base.toml",
+                "[[mock]]\nmatch = { path = \"/api/**\" }\nrespond = { status = 200 }\n\n[[mock]]\nmatch = { path = \"/api/cart\" }\nrespond = { status = 204 }\n",
+            ),
+        ]),
+    },
+    Case {
+        name: "lint-warnings",
+        args: &["lint"],
+        modes: ALL,
+        fixture: Fixture::Project(&[
+            (
+                "chrome-cdp.toml",
+                "[e2e]\nbase_url = \"http://localhost:5173\"\n",
+            ),
+            (
+                "e2e/scenarios/cart.cdp",
+                "@test \"opens the cart\"\n  goto /\n  wait 2s\n  click text=Cart\n",
             ),
         ]),
     },

@@ -1,0 +1,19 @@
+$ chrome-cdp lint
+exit: 0
+--- stdout
+e2e/scenarios/cart.cdp:1:1: warning [no-expect] test "opens the cart" has no expect step, so it only fails when a step errors
+  hint: end it with what should be true, e.g. expect text=Saved visible
+e2e/scenarios/cart.cdp:3:3: warning [sleep] `wait 2s` sleeps 2000ms whatever the page does: slow when it is quick, flaky when it is slow
+  hint: wait for what the sleep stands for: wait <locator>, wait --text …, wait --url …, or wait --idle
+1 file: 0 errors, 2 warnings
+
+$ chrome-cdp lint --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"errors":0,"files":["<tmp>/app/e2e/scenarios/cart.cdp"],"problems":[{"col":1,"file":"<tmp>/app/e2e/scenarios/cart.cdp","hint":"end it with what should be true, e.g. expect text=Saved visible","line":1,"message":"test \"opens the cart\" has no expect step, so it only fails when a step errors","rule":"no-expect","severity":"warning"},{"col":3,"file":"<tmp>/app/e2e/scenarios/cart.cdp","hint":"wait for what the sleep stands for: wait <locator>, wait --text …, wait --url …, or wait --idle","line":3,"message":"`wait 2s` sleeps 2000ms whatever the page does: slow when it is quick, flaky when it is slow","rule":"sleep","severity":"warning"}],"warnings":2}}
+
+$ chrome-cdp lint -q
+exit: 0
+--- stdout
+0 2
+
