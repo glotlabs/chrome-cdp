@@ -24,6 +24,7 @@ mod route;
 mod schema;
 mod script;
 mod session;
+mod skill;
 mod version;
 
 use cli::{Cli, ClipboardCommand, Command};
@@ -71,6 +72,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             .hint(Cmd::new("").switch("help"))),
         Some(Command::Schema(args)) => schema::run(&args),
         Some(Command::Help(args)) => help::run(&args),
+        Some(Command::Skill(args)) => skill::run(&args),
         Some(Command::Install(args)) => {
             install::install(&args, cli.global.timeout_or(cli::DEFAULT_TIMEOUT))
         }

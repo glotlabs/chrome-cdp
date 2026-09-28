@@ -1309,6 +1309,27 @@ Examples:
   chrome-cdp help tab close")]
     Help(HelpArgs),
 
+    /// Print a SKILL.md that teaches an agent to use chrome-cdp, or install it.
+    #[command(after_help = "\
+The skill is an Agent Skills file (Claude Code and others): frontmatter
+with a name and description, then the workflow (open, snapshot -i, act by
+ref, read the report, errors and console when stuck), the common pitfalls
+and a cheat sheet, in under 2k tokens.
+
+--install writes it to .claude/skills/chrome-cdp/SKILL.md in the project
+(the nearest directory up with .git or .claude, else this one); with
+--user to $CLAUDE_CONFIG_DIR/skills/… or ~/.claude/skills/…. Running it
+again updates the file. --format agents-md prints a section for AGENTS.md
+and --format llms-txt an llms.txt with every command.
+
+Examples:
+  chrome-cdp skill                          # print SKILL.md
+  chrome-cdp skill --install                # into this project's .claude/skills
+  chrome-cdp skill --install --user         # for every project
+  chrome-cdp skill --format agents-md >> AGENTS.md
+  chrome-cdp skill --format llms-txt > llms.txt")]
+    Skill(SkillArgs),
+
     /// The session daemon; other commands start it.
     #[command(name = "__daemon", hide = true)]
     Daemon(DaemonArgs),
@@ -1320,6 +1341,48 @@ pub(crate) struct HelpArgs {
     /// `commands`, or a command (`click`, `tab close`).
     #[arg(value_name = "TOPIC")]
     pub(crate) topic: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct SkillArgs {
+    /// What to print: the SKILL.md, an AGENTS.md section, or an llms.txt.
+    #[arg(long, value_enum, default_value_t = SkillFormat::Skill)]
+    pub(crate) format: SkillFormat,
+
+    /// Write SKILL.md where Claude Code finds it (see --user) instead of
+    /// printing it.
+    #[arg(long, conflicts_with = "format")]
+    pub(crate) install: bool,
+
+    /// With --install: into this project's .claude/skills (the default).
+    #[arg(long, requires = "install", conflicts_with = "user")]
+    pub(crate) project: bool,
+
+    /// With --install: into ~/.claude/skills, for every project.
+    #[arg(long, requires = "install")]
+    pub(crate) user: bool,
+}
+
+/// `skill --format`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum SkillFormat {
+    /// SKILL.md, for Claude Code and other Agent Skills clients.
+    Skill,
+    /// A section to add to AGENTS.md.
+    AgentsMd,
+    /// llms.txt: a summary, the help topics and every command.
+    LlmsTxt,
+}
+
+impl SkillFormat {
+    /// The name `--format` takes.
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Skill => "skill",
+            Self::AgentsMd => "agents-md",
+            Self::LlmsTxt => "llms-txt",
+        }
+    }
 }
 
 #[derive(Debug, Args)]
@@ -4285,6 +4348,7 @@ mod tests {
         "state load",
         // Fixed texts: the help, the skill file, completion scripts.
         "help",
+        "skill",
         // Each step is bounded by its own command's flags.
         "batch",
         "run",

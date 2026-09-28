@@ -167,6 +167,12 @@ const CASES: &[Case] = &[
         fixture: Fixture::None,
     },
     Case {
+        name: "skill-agents-md",
+        args: &["skill", "--format", "agents-md"],
+        modes: ALL,
+        fixture: Fixture::None,
+    },
+    Case {
         name: "mistyped-command",
         args: &["scheme"],
         modes: ERR,

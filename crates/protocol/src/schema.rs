@@ -57,6 +57,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<HelpData>),
     },
     CommandSchema {
+        name: "skill",
+        summary: "the skill file's text, or where --install wrote it",
+        schema: || schema_for!(Envelope<SkillData>),
+    },
+    CommandSchema {
         name: "install",
         summary: "the browser installed, or with --list the installed and available ones",
         schema: || schema_for!(Envelope<InstallData>),
@@ -609,6 +614,34 @@ pub struct HelpData {
     pub topic: String,
     /// The help text, as printed.
     pub text: String,
+}
+
+/// `data` of `chrome-cdp skill --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SkillData {
+    /// `skill`, `agents-md` or `llms-txt`.
+    pub format: String,
+    /// The file's text (not with `--install`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// With `--install`: the absolute path of the SKILL.md.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// With `--install`: what happened to the file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub write: Option<SkillWrite>,
+}
+
+/// What `skill --install` did to the file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum SkillWrite {
+    /// It did not exist.
+    Created,
+    /// It held another version.
+    Updated,
+    /// It was the same already.
+    Unchanged,
 }
 
 /// `data` of `chrome-cdp install --json`.

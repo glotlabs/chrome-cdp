@@ -22,7 +22,6 @@ pub(crate) const SHORT: &str = include_str!("short.txt");
 #[derive(Debug)]
 pub(crate) struct Topic {
     pub(crate) name: &'static str,
-    #[allow(dead_code)] // for llms.txt, next
     pub(crate) summary: &'static str,
     pub(crate) text: &'static str,
 }
@@ -159,7 +158,7 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
     ),
     ("Cookies and storage", &["cookies", "storage", "state"]),
     ("Scripts and raw CDP", &["batch", "run", "cdp"]),
-    ("Help and tooling", &["help", "schema"]),
+    ("Help and tooling", &["help", "skill", "schema"]),
 ];
 
 pub(crate) fn run(args: &HelpArgs) -> Result<Output, ErrorInfo> {

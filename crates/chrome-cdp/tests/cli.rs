@@ -118,6 +118,48 @@ fn typos_hint_the_corrected_command() {
 }
 
 #[test]
+fn skill_installs_into_the_project_or_the_user_dir() {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    let deep = repo.join("web").join("src");
+    std::fs::create_dir_all(&deep).unwrap();
+    std::fs::create_dir(repo.join(".git")).unwrap();
+    let home = tmp.path().join("home");
+    let skill = run(cli().arg("skill"));
+    assert_eq!(code(&skill), 0);
+    assert!(stdout(&skill).starts_with("---\nname: chrome-cdp\n"));
+
+    let install = |args: &[&str]| {
+        run(cli()
+            .args(["skill", "--install"])
+            .args(args)
+            .current_dir(&deep)
+            .env("HOME", &home)
+            .env_remove("CLAUDE_CONFIG_DIR"))
+    };
+    let project = repo.join(".claude/skills/chrome-cdp/SKILL.md");
+    let out = install(&[]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert_eq!(stdout(&out), format!("installed {}\n", project.display()));
+    assert_eq!(std::fs::read_to_string(&project).unwrap(), stdout(&skill));
+
+    // Again: nothing to do. An old copy is replaced.
+    let out = install(&["-q"]);
+    assert_eq!(stdout(&out), format!("{}\n", project.display()));
+    let out = install(&["--json"]);
+    assert_eq!(json_out(&out)["data"]["write"], json!("unchanged"));
+    std::fs::write(&project, "old").unwrap();
+    let out = install(&["--project"]);
+    assert_eq!(stdout(&out), format!("updated {}\n", project.display()));
+    assert_eq!(std::fs::read_to_string(&project).unwrap(), stdout(&skill));
+
+    let out = install(&["--user"]);
+    let user = home.join(".claude/skills/chrome-cdp/SKILL.md");
+    assert_eq!(stdout(&out), format!("installed {}\n", user.display()));
+    assert!(user.is_file());
+}
+
+#[test]
 fn global_flags_have_env_vars() {
     let out = run(cli().arg("-V").env("CHROME_CDP_JSON", "1"));
     assert_eq!(json_out(&out)["ok"], json!(true));
