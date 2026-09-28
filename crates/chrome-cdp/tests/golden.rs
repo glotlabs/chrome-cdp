@@ -2057,6 +2057,32 @@ fn schemas_match_golden_files() {
     finish(&failures);
 }
 
+/// Every command's output is under review: some case runs it.
+#[test]
+fn every_command_has_a_golden_case() {
+    let missing: Vec<&str> = protocol::schema::COMMANDS
+        .iter()
+        .map(|c| c.name)
+        .filter(|name| {
+            let words: Vec<&str> = name.split(' ').collect();
+            !CASES.iter().any(|case| {
+                // `version` stands for `--version`.
+                let typed: Vec<&str> = if case.args.first() == Some(&"-V") {
+                    vec!["version"]
+                } else {
+                    case.args
+                        .iter()
+                        .copied()
+                        .filter(|a| !a.starts_with('-'))
+                        .collect()
+                };
+                typed.starts_with(&words)
+            })
+        })
+        .collect();
+    assert!(missing.is_empty(), "no golden case runs {missing:?}");
+}
+
 /// Every golden file belongs to a case or schema, so none go stale.
 #[test]
 fn no_stale_golden_files() {
