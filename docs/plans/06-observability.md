@@ -1,6 +1,6 @@
 # Plan 06 — Observability
 
-Status: DONE (6.1-6.6; the 1-hour RSS soak waits for plan 10's benchmarks, the 20k-px screenshot for a macOS run, and `inspect`'s success path for a machine with a display)
+Status: DONE (6.1-6.6; the 1-hour RSS soak is built, `crates/chrome-cdp/tests/soak.rs`, and runs with the benchmarks after all plans; the 20k-px screenshot waits for a macOS run, and `inspect`'s success path for a machine with a display)
 Depends on: 03 (can proceed in parallel with 04/05)
 
 ## Goal
