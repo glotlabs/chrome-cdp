@@ -23,6 +23,8 @@
 //! - [`record`]: mock files from recorded traffic (`mock record`, `mock
 //!   import`);
 //! - `engine`: [`Mocks`];
+//! - `ws`: `[[websocket]]` mocks (milestone 11.9), for the page's
+//!   `WebSocket` stand-in;
 //! - [`text`]: the text form of the `mock` commands' output.
 
 pub mod check;
@@ -39,6 +41,7 @@ pub mod record;
 mod respond;
 mod template;
 pub mod text;
+mod ws;
 
 pub use closest::{RequestFilter, Verdict};
 pub use engine::{Answer, Mocks, Outcome, Seed, StateItem};
@@ -46,8 +49,10 @@ pub use file::{AfterSequence, Cors, Unmatched, schema};
 pub use load::{Located, MockSet, Source, available};
 pub use matcher::{Request, json_contains};
 pub use respond::{
-    MAX_FILE, NETWORK_ERRORS, Response, content_type, is_header_name, network_error,
+    MAX_FILE, NETWORK_ERRORS, Response, SseEvent, content_type, is_header_name, network_error,
+    parse_sse,
 };
+pub use ws::{WsFrame, WsKey, WsOutcome, WsStep};
 
 #[cfg(test)]
 mod tests;
@@ -57,3 +62,5 @@ mod tests_check;
 mod tests_record;
 #[cfg(test)]
 mod tests_stateful;
+#[cfg(test)]
+mod tests_ws;

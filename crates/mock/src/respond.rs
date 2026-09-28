@@ -138,6 +138,110 @@ pub(crate) enum Body {
     Text(String),
     TextFile(String),
     File(String),
+    Sse(Vec<SseSpec>),
+}
+
+/// A Server-Sent Event of `respond.sse`, checked (its strings templates).
+#[derive(Debug, Clone)]
+pub(crate) struct SseSpec {
+    pub(crate) delay: Duration,
+    pub(crate) event: Option<String>,
+    pub(crate) data: Option<Value>,
+    pub(crate) id: Option<String>,
+    pub(crate) retry: Option<u64>,
+    pub(crate) comment: Option<String>,
+}
+
+/// A Server-Sent Event, as sent.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SseEvent {
+    /// How long after the event before it (or the answer) it comes.
+    pub delay: Duration,
+    /// Its type; `message` when `None`.
+    pub event: Option<String>,
+    pub data: Option<String>,
+    pub id: Option<String>,
+    /// The reconnection time it sets, in ms.
+    pub retry: Option<u64>,
+    pub comment: Option<String>,
+}
+
+impl SseEvent {
+    /// Its `text/event-stream` form, blank line included.
+    pub fn text(&self) -> String {
+        let mut text = String::new();
+        let one_line = |s: &str| s.replace(['\r', '\n'], " ");
+        if let Some(comment) = &self.comment {
+            for line in comment.lines() {
+                let _ = writeln!(text, ": {line}");
+            }
+        }
+        if let Some(event) = &self.event {
+            let _ = writeln!(text, "event: {}", one_line(event));
+        }
+        if let Some(id) = &self.id {
+            let _ = writeln!(text, "id: {}", one_line(id));
+        }
+        if let Some(retry) = self.retry {
+            let _ = writeln!(text, "retry: {retry}");
+        }
+        if let Some(data) = &self.data {
+            for line in data.split('\n') {
+                let _ = writeln!(text, "data: {}", line.strip_suffix('\r').unwrap_or(line));
+            }
+        }
+        text.push('\n');
+        text
+    }
+
+    /// Whether a page's `EventSource` dispatches it (it has data).
+    pub fn dispatched(&self) -> bool {
+        self.data.is_some()
+    }
+}
+
+/// The events of a `text/event-stream` body (as a browser reads them),
+/// without delays.
+pub fn parse_sse(text: &str) -> Vec<SseEvent> {
+    let mut events = Vec::new();
+    let mut event = SseEvent::default();
+    let mut data: Vec<&str> = Vec::new();
+    let mut any = false;
+    for line in text.split('\n').map(|l| l.strip_suffix('\r').unwrap_or(l)) {
+        if line.is_empty() {
+            if any {
+                if !data.is_empty() {
+                    event.data = Some(data.join("\n"));
+                }
+                events.push(std::mem::take(&mut event));
+                data.clear();
+                any = false;
+            }
+            continue;
+        }
+        any = true;
+        let (field, value) = match line.split_once(':') {
+            Some((f, v)) => (f, v.strip_prefix(' ').unwrap_or(v)),
+            None => (line, ""),
+        };
+        match field {
+            "" => event.comment = Some(value.to_owned()),
+            "event" => event.event = Some(value.to_owned()),
+            "data" => data.push(value),
+            "id" => event.id = Some(value.to_owned()),
+            "retry" => event.retry = value.parse().ok(),
+            _ => {}
+        }
+    }
+    events
+}
+
+/// What a data value sends: a string as it is, anything else as JSON.
+pub(crate) fn text_of(value: &Value) -> String {
+    match value {
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
 }
 
 /// A mock's `respond`, checked.
@@ -160,6 +264,8 @@ pub(crate) struct Rendered {
     pub(crate) note: Option<String>,
     /// The JSON data file the body is, as is (not a template).
     pub(crate) data_file: Option<std::path::PathBuf>,
+    /// An `sse` answer's events; the body has them all.
+    pub(crate) events: Option<Vec<SseEvent>>,
 }
 
 impl Respond {
@@ -177,6 +283,7 @@ impl Respond {
                     response: Response::Abort { reason },
                     note: None,
                     data_file: None,
+                    events: None,
                 });
             }
             Self::Passthrough(patch) => {
@@ -188,6 +295,7 @@ impl Respond {
                     response: Response::Passthrough { patch },
                     note: None,
                     data_file: None,
+                    events: None,
                 });
             }
             Self::Fulfill {
@@ -201,8 +309,24 @@ impl Respond {
             .map(|(n, v)| Ok((n.clone(), template::render(v, ctx)?)))
             .collect::<Result<_, String>>()?;
         let mut data_file = None;
+        let mut events = None;
         let (bytes, kind): (Vec<u8>, Option<&str>) = match body {
             Body::Empty => (Vec::new(), None),
+            Body::Sse(specs) => {
+                let rendered = specs
+                    .iter()
+                    .map(|spec| render_event(spec, ctx))
+                    .collect::<Result<Vec<_>, String>>()?;
+                let text: String = rendered.iter().map(SseEvent::text).collect();
+                events = Some(rendered);
+                if !headers
+                    .iter()
+                    .any(|(n, _)| n.eq_ignore_ascii_case("Cache-Control"))
+                {
+                    headers.push(("Cache-Control".into(), "no-cache".into()));
+                }
+                (text.into_bytes(), Some("text/event-stream"))
+            }
             Body::Json(value) => (
                 serde_json::to_vec(&template::render_json(value, ctx)?).unwrap_or_default(),
                 Some("application/json"),
@@ -222,6 +346,7 @@ impl Respond {
                             response: Response::json(404, &body, cors),
                             note: Some(format!("no {rel}")),
                             data_file: None,
+                            events: None,
                         });
                     }
                     Err(Missing::Unreadable(why)) => return Err(format!("{rel}: {why}")),
@@ -266,11 +391,22 @@ impl Respond {
             },
             note: None,
             data_file,
+            events,
         })
     }
 
     pub(crate) fn is_passthrough(&self) -> bool {
         matches!(self, Self::Passthrough(_))
+    }
+
+    pub(crate) fn is_sse(&self) -> bool {
+        matches!(
+            self,
+            Self::Fulfill {
+                body: Body::Sse(_),
+                ..
+            }
+        )
     }
 
     /// What it answers, in a few words: `200 json_file data/items.json`.
@@ -297,12 +433,34 @@ impl Respond {
                     Body::JsonFile(p) => path("json_file", p),
                     Body::TextFile(p) => path("body_file", p),
                     Body::File(p) => path("file", p),
+                    Body::Sse(events) => format!(
+                        " sse {} {}",
+                        events.len(),
+                        if events.len() == 1 { "event" } else { "events" }
+                    ),
                 };
                 text.push_str(&more);
                 text
             }
         }
     }
+}
+
+/// An `sse` event for one request.
+fn render_event(spec: &SseSpec, ctx: &minijinja::Value) -> Result<SseEvent, String> {
+    let text = |t: &Option<String>| t.as_ref().map(|t| template::render(t, ctx)).transpose();
+    Ok(SseEvent {
+        delay: spec.delay,
+        event: text(&spec.event)?,
+        data: spec
+            .data
+            .as_ref()
+            .map(|d| template::render_json(d, ctx).map(|v| text_of(&v)))
+            .transpose()?,
+        id: text(&spec.id)?,
+        retry: spec.retry,
+        comment: spec.comment.clone(),
+    })
 }
 
 fn cut(text: &str) -> String {

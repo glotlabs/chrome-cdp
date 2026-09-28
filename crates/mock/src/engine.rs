@@ -43,6 +43,9 @@ pub struct Answer {
     /// The JSON data file the body is, when it is one as is (not a
     /// template): what `test --verify-mocks --update` rewrites.
     pub data_file: Option<std::path::PathBuf>,
+    /// An `sse` answer's events, for those who can send them one by one
+    /// (the body has them all).
+    pub events: Option<Vec<crate::SseEvent>>,
 }
 
 /// What mocks do with a request.
@@ -69,12 +72,12 @@ pub enum Outcome {
 /// The mock sets in use, in the order they were applied.
 #[derive(Debug)]
 pub struct Mocks {
-    sets: Vec<MockSet>,
+    pub(crate) sets: Vec<MockSet>,
     seed: u64,
-    rng: Rng,
+    pub(crate) rng: Rng,
     checked: Option<Instant>,
     /// The named values, shared by every set.
-    state: BTreeMap<String, Value>,
+    pub(crate) state: BTreeMap<String, Value>,
 }
 
 /// What `mock seed` fills a collection with.
@@ -222,6 +225,10 @@ impl Mocks {
             for mock in &mut set.mocks {
                 mock.hits = 0;
             }
+            for ws in &mut set.websockets {
+                ws.hits = 0;
+                ws.answered = 0;
+            }
             for (name, value) in &set.state {
                 self.state.insert(name.clone(), value.clone());
             }
@@ -268,6 +275,12 @@ impl Mocks {
                         .collect();
                     for mock in &mut new.mocks {
                         mock.hits = hits.get(mock.name.as_str()).copied().unwrap_or(0);
+                    }
+                    for ws in &mut new.websockets {
+                        if let Some(old) = set.websockets.iter().find(|o| o.name == ws.name) {
+                            ws.hits = old.hits;
+                            ws.answered = old.answered;
+                        }
                     }
                     // Collections keep their items, and new values start.
                     for c in &mut new.collections {
@@ -327,7 +340,8 @@ impl Mocks {
                         ),
                         hits: c.hits,
                     });
-                    listed.chain(collections).collect()
+                    let websockets = set.websockets.iter().map(|ws| ws.info(set));
+                    listed.chain(collections).chain(websockets).collect()
                 } else {
                     Vec::new()
                 },
@@ -546,6 +560,7 @@ impl Mocks {
                     delay,
                     outcome,
                     data_file: rendered.data_file,
+                    events: rendered.events,
                 }
             }
             Err(error) => {
@@ -558,6 +573,7 @@ impl Mocks {
                     response: Response::json(500, &body, cors),
                     delay: Duration::ZERO,
                     data_file: None,
+                    events: None,
                 }
             }
         };
@@ -577,6 +593,7 @@ impl Mocks {
             response,
             delay: latency.sample(|n| self.rng.below(n)),
             data_file: None,
+            events: None,
         }
     }
 
@@ -1054,7 +1071,7 @@ fn describe(mock: &Mock, ctx: Option<&minijinja::Value>) -> String {
     text
 }
 
-fn vars(
+pub(crate) fn vars(
     parsed: &Parsed,
     params: BTreeMap<String, String>,
     seq: u64,

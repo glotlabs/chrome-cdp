@@ -14,12 +14,13 @@ use serde_json::Value;
 use crate::collection::{self, Collection, List};
 use crate::file::{
     AfterSequence, At, BodyMatch, Cors, JsonMode, RawCollection, RawFile, RawMatch, RawMock,
-    RawRespond, Scalar, Unmatched,
+    RawRespond, RawSseEvent, RawWebSocket, RawWsRule, Scalar, Unmatched,
 };
 use crate::glob::{Glob, PathGlob};
 use crate::matcher::{BodyMatcher, Matcher, Target};
-use crate::respond::{Body, Latency, Respond, is_header_name, network_error, parse_delay};
+use crate::respond::{Body, Latency, Respond, SseSpec, is_header_name, network_error, parse_delay};
 use crate::template::{self, is_template};
+use crate::ws::{WsAction, WsMatch, WsMock, WsRule};
 
 /// Where a mock set comes from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -133,6 +134,8 @@ pub struct MockSet {
     /// `[state]`: named values and where they start.
     pub(crate) state: Vec<(String, Value)>,
     pub(crate) collections: Vec<Collection>,
+    /// `[[websocket]]`s, tried in the order written.
+    pub(crate) websockets: Vec<WsMock>,
     /// Why the file's latest change was not loaded.
     pub(crate) reload_error: Option<String>,
 }
@@ -375,6 +378,18 @@ impl Check<'_> {
             }
             collections.push(c);
         }
+        let mut websockets: Vec<WsMock> = Vec::new();
+        for raw in raw.websockets {
+            let span = raw.span();
+            let ws = self.websocket(raw)?;
+            if websockets.iter().any(|o| o.name == ws.name) {
+                return Err((
+                    span,
+                    format!("websocket: the name `{}` is used twice", ws.name),
+                ));
+            }
+            websockets.push(ws);
+        }
         Ok(MockSet {
             source: source.clone(),
             modified: None,
@@ -386,7 +401,66 @@ impl Check<'_> {
             mocks,
             state,
             collections,
+            websockets,
             reload_error: None,
+        })
+    }
+
+    fn websocket(&self, raw: At<RawWebSocket>) -> Result<WsMock, Problem> {
+        let (line, _) = line_col(self.text, raw.span().start);
+        let raw = raw.into_inner();
+        let text = raw.url.get();
+        let url = if text.starts_with('/') {
+            PathGlob::path(text)
+        } else {
+            PathGlob::url(text).map_err(|_| {
+                format!("`{text}` is neither a path glob (/ws/**) nor a full-URL glob (wss://push.example.com/**)")
+            })
+        }
+        .map_err(|m| (raw.url.span(), format!("websocket.url: {m}")))?;
+        let on_open = match raw.on_open {
+            None => Vec::new(),
+            Some(list) => list
+                .into_inner()
+                .into_iter()
+                .enumerate()
+                .map(|(i, a)| {
+                    let span = a.span();
+                    let a = a.into_inner();
+                    ws_action(
+                        &format!("websocket.on_open[{i}]"),
+                        span,
+                        a.send,
+                        a.close,
+                        a.reason,
+                        a.delay,
+                    )
+                })
+                .collect::<Result<_, _>>()?,
+        };
+        let on_message = match raw.on_message {
+            None => Vec::new(),
+            Some(list) => list
+                .into_inner()
+                .into_iter()
+                .enumerate()
+                .map(|(i, r)| ws_rule(&format!("websocket.on_message[{i}]"), r))
+                .collect::<Result<_, _>>()?,
+        };
+        let name = raw
+            .name
+            .map(|n| n.trim().to_owned())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| format!("WS {text}"));
+        Ok(WsMock {
+            name,
+            line,
+            url,
+            protocol: raw.protocol,
+            on_open,
+            on_message,
+            hits: 0,
+            answered: 0,
         })
     }
 
@@ -676,6 +750,7 @@ impl Check<'_> {
             (raw.body.is_some(), "body"),
             (raw.body_file.is_some(), "body_file"),
             (raw.file.is_some(), "file"),
+            (raw.sse.is_some(), "sse"),
         ]
         .into_iter()
         .filter_map(|(given, name)| given.then_some(name))
@@ -768,6 +843,19 @@ impl Check<'_> {
         } else if let Some(path) = raw.file {
             self.data_file("file", &path, false)?;
             Body::File(path.into_inner())
+        } else if let Some(events) = raw.sse {
+            let span = events.span();
+            let events = events.into_inner();
+            if events.is_empty() {
+                return Err((span, "respond.sse: it has no events".into()));
+            }
+            Body::Sse(
+                events
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, e)| sse_event(i, e))
+                    .collect::<Result<_, _>>()?,
+            )
         } else {
             Body::Empty
         };
@@ -814,6 +902,122 @@ impl Check<'_> {
         }
         Ok(())
     }
+}
+
+/// An `on_open` action, or a rule's answer.
+fn ws_action(
+    key: &str,
+    span: Range<usize>,
+    send: Option<At<Value>>,
+    close: Option<At<i64>>,
+    reason: Option<String>,
+    delay: Option<At<String>>,
+) -> Result<WsAction, Problem> {
+    let delay = delay
+        .map(|d| parse_delay(d.get()).map_err(|m| (d.span(), format!("{key}.delay: {m}"))))
+        .transpose()?
+        .unwrap_or_default();
+    if close.is_none() && reason.is_some() {
+        return Err((span, format!("{key}: `reason` needs `close`")));
+    }
+    let close = match close {
+        None => None,
+        Some(code) => {
+            let n = *code.get();
+            let code = u16::try_from(n)
+                .ok()
+                .filter(|n| *n == 1000 || (3000..=4999).contains(n))
+                .ok_or_else(|| {
+                    (
+                        code.span(),
+                        format!(
+                            "{key}.close: a page cannot be sent code {n}; use 1000 or 3000-4999"
+                        ),
+                    )
+                })?;
+            let reason = reason.unwrap_or_default();
+            if reason.len() > 123 {
+                return Err((span, format!("{key}.reason: longer than 123 bytes")));
+            }
+            Some((code, reason))
+        }
+    };
+    let send = send.map(At::into_inner);
+    match (&send, &close) {
+        (Some(_), Some(_)) => {
+            return Err((span, format!("{key}: give `send` or `close`, not both")));
+        }
+        (None, None) => return Err((span, format!("{key}: give `send` or `close`"))),
+        (Some(value), None) => {
+            template::check_json(value).map_err(|m| (span.clone(), format!("{key}.send: {m}")))?;
+        }
+        (None, Some(_)) => {}
+    }
+    Ok(WsAction { send, close, delay })
+}
+
+fn ws_rule(key: &str, raw: At<RawWsRule>) -> Result<WsRule, Problem> {
+    let span = raw.span();
+    let raw = raw.into_inner();
+    let matcher = match raw.matcher.map(At::into_inner) {
+        None => WsMatch::Any,
+        Some(Value::String(text)) => WsMatch::Text(Glob::new(&text)),
+        Some(value @ (Value::Object(_) | Value::Array(_))) => WsMatch::Json(value),
+        Some(other) => {
+            return Err((
+                span,
+                format!(
+                    "{key}.match: `{other}` is neither a table (JSON messages) nor a string (a glob on the text)"
+                ),
+            ));
+        }
+    };
+    let action = ws_action(key, span, raw.send, raw.close, raw.reason, raw.delay)?;
+    Ok(WsRule { matcher, action })
+}
+
+fn sse_event(i: usize, raw: At<RawSseEvent>) -> Result<SseSpec, Problem> {
+    let span = raw.span();
+    let raw = raw.into_inner();
+    let key = format!("respond.sse[{i}]");
+    let delay = raw
+        .delay
+        .map(|d| parse_delay(d.get()).map_err(|m| (d.span(), format!("{key}.delay: {m}"))))
+        .transpose()?
+        .unwrap_or_default();
+    let retry = raw
+        .retry
+        .map(|r| {
+            u64::try_from(*r.get())
+                .map_err(|_| (r.span(), format!("{key}.retry: must be 0 or more (ms)")))
+        })
+        .transpose()?;
+    let text = |name: &str, value: Option<At<String>>| -> Result<Option<String>, Problem> {
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        template::check(value.get()).map_err(|m| (value.span(), format!("{key}.{name}: {m}")))?;
+        Ok(Some(value.into_inner()))
+    };
+    let event = text("event", raw.event)?;
+    let id = text("id", raw.id)?;
+    if let Some(data) = &raw.data {
+        template::check_json(data.get()).map_err(|m| (data.span(), format!("{key}.data: {m}")))?;
+    }
+    if raw.data.is_none() && raw.comment.is_none() && retry.is_none() {
+        return Err((
+            span,
+            format!("{key}: give `data` (or a `comment`, or `retry`)"),
+        ));
+    }
+    Ok(SseSpec {
+        delay,
+        event,
+        data: raw.data.map(At::into_inner),
+        id,
+        retry,
+        comment: raw.comment,
+    })
 }
 
 /// A `[state]` name: letters, digits, `_` and `-`, so templates can say

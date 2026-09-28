@@ -78,6 +78,10 @@ pub(crate) struct RawFile {
     /// Fake REST resources kept in memory, tried after the set's mocks.
     #[serde(default, rename = "collection")]
     pub(crate) collections: Vec<At<RawCollection>>,
+    /// Fake WebSocket servers: the page's `WebSocket`s to these URLs talk
+    /// to the mocks instead of the network.
+    #[serde(default, rename = "websocket")]
+    pub(crate) websockets: Vec<At<RawWebSocket>>,
 }
 
 /// `[settings]`.
@@ -191,6 +195,78 @@ pub(crate) struct RawMock {
     /// longer holds), e.g. `["user"]`.
     #[serde(default)]
     pub(crate) unset_state: Option<At<Vec<String>>>,
+}
+
+/// `[[websocket]]`: a fake WebSocket server. A page's `WebSocket` to a
+/// URL it matches opens at once and talks to it: `on_open` sends its
+/// messages, and each message the page sends gets the answer of the first
+/// `on_message` rule that matches it. Scenarios push more with `mock ws
+/// send`.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "WebSocket")]
+pub(crate) struct RawWebSocket {
+    /// What `mock list` and `mock log` call it; `WS <url>` when not set.
+    #[serde(default)]
+    pub(crate) name: Option<String>,
+    /// The sockets it answers: a glob on the URL's path (`/ws/**`,
+    /// `/ws/rooms/:room`), or on the full URL (`wss://push.example.com/**`).
+    pub(crate) url: At<String>,
+    /// The subprotocol the socket reports (`ws.protocol`); the first one
+    /// the page asked for when not set.
+    #[serde(default)]
+    pub(crate) protocol: Option<String>,
+    /// What the server does once the socket is open, in order.
+    #[serde(default)]
+    pub(crate) on_open: Option<At<Vec<At<RawWsAction>>>>,
+    /// Answers to the page's messages: the first rule whose `match` fits a
+    /// message answers it; a message no rule fits gets no answer.
+    #[serde(default)]
+    pub(crate) on_message: Option<At<Vec<At<RawWsRule>>>>,
+}
+
+/// A WebSocket mock's action: send a message, or close the socket.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "WebSocketAction")]
+pub(crate) struct RawWsAction {
+    /// The message: a string is sent as it is, anything else as JSON text.
+    /// Strings may be templates (`{{json.id}}` is the page's message's).
+    #[serde(default)]
+    pub(crate) send: Option<At<Value>>,
+    /// Close the socket with this code (1000, or 3000-4999).
+    #[serde(default)]
+    pub(crate) close: Option<At<i64>>,
+    /// With `close`: the reason the page sees.
+    #[serde(default)]
+    pub(crate) reason: Option<String>,
+    /// How long to wait first (`300ms`, `2s`), after the action before it.
+    #[serde(default)]
+    pub(crate) delay: Option<At<String>>,
+}
+
+/// An `on_message` rule: the messages it answers, and the answer.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "WebSocketRule")]
+pub(crate) struct RawWsRule {
+    /// Which messages: a table matches JSON messages as `match.json` does
+    /// (a subset; `"*"` for any value), a string is a glob on the text.
+    /// Every message when not set.
+    #[serde(default, rename = "match")]
+    pub(crate) matcher: Option<At<Value>>,
+    /// The answer: a string is sent as it is, anything else as JSON text.
+    #[serde(default)]
+    pub(crate) send: Option<At<Value>>,
+    /// Close the socket with this code (1000, or 3000-4999) instead.
+    #[serde(default)]
+    pub(crate) close: Option<At<i64>>,
+    /// With `close`: the reason the page sees.
+    #[serde(default)]
+    pub(crate) reason: Option<String>,
+    /// How long to wait before answering.
+    #[serde(default)]
+    pub(crate) delay: Option<At<String>>,
 }
 
 /// `after_sequence`.
@@ -413,6 +489,12 @@ pub(crate) struct RawRespond {
     /// A file served as it is, typed by its extension (images, fonts, …).
     #[serde(default)]
     pub(crate) file: Option<At<String>>,
+    /// Server-Sent Events, sent in order (`text/event-stream`), each after
+    /// its own `delay`; the stream then stays open. A page's `EventSource`
+    /// and `mock serve` get them one by one; a `fetch` gets them all at
+    /// once.
+    #[serde(default)]
+    pub(crate) sse: Option<At<Vec<At<RawSseEvent>>>>,
     /// How long to wait before answering (`300ms`, `2s`); replaces the
     /// set's latency.
     #[serde(default)]
@@ -428,6 +510,34 @@ pub(crate) struct RawRespond {
     /// (`null` removes a key).
     #[serde(default)]
     pub(crate) patch: Option<At<Value>>,
+}
+
+/// A Server-Sent Event of `respond.sse`.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "SseEvent")]
+pub(crate) struct RawSseEvent {
+    /// The event's data: a string is sent as it is (a line each), anything
+    /// else as JSON text. Strings may be templates.
+    #[serde(default)]
+    pub(crate) data: Option<At<Value>>,
+    /// The event's type (`addEventListener("price", …)`); `message` when
+    /// not set.
+    #[serde(default)]
+    pub(crate) event: Option<At<String>>,
+    /// The event's id (`lastEventId`).
+    #[serde(default)]
+    pub(crate) id: Option<At<String>>,
+    /// The reconnection time the event sets, in ms.
+    #[serde(default)]
+    pub(crate) retry: Option<At<i64>>,
+    /// A comment line (`: text`), which pages do not see.
+    #[serde(default)]
+    pub(crate) comment: Option<String>,
+    /// How long to wait before sending it (`1s`), after the event before
+    /// it.
+    #[serde(default)]
+    pub(crate) delay: Option<At<String>>,
 }
 
 /// The JSON Schema of mock files (`chrome-cdp schema mocks`).
