@@ -124,6 +124,21 @@ fn the_passing_suite_passes_in_parallel_contexts() {
         .map(|d| d.flatten().map(|e| e.file_name()).collect())
         .unwrap_or_default();
     assert!(left.is_empty(), "{left:?}");
+
+    // Two shards run every test, each once.
+    let mut ran = Vec::new();
+    for shard in ["1/2", "2/2"] {
+        let (out, value) = project.json(&["--shard", shard]);
+        assert_eq!(out.status.code(), Some(0), "{value}");
+        for t in value["data"]["tests"].as_array().unwrap() {
+            assert_eq!(t["status"], "passed", "{t}");
+            ran.push(format!("{}:{}", t["file"], t["line"]));
+        }
+    }
+    let count = ran.len();
+    ran.sort();
+    ran.dedup();
+    assert_eq!((count, ran.len()), (7, 7), "{ran:?}");
 }
 
 #[test]
