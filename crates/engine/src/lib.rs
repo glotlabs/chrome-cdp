@@ -66,13 +66,15 @@ pub use frames::{FrameInfo, WORLD_NAME, World};
 pub use input::{ActionPoint, Checks, check_action, parse_modifiers};
 pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, parse_locator};
 pub use navigate::normalize_url;
+pub use observe::RESOURCE_TYPES;
 pub use read::check_read;
 pub use request::{
     Action, ActionRequest, Button, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
     ConsoleRequest, DialogPolicy, DialogRequest, DownloadsRequest, ElementState, FindRequest,
-    HttpCredentials, Modifier, MouseOp, NavigateRequest, Navigation, OpenRequest, Read,
-    ReadRequest, ScrollTo, Since, SnapshotEngine, SnapshotRequest, TabCloseRequest, TabNewRequest,
-    TabSelectRequest, TabsRequest, Target, WaitFor, WaitRequest, WaitUntil,
+    HttpCredentials, Modifier, MouseOp, NavigateRequest, Navigation, NetworkClearRequest,
+    NetworkRequest, NetworkShowRequest, OpenRequest, Read, ReadRequest, ScrollTo, Since,
+    SnapshotEngine, SnapshotRequest, StatusRange, TabCloseRequest, TabNewRequest, TabSelectRequest,
+    TabsRequest, Target, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use tabs::commands::TabClosed;
@@ -265,6 +267,9 @@ impl Engine {
         }
         if let Some(entries) = req.console_buffer {
             self.settings.set_console_buffer(entries);
+        }
+        if let Some(requests) = req.network_buffer {
+            self.settings.set_network_buffer(requests);
         }
         let mut warnings = Vec::new();
         let current = match &*self.lock_state() {

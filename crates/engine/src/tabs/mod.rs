@@ -49,6 +49,7 @@ use crate::injected;
 use crate::input::Pointer;
 use crate::network::{Exchange, Failure, Idle, InFlight, Network};
 use crate::observe::console::{self, Console, ConsoleError};
+use crate::observe::netlog::{self, NetLog};
 use crate::request::{DialogPolicy, HttpCredentials};
 use crate::snapshot::{FrameSource, Memory as SnapshotMemory};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
@@ -117,6 +118,9 @@ pub(crate) struct Settings {
     pub(crate) downloads_dir: Option<PathBuf>,
     /// How many console entries each tab keeps (`open --console-buffer`).
     console_buffer: AtomicUsize,
+    /// How many requests each tab's network log keeps (`open
+    /// --network-buffer`).
+    network_buffer: AtomicUsize,
 }
 
 impl Settings {
@@ -125,6 +129,7 @@ impl Settings {
         Self {
             downloads_dir,
             console_buffer: AtomicUsize::new(console::DEFAULT_CAPACITY),
+            network_buffer: AtomicUsize::new(netlog::DEFAULT_CAPACITY),
             ..Self::default()
         }
     }
@@ -136,6 +141,18 @@ impl Settings {
     pub(crate) fn console_buffer(&self) -> usize {
         match self.console_buffer.load(Ordering::Relaxed) {
             0 => console::DEFAULT_CAPACITY,
+            n => n,
+        }
+    }
+
+    pub(crate) fn set_network_buffer(&self, requests: usize) {
+        self.network_buffer
+            .store(requests.max(1), Ordering::Relaxed);
+    }
+
+    pub(crate) fn network_buffer(&self) -> usize {
+        match self.network_buffer.load(Ordering::Relaxed) {
+            0 => netlog::DEFAULT_CAPACITY,
             n => n,
         }
     }
@@ -236,6 +253,8 @@ struct Tab {
     /// Its console, also that of its OOPIF sessions and dedicated
     /// workers.
     console: Console,
+    /// Its network log, also that of its OOPIF sessions.
+    netlog: NetLog,
     /// The network log's marks when the page command before the current
     /// one, and the current one, began.
     command_marks: (u64, u64),
@@ -935,6 +954,25 @@ impl Tabs {
         .is_some()
     }
 
+    /// Calls `f` with tab `id`'s network log (`None` if the tab is gone).
+    pub(crate) fn netlog<R>(&self, id: u32, f: impl FnOnce(&mut NetLog) -> R) -> Option<R> {
+        self.shared
+            .lock()
+            .tabs
+            .get_mut(&id)
+            .map(|tab| f(&mut tab.netlog))
+    }
+
+    /// The page or iframe session with id `session_id`, if it is still
+    /// attached.
+    pub(crate) fn host_session(&self, session_id: &str) -> Option<Session> {
+        self.shared
+            .lock()
+            .hosts
+            .get(session_id)
+            .map(|h| h.session.clone())
+    }
+
     /// The requests that keep tab `id`'s network busy now.
     pub(crate) fn busy(&self, id: u32) -> Vec<InFlight> {
         self.shared
@@ -1367,13 +1405,15 @@ fn frame_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event:
     }
 }
 
-/// Applies a `Network` event of `session_id` to tab `tab`'s requests.
+/// Applies a `Network` event of `session_id` to tab `tab`'s requests and
+/// network log.
 fn network_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event: &RawEvent) {
-    let followed = shared
-        .lock()
-        .tabs
-        .get_mut(&tab)
-        .is_some_and(|t| t.network.event(session_id, method, &event.params));
+    let capacity = shared.settings.network_buffer();
+    let followed = shared.lock().tabs.get_mut(&tab).is_some_and(|t| {
+        let followed = t.network.event(session_id, method, &event.params);
+        let logged = t.netlog.event(session_id, method, &event.params, capacity);
+        followed || logged
+    });
     if followed {
         shared.bump();
     }
@@ -1449,6 +1489,7 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
                 ready: false,
                 frames: FrameTree::new(&info.target_id, &session_id),
                 network: Network::default(),
+                netlog: NetLog::default(),
                 console: Console::default(),
                 command_marks: (0, 0),
                 event_marks: (0, 0),
@@ -1509,6 +1550,18 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
             ready(&task_shared, id);
         }
     });
+}
+
+/// How much of the page's traffic Chrome keeps for `network show`: the
+/// bodies of its responses (evicted oldest first past the total), and
+/// request bodies up to 64KB in the request events.
+fn network_enable() -> network::EnableParams {
+    network::EnableParams {
+        max_total_buffer_size: Some(64 * 1024 * 1024),
+        max_resource_buffer_size: Some(10 * 1024 * 1024),
+        max_post_data_size: Some(64 * 1024),
+        ..network::EnableParams::default()
+    }
 }
 
 /// What a target is to [`setup`].
@@ -1576,11 +1629,9 @@ async fn setup(
             "Log.enable",
             step(session.call(cdp::domains::log::EnableParams::default())),
         ));
-        // Requests, for network idle and `wait --request/--response`.
-        steps.push((
-            "Network.enable",
-            step(session.call(network::EnableParams::default())),
-        ));
+        // Requests, for network idle, `wait --request/--response` and
+        // the network log.
+        steps.push(("Network.enable", step(session.call(network_enable()))));
         // The frames that exist already; events report later ones.
         let tree = session.call(page::GetFrameTreeParams::default());
         let seed_shared = shared.clone();

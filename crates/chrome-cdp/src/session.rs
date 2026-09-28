@@ -197,6 +197,7 @@ fn open_in(
         console_buffer: args
             .console_buffer
             .map(|n| usize::try_from(n).unwrap_or(usize::MAX)),
+        network_buffer: None,
         timeout_ms: millis(ctx.timeout),
     };
     if let Some(previous) = session.replaced.as_ref().and_then(|m| m.launch.as_ref()) {

@@ -35,6 +35,8 @@
 //! - Sends `Cache-Control: no-store`, so a reload always hits the server.
 //! - `/ws` is a WebSocket that echoes every message (for pages that keep
 //!   one open).
+//! - `/items?n=<count>` answers a JSON array of `count` items (default
+//!   10), for pages that need a large JSON response.
 //!
 //! Add pages under `testdata/site` (and dynamic routes in [`respond`]) as
 //! milestones need them, rather than starting another server.
@@ -295,6 +297,7 @@ async fn respond(site: &Site, origin: &str, req: &Request<Incoming>) -> Response
         .and_then(|v| v.parse::<u16>().ok())
         .and_then(|code| StatusCode::from_u16(code).ok());
     let mut response = match file(site, path) {
+        None if path == "/items" => items(query),
         Some(file) => {
             let Ok(body) = std::fs::read(&file) else {
                 return not_found(path);
@@ -361,6 +364,26 @@ fn websocket(req: &mut Request<Incoming>) -> Response<Full<Bytes>> {
         headers.insert(SEC_WEBSOCKET_ACCEPT, accept);
     }
     response
+}
+
+/// `/items?n=<count>`: a JSON array of `count` items.
+fn items(query: &str) -> Response<Full<Bytes>> {
+    let count = param(query, "n")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(10);
+    let items: Vec<String> = (1..=count)
+        .map(|i| {
+            format!(
+                "{{\"id\":{i},\"name\":\"item {i}\",\"done\":{}}}",
+                i % 2 == 0
+            )
+        })
+        .collect();
+    response(
+        StatusCode::OK,
+        "application/json",
+        Bytes::from(format!("[{}]", items.join(","))),
+    )
 }
 
 /// `/redirect?to=<path>&n=<hops>`: one 302 hop of the chain.
@@ -590,6 +613,19 @@ mod tests {
         let mut bytes = Vec::new();
         let _ = stream.read_to_end(&mut bytes);
         assert!(!bytes.starts_with(b"HTTP/"), "{bytes:?}");
+    }
+
+    #[test]
+    fn items_are_json() {
+        let f = Fixtures::shared();
+        let (status, body) = get(&f.url("/items?n=2"));
+        assert_eq!(status, "HTTP/1.1 200 OK");
+        assert_eq!(
+            body,
+            r#"[{"id":1,"name":"item 1","done":false},{"id":2,"name":"item 2","done":true}]"#
+        );
+        let (status, _) = get(&f.url("/items?n=1&status=503"));
+        assert_eq!(status, "HTTP/1.1 503 Service Unavailable");
     }
 
     #[test]

@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Network</title>
+  <!-- No favicon request, so the log holds only the page's own. -->
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Network</h1>
+  <!-- Each button sends one kind of request (see app.js). -->
+  <button id="items" onclick="loadItems()">Load items</button>
+  <button id="login" onclick="logIn()">Log in (500)</button>
+  <button id="upload" onclick="upload()">Post a large body</button>
+  <button id="missing" onclick="fetchMissing()">Fetch a 404</button>
+  <button id="refused" onclick="fetchRefused()">Fetch a closed port</button>
+  <button id="cors" onclick="fetchCors()">Fetch across origins</button>
+  <button id="abort" onclick="fetchAborted()">Fetch and abort</button>
+  <button id="slow" onclick="fetchSlow()">Fetch slowly</button>
+  <button id="redirect" onclick="fetchRedirect()">Fetch a redirect</button>
+  <button id="ws" onclick="echo()">WebSocket echo</button>
+  <p id="out"></p>
+  <script src="app.js"></script>
+</body>
+</html>

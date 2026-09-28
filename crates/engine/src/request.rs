@@ -65,6 +65,10 @@ pub struct OpenRequest {
     /// keeps the session's (1,000 at first).
     #[serde(default)]
     pub console_buffer: Option<usize>,
+    /// `--network-buffer`: how many requests each tab's network log keeps;
+    /// `None` keeps the session's (2,000 at first).
+    #[serde(default)]
+    pub network_buffer: Option<usize>,
     /// Bounds the launch and the page load.
     pub timeout_ms: u64,
 }
@@ -430,6 +434,103 @@ pub struct ConsoleRequest {
     pub timeout_ms: u64,
     /// The output budget (0 = none).
     pub max_chars: usize,
+}
+
+/// A range of HTTP statuses for `network --status` (`404`: 404 to 404,
+/// `4xx`: 400 to 499).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StatusRange {
+    pub min: u16,
+    pub max: u16,
+}
+
+impl StatusRange {
+    /// Parses `404`, `4xx` or `400-499`.
+    pub fn parse(text: &str) -> Option<Self> {
+        let text = text.trim().to_ascii_lowercase();
+        if let Some((min, max)) = text.split_once('-') {
+            let (min, max) = (min.trim().parse().ok()?, max.trim().parse().ok()?);
+            return ((100..=999).contains(&min) && (min..=999).contains(&max))
+                .then_some(Self { min, max });
+        }
+        if let Some(class) = text.strip_suffix("xx") {
+            let class: u16 = class.parse().ok()?;
+            return (1..=9).contains(&class).then_some(Self {
+                min: class * 100,
+                max: class * 100 + 99,
+            });
+        }
+        let status: u16 = text.parse().ok()?;
+        (100..=999).contains(&status).then_some(Self {
+            min: status,
+            max: status,
+        })
+    }
+
+    pub fn contains(self, status: u16) -> bool {
+        (self.min..=self.max).contains(&status)
+    }
+}
+
+/// `network`: the tab's requests.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NetworkRequest {
+    /// `--tab`: the tab to read; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// `--failed`: only requests that failed or got a status of 400 or
+    /// more.
+    #[serde(default)]
+    pub failed: bool,
+    /// `--type`: only these resource types (lower case: `xhr`, `fetch`,
+    /// …).
+    #[serde(default)]
+    pub types: Vec<String>,
+    /// `--url`: a URL pattern (a glob, `/regex/` or a part of the URL).
+    #[serde(default)]
+    pub url: Option<String>,
+    /// `--method`: only this HTTP method.
+    #[serde(default)]
+    pub method: Option<String>,
+    /// `--status`: only statuses in one of these ranges.
+    #[serde(default)]
+    pub status: Vec<StatusRange>,
+    #[serde(default)]
+    pub since: Since,
+    /// `--limit`: the most requests shown, the newest (0 = all).
+    pub limit: usize,
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
+/// `network show`: one request of the tab's log in full.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NetworkShowRequest {
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// The request's id in the log (`#42`).
+    pub id: u64,
+    /// `--headers`: list its headers.
+    #[serde(default)]
+    pub headers: bool,
+    /// `--body`: fetch the response body from Chrome.
+    #[serde(default)]
+    pub body: bool,
+    /// `--request-body`: the request body.
+    #[serde(default)]
+    pub request_body: bool,
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
+/// `network clear`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NetworkClearRequest {
+    #[serde(default)]
+    pub tab: Option<String>,
+    pub timeout_ms: u64,
 }
 
 /// Which engine reads the page for `snapshot` (`--engine`).

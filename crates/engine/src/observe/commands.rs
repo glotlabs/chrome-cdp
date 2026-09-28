@@ -346,7 +346,7 @@ fn since_arg(since: Since, base: u64) -> String {
 }
 
 /// A URL as the text form shows it: without the page's origin.
-fn shown_url<'a>(url: &'a str, page_origin: Option<&str>) -> &'a str {
+pub(super) fn shown_url<'a>(url: &'a str, page_origin: Option<&str>) -> &'a str {
     if page_origin.is_some() && origin(url) == page_origin {
         path_of(url)
     } else {

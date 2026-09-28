@@ -823,6 +823,225 @@ pub struct SourcePosition {
     pub name: Option<String>,
 }
 
+/// `data` of `chrome-cdp network --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NetworkData {
+    /// The tab, e.g. `t1`.
+    pub tab: String,
+    /// The requests shown, oldest first. A request shown while it was
+    /// pending is shown once more when it ends.
+    pub requests: Vec<NetworkEntry>,
+    /// Older requests that matched but `--limit` left out.
+    pub skipped: usize,
+    /// Requests the tab's log dropped before anyone read them (it keeps
+    /// the newest `open --network-buffer`, 2,000 by default).
+    pub dropped: u64,
+    /// The read cursor now: the next `--since last` shows requests after
+    /// this id.
+    pub cursor: u64,
+}
+
+/// Where a request is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum RequestState {
+    /// Sent, not finished yet (a WebSocket: still open).
+    Pending,
+    /// Finished with a response (whatever its status), or redirected.
+    Done,
+    /// Ended without a response: `error` says why.
+    Failed,
+    /// Canceled by the page or a navigation.
+    Canceled,
+}
+
+/// One request of the tab's network log (each redirect hop is its own).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NetworkEntry {
+    /// Its id in the tab's log (`network show <id>`); later ones are
+    /// larger (`--since <id>`).
+    pub id: u64,
+    /// When the daemon saw it start, in ms since the Unix epoch.
+    pub time_ms: u64,
+    pub method: String,
+    pub url: String,
+    /// Chrome's resource type in lower case: `document`, `xhr`, `fetch`,
+    /// `script`, `stylesheet`, `image`, `websocket`, …
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub state: RequestState,
+    /// The HTTP status, once a response came.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status_text: Option<String>,
+    /// The response's MIME type.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime: Option<String>,
+    /// `http/1.1`, `h2`, `h3`, …
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<String>,
+    /// Bytes received over the network, headers included (0 from a
+    /// cache); for a WebSocket, the frames' payloads.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    /// The body's size once decoded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_size: Option<u64>,
+    /// From start to end (or to the redirect); for a WebSocket, how long
+    /// it was open.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+    /// Which cache served it: `memory`, `disk` or `prefetch`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache: Option<String>,
+    /// A service worker answered it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub service_worker: bool,
+    /// What sent it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub initiator: Option<Initiator>,
+    /// Where a redirect sent it (the next hop is the next request with
+    /// this URL).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub redirect: Option<String>,
+    /// Chrome's error, for a failed request: `net::ERR_CONNECTION_REFUSED`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Why Chrome blocked it: `csp`, `mixed-content`, `inspector`, …
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked: Option<String>,
+    /// The CORS check that failed: `MissingAllowOriginHeader`, and the
+    /// value at fault if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cors: Option<String>,
+    /// A WebSocket's traffic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub websocket: Option<WebSocketSummary>,
+}
+
+/// What sent a request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Initiator {
+    /// `parser` (the HTML), `script`, `preload`, `preflight`, `other`, …
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// The document or script, with the line (1-based).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    /// The function that sent it, for a script.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub function: Option<String>,
+}
+
+/// A WebSocket's frames, summed up.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WebSocketSummary {
+    /// Frames the page sent, and their payload bytes.
+    pub sent: u64,
+    pub sent_bytes: u64,
+    /// Frames it received, and their payload bytes.
+    pub received: u64,
+    pub received_bytes: u64,
+    /// Closed (else still open).
+    pub closed: bool,
+}
+
+/// `data` of `chrome-cdp network show --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NetworkShowData {
+    /// The tab, e.g. `t1`.
+    pub tab: String,
+    pub request: NetworkEntry,
+    /// Where the time went, from Chrome's resource timing (absent from a
+    /// cache).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timing: Option<Timing>,
+    /// With `--headers` (else only counted in the text form).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_headers: Option<Vec<Header>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_headers: Option<Vec<Header>>,
+    /// With `--request-body`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_body: Option<Body>,
+    /// With `--body`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_body: Option<Body>,
+    /// A WebSocket's last frames (at most 20), oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub frames: Vec<WebSocketFrame>,
+}
+
+/// A request's phases, in ms.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Timing {
+    /// Waiting before the request could go (queueing, proxy, …).
+    pub blocked_ms: u64,
+    pub dns_ms: u64,
+    /// Opening the connection, TLS included.
+    pub connect_ms: u64,
+    pub tls_ms: u64,
+    pub send_ms: u64,
+    /// For the first byte of the response (the server's time).
+    pub wait_ms: u64,
+    /// Reading the response, if it ended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receive_ms: Option<u64>,
+}
+
+/// One HTTP header.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Header {
+    pub name: String,
+    pub value: String,
+}
+
+/// A request's or response's body, fetched from Chrome when asked for.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Body {
+    /// The body as text (a JSON body pretty-printed only in the text
+    /// form); absent for a binary or unavailable body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    /// Its size in bytes, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    /// Not text (an image, a font, …): not shown.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub binary: bool,
+    /// Why there is no body to show: Chrome no longer has it, the request
+    /// failed or is still loading, …
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unavailable: Option<String>,
+}
+
+/// One WebSocket frame.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WebSocketFrame {
+    /// Sent by the page (else received).
+    pub sent: bool,
+    pub time_ms: u64,
+    /// `text`, `binary`, `close`, `ping` or `pong`.
+    pub opcode: String,
+    /// The payload's size in bytes.
+    pub size: u64,
+    /// The start of a text payload (at most 200 characters).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+}
+
+/// `data` of `chrome-cdp network clear --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NetworkClearData {
+    /// The tab, e.g. `t1`.
+    pub tab: String,
+    /// How many requests the log held.
+    pub cleared: usize,
+}
+
 /// `data` of `chrome-cdp snapshot --json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SnapshotData {
