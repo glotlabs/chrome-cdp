@@ -732,12 +732,29 @@ pub(crate) fn network(args: &NetworkArgs, global: &GlobalArgs) -> Result<Output,
                 .block_on(client.call_output(rpc::NETWORK, &request, wait))
         }
         Some(NetworkCommand::Show(show)) => {
+            let output = match show.output.as_deref() {
+                Some(path) if path.as_os_str() == "-" => {
+                    return Err(bad_args("network show -o needs a file name").hint(
+                        Hint::run(
+                            Cmd::new("network")
+                                .arg("show")
+                                .arg(show.id.to_string())
+                                .switch("body")
+                                .raw("-q"),
+                        )
+                        .why("prints a text body alone"),
+                    ));
+                }
+                Some(path) => Some(PathBuf::from(input::absolute_path(path)?)),
+                None => None,
+            };
             let request = NetworkShowRequest {
                 tab: ctx.tab.clone(),
                 id: show.id,
                 headers: show.headers,
                 body: show.body,
                 request_body: show.request_body,
+                output,
                 timeout_ms,
                 max_chars: show.max_chars,
             };

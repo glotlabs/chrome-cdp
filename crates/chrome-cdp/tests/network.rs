@@ -8,7 +8,7 @@
 
 mod common;
 
-use common::{Sandbox, chrome_path, code, json_out, stderr, stdout};
+use common::{Sandbox, chrome_path, code, json_out, run, stderr, stdout};
 use fixtures::Fixtures;
 
 #[test]
@@ -54,6 +54,29 @@ fn list_show_and_clear() {
     );
     assert!(text.contains("\nresponse body ("), "{text}");
     assert!(text.contains("--max-chars 0 for all of it"), "{text}");
+    // `-o` saves the body relative to the current directory and prints
+    // the absolute path.
+    let dir = tempfile::tempdir().unwrap();
+    let out = run(sandbox.cli().current_dir(dir.path()).args([
+        "network",
+        "show",
+        "4",
+        "-o",
+        "out/items.json",
+        "-q",
+    ]));
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let saved = dir.path().join("out/items.json");
+    assert_eq!(stdout(&out), format!("{}\n", saved.display()));
+    let body: serde_json::Value = serde_json::from_slice(&std::fs::read(&saved).unwrap()).unwrap();
+    assert_eq!(body.as_array().unwrap().len(), 300);
+    let out = sandbox.run(&["network", "show", "4", "-o", "-"]);
+    assert_eq!(code(&out), 2, "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("hint: chrome-cdp network show 4 --body -q"),
+        "{}",
+        stderr(&out)
+    );
 
     let out = sandbox.run(&["network", "--type", "nope"]);
     assert_eq!(code(&out), 2, "{}", stderr(&out));

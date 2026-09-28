@@ -131,6 +131,7 @@ fn show_request(id: u64) -> NetworkShowRequest {
         headers: false,
         body: false,
         request_body: false,
+        output: None,
         timeout_ms: TIMEOUT_MS,
         max_chars: 0,
     }
@@ -290,6 +291,26 @@ async fn requests_and_their_bodies() {
         out.text
     );
 
+    // With no body to save, `-o` is an error, not an empty file.
+    let dir = tempfile::tempdir().unwrap();
+    let err = engine
+        .network_show(NetworkShowRequest {
+            output: Some(dir.path().join("login.txt")),
+            ..show_request(login.id)
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::NotFound);
+    assert!(
+        err.message.starts_with(&format!(
+            "request #{} has no response body to save: the response is still loading",
+            login.id
+        )),
+        "{}",
+        err.message
+    );
+    assert!(!dir.path().join("login.txt").exists());
+
     // A request body too large to keep in the log comes from Chrome.
     click(&engine, "#upload").await;
     let (_, data) = list(&engine, request()).await;
@@ -319,6 +340,50 @@ async fn requests_and_their_bodies() {
     .await;
     let body = shown.response_body.unwrap();
     assert!(body.text.is_some(), "{body:?}");
+
+    // `-o` saves a body as it is, text or binary, into new directories.
+    let dir = tempfile::tempdir().unwrap();
+    let saved = dir.path().join("bodies/items.json");
+    let (out, shown) = show(
+        &engine,
+        NetworkShowRequest {
+            output: Some(saved.clone()),
+            ..show_request(items.id)
+        },
+    )
+    .await;
+    let body = shown.response_body.unwrap();
+    assert_eq!(body.path.as_deref(), Some(saved.to_str().unwrap()));
+    assert!(body.text.is_none() && !body.binary, "{body:?}");
+    let bytes = std::fs::read(&saved).unwrap();
+    assert!(bytes.starts_with(br#"[{"id":1,"name":"item 1""#));
+    assert_eq!(Some(bytes.len() as u64), body.size);
+    assert!(
+        out.text
+            .contains(&format!("response body: saved to {}", saved.display())),
+        "{}",
+        out.text
+    );
+    assert!(!out.text.contains("--body"), "{}", out.text);
+    assert_eq!(out.quiet.as_deref(), saved.to_str());
+
+    goto(&engine, &site.url("/har/index.html")).await;
+    let (_, data) = list(&engine, request()).await;
+    let dot = find(&data, "dot.png");
+    let saved = dir.path().join("dot.png");
+    let (_, shown) = show(
+        &engine,
+        NetworkShowRequest {
+            output: Some(saved.clone()),
+            ..show_request(dot.id)
+        },
+    )
+    .await;
+    assert!(shown.response_body.unwrap().binary);
+    assert_eq!(
+        std::fs::read(&saved).unwrap(),
+        std::fs::read(fixtures::site_dir().join("har/dot.png")).unwrap()
+    );
     engine.close().await;
 }
 

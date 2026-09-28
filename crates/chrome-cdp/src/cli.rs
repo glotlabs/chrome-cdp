@@ -1981,7 +1981,8 @@ Examples:
   chrome-cdp network show 42
   chrome-cdp network show 42 --body
   chrome-cdp network show 42 --headers --request-body
-  chrome-cdp network show 42 --body -q > body.json   # just the body")]
+  chrome-cdp network show 42 --body -q > body.json   # just the body
+  chrome-cdp network show 7 -o logo.png              # save a body, binary too")]
     Show(NetworkShowArgs),
 
     /// Forget the tab's requests so far (ids go on from where they were).
@@ -2048,6 +2049,11 @@ pub(crate) struct NetworkShowArgs {
     /// Show the request body.
     #[arg(long)]
     pub(crate) request_body: bool,
+
+    /// Save the response body to this file (decoded: an image as its
+    /// bytes) and print its path, instead of showing it.
+    #[arg(short, long, value_name = "PATH")]
+    pub(crate) output: Option<PathBuf>,
 
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]

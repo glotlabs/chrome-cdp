@@ -586,6 +586,10 @@ pub struct NetworkShowRequest {
     /// `--request-body`: the request body.
     #[serde(default)]
     pub request_body: bool,
+    /// `-o`: save the response body (decoded, text or binary) to this
+    /// absolute path instead of showing it.
+    #[serde(default)]
+    pub output: Option<PathBuf>,
     pub timeout_ms: u64,
     /// The output budget (0 = none).
     pub max_chars: usize,

@@ -37,6 +37,13 @@
           "description": "Not text (an image, a font, …): not shown.",
           "type": "boolean"
         },
+        "path": {
+          "description": "With `-o`: the file the body was saved to (absolute), instead of\n`text`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "size": {
           "description": "Its size in bytes, when known.",
           "format": "uint64",

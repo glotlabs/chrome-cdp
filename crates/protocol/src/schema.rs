@@ -1091,6 +1091,10 @@ pub struct Body {
     /// failed or is still loading, …
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unavailable: Option<String>,
+    /// With `-o`: the file the body was saved to (absolute), instead of
+    /// `text`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
 }
 
 /// One WebSocket frame.

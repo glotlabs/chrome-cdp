@@ -263,7 +263,8 @@ filter:
 
 `network show 42` prints one request in full (status, sizes, timing, what
 sent it); `--headers`, `--body` (JSON pretty-printed; with `-q`, just the
-body) and `--request-body` add the rest. Chrome keeps response bodies for a
+body) and `--request-body` add the rest; `-o file` saves the response body
+(an image as its bytes) and prints the path. Chrome keeps response bodies for a
 while, also after the page navigates away, and the output says when it no
 longer has one. Each tab keeps its newest 2,000 requests (`open
 --network-buffer N`); `network clear` empties the log.

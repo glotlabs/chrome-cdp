@@ -12,6 +12,7 @@
 //! forever.
 
 use std::fmt::Write as _;
+use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
@@ -23,6 +24,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format as units};
 
 use super::commands::shown_url;
 use super::netlog::{NetLog, Record};
+use super::save;
 use crate::Engine;
 use crate::Running;
 use crate::input::origin;
@@ -292,15 +294,25 @@ impl Engine {
         if req.request_body {
             data.request_body = Some(self.request_body(&running, &record, timeout).await);
         }
-        if req.body {
+        if let Some(path) = &req.output {
+            data.response_body = Some(
+                self.save_response_body(&running, &record, path, timeout)
+                    .await?,
+            );
+        } else if req.body {
             data.response_body = Some(self.response_body(&running, &record, timeout).await);
         }
         let text = show_text(&data, &record, &req, page_origin.as_deref());
         let quiet = data
             .response_body
             .as_ref()
-            .or(data.request_body.as_ref())
-            .and_then(|b| b.text.clone())
+            .and_then(|b| b.path.clone())
+            .or_else(|| {
+                data.response_body
+                    .as_ref()
+                    .or(data.request_body.as_ref())
+                    .and_then(|b| b.text.clone())
+            })
             .unwrap_or_else(|| entry_line(&data.request, page_origin.as_deref()));
         Ok(Output::typed(&data, text)
             .quiet(quiet)
@@ -391,6 +403,67 @@ impl Engine {
 
     /// The response body, asked of Chrome.
     async fn response_body(&self, running: &Running, record: &Record, timeout: Duration) -> Body {
+        match self.response_data(running, record, timeout).await {
+            Ok((data, base64)) => body(&data, base64, record.entry.mime.as_deref()),
+            Err(unavailable) => unavailable,
+        }
+    }
+
+    /// `network show -o`: the response body saved to `path`, decoded (an
+    /// image as its bytes). A body Chrome cannot give is an error: the
+    /// caller wants a file.
+    async fn save_response_body(
+        &self,
+        running: &Running,
+        record: &Record,
+        path: &Path,
+        timeout: Duration,
+    ) -> Result<Body, ErrorInfo> {
+        let id = record.entry.id;
+        let (data, base64) = match self.response_data(running, record, timeout).await {
+            Ok(found) => found,
+            Err(body) => {
+                let why = body.unavailable.unwrap_or_default();
+                return Err(ErrorInfo::new(
+                    ErrorKind::NotFound,
+                    format!("request #{id} has no response body to save: {why}"),
+                ));
+            }
+        };
+        let bytes = if base64 {
+            base64::engine::general_purpose::STANDARD
+                .decode(&data)
+                .map_err(|_| {
+                    ErrorInfo::new(
+                        ErrorKind::ProtocolError,
+                        format!(
+                            "Chrome sent the body of request #{id} in a form chrome-cdp cannot read"
+                        ),
+                    )
+                })?
+        } else {
+            data.into_bytes()
+        };
+        let dir = path.parent().unwrap_or(path);
+        let saved = save::save(&bytes, Some(path), dir, "")?;
+        let binary = std::str::from_utf8(&bytes).is_err()
+            || !record.entry.mime.as_deref().is_none_or(textual);
+        Ok(Body {
+            size: Some(bytes.len() as u64),
+            binary,
+            path: Some(saved.display().to_string()),
+            ..Body::default()
+        })
+    }
+
+    /// The response body as Chrome gives it (and whether it is base64), or
+    /// an unavailable [`Body`] saying why there is none.
+    async fn response_data(
+        &self,
+        running: &Running,
+        record: &Record,
+        timeout: Duration,
+    ) -> Result<(String, bool), Body> {
         let entry = &record.entry;
         let why = match entry.state {
             _ if entry.websocket.is_some() => Some("a WebSocket has frames, not a body"),
@@ -403,15 +476,15 @@ impl Engine {
             RequestState::Done => None,
         };
         if let Some(why) = why {
-            return unavailable(why);
+            return Err(unavailable(why));
         }
         let Some(session) = running.tabs.host_session(&record.session) else {
-            return unavailable("its frame is gone, and the body with it");
+            return Err(unavailable("its frame is gone, and the body with it"));
         };
         let params = cdp_network::GetResponseBodyParams::new(record.request_id.clone());
         match session.with_timeout(timeout).call(params).await {
-            Ok(data) => body(&data.body, data.base64_encoded, entry.mime.as_deref()),
-            Err(e) => unavailable(&gone(&e)),
+            Ok(data) => Ok((data.body, data.base64_encoded)),
+            Err(e) => Err(unavailable(&gone(&e))),
         }
     }
 }
@@ -774,6 +847,7 @@ fn show_text(
         more.push("--headers");
     }
     if !req.body
+        && req.output.is_none()
         && entry.state == RequestState::Done
         && entry.websocket.is_none()
         && entry.redirect.is_none()
@@ -796,6 +870,10 @@ fn body_text(text: &mut String, side: &str, body: &Body, mime: Option<&str>) {
         return;
     }
     let size = body.size.map(units::size).unwrap_or_default();
+    if let Some(path) = &body.path {
+        let _ = writeln!(text, "{side}: saved to {path} ({size})");
+        return;
+    }
     if body.binary {
         let _ = writeln!(
             text,
