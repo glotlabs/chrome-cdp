@@ -12,7 +12,9 @@ section is a table: the Playwright call, what to run instead, and a status.
 | ➖ | not planned |
 
 `chrome-cdp convert spec.ts` translates simple Playwright tests into `.cdp`
-scripts using these tables ([below](#convert-a-spec-file)).
+scripts using these tables ([below](#convert-a-spec-file)). For a whole
+`@playwright/test` suite with `page.route` mocks, see
+[e2e/migrating.md](e2e/migrating.md).
 
 ## The model is different
 
@@ -391,29 +393,31 @@ they apply to every tab. `emulate reset` turns everything off.
 
 ## The test runner
 
-`@playwright/test`'s runner maps to `chrome-cdp run` for a single script today.
-The `chrome-cdp test` runner, with scenario files, mocks, retries, shards
-and reports, is planned but not built yet.
+`@playwright/test` maps to `chrome-cdp test`: `.cdp` scenario files with
+`@test` blocks, mock files instead of `page.route` handlers, a fresh
+browser context per test, and a `report.md` per failure.
+[e2e/migrating.md](e2e/migrating.md) walks through moving a suite and its
+mocks; [e2e/quickstart.md](e2e/quickstart.md) starts from scratch.
 
 | Playwright | chrome-cdp | |
 |---|---|---|
-| a test file | a `.cdp` script: `chrome-cdp run login.cdp` | 🟡 one script, one flow |
-| `test.step('name', …)` | a `# name` comment; `run` prints `[3/7] …` for each step | 🟡 |
-| `beforeEach` / fixtures | a shared script: `run setup.cdp && run test.cdp` (same session) | 🟡 |
-| parametrised tests, `process.env` | `run x.cdp --var user=ada`, `${env:NAME}`, `${data:users.json#/0/email}` | ✅ |
-| `baseURL` | `base_url` in `.chrome-cdp.toml` | ✅ |
-| `use: { viewport, locale, … }` | `.chrome-cdp.toml`, or emulation commands at the top of the script | ✅ |
-| isolation between tests | `--session NAME` per test (its own browser), or `close` between them | 🟡 |
-| `webServer` | start the server yourself before `run` | ❌ |
-| `projects` (browsers, devices) | run the script again after `emulate DEVICE`; only Chromium | 🟡 |
-| `retries`, `workers`, sharding | a shell loop; one `--session` per parallel run | ❌ |
-| reporters (`html`, `junit`, `json`) | `run --json`: one JSON line per step | 🟡 |
-| `test.only`, `skip`, `fixme`, tags, `--grep` | — | ❌ |
-| running the same tests against other environments | `base_url` (or a `--var`) per environment | 🟡 |
-| `page.route` mocking in tests | `route` lines in the script (above) | ✅ |
-| Firefox, WebKit | Chromium browsers only | ➖ |
+| a test file | a scenario file, `e2e/scenarios/login.cdp`, run by `chrome-cdp test` | ✅ |
+| `test('name', …)` | `@test "name"` with indented steps | ✅ |
+| `test.step('name', …)` | a `# name` comment; each step's line is in the report | 🟡 |
+| `beforeEach` / `afterEach`, `beforeAll` / `afterAll` | `@before` / `@after`, `@before-all` / `@after-all` | ✅ |
+| fixtures, helpers | step files: `@include ../steps/login.cdp email=ada@example.com` | 🟡 |
+| parametrised tests, `process.env` | `@include` parameters, `${env:NAME}`, `${var:name}`, `${data:users.json#/0/email}` | ✅ |
+| `baseURL`, `use: { viewport, locale, … }` | `base_url`, `viewport` in `[e2e]`; `@viewport`, `@device` | ✅ |
+| isolation between tests | a new browser context per test (cookies, storage, mocks, emulation) | ✅ |
+| `webServer` | `[e2e.web_server]` (a command, or `static = "dist"`) | ✅ |
+| `retries`, `workers`, sharding, `--repeat-each` | `--retries`, `--jobs`, `--shard 2/4`, `--repeat 20` | ✅ |
+| reporters (`html`, `junit`, `json`) | `--reporter text,junit,json,html` | ✅ |
+| `test.only`, `skip`, `fixme`, tags, `--grep` | `@only`, `@skip "why"`, `@tags`, `--tags`, `--grep` | ✅ |
+| `page.route` mocking in tests | mock files (`@mocks`, `default_mocks`) or `route` lines | ✅ |
+| running the same tests against other environments | backends: `--backend staging` | ✅ |
+| `projects` (browsers) | Chromium only | ➖ |
 | component testing | — | ➖ |
-| `codegen` | `snapshot -i` and `find` give the locators; `convert` for existing tests | ➖ |
+| `codegen` | explore with `snapshot -i`, then `history --as-scenario` | 🟡 |
 
 ## Convert a spec file
 
