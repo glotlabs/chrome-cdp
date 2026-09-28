@@ -1,6 +1,6 @@
 //! Templates in mock files (`minijinja`): `{{params.id}}`, `{{query.q}}`,
 //! `{{headers.authorization}}`, `{{json.user.email}}`, `{{uuid}}`,
-//! `{{now}}`, `{{seq}}` and `{{faker.name}}`.
+//! `{{now}}`, `{{seq}}`, `{{faker.name}}` and `{{state.x}}`.
 //!
 //! Only strings with `{{` or `{%` are templates; everything else is taken
 //! as written, so large data files cost nothing. An undefined value is an
@@ -129,6 +129,8 @@ pub(crate) struct Vars {
     pub(crate) now_ms: i64,
     /// Seeds `uuid` and `faker`.
     pub(crate) seed: u64,
+    /// The named values (`[state]`), before this answer changes them.
+    pub(crate) state: BTreeMap<String, Json>,
 }
 
 impl Vars {
@@ -150,6 +152,7 @@ impl Vars {
             ("now_ms", Value::from(self.now_ms)),
             ("uuid", Value::from(uuid)),
             ("faker", Value::from_serialize(&faker)),
+            ("state", Value::from_serialize(&self.state)),
         ]);
         if let Some(json) = &self.json {
             ctx.insert("json", Value::from_serialize(json));
@@ -190,7 +193,7 @@ impl Rng {
 }
 
 /// A version 4 UUID from `rng`.
-fn uuid(rng: &mut Rng) -> String {
+pub(crate) fn uuid(rng: &mut Rng) -> String {
     let hi = rng.next_u64();
     let lo = rng.next_u64();
     let hi = (hi & 0xFFFF_FFFF_FFFF_0FFF) | 0x0000_0000_0000_4000;

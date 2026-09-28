@@ -18,6 +18,7 @@
 //! - `engine`: [`Mocks`];
 //! - [`text`]: the text form of the `mock` commands' output.
 
+mod collection;
 mod engine;
 pub mod file;
 mod glob;
@@ -27,8 +28,8 @@ mod respond;
 mod template;
 pub mod text;
 
-pub use engine::{Answer, Mocks, Outcome};
-pub use file::{Cors, Unmatched, schema};
+pub use engine::{Answer, Mocks, Outcome, Seed, StateItem};
+pub use file::{AfterSequence, Cors, Unmatched, schema};
 pub use load::{MockSet, Source, available};
 pub use matcher::Request;
 pub use respond::{
@@ -37,3 +38,5 @@ pub use respond::{
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_stateful;

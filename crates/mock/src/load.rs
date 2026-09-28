@@ -11,8 +11,10 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::collection::{self, Collection, List};
 use crate::file::{
-    At, BodyMatch, Cors, JsonMode, RawFile, RawMatch, RawMock, RawRespond, Scalar, Unmatched,
+    AfterSequence, At, BodyMatch, Cors, JsonMode, RawCollection, RawFile, RawMatch, RawMock,
+    RawRespond, Scalar, Unmatched,
 };
 use crate::glob::{Glob, PathGlob};
 use crate::matcher::{BodyMatcher, Matcher, Target};
@@ -128,6 +130,9 @@ pub struct MockSet {
     pub(crate) cors: Cors,
     pub(crate) latency: Latency,
     pub(crate) mocks: Vec<Mock>,
+    /// `[state]`: named values and where they start.
+    pub(crate) state: Vec<(String, Value)>,
+    pub(crate) collections: Vec<Collection>,
     /// Why the file's latest change was not loaded.
     pub(crate) reload_error: Option<String>,
 }
@@ -138,10 +143,41 @@ pub(crate) struct Mock {
     pub(crate) name: String,
     pub(crate) line: usize,
     pub(crate) matcher: Matcher,
+    /// Its answer, or a sequence's answers in turn.
+    pub(crate) steps: Vec<Step>,
+    /// What a sequence does after its last answer; `None` for a mock
+    /// with one `respond`.
+    pub(crate) sequence: Option<AfterSequence>,
+    /// `when`: named values that must hold.
+    pub(crate) when: Vec<(String, Value)>,
+    /// `set_state`: named values to set after answering (templates); a
+    /// `null` is an `unset_state` name.
+    pub(crate) set_state: Vec<(String, Value)>,
+    pub(crate) hits: u64,
+}
+
+/// One answer of a mock.
+#[derive(Debug, Clone)]
+pub(crate) struct Step {
     pub(crate) respond: Respond,
     /// `delay`: replaces the set's latency.
     pub(crate) delay: Option<std::time::Duration>,
-    pub(crate) hits: u64,
+}
+
+impl Mock {
+    /// The index of the answer the next request gets; `None` once a
+    /// sequence with `after_sequence = "unmatched"` is used up.
+    pub(crate) fn next_step(&self) -> Option<usize> {
+        let len = self.steps.len() as u64;
+        let i = match self.sequence {
+            None => 0,
+            Some(_) if self.hits < len => self.hits,
+            Some(AfterSequence::RepeatLast) => len.saturating_sub(1),
+            Some(AfterSequence::Cycle) => self.hits % len.max(1),
+            Some(AfterSequence::Unmatched) => return None,
+        };
+        usize::try_from(i).ok()
+    }
 }
 
 impl MockSet {
@@ -274,6 +310,35 @@ impl Check<'_> {
             .into_iter()
             .map(|m| self.mock(m))
             .collect::<Result<_, _>>()?;
+        let mut state = Vec::new();
+        if let Some(values) = raw.state {
+            let span = values.span();
+            for (name, value) in values.into_inner() {
+                check_state_name(&name).map_err(|m| (span.clone(), format!("state: {m}")))?;
+                state.push((name, value));
+            }
+        }
+        let mut collections: Vec<Collection> = Vec::new();
+        for raw in raw.collections {
+            let span = raw.span();
+            let c = self.collection(raw)?;
+            if collections.iter().any(|o| o.name == c.name) {
+                return Err((
+                    span,
+                    format!("collection: the name `{}` is used twice", c.name),
+                ));
+            }
+            if state.iter().any(|(n, _)| *n == c.name) {
+                return Err((
+                    span,
+                    format!(
+                        "collection: `{}` is also a [state] value; give one another name",
+                        c.name
+                    ),
+                ));
+            }
+            collections.push(c);
+        }
         Ok(MockSet {
             source: source.clone(),
             modified: None,
@@ -283,6 +348,8 @@ impl Check<'_> {
             cors,
             latency,
             mocks,
+            state,
+            collections,
             reload_error: None,
         })
     }
@@ -292,19 +359,167 @@ impl Check<'_> {
         let (line, _) = line_col(self.text, span.start);
         let raw = raw.into_inner();
         let matcher = Self::matcher(raw.matcher)?;
-        let Some(respond) = raw.respond else {
-            return Err((span, "the mock has no `respond`".into()));
+        let (steps, sequence) = match (raw.respond, raw.sequence) {
+            (Some(_), Some(_)) => {
+                return Err((
+                    span,
+                    "the mock has both `respond` and `sequence`; give one".into(),
+                ));
+            }
+            (None, None) => {
+                return Err((span, "the mock has no `respond` (or `sequence`)".into()));
+            }
+            (Some(respond), None) => {
+                if raw.after_sequence.is_some() {
+                    return Err((span, "`after_sequence` needs a `sequence`".into()));
+                }
+                let (respond, delay) = self.respond(respond, "respond")?;
+                (vec![Step { respond, delay }], None)
+            }
+            (None, Some(sequence)) => {
+                let seq_span = sequence.span();
+                let raw_steps = sequence.into_inner();
+                if raw_steps.is_empty() {
+                    return Err((seq_span, "sequence: it has no answers".into()));
+                }
+                let mut steps = Vec::with_capacity(raw_steps.len());
+                for (i, step) in raw_steps.into_iter().enumerate() {
+                    let (respond, delay) = self.respond(step, &format!("sequence[{i}]"))?;
+                    steps.push(Step { respond, delay });
+                }
+                (steps, Some(raw.after_sequence.unwrap_or_default()))
+            }
         };
-        let (respond, delay) = self.respond(respond)?;
+        let when = Self::state_map(raw.when, "when", false)?;
+        let mut set_state = Self::state_map(raw.set_state, "set_state", true)?;
+        if let Some(unset) = raw.unset_state {
+            let span = unset.span();
+            for name in unset.into_inner() {
+                check_state_name(&name).map_err(|m| (span.clone(), format!("unset_state: {m}")))?;
+                if set_state.iter().any(|(n, _)| *n == name) {
+                    return Err((span, format!("unset_state: `{name}` is in set_state too")));
+                }
+                set_state.push((name, Value::Null));
+            }
+        }
         let name = raw.name.unwrap_or_else(|| matcher.summary());
         Ok(Mock {
             name,
             line,
             matcher,
-            respond,
-            delay,
+            steps,
+            sequence,
+            when,
+            set_state,
             hits: 0,
         })
+    }
+
+    /// `when` or `set_state` (whose strings are templates).
+    fn state_map(
+        raw: Option<At<BTreeMap<String, Value>>>,
+        key: &str,
+        templates: bool,
+    ) -> Result<Vec<(String, Value)>, Problem> {
+        let Some(raw) = raw else {
+            return Ok(Vec::new());
+        };
+        let span = raw.span();
+        let map = raw.into_inner();
+        if map.is_empty() {
+            return Err((span, format!("{key}: it names no value")));
+        }
+        let mut out = Vec::with_capacity(map.len());
+        for (name, value) in map {
+            check_state_name(&name).map_err(|m| (span.clone(), format!("{key}: {m}")))?;
+            if templates {
+                template::check_json(&value)
+                    .map_err(|m| (span.clone(), format!("{key}.{name}: {m}")))?;
+            }
+            out.push((name, value));
+        }
+        Ok(out)
+    }
+
+    fn collection(&self, raw: At<RawCollection>) -> Result<Collection, Problem> {
+        let span = raw.span();
+        let (line, _) = line_col(self.text, span.start);
+        let raw = raw.into_inner();
+        let name = raw.name.get().trim().to_owned();
+        check_state_name(&name).map_err(|m| (raw.name.span(), format!("collection.name: {m}")))?;
+        let path = PathGlob::path(raw.path.get())
+            .map_err(|m| (raw.path.span(), format!("collection.path: {m}")))?;
+        let id = match &raw.id {
+            Some(id) if id.get().trim().is_empty() => {
+                return Err((id.span(), "collection.id: empty".into()));
+            }
+            Some(id) => id.get().trim().to_owned(),
+            None => "id".to_owned(),
+        };
+        let (seed_file, seed) = match (raw.seed, raw.items) {
+            (Some(_), Some(items)) => {
+                return Err((
+                    items.span(),
+                    "collection: give `seed` (a data file) or `items`, not both".into(),
+                ));
+            }
+            (Some(file), None) => {
+                self.data_file("seed", &file, true)
+                    .map_err(|(s, m)| (s, m.replacen("respond.seed", "collection.seed", 1)))?;
+                if is_template(file.get()) {
+                    return Err((
+                        file.span(),
+                        "collection.seed: a seed file cannot be a template".into(),
+                    ));
+                }
+                let items = collection::read_items(self.base, file.get(), &id)
+                    .map_err(|m| (file.span(), format!("collection.seed: {m}")))?;
+                (Some(file.into_inner()), items)
+            }
+            (None, Some(items)) => {
+                let span = items.span();
+                let items = collection::check_items(Value::Array(items.into_inner()), &id)
+                    .map_err(|m| (span, format!("collection.items: {m}")))?;
+                (None, items)
+            }
+            (None, None) => (None, Vec::new()),
+        };
+        let new_id = raw
+            .new_id
+            .unwrap_or_else(|| collection::default_new_id(&seed, &id));
+        let mut list = List {
+            page_size: collection::PAGE_SIZE,
+            ..List::default()
+        };
+        if let Some(raw_list) = raw.list {
+            let list_span = raw_list.span();
+            let raw_list = raw_list.into_inner();
+            list.filter_query = raw_list.filter_query.unwrap_or(false);
+            list.page_param = raw_list.page_param;
+            list.page_size_param = raw_list.page_size_param;
+            list.wrap = raw_list.wrap;
+            if let Some(size) = &raw_list.page_size {
+                list.page_size = u64::try_from(*size.get())
+                    .ok()
+                    .filter(|n| *n > 0)
+                    .ok_or_else(|| {
+                        (
+                            size.span(),
+                            "collection.list.page_size: must be 1 or more".into(),
+                        )
+                    })?;
+            }
+            if list.page_param.is_none()
+                && (list.page_size_param.is_some() || raw_list.page_size.is_some())
+            {
+                return Err((
+                    list_span,
+                    "collection.list: page sizes need `page_param`".into(),
+                ));
+            }
+        }
+        Collection::new(name, line, path, id, new_id, seed_file, seed, list)
+            .map_err(|m| (span, format!("collection.path: {m}")))
     }
 
     fn matcher(raw: At<RawMatch>) -> Result<Matcher, Problem> {
@@ -398,12 +613,23 @@ impl Check<'_> {
         Ok(matcher)
     }
 
+    /// A `respond` (or a sequence's answer; `key` says which, for
+    /// problems).
     fn respond(
         &self,
         raw: At<RawRespond>,
+        key: &str,
     ) -> Result<(Respond, Option<std::time::Duration>), Problem> {
         let span = raw.span();
-        let raw = raw.into_inner();
+        self.respond_inner(raw.into_inner(), span)
+            .map_err(|(span, m)| (span, m.replacen("respond", key, 1)))
+    }
+
+    fn respond_inner(
+        &self,
+        raw: RawRespond,
+        span: Range<usize>,
+    ) -> Result<(Respond, Option<std::time::Duration>), Problem> {
         let delay = raw
             .delay
             .map(|d| parse_delay(d.get()).map_err(|m| (d.span(), format!("respond.delay: {m}"))))
@@ -551,6 +777,22 @@ impl Check<'_> {
                 .map_err(|e| problem(format!("{} is not JSON: {e}", file.display())))?;
         }
         Ok(())
+    }
+}
+
+/// A `[state]` name: letters, digits, `_` and `-`, so templates can say
+/// `{{state.name}}` and commands `mock state name`.
+fn check_state_name(name: &str) -> Result<(), String> {
+    let ok = !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    if ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "`{name}` is not a name; use letters, digits, `_` and `-`"
+        ))
     }
 }
 

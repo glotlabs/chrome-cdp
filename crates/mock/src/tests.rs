@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use crate::{MockSet, Mocks, Outcome, Request, Response, Source};
 
 /// A mocks directory with `files` (path → text) in it.
-fn dir(files: &[(&str, &str)]) -> tempfile::TempDir {
+pub(crate) fn dir(files: &[(&str, &str)]) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     for (path, text) in files {
         let file = dir.path().join(path);
@@ -18,24 +18,24 @@ fn dir(files: &[(&str, &str)]) -> tempfile::TempDir {
     dir
 }
 
-fn set(dir: &Path, name: &str) -> MockSet {
+pub(crate) fn set(dir: &Path, name: &str) -> MockSet {
     MockSet::load(&Source::find(dir, dir, name).unwrap()).unwrap()
 }
 
-fn load_err(files: &[(&str, &str)]) -> String {
+pub(crate) fn load_err(files: &[(&str, &str)]) -> String {
     let d = dir(files);
     MockSet::load(&Source::find(d.path(), d.path(), "base").unwrap())
         .unwrap_err()
         .message
 }
 
-fn mocks(dir: &Path, names: &[&str]) -> Mocks {
+pub(crate) fn mocks(dir: &Path, names: &[&str]) -> Mocks {
     let mut mocks = Mocks::new(7);
     mocks.apply(names.iter().map(|n| set(dir, n)).collect(), false);
     mocks
 }
 
-fn req<'a>(method: &'a str, url: &'a str, body: Option<&'a [u8]>) -> Request<'a> {
+pub(crate) fn req<'a>(method: &'a str, url: &'a str, body: Option<&'a [u8]>) -> Request<'a> {
     Request {
         method,
         url,
@@ -45,7 +45,12 @@ fn req<'a>(method: &'a str, url: &'a str, body: Option<&'a [u8]>) -> Request<'a>
 }
 
 /// The status and JSON body a request gets, and the mock's name.
-fn answer(mocks: &mut Mocks, method: &str, url: &str, body: Option<&str>) -> (u16, Value, String) {
+pub(crate) fn answer(
+    mocks: &mut Mocks,
+    method: &str,
+    url: &str,
+    body: Option<&str>,
+) -> (u16, Value, String) {
     match mocks.decide(&req(method, url, body.map(str::as_bytes)), 0) {
         Outcome::Answer(a) => match a.response {
             Response::Fulfill { status, body, .. } => (

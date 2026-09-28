@@ -1,21 +1,30 @@
 //! Mock sets in use, layered: [`Mocks`] decides what a request gets.
 //!
 //! Sets applied later are tried first; within a set, the first mock that
-//! matches answers. A request no mock answers is *unmatched* if some set's
-//! `scope` owns it (the first such set's `unmatched` policy handles it);
-//! otherwise it goes to the network.
+//! matches answers, then its collections are tried. A request no mock
+//! answers is *unmatched* if some set's `scope` owns it (the first such
+//! set's `unmatched` policy handles it); otherwise it goes to the network.
+//!
+//! The state (plan 11.3) lives here too: hit counters (`{{seq}}`, and
+//! where a `sequence` is), the named values of `[state]` that every set
+//! shares, and the collections' items. [`Mocks::reset`] starts it all
+//! over.
 
 use std::collections::{BTreeMap, HashMap};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
-use protocol::schema::{MockCheck, MockExplainData, MockInfo, MockRef, MockSetInfo};
-use serde_json::json;
+use protocol::schema::{
+    MockCheck, MockCollectionInfo, MockExplainData, MockInfo, MockRef, MockSetInfo,
+};
+use serde_json::{Value, json};
 
-use crate::file::{Cors, Unmatched};
-use crate::load::{Mock, MockSet};
-use crate::matcher::{Parsed, Request};
+use crate::collection::{self, Collection, Op};
+use crate::file::{AfterSequence, Cors, Unmatched};
+use crate::load::{Mock, MockSet, Step};
+use crate::matcher::{Parsed, Request, json_subset};
 use crate::respond::{Respond, Response};
-use crate::template::{Rng, Vars};
+use crate::template::{self, Rng, Vars};
 
 /// How often [`Mocks::refresh`] looks at the files at most.
 const REFRESH: Duration = Duration::from_millis(250);
@@ -57,6 +66,47 @@ pub struct Mocks {
     seed: u64,
     rng: Rng,
     checked: Option<Instant>,
+    /// The named values, shared by every set.
+    state: BTreeMap<String, Value>,
+}
+
+/// What `mock seed` fills a collection with.
+#[derive(Debug, Clone)]
+pub enum Seed {
+    /// Its starting items (its `seed` file read again, or `items`).
+    Start,
+    /// A data file: absolute, or relative to the mocks directory, else to
+    /// `cwd`.
+    File {
+        path: String,
+        cwd: std::path::PathBuf,
+    },
+    /// Items given as JSON (from stdin).
+    Items(Value),
+}
+
+/// A named value or a collection, as `mock state <name>` and `expect
+/// mock-state` see it.
+#[derive(Debug, Clone, PartialEq)]
+pub enum StateItem {
+    Value(Value),
+    Collection {
+        info: MockCollectionInfo,
+        items: Vec<Value>,
+    },
+}
+
+/// What answers a request.
+enum Found {
+    Mock {
+        mock: usize,
+        params: BTreeMap<String, String>,
+        step: usize,
+    },
+    Collection {
+        collection: usize,
+        op: Op,
+    },
 }
 
 impl Mocks {
@@ -68,6 +118,7 @@ impl Mocks {
             seed,
             rng: Rng::new(seed),
             checked: None,
+            state: BTreeMap::new(),
         }
     }
 
@@ -85,11 +136,53 @@ impl Mocks {
     pub fn apply(&mut self, sets: Vec<MockSet>, add: bool) {
         if !add {
             self.sets.clear();
+            self.state.clear();
         }
         for set in sets {
             self.sets.retain(|s| s.name() != set.name());
+            for (name, value) in &set.state {
+                if add {
+                    self.state
+                        .entry(name.clone())
+                        .or_insert_with(|| value.clone());
+                } else {
+                    self.state.insert(name.clone(), value.clone());
+                }
+            }
             self.sets.push(set);
         }
+    }
+
+    /// Warnings about the sets in use: `when` and `set_state` names that
+    /// no set's `[state]` declares (a typo, or a set left out).
+    pub fn undeclared(&self) -> Vec<String> {
+        let declared = |name: &str| {
+            self.sets
+                .iter()
+                .any(|s| s.state.iter().any(|(n, _)| n == name))
+        };
+        let mut warnings = Vec::new();
+        for set in &self.sets {
+            for mock in &set.mocks {
+                for (key, names) in [("when", &mock.when), ("set_state", &mock.set_state)] {
+                    for (name, value) in names {
+                        let key = if value.is_null() && key == "set_state" {
+                            "unset_state"
+                        } else {
+                            key
+                        };
+                        if !declared(name) {
+                            let r = mock_ref(set, mock);
+                            warnings.push(format!(
+                                "{} \"{}\": {key} names `{name}`, which no [state] of the sets in use declares",
+                                r.at, r.name
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        warnings
     }
 
     /// Turns sets `names` off; a name not in use is `Err` and nothing
@@ -112,11 +205,29 @@ impl Mocks {
         names
     }
 
-    /// Starts the state over: hit counters (`{{seq}}`) and random values.
+    /// Starts the state over: hit counters (`{{seq}}`, sequences), named
+    /// values, collections (their `seed` files read again) and random
+    /// values. A seed file that no longer reads keeps the items it had,
+    /// and the set's [`MockSetInfo::reload_error`] says why.
     pub fn reset(&mut self) {
+        self.state.clear();
         for set in &mut self.sets {
             for mock in &mut set.mocks {
                 mock.hits = 0;
+            }
+            for (name, value) in &set.state {
+                self.state.insert(name.clone(), value.clone());
+            }
+            for c in &mut set.collections {
+                if let Some(file) = &c.seed_file {
+                    match collection::read_items(&set.source.base, file, &c.id) {
+                        Ok(items) => c.seed = items,
+                        Err(e) => {
+                            set.reload_error = Some(format!("collection {}: {e}", c.name));
+                        }
+                    }
+                }
+                c.reset();
             }
         }
         self.rng = Rng::new(self.seed);
@@ -151,6 +262,18 @@ impl Mocks {
                     for mock in &mut new.mocks {
                         mock.hits = hits.get(mock.name.as_str()).copied().unwrap_or(0);
                     }
+                    // Collections keep their items, and new values start.
+                    for c in &mut new.collections {
+                        if let Some(old) = set.collections.iter().find(|o| o.name == c.name) {
+                            c.items.clone_from(&old.items);
+                            c.hits = old.hits;
+                        }
+                    }
+                    for (name, value) in &new.state {
+                        self.state
+                            .entry(name.clone())
+                            .or_insert_with(|| value.clone());
+                    }
                     *set = new;
                 }
                 Err(e) => {
@@ -170,6 +293,7 @@ impl Mocks {
                 name: set.name().to_owned(),
                 file: set.source.file.display().to_string(),
                 count: set.mocks.len(),
+                collections: set.collections.len(),
                 scope: set.scope_text.clone(),
                 unmatched: set.unmatched.as_str().into(),
                 cors: match set.cors {
@@ -179,20 +303,161 @@ impl Mocks {
                 latency: set.latency.text(),
                 reload_error: set.reload_error.clone(),
                 mocks: if mocks {
-                    set.mocks
-                        .iter()
-                        .map(|m| MockInfo {
-                            mock: mock_ref(set, m),
-                            matches: m.matcher.summary(),
-                            responds: describe(m, None),
-                            hits: m.hits,
-                        })
-                        .collect()
+                    let listed = set.mocks.iter().map(|m| MockInfo {
+                        mock: mock_ref(set, m),
+                        matches: matches_text(m),
+                        responds: describe(m, None),
+                        hits: m.hits,
+                    });
+                    let collections = set.collections.iter().map(|c| MockInfo {
+                        mock: collection_ref(set, c),
+                        matches: c.summary(),
+                        responds: format!(
+                            "collection {}: {} {}",
+                            c.name,
+                            c.items.len(),
+                            if c.items.len() == 1 { "item" } else { "items" }
+                        ),
+                        hits: c.hits,
+                    });
+                    listed.chain(collections).collect()
                 } else {
                     Vec::new()
                 },
             })
             .collect()
+    }
+
+    /// The named values, and the collections in the order they are
+    /// tried.
+    pub fn state(&self) -> (BTreeMap<String, Value>, Vec<MockCollectionInfo>) {
+        let collections = self
+            .sets
+            .iter()
+            .rev()
+            .flat_map(|set| set.collections.iter().map(|c| collection_info(set, c)))
+            .collect();
+        (self.state.clone(), collections)
+    }
+
+    /// Every name `mock state` knows: the collections', then the values'.
+    pub fn state_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = Vec::new();
+        for set in self.sets.iter().rev() {
+            for c in &set.collections {
+                if !names.contains(&c.name) {
+                    names.push(c.name.clone());
+                }
+            }
+        }
+        for set in &self.sets {
+            for (name, _) in &set.state {
+                if !names.contains(name) {
+                    names.push(name.clone());
+                }
+            }
+        }
+        for name in self.state.keys() {
+            if !names.contains(name) {
+                names.push(name.clone());
+            }
+        }
+        names
+    }
+
+    /// Collection `name` (the one tried first), else named value `name`;
+    /// a value declared in a `[state]` but cleared is `null`.
+    pub fn lookup(&self, name: &str) -> Option<StateItem> {
+        if let Some((set, c)) = self.find_collection(name) {
+            return Some(StateItem::Collection {
+                info: collection_info(set, c),
+                items: c.items.clone(),
+            });
+        }
+        if let Some(value) = self.state.get(name) {
+            return Some(StateItem::Value(value.clone()));
+        }
+        self.declares(name).then_some(StateItem::Value(Value::Null))
+    }
+
+    fn declares(&self, name: &str) -> bool {
+        self.sets
+            .iter()
+            .any(|s| s.state.iter().any(|(n, _)| n == name))
+    }
+
+    fn find_collection(&self, name: &str) -> Option<(&MockSet, &Collection)> {
+        self.sets
+            .iter()
+            .rev()
+            .find_map(|set| Some((set, set.collections.iter().find(|c| c.name == name)?)))
+    }
+
+    /// Sets named values (`null` clears one). A name that no `[state]`
+    /// declares and nothing has set is `Err(name)`, and nothing changes.
+    pub fn set_values(&mut self, values: &[(String, Value)]) -> Result<(), String> {
+        if let Some((name, _)) = values
+            .iter()
+            .find(|(n, _)| !self.state.contains_key(n) && !self.declares(n))
+        {
+            return Err(name.clone());
+        }
+        for (name, value) in values {
+            if value.is_null() {
+                self.state.remove(name);
+            } else {
+                self.state.insert(name.clone(), value.clone());
+            }
+        }
+        Ok(())
+    }
+
+    /// Fills collection `name` (the one tried first) with `seed`'s items;
+    /// returns it and where the items came from. `Err` says why not, and
+    /// nothing changes.
+    pub fn seed(
+        &mut self,
+        name: &str,
+        seed: &Seed,
+    ) -> Result<(MockCollectionInfo, String), String> {
+        let Some(set) = self
+            .sets
+            .iter_mut()
+            .rev()
+            .find(|s| s.collections.iter().any(|c| c.name == name))
+        else {
+            return Err(format!("no collection {name} in the mock sets in use"));
+        };
+        let base = set.source.base.clone();
+        let Some(c) = set.collections.iter_mut().find(|c| c.name == name) else {
+            return Err(format!("no collection {name}"));
+        };
+        let (items, from) = match seed {
+            Seed::Start => {
+                if let Some(file) = &c.seed_file {
+                    c.seed = collection::read_items(&base, file, &c.id)?;
+                }
+                (c.seed.clone(), "seed".to_owned())
+            }
+            Seed::Items(value) => (
+                collection::check_items(value.clone(), &c.id)?,
+                "stdin".to_owned(),
+            ),
+            Seed::File { path, cwd } => {
+                let file = seed_file(&base, cwd, path)?;
+                let items = collection::read_items(&base, &file.to_string_lossy(), &c.id)?;
+                (items, file.display().to_string())
+            }
+        };
+        c.items = items;
+        let info = collection_info(
+            set,
+            set.collections
+                .iter()
+                .find(|c| c.name == name)
+                .unwrap_or_else(|| unreachable!()),
+        );
+        Ok((info, from))
     }
 
     /// What `req` gets. `now_ms` is `{{now}}` (the frozen time, if any).
@@ -202,28 +467,66 @@ impl Mocks {
         if let Some(outcome) = self.preflight(&parsed) {
             return outcome;
         }
+        let state = &self.state;
         let found = self.sets.iter().enumerate().rev().find_map(|(s, set)| {
-            set.mocks.iter().enumerate().find_map(|(m, mock)| {
-                mock.matcher
-                    .check(&parsed, &parsed.method, false)
-                    .ok()
-                    .map(|params| (s, m, params))
+            let mock = set.mocks.iter().enumerate().find_map(|(m, mock)| {
+                let params = mock.matcher.check(&parsed, &parsed.method, false).ok()?;
+                holds(&mock.when, state).ok()?;
+                let step = mock.next_step()?;
+                Some(Found::Mock {
+                    mock: m,
+                    params,
+                    step,
+                })
+            });
+            mock.or_else(|| {
+                set.collections.iter().enumerate().find_map(|(c, coll)| {
+                    let op = coll.op(&parsed.path, &parsed.method).ok()?;
+                    Some(Found::Collection { collection: c, op })
+                })
             })
+            .map(|found| (s, found))
         });
-        let Some((s, m, params)) = found else {
+        let Some((s, found)) = found else {
             return self.unmatched(&parsed);
         };
+        let (m, params, step) = match found {
+            Found::Mock { mock, params, step } => (mock, params, step),
+            Found::Collection { collection, op } => {
+                return Outcome::Answer(self.collection_answer(s, collection, &op, &parsed));
+            }
+        };
         let seed = self.rng.next_u64();
+        let state = self.state.clone();
         let set = &mut self.sets[s];
         let cors = set.cors == Cors::Auto;
         let latency = set.latency;
         let mock = &mut set.mocks[m];
         mock.hits += 1;
-        let vars = vars(&parsed, params, mock.hits, now_ms, seed);
-        let rendered = mock.respond.render(&vars.context(), &set.source.base, cors);
-        let delay = mock.delay;
+        let vars = vars(&parsed, params, mock.hits, now_ms, seed, state);
+        let ctx = vars.context();
+        let Step { respond, delay } = &mock.steps[step];
+        let rendered = respond.render(&ctx, &set.source.base, cors).and_then(|r| {
+            let changes = mock
+                .set_state
+                .iter()
+                .map(|(name, value)| Ok((name.clone(), template::render_json(value, &ctx)?)))
+                .collect::<Result<Vec<_>, String>>()?;
+            Ok((r, changes))
+        });
+        let delay = *delay;
         let mock = mock_ref(set, &set.mocks[m]);
         let delay = delay.unwrap_or_else(|| latency.sample(|n| self.rng.below(n)));
+        let rendered = rendered.map(|(r, changes)| {
+            for (name, value) in changes {
+                if value.is_null() {
+                    self.state.remove(&name);
+                } else {
+                    self.state.insert(name, value);
+                }
+            }
+            r
+        });
         let answer = match rendered {
             Ok(rendered) => {
                 let mut outcome = rendered.response.outcome();
@@ -252,6 +555,21 @@ impl Mocks {
         Outcome::Answer(answer)
     }
 
+    /// Collection `c` of set `s` carries out `op`.
+    fn collection_answer(&mut self, s: usize, c: usize, op: &Op, parsed: &Parsed) -> Answer {
+        let set = &mut self.sets[s];
+        let cors = set.cors == Cors::Auto;
+        let latency = set.latency;
+        let (response, note) = set.collections[c].handle(op, parsed, &mut self.rng, cors);
+        let mock = collection_ref(set, &set.collections[c]);
+        Answer {
+            mock,
+            outcome: format!("{} ({note})", response.outcome()),
+            response,
+            delay: latency.sample(|n| self.rng.below(n)),
+        }
+    }
+
     /// A CORS preflight (`OPTIONS` with `Access-Control-Request-Method`)
     /// for a request a mock answers, or a set with `cors = "auto"` owns.
     fn preflight(&self, parsed: &Parsed) -> Option<Outcome> {
@@ -264,11 +582,22 @@ impl Mocks {
         let auto = || self.sets.iter().rev().filter(|s| s.cors == Cors::Auto);
         for set in auto() {
             for mock in &set.mocks {
-                if !mock.respond.is_passthrough()
+                let answers = mock
+                    .next_step()
+                    .is_some_and(|i| !mock.steps[i].respond.is_passthrough());
+                if answers
+                    && holds(&mock.when, &self.state).is_ok()
                     && mock.matcher.check(parsed, &method, true).is_ok()
                 {
                     return Some(Outcome::Preflight {
                         mock: Some(mock_ref(set, mock)),
+                    });
+                }
+            }
+            for c in &set.collections {
+                if c.op(&parsed.path, &method).is_ok() {
+                    return Some(Outcome::Preflight {
+                        mock: Some(collection_ref(set, c)),
                     });
                 }
             }
@@ -301,14 +630,30 @@ impl Mocks {
     pub fn explain(&self, req: &Request<'_>) -> MockExplainData {
         let parsed = Parsed::new(req);
         let mut checked = Vec::new();
-        let mut answer: Option<(usize, usize, BTreeMap<String, String>)> = None;
+        let mut answer: Option<(usize, Found)> = None;
         for (s, set) in self.sets.iter().enumerate().rev() {
             for (m, mock) in set.mocks.iter().enumerate() {
-                let result = mock.matcher.check(&parsed, &parsed.method, false);
+                let result =
+                    mock.matcher
+                        .check(&parsed, &parsed.method, false)
+                        .and_then(|params| {
+                            holds(&mock.when, &self.state)?;
+                            let step = mock.next_step().ok_or_else(|| {
+                            format!(
+                                "its sequence of {} is used up, and after_sequence = \"unmatched\"",
+                                answers(mock.steps.len())
+                            )
+                        })?;
+                            Ok(Found::Mock {
+                                mock: m,
+                                params,
+                                step,
+                            })
+                        });
                 let (matches, reason) = match result {
-                    Ok(params) => {
+                    Ok(found) => {
                         if answer.is_none() {
-                            answer = Some((s, m, params));
+                            answer = Some((s, found));
                             (true, None)
                         } else {
                             (
@@ -325,21 +670,58 @@ impl Mocks {
                     reason,
                 });
             }
+            for (c, coll) in set.collections.iter().enumerate() {
+                let (matches, reason) = match coll.op(&parsed.path, &parsed.method) {
+                    Ok(op) if answer.is_none() => {
+                        answer = Some((s, Found::Collection { collection: c, op }));
+                        (true, None)
+                    }
+                    Ok(_) => (
+                        true,
+                        Some("matches too, but an earlier mock answers".into()),
+                    ),
+                    Err(why) => (false, Some(why)),
+                };
+                checked.push(MockCheck {
+                    mock: collection_ref(set, coll),
+                    matches,
+                    reason,
+                });
+            }
         }
         let scope = self
             .sets
             .iter()
             .rev()
             .find(|s| s.owns(&parsed.path, &parsed.base));
-        let (answer, outcome, params) = if let Some((s, m, params)) = answer {
+        let (answer, outcome, params) = if let Some((s, found)) = answer {
             let set = &self.sets[s];
-            let mock = &set.mocks[m];
-            let vars = vars(&parsed, params.clone(), mock.hits + 1, 0, 0);
-            (
-                Some(mock_ref(set, mock)),
-                describe(mock, Some(&vars.context())),
-                params,
-            )
+            match found {
+                Found::Mock { mock, params, .. } => {
+                    let mock = &set.mocks[mock];
+                    let vars = vars(
+                        &parsed,
+                        params.clone(),
+                        mock.hits + 1,
+                        0,
+                        0,
+                        self.state.clone(),
+                    );
+                    (
+                        Some(mock_ref(set, mock)),
+                        describe(mock, Some(&vars.context())),
+                        params,
+                    )
+                }
+                Found::Collection { collection, op } => {
+                    let coll = &set.collections[collection];
+                    (
+                        Some(collection_ref(set, coll)),
+                        collection_outcome(coll, &op),
+                        BTreeMap::new(),
+                    )
+                }
+            }
         } else {
             let outcome = match scope {
                 Some(set) => match set.unmatched {
@@ -371,6 +753,29 @@ impl Mocks {
             checked,
         }
     }
+}
+
+/// A `mock seed` file: absolute, or in mocks directory `base`, else
+/// relative to `cwd`.
+fn seed_file(base: &Path, cwd: &Path, path: &str) -> Result<std::path::PathBuf, String> {
+    let given = Path::new(path);
+    if given.is_absolute() {
+        return if given.is_file() {
+            Ok(given.to_path_buf())
+        } else {
+            Err(format!("no file {path}"))
+        };
+    }
+    [base.join(given), cwd.join(given)]
+        .into_iter()
+        .find(|f| f.is_file())
+        .ok_or_else(|| {
+            format!(
+                "no file {path} in the mocks directory {} or in {}",
+                base.display(),
+                cwd.display()
+            )
+        })
 }
 
 /// The answer to an in-scope request no mock answers.
@@ -417,16 +822,115 @@ fn mock_ref(set: &MockSet, mock: &Mock) -> MockRef {
     }
 }
 
-/// What a mock answers: `fulfill 200 json_file data/items.json`, with the
+fn collection_ref(set: &MockSet, c: &Collection) -> MockRef {
+    MockRef {
+        set: set.name().to_owned(),
+        name: c.name.clone(),
+        file: set.source.file.display().to_string(),
+        line: c.line,
+        at: format!("{}:{}", set.file_name(), c.line),
+    }
+}
+
+fn collection_info(set: &MockSet, c: &Collection) -> MockCollectionInfo {
+    MockCollectionInfo {
+        mock: collection_ref(set, c),
+        path: c.path.to_string(),
+        count: c.items.len(),
+    }
+}
+
+/// What a collection would do: `collection todos: get 7 (200)`.
+fn collection_outcome(c: &Collection, op: &Op) -> String {
+    let status = match op {
+        Op::List => "200".to_owned(),
+        Op::Create => "201, or 400 without a JSON object body".to_owned(),
+        Op::Get(id) | Op::Replace(id) | Op::Update(id) | Op::Delete(id) => {
+            if c.has(id) {
+                "200".to_owned()
+            } else {
+                format!("404, no {}/{id}", c.name)
+            }
+        }
+        Op::NotAllowed(allow) => format!("405, it takes {allow}"),
+    };
+    format!("collection {}: {} ({status})", c.name, op.text())
+}
+
+/// `1 answer`, `3 answers`.
+fn answers(n: usize) -> String {
+    if n == 1 {
+        "1 answer".into()
+    } else {
+        format!("{n} answers")
+    }
+}
+
+/// Whether the named values `when` requires hold; else the first that
+/// does not. `"*"` means any value but none.
+fn holds(when: &[(String, Value)], state: &BTreeMap<String, Value>) -> Result<(), String> {
+    for (name, want) in when {
+        let Some(got) = state.get(name) else {
+            if want.is_null() {
+                continue;
+            }
+            return Err(format!(
+                "state {name}: expects {}, but it is not set",
+                shown(want)
+            ));
+        };
+        let ok = if want.as_str() == Some("*") {
+            !got.is_null()
+        } else {
+            json_subset(want, got, false, &mut String::new()).is_ok()
+        };
+        if !ok {
+            return Err(format!(
+                "state {name}: expects {}, it is {}",
+                shown(want),
+                shown(got)
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn shown(value: &Value) -> String {
+    let text = value.to_string();
+    let cut: String = text.chars().take(60).collect();
+    if cut.len() < text.len() {
+        format!("{cut}…")
+    } else {
+        cut
+    }
+}
+
+/// What a mock matches, with its `when`: `POST /api/orders when
+/// logged_in = true`.
+fn matches_text(mock: &Mock) -> String {
+    let mut text = mock.matcher.summary();
+    if !mock.when.is_empty() {
+        let when: Vec<String> = mock
+            .when
+            .iter()
+            .map(|(n, v)| format!("{n} = {}", shown(v)))
+            .collect();
+        text.push_str(" when ");
+        text.push_str(&when.join(", "));
+    }
+    text
+}
+
+/// What one answer is: `fulfill 200 json_file data/items.json`, with the
 /// delay first if it has one.
-fn describe(mock: &Mock, ctx: Option<&minijinja::Value>) -> String {
-    let summary = mock.respond.summary(ctx);
-    let summary = if matches!(mock.respond, Respond::Fulfill { .. }) {
+fn describe_step(step: &Step, ctx: Option<&minijinja::Value>) -> String {
+    let summary = step.respond.summary(ctx);
+    let summary = if matches!(step.respond, Respond::Fulfill { .. }) {
         format!("fulfill {summary}")
     } else {
         summary
     };
-    match mock.delay {
+    match step.delay {
         Some(delay) if !delay.is_zero() => {
             format!(
                 "delay {}, then {summary}",
@@ -437,12 +941,52 @@ fn describe(mock: &Mock, ctx: Option<&minijinja::Value>) -> String {
     }
 }
 
+/// What a mock answers next: its answer, or where its sequence is; and
+/// the values it sets.
+fn describe(mock: &Mock, ctx: Option<&minijinja::Value>) -> String {
+    let mut text = match mock.sequence {
+        None => describe_step(&mock.steps[0], ctx),
+        Some(after) => {
+            let n = mock.steps.len();
+            match mock.next_step() {
+                Some(i) => format!(
+                    "sequence {}/{n} (then {}): {}",
+                    i + 1,
+                    after.as_str(),
+                    describe_step(&mock.steps[i], ctx)
+                ),
+                None => format!(
+                    "sequence of {} used up (after_sequence = \"{}\")",
+                    answers(n),
+                    AfterSequence::Unmatched.as_str()
+                ),
+            }
+        }
+    };
+    let (unset, set): (Vec<_>, Vec<_>) = mock.set_state.iter().partition(|(_, v)| v.is_null());
+    if !set.is_empty() {
+        let set: Vec<String> = set
+            .iter()
+            .map(|(n, v)| format!("{n} = {}", shown(v)))
+            .collect();
+        text.push_str("; set_state ");
+        text.push_str(&set.join(", "));
+    }
+    if !unset.is_empty() {
+        let unset: Vec<&str> = unset.iter().map(|(n, _)| n.as_str()).collect();
+        text.push_str("; unset_state ");
+        text.push_str(&unset.join(", "));
+    }
+    text
+}
+
 fn vars(
     parsed: &Parsed,
     params: BTreeMap<String, String>,
     seq: u64,
     now_ms: i64,
     seed: u64,
+    state: BTreeMap<String, Value>,
 ) -> Vars {
     let mut query = BTreeMap::new();
     for (k, v) in &parsed.query {
@@ -472,5 +1016,6 @@ fn vars(
         seq,
         now_ms,
         seed,
+        state,
     }
 }

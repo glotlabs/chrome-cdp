@@ -56,9 +56,10 @@ impl<T: JsonSchema> JsonSchema for At<T> {
 }
 
 /// A chrome-cdp mock file: one mock set. Each `[[mock]]` answers the
-/// requests it matches; within a file the first match wins, and sets
-/// applied later are tried first. Data files (`json_file`, `body_file`,
-/// `file`) are relative to the mocks directory.
+/// requests it matches; within a file the first match wins, then the
+/// `[[collection]]`s are tried, and sets applied later are tried first.
+/// Data files (`json_file`, `body_file`, `file`, `seed`) are relative to
+/// the mocks directory.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(title = "chrome-cdp mock file")]
@@ -66,9 +67,17 @@ pub(crate) struct RawFile {
     /// Settings for the whole set.
     #[serde(default)]
     pub(crate) settings: Option<At<RawSettings>>,
+    /// Named values and where they start, e.g. `logged_in = false`.
+    /// Mocks require them (`when`) and change them (`set_state`); every
+    /// set in use shares them, and `mock reset` starts them over.
+    #[serde(default)]
+    pub(crate) state: Option<At<BTreeMap<String, Value>>>,
     /// The mocks, tried in the order written.
     #[serde(default, rename = "mock")]
     pub(crate) mocks: Vec<At<RawMock>>,
+    /// Fake REST resources kept in memory, tried after the set's mocks.
+    #[serde(default, rename = "collection")]
+    pub(crate) collections: Vec<At<RawCollection>>,
 }
 
 /// `[settings]`.
@@ -158,7 +167,114 @@ pub(crate) struct RawMock {
     #[serde(rename = "match")]
     pub(crate) matcher: At<RawMatch>,
     /// The answer.
+    #[serde(default)]
     pub(crate) respond: Option<At<RawRespond>>,
+    /// Answers given in turn instead of `respond`: the first to the first
+    /// request, the second to the next, … (`mock reset` starts over).
+    #[serde(default)]
+    pub(crate) sequence: Option<At<Vec<At<RawRespond>>>>,
+    /// With `sequence`, what comes after its last answer:
+    /// `repeat-last` (the default), `cycle` (from the first again) or
+    /// `unmatched` (the mock stops matching, so the next one answers).
+    #[serde(default)]
+    pub(crate) after_sequence: Option<AfterSequence>,
+    /// Named values (`[state]`) that must hold for the mock to match:
+    /// `{ logged_in = true }`. `"*"` means any value but none; other
+    /// values match as `match.json` does.
+    #[serde(default)]
+    pub(crate) when: Option<At<BTreeMap<String, Value>>>,
+    /// Named values to change after answering: `{ logged_in = true,
+    /// user = "{{json.email}}" }`. Strings may be templates.
+    #[serde(default)]
+    pub(crate) set_state: Option<At<BTreeMap<String, Value>>>,
+    /// Named values to remove after answering (a `when` of `"*"` then no
+    /// longer holds), e.g. `["user"]`.
+    #[serde(default)]
+    pub(crate) unset_state: Option<At<Vec<String>>>,
+}
+
+/// `after_sequence`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum AfterSequence {
+    #[default]
+    RepeatLast,
+    Cycle,
+    Unmatched,
+}
+
+impl AfterSequence {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::RepeatLast => "repeat-last",
+            Self::Cycle => "cycle",
+            Self::Unmatched => "unmatched",
+        }
+    }
+}
+
+/// `[[collection]]`: a fake REST resource. `GET path` lists the items,
+/// `GET path/:id` gets one, `POST path` adds one, `PUT` and `PATCH
+/// path/:id` replace and change one, and `DELETE path/:id` removes it.
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "Collection")]
+pub(crate) struct RawCollection {
+    /// What `mock state`, `mock seed` and `expect mock-state` call it.
+    pub(crate) name: At<String>,
+    /// The list's path, e.g. `/api/todos`; items are at `/api/todos/:id`.
+    pub(crate) path: At<String>,
+    /// The items' id field; `id` when not set.
+    #[serde(default)]
+    pub(crate) id: Option<At<String>>,
+    /// A data file (a JSON array of objects) with the items it starts
+    /// with, relative to the mocks directory.
+    #[serde(default)]
+    pub(crate) seed: Option<At<String>>,
+    /// The items it starts with, written here instead of a `seed` file.
+    #[serde(default)]
+    pub(crate) items: Option<At<Vec<Value>>>,
+    /// How a POST without an id gets one: `increment` (the highest number
+    /// plus one) or `uuid`. When not set: `increment` if the starting
+    /// items' ids are numbers, else `uuid`.
+    #[serde(default)]
+    pub(crate) new_id: Option<NewId>,
+    /// How `GET path` lists the items.
+    #[serde(default)]
+    pub(crate) list: Option<At<RawList>>,
+}
+
+/// `[[collection]] new_id`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum NewId {
+    Increment,
+    Uuid,
+}
+
+/// `[[collection]] list`.
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+#[schemars(rename = "CollectionList")]
+pub(crate) struct RawList {
+    /// Query parameters filter the items by the field of the same name
+    /// (`?done=true`); parameters no item has are ignored.
+    #[serde(default)]
+    pub(crate) filter_query: Option<bool>,
+    /// The query parameter with the page number (from 1); pages only when
+    /// set.
+    #[serde(default)]
+    pub(crate) page_param: Option<String>,
+    /// The query parameter with the page size.
+    #[serde(default)]
+    pub(crate) page_size_param: Option<String>,
+    /// The page size when the request gives none; 20 when not set.
+    #[serde(default)]
+    pub(crate) page_size: Option<At<i64>>,
+    /// Answer `{ "<wrap>": [items], "total": N }` instead of the bare
+    /// array. Lists always carry an `X-Total-Count` header.
+    #[serde(default)]
+    pub(crate) wrap: Option<String>,
 }
 
 /// `match`: conditions on the request, all of which must hold.

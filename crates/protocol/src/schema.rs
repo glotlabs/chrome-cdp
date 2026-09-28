@@ -285,8 +285,18 @@ pub const COMMANDS: &[CommandSchema] = &[
     },
     CommandSchema {
         name: "mock reset",
-        summary: "the mock sets whose state (counters, random values) was reset",
+        summary: "the mock sets whose state (counters, sequences, named values, collections, random values) was reset",
         schema: || schema_for!(Envelope<MockSetsData>),
+    },
+    CommandSchema {
+        name: "mock state",
+        summary: "the mocks' named values and collections, or one of them",
+        schema: || schema_for!(Envelope<MockStateData>),
+    },
+    CommandSchema {
+        name: "mock seed",
+        summary: "the collection seeded, and where its items came from",
+        schema: || schema_for!(Envelope<MockSeedData>),
     },
     CommandSchema {
         name: "mock explain",
@@ -3255,6 +3265,9 @@ pub struct MockSetInfo {
     pub file: String,
     /// How many mocks it has.
     pub count: usize,
+    /// How many collections it has.
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
+    pub collections: usize,
     /// The requests it owns (`[settings] scope`), as written.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scope: Vec<String>,
@@ -3272,6 +3285,11 @@ pub struct MockSetInfo {
     /// Its mocks, in the order they are tried (`mock list`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mocks: Vec<MockInfo>,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero_usize(n: &usize) -> bool {
+    *n == 0
 }
 
 /// A mock, as `mock list` shows it.
@@ -3356,4 +3374,49 @@ pub struct MockExplainData {
     pub scope: Option<String>,
     /// Every mock, in the order they are tried.
     pub checked: Vec<MockCheck>,
+}
+
+/// A collection of a mock set in use (plan 11.3): a fake REST resource.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockCollectionInfo {
+    /// Its set, name, file and line.
+    #[serde(flatten)]
+    pub mock: MockRef,
+    /// Its list's path, e.g. `/api/todos`.
+    pub path: String,
+    /// How many items it has now.
+    pub count: usize,
+}
+
+/// `data` of `chrome-cdp mock state --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockStateData {
+    /// With a NAME: the named value or collection shown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// With a NAME: its value, or the collection's items.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<Value>,
+    /// With a collection's NAME: the collection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collection: Option<MockCollectionInfo>,
+    /// Without a NAME: every named value (`[state]` and `set_state`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub values: BTreeMap<String, Value>,
+    /// Without a NAME: every collection, in the order they are tried.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub collections: Vec<MockCollectionInfo>,
+    /// The values `--set` changed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed: Vec<String>,
+}
+
+/// `data` of `chrome-cdp mock seed --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockSeedData {
+    /// The collection, with its new count.
+    pub collection: MockCollectionInfo,
+    /// Where the items came from: a data file (absolute), `stdin`, or
+    /// `seed` (its starting items again).
+    pub from: String,
 }

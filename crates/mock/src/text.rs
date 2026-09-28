@@ -3,7 +3,10 @@
 
 use std::fmt::Write as _;
 
-use protocol::schema::{MockExplainData, MockInfo, MockSetInfo, RoutedRequest};
+use protocol::schema::{
+    MockCollectionInfo, MockExplainData, MockInfo, MockSetInfo, MockStateData, RoutedRequest,
+};
+use serde_json::Value;
 
 /// How much of a URL a line shows.
 const SHOWN_URL: usize = 150;
@@ -16,6 +19,18 @@ pub fn set_line(set: &MockSetInfo) -> String {
         set.count,
         if set.count == 1 { "mock" } else { "mocks" }
     );
+    if set.collections > 0 {
+        let _ = write!(
+            line,
+            ", {} {}",
+            set.collections,
+            if set.collections == 1 {
+                "collection"
+            } else {
+                "collections"
+            }
+        );
+    }
     if !set.scope.is_empty() {
         let _ = write!(
             line,
@@ -152,4 +167,48 @@ pub fn explain(data: &MockExplainData, limit: usize) -> String {
         );
     }
     text.trim_end().to_owned()
+}
+
+/// `todos  4 items  /api/todos  (base.toml:30)`.
+pub fn collection_line(c: &MockCollectionInfo) -> String {
+    format!(
+        "{}  {} {}  {}  ({})",
+        c.mock.name,
+        c.count,
+        if c.count == 1 { "item" } else { "items" },
+        c.path,
+        c.mock.at
+    )
+}
+
+/// `mock state`: the named values (`name = value`), then the
+/// collections; with a NAME, its value or items as indented JSON.
+pub fn state(data: &MockStateData) -> String {
+    if let Some(value) = &data.value {
+        return serde_json::to_string_pretty(value).unwrap_or_default();
+    }
+    let mut text = String::new();
+    for (name, value) in &data.values {
+        let _ = writeln!(text, "{name} = {}", compact(value));
+    }
+    if !data.collections.is_empty() {
+        if !data.values.is_empty() {
+            text.push_str("collections:\n");
+        }
+        for c in &data.collections {
+            let _ = writeln!(text, "{}", collection_line(c));
+        }
+    }
+    text.trim_end().to_owned()
+}
+
+/// A value on one line.
+pub fn compact(value: &Value) -> String {
+    let text = value.to_string();
+    let shown: String = text.chars().take(SHOWN_URL).collect();
+    if shown.len() < text.len() {
+        format!("{shown}…")
+    } else {
+        shown
+    }
 }
