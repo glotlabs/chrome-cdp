@@ -8,6 +8,7 @@ CSS: enable, disable, getComputedStyleForNode, startRuleUsageTracking, stopRuleU
 DOM
 DOMSnapshot
 Emulation
+Extensions: loadUnpacked, getExtensions, uninstall
 Fetch
 IO
 Input

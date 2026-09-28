@@ -19,6 +19,7 @@ pub mod dom;
 pub mod dom_debugger;
 pub mod dom_snapshot;
 pub mod emulation;
+pub mod extensions;
 pub mod fetch;
 pub mod input;
 pub mod io;
