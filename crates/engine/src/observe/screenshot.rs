@@ -344,7 +344,10 @@ impl Shot<'_> {
                     let (frame, note) = (target.key.frame.clone(), target.note.clone());
                     target.release();
                     match measured? {
-                        Some(rect) => return self.element_area(rect, &frame, note).await,
+                        Some(rect) => {
+                            self.scroll_owners(rect, &frame).await?;
+                            return self.element_area(rect, &frame, note).await;
+                        }
                         None => ErrorInfo::new(
                             ErrorKind::NotFound,
                             format!("{locator} is not rendered, so it has no box to capture"),
@@ -407,6 +410,51 @@ impl Shot<'_> {
                 width,
                 height,
             }))
+    }
+
+    /// Scrolls each `<iframe>` that frame `frame` is in so that `rect`, a
+    /// box in the frame's viewport, is in view there too: an
+    /// out-of-process frame's own scroll reaches its parent only later,
+    /// after the image would be taken.
+    async fn scroll_owners(&self, rect: Area, frame: &str) -> Result<(), ErrorInfo> {
+        let frames = self.running.tabs.frames(self.page.id);
+        let mut frame = frame.to_owned();
+        let mut rect = rect;
+        while frames.iter().any(|f| f.id == frame && f.parent.is_some()) {
+            let (parent, context, owner) = self
+                .engine
+                .frame_owner(self.running, self.page, &frame, self.left())
+                .await?;
+            let session = context.session.with_timeout(self.left());
+            let scrolled = async {
+                // Where the frame's content starts in the owner's border
+                // box.
+                let [dx, dy, ..] = owner_box(&session, &owner.object_id).await?;
+                let _ = session
+                    .call(dom::ScrollIntoViewIfNeededParams {
+                        object_id: Some(owner.object_id.clone()),
+                        rect: Some(dom::Rect {
+                            x: rect.x + dx,
+                            y: rect.y + dy,
+                            width: rect.width,
+                            height: rect.height,
+                        }),
+                        ..dom::ScrollIntoViewIfNeededParams::default()
+                    })
+                    .await;
+                let [dx, dy, left, top] = owner_box(&session, &owner.object_id).await?;
+                Ok::<_, cdp::CdpError>(Area {
+                    x: left + dx + rect.x,
+                    y: top + dy + rect.y,
+                    ..rect
+                })
+            }
+            .await;
+            release(&context, owner.object_id);
+            rect = scrolled.map_err(|e| from_cdp(&e, self.session()))?;
+            frame = parent;
+        }
+        Ok(())
     }
 
     /// The capture of `rect`, a box in frame `frame`'s viewport.
@@ -844,6 +892,25 @@ impl Shot<'_> {
 
 /// Below this many image pixels per CSS pixel, text is too small to read.
 const SMALL: f64 = 0.5;
+
+/// An `<iframe>`'s content-box offset in its border box, and its border
+/// box's top-left corner in its frame's viewport: `[dx, dy, left, top]`.
+async fn owner_box(session: &cdp::Session, object_id: &str) -> cdp::Result<[f64; 4]> {
+    let mut params = runtime::CallFunctionOnParams::new(
+        "function () { const r = this.getBoundingClientRect(); const s = getComputedStyle(this);\n\
+         return [this.clientLeft + parseFloat(s.paddingLeft),\n\
+                 this.clientTop + parseFloat(s.paddingTop), r.left, r.top]; }"
+            .to_owned(),
+    );
+    params.object_id = Some(object_id.to_owned());
+    params.return_by_value = Some(true);
+    let result = session.call(params).await?;
+    Ok(result
+        .result
+        .value
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default())
+}
 
 /// Image pixels per CSS pixel for `capture`, and whether `max_size` made
 /// it smaller than `scale` asks.

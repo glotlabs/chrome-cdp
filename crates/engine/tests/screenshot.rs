@@ -254,6 +254,21 @@ async fn viewport_element_and_full_page() {
     assert!(near(image.pixel(1, 1), [0, 200, 0]));
     assert!(near(image.pixel(98, 48), [0, 200, 0]));
 
+    // One inside another site's iframe, below the fold.
+    goto(&engine, &fixtures.url("/shots/remote.html")).await;
+    let (data, _) = shoot(
+        &engine,
+        ScreenshotRequest {
+            locator: Some("frame=remote >> #inner".into()),
+            ..request()
+        },
+    )
+    .await;
+    assert_eq!((data.width, data.height), (100, 50));
+    let image = Image::load(&data.path);
+    assert!(near(image.pixel(1, 1), [0, 200, 0]));
+    assert!(near(image.pixel(98, 48), [0, 200, 0]));
+
     // An element that appears later is waited for.
     goto(&engine, &fixtures.url("/shots/index.html")).await;
     let (data, _) = shoot(

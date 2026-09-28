@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Shots: remote frame</title>
+<style>
+  html { scrollbar-width: none; }
+  body { margin: 0; }
+  /* Another site's frame (out of process), below the fold. */
+  #remote { position: absolute; left: 50px; top: 2000px; width: 240px; height: 120px; border: 0; }
+  #spacer { height: 2400px; }
+</style>
+</head>
+<body>
+<iframe id="remote" name="remote" src="{{ORIGIN_B}}/shots/frame.html"></iframe>
+<div id="spacer"></div>
+</body>
+</html>
