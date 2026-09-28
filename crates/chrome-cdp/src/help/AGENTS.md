@@ -11,6 +11,8 @@ real Chrome, one shell command per step.
 - After a navigation, run `snapshot -i` again: the old refs are stale.
 - Never `sleep`: use `chrome-cdp wait --text 'Saved'`, `wait <locator>` or
   `wait --url /path`.
+- Verify with `chrome-cdp expect <locator> text 'Saved'` (or `visible`,
+  `count 3`, `--no-errors`): it retries, and a failure says what it saw.
 - When stuck, run the command in the error's `hint:` line, and check
   `chrome-cdp errors`, `chrome-cdp console` and `chrome-cdp screenshot`.
 - `chrome-cdp close` when done. Full guide: `chrome-cdp skill`; reference:

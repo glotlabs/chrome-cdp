@@ -1,6 +1,6 @@
 ---
 name: chrome-cdp
-description: Drive a real Chrome browser from the shell with chrome-cdp. Open pages, read them as an accessibility tree with refs, click, fill and type, check console errors and network requests, take screenshots, mock requests. Use it to look at, operate, test or debug a web page or web app.
+description: Drive a real Chrome browser from the shell with chrome-cdp. Open pages, read them as an accessibility tree with refs, click, fill and type, check console errors and network requests, assert what the page shows, take screenshots, mock requests. Use it to look at, operate, test or debug a web page or web app.
 ---
 
 # chrome-cdp
@@ -36,7 +36,10 @@ browser, tabs and refs between commands. Output is compact text; add
 6. **When stuck**: read the error's `hint:` line (it names the next
    command), then `chrome-cdp errors`, `console`, `network --failed`, or
    `screenshot` (prints the PNG path; look at the image).
-7. **Done**: `chrome-cdp close`.
+7. **Verify**: `chrome-cdp expect 'role=alert' text Saved`, `expect e6
+   visible`, `expect '.row' count 3`, `expect --no-errors`. It retries
+   for 5s, and a failure (exit 1) says what it saw instead.
+8. **Done**: `chrome-cdp close`.
 
 ## Locators
 
@@ -82,6 +85,8 @@ select <loc> <value>           a <select> option
 check | uncheck <loc>          checkboxes and radios
 upload <loc> <file...>         file inputs
 wait <loc> | --text t | --url u | --idle
+expect <loc> visible|text t|value v|count n [--not]   assert, retrying
+expect --url u | --no-errors | --no-failed-requests | --a11y
 screenshot [loc] [--full] [-o f.png]
 errors | console | network [--failed]
 eval '<js>'                    run JavaScript, print the value

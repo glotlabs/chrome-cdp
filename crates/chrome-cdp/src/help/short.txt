@@ -15,6 +15,7 @@ Act        click <loc>          wait until it can be clicked, then click
            press <keys>         keys and shortcuts: Enter, Control+A
            select <loc> <val>   choose options of a <select>
 Check      wait <cond>          an element, --text, --url, --idle, …
+           expect <loc> <m>     assert: visible, text Saved, count 3, …
            errors               uncaught exceptions and failed loads
            eval <js>            run JavaScript and print its value
 Script     batch                run commands from stdin, one per line
