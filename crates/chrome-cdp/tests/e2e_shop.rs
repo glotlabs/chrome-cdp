@@ -169,3 +169,43 @@ fn the_shop_is_formatted_and_lints_clean() {
         stdout(&out)
     );
 }
+
+/// The paths below `path` (itself if it is a file), relative to `root`
+/// with `/` separators.
+fn files(root: &Path, path: &Path) -> Vec<String> {
+    if path.is_file() {
+        let relative = path.strip_prefix(root).unwrap();
+        let parts: Vec<_> = relative.iter().map(|p| p.to_string_lossy()).collect();
+        return vec![parts.join("/")];
+    }
+    std::fs::read_dir(path)
+        .unwrap()
+        .flat_map(|entry| files(root, &entry.unwrap().path()))
+        .collect()
+}
+
+#[test]
+fn the_committed_dist_is_built_from_the_current_sources() {
+    // What vite.config.js's `sourcesHash` computes: FNV-1a over each
+    // source's path, a NUL, its bytes and a NUL, in path order.
+    let root = example();
+    let mut paths: Vec<String> = ["index.html", "package-lock.json", "vite.config.js", "src"]
+        .iter()
+        .flat_map(|p| files(&root, &root.join(p)))
+        .collect();
+    paths.sort();
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for path in paths {
+        let bytes = std::fs::read(root.join(&path)).unwrap();
+        for byte in path.bytes().chain([0]).chain(bytes).chain([0]) {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0100_0000_01b3);
+        }
+    }
+    let recorded = std::fs::read_to_string(root.join("dist/sources.txt")).unwrap();
+    assert_eq!(
+        recorded.trim(),
+        format!("{hash:016x}"),
+        "examples/e2e-shop/dist is out of date: run `npm ci && npm run build` there"
+    );
+}

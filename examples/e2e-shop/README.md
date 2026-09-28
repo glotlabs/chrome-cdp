@@ -14,7 +14,9 @@ chrome-cdp test --repeat 20          # check for flaky tests before a commit
 The built app (`dist/`) is committed, and `chrome-cdp test` serves it
 itself (`static = "dist"` in `chrome-cdp.toml`), so a fresh clone needs
 nothing but chrome-cdp. After changing `src/`, run `npm install` once
-and `npm run build`.
+and `npm run build`; the build also writes a hash of its sources to
+`dist/sources.txt`, and a test of the repository fails when `dist/` is
+older than them.
 
 ## What it covers
 
