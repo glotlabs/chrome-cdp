@@ -20,8 +20,9 @@ for a human watching (`highlight`, `inspect`), mocking and blocking requests
 (`emulate`, `viewport`, `geo`, `tz`, `locale`, `ua`, `media`, `offline`,
 `throttle`, `cpu-throttle`, `time`, `permissions`), scripts and functions
 for every page (`init-script`, `expose`, `unexpose`), cookies, storage and
-saved logins (`cookies`, `storage`, `state`), raw CDP calls,
-`install`/`uninstall` and `schema` work so far:
+saved logins (`cookies`, `storage`, `state`), raw CDP calls, scripts
+(`batch`, `run`), `install`/`uninstall`, and help for people and agents
+(`help`, `skill`, `completions`, `schema`) work so far:
 
 ```sh
 chrome-cdp install                    # Chrome for Testing, if there is no Chrome
@@ -505,6 +506,21 @@ click 'role=button[name="Sign in"]'
 wait --url /dashboard
 EOF
 ```
+
+`chrome-cdp --help` fits on one screen: the commands most tasks need, by
+task, and the locator grammar. `help commands` lists every command, `help
+<command>` shows one in full (each has examples), and `help
+locators|refs|waiting|errors|config|scripts` explain the ideas behind them.
+A mistyped command, flag, key, device or topic gets a "did you mean" and a
+hint with the corrected command line.
+
+For agents, `chrome-cdp skill` prints a `SKILL.md` (Claude Code and other
+Agent Skills clients) that teaches the workflow, the usual pitfalls and a
+cheat sheet in about 1,100 tokens. `skill --install` writes it to the
+project's `.claude/skills/chrome-cdp/`, `skill --install --user` to
+`~/.claude/skills/chrome-cdp/`. `skill --format agents-md` prints a section
+for `AGENTS.md`, and `skill --format llms-txt` an `llms.txt`. `completions
+bash|zsh|fish|elvish|powershell` prints a shell completion script.
 
 ## Development
 

@@ -1,7 +1,9 @@
 Waiting: chrome-cdp waits for you, so never sleep
 
-- Navigation (open, goto, back, forward, reload) waits for the page's load
-  event; --wait domcontentloaded|load|commit changes that.
+- Navigation (open, goto, back, forward, reload) waits for the load event,
+  then for the page to settle (no requests for 500ms, no DOM changes for
+  300ms, 5s at most); --wait load|domcontentloaded|networkidle|commit|none
+  waits for less.
 - Every action (click, fill, select, check, …) first waits until its
   element is attached, visible, stable, enabled and not covered, then
   acts, then waits for what it caused (a navigation, the requests it sent)
