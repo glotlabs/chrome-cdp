@@ -1,0 +1,7 @@
+# Fails on its first try, when the marker file is missing; @after writes
+# it, so the retry passes.
+@after
+  state save flaky-marker.json
+
+@test "passes on the second try" @retries 1
+  state load flaky-marker.json

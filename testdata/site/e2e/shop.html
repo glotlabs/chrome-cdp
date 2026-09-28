@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Shop</title>
+<!-- The page of chrome-cdp test's fixture suite (testdata/e2e): its API
+     is mocked by the suite's mock sets, never served. -->
+<h1>Shop</h1>
+<p id="price">Loading…</p>
+<form id="add">
+  <label>New todo <input name="title"></label>
+  <button>Add</button>
+</form>
+<ul id="list"></ul>
+<script>
+  const list = document.getElementById("list");
+  async function load() {
+    const todos = await (await fetch("/e2e/api/todos")).json();
+    list.replaceChildren(...todos.map((t) => {
+      const li = document.createElement("li");
+      li.textContent = t.title;
+      return li;
+    }));
+  }
+  document.getElementById("add").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = e.target.elements.title;
+    const title = input.value;
+    input.value = "";
+    await fetch("/e2e/api/todos", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title, done: false }),
+    });
+    await load();
+  });
+  fetch("/e2e/api/price")
+    .then((r) => r.json())
+    .then((p) => { document.getElementById("price").textContent = `Price: ${p.price}`; });
+  load();
+</script>

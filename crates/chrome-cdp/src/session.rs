@@ -1545,8 +1545,12 @@ fn read_state(path: &Path, session: &str) -> Result<StateLoadRequest, ErrorInfo>
 /// Routes belong to the session: a `--tab` is no scope for them.
 fn every_tab(output: Output, ctx: &Ctx, what: &str) -> Output {
     if ctx.tab.is_some() {
+        let whose = ctx.context.as_ref().map_or_else(
+            || "the session".to_owned(),
+            |context| format!("context {context}"),
+        );
         output.warning(format!(
-            "{what} apply to every tab of the session; --tab is ignored"
+            "{what} apply to every tab of {whose}; --tab is ignored"
         ))
     } else {
         output

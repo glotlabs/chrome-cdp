@@ -1,0 +1,3 @@
+@test "has a typo"
+  goto /e2e/shop.html
+  clik text=Add

@@ -500,6 +500,31 @@ const CASES: &[Case] = &[
         fixture: Fixture::NoSessions,
     },
     Case {
+        name: "test-list",
+        args: &["test", "--list"],
+        modes: ALL,
+        fixture: Fixture::Project(&[
+            ("chrome-cdp.toml", "[e2e]\ntests = [\"e2e/**/*.cdp\"]\n"),
+            (
+                "e2e/cart.cdp",
+                "@tags cart\n\n@test \"adds an item\"\n  goto /\n\n@test \"checks out\" @skip \"no payments yet\"\n",
+            ),
+        ]),
+    },
+    Case {
+        name: "test-bad-scenario",
+        args: &["test"],
+        modes: ERR,
+        fixture: Fixture::Project(&[
+            ("chrome-cdp.toml", "[e2e]\ntests = [\"e2e/**/*.cdp\"]\n"),
+            (
+                "e2e/cart.cdp",
+                "@test \"adds an item\"\n  goto /\n  @include missing.cdp\n",
+            ),
+            ("e2e/login.cdp", "@test \"logs in\"\n  clik text=Login\n"),
+        ]),
+    },
+    Case {
         name: "context-new",
         args: &["context", "new", "data:text/html,<title>Own</title>"],
         modes: ALL,

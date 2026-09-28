@@ -1,0 +1,4 @@
+# Adds a todo on the shop page: @include steps/add.cdp title=…
+fill 'label=New todo' ${title}
+press Enter
+expect text=${title} visible

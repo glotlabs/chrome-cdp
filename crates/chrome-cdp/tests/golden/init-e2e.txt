@@ -7,7 +7,7 @@ created  <tmp>/app/e2e/mocks/base.toml
 created  <tmp>/app/e2e/mocks/data/items.json
 created  <tmp>/app/.github/workflows/e2e.yml
 created  <tmp>/app/.gitignore                 e2e/.results/
-next: start the app, then chrome-cdp open / opens http://localhost:5173
+next: chrome-cdp test starts the app and runs the example scenario
 
 $ chrome-cdp init e2e --json
 exit: 0

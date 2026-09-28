@@ -1,0 +1,14 @@
+# The shop page's API (testdata/site/e2e/shop.html): a price and a todo
+# collection that starts from two items in every test.
+[settings]
+scope = ["/e2e/api/**"]
+
+[[mock]]
+name = "price"
+match = { method = "GET", path = "/e2e/api/price" }
+respond = { json = { price = 49 } }
+
+[[collection]]
+name = "todos"
+path = "/e2e/api/todos"
+seed = "data/todos.json"

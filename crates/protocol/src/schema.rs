@@ -654,6 +654,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(StepLine),
     },
     CommandSchema {
+        name: "test",
+        summary: "every test of the run with its result, and the counts; on failure the same data is the error's details",
+        schema: || schema_for!(Envelope<TestRunData>),
+    },
+    CommandSchema {
         name: "convert",
         summary: "the .cdp script translated from a Playwright test file, and its TODO lines",
         schema: || schema_for!(Envelope<ConvertData>),
@@ -3484,4 +3489,74 @@ pub struct MockSeedData {
     /// Where the items came from: a data file (absolute), `stdin`, or
     /// `seed` (its starting items again).
     pub from: String,
+}
+
+/// `data` of `chrome-cdp test --json` (and `details` of its error when a
+/// test failed).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TestRunData {
+    /// The tests of the run, in the order they were selected.
+    pub tests: Vec<TestResult>,
+    pub passed: usize,
+    pub failed: usize,
+    /// Failed, then passed on a retry: they count as passing, and are
+    /// always reported.
+    pub flaky: usize,
+    pub skipped: usize,
+    /// Not run: `--bail` stopped the run, or it was interrupted.
+    pub not_run: usize,
+    /// How long the run took (0 for `--list`).
+    pub duration_ms: u64,
+    /// `--shard`, as given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard: Option<String>,
+    /// `--list`: the tests were listed, not run.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub listed: bool,
+}
+
+/// One test of `chrome-cdp test`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TestResult {
+    /// The scenario file, relative to the current directory.
+    pub file: String,
+    /// The line of its `@test`; `file:line` runs it alone.
+    pub line: u32,
+    pub name: String,
+    /// `passed`, `failed`, `flaky`, `skipped`, `not-run`, or `listed`
+    /// (`--list`).
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    /// How long its last try took.
+    #[serde(default)]
+    pub duration_ms: u64,
+    /// How many times it ran (1 without retries).
+    #[serde(default)]
+    pub tries: u32,
+    /// Why it was skipped (`@skip`) or not run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Why it failed (its last try; a flaky test's first failure).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<TestFailure>,
+}
+
+/// The step a test failed at, and its error.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TestFailure {
+    /// `file:line:col` of the step (in a step file for an `@include`d
+    /// one).
+    pub at: String,
+    /// The step as written.
+    pub step: String,
+    /// `before`, `after`, `before-all` or `after-all` for a hook's step;
+    /// absent for the test's own and the runner's (`setup`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hook: Option<String>,
+    /// The `@include` lines the step came through, outermost first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub via: Vec<String>,
+    /// The step's error.
+    pub error: ErrorInfo,
 }

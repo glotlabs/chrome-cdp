@@ -1,0 +1,5 @@
+@test "runs" @only
+  goto /e2e/shop.html
+
+@test "does not run"
+  expect text=Nowhere visible --timeout 100ms

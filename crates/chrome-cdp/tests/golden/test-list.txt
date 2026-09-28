@@ -1,0 +1,18 @@
+$ chrome-cdp test --list
+exit: 0
+--- stdout
+e2e/cart.cdp:3 adds an item [cart]
+e2e/cart.cdp:6 checks out [cart] (skipped: no payments yet)
+2 tests (1 skipped)
+
+$ chrome-cdp test --list --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"duration_ms":0,"failed":0,"flaky":0,"listed":true,"not_run":0,"passed":0,"skipped":1,"tests":[{"duration_ms":0,"file":"e2e/cart.cdp","line":3,"name":"adds an item","status":"listed","tags":["cart"],"tries":<n>},{"duration_ms":0,"file":"e2e/cart.cdp","line":6,"name":"checks out","reason":"no payments yet","status":"skipped","tags":["cart"],"tries":<n>}]}}
+
+$ chrome-cdp test --list -q
+exit: 0
+--- stdout
+e2e/cart.cdp:3
+e2e/cart.cdp:6
+

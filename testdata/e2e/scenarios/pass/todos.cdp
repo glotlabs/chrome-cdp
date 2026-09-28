@@ -1,0 +1,20 @@
+# The todo list on the shop page's mocked collection: every test starts
+# from the seed's two items, whatever the others did.
+@tags todos
+
+@before
+  goto /e2e/shop.html
+  expect 'role=listitem' count 2
+
+@test "adds a todo"
+  fill 'label=New todo' Milk
+  press Enter
+  expect 'role=listitem' count 3
+  expect mock-state todos count 3
+
+@test "adds a todo through a step file"
+  @include ../../steps/add.cdp title=Bread
+  expect 'role=listitem' count 3
+
+@test "starts from the seed again" @tags smoke
+  expect mock-state todos count 2

@@ -1,0 +1,11 @@
+# A suite with a failing and a skipped test.
+@before
+  goto /e2e/shop.html
+
+@test "passes"
+  expect text='Price: 49' visible
+
+@test "fails on a missing element"
+  expect text=Nowhere visible --timeout 500ms
+
+@test "is skipped" @skip "not ready"

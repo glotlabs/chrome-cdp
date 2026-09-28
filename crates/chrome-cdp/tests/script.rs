@@ -131,7 +131,7 @@ fn lines_are_checked_against_the_commands() {
 
     let err = check("batch\n");
     assert!(
-        err.starts_with("error: <stdin>:1:1: batch and run cannot run inside a script\n"),
+        err.starts_with("error: <stdin>:1:1: batch, run and test cannot run inside a script\n"),
         "{err}"
     );
     let err = check("@test login\n  goto /\n");

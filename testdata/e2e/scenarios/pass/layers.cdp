@@ -1,0 +1,23 @@
+# Mock sets layered per test, a viewport per test, and file-wide hooks.
+@before-all
+  goto /e2e/shop.html
+  eval "document.cookie = 'user=ada; path=/'"
+  state save hooks-state.json
+
+@before
+  state load hooks-state.json
+  goto /e2e/shop.html
+
+@test "the regular price" @tags smoke
+  expect text='Price: 49' visible
+
+@test "a sale price from a layered set"
+  @mocks sale
+  expect text='Price: 39' visible
+
+@test "a phone's viewport"
+  @viewport 390x844
+  eval "if (innerWidth !== 390) throw new Error('width ' + innerWidth)"
+
+@test "the state the @before-all saved"
+  eval "if (!document.cookie.includes('user=ada')) throw new Error(document.cookie)"

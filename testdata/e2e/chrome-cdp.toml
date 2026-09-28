@@ -1,0 +1,8 @@
+# The fixture project of `chrome-cdp test`'s integration tests
+# (crates/chrome-cdp/tests/e2e.rs). The tests copy it to a temp dir and
+# add base_url, the fixture site's origin.
+[e2e]
+tests = ["scenarios/pass/**/*.cdp"]
+mocks = "mocks"
+default_mocks = ["shop"]
+jobs = 2

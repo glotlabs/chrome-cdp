@@ -119,6 +119,7 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
             "expect-screenshot",
             "mark",
             "init",
+            "test",
         ],
     ),
     (

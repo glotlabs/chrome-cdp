@@ -1,0 +1,12 @@
+$ chrome-cdp test
+exit: 2
+--- stderr
+error: e2e/cart.cdp:3:12: cannot read <tmp>/app/e2e/missing.cdp: No such file or directory (os error 2)
+  also: e2e/login.cdp:2:3: unrecognized subcommand 'clik'
+  hint: @include paths are relative to the file that includes them
+
+$ chrome-cdp test --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"e2e/cart.cdp:3:12: cannot read <tmp>/app/e2e/missing.cdp: No such file or directory (os error 2)","hint":"@include paths are relative to the file that includes them","notes":[{"label":"also","text":"e2e/login.cdp:2:3: unrecognized subcommand 'clik'"}],"details":{"problems":[{"at":"e2e/cart.cdp:3:12","message":"cannot read <tmp>/app/e2e/missing.cdp: No such file or directory (os error 2)"},{"at":"e2e/login.cdp:2:3","message":"unrecognized subcommand 'clik'"}]}}}
+

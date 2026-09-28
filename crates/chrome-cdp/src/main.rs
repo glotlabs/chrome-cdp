@@ -30,6 +30,7 @@ mod schema;
 mod script;
 mod session;
 mod skill;
+mod test;
 mod version;
 
 use cli::{Cli, ClipboardCommand, Command};
@@ -59,10 +60,19 @@ fn main() -> ExitCode {
     if let Err(info) = config::apply(&mut cli.global, &matches) {
         return ExitCode::from(output::print(mode, Err(info)));
     }
-    // `batch` and `run` print each step as it ends.
+    // `batch`, `run` and `test` print each step or test as it ends.
     match &cli.command {
         Some(Command::Batch(args)) => return ExitCode::from(script::batch(args, &cli.global)),
         Some(Command::Run(args)) => return ExitCode::from(script::run(args, &cli.global)),
+        Some(Command::Test(args)) => {
+            let explicit = matches!(
+                matches.value_source("session"),
+                Some(
+                    clap::parser::ValueSource::CommandLine | clap::parser::ValueSource::EnvVariable
+                )
+            );
+            return ExitCode::from(test::run(args, &cli.global, explicit));
+        }
         _ => {}
     }
     ExitCode::from(output::print(mode, run(cli)))
@@ -407,9 +417,9 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         ),
         // Handled in `main`; a script cannot hold them (`script` checks).
         Some(Command::Daemon(_)) => Ok(Output::new(serde_json::Value::Null, "")),
-        Some(Command::Batch(_) | Command::Run(_)) => Err(ErrorInfo::new(
+        Some(Command::Batch(_) | Command::Run(_) | Command::Test(_)) => Err(ErrorInfo::new(
             ErrorKind::BadArgs,
-            "batch and run cannot run inside a script",
+            "batch, run and test cannot run inside a script",
         )),
     }
 }

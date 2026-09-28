@@ -36,7 +36,7 @@ pub(crate) struct Cli {
 }
 
 /// Flags every command accepts.
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 pub(crate) struct GlobalArgs {
     /// Print one JSON object on stdout: {"ok":true,"data":…} or {"ok":false,"error":…}.
     #[arg(
@@ -270,6 +270,38 @@ Examples:
   chrome-cdp context close c1
   chrome-cdp context close --all")]
     Context(ContextArgs),
+
+    /// Run the project's E2E scenarios, each test in a fresh browser
+    /// context with its mocks.
+    #[command(after_help = "\
+Finds the scenarios by the `tests` globs of [e2e] in chrome-cdp.toml
+(default e2e/scenarios/**/*.cdp), starts the [e2e.web_server]s unless
+something already answers on their URLs, and opens a browser session of
+its own. Every test gets a fresh browser context: its own cookies,
+storage, routes and mock sets (default_mocks, then the file's and the
+test's @mocks), so tests cannot leak into each other. `--jobs N` runs N
+tests at once in one Chrome; a test that fails, then passes on a retry,
+is reported as flaky. Exit code 0: every test passed; 1: a test failed.
+A scenario that does not check (bad syntax, unknown command, missing
+@include) fails before any test runs, with exit code 2.
+
+Scenario syntax (docs/e2e/scenarios.md):
+  @mocks base checkout          # file settings: @mocks @tags @skip @only
+  @before                       #   @timeout @viewport @device @retries
+    goto /
+  @test \"adds an item\" @tags smoke
+    click text=Add
+    expect text=1 item visible
+  @test \"logs in\"
+    @include ../steps/login.cdp email=a@example.com
+
+Examples:
+  chrome-cdp test
+  chrome-cdp test e2e/scenarios/checkout.cdp:12     # the test at line 12
+  chrome-cdp test --grep cart --tags smoke,!slow
+  chrome-cdp test --jobs 4 --shard 2/4 --retries 1
+  chrome-cdp test --list")]
+    Test(TestArgs),
 
     /// Load a URL in the current tab and wait for it.
     #[command(after_help = "\
@@ -4777,6 +4809,72 @@ pub(crate) struct TabsArgs {
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct TestArgs {
+    /// Scenario files or folders, or FILE:LINE for the test at that line.
+    /// Default: the config's `tests` globs.
+    #[arg(value_name = "PATH")]
+    pub(crate) paths: Vec<String>,
+
+    /// Only the tests whose `file > name` matches this regular expression.
+    #[arg(long, value_name = "REGEX")]
+    pub(crate) grep: Option<String>,
+
+    /// Only tests with one of these tags; `!tag` leaves a tag out, e.g.
+    /// smoke,!slow.
+    #[arg(long, value_name = "TAGS", allow_hyphen_values = true)]
+    pub(crate) tags: Option<String>,
+
+    /// How many tests run at once. Default: `jobs` in the config, else 1.
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
+    pub(crate) jobs: Option<u32>,
+
+    /// Where the tests run at once: in browser contexts of one Chrome
+    /// (the default), or in a Chrome each.
+    #[arg(long, value_enum, value_name = "HOW", default_value_t = JobsIsolation::Context)]
+    pub(crate) jobs_isolation: JobsIsolation,
+
+    /// Run only part INDEX of TOTAL near-equal parts, e.g. 2/4 (for CI
+    /// machines that split a suite).
+    #[arg(long, value_name = "INDEX/TOTAL")]
+    pub(crate) shard: Option<String>,
+
+    /// Run a failed test again up to N times. Default: `retries` in the
+    /// config, else 0; a test's @retries wins.
+    #[arg(long, value_name = "N")]
+    pub(crate) retries: Option<u32>,
+
+    /// Stop after the first failed test.
+    #[arg(long)]
+    pub(crate) bail: bool,
+
+    /// Show a browser window.
+    #[arg(long)]
+    pub(crate) headed: bool,
+
+    /// Write the baselines of expect-snapshot and expect-screenshot steps
+    /// (in e2e/snapshots) instead of comparing with them.
+    #[arg(long)]
+    pub(crate) update_snapshots: bool,
+
+    /// List the tests the run would have, without running them.
+    #[arg(long)]
+    pub(crate) list: bool,
+
+    /// Bound the JSON output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 200_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+/// `test --jobs-isolation`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum JobsIsolation {
+    /// A browser context each, in one Chrome.
+    Context,
+    /// A Chrome (a session) each.
+    Browser,
 }
 
 #[derive(Debug, Args)]

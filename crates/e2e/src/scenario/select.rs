@@ -172,6 +172,18 @@ pub struct Filter {
 }
 
 impl Filter {
+    /// `--grep`: a regular expression.
+    pub fn set_grep(&mut self, pattern: &str) -> Result<(), ErrorInfo> {
+        let re = Regex::new(pattern).map_err(|e| {
+            ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("--grep is not a regular expression: {e}"),
+            )
+        })?;
+        self.grep = Some(re);
+        Ok(())
+    }
+
     /// `--tags smoke,!slow`.
     pub fn set_tags(&mut self, list: &str) {
         for tag in list.split(',').map(str::trim).filter(|t| !t.is_empty()) {

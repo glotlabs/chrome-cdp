@@ -1,0 +1,5 @@
+# Layered onto shop: a lower price.
+[[mock]]
+name = "sale price"
+match = { method = "GET", path = "/e2e/api/price" }
+respond = { json = { price = 39 } }

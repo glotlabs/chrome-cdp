@@ -86,17 +86,20 @@ fn execute(
 }
 
 /// A checked step, ready to run.
-struct Step {
-    cli: Cli,
-    span: Span,
+pub(crate) struct Step {
+    pub(crate) cli: Cli,
+    pub(crate) span: Span,
     /// The line as written.
-    text: String,
+    pub(crate) text: String,
+    /// The words, variables filled in: [`command`] makes the step's
+    /// [`Cli`] again from them.
+    pub(crate) words: Vec<String>,
 }
 
 /// A problem found while checking a script.
-struct Problem {
-    span: Span,
-    info: ErrorInfo,
+pub(crate) struct Problem {
+    pub(crate) span: Span,
+    pub(crate) info: ErrorInfo,
 }
 
 impl From<ScriptError> for Problem {
@@ -191,7 +194,7 @@ pub(crate) fn check(src: &str) -> Result<Vec<String>, Vec<String>> {
 /// Expands and checks one command line.
 // Checked once per line before anything runs; the size does not matter.
 #[allow(clippy::result_large_err)]
-fn step(line: &Line, vars: &dyn Resolve, global: &GlobalArgs) -> Result<Step, Problem> {
+pub(crate) fn step(line: &Line, vars: &dyn Resolve, global: &GlobalArgs) -> Result<Step, Problem> {
     let words = line
         .words
         .iter()
@@ -213,11 +216,11 @@ fn step(line: &Line, vars: &dyn Resolve, global: &GlobalArgs) -> Result<Step, Pr
                     .hint(Hint::text("start the line with a command, e.g. goto")),
             ));
         }
-        Some(Command::Batch(_) | Command::Run(_) | Command::Daemon(_)) => {
+        Some(Command::Batch(_) | Command::Run(_) | Command::Test(_) | Command::Daemon(_)) => {
             return Err(problem(
                 ErrorInfo::new(
                     ErrorKind::BadArgs,
-                    "batch and run cannot run inside a script",
+                    "batch, run and test cannot run inside a script",
                 )
                 .hint(Hint::text("put the other script's lines in this one")),
             ));
@@ -238,7 +241,20 @@ fn step(line: &Line, vars: &dyn Resolve, global: &GlobalArgs) -> Result<Step, Pr
         cli,
         span: line.span.clone(),
         text: line.text.clone(),
+        words,
     })
+}
+
+/// The [`Cli`] of a checked step's `words` again (a step that runs more
+/// than once needs a fresh one each time), with `global`'s flags except
+/// those the line sets.
+pub(crate) fn command(words: &[String], global: &GlobalArgs) -> Result<Cli, ErrorInfo> {
+    let matches = Cli::command()
+        .try_get_matches_from(std::iter::once(protocol::PROGRAM.to_owned()).chain(words.to_vec()))
+        .map_err(|e| crate::usage_info(&e, words))?;
+    let mut cli = Cli::from_arg_matches(&matches).map_err(|e| crate::usage_info(&e, words))?;
+    inherit(&mut cli.global, &matches, global);
+    Ok(cli)
 }
 
 /// A clap error about a line, in the §3 form. A bare `#word` that became a
@@ -298,6 +314,10 @@ fn check_locators(matches: &ArgMatches) -> Result<(), ErrorInfo> {
             }
             if let Ok(Some(values)) = matches.try_get_raw(arg.get_id().as_str()) {
                 for value in values.filter_map(|v| v.to_str()) {
+                    // `expect mock-state <name> …` checks no element.
+                    if name == "expect" && value == "mock-state" {
+                        continue;
+                    }
                     engine::parse_locator(value)?;
                 }
             }
@@ -333,7 +353,7 @@ fn inherit(step: &mut GlobalArgs, matches: &ArgMatches, script: &GlobalArgs) {
 
 /// The one error for a script that did not start: the first problem, the
 /// others as notes, and all of them in `details`.
-fn invalid(problems: Vec<Problem>) -> ErrorInfo {
+pub(crate) fn invalid(problems: Vec<Problem>) -> ErrorInfo {
     let details = json!({
         "problems": problems
             .iter()
@@ -376,7 +396,9 @@ fn run_steps(steps: Vec<Step>, keep_going: bool, mode: Mode) -> u8 {
     let mut exit = 0;
     for (index, step) in steps.into_iter().enumerate() {
         let n = index + 1;
-        let Step { cli, span, text } = step;
+        let Step {
+            cli, span, text, ..
+        } = step;
         let step_mode = if mode == Mode::Json {
             Mode::Json
         } else {

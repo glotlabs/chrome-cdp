@@ -49,9 +49,9 @@ fn text(data: &InitData) -> String {
     let mut text = format::table(&rows);
     text.push('\n');
     let next = match (&data.base_url, &data.web_server) {
-        (Some(url), Some(_)) => format!(
-            "next: start the app, then {} opens {url}",
-            Cmd::new("open").arg("/")
+        (Some(_), Some(_)) => format!(
+            "next: {} starts the app and runs the example scenario",
+            Cmd::new("test")
         ),
         (Some(_), None) => format!(
             "next: set [e2e.web_server] in {} to the command that serves the app",
@@ -94,5 +94,16 @@ mod tests {
             assert!(steps.len() >= 2, "{steps:?}");
         }
         assert_eq!(tests, 1);
+    }
+
+    /// `chrome-cdp test` reads the example scenario.
+    #[test]
+    fn the_example_scenario_loads() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("example.cdp");
+        std::fs::write(&path, e2e::init::SCENARIO).unwrap();
+        let scenario =
+            e2e::scenario::load(&path, "example.cdp").unwrap_or_else(|e| panic!("{e:?}"));
+        assert_eq!(scenario.tests.len(), 1);
     }
 }
