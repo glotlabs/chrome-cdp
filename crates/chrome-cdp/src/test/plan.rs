@@ -70,6 +70,8 @@ pub(super) struct Plan {
     pub(super) jobs: u32,
     /// Retries of a test without its own `@retries`.
     pub(super) retries: u32,
+    /// How many times each test runs (`--repeat`; 1 without).
+    pub(super) repeat: u32,
     /// `expect-snapshot` baselines' directory.
     pub(super) snapshots: PathBuf,
     /// What every test's context gets before its steps (11.6).
@@ -191,6 +193,7 @@ impl Plan {
         }
         let jobs = args.jobs.unwrap_or_else(|| config.jobs.count()).max(1);
         let retries = args.retries.unwrap_or(config.retries);
+        let repeat = args.repeat.unwrap_or(1);
         let snapshots = config.root.join(SNAPSHOTS);
         let determinism = config.determinism.resolve();
         Ok(Self {
@@ -200,6 +203,7 @@ impl Plan {
             tests,
             jobs,
             retries,
+            repeat,
             snapshots,
             determinism,
         })
@@ -210,8 +214,12 @@ impl Plan {
         settings.timeout.unwrap_or(self.config.timeout)
     }
 
-    /// Test `test`'s retries.
+    /// Test `test`'s retries: none with `--repeat`, whose point is to see
+    /// the failures retries would hide.
     pub(super) fn retries(&self, test: &Planned) -> u32 {
+        if self.repeat > 1 {
+            return 0;
+        }
         test.settings.retries.unwrap_or(self.retries)
     }
 }

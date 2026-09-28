@@ -23,7 +23,13 @@ fn place(plan: &Plan, test: &Planned) -> String {
 /// The text of one test's result, as it ends.
 pub(super) fn line(plan: &Plan, test: &Planned, outcome: &Outcome) -> String {
     let place = place(plan, test);
-    let took = format::duration(outcome.duration);
+    let mut took = format::duration(outcome.duration);
+    if plan.repeat > 1 && matches!(outcome.status, Status::Passed | Status::Failed) {
+        took = match outcome.failed_runs.unwrap_or(0) {
+            0 => format!("{} runs, slowest {took}", plan.repeat),
+            failed => format!("failed {failed} of {} runs, slowest {took}", plan.repeat),
+        };
+    }
     let mut text = match outcome.status {
         Status::Passed => format!("✓ {place} {} ({took})\n", test.name),
         Status::Flaky => format!(
@@ -46,6 +52,8 @@ pub(super) fn line(plan: &Plan, test: &Planned, outcome: &Outcome) -> String {
     if let Some(failure) = &outcome.failure {
         let label = if outcome.status == Status::Flaky {
             "first try failed"
+        } else if plan.repeat > 1 {
+            "first failure"
         } else {
             "failed"
         };
@@ -101,6 +109,7 @@ pub(super) fn data(
         duration_ms: u64::try_from(duration.as_millis()).unwrap_or(u64::MAX),
         shard: shard.map(str::to_owned),
         listed: false,
+        repeat: (plan.repeat > 1).then_some(plan.repeat),
     }
 }
 
@@ -121,6 +130,7 @@ fn result(plan: &Plan, test: &Planned, outcome: &Outcome) -> TestResult {
         duration_ms: u64::try_from(outcome.duration.as_millis()).unwrap_or(u64::MAX),
         tries: outcome.tries,
         reason: outcome.reason.clone(),
+        failed_runs: outcome.failed_runs,
         error: outcome.failure.as_deref().cloned(),
     }
 }
@@ -182,11 +192,12 @@ pub(super) fn finish(
             format!("{} more (see --json)", failed.len() - LISTED),
         );
     }
+    let mut again = Cmd::new("test").arg(place(plan, first));
+    if plan.repeat > 1 {
+        again = again.flag("repeat", plan.repeat.to_string());
+    }
     Err(info
-        .hint(
-            Hint::run(Cmd::new("test").arg(place(plan, first)))
-                .why("runs the first failed test again"),
-        )
+        .hint(Hint::run(again).why("runs the first failed test again"))
         .details(json!(data)))
 }
 
@@ -221,6 +232,7 @@ pub(super) fn listed(plan: &Plan, shard: Option<&str>, max_chars: usize) -> Outp
             duration_ms: 0,
             tries: 0,
             reason: test.skipped().map(str::to_owned),
+            failed_runs: None,
             error: None,
         });
     }
@@ -247,6 +259,7 @@ pub(super) fn listed(plan: &Plan, shard: Option<&str>, max_chars: usize) -> Outp
         duration_ms: 0,
         shard: shard.map(str::to_owned),
         listed: true,
+        repeat: None,
     };
     Output::typed(&data, text)
         .quiet(quiet.join("\n"))

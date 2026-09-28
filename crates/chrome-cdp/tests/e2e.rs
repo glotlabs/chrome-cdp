@@ -469,3 +469,61 @@ fn tests_see_a_frozen_clock_seeded_random_values_and_no_animations() {
     let out = project.test(&["scenarios/determinism-off"]);
     assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
 }
+
+#[test]
+fn repeat_runs_each_test_and_fails_a_flaky_one() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let out = project.test(&["scenarios/determinism", "--repeat", "3", "--jobs", "4"]);
+    let text = stdout(&out);
+    assert_eq!(out.status.code(), Some(0), "{text}{}", stderr(&out));
+    assert!(
+        text.starts_with("running 4 tests 3 times each from 1 file, 4 at once\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("✓ scenarios/determinism/determinism.cdp:11 random values are the same in every run (3 runs, slowest "),
+        "{text}"
+    );
+    assert!(text.contains("\n4 tests: 4 passed ("), "{text}");
+
+    // The flaky test fails its first run (retries are off) and passes
+    // the others: the run fails.
+    let (out, value) = project.json(&["scenarios/fail/flaky.cdp", "--repeat", "3", "--jobs", "1"]);
+    assert_eq!(out.status.code(), Some(1), "{value}");
+    let details = &value["error"]["details"];
+    assert_eq!(details["repeat"], 3);
+    let test = &details["tests"][0];
+    assert_eq!(test["status"], "failed", "{test}");
+    assert_eq!(test["failed_runs"], 1, "{test}");
+    assert_eq!(test["tries"], 3, "{test}");
+    assert!(
+        value["error"]["hint"]
+            .as_str()
+            .unwrap()
+            .contains("chrome-cdp test scenarios/fail/flaky.cdp:6 --repeat 3"),
+        "{value}"
+    );
+    std::fs::remove_file(project.root.join("flaky-marker.json")).unwrap();
+    let text = stdout(&project.test(&["scenarios/fail/flaky.cdp", "--repeat", "3", "--jobs", "1"]));
+    assert!(
+        text.contains(
+            "✗ scenarios/fail/flaky.cdp:6 passes on the second try (failed 1 of 3 runs, slowest "
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains(
+            "\n    first failure at scenarios/fail/flaky.cdp:7:3: state load flaky-marker.json\n"
+        ),
+        "{text}"
+    );
+    let out = project.test(&[
+        "scenarios/fail/flaky.cdp",
+        "--repeat",
+        "2",
+        "--retries",
+        "1",
+    ]);
+    assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
+}

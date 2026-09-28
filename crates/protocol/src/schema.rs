@@ -3521,6 +3521,9 @@ pub struct TestRunData {
     /// `--list`: the tests were listed, not run.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub listed: bool,
+    /// `--repeat`: how many times each test ran.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat: Option<u32>,
 }
 
 /// One test of `chrome-cdp test`.
@@ -3536,16 +3539,22 @@ pub struct TestResult {
     pub status: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
-    /// How long its last try took.
+    /// How long its last try took (with `--repeat`, its slowest run).
     #[serde(default)]
     pub duration_ms: u64,
-    /// How many times it ran (1 without retries).
+    /// How many times it ran (1 without retries; with `--repeat`, the
+    /// tries of all its runs).
     #[serde(default)]
     pub tries: u32,
+    /// `--repeat`: the runs that failed. A test fails when one of its runs
+    /// does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed_runs: Option<u32>,
     /// Why it was skipped (`@skip`) or not run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
-    /// Why it failed (its last try; a flaky test's first failure).
+    /// Why it failed (its last try; a flaky test's first failure; with
+    /// `--repeat`, its first failed run's).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<TestFailure>,
 }

@@ -60,6 +60,8 @@ pub(super) struct Outcome {
     pub(super) failure: Option<Box<TestFailure>>,
     /// Why it was skipped or not run.
     pub(super) reason: Option<String>,
+    /// `--repeat`: how many of its runs failed.
+    pub(super) failed_runs: Option<u32>,
 }
 
 /// How a run's steps are made.
@@ -83,9 +85,10 @@ enum Once {
     Failed(Box<TestFailure>),
 }
 
-/// Runs `plan`'s tests; `report` gets each result in the plan's order as
-/// soon as it and those before it are known. `stop` ends the run early
-/// (the tests not started are not run).
+/// Runs `plan`'s tests, each `plan.repeat` times; `report` gets each
+/// test's result in the plan's order as soon as it and those before it
+/// are known. `stop` ends the run early (the tests not started are not
+/// run).
 pub(super) fn execute(
     plan: &Plan,
     options: &Options,
@@ -93,39 +96,43 @@ pub(super) fn execute(
     report: &(dyn Fn(usize, &Outcome) + Sync),
 ) -> Vec<Outcome> {
     let count = plan.tests.len();
+    let repeat = usize::try_from(plan.repeat).unwrap_or(1).max(1);
+    // A run of a test is an item; the runs of a test are next to each
+    // other, so they spread over the workers.
+    let items = count * repeat;
     let next = AtomicUsize::new(0);
-    let results: Mutex<(Vec<Option<Outcome>>, usize)> = Mutex::new((vec![None; count], 0));
+    let results: Mutex<(Vec<Option<Outcome>>, usize)> = Mutex::new((vec![None; items], 0));
     let before_all: Vec<Mutex<Once>> = plan
         .scenarios
         .iter()
         .map(|_| Mutex::new(Once::NotRun))
         .collect();
-    // Tests of each file still to run, for its @after-all.
+    // Runs of each file still to go, for its @after-all.
     let left: Vec<AtomicUsize> = plan
         .scenarios
         .iter()
         .enumerate()
         .map(|(f, _)| {
-            AtomicUsize::new(
-                plan.tests
-                    .iter()
-                    .filter(|t| t.file == f && t.skipped().is_none())
-                    .count(),
-            )
+            let tests = plan
+                .tests
+                .iter()
+                .filter(|t| t.file == f && t.skipped().is_none())
+                .count();
+            AtomicUsize::new(tests * repeat)
         })
         .collect();
-    let workers = usize::try_from(plan.jobs).unwrap_or(1).min(count.max(1));
+    let workers = usize::try_from(plan.jobs).unwrap_or(1).min(items.max(1));
     std::thread::scope(|scope| {
         for worker in 0..workers {
             let session = &options.sessions[worker % options.sessions.len()];
             let (next, results, before_all, left) = (&next, &results, &before_all, &left);
             scope.spawn(move || {
                 loop {
-                    let index = next.fetch_add(1, Ordering::SeqCst);
-                    if index >= count {
+                    let item = next.fetch_add(1, Ordering::SeqCst);
+                    if item >= items {
                         break;
                     }
-                    let test = &plan.tests[index];
+                    let test = &plan.tests[item / repeat];
                     let mut outcome = if stop.load(Ordering::SeqCst) {
                         not_run(options)
                     } else if let Some(reason) = test.skipped() {
@@ -135,6 +142,7 @@ pub(super) fn execute(
                             tries: 0,
                             failure: None,
                             reason: Some(reason.to_owned()),
+                            failed_runs: None,
                         }
                     } else {
                         let runner = Runner {
@@ -150,6 +158,7 @@ pub(super) fn execute(
                                 tries: 0,
                                 failure: Some(failure),
                                 reason: None,
+                                failed_runs: None,
                             },
                             Ok(()) => runner.test(test),
                         };
@@ -169,12 +178,13 @@ pub(super) fn execute(
                     }
                     let mut guard = results.lock().unwrap_or_else(PoisonError::into_inner);
                     let (done, printed) = &mut *guard;
-                    done[index] = Some(outcome);
+                    done[item] = Some(outcome);
                     while *printed < count {
-                        let Some(outcome) = &done[*printed] else {
+                        let runs = &done[*printed * repeat..(*printed + 1) * repeat];
+                        let Some(runs) = runs.iter().cloned().collect::<Option<Vec<_>>>() else {
                             break;
                         };
-                        report(*printed, outcome);
+                        report(*printed, &merge(runs, repeat));
                         *printed += 1;
                     }
                 }
@@ -182,9 +192,48 @@ pub(super) fn execute(
         }
     });
     let (done, _) = results.into_inner().unwrap_or_else(PoisonError::into_inner);
-    done.into_iter()
-        .map(|o| o.unwrap_or_else(|| not_run(options)))
+    done.chunks(repeat)
+        .map(|runs| {
+            let runs = runs
+                .iter()
+                .map(|o| o.clone().unwrap_or_else(|| not_run(options)))
+                .collect();
+            merge(runs, repeat)
+        })
         .collect()
+}
+
+/// A test's result from its runs (one without `--repeat`): failed if one
+/// failed, then not run if one was not, then skipped if all were; the
+/// slowest run's duration, and the first failure.
+fn merge(mut runs: Vec<Outcome>, repeat: usize) -> Outcome {
+    if repeat == 1 && runs.len() == 1 {
+        return runs.remove(0);
+    }
+    let failed = runs.iter().filter(|o| o.status == Status::Failed).count();
+    let any = |status: Status| runs.iter().any(|o| o.status == status);
+    let status = if failed > 0 {
+        Status::Failed
+    } else if any(Status::NotRun) {
+        Status::NotRun
+    } else if runs.iter().all(|o| o.status == Status::Skipped) {
+        Status::Skipped
+    } else if any(Status::Flaky) {
+        Status::Flaky
+    } else {
+        Status::Passed
+    };
+    Outcome {
+        status,
+        duration: runs.iter().map(|o| o.duration).max().unwrap_or_default(),
+        tries: runs.iter().map(|o| o.tries).sum(),
+        failure: runs.iter().find_map(|o| o.failure.clone()),
+        reason: runs
+            .iter()
+            .find(|o| o.status == status)
+            .and_then(|o| o.reason.clone()),
+        failed_runs: Some(u32::try_from(failed).unwrap_or(u32::MAX)),
+    }
 }
 
 fn not_run(options: &Options) -> Outcome {
@@ -198,6 +247,7 @@ fn not_run(options: &Options) -> Outcome {
         } else {
             "the run was stopped".into()
         }),
+        failed_runs: None,
     }
 }
 
@@ -239,6 +289,7 @@ impl Runner<'_> {
                         tries: attempt,
                         failure: first_failure,
                         reason: None,
+                        failed_runs: None,
                     };
                 }
                 Err(failure) if attempt == tries => {
@@ -248,6 +299,7 @@ impl Runner<'_> {
                         tries: attempt,
                         failure: Some(failure),
                         reason: None,
+                        failed_runs: None,
                     };
                 }
                 Err(failure) => {

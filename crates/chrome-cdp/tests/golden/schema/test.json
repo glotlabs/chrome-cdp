@@ -638,7 +638,7 @@
       "properties": {
         "duration_ms": {
           "default": 0,
-          "description": "How long its last try took.",
+          "description": "How long its last try took (with `--repeat`, its slowest run).",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
@@ -652,7 +652,16 @@
               "type": "null"
             }
           ],
-          "description": "Why it failed (its last try; a flaky test's first failure)."
+          "description": "Why it failed (its last try; a flaky test's first failure; with\n`--repeat`, its first failed run's)."
+        },
+        "failed_runs": {
+          "description": "`--repeat`: the runs that failed. A test fails when one of its runs\ndoes.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "file": {
           "description": "The scenario file, relative to the current directory.",
@@ -686,7 +695,7 @@
         },
         "tries": {
           "default": 0,
-          "description": "How many times it ran (1 without retries).",
+          "description": "How many times it ran (1 without retries; with `--repeat`, the\ntries of all its runs).",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
@@ -734,6 +743,15 @@
           "format": "uint",
           "minimum": 0,
           "type": "integer"
+        },
+        "repeat": {
+          "description": "`--repeat`: how many times each test ran.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
         },
         "shard": {
           "description": "`--shard`, as given.",

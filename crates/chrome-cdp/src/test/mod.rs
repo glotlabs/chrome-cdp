@@ -71,13 +71,18 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
             .map(|t| t.file)
             .collect::<std::collections::BTreeSet<_>>()
             .len();
+        let runs = plan.tests.len() * usize::try_from(plan.repeat).unwrap_or(1);
         output::stdout(&format!(
-            "running {} test{} from {files} file{}, {} at once\n",
+            "running {} test{}{} from {files} file{}, {} at once\n",
             plan.tests.len(),
             if plan.tests.len() == 1 { "" } else { "s" },
+            if plan.repeat > 1 {
+                format!(" {} times each", plan.repeat)
+            } else {
+                String::new()
+            },
             if files == 1 { "" } else { "s" },
-            plan.jobs
-                .min(u32::try_from(plan.tests.len()).unwrap_or(u32::MAX))
+            plan.jobs.min(u32::try_from(runs).unwrap_or(u32::MAX))
         ));
     }
     let stop = AtomicBool::new(false);

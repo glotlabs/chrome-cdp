@@ -279,9 +279,13 @@ Finds the scenarios by the `tests` globs of [e2e] in chrome-cdp.toml
 something already answers on their URLs, and opens a browser session of
 its own. Every test gets a fresh browser context: its own cookies,
 storage, routes and mock sets (default_mocks, then the file's and the
-test's @mocks), so tests cannot leak into each other. `--jobs N` runs N
-tests at once in one Chrome; a test that fails, then passes on a retry,
-is reported as flaky. A request no mock answers, in a set's scope with
+test's @mocks), so tests cannot leak into each other. Each also sees the
+same time (2026-01-01T10:00:00Z), random values, locale (en-US), time
+zone (UTC) and no animations; [e2e.determinism] changes that, and `time
+advance 5m` moves the time on and runs the timers due by then. `--jobs N`
+runs N tests at once in one Chrome; a test that fails, then passes on a
+retry, is reported as flaky; `--repeat 20` runs each test 20 times to
+find flaky ones. A request no mock answers, in a set's scope with
 unmatched = \"fail\", fails the test at the step after which it was
 sent, naming the closest mocks; so does a console error in any of its
 tabs (unless @allow-console-errors, or allow_console_errors = true in
@@ -305,6 +309,7 @@ Examples:
   chrome-cdp test e2e/scenarios/checkout.cdp:12     # the test at line 12
   chrome-cdp test --grep cart --tags smoke,!slow
   chrome-cdp test --jobs 4 --shard 2/4 --retries 1
+  chrome-cdp test e2e/scenarios/cart.cdp --repeat 20   # flaky before a commit?
   chrome-cdp test --list")]
     Test(TestArgs),
 
@@ -4894,6 +4899,11 @@ pub(crate) struct TestArgs {
     /// config, else 0; a test's @retries wins.
     #[arg(long, value_name = "N")]
     pub(crate) retries: Option<u32>,
+
+    /// Run each test N times, without retries, to find flaky tests: a test
+    /// fails if any of its runs does.
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..), conflicts_with = "retries")]
+    pub(crate) repeat: Option<u32>,
 
     /// Stop after the first failed test.
     #[arg(long)]
