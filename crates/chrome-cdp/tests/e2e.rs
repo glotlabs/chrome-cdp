@@ -820,6 +820,18 @@ fn debug_keeps_the_failed_tests_context_open() {
         )),
         "{step_hint}"
     );
+    let md = std::fs::read_to_string(
+        project
+            .root
+            .join("e2e/.results/scenarios/fail/fails.cdp/fails-on-a-missing-element/report.md"),
+    )
+    .unwrap();
+    assert!(
+        md.ends_with(&format!(
+            "still open (--debug): `chrome-cdp snapshot --session test-debug --context {context}`\n"
+        )),
+        "{md}"
+    );
     // The page is still there, with its mocks.
     let cli = |args: &[&str]| {
         common::run(

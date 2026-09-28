@@ -24,6 +24,7 @@
 //! (config) or `@allow-console-errors` (test) allows them.
 
 use std::cell::{Cell, RefCell};
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
@@ -471,7 +472,17 @@ impl Runner<'_> {
                 artifacts::point_hint_at_files(&mut failure.error, dir);
             }
             let steps = recorder.as_ref().map(Recorder::steps).unwrap_or_default();
-            let text = report_md::render(subject, &failure, steps, capture.as_ref(), &logs, dir);
+            let mut text =
+                report_md::render(subject, &failure, steps, capture.as_ref(), &logs, dir);
+            if let Some(kept) = kept.then(|| self.kept_context()).flatten() {
+                let _ = writeln!(
+                    text,
+                    "\nThe test's browser context is still open (--debug): `{}`",
+                    Cmd::new("snapshot")
+                        .session(&kept.session)
+                        .flag("context", &kept.context)
+                );
+            }
             let path = dir.join(artifacts::REPORT);
             artifacts::write(&path, &text);
             failure.report = Some(path.display().to_string());
@@ -484,16 +495,19 @@ impl Runner<'_> {
         artifacts::capture(dir, &|words| self.invoke(words, Some(context), None))
     }
 
+    /// The context `--debug` kept, if one was.
+    fn kept_context(&self) -> Option<Kept> {
+        self.options
+            .debug
+            .as_ref()
+            .and_then(|k| k.lock().unwrap_or_else(PoisonError::into_inner).clone())
+    }
+
     /// Adds `--context` of the context `--debug` kept to the commands in
     /// `error`'s hint and notes that name its session, so they act on the
     /// test's page.
     fn name_context(&self, error: &mut ErrorInfo) {
-        let Some(kept) = self
-            .options
-            .debug
-            .as_ref()
-            .and_then(|k| k.lock().unwrap_or_else(PoisonError::into_inner).clone())
-        else {
+        let Some(kept) = self.kept_context() else {
             return;
         };
         let flag = format!(" --session {}", kept.session);
