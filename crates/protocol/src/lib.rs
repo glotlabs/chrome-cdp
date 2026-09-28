@@ -9,7 +9,8 @@
 //! - [`format`]: durations, sizes and shell quoting for text output;
 //! - [`schema`]: each command's `data` type and its JSON Schema;
 //! - [`rpc`]: the line-delimited JSON-RPC 2.0 envelope between the CLI and
-//!   the session daemon (plan 02).
+//!   the session daemon (plan 02);
+//! - [`script`]: the `.cdp` format of `batch`, `run` and scenarios.
 //!
 //! It has no I/O so both the CLI and the daemon can depend on it cheaply.
 
@@ -20,6 +21,7 @@ mod hint;
 mod output;
 pub mod rpc;
 pub mod schema;
+pub mod script;
 mod style;
 
 pub use bound::{Limit, TruncatedKind, Truncation};
