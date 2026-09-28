@@ -739,6 +739,39 @@ const CASES: &[Case] = &[
         fixture: Fixture::None,
     },
     Case {
+        name: "eval",
+        args: &[
+            "eval",
+            "({title: document.title, items: document.querySelectorAll('.item').length})",
+        ],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/eval/index.html"),
+    },
+    Case {
+        name: "eval-in",
+        args: &["eval", "--in", "#name", "el.value"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/eval/index.html"),
+    },
+    Case {
+        name: "eval-threw",
+        args: &["eval", "explode()"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/eval/index.html"),
+    },
+    Case {
+        name: "eval-syntax",
+        args: &["eval", "let x = ;"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "eval-in-and-frame",
+        args: &["eval", "--in", "e1", "--frame", "inner", "el"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
         name: "cdp-listen-none",
         args: &[
             "cdp",

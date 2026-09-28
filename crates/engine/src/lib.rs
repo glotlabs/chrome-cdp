@@ -67,17 +67,17 @@ pub use frames::{FrameInfo, WORLD_NAME, World};
 pub use input::{ActionPoint, Checks, check_action, parse_modifiers};
 pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, parse_locator};
 pub use navigate::normalize_url;
-pub use observe::{RESOURCE_TYPES, check_screenshot};
+pub use observe::{RESOURCE_TYPES, check_eval, check_screenshot};
 pub use raw::check_cdp;
 pub use read::check_read;
 pub use request::{
     Action, ActionRequest, Button, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
-    ConsoleRequest, DialogPolicy, DialogRequest, DownloadsRequest, ElementState, FindRequest,
-    HttpCredentials, ImageFormat, Margins, Modifier, MouseOp, NavigateRequest, Navigation,
-    NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest,
-    Read, ReadRequest, ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine,
-    SnapshotRequest, StatusRange, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
-    Target, WaitFor, WaitRequest, WaitUntil,
+    ConsoleRequest, DialogPolicy, DialogRequest, DownloadsRequest, ElementState, EvalRequest,
+    EvalWorld, FindRequest, HttpCredentials, ImageFormat, Margins, Modifier, MouseOp,
+    NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest, NetworkShowRequest,
+    OpenRequest, PaperFormat, PdfRequest, Read, ReadRequest, ScreenshotRequest, ScrollTo,
+    ShotScale, Since, SnapshotEngine, SnapshotRequest, StatusRange, TabCloseRequest, TabNewRequest,
+    TabSelectRequest, TabsRequest, Target, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use tabs::commands::TabClosed;

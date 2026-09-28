@@ -811,6 +811,29 @@ Examples:
   chrome-cdp pdf --margin 10mm,15mm           # top and bottom, left and right")]
     Pdf(PdfArgs),
 
+    /// Run JavaScript in the page and print its value.
+    #[command(after_help = "\
+The script runs like a line typed into DevTools' console: statements are
+fine and the last one's value is printed, `await` works at the top level,
+and it counts as a user gesture. A promise is awaited; a function
+(`() => …`, `el => …`) is called, with the --in element. Strings print as
+they are; other values print as JSON (DOM nodes as `button#id.class`).
+The script's `let`s and `const`s do not stay behind in the page. An
+exception exits 1 with its message and stack. Needs a running session.
+
+Examples:
+  chrome-cdp eval document.title
+  chrome-cdp eval 'document.querySelectorAll(\"a\").length'
+  chrome-cdp eval --in e12 'el.value'
+  chrome-cdp eval --in '#price' 'getComputedStyle(el).color'
+  chrome-cdp eval 'await fetch(\"/api/me\").then((r) => r.json())'
+  chrome-cdp eval --frame checkout 'location.href'
+  chrome-cdp eval - <<'EOF'
+    const rows = [...document.querySelectorAll('tr')];
+    rows.map((r) => r.innerText)
+  EOF")]
+    Eval(EvalArgs),
+
     /// Make one raw CDP call on the session's browser or current page.
     #[command(after_help = "\
 Starts the session's browser first if it has none. --tab and --frame send
@@ -2214,6 +2237,58 @@ pub(crate) struct CdpArgs {
     /// long strings and arrays in `data` are shortened instead.
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct EvalArgs {
+    /// The script: an expression or statements; `-` reads it from stdin.
+    #[arg(value_name = "JS")]
+    pub(crate) script: String,
+
+    /// Bind this element as `el` (a ref such as e12, or any locator); the
+    /// script runs in its frame.
+    #[arg(long = "in", value_name = "LOCATOR", conflicts_with = "frame")]
+    pub(crate) locator: Option<String>,
+
+    /// Run in a frame of the tab: its name attribute, a part of its URL,
+    /// or its id.
+    #[arg(long, value_name = "FRAME")]
+    pub(crate) frame: Option<String>,
+
+    /// The page's own world (its globals), or chrome-cdp's isolated one
+    /// (the same DOM, where page scripts cannot see or change what the
+    /// script does).
+    #[arg(long, value_enum, default_value_t = WorldArg::Main)]
+    pub(crate) world: WorldArg,
+
+    /// Resolve an exception's stack frames with source maps (always on for
+    /// localhost pages).
+    #[arg(long)]
+    pub(crate) sourcemaps: bool,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+
+    /// Bound the output to this many characters (0 = no limit). With --json,
+    /// long strings and arrays in `data` are shortened instead.
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+/// `eval --world`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum WorldArg {
+    Main,
+    Isolated,
+}
+
+impl WorldArg {
+    pub(crate) fn to_engine(self) -> engine::EvalWorld {
+        match self {
+            Self::Main => engine::EvalWorld::Main,
+            Self::Isolated => engine::EvalWorld::Isolated,
+        }
+    }
 }
 
 #[derive(Debug, Args)]

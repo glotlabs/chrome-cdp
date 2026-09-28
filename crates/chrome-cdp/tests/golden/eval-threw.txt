@@ -1,0 +1,12 @@
+$ chrome-cdp eval 'explode()'
+exit: 1
+--- stderr
+error: the script threw TypeError: Cannot read properties of null (reading 'sum')
+  at: explode (/eval/src/app.ts:8:1)
+  at: eval:1:1
+
+$ chrome-cdp eval 'explode()' --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"EvalError","message":"the script threw TypeError: Cannot read properties of null (reading 'sum')","notes":[{"label":"at","text":"explode (/eval/src/app.ts:8:1)"},{"label":"at","text":"eval:1:1"}],"details":{"exception":"TypeError","message":"TypeError: Cannot read properties of null (reading 'sum')","stack":[{"column":17,"function":"explode","line":4,"original":{"column":1,"line":8,"source":"<site>/eval/src/app.ts"},"url":"<site>/eval/dist/app.js"},{"column":1,"function":"","line":1,"url":"eval"}]}}}
+

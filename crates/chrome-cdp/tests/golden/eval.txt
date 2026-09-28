@@ -1,0 +1,18 @@
+$ chrome-cdp eval '({title: document.title, items: document.querySelectorAll('\''.item'\'').length})'
+exit: 0
+--- stdout
+{
+  "title": "Eval",
+  "items": 2
+}
+
+$ chrome-cdp eval '({title: document.title, items: document.querySelectorAll('\''.item'\'').length})' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"tab":"t1","type":"object","value":{"items":2,"title":"Eval"},"world":"main"}}
+
+$ chrome-cdp eval '({title: document.title, items: document.querySelectorAll('\''.item'\'').length})' -q
+exit: 0
+--- stdout
+{"title":"Eval","items":2}
+

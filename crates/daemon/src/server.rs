@@ -379,6 +379,10 @@ impl Daemon {
                 Ok(p) => output(Box::pin(self.engine.pdf(p)).await),
                 Err(e) => Err(e),
             },
+            rpc::EVAL => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.eval(p)).await),
+                Err(e) => Err(e),
+            },
             rpc::DOWNLOADS => match params(req.params) {
                 Ok(p) => output(self.engine.downloads(p)),
                 Err(e) => Err(e),

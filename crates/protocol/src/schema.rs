@@ -182,6 +182,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<ScreenshotData>),
     },
     CommandSchema {
+        name: "eval",
+        summary: "the script's value as JSON, and its type",
+        schema: || schema_for!(Envelope<EvalData>),
+    },
+    CommandSchema {
         name: "pdf",
         summary: "the PDF file the page was printed to",
         schema: || schema_for!(Envelope<PdfData>),
@@ -1142,6 +1147,33 @@ pub struct CdpEvent {
     /// `Domain.event`.
     pub method: String,
     pub params: Value,
+}
+
+/// `data` of `chrome-cdp eval --json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct EvalData {
+    /// The tab, e.g. `t1`.
+    pub tab: String,
+    /// `--in`: the element bound as `el`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locator: Option<String>,
+    /// `--frame`: the frame the script ran in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<String>,
+    /// `main` or `isolated`.
+    pub world: String,
+    /// What the value is: `undefined`, `null`, `boolean`, `number`,
+    /// `string`, `bigint`, `symbol`, `function`, `array`, `node` or
+    /// `object`. A promise is awaited and a function called (with `el`)
+    /// first, so neither is ever the type.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// The value as JSON: `undefined` is `null` (see `type`); `NaN`,
+    /// `Infinity`, bigints (`12n`) and symbols are strings; a DOM node is
+    /// a string such as `button#save.primary`; a `Date` its ISO string;
+    /// a `Map` an object (or an array of `[key, value]` pairs); a `Set` an
+    /// array; a cycle `"[Circular]"`.
+    pub value: Value,
 }
 
 /// `data` of `chrome-cdp snapshot --json`.

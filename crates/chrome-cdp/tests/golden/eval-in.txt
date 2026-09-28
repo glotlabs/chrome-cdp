@@ -1,0 +1,15 @@
+$ chrome-cdp eval --in '#name' el.value
+exit: 0
+--- stdout
+Ada
+
+$ chrome-cdp eval --in '#name' el.value --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"locator":"#name","tab":"t1","type":"string","value":"Ada","world":"main"}}
+
+$ chrome-cdp eval --in '#name' el.value -q
+exit: 0
+--- stdout
+Ada
+

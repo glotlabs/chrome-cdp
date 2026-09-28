@@ -1,0 +1,12 @@
+$ chrome-cdp eval 'let x = ;'
+exit: 1
+--- stderr
+error: the script does not parse: SyntaxError: Unexpected token ';'
+  at: eval:1:9
+  hint: chrome-cdp eval -   (reads the script from stdin, with no shell quoting to get wrong)
+
+$ chrome-cdp eval 'let x = ;' --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"EvalError","message":"the script does not parse: SyntaxError: Unexpected token ';'","hint":"chrome-cdp eval -   (reads the script from stdin, with no shell quoting to get wrong)","notes":[{"label":"at","text":"eval:1:9"}],"details":{"exception":"SyntaxError","message":"SyntaxError: Unexpected token ';'","stack":[{"column":9,"function":"","line":1,"url":"eval"}]}}}
+

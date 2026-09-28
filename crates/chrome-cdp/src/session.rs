@@ -24,7 +24,7 @@ use daemon::paths::{Env, SessionPaths, check_name};
 use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
     Action, ActionRequest, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
-    ConsoleRequest, DialogRequest, DownloadsRequest, ElementState, FindRequest,
+    ConsoleRequest, DialogRequest, DownloadsRequest, ElementState, EvalRequest, FindRequest,
     HttpCredentials, ImageFormat, NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest,
     NetworkShowRequest, OpenRequest, PdfRequest, Read, ReadRequest, ScreenshotRequest,
     SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, WaitFor,
@@ -37,7 +37,7 @@ use tokio::runtime::Runtime;
 
 use crate::cli::{
     AfterArgs, CdpArgs, CloseArgs, ConnectArgs, DEFAULT_TIMEOUT, DialogArgs, DialogCommand,
-    DownloadsArgs, ElementStateArg, FindArgs, GlobalArgs, GotoArgs, HistoryArgs,
+    DownloadsArgs, ElementStateArg, EvalArgs, FindArgs, GlobalArgs, GotoArgs, HistoryArgs,
     IdleArgs, ImageFormatArg, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs,
     ReloadArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs, TabArgs,
     TabCommand, TabsArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
@@ -339,6 +339,28 @@ pub(crate) fn cdp(args: &CdpArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
         .runtime
         .block_on(session.client.call_output(rpc::CDP, &request, wait))?;
     Ok(warnings.into_iter().fold(output, Output::warning))
+}
+
+/// `eval`: needs a running session.
+pub(crate) fn eval(args: &EvalArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let request = EvalRequest {
+        script: input::text_arg(&args.script, "the script")?,
+        locator: args.locator.clone(),
+        frame: args.frame.clone(),
+        world: args.world.to_engine(),
+        tab: ctx.tab.clone(),
+        strict_refs: args.refs.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        sourcemaps: args.sourcemaps,
+        timeout_ms: millis(ctx.timeout),
+        max_chars: args.max_chars,
+    };
+    engine::check_eval(&request)?;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::EVAL, &request, ctx.timeout + QUICK))
 }
 
 /// The session's daemon, started with a browser (as `open` would) if it

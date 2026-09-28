@@ -23,11 +23,11 @@ use tokio::time::Instant;
 use super::console::Console;
 use super::format::{self, frame_text};
 use super::sourcemaps::{RESOLVE_LIMIT, is_local};
-use crate::Engine;
 use crate::input::origin;
 use crate::request::{ConsoleRequest, Since, millis};
 use crate::tabs::commands::path_of;
 use crate::tabs::{Page, TabError, parse_tab_id, tab_name};
+use crate::{Engine, Running};
 
 /// How much of an entry's text the text form shows.
 const SHOWN_TEXT: usize = 500;
@@ -92,21 +92,39 @@ impl Engine {
                 break selection;
             }
         };
-        if req.sourcemaps || is_local(&main_url) {
-            let documents: HashSet<String> = frames.iter().map(|f| f.url.clone()).collect();
-            let frame_id = frames.first().map(|f| f.id.clone()).unwrap_or_default();
-            let deadline = Instant::now() + timeout.min(RESOLVE_LIMIT);
-            let mut stack: Vec<&mut StackFrame> = selection
-                .entries
-                .iter_mut()
-                .flat_map(|e| e.stack.iter_mut())
-                .collect();
-            running
-                .sourcemaps
-                .resolve(&page.session, &frame_id, &documents, &mut stack, deadline)
-                .await;
-        }
+        let mut stack: Vec<&mut StackFrame> = selection
+            .entries
+            .iter_mut()
+            .flat_map(|e| e.stack.iter_mut())
+            .collect();
+        self.map_stack(&running, &page, &mut stack, req.sourcemaps, timeout)
+            .await;
         Ok(self.console_output(&page, &req, selection, page_origin.as_deref()))
+    }
+
+    /// Resolves `stack`'s frames with source maps, if `sourcemaps` is set
+    /// or the page is on localhost, within `timeout` (at most
+    /// [`RESOLVE_LIMIT`]).
+    pub(super) async fn map_stack(
+        &self,
+        running: &Running,
+        page: &Page,
+        stack: &mut [&mut StackFrame],
+        sourcemaps: bool,
+        timeout: Duration,
+    ) {
+        let frames = running.tabs.frames(page.id);
+        let main_url = frames.first().map(|f| f.url.as_str()).unwrap_or_default();
+        if stack.is_empty() || !(sourcemaps || is_local(main_url)) {
+            return;
+        }
+        let documents: HashSet<String> = frames.iter().map(|f| f.url.clone()).collect();
+        let frame_id = frames.first().map(|f| f.id.clone()).unwrap_or_default();
+        let deadline = Instant::now() + timeout.min(RESOLVE_LIMIT);
+        running
+            .sourcemaps
+            .resolve(&page.session, &frame_id, &documents, stack, deadline)
+            .await;
     }
 
     fn console_output(
@@ -357,7 +375,7 @@ pub(super) fn shown_url<'a>(url: &'a str, page_origin: Option<&str>) -> &'a str 
 /// A frame's place, the original one if a source map gave it:
 /// `render (/src/app.ts:12:5)`. The function keeps its generated name: a
 /// map names identifiers, not the function around them.
-fn frame_line(frame: &StackFrame, page_origin: Option<&str>) -> String {
+pub(super) fn frame_line(frame: &StackFrame, page_origin: Option<&str>) -> String {
     match &frame.original {
         Some(original) => frame_text(
             &frame.function,

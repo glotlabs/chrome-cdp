@@ -91,6 +91,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Network(args)) => session::network(&args, &cli.global),
         Some(Command::Screenshot(args)) => session::screenshot(&args, &cli.global),
         Some(Command::Pdf(args)) => session::pdf(&args, &cli.global),
+        Some(Command::Eval(args)) => session::eval(&args, &cli.global),
         Some(Command::Clipboard(args)) => {
             let op = match &args.command {
                 ClipboardCommand::Read(_) => engine::ClipboardOp::Read,

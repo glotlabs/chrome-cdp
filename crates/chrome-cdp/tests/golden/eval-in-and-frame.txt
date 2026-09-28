@@ -1,0 +1,11 @@
+$ chrome-cdp eval --in e1 --frame inner el
+exit: 2
+--- stderr
+error: the argument '--in <LOCATOR>' cannot be used with '--frame <FRAME>'
+  hint: chrome-cdp eval --help
+
+$ chrome-cdp eval --in e1 --frame inner el --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"the argument '--in <LOCATOR>' cannot be used with '--frame <FRAME>'","hint":"chrome-cdp eval --help"}}
+

@@ -170,6 +170,63 @@ pub struct CdpRequest {
     pub max_chars: usize,
 }
 
+/// Where `eval` runs a script (`--world`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EvalWorld {
+    /// The page's own world, with its globals.
+    #[default]
+    Main,
+    /// chrome-cdp's isolated world: the same DOM, none of the page's
+    /// globals.
+    Isolated,
+}
+
+impl EvalWorld {
+    /// The `--world` value.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Main => "main",
+            Self::Isolated => "isolated",
+        }
+    }
+}
+
+/// `eval <js>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvalRequest {
+    /// The script: an expression or statements; the last one's value is
+    /// the result.
+    pub script: String,
+    /// `--in`: the one element bound as `el`.
+    #[serde(default)]
+    pub locator: Option<String>,
+    /// `--frame`: run in this frame (its id, `name` or a part of its URL).
+    #[serde(default)]
+    pub frame: Option<String>,
+    #[serde(default)]
+    pub world: EvalWorld,
+    /// `--tab`: the tab to run in; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// `--strict-refs`: a ref whose element is gone is an error, never
+    /// re-resolved by role and name.
+    #[serde(default)]
+    pub strict_refs: bool,
+    /// The attribute `testid=` locators read; `data-testid` if `None`.
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    /// `--sourcemaps`: resolve an exception's stack with source maps
+    /// (always on for localhost pages).
+    #[serde(default)]
+    pub sourcemaps: bool,
+    /// Bounds finding the element and running the script (a promise's
+    /// wait included).
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
 /// `tabs`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TabsRequest {
