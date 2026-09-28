@@ -13,7 +13,8 @@ and errors that say what to run next.
 forms (`press`, `type`, `fill`, `select`, `check`, `uncheck`, `focus`,
 `blur`), files and the clipboard (`upload`, `clipboard`), dialogs (`dialog`),
 `downloads`, what the page logged (`console`, `errors`) and requested
-(`network`), raw CDP calls, `install`/`uninstall` and `schema` work so far:
+(`network`), what it looks like (`screenshot`, `pdf`), raw CDP calls,
+`install`/`uninstall` and `schema` work so far:
 
 ```sh
 chrome-cdp install                    # Chrome for Testing, if there is no Chrome
@@ -28,6 +29,7 @@ chrome-cdp markdown                   # the article, as Markdown
 chrome-cdp wait --text 'Welcome back'  # instead of sleep
 chrome-cdp errors                     # exceptions and error logs not seen yet
 chrome-cdp network --failed           # #42 POST 500 /api/login xhr 12KB 340ms
+chrome-cdp screenshot --annotate      # …/shots/1.png: 1280x720 png, 48KB; refs labelled
 chrome-cdp back
 chrome-cdp cdp --target page Runtime.evaluate '{"expression":"document.title"}'
 chrome-cdp tabs                       # * t1  https://example.com/  "Example Domain"
@@ -261,6 +263,25 @@ body) and `--request-body` add the rest. Chrome keeps response bodies for a
 while, also after the page navigates away, and the output says when it no
 longer has one. Each tab keeps its newest 2,000 requests (`open
 --network-buffer N`); `network clear` empties the log.
+
+`screenshot` saves an image of the viewport, the whole page (`--full`) or one
+element (`screenshot e12`, scrolled into view first) and prints its path:
+
+```
+/run/user/1000/chrome-cdp/default/shots/3.png: 1280x720 png, 48KB
+```
+
+Images go to the session's `shots` directory, numbered, unless `-o` names a
+file (`-o -` writes it to stdout). They are in CSS pixels and at most 1,568
+pixels on their longest side (`--max-size`, scaled down to fit), a size
+vision models take without resizing, so a point in the image is a point on
+the page. `--annotate` labels the elements `snapshot -i` gives refs with
+those refs, so a model can map what it sees to what it can click; `--mask
+<locator>` paints over elements (prices, dates) for stable images.
+`--format jpeg|webp`, `--quality`, `--scale device` and `--omit-background`
+do what they say. `pdf` prints the page to the session's `pdfs` directory
+(or `-o`) with `--format A4|Letter|…`, `--landscape`, `--background` and
+`--margin 1cm`; Chrome prints only when headless.
 
 Downloads go to the session's `downloads` directory, named as the server
 suggests (`report (1).pdf` if the name is taken). `goto` to a file waits for

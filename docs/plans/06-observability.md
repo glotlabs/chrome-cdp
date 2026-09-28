@@ -1,6 +1,6 @@
 # Plan 06 — Observability
 
-Status: IN PROGRESS (6.1-6.2 done)
+Status: IN PROGRESS (6.1-6.3 done)
 Depends on: 03 (can proceed in parallel with 04/05)
 
 ## Goal
@@ -144,3 +144,12 @@ _(append here)_
 - 6.2: A WebSocket is one record: status 101 while open, frames counted with their bytes, and the last 20 frames (200 chars of text each) for `network show`; `size` is the payload bytes.
 - 6.2: `network -q` prints the ids; `network show --body -q` prints just the body (for `> file`). JSON bodies are re-indented as they came (parsing into a `Value` would sort their keys); binary bodies are not shown.
 - 6.2: Requests of dedicated, shared and service workers are not recorded yet (workers get no `Network.enable`), and there is no `network --follow`; both are follow-ups.
+- 6.3: One `Page.captureScreenshot` per image, with a `clip` in page coordinates whose `scale` sets the size: `--scale css` and the `--max-size` downscale are rendered by Chrome at that size, so no image crate is needed. The device pixel ratio is read from the page (`devicePixelRatio`); `Page.getLayoutMetrics`' device-pixel fields ignore device emulation.
+- 6.3: A viewport screenshot is the layout viewport, which leaves out classic scrollbars: every image pixel (at `--scale css`) is a CSS pixel of the page. `--full` is `cssContentSize` with `captureBeyondViewport`; a 20,000px page is one capture. `--max-size` (1568 by default) applies to `--full` too, and a capture shrunk below half size gets a warning naming `--max-size 0` or a locator.
+- 6.3: An element screenshot waits (within `--timeout`) for the locator to match one rendered element, like an action waits for its element, then scrolls it into view with `DOM.scrollIntoViewIfNeeded` and clips to its `getBoundingClientRect` plus the offsets of the iframes it is in (the same as `box`, whose `frame_offset` moved to `Engine`). `captureBeyondViewport` is set only when the box goes past the viewport.
+- 6.3: `--mask` and `--annotate` draw into the page just for the capture: a zero-size `<chrome-cdp-overlay>` with a closed shadow root, appended to each frame's document, with boxes positioned against the host's own containing block; it is removed after the capture, also when it fails. Masks paint `#ff00ff` over every match (as Playwright does). Labels mark the refs `snapshot -i` would show (reading them counts as the tab's last snapshot for `--diff`), drawn in each element's own frame; the output lists the refs whose boxes are in the image (the text form the first 30).
+- 6.3: Files without `-o` go to `<session dir>/shots/<n>.<ext>` and `<session dir>/pdfs/<n>.pdf` (the daemon's `Engine::set_output_dir`), numbered on from the highest file there and created with `create_new`, so a daemon restart or two tabs never overwrite a capture. `-o` is made absolute by the CLI, its directories are created, and its extension picks the format unless `--format` is given (a mismatch is a warning). `-o -` saves to the session directory, and the CLI copies the file to stdout and deletes it; with `--json` it is a `BadArgs`.
+- 6.3: `screenshot` and `pdf` have no `--max-chars`: they print a path and a line or two (they are in the checklist's fixed-size list).
+- 6.3: `pdf --format` takes Letter (Chrome's default), Legal, Tabloid, A3, A4 and A5 in any case; `--margin` takes one to four CSS-ordered lengths in `in`, `cm`, `mm` or `px`. A launched headed browser is refused before the call; a connected one when Chrome answers that `printToPDF` is not implemented. The page count comes from the file's `/Type /Page` objects.
+- 6.3: The `--annotate` image is compared with a golden PNG (`crates/engine/tests/golden/annotate.png`, `UPDATE_GOLDEN=1` rewrites it): at most 1% of the pixels may differ by more than 64 in a channel, which leaves room for font rendering. Tests decode PNGs with the `png` crate (a dev-dependency).
+- 6.3: The criterion "screenshot of a 20k-px-tall page works on both OSes" stays unticked: it passes on Linux (`viewport_element_and_full_page` checks the last band's pixels at full size), but macOS has not been run.
