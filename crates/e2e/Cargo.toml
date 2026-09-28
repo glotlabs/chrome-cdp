@@ -14,6 +14,7 @@ http-body-util.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
 mock.workspace = true
+percent-encoding.workspace = true
 protocol.workspace = true
 regex.workspace = true
 reqwest.workspace = true

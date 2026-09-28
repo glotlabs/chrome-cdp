@@ -10,7 +10,9 @@
 //! - [`scenario`]: scenario files and which of their tests a run has
 //!   (11.4);
 //! - [`mock_server`]: `mock serve`, the mock sets as a real HTTP server
-//!   for server-side fetches (11.9).
+//!   for server-side fetches (11.9);
+//! - [`static_server`]: a web server's `static` folder, a prebuilt app
+//!   served without Node (11.10).
 //!
 //! The mock engine (11.2) is the `mock` crate. The runner (11.4) is the
 //! CLI's `test` command, since steps are CLI command lines.
@@ -20,6 +22,7 @@ pub mod config;
 pub mod init;
 pub mod mock_server;
 pub mod scenario;
+pub mod static_server;
 pub mod web_server;
 
 pub use config::{Config, find_project_file};

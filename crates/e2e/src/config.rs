@@ -171,8 +171,13 @@ impl fmt::Display for Viewport {
 /// A command that serves the app, and how to know it is up.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WebServer {
-    /// A shell command line (`sh -c`).
+    /// A shell command line (`sh -c`); for a `static` server, `static
+    /// <dir>` as written, for reports only.
     pub command: String,
+    /// `static = "dist"`: chrome-cdp serves the files below this
+    /// directory itself ([`crate::static_server`]) on `url`'s port,
+    /// instead of running a command.
+    pub static_dir: Option<PathBuf>,
     /// Ready when a GET of it gets an HTTP status below 500.
     pub url: String,
     /// When something already answers on `url`, use it and start nothing.
@@ -186,6 +191,14 @@ pub struct WebServer {
     /// `mock_server = { port = 4010 }`: a `mock serve` to start before
     /// the command (plan 11.9), for the app's server-side fetches.
     pub mock_server: Option<MockServer>,
+}
+
+impl WebServer {
+    /// Where a `static` server listens: `127.0.0.1` and `url`'s port.
+    pub fn static_addr(&self) -> Option<std::net::SocketAddr> {
+        self.static_dir.as_ref()?;
+        local_port(&self.url).map(|port| std::net::SocketAddr::from(([127, 0, 0, 1], port)))
+    }
 }
 
 /// A web server's `mock_server`.
@@ -586,11 +599,45 @@ impl Check<'_> {
     }
 
     fn web_server(&self, key: &str, raw: RawWebServer) -> Result<WebServer, Problem> {
-        if raw.command.get_ref().trim().is_empty() {
-            return Err((raw.command.span(), format!("{key}.command: empty")));
-        }
+        let cwd = raw
+            .cwd
+            .as_deref()
+            .map_or_else(|| self.root.to_path_buf(), |c| self.path(c));
+        let (command, static_dir) = match (raw.command, raw.static_dir) {
+            (Some(command), None) => {
+                if command.get_ref().trim().is_empty() {
+                    return Err((command.span(), format!("{key}.command: empty")));
+                }
+                (command.into_inner(), None)
+            }
+            (None, Some(dir)) => {
+                if dir.get_ref().trim().is_empty() {
+                    return Err((dir.span(), format!("{key}.static: empty")));
+                }
+                static_port(key, &raw.url)?;
+                (
+                    format!("static {}", dir.get_ref()),
+                    Some(cwd.join(dir.get_ref())),
+                )
+            }
+            (Some(command), Some(_)) => {
+                return Err((
+                    command.span(),
+                    format!("{key}: command and static both set; a server is one or the other"),
+                ));
+            }
+            (None, None) => {
+                return Err((
+                    raw.url.span(),
+                    format!(
+                        "{key}: needs command (a shell command that serves the app) or static (a folder chrome-cdp serves)"
+                    ),
+                ));
+            }
+        };
         Ok(WebServer {
-            command: raw.command.into_inner(),
+            command,
+            static_dir,
             url: url(&format!("{key}.url"), raw.url)?,
             reuse_existing: raw.reuse_existing.unwrap_or(true),
             timeout: raw
@@ -599,10 +646,7 @@ impl Check<'_> {
                 .transpose()?
                 .unwrap_or(DEFAULT_SERVER_TIMEOUT),
             env: raw.env.unwrap_or_default(),
-            cwd: raw
-                .cwd
-                .as_deref()
-                .map_or_else(|| self.root.to_path_buf(), |c| self.path(c)),
+            cwd,
             mock_server: raw
                 .mock_server
                 .map(|m| mock_server(&format!("{key}.mock_server"), m))
@@ -634,6 +678,28 @@ fn mock_server(key: &str, raw: Spanned<RawMockServer>) -> Result<MockServer, Pro
         })?,
     };
     Ok(MockServer { port, host })
+}
+
+/// The port of an `http://localhost:PORT` or `http://127.0.0.1:PORT`
+/// URL, with the port written out; `None` for any other URL.
+fn local_port(url: &str) -> Option<u16> {
+    let rest = url.strip_prefix("http://")?;
+    let host_port = rest.split('/').next().unwrap_or_default();
+    let (host, port) = host_port.rsplit_once(':')?;
+    let port = port.parse::<u16>().ok().filter(|&p| p > 0)?;
+    matches!(host, "localhost" | "127.0.0.1").then_some(port)
+}
+
+fn static_port(key: &str, url: &Spanned<String>) -> Result<u16, Problem> {
+    local_port(url.get_ref()).ok_or_else(|| {
+        (
+            url.span(),
+            format!(
+                "{key}.url: a static server needs an http://localhost:PORT or http://127.0.0.1:PORT url, not `{}`",
+                url.get_ref()
+            ),
+        )
+    })
 }
 
 fn url(key: &str, raw: Spanned<String>) -> Result<String, Problem> {
@@ -731,7 +797,9 @@ struct RawE2e {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawWebServer {
-    command: Spanned<String>,
+    command: Option<Spanned<String>>,
+    #[serde(rename = "static")]
+    static_dir: Option<Spanned<String>>,
     url: Spanned<String>,
     reuse_existing: Option<bool>,
     timeout: Option<Spanned<String>>,

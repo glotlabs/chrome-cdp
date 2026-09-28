@@ -6,6 +6,8 @@
 //!   500), it is reused when `reuse_existing` is set, and nothing is
 //!   started or stopped; otherwise that is an error, since the tests would
 //!   run against a server the config does not describe;
+//! - a `static` server's files are served by chrome-cdp itself
+//!   ([`crate::static_server`]), ready at once;
 //! - else its `command` runs under `sh -c` in its own process group, with
 //!   stdout and stderr in `<artifacts>/web-server.log` (`web-server-N.log`
 //!   when there are several) and `BROWSER=none` unless `env` sets it, so
@@ -33,6 +35,7 @@ use tokio::process::Command;
 use tokio::sync::{mpsc, watch};
 
 use crate::config::WebServer;
+use crate::static_server::StaticServer;
 
 /// How many lines of a server's log an error shows.
 pub const LOG_TAIL_LINES: usize = 30;
@@ -84,6 +87,8 @@ struct Server {
     watchdog: Option<browser::launch::Watchdog>,
     /// `Some` once the started command has exited.
     exited: Option<watch::Receiver<Option<ExitStatus>>>,
+    /// A `static` server's files, served by chrome-cdp itself.
+    files: Option<StaticServer>,
     stopped: bool,
 }
 
@@ -154,6 +159,21 @@ impl WebServers {
                 info,
                 watchdog: None,
                 exited: None,
+                files: None,
+                stopped: false,
+            });
+            return Ok(());
+        }
+
+        if let (Some(dir), Some(addr)) = (&config.static_dir, config.static_addr()) {
+            let files = serve_files(config, dir, addr)?;
+            info.ready_in = started.elapsed();
+            tracing::info!(url = %config.url, dir = %dir.display(), "serving static files");
+            self.servers.push(Server {
+                info,
+                watchdog: None,
+                exited: None,
+                files: Some(files),
                 stopped: false,
             });
             return Ok(());
@@ -169,6 +189,7 @@ impl WebServers {
             info,
             watchdog,
             exited: Some(exited.clone()),
+            files: None,
             stopped: false,
         });
         let index = self.servers.len() - 1;
@@ -287,6 +308,7 @@ impl WebServers {
     /// group, then SIGKILL to what is left after [`STOP_GRACE`].
     pub async fn stop(&mut self) {
         for server in self.servers.iter_mut().rev() {
+            server.files = None;
             let Some(pgid) = server.info.pgid else {
                 continue;
             };
@@ -324,6 +346,40 @@ impl Drop for WebServers {
             }
         }
     }
+}
+
+/// Starts serving a `static` server's `dir` on `addr`.
+fn serve_files(
+    config: &WebServer,
+    dir: &Path,
+    addr: std::net::SocketAddr,
+) -> Result<StaticServer, ErrorInfo> {
+    if !dir.join("index.html").is_file() {
+        return Err(ErrorInfo::new(
+            ErrorKind::LaunchFailed,
+            format!(
+                "web server `{}`: {} has no index.html",
+                config.command,
+                dir.display()
+            ),
+        )
+        .hint(Hint::text(
+            "build the app first (e.g. `npm run build`), or point static at the build's folder",
+        )));
+    }
+    StaticServer::start(addr, dir.to_path_buf()).map_err(|e| {
+        ErrorInfo::new(
+            ErrorKind::LaunchFailed,
+            format!(
+                "web server `{}` cannot listen on {addr}: {e}",
+                config.command
+            ),
+        )
+        .hint(format!(
+            "stop what listens on port {}, or change the web server's url",
+            addr.port()
+        ))
+    })
 }
 
 /// Polls `url` until it answers below 500, the command exits, or the

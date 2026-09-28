@@ -40,6 +40,8 @@ writes one). Paths are relative to the file; its base_url is also the
   timeout = "60s"
   env = { VITE_API_URL = "/api" }
   cwd = "."
+  # static = "dist"                    instead of command: chrome-cdp serves
+                                       the prebuilt app (no Node needed)
 
   [e2e.determinism]                    on by default in every test
   freeze_time = "2026-01-01T10:00:00Z"  Date (the default time); or false
@@ -59,7 +61,9 @@ writes one). Paths are relative to the file; its base_url is also the
   jobs, timeout, retries, determinism  override [e2e]'s
 
 A web server runs in its own process group with its output in
-<artifacts>/web-server.log, and is stopped when the tests end.
+<artifacts>/web-server.log, and is stopped when the tests end. A static
+one serves its folder on url's port (http://localhost:PORT), and answers
+paths without a file extension with index.html, for client-side routes.
 
 Environment variables:
   CHROME_CDP_JSON, CHROME_CDP_QUIET, CHROME_CDP_SESSION,

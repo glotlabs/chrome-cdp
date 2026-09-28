@@ -84,6 +84,7 @@ fn helper(port: u16, before: &str, env: &[(&str, &str)]) -> WebServer {
         timeout: Duration::from_secs(20),
         env: vars,
         cwd: std::env::temp_dir(),
+        static_dir: None,
         mock_server: None,
     }
 }
@@ -336,4 +337,41 @@ async fn a_killed_chrome_cdp_leaves_no_server() {
     holder.kill().unwrap();
     holder.wait().unwrap();
     assert!(gone(pgid).await, "the server outlived chrome-cdp");
+}
+
+#[tokio::test]
+async fn a_static_server_serves_its_folder_until_stopped() {
+    let dir = tempfile::tempdir().unwrap();
+    let dist = dir.path().join("dist");
+    std::fs::create_dir_all(&dist).unwrap();
+    std::fs::write(dist.join("index.html"), "<p>app</p>").unwrap();
+    let port = free_port();
+    let config = WebServer {
+        command: "static dist".into(),
+        static_dir: Some(dist.clone()),
+        url: format!("http://127.0.0.1:{port}"),
+        reuse_existing: true,
+        timeout: Duration::from_secs(5),
+        env: BTreeMap::new(),
+        cwd: dir.path().to_path_buf(),
+        mock_server: None,
+    };
+    let mut servers = WebServers::start(std::slice::from_ref(&config), dir.path())
+        .await
+        .unwrap();
+    let [info] = servers.servers().try_into().unwrap();
+    assert!(!info.reused && info.log.is_none() && info.pgid.is_none());
+    assert_eq!(get(port), Some(200));
+    servers.stop().await;
+    assert_eq!(get(port), None);
+
+    // A folder without index.html is not an app.
+    std::fs::remove_file(dist.join("index.html")).unwrap();
+    let e = WebServers::start(&[config], dir.path()).await.unwrap_err();
+    assert_eq!(e.kind, ErrorKind::LaunchFailed);
+    assert!(
+        e.message.ends_with("dist has no index.html"),
+        "{}",
+        e.message
+    );
 }

@@ -191,6 +191,32 @@ fn several_web_servers_keep_their_order() {
 }
 
 #[test]
+fn a_web_server_may_serve_a_folder() {
+    let c = parse("[e2e]\n[e2e.web_server]\nstatic = \"dist\"\nurl = \"http://localhost:4173\"\n");
+    let server = &c.web_servers[0];
+    assert_eq!(server.command, "static dist");
+    assert_eq!(server.static_dir.as_deref(), Some(Path::new("/p/dist")));
+    assert_eq!(
+        server.static_addr(),
+        Some(std::net::SocketAddr::from(([127, 0, 0, 1], 4173)))
+    );
+    assert!(
+        error("[e2e]\n[e2e.web_server]\nstatic = \"dist\"\nurl = \"http://example.com:80\"\n")
+            .contains("e2e.web_server.url: a static server needs an http://localhost:PORT")
+    );
+    assert!(
+        error("[e2e]\n[e2e.web_server]\nstatic = \"dist\"\nurl = \"http://localhost\"\n")
+            .contains("needs an http://localhost:PORT")
+    );
+    assert!(error("[e2e]\n[e2e.web_server]\nstatic = \"d\"\ncommand = \"x\"\nurl = \"http://localhost:1\"\n")
+        .contains("command and static both set"));
+    assert!(
+        error("[e2e]\n[e2e.web_server]\nurl = \"http://localhost:1\"\n")
+            .contains("needs command (a shell command that serves the app) or static")
+    );
+}
+
+#[test]
 fn a_web_server_may_have_a_mock_server() {
     let c = parse(
         "[e2e]\n[e2e.web_server]\ncommand = \"npm run dev\"\nurl = \"http://localhost:3000\"\n\

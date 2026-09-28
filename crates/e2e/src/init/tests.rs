@@ -162,7 +162,10 @@ fn scaffolds_a_vite_project() {
     assert!(workflow.contains("chrome-cdp test --reporter text,junit --shard ${{ matrix.shard }}"));
     // fmt and lint run before the tests (11.12).
     let checks = workflow.find("chrome-cdp fmt --check\n          chrome-cdp lint --format github");
-    assert!(checks.is_some_and(|at| at < workflow.find("chrome-cdp test").unwrap()), "{workflow}");
+    assert!(
+        checks.is_some_and(|at| at < workflow.find("chrome-cdp test").unwrap()),
+        "{workflow}"
+    );
     assert!(workflow.contains("path: e2e/.results/"));
     assert_eq!(read(dir.path(), ".gitignore"), "e2e/.results/\n");
 }
@@ -372,7 +375,8 @@ fn the_commented_collection_works() {
 #[test]
 fn the_example_files_are_formatted() {
     let example = include_str!("example.cdp");
-    let formatted = crate::scenario::format::format("example.cdp", example, &crate::scenario::format::Plain);
+    let formatted =
+        crate::scenario::format::format("example.cdp", example, &crate::scenario::format::Plain);
     assert_eq!(formatted.as_deref(), Ok(example));
     let mocks = include_str!("base.toml");
     assert_eq!(mock::format::format(mocks).as_deref(), Ok(mocks));
