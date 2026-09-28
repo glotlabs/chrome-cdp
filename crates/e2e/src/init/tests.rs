@@ -277,3 +277,31 @@ fn refuses_what_it_cannot_add_to() {
         e.message
     );
 }
+
+/// The mock set `init e2e` writes loads, and answers as its comments say.
+#[test]
+fn the_mock_set_written_is_a_valid_mock_set() {
+    let dir = project(&[]);
+    run(dir.path(), FrameworkChoice::None).unwrap();
+    let config = Config::find(dir.path()).unwrap();
+    assert_eq!(config.default_mocks, ["base"]);
+    let source = mock::Source::find(&config.mocks, dir.path(), "base").unwrap();
+    let set = mock::MockSet::load(&source).unwrap_or_else(|e| panic!("{}", e.message));
+    let mut mocks = mock::Mocks::new(0);
+    mocks.apply(vec![set], false);
+    let explain = |url: &str| {
+        mocks.explain(&mock::Request {
+            method: "GET",
+            url,
+            headers: &[],
+            body: None,
+        })
+    };
+    let listed = explain("http://localhost:5173/api/items");
+    assert_eq!(listed.answer.unwrap().name, "list items");
+    assert_eq!(listed.outcome, "fulfill 200 json_file data/items.json");
+    let one = explain("http://localhost:5173/api/items/7");
+    assert_eq!(one.answer.unwrap().name, "item by id");
+    let other = explain("http://localhost:5173/api/users");
+    assert_eq!(other.scope.as_deref(), Some("base"));
+}

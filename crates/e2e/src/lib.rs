@@ -6,8 +6,8 @@
 //!   groups, waits for them to answer, and tears them down (11.1);
 //! - [`init`]: `chrome-cdp init e2e`, which scaffolds the layout (11.1).
 //!
-//! The mock engine, the runner and the reports (11.2 onwards) build on
-//! these.
+//! The mock engine (11.2) is the `mock` crate; the runner and the reports
+//! (11.4 onwards) build on these.
 
 pub mod config;
 pub mod init;

@@ -21,7 +21,8 @@ for a human watching (`highlight`, `inspect`), mocking and blocking requests
 `throttle`, `cpu-throttle`, `time`, `permissions`), scripts and functions
 for every page (`init-script`, `expose`, `unexpose`), cookies, storage and
 saved logins (`cookies`, `storage`, `state`), raw CDP calls, scripts
-(`batch`, `run`, `convert`), E2E project setup (`init e2e`),
+(`batch`, `run`, `convert`), E2E project setup (`init e2e`), mock files
+(`mock`),
 `install`/`uninstall`, and help for people and agents
 (`help`, `skill`, `completions`, `schema`) work so far:
 
@@ -520,6 +521,29 @@ progress), `chrome-cdp init e2e` scaffolds a project: an `[e2e]` section in
 (Vite, Next.js, Create React App, Astro, SvelteKit), an example scenario in
 `e2e/scenarios/`, a mock set in `e2e/mocks/`, and a GitHub Actions workflow.
 It never overwrites a file. `chrome-cdp help config` lists the `[e2e]` keys.
+
+The mock sets in `e2e/mocks/` are plain TOML: each `[[mock]]` matches
+requests (method, path with `:params` and globs, query, headers, a JSON
+subset, form, body, GraphQL) and answers them (JSON inline or from a data
+file, text, files, a network error, or the real server with a patch), with
+templates such as `{{params.id}}`, `{{json.email}}`, `{{uuid}}` and
+`{{now}}`. A set's `scope` says which requests it owns; an owned request no
+mock answers gets a 501 that says so. `mock use` applies sets to the session,
+on top of the project's `default_mocks`, so the app can be explored by hand
+against its mocks:
+
+```sh
+chrome-cdp mock use checkout                     # default_mocks, then checkout
+chrome-cdp mock list                             # the sets and mocks, with hits
+chrome-cdp mock log --unmatched                  # requests no mock answered
+chrome-cdp mock explain GET /api/cart?user=7     # which mock answers, why the others don't
+chrome-cdp mock off
+chrome-cdp schema mocks                          # the file format's JSON Schema
+```
+
+Mock files are checked when they are applied, with each problem at
+`file:line:col`, and read again when they change. `route` rules come before
+any mock.
 
 `chrome-cdp --help` fits on one screen: the commands most tasks need, by
 task, and the locator grammar. `help commands` lists every command, `help
