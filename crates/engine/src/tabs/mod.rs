@@ -224,8 +224,6 @@ struct Shared {
     changed: watch::Sender<u64>,
     /// Whether this browser was told to ignore certificate errors.
     security_applied: AtomicBool,
-    /// What its sessions were told to intercept.
-    interception: Mutex<fetch::Interception>,
     /// The watcher and setup tasks. They hold the connection, so they are
     /// stopped with the manager (a connected browser's WebSocket closes
     /// only when the last handle goes).
@@ -332,7 +330,6 @@ impl Tabs {
             }),
             changed: watch::Sender::new(0),
             security_applied: AtomicBool::new(false),
-            interception: Mutex::default(),
             tasks: Mutex::default(),
         });
         // Subscribe before anything can attach.

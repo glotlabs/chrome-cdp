@@ -24,10 +24,9 @@ use super::auth::Auth;
 use super::{Shared, Step, lock, step};
 use crate::route::{self, Decision, PendingPatches};
 
-/// What the sessions were last told, so turning something off is sent
-/// only when it was on.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub(super) struct Interception {
+/// What a page or iframe session intercepts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Interception {
     /// `Fetch` is on.
     fetch: bool,
     /// Requests skip service workers.
@@ -78,9 +77,11 @@ pub(super) fn setup_steps(shared: &Shared, session: &Session, steps: &mut Vec<(&
 
 /// Brings every page and iframe session in line with the settings (after
 /// routes or credentials changed); new sessions get them in their setup.
+/// Every setting is sent, on or off: a session set up while rules existed
+/// (before a restart, say) must be turned off too, and turning off what is
+/// off costs a call and no harm.
 pub(super) async fn apply(shared: &Shared, timeout: Duration) {
     let now = wanted(shared);
-    let before = std::mem::replace(&mut *lock(&shared.interception), now);
     let hosts: Vec<Session> = lock(&shared.state)
         .hosts
         .values()
@@ -91,17 +92,13 @@ pub(super) async fn apply(shared: &Shared, timeout: Duration) {
         if now.fetch {
             // Sent again when already on: the credentials may be new.
             calls.push(step(host.call(enable(shared))));
-        } else if before.fetch {
+        } else {
             calls.push(step(host.call(fetch::DisableParams::default())));
         }
-        if now.bypass != before.bypass {
-            let params = network::SetBypassServiceWorkerParams::new(now.bypass);
-            calls.push(step(host.call(params)));
-        }
-        if now.no_cache != before.no_cache {
-            let params = network::SetCacheDisabledParams::new(now.no_cache);
-            calls.push(step(host.call(params)));
-        }
+        let params = network::SetBypassServiceWorkerParams::new(now.bypass);
+        calls.push(step(host.call(params)));
+        let params = network::SetCacheDisabledParams::new(now.no_cache);
+        calls.push(step(host.call(params)));
     }
     for result in join_all(calls).await {
         if let Err(e) = result {

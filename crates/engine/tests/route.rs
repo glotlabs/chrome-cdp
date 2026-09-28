@@ -482,6 +482,19 @@ async fn routes_apply_to_first_scripts_popups_and_frames() {
         "{:#?}",
         data.routes
     );
+
+    // Sessions set up with the rules stop intercepting once they are gone.
+    unroute(&engine, &[], true).await;
+    let (_, before) = routes(&engine, true);
+    goto(&engine, &site.url("/route/inline.html")).await;
+    eventually(
+        &engine,
+        eval_request("document.title"),
+        &json!("no fixture at /route/api/first"),
+    )
+    .await;
+    let (_, after) = routes(&engine, true);
+    assert_eq!(before.log.unwrap().len(), after.log.unwrap().len());
 }
 
 #[tokio::test]
