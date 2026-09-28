@@ -68,6 +68,9 @@ impl Engine {
         );
         let mut last = Probed::default();
         let mut note = None;
+        // `expect`'s tries over every probe run: the probe counts its own,
+        // from zero in each document.
+        let mut tries = 0;
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() && !last.observed.is_null() {
@@ -79,6 +82,7 @@ impl Engine {
             let (context, place) = match at {
                 Ok(At::Place(context, place)) => (context, place),
                 Ok(At::Absent(observed)) => {
+                    tries += 1;
                     last = Probed {
                         done: absent_is_met(condition),
                         observed,
@@ -116,6 +120,7 @@ impl Engine {
             ]);
             params.return_by_value = Some(true);
             params.await_promise = Some(true);
+            let sent = Instant::now();
             let result = injected::call(
                 &context.session.with_timeout(budget + CALL_SLACK),
                 context.context_id,
@@ -129,6 +134,7 @@ impl Engine {
                 Ok(result) => result,
                 Err(e) if is_gone(&e) => {
                     // The document went away; look in the next one.
+                    tries += lost_tries(&e, sent.elapsed());
                     running.tabs.forget_context(page.id, &context);
                     continue;
                 }
@@ -162,6 +168,7 @@ impl Engine {
                 }
                 return Err(bad_selector(condition, fatal));
             }
+            tries += value["observed"]["tries"].as_u64().unwrap_or(0);
             last = Probed {
                 done: value["done"].as_bool().unwrap_or(false),
                 observed: value["observed"].clone(),
@@ -170,6 +177,11 @@ impl Engine {
             if last.done || Instant::now() >= deadline {
                 break;
             }
+        }
+        if matches!(condition, Condition::Expect { .. })
+            && let Some(observed) = last.observed.as_object_mut()
+        {
+            observed.insert("tries".into(), json!(tries.max(1)));
         }
         Ok(if last.done {
             let mut met = met(condition, last);
@@ -243,6 +255,18 @@ fn is_gone(err: &CdpError) -> bool {
         if message.starts_with("Cannot find context with specified id")
             || message.starts_with("Execution context was destroyed")
             || message.starts_with("Inspected target navigated or closed"))
+}
+
+/// About how many times a probe checked before its document went away
+/// (`err`, after `ran`): it had checked at least once a frame or every
+/// 100ms, unless it never started.
+fn lost_tries(err: &CdpError, ran: Duration) -> u64 {
+    if matches!(err, CdpError::Protocol { message, .. }
+        if message.starts_with("Cannot find context with specified id"))
+    {
+        return 0;
+    }
+    1 + u64::try_from(ran.as_millis() / 100).unwrap_or(u64::MAX)
 }
 
 /// The probe's spec for `condition` (its locator's in-frame steps, with

@@ -4,7 +4,8 @@
 // it holds or `budget` ms pass. Returns {done, observed, value?, fatal?}.
 // `fatal` is an error in the spec itself (a bad selector, or with
 // `bad_args` a bad `expect` regex): no use waiting. `expect` checks
-// (plan 09) also count their tries in `observed.tries`.
+// (plan 09) also count their tries in `observed.tries` (the engine sums
+// them over the documents a navigation starts the probe again in).
 // Locators are the in-frame steps of plan 04's locators, evaluated by the
 // injected bundle (`__ccdp.query`) from `root` (a ref's element, or the
 // document when null). The engine puts `--fn`'s expression (or null) in

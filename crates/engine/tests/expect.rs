@@ -280,6 +280,46 @@ async fn every_matcher_passes_fails_and_waits() {
 }
 
 #[tokio::test]
+async fn retries_count_across_a_navigation() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path).await;
+    goto(&engine, &site.url("/expect/index.html")).await;
+
+    // The page goes to another document 900ms into a 1s assertion: the
+    // probe starts again there, and its count with it.
+    eval(
+        &engine,
+        "setTimeout(() => { location.href = '?again'; }, 900)",
+    )
+    .await;
+    let Err(err) = expect(
+        &engine,
+        &el("#status", text_is("Never", false)),
+        false,
+        1_000,
+    )
+    .await
+    else {
+        panic!("text Never passed");
+    };
+    let text = err.to_text();
+    assert_eq!(err.kind, ErrorKind::ExpectFailed, "{text}");
+    passes(
+        &engine,
+        &Expectation::Url {
+            pattern: "again".into(),
+        },
+        false,
+    )
+    .await;
+    // At least one try per 100ms in the first document, which the second
+    // (under 100ms) cannot reach alone.
+    let retries = err.details.as_ref().unwrap()["retries"].as_u64().unwrap();
+    assert!(retries >= 9, "{retries} retries: {text}");
+}
+
+#[tokio::test]
 async fn failures_say_what_they_saw() {
     let Some(path) = chrome_path() else { return };
     let site = Fixtures::shared();
