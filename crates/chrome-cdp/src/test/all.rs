@@ -107,7 +107,7 @@ fn once(
     explicit_session: bool,
     mode: Mode,
 ) -> Result<TestRunData, ErrorInfo> {
-    ready(plan, args, mode)?;
+    ready(plan, args, global, mode)?;
     let options = options(plan, args, global, explicit_session);
     let stop = AtomicBool::new(false);
     let servers = AtomicBool::new(false);

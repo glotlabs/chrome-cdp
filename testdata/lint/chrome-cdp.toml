@@ -1,0 +1,12 @@
+# The fixture project of `chrome-cdp lint`'s tests
+# (crates/chrome-cdp/tests/lint.rs): one problem per rule.
+[e2e]
+base_url = "http://localhost:3000"
+tests = ["e2e/scenarios/**/*.cdp"]
+default_mocks = ["base"]
+vars = "e2e/vars/mock.toml"
+
+[e2e.backends.local]
+mode = "real"
+base_url = "http://localhost:8080"
+vars = "e2e/vars/local.toml"

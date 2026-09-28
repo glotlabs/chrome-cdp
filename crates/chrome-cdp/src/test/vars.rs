@@ -230,7 +230,7 @@ fn secret(var: &Var, name: &str) -> Result<String, Unresolved> {
 
 /// The names the steps of `scenario` (its `@include`s too) save with
 /// `http … --save NAME`.
-pub(super) fn saved_names(scenario: &Scenario) -> BTreeSet<String> {
+pub(crate) fn saved_names(scenario: &Scenario) -> BTreeSet<String> {
     let steps = scenario
         .tests
         .iter()

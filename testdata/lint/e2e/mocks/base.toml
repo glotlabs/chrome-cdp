@@ -1,0 +1,12 @@
+[settings]
+scope = ["/api/**"]
+
+[[mock]]
+name = "products"
+match = { method = "GET", path = "/api/products" }
+respond = { json = "data/products.json" }
+
+[[mock]]
+name = "never answers"
+match = { method = "GET", path = "/api/products" }
+respond = { status = 500 }

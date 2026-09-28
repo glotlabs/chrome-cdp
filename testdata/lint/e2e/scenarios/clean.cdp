@@ -1,0 +1,4 @@
+@backend mock
+@test "only mocks"
+  goto /
+  expect mock-state todos count 2

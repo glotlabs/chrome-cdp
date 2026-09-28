@@ -17,7 +17,7 @@ mod artifacts;
 mod backend;
 mod determinism;
 mod exec;
-mod plan;
+pub(crate) mod plan;
 mod record;
 mod report;
 mod report_md;
@@ -38,6 +38,27 @@ use crate::{output, script};
 use exec::{Kept, Options, Outcome};
 use plan::Plan;
 
+pub(crate) use vars::saved_names as vars_saved_names;
+
+/// The command `cli` runs when it needs the mocks (it fails against a
+/// real backend): `mock state`, `mock seed`, `mock ws send` and `expect
+/// mock-state`.
+pub(crate) fn mock_only(cli: &crate::cli::Cli) -> Option<&'static str> {
+    use crate::cli::{Command, MockCommand};
+    match &cli.command {
+        Some(Command::Mock(args)) => match &args.command {
+            MockCommand::State(_) => Some("mock state"),
+            MockCommand::Seed(_) => Some("mock seed"),
+            MockCommand::Ws(_) => Some("mock ws send"),
+            _ => None,
+        },
+        Some(Command::Expect(args)) if args.target.as_deref() == Some("mock-state") => {
+            Some("expect mock-state")
+        }
+        _ => None,
+    }
+}
+
 /// Runs `test` and returns the exit code; `explicit_session` says whether
 /// `--session` (or its env var) named the session to use.
 pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) -> u8 {
@@ -53,7 +74,7 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
         let listed = report::listed(&plan, args.shard.as_deref(), args.max_chars);
         return output::print(mode, Ok(listed));
     }
-    if let Err(info) = ready(&plan, args, mode) {
+    if let Err(info) = ready(&plan, args, global, mode) {
         return output::print(mode, Err(info));
     }
     let options = options(&plan, args, global, explicit_session);
@@ -128,7 +149,7 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
 /// Before a browser starts: a plan with tests, and mocks that check
 /// (plan 11.8): the sets the run applies, and with `--verify-mocks` the
 /// sets the tests would have in mock mode.
-fn ready(plan: &Plan, args: &TestArgs, mode: Mode) -> Result<(), ErrorInfo> {
+fn ready(plan: &Plan, args: &TestArgs, global: &GlobalArgs, mode: Mode) -> Result<(), ErrorInfo> {
     if plan.tests.is_empty() {
         return Err(ErrorInfo::new(ErrorKind::NotFound, "no test matches").hint(
             Hint::run(Cmd::new("test").switch("list"))
@@ -168,6 +189,21 @@ fn ready(plan: &Plan, args: &TestArgs, mode: Mode) -> Result<(), ErrorInfo> {
         for test in &plan.tests {
             add(&test.settings.mocks);
         }
+    }
+    // `lint`'s scenario rules (11.12): errors stop the run.
+    let linted = crate::lint::for_run(&plan.config, &plan.scenarios, &plan.backend.name, global)?;
+    if linted.errors > 0 {
+        return Err(crate::lint::failed(&linted, "lint"));
+    }
+    if mode == Mode::Text && linted.warnings > 0 {
+        output::stderr(&format!(
+            "warning: {}; `chrome-cdp lint` lists them\n",
+            if linted.warnings == 1 {
+                "1 lint warning".to_owned()
+            } else {
+                format!("{} lint warnings", linted.warnings)
+            }
+        ));
     }
     let warnings = crate::mock::check_for_run(&plan.config, &sets)?;
     if mode == Mode::Text {

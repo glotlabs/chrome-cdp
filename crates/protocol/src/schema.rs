@@ -329,6 +329,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<MockWsSendData>),
     },
     CommandSchema {
+        name: "fmt",
+        summary: "the .cdp and mock files looked at, and those formatted (or, with --check, not formatted)",
+        schema: || schema_for!(Envelope<FmtData>),
+    },
+    CommandSchema {
+        name: "lint",
+        summary: "the problems found in scenario and mock files: file:line:col, severity, rule, message and hint",
+        schema: || schema_for!(Envelope<LintData>),
+    },
+    CommandSchema {
         name: "mock check",
         summary: "the problems found in the mock files: file:line:col, severity, rule and message",
         schema: || schema_for!(Envelope<MockCheckData>),
@@ -3523,6 +3533,53 @@ pub struct RefLocator {
     /// Why there is no locator.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+}
+
+/// `data` of `chrome-cdp fmt --json` (plan 11, milestone 11.12); with
+/// `--check`, also `details` of its error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FmtData {
+    /// How many files were looked at.
+    pub files: usize,
+    /// The files formatted (absolute); with `--check`, those that are not
+    /// formatted.
+    pub changed: Vec<String>,
+    /// Whether it ran with `--check` (nothing was written).
+    pub check: bool,
+    /// With `--check`: the unified diff of the changes it would make.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff: Option<String>,
+}
+
+/// `data` of `chrome-cdp lint --json` (plan 11, milestone 11.12), and
+/// `details` of its error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LintData {
+    /// The files checked (absolute): scenarios, step files and mock files.
+    pub files: Vec<String>,
+    pub errors: usize,
+    pub warnings: usize,
+    /// By file, line and column.
+    pub problems: Vec<LintProblem>,
+}
+
+/// One problem `lint` found.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LintProblem {
+    /// The file (absolute).
+    pub file: String,
+    /// 1-based; 0 when the problem is the whole file's.
+    pub line: usize,
+    pub col: usize,
+    /// `error` or `warning`.
+    pub severity: String,
+    /// The rule, e.g. `unknown-command`, `ref`, `sleep`, `unreachable`
+    /// (`chrome-cdp lint --help` lists them).
+    pub rule: String,
+    pub message: String,
+    /// What to write instead, or the command that helps.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
 }
 
 /// `data` of `chrome-cdp mock check --json` (and `details` of its

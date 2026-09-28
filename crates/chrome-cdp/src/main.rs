@@ -15,14 +15,17 @@ mod cli;
 mod completions;
 mod config;
 mod convert;
+mod e2e_files;
 mod emulate;
 mod expect;
+mod fmt;
 mod help;
 mod history;
 mod http;
 mod init;
 mod input;
 mod install;
+mod lint;
 mod log;
 mod mock;
 mod output;
@@ -66,6 +69,7 @@ fn main() -> ExitCode {
     match &cli.command {
         Some(Command::Batch(args)) => return ExitCode::from(script::batch(args, &cli.global)),
         Some(Command::Run(args)) => return ExitCode::from(script::run(args, &cli.global)),
+        Some(Command::Lint(args)) => return ExitCode::from(lint::run(args, &cli.global)),
         Some(Command::Test(args)) => {
             let explicit = matches!(
                 matches.value_source("session"),
@@ -98,6 +102,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Help(args)) => help::run(&args),
         Some(Command::Skill(args)) => skill::run(&args),
         Some(Command::Convert(args)) => convert::run(&args),
+        Some(Command::Fmt(args)) => fmt::run(&args),
         Some(Command::Init(args)) => init::run(&args),
         Some(Command::Completions(args)) => Ok(completions::run(&args)),
         Some(Command::Install(args)) => {
@@ -428,6 +433,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         ),
         // Handled in `main`; a script cannot hold them (`script` checks).
         Some(Command::Daemon(_)) => Ok(Output::new(serde_json::Value::Null, "")),
+        Some(Command::Lint(args)) => lint::output(&args, &cli.global),
         Some(Command::Batch(_) | Command::Run(_) | Command::Test(_)) => Err(ErrorInfo::new(
             ErrorKind::BadArgs,
             "batch, run and test cannot run inside a script",

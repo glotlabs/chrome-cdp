@@ -338,6 +338,22 @@ pub(crate) fn check_for_run(
     Ok(data.problems.iter().map(problem_line).collect())
 }
 
+/// `mock check` of mock files `files` (absolute) for `lint`, against
+/// `openapi` (else the config's).
+pub(crate) fn check_files(
+    config: &e2e::Config,
+    files: &[PathBuf],
+    openapi: Option<&Path>,
+) -> Result<MockCheckData, ErrorInfo> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| config.root.clone());
+    let project = Project::of(config, cwd);
+    let names: Vec<String> = files.iter().map(|f| f.display().to_string()).collect();
+    let openapi = openapi
+        .map(Path::to_path_buf)
+        .or_else(|| project.openapi.clone());
+    check_sets(&project, &names, openapi.as_deref())
+}
+
 /// Runs `mock check` on sets `names` of `project`, against `openapi`.
 fn check_sets(
     project: &Project,

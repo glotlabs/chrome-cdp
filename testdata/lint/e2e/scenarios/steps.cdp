@@ -1,0 +1,26 @@
+# One problem per step rule; each test runs on both backends unless marked.
+@test "commands"
+  goto /
+  clik text=Add
+  click text=Add --forse
+  click 'role=button[name='
+  click e12
+  wait 500
+  expect text=Added visible
+
+@test "variables"
+  fill label=Email ${var:only_local}
+  fill label=Name ${nobody}
+  @include ../steps/login.cdp
+  expect text=Welcome visible
+
+@test "mock data"
+  expect text='Mechanical keyboard' visible
+  expect mock-state todos count 2
+
+@test "commands"
+  goto /
+
+@test "a phone" @device "iPhone 99" @backend stagin
+  goto /
+  expect text=Home visible

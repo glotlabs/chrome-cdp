@@ -375,7 +375,7 @@ fn test_dir(config: &Config, scenario: &Scenario, index: usize) -> PathBuf {
 
 /// The project's `[e2e]` config; without one, the defaults, rooted at
 /// `cwd` (or at the config file that has no `[e2e]`).
-fn project(cwd: &Path) -> Result<Config, ErrorInfo> {
+pub(crate) fn project(cwd: &Path) -> Result<Config, ErrorInfo> {
     let file = e2e::find_project_file(cwd)?;
     let (text, file) = match file {
         Some(file) => {

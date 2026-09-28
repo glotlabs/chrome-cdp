@@ -295,6 +295,16 @@ fn clap_problem(e: &clap::Error, words: &[String], line: &Line) -> ErrorInfo {
 /// `drag`'s `FROM` and `TO`), so a bad one fails before the script starts
 /// rather than when its step runs.
 fn check_locators(matches: &ArgMatches) -> Result<(), ErrorInfo> {
+    for value in locator_values(matches) {
+        engine::parse_locator(&value)?;
+    }
+    Ok(())
+}
+
+/// The values of a parsed line's locator arguments (named `LOCATOR`,
+/// `FROM` or `TO`).
+pub(crate) fn locator_values(matches: &ArgMatches) -> Vec<String> {
+    let mut out = Vec::new();
     let mut cmd = Cli::command();
     let mut matches = matches;
     while let Some((name, sub)) = matches.subcommand() {
@@ -320,12 +330,12 @@ fn check_locators(matches: &ArgMatches) -> Result<(), ErrorInfo> {
                     {
                         continue;
                     }
-                    engine::parse_locator(value)?;
+                    out.push(value.to_owned());
                 }
             }
         }
     }
-    Ok(())
+    out
 }
 
 /// Gives a step the script's global flags, except those its line sets.

@@ -142,6 +142,12 @@ impl Locator {
         &self.steps[head..]
     }
 
+    /// Whether it starts from a ref (`e12`): session-only, so never in a
+    /// committed scenario.
+    pub fn has_ref(&self) -> bool {
+        self.steps.iter().any(|s| matches!(s, Step::Ref { .. }))
+    }
+
     /// Reads `testid=` from `attribute` instead of `data-testid`.
     #[must_use]
     pub fn with_testid_attribute(mut self, attribute: Option<&str>) -> Self {

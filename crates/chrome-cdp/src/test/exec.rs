@@ -51,7 +51,7 @@ use super::plan::{Plan, Planned, Prepared};
 use super::report_md::{self, Subject};
 use super::vars::{self, Resolver};
 use super::verify::Seen;
-use crate::cli::{Command, GlobalArgs, MockCommand, WAIT_TIMEOUT};
+use crate::cli::{Command, GlobalArgs, WAIT_TIMEOUT};
 use crate::script;
 
 /// How a test ended.
@@ -1097,18 +1097,7 @@ impl Runner<'_> {
     /// `--allow-writes`.
     fn allowed(&self, cli: &crate::cli::Cli, part: Part) -> Result<(), ErrorInfo> {
         let plan = self.plan;
-        let mock_only = match &cli.command {
-            Some(Command::Mock(args)) => match &args.command {
-                MockCommand::State(_) => Some("mock state"),
-                MockCommand::Seed(_) => Some("mock seed"),
-                MockCommand::Ws(_) => Some("mock ws send"),
-                _ => None,
-            },
-            Some(Command::Expect(args)) if args.target.as_deref() == Some("mock-state") => {
-                Some("expect mock-state")
-            }
-            _ => None,
-        };
+        let mock_only = super::mock_only(cli);
         if let Some(command) = mock_only
             && plan.real()
         {

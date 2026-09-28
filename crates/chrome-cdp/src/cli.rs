@@ -1638,6 +1638,63 @@ Examples:
   chrome-cdp convert tests/login.spec.ts --json    # the script and each TODO")]
     Convert(ConvertArgs),
 
+    /// Format .cdp scenario files and mock files in place; --check only reports.
+    #[command(after_help = "\
+Without paths, formats the project's E2E files: every .cdp file below the
+project root (chrome-cdp.toml's folder) and the mock files in the mocks
+directory ([e2e] mocks, else e2e/mocks). A folder means the .cdp files
+below it, and its .toml files when they are mock files.
+
+.cdp files: 2-space bodies, one blank line before each @test and hook,
+single quotes unless a word needs ${…} or a ' (directive arguments such
+as test names take double quotes), long flags instead of short ones,
+settings in a stable order (@skip @only @mocks @tags @backend @safe
+@timeout @retries @viewport/@device @allow-console-errors), trailing
+comments lined up. Mock files: the keys of each [[mock]] in the order
+name, match, respond, sequence, …, `key = value` spacing, inline tables
+kept inline. Comments are kept, and the meaning never changes: a file
+whose formatted form would read differently is left alone, with an error.
+
+--check changes nothing: it exits 1 and prints a diff when a file is not
+formatted, for CI.
+
+Examples:
+  chrome-cdp fmt
+  chrome-cdp fmt e2e/scenarios/checkout.cdp
+  chrome-cdp fmt --check        # in CI, before chrome-cdp lint and test")]
+    Fmt(FmtArgs),
+
+    /// Check scenario and mock files for mistakes without running them.
+    #[command(after_help = "\
+Without paths, checks the project's E2E files, as fmt finds them. Every
+problem has a place (file:line:col), a severity, a rule and a hint.
+
+Scenario rules: syntax (and directive misuse), unknown-command,
+unknown-flag, bad-args, unknown-directive, unknown-device,
+unknown-backend, locator (an invalid locator), include-missing,
+include-cycle, include-param (a ${name} the @include line does not
+pass), undefined-var (a ${var:x} missing from a backend's vars, an
+unknown ${saved.x}, a missing data file), ref (e12 refs are
+session-only; write a stable locator), duplicate-test, and the warnings
+mock-only (mock state/seed/ws send or expect mock-state in a test that
+real backends run), mock-literal (a value from the mock data, in a test
+real backends run), sleep (wait <ms>) and no-expect (a test that checks
+nothing). Mock files get the `mock check` rules (unreachable,
+collection-shadowed, openapi-…). Environment variables are not needed:
+${env:…} and ${secret:…} are not read.
+
+Errors exit 1; warnings alone exit 0. --format github prints workflow
+annotations, so problems show inline on pull requests; --format json is
+--json. `chrome-cdp test` runs these checks first and refuses to start
+on errors.
+
+Examples:
+  chrome-cdp lint
+  chrome-cdp lint e2e/scenarios/checkout.cdp
+  chrome-cdp lint --format github    # in a GitHub workflow
+  chrome-cdp lint --json")]
+    Lint(LintArgs),
+
     /// Set up a project for chrome-cdp: `init e2e` scaffolds E2E tests with mocks.
     #[command(
         subcommand_required = true,
@@ -1693,6 +1750,50 @@ Examples:
     /// The session daemon; other commands start it.
     #[command(name = "__daemon", hide = true)]
     Daemon(DaemonArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct FmtArgs {
+    /// Files or folders; the project's E2E files if none.
+    #[arg(value_name = "PATH")]
+    pub(crate) paths: Vec<PathBuf>,
+
+    /// Change nothing: exit 1 and print a diff if a file is not formatted.
+    #[arg(long)]
+    pub(crate) check: bool,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct LintArgs {
+    /// Files or folders; the project's E2E files if none.
+    #[arg(value_name = "PATH")]
+    pub(crate) paths: Vec<PathBuf>,
+
+    /// How to print the problems: text, json (as --json) or github
+    /// (workflow annotations).
+    #[arg(long, value_enum, default_value_t = LintFormat::Text, value_name = "FORMAT")]
+    pub(crate) format: LintFormat,
+
+    /// Check the mocks against this OpenAPI spec (JSON or YAML) instead of
+    /// the config's `openapi`.
+    #[arg(long, value_name = "FILE")]
+    pub(crate) openapi: Option<PathBuf>,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+/// `lint --format`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum LintFormat {
+    Text,
+    Json,
+    Github,
 }
 
 #[derive(Debug, Args)]

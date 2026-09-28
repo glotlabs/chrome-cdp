@@ -1,0 +1,3 @@
+@test "includes"
+  @include ../steps/missing.cdp
+  @include ../steps/cycle-a.cdp

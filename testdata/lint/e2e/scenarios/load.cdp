@@ -1,0 +1,5 @@
+@tag smoke
+@timeout soon
+
+@test "never checked"
+  goto /

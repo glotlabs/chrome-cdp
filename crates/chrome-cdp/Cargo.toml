@@ -23,6 +23,7 @@ engine.workspace = true
 protocol.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+similar.workspace = true
 url.workspace = true
 tempfile.workspace = true
 toml.workspace = true

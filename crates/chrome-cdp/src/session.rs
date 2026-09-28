@@ -1957,7 +1957,7 @@ fn wait_condition(args: &WaitCmdArgs) -> Result<WaitFor, ErrorInfo> {
 }
 
 /// `wait 500` or `wait 2s`: a delay, not a locator.
-fn delay_ms(target: &str) -> Option<u64> {
+pub(crate) fn delay_ms(target: &str) -> Option<u64> {
     let target = target.trim();
     if !target.is_empty() && target.bytes().all(|b| b.is_ascii_digit()) {
         return target.parse().ok();
