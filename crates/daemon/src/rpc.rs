@@ -35,6 +35,8 @@ pub const NETWORK_CLEAR: &str = "network_clear";
 pub const SCREENSHOT: &str = "screenshot";
 pub const PDF: &str = "pdf";
 pub const EVAL: &str = "eval";
+pub const HAR_START: &str = "har_start";
+pub const HAR_STOP: &str = "har_stop";
 
 /// `hello`: the first call on every connection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

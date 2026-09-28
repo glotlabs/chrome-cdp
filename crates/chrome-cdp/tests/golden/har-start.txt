@@ -1,0 +1,15 @@
+$ chrome-cdp har start --content omit
+exit: 0
+--- stdout
+recording a HAR of every tab (and tabs opened from now on), without response bodies; chrome-cdp har stop -o requests.har saves it
+
+$ chrome-cdp har start --content omit --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"already":false,"content":"omit"}}
+
+$ chrome-cdp har start --content omit -q
+exit: 0
+--- stdout
+omit
+

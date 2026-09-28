@@ -383,6 +383,14 @@ impl Daemon {
                 Ok(p) => output(Box::pin(self.engine.eval(p)).await),
                 Err(e) => Err(e),
             },
+            rpc::HAR_START => match params(req.params) {
+                Ok(p) => output(self.engine.har_start(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::HAR_STOP => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.har_stop(p)).await),
+                Err(e) => Err(e),
+            },
             rpc::DOWNLOADS => match params(req.params) {
                 Ok(p) => output(self.engine.downloads(p)),
                 Err(e) => Err(e),

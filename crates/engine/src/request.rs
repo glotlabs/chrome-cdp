@@ -599,6 +599,46 @@ pub struct NetworkClearRequest {
     pub timeout_ms: u64,
 }
 
+/// What `har` does with response bodies (`har start --content`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HarContent {
+    /// In the file: text as it is, binary bodies in base64.
+    #[default]
+    Embed,
+    /// Left out (sizes and MIME types stay).
+    Omit,
+}
+
+impl HarContent {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Embed => "embed",
+            Self::Omit => "omit",
+        }
+    }
+}
+
+/// `har start`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HarStartRequest {
+    /// `--tab`: record only this tab; every tab if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    #[serde(default)]
+    pub content: HarContent,
+    pub timeout_ms: u64,
+}
+
+/// `har stop`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HarStopRequest {
+    /// `-o`: an absolute path; `<session dir>/hars/<n>.har` if `None`.
+    #[serde(default)]
+    pub path: Option<PathBuf>,
+    pub timeout_ms: u64,
+}
+
 /// An image format (`screenshot --format`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

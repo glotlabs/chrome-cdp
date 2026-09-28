@@ -601,6 +601,17 @@ impl Tabs {
         Ok(())
     }
 
+    /// The ids of the ready tabs, in order.
+    pub(crate) fn tab_ids(&self) -> Vec<u32> {
+        let state = self.shared.lock();
+        state
+            .tabs
+            .iter()
+            .filter(|(_, t)| t.ready)
+            .map(|(&id, _)| id)
+            .collect()
+    }
+
     /// How many tabs are open.
     pub(crate) fn count(&self) -> u32 {
         let state = self.shared.lock();

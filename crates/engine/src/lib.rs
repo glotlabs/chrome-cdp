@@ -73,11 +73,12 @@ pub use read::check_read;
 pub use request::{
     Action, ActionRequest, Button, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
     ConsoleRequest, DialogPolicy, DialogRequest, DownloadsRequest, ElementState, EvalRequest,
-    EvalWorld, FindRequest, HttpCredentials, ImageFormat, Margins, Modifier, MouseOp,
-    NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest, NetworkShowRequest,
-    OpenRequest, PaperFormat, PdfRequest, Read, ReadRequest, ScreenshotRequest, ScrollTo,
-    ShotScale, Since, SnapshotEngine, SnapshotRequest, StatusRange, TabCloseRequest, TabNewRequest,
-    TabSelectRequest, TabsRequest, Target, WaitFor, WaitRequest, WaitUntil,
+    EvalWorld, FindRequest, HarContent, HarStartRequest, HarStopRequest, HttpCredentials,
+    ImageFormat, Margins, Modifier, MouseOp, NavigateRequest, Navigation, NetworkClearRequest,
+    NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest, Read, ReadRequest,
+    ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest, StatusRange,
+    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target, WaitFor, WaitRequest,
+    WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use tabs::commands::TabClosed;
@@ -136,6 +137,8 @@ struct Running {
     mac: std::sync::OnceLock<bool>,
     /// The source maps console stack frames were resolved with.
     sourcemaps: observe::SourceMaps,
+    /// The `har start` recording, if one runs.
+    har: Mutex<Option<observe::HarRecording>>,
 }
 
 /// What the running browser was started with, to compare with a later
@@ -538,6 +541,7 @@ impl Engine {
             stop: stop.clone(),
             mac: std::sync::OnceLock::new(),
             sourcemaps: observe::SourceMaps::default(),
+            har: Mutex::new(None),
         });
         *self.lock_state() = State::Running(running.clone());
         let engine = Arc::downgrade(self);

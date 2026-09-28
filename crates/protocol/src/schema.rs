@@ -192,6 +192,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<PdfData>),
     },
     CommandSchema {
+        name: "har start",
+        summary: "which tabs a HAR recording covers, and whether bodies go in",
+        schema: || schema_for!(Envelope<HarStartData>),
+    },
+    CommandSchema {
+        name: "har stop",
+        summary: "the HAR 1.2 file saved from the network log",
+        schema: || schema_for!(Envelope<HarStopData>),
+    },
+    CommandSchema {
         name: "snapshot",
         summary: "the page's accessibility tree, with refs on what can be acted on",
         schema: || schema_for!(Envelope<SnapshotData>),
@@ -1119,6 +1129,44 @@ pub struct PdfData {
     /// The paper size: `Letter`, `A4`, …
     pub paper: String,
     pub landscape: bool,
+}
+
+/// `data` of `chrome-cdp har start --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HarStartData {
+    /// The tab recorded (`--tab`); every tab, the ones opened later too,
+    /// if absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab: Option<String>,
+    /// What happens to response bodies: `embed` or `omit`.
+    pub content: String,
+    /// Whether a recording was running already (it goes on, with this
+    /// `content`).
+    pub already: bool,
+}
+
+/// `data` of `chrome-cdp har stop --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HarStopData {
+    /// The HAR file (absolute).
+    pub path: String,
+    /// The file's size in bytes.
+    pub bytes: u64,
+    /// How many requests it has.
+    pub entries: usize,
+    /// The tabs they came from (the HAR's pages), e.g. `t1`.
+    pub pages: Vec<String>,
+    /// `embed` or `omit`.
+    pub content: String,
+    /// Response bodies in the file.
+    pub bodies: usize,
+    /// Response bodies Chrome no longer had, left out.
+    pub missing_bodies: usize,
+    /// Requests the network log dropped (or `network clear` removed)
+    /// before the recording stopped; they are not in the file.
+    pub dropped: u64,
+    /// How long it recorded, in ms.
+    pub duration_ms: u64,
 }
 
 /// `data` of `chrome-cdp cdp --json`.

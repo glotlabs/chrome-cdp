@@ -11,6 +11,7 @@ mod commands;
 pub(crate) mod console;
 mod eval;
 mod format;
+mod har;
 pub(crate) mod netlog;
 mod network;
 mod pdf;
@@ -19,6 +20,7 @@ mod screenshot;
 mod sourcemaps;
 
 pub use eval::check_eval;
+pub(crate) use har::HarRecording;
 pub use network::RESOURCE_TYPES;
 pub use screenshot::check_screenshot;
 pub(crate) use sourcemaps::SourceMaps;

@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>HAR</title>
+  <!-- No favicon request, so the HAR holds only the page's own. -->
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <h1>HAR</h1>
+  <!-- A binary body (embedded in base64) and a POST with a JSON body. -->
+  <img src="dot.png" alt="dot">
+  <button id="post" onclick="post()">Post</button>
+  <p id="out"></p>
+  <script>
+    function post() {
+      fetch('/items?n=2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{"a":1}',
+      })
+        .then((r) => r.json())
+        .then((items) => { document.getElementById('out').textContent = `${items.length} items`; });
+    }
+  </script>
+</body>
+</html>

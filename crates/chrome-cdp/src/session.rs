@@ -25,10 +25,10 @@ use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
     Action, ActionRequest, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
     ConsoleRequest, DialogRequest, DownloadsRequest, ElementState, EvalRequest, FindRequest,
-    HttpCredentials, ImageFormat, NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest,
-    NetworkShowRequest, OpenRequest, PdfRequest, Read, ReadRequest, ScreenshotRequest,
-    SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, WaitFor,
-    WaitRequest,
+    HarStartRequest, HarStopRequest, HttpCredentials, ImageFormat, NavigateRequest, Navigation,
+    NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PdfRequest, Read,
+    ReadRequest, ScreenshotRequest, SnapshotRequest, TabCloseRequest, TabNewRequest,
+    TabSelectRequest, TabsRequest, WaitFor, WaitRequest,
 };
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
@@ -37,10 +37,10 @@ use tokio::runtime::Runtime;
 
 use crate::cli::{
     AfterArgs, CdpArgs, CloseArgs, ConnectArgs, DEFAULT_TIMEOUT, DialogArgs, DialogCommand,
-    DownloadsArgs, ElementStateArg, EvalArgs, FindArgs, GlobalArgs, GotoArgs, HistoryArgs,
-    IdleArgs, ImageFormatArg, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs,
-    ReloadArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs, TabArgs,
-    TabCommand, TabsArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    DownloadsArgs, ElementStateArg, EvalArgs, FindArgs, GlobalArgs, GotoArgs, HarArgs, HarCommand,
+    HistoryArgs, IdleArgs, ImageFormatArg, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs,
+    PdfArgs, ReloadArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs,
+    TabArgs, TabCommand, TabsArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -815,6 +815,36 @@ pub(crate) fn pdf(args: &PdfArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
         to_stdout(output)
     } else {
         Ok(output)
+    }
+}
+
+/// `har start` and `har stop`: need a running session.
+pub(crate) fn har(args: &HarArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let timeout_ms = millis(ctx.timeout);
+    match &args.command {
+        HarCommand::Start(start) => {
+            let request = HarStartRequest {
+                tab: ctx.tab.clone(),
+                content: start.content.to_content(),
+                timeout_ms,
+            };
+            ctx.runtime
+                .block_on(client.call_output(rpc::HAR_START, &request, ctx.timeout + QUICK))
+        }
+        HarCommand::Stop(stop) => {
+            let path = stop
+                .output
+                .as_deref()
+                .map(input::absolute_path)
+                .transpose()?
+                .map(PathBuf::from);
+            let request = HarStopRequest { path, timeout_ms };
+            ctx.runtime
+                .block_on(client.call_output(rpc::HAR_STOP, &request, ctx.timeout + QUICK))
+        }
     }
 }
 

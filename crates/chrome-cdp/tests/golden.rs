@@ -800,6 +800,18 @@ const CASES: &[Case] = &[
         fixture: Fixture::None,
     },
     Case {
+        name: "har-start",
+        args: &["har", "start", "--content", "omit"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "har-stop-not-recording",
+        args: &["har", "stop"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
         name: "goto-auth-required",
         args: &["goto", "{site}/auth/"],
         modes: ERR,

@@ -834,6 +834,23 @@ Examples:
   EOF")]
     Eval(EvalArgs),
 
+    /// Record the page's requests to a HAR file.
+    #[command(
+        subcommand_required = true,
+        arg_required_else_help = true,
+        after_help = "\
+`har start` marks where each tab's network log is; `har stop` writes the
+requests since then, of every tab (or of --tab), as a HAR 1.2 file that
+DevTools, Charles or a HAR viewer can open. Response bodies go in unless
+`--content omit`. Needs a running session.
+
+Examples:
+  chrome-cdp har start
+  chrome-cdp click e5 && chrome-cdp har stop -o checkout.har
+  chrome-cdp har start --content omit --tab t2"
+    )]
+    Har(HarArgs),
+
     /// Make one raw CDP call on the session's browser or current page.
     #[command(after_help = "\
 Starts the session's browser first if it has none. --tab and --frame send
@@ -2049,6 +2066,70 @@ impl ShotScaleArg {
 }
 
 #[derive(Debug, Args)]
+pub(crate) struct HarArgs {
+    #[command(subcommand)]
+    pub(crate) command: HarCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum HarCommand {
+    /// Start recording requests (of every tab, or of --tab).
+    #[command(after_help = "\
+Starting again while recording keeps the recording and takes the new
+--content.
+
+Examples:
+  chrome-cdp har start
+  chrome-cdp har start --content omit      # sizes and types, no bodies
+  chrome-cdp har start --tab t2")]
+    Start(HarStartArgs),
+
+    /// Save the requests recorded since `har start` to a HAR file.
+    #[command(after_help = "\
+Prints the file's path (-q: only the path); the file goes to the session's
+hars/ directory (1.har, 2.har, …) unless -o names one. Bodies Chrome no
+longer has are left out, with a warning.
+
+Examples:
+  chrome-cdp har stop -o checkout.har
+  chrome-cdp har stop -q")]
+    Stop(HarStopArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct HarStartArgs {
+    /// Response bodies: in the file (`embed`) or left out (`omit`).
+    #[arg(long, value_enum, default_value_t = HarContentArg::Embed, value_name = "HOW")]
+    pub(crate) content: HarContentArg,
+}
+
+/// `har start --content`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum HarContentArg {
+    /// Text as it is, binary bodies in base64.
+    Embed,
+    /// Only sizes and MIME types.
+    Omit,
+}
+
+impl HarContentArg {
+    pub(crate) fn to_content(self) -> engine::HarContent {
+        match self {
+            Self::Embed => engine::HarContent::Embed,
+            Self::Omit => engine::HarContent::Omit,
+        }
+    }
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct HarStopArgs {
+    /// Where to save it; a numbered file in the session's hars/ directory
+    /// if not given.
+    #[arg(short, long, value_name = "PATH")]
+    pub(crate) output: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
 pub(crate) struct PdfArgs {
     /// Where to save it (`-` for stdout); a numbered file in the session's
     /// pdfs/ directory if not given.
@@ -2715,6 +2796,8 @@ mod tests {
         "schema",
         "screenshot",
         "pdf",
+        "har start",
+        "har stop",
         "network clear",
         "count",
         "box",

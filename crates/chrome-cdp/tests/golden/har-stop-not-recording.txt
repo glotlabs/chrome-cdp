@@ -1,0 +1,11 @@
+$ chrome-cdp har stop
+exit: 2
+--- stderr
+error: session default is not recording a HAR
+  hint: chrome-cdp har start   (then act, then har stop)
+
+$ chrome-cdp har stop --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"session default is not recording a HAR","hint":"chrome-cdp har start   (then act, then har stop)"}}
+
