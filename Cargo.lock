@@ -1091,6 +1091,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "strsim",
  "tempfile",
  "toml",
  "url",

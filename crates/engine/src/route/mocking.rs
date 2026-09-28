@@ -242,6 +242,9 @@ impl Engine {
         }
         for entry in &log {
             let _ = writeln!(text, "{}", mock::text::log_line(entry));
+            for line in mock::text::closest_lines(entry) {
+                let _ = writeln!(text, "  {line}");
+            }
         }
         if log.is_empty() {
             text.push_str(

@@ -13,11 +13,14 @@
 //!   (`chrome-cdp schema mocks`);
 //! - `load`: finding sets by name and compiling them;
 //! - `matcher`: conditions on a request, with the reason one fails;
+//! - `closest`: how close a request comes to them (unmatched requests'
+//!   closest mocks, and [`RequestFilter`] of `expect request`);
 //! - `respond`: answers, data files, content types;
 //! - `template`: `{{params.id}}` and friends (`minijinja`);
 //! - `engine`: [`Mocks`];
 //! - [`text`]: the text form of the `mock` commands' output.
 
+mod closest;
 mod collection;
 mod engine;
 pub mod file;
@@ -28,6 +31,7 @@ mod respond;
 mod template;
 pub mod text;
 
+pub use closest::{RequestFilter, Verdict};
 pub use engine::{Answer, Mocks, Outcome, Seed, StateItem};
 pub use file::{AfterSequence, Cors, Unmatched, schema};
 pub use load::{MockSet, Source, available};

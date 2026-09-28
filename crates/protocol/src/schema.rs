@@ -1718,6 +1718,14 @@ pub struct RoutedRequest {
     /// it was unmatched, and the set's `unmatched` policy handled it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unmatched: Option<String>,
+    /// With `unmatched`: that set's policy, `fail`, `passthrough` or
+    /// `abort`. A `fail` fails the test that sent it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<String>,
+    /// With `unmatched`: the mocks that come closest to answering it,
+    /// best first, each with the condition it fails.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub closest: Vec<MockCheck>,
     /// What happened: `fulfill 200`, `abort failed`, `continue`, …
     pub outcome: String,
 }

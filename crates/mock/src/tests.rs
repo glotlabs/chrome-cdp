@@ -193,6 +193,7 @@ fn later_sets_win_and_unmatched_requests_in_scope_fail() {
                 status, headers, ..
             },
             outcome,
+            ..
         } => {
             assert_eq!((set.as_str(), status), ("base", 501));
             assert_eq!(outcome, "unmatched, fulfill 501");
@@ -219,6 +220,57 @@ fn later_sets_win_and_unmatched_requests_in_scope_fail() {
     assert_eq!(m.remove(&["nope".into()]), Err("nope".into()));
     assert_eq!(m.remove(&["base".into()]), Ok(vec!["base".into()]));
     assert_eq!(m.clear(), ["checkout"]);
+}
+
+#[test]
+fn unmatched_requests_name_the_closest_mocks() {
+    let d = shop();
+    let mut m = mocks(d.path(), &["base", "checkout"]);
+    let closest = |m: &mut Mocks, method, url, body| match m.decide(&req(method, url, body), 0) {
+        Outcome::Unmatched {
+            closest, policy, ..
+        } => {
+            assert_eq!(policy, crate::Unmatched::Fail);
+            closest
+                .into_iter()
+                .map(|c| {
+                    format!(
+                        "{} {}: {}",
+                        c.mock.at,
+                        c.mock.name,
+                        c.reason.unwrap_or_default()
+                    )
+                })
+                .collect::<Vec<_>>()
+        }
+        other => panic!("{other:?}"),
+    };
+    // A typo in the path: the mocks of that path, in the order they are
+    // tried.
+    assert_eq!(
+        closest(&mut m, "GET", "http://app/api/product", None),
+        [
+            "checkout.toml:2 one product only: path differs: expects /api/products, got /api/product",
+            "base.toml:5 list products: path differs: expects /api/products, got /api/product",
+        ]
+    );
+    // The method and path match, the body does not: that mock alone.
+    assert_eq!(
+        closest(
+            &mut m,
+            "POST",
+            "http://app/api/login",
+            Some(br#"{"email":"ada@other.org"}"#.as_slice())
+        ),
+        [r#"base.toml:20 login: json $.email: expects "*@example.com", got "ada@other.org""#]
+    );
+    // The method differs.
+    assert_eq!(
+        closest(&mut m, "PUT", "http://app/api/orders", None),
+        ["base.toml:25 orders: method differs: expects POST, got PUT"]
+    );
+    // Nothing close.
+    assert!(closest(&mut m, "GET", "http://app/api/cart", None).is_empty());
 }
 
 #[test]

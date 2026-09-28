@@ -19,6 +19,7 @@ use protocol::schema::{
 };
 use serde_json::{Value, json};
 
+use crate::closest::{CLOSEST, Closeness, closest, glob_similarity, path_similarity};
 use crate::collection::{self, Collection, Op};
 use crate::file::{AfterSequence, Cors, Unmatched};
 use crate::load::{Mock, MockSet, Step};
@@ -47,11 +48,14 @@ pub enum Outcome {
     /// A mock answers it.
     Answer(Answer),
     /// No mock answers it, and set `set` owns it: `response` is its
-    /// `unmatched` policy's answer.
+    /// `unmatched` policy's (`policy`) answer. `closest` are the mocks
+    /// that come closest to matching it, with the condition each fails.
     Unmatched {
         set: String,
+        policy: Unmatched,
         response: Response,
         outcome: String,
+        closest: Vec<MockCheck>,
     },
     /// A CORS preflight for a request the mocks answer (or own): allow it.
     Preflight { mock: Option<MockRef> },
@@ -620,9 +624,65 @@ impl Mocks {
         let outcome = format!("unmatched, {}", response.outcome());
         Outcome::Unmatched {
             set: set.name().to_owned(),
+            policy: set.unmatched,
             response,
             outcome,
+            closest: self.closest(parsed),
         }
+    }
+
+    /// The mocks (and collections) that come closest to answering a
+    /// request none answers, best first, with why each does not.
+    fn closest(&self, parsed: &Parsed) -> Vec<MockCheck> {
+        let mut candidates = Vec::new();
+        for set in self.sets.iter().rev() {
+            for mock in &set.mocks {
+                let (closeness, reason) = match mock.matcher.check(parsed, &parsed.method, false) {
+                    Err(why) => (mock.matcher.closeness(parsed), why),
+                    // It matches, but does not answer.
+                    Ok(_) => (
+                        Closeness {
+                            path: 100,
+                            score: u32::MAX,
+                        },
+                        holds(&mock.when, &self.state).err().unwrap_or_else(|| {
+                            format!(
+                                "its sequence of {} is used up, and after_sequence = \"unmatched\"",
+                                answers(mock.steps.len())
+                            )
+                        }),
+                    ),
+                };
+                candidates.push((
+                    closeness,
+                    MockCheck {
+                        mock: mock_ref(set, mock),
+                        matches: false,
+                        reason: Some(reason),
+                    },
+                ));
+            }
+            for coll in &set.collections {
+                let Err(reason) = coll.op(&parsed.path, &parsed.method) else {
+                    continue;
+                };
+                let item = format!("{}/:id", coll.path.to_string().trim_end_matches('/'));
+                let path = glob_similarity(&coll.path, &parsed.path)
+                    .max(path_similarity(&item, &parsed.path).min(99));
+                candidates.push((
+                    Closeness {
+                        path,
+                        score: path * 4 + 50,
+                    },
+                    MockCheck {
+                        mock: collection_ref(set, coll),
+                        matches: false,
+                        reason: Some(reason),
+                    },
+                ));
+            }
+        }
+        closest(candidates, CLOSEST)
     }
 
     /// Which mock would answer `req` and why the others would not, without

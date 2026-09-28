@@ -460,10 +460,16 @@ impl Table {
             }
             Outcome::Unmatched {
                 set,
+                policy,
                 response,
                 outcome,
+                closest,
             } => {
                 let seq = self.log_mock(req, None, Some(set), outcome);
+                if let Some((_, entry)) = self.journal.back_mut() {
+                    entry.policy = Some(policy.as_str().to_owned());
+                    entry.closest = closest;
+                }
                 if matches!(response, Response::Passthrough { patch: None }) {
                     return Decision::Pass;
                 }
@@ -507,6 +513,8 @@ impl Table {
                 route: None,
                 mock,
                 unmatched,
+                policy: None,
+                closest: Vec::new(),
                 outcome,
             },
         ));

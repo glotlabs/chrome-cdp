@@ -115,6 +115,23 @@ pub fn log_line(entry: &RoutedRequest) -> String {
     line
 }
 
+/// The closest mocks of an unmatched journal entry, a line each:
+/// `closest mock: base.toml:31 "cart": path differs: expects /api/carts,
+/// got /api/cart`; none if no mock came close.
+pub fn closest_lines(entry: &RoutedRequest) -> Vec<String> {
+    entry
+        .closest
+        .iter()
+        .map(|check| {
+            let mut line = format!("closest mock: {} \"{}\"", check.mock.at, check.mock.name);
+            if let Some(reason) = &check.reason {
+                let _ = write!(line, ": {reason}");
+            }
+            line
+        })
+        .collect()
+}
+
 /// `mock explain`: the answer, then every mock checked (at most `limit`,
 /// 0 for all).
 pub fn explain(data: &MockExplainData, limit: usize) -> String {

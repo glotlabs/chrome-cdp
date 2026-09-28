@@ -166,7 +166,21 @@ impl Matcher {
                 self.methods.join(" or ")
             ));
         }
-        let params = match &self.target {
+        let params = self.check_target(req)?;
+        self.check_query(req)?;
+        if request_only {
+            return Ok(params);
+        }
+        self.check_headers(req)?;
+        if let Some(body) = &self.body {
+            check_body(body, req)?;
+        }
+        Ok(params)
+    }
+
+    /// The path, URL or regex condition: the parameters it captures.
+    pub(crate) fn check_target(&self, req: &Parsed) -> Result<BTreeMap<String, String>, String> {
+        Ok(match &self.target {
             None => BTreeMap::new(),
             Some(Target::Path(glob)) => glob
                 .captures(&req.path)
@@ -184,7 +198,10 @@ impl Matcher {
                     .filter_map(|n| Some((n.to_owned(), decode(caps.name(n)?.as_str()))))
                     .collect()
             }
-        };
+        })
+    }
+
+    pub(crate) fn check_query(&self, req: &Parsed) -> Result<(), String> {
         for (name, glob) in &self.query {
             let values: Vec<&str> = req
                 .query
@@ -203,9 +220,10 @@ impl Matcher {
                 ));
             }
         }
-        if request_only {
-            return Ok(params);
-        }
+        Ok(())
+    }
+
+    pub(crate) fn check_headers(&self, req: &Parsed) -> Result<(), String> {
         for (name, glob) in &self.headers {
             let Some(value) = req.header(name) else {
                 return Err(format!("header {name}: missing"));
@@ -218,10 +236,7 @@ impl Matcher {
                 ));
             }
         }
-        if let Some(body) = &self.body {
-            check_body(body, req)?;
-        }
-        Ok(params)
+        Ok(())
     }
 
     /// What it matches, in a few words: `GET /api/products/:id (query q,
@@ -269,7 +284,7 @@ fn quoted(text: &str) -> String {
     format!("\"{}\"", shown(text))
 }
 
-fn check_body(body: &BodyMatcher, req: &Parsed) -> Result<(), String> {
+pub(crate) fn check_body(body: &BodyMatcher, req: &Parsed) -> Result<(), String> {
     match body {
         BodyMatcher::Json { value, contains } => {
             let Some(json) = &req.json else {
