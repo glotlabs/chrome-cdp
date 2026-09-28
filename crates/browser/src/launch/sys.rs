@@ -16,13 +16,23 @@ pub(crate) fn euid() -> u32 {
 /// Sends SIGKILL to every process in the group `pgid`. A group that no
 /// longer exists is not an error.
 pub(crate) fn kill_group(pgid: u32) -> io::Result<()> {
+    signal_group(pgid, libc::SIGKILL)
+}
+
+/// Sends SIGTERM to every process in the group `pgid`, asking it to exit.
+/// A group that no longer exists is not an error.
+pub(crate) fn terminate_group(pgid: u32) -> io::Result<()> {
+    signal_group(pgid, libc::SIGTERM)
+}
+
+fn signal_group(pgid: u32, signal: libc::c_int) -> io::Result<()> {
     let pgid =
         libc::pid_t::try_from(pgid).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
     if pgid <= 1 {
         return Err(io::ErrorKind::InvalidInput.into());
     }
     // SAFETY: kill has no memory preconditions; a negative pid names the group.
-    if unsafe { libc::kill(-pgid, libc::SIGKILL) } == 0 {
+    if unsafe { libc::kill(-pgid, signal) } == 0 {
         return Ok(());
     }
     let err = io::Error::last_os_error();
@@ -35,7 +45,6 @@ pub(crate) fn kill_group(pgid: u32) -> io::Result<()> {
 
 /// Whether any process in the group `pgid` is still alive (zombies count
 /// until they are reaped).
-#[cfg(test)]
 pub(crate) fn group_alive(pgid: u32) -> bool {
     let Ok(pgid) = libc::pid_t::try_from(pgid) else {
         return false;

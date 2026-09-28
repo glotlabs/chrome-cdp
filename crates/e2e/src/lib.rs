@@ -10,5 +10,6 @@
 //! these.
 
 pub mod config;
+pub mod web_server;
 
 pub use config::{Config, find_project_file};

@@ -226,6 +226,18 @@ pub fn kill_process_group(pgid: u32) -> io::Result<()> {
     sys::kill_group(pgid)
 }
 
+/// Asks the process group `pgid` to exit (SIGTERM). A group that is
+/// already gone is not an error; pids 0 and 1 are refused.
+pub fn terminate_process_group(pgid: u32) -> io::Result<()> {
+    sys::terminate_group(pgid)
+}
+
+/// Whether any process of the group `pgid` is alive (an unreaped zombie
+/// counts).
+pub fn process_group_alive(pgid: u32) -> bool {
+    sys::group_alive(pgid)
+}
+
 /// The effective user id, e.g. to name a per-user directory.
 pub fn effective_uid() -> u32 {
     sys::euid()
