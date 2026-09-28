@@ -354,7 +354,7 @@ impl Engine {
         };
         let shown = match &baseline {
             _ if !store => format!(
-                "passed: expect-snapshot {} ({}, {lines} lines)",
+                "passed: expect-snapshot {}: {lines} lines as in the baseline ({})",
                 req.name,
                 format::duration(reads.elapsed)
             ),
@@ -606,13 +606,17 @@ impl Engine {
         };
         let text = match (&baseline, changed) {
             _ if !store => format!(
-                "passed: expect-screenshot {} ({}, {width}x{height}{})",
+                "passed: expect-screenshot {}: {width}x{height} as in the baseline{} ({})",
                 req.name,
-                format::duration(reads.elapsed),
                 match changed {
                     Some(0) | None => String::new(),
-                    Some(n) => format!(", {} pixels differ", format::thousands(to_usize(n))),
-                }
+                    Some(n) => format!(
+                        " but for {} {}",
+                        format::thousands(to_usize(n)),
+                        if n == 1 { "pixel" } else { "pixels" }
+                    ),
+                },
+                format::duration(reads.elapsed),
             ),
             (Some(_), Some(0)) => {
                 data.result = BaselineResult::Unchanged;
