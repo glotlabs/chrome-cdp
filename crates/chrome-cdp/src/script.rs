@@ -26,6 +26,10 @@ use crate::{input, output};
 /// How many problems one error lists as notes; the rest are counted.
 const MAX_LISTED: usize = 10;
 
+/// The directives `batch` and `run` know, for "did you mean". The parser
+/// takes `@syntax` out of the tree, so any directive left is unknown.
+const DIRECTIVES: &[&str] = &["syntax"];
+
 /// `batch`: the script is stdin.
 pub(crate) fn batch(args: &BatchArgs, global: &GlobalArgs) -> u8 {
     let mode = global.mode();
@@ -123,11 +127,18 @@ fn prepare(
     for item in &parsed.script.items {
         match item {
             Item::Comment(_) => {}
-            Item::Directive(d) => problems.push(
-                ScriptError::new(d.span.clone(), format!("unknown directive @{}", d.name))
-                    .hint("batch and run know only @syntax; see docs/scenario-syntax.md")
-                    .into(),
-            ),
+            Item::Directive(d) => {
+                let known = protocol::suggest::similar(&d.name, DIRECTIVES.iter().copied(), 1);
+                let hint = match known.first() {
+                    Some(name) => format!("did you mean @{name}?"),
+                    None => "batch and run know only @syntax; see docs/scenario-syntax.md".into(),
+                };
+                problems.push(
+                    ScriptError::new(d.span.clone(), format!("unknown directive @{}", d.name))
+                        .hint(hint)
+                        .into(),
+                );
+            }
             Item::Command(line) => match step(line, vars, global) {
                 Ok(step) => steps.push(step),
                 Err(problem) => problems.push(problem),
@@ -199,6 +210,7 @@ fn step(line: &Line, vars: &Vars, global: &GlobalArgs) -> Result<Step, Problem> 
             ),
         ));
     }
+    check_locators(&matches).map_err(problem)?;
     inherit(&mut cli.global, &matches, global);
     Ok(Step {
         cli,
@@ -239,6 +251,37 @@ fn clap_problem(e: &clap::Error, words: &[String], line: &Line) -> ErrorInfo {
         },
         None => info,
     }
+}
+
+/// Parses the line's locators (the arguments named `LOCATOR`, and
+/// `drag`'s `FROM` and `TO`), so a bad one fails before the script starts
+/// rather than when its step runs.
+fn check_locators(matches: &ArgMatches) -> Result<(), ErrorInfo> {
+    let mut cmd = Cli::command();
+    let mut matches = matches;
+    while let Some((name, sub)) = matches.subcommand() {
+        let Some(next) = cmd.find_subcommand(name).cloned() else {
+            break;
+        };
+        cmd = next;
+        matches = sub;
+        for arg in cmd.get_arguments() {
+            let locator = arg.get_value_names().is_some_and(|names| {
+                names
+                    .iter()
+                    .any(|n| ["LOCATOR", "FROM", "TO"].contains(&n.as_str()))
+            });
+            if !locator {
+                continue;
+            }
+            if let Ok(Some(values)) = matches.try_get_raw(arg.get_id().as_str()) {
+                for value in values.filter_map(|v| v.to_str()) {
+                    engine::parse_locator(value)?;
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Gives a step the script's global flags, except those its line sets.

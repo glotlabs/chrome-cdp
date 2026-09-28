@@ -120,6 +120,15 @@ fn lines_are_checked_against_the_commands() {
         "{err}"
     );
 
+    // Locators are parsed too.
+    let err = check("text h1\n");
+    assert!(
+        err.starts_with("error: <stdin>:1:1: `h1` is not a locator\n"),
+        "{err}"
+    );
+    let err = check("drag e1 'role=button[name=\"x\"'\n");
+    assert!(err.starts_with("error: <stdin>:1:1: "), "{err}");
+
     let err = check("batch\n");
     assert!(
         err.starts_with("error: <stdin>:1:1: batch and run cannot run inside a script\n"),
@@ -128,6 +137,13 @@ fn lines_are_checked_against_the_commands() {
     let err = check("@test login\n  goto /\n");
     assert!(
         err.starts_with("error: <stdin>:1:1: unknown directive @test\n"),
+        "{err}"
+    );
+    let err = check("@synax 1\ngoto /\n");
+    assert!(
+        err.starts_with(
+            "error: <stdin>:1:1: unknown directive @synax\n  hint: did you mean @syntax?\n"
+        ),
         "{err}"
     );
     let err = check("goto / --json\n");
