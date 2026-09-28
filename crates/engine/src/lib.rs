@@ -25,7 +25,8 @@
 //! commands (6.1), then its network log (6.2), and `screenshot` and `pdf`
 //! (6.3). Plan 07 adds request routing (`route`, 7.1) and emulation
 //! (`emulate`, 7.2), init scripts and exposed functions
-//! (`inject`, 7.3).
+//! (`inject`, 7.3), and cookies, storage and storage state files
+//! (`state`, 7.4).
 
 mod clipboard;
 mod dialog;
@@ -48,6 +49,7 @@ mod read;
 mod request;
 mod route;
 mod snapshot;
+mod state;
 mod tabs;
 mod wait;
 
@@ -81,19 +83,21 @@ pub use raw::check_cdp;
 pub use read::check_read;
 pub use request::{
     Action, ActionRequest, Button, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
-    ConsoleRequest, CoverageStartRequest, CoverageStopRequest, DialogPolicy, DialogRequest,
-    DownloadsRequest, ElementState, EmulateRequest, EmulationChange, EvalRequest, EvalWorld,
-    ExposeRequest, FindRequest, HarContent, HarStartRequest, HarStopRequest, HighlightRequest,
-    HttpCredentials, ImageFormat, InitScriptAddRequest, InitScriptListRequest,
-    InitScriptRemoveRequest, InspectRequest, Margins, Modifier, MouseOp, NavigateRequest,
-    Navigation, NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat,
-    PdfRequest, PerfRequest, PermissionsOp, PermissionsRequest, Read, ReadRequest, RouteAction,
-    RouteBody, RouteRequest, RouteSpec, RoutesRequest, ScreenshotRequest, ScrollTo, ShotScale,
-    Since, SnapshotEngine, SnapshotRequest, StatusRange, TabCloseRequest, TabNewRequest,
-    TabSelectRequest, TabsRequest, Target, TraceStartRequest, TraceStopRequest, UnrouteRequest,
-    WaitFor, WaitRequest, WaitUntil,
+    ConsoleRequest, CookieFilter, CookieSpec, CookiesOp, CookiesRequest, CoverageStartRequest,
+    CoverageStopRequest, DialogPolicy, DialogRequest, DownloadsRequest, ElementState,
+    EmulateRequest, EmulationChange, EvalRequest, EvalWorld, ExposeRequest, FindRequest,
+    HarContent, HarStartRequest, HarStopRequest, HighlightRequest, HttpCredentials, ImageFormat,
+    InitScriptAddRequest, InitScriptListRequest, InitScriptRemoveRequest, InspectRequest, Margins,
+    Modifier, MouseOp, NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest,
+    NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest, PerfRequest, PermissionsOp,
+    PermissionsRequest, Read, ReadRequest, RouteAction, RouteBody, RouteRequest, RouteSpec,
+    RoutesRequest, ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest,
+    StateLoadRequest, StateSaveRequest, StatusRange, StorageArea, StorageOp, StorageRequest,
+    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest,
+    TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
+pub use state::{OriginState, StateCookie, StorageState};
 pub use tabs::commands::TabClosed;
 pub use tabs::parse_tab_id;
 pub use wait::check_condition;
@@ -360,6 +364,14 @@ impl Engine {
             };
             self.emulate(change).await?;
         }
+        let state = match &req.state {
+            Some(state) => {
+                let (data, loaded) = self.load_state(state).await?;
+                warnings.extend(loaded);
+                Some(data)
+            }
+            None => None,
+        };
         let page = match &req.url {
             Some(url) => {
                 let tab = tab.map(tabs::tab_name);
@@ -387,6 +399,7 @@ impl Engine {
                     .device
                     .as_ref()
                     .and(self.settings.emulation.get().device),
+                state,
             },
             warnings,
         })
@@ -485,6 +498,7 @@ impl Engine {
                         browser: running.info.clone(),
                         page: None,
                         device: None,
+                        state: None,
                     },
                     warnings,
                 });
@@ -555,6 +569,7 @@ impl Engine {
                 browser: running.info.clone(),
                 page: None,
                 device: None,
+                state: None,
             },
             warnings,
         })

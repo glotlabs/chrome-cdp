@@ -54,7 +54,7 @@ use self::dialogs::OpenDialog;
 use self::downloads::Download;
 use crate::emulate::{Aspects, Emulator};
 use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
-use crate::inject::{Injector, Key};
+use crate::inject::{Injector, Key, SEED_BINDING};
 use crate::injected;
 use crate::input::Pointer;
 use crate::network::{Exchange, Failure, Idle, InFlight, Network};
@@ -1312,6 +1312,9 @@ async fn watch_host(
                     network_event(&shared, &session_id, tab, method, &event);
                 }
             }
+            "Runtime.bindingCalled" if event.params["name"] == SEED_BINDING => {
+                seeded(&shared, &event);
+            }
             "Runtime.consoleAPICalled"
             | "Runtime.exceptionThrown"
             | "Runtime.exceptionRevoked"
@@ -1347,6 +1350,21 @@ async fn watch_host(
                 }
             }
         }
+    }
+}
+
+/// A storage seed gave an origin's document its storage: it is taken out
+/// of every page and iframe session (plan 07, milestone 7.4).
+fn seeded(shared: &Arc<Shared>, event: &RawEvent) {
+    let Some(origin) = event.params["payload"].as_str() else {
+        return;
+    };
+    if shared.settings.injections.seeded(origin) {
+        tracing::debug!("{origin} got its storage; its seed is taken out");
+        let shared2 = shared.clone();
+        shared.spawn(async move {
+            inject::apply(&shared2, false, SETUP_TIMEOUT).await;
+        });
     }
 }
 

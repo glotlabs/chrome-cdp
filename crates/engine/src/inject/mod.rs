@@ -17,6 +17,12 @@
 //! `binding <name>(args)` (see `observe::console`).
 //!
 //! Workers get neither (`Page` is not theirs).
+//!
+//! Milestone 7.4's `state load` adds seeds here: for an origin with no page
+//! open, an isolated-world script that gives the origin's first document
+//! its storage and then reports on [`SEED_BINDING`], upon which the seed is
+//! taken out ([`Injector::seeded`]). Seeds are not init scripts to the
+//! user: `init-script list` does not show them.
 
 pub(crate) mod commands;
 
@@ -33,6 +39,10 @@ use crate::request::EvalWorld;
 /// `__chromeCdpExpose_onSave` to Chrome, and the page only sees the
 /// wrapper.
 pub(crate) const BINDING_PREFIX: &str = "__chromeCdpExpose_";
+
+/// The binding a storage seed reports on, in chrome-cdp's isolated world
+/// only; its payload is the origin that got its storage.
+pub(crate) const SEED_BINDING: &str = "__chromeCdpStateSeeded";
 
 /// How much of a script's first line `init-script list` shows.
 const PREVIEW: usize = 60;
@@ -57,6 +67,10 @@ struct Table {
     bindings: Vec<(String, u32)>,
     /// The last binding serial number given.
     last_serial: u32,
+    /// Storage seeds (`state load`), by origin; at most one per origin.
+    seeds: Vec<(String, Arc<Script>)>,
+    /// The last seed id given.
+    last_seed: u32,
 }
 
 /// An init script.
@@ -77,7 +91,14 @@ pub(crate) struct Script {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum Key {
     Script(u32),
-    Binding { name: String, serial: u32 },
+    Binding {
+        name: String,
+        serial: u32,
+    },
+    /// A storage seed, by its own ids.
+    Seed(u32),
+    /// [`SEED_BINDING`], while there are seeds.
+    SeedBinding,
 }
 
 /// What a [`Key`] stands for.
@@ -86,6 +107,8 @@ pub(crate) enum Wanted {
     Script(Arc<Script>),
     /// An exposed function's name.
     Binding(String),
+    /// [`SEED_BINDING`].
+    SeedBinding,
 }
 
 fn lock(m: &Mutex<Table>) -> MutexGuard<'_, Table> {
@@ -240,9 +263,37 @@ impl Injector {
             .collect()
     }
 
+    /// Adds `source`, an isolated-world script, as the storage seed of
+    /// `origin`, in place of an earlier one.
+    pub(crate) fn seed(&self, origin: &str, source: &str) {
+        let mut table = lock(&self.table);
+        table.last_seed += 1;
+        let id = table.last_seed;
+        let script = Arc::new(Script {
+            id,
+            source: format!("{source}\n//# sourceURL=chrome-cdp-state-seed-{id}.js"),
+            world: EvalWorld::Isolated,
+            file: None,
+            preview: String::new(),
+            size: source.len() as u64,
+        });
+        table.seeds.retain(|(o, _)| o != origin);
+        table.seeds.push((origin.to_owned(), script));
+    }
+
+    /// Takes out `origin`'s seed, which has done its work; returns whether
+    /// there was one.
+    pub(crate) fn seeded(&self, origin: &str) -> bool {
+        let mut table = lock(&self.table);
+        let before = table.seeds.len();
+        table.seeds.retain(|(o, _)| o != origin);
+        table.seeds.len() != before
+    }
+
     /// What every page and iframe session should have, in the order it is
     /// added: the exposed functions first (so init scripts can call them),
-    /// then the scripts.
+    /// then the storage seeds (after their binding), so init scripts see
+    /// the storage they give, then the scripts.
     pub(crate) fn wanted(&self) -> Vec<(Key, Wanted)> {
         let table = lock(&self.table);
         let bindings = table.bindings.iter().map(|(name, serial)| {
@@ -258,7 +309,17 @@ impl Injector {
             .scripts
             .iter()
             .map(|s| (Key::Script(s.id), Wanted::Script(s.clone())));
-        bindings.chain(scripts).collect()
+        let seed_binding =
+            (!table.seeds.is_empty()).then_some((Key::SeedBinding, Wanted::SeedBinding));
+        let seeds = table
+            .seeds
+            .iter()
+            .map(|(_, s)| (Key::Seed(s.id), Wanted::Script(s.clone())));
+        bindings
+            .chain(seed_binding)
+            .chain(seeds)
+            .chain(scripts)
+            .collect()
     }
 }
 

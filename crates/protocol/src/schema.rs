@@ -332,6 +332,36 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<PermissionsData>),
     },
     CommandSchema {
+        name: "cookies",
+        summary: "the browser's cookies, or those --url or --domain would get",
+        schema: || schema_for!(Envelope<CookiesData>),
+    },
+    CommandSchema {
+        name: "cookies set",
+        summary: "the cookie set, as the browser stored it",
+        schema: || schema_for!(Envelope<CookieSetData>),
+    },
+    CommandSchema {
+        name: "cookies clear",
+        summary: "the cookies removed",
+        schema: || schema_for!(Envelope<CookiesClearData>),
+    },
+    CommandSchema {
+        name: "storage",
+        summary: "a frame's localStorage or sessionStorage: its items, or the item read or changed",
+        schema: || schema_for!(Envelope<StorageData>),
+    },
+    CommandSchema {
+        name: "state save",
+        summary: "the storage state file written: its cookies and origins",
+        schema: || schema_for!(Envelope<StateData>),
+    },
+    CommandSchema {
+        name: "state load",
+        summary: "the storage state loaded: its cookies and origins, and how each origin got its storage",
+        schema: || schema_for!(Envelope<StateData>),
+    },
+    CommandSchema {
         name: "trace start",
         summary: "the tab whose performance trace is recording, and its categories",
         schema: || schema_for!(Envelope<TraceStartData>),
@@ -755,6 +785,9 @@ pub struct OpenData {
     /// The device emulated (`--device`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device: Option<String>,
+    /// The storage state loaded (`--state`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<StateData>,
 }
 
 /// `data` of `chrome-cdp close --json`.
@@ -1485,6 +1518,110 @@ pub struct ExposeData {
     pub changed: Vec<String>,
     /// Every function the session exposes now, oldest first.
     pub bindings: Vec<String>,
+}
+
+/// A cookie (`cookies`, plan 07).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CookieInfo {
+    pub name: String,
+    pub value: String,
+    /// `example.com` for a host-only cookie, `.example.com` for one its
+    /// subdomains get too.
+    pub domain: String,
+    pub path: String,
+    /// When it expires, in seconds since 1970; none for a session cookie.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires: Option<f64>,
+    pub http_only: bool,
+    pub secure: bool,
+    /// `Strict`, `Lax` or `None`; none when the cookie did not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub same_site: Option<String>,
+    /// The top-level site of a partitioned (CHIPS) cookie.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partition_key: Option<String>,
+}
+
+/// `data` of `chrome-cdp cookies --json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CookiesData {
+    /// By domain, then path, then name.
+    pub cookies: Vec<CookieInfo>,
+}
+
+/// `data` of `chrome-cdp cookies set --json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CookieSetData {
+    pub cookie: CookieInfo,
+}
+
+/// `data` of `chrome-cdp cookies clear --json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CookiesClearData {
+    /// How many cookies were removed.
+    pub removed: usize,
+}
+
+/// A name and value of `localStorage` or `sessionStorage`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct StorageItem {
+    pub name: String,
+    pub value: String,
+}
+
+/// `data` of `chrome-cdp storage --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct StorageData {
+    /// `local` or `session`.
+    pub area: String,
+    /// The origin whose storage it is.
+    pub origin: String,
+    /// The tab whose frame was used (`t1`).
+    pub tab: String,
+    /// `list`, `get`, `set`, `remove` or `clear`.
+    pub action: String,
+    /// `list`: every item, in key order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items: Vec<StorageItem>,
+    /// The key `get`, `set` or `remove` used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    /// `get`: the value (none when the key is not there); `set`: the value
+    /// set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    /// `set`, `remove`, `clear`: how many items there are now.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub length: Option<usize>,
+}
+
+/// One origin of a storage state file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct StateOriginInfo {
+    pub origin: String,
+    /// How many `localStorage` items.
+    pub local_storage: usize,
+    /// How many `sessionStorage` items (chrome-cdp's extension).
+    pub session_storage: usize,
+    /// How many IndexedDB databases (`--indexeddb`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indexed_db: Option<usize>,
+    /// `state load`: `now` when a page of the origin was open and got it at
+    /// once; `next-load` when the origin's next document gets it, before
+    /// its scripts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applied: Option<String>,
+}
+
+/// `data` of `chrome-cdp state save --json` and `state load --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct StateData {
+    /// The file written or read (absolute); none for stdin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// How many cookies.
+    pub cookies: usize,
+    pub origins: Vec<StateOriginInfo>,
 }
 
 /// The page size and kind of screen (`viewport`, or a device's; plan 07).

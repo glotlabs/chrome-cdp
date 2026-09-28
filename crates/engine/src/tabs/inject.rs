@@ -10,6 +10,9 @@
 //! session set up while a change is applied gets each item once. An item
 //! taken away while Chrome was still adding it is removed when Chrome's
 //! answer comes.
+//!
+//! Storage seeds (`state load`, milestone 7.4) are isolated-world scripts
+//! like the others, plus one binding in that world they report on.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -20,7 +23,7 @@ use futures_util::future::join_all;
 
 use super::{Shared, Step};
 use crate::frames::WORLD_NAME;
-use crate::inject::{BINDING_PREFIX, Key, Wanted, unwrapper, wrapper};
+use crate::inject::{BINDING_PREFIX, Key, SEED_BINDING, Wanted, unwrapper, wrapper};
 use crate::request::EvalWorld;
 
 /// The setup steps of a new page or iframe session.
@@ -101,14 +104,8 @@ fn add(
     what: &Wanted,
     now: bool,
 ) -> Step {
-    let binding = match what {
-        Wanted::Binding(name) => {
-            let params = runtime::AddBindingParams::new(format!("{BINDING_PREFIX}{name}"));
-            Some(session.call(params))
-        }
-        Wanted::Script(_) => None,
-    };
-    let params = match what {
+    let (binding, params) = match what {
+        Wanted::SeedBinding => return add_seed_binding(shared, session_id, session, key),
         Wanted::Script(script) => {
             let mut params =
                 page::AddScriptToEvaluateOnNewDocumentParams::new(script.source.clone());
@@ -116,14 +113,15 @@ fn add(
                 params.world_name = Some(WORLD_NAME.to_owned());
             }
             params.run_immediately = now.then_some(true);
-            params
+            (None, params)
         }
         Wanted::Binding(name) => {
+            let binding = runtime::AddBindingParams::new(format!("{BINDING_PREFIX}{name}"));
             // The function goes into the documents there are at once: the
             // binding is in them already.
             let mut params = page::AddScriptToEvaluateOnNewDocumentParams::new(wrapper(name));
             params.run_immediately = Some(true);
-            params
+            (Some(session.call(binding)), params)
         }
     };
     let script = session.call(params);
@@ -158,10 +156,47 @@ fn add(
     })
 }
 
+/// Adds [`SEED_BINDING`] to chrome-cdp's isolated world of `session`; the
+/// step records it as added (it has no script id).
+fn add_seed_binding(shared: &Arc<Shared>, session_id: &str, session: &Session, key: Key) -> Step {
+    let mut params = runtime::AddBindingParams::new(SEED_BINDING.to_owned());
+    params.execution_context_name = Some(WORLD_NAME.to_owned());
+    let call = session.call(params);
+    let shared = shared.clone();
+    let session = session.clone();
+    let session_id = session_id.to_owned();
+    Box::pin(async move {
+        call.await?;
+        let kept = {
+            let mut state = shared.lock();
+            match state
+                .hosts
+                .get_mut(&session_id)
+                .and_then(|h| h.injected.get_mut(&key))
+            {
+                Some(slot) => {
+                    *slot = Some(String::new());
+                    true
+                }
+                None => false,
+            }
+        };
+        if kept {
+            Ok(())
+        } else {
+            remove(&session, &key, String::new()).await
+        }
+    })
+}
+
 /// Takes `key` (added as script `identifier`) out of `session`: the
 /// script from new documents, and an exposed function from the documents
 /// there are too.
 fn remove(session: &Session, key: &Key, identifier: String) -> Step {
+    if *key == Key::SeedBinding {
+        let call = session.call(runtime::RemoveBindingParams::new(SEED_BINDING.to_owned()));
+        return Box::pin(async move { call.await.map(drop) });
+    }
     let script = session.call(page::RemoveScriptToEvaluateOnNewDocumentParams::new(
         identifier,
     ));

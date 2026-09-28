@@ -9,6 +9,8 @@ use protocol::schema::{Geolocation, Media, Throttle, Viewport};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::state::StorageState;
+
 /// `open`: start the session's browser, or check that the running one fits,
 /// then optionally load a URL.
 ///
@@ -79,6 +81,10 @@ pub struct OpenRequest {
     /// loading `url`.
     #[serde(default)]
     pub device: Option<String>,
+    /// `--state`: load this storage state (as `state load`) before
+    /// loading `url`. Never kept for a later daemon: it holds secrets.
+    #[serde(default)]
+    pub state: Option<StateLoadRequest>,
     /// Bounds the launch and the page load.
     pub timeout_ms: u64,
 }
@@ -869,6 +875,172 @@ pub struct ExposeRequest {
     /// With `remove`: every one.
     #[serde(default)]
     pub all: bool,
+    pub timeout_ms: u64,
+}
+
+/// `cookies`, `cookies set` and `cookies clear` (plan 07, milestone
+/// 7.4): the browser's cookies, of every tab.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CookiesRequest {
+    pub op: CookiesOp,
+    /// The output budget of the list (0 = none).
+    #[serde(default)]
+    pub max_chars: usize,
+    pub timeout_ms: u64,
+}
+
+/// What `cookies` does.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum CookiesOp {
+    /// List them (all, or those the filter keeps).
+    List {
+        #[serde(default)]
+        filter: CookieFilter,
+    },
+    /// Set one.
+    Set { cookie: CookieSpec },
+    /// Remove them (all, or those the filter keeps).
+    Clear {
+        #[serde(default)]
+        filter: CookieFilter,
+    },
+}
+
+/// Which cookies `cookies` and `cookies clear` take; all when empty.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CookieFilter {
+    /// `--url`: the cookies a request to this URL would carry.
+    #[serde(default)]
+    pub url: Option<String>,
+    /// `--domain`: cookies of this domain or its subdomains.
+    #[serde(default)]
+    pub domain: Option<String>,
+    /// `--name`: only cookies with this name.
+    #[serde(default)]
+    pub name: Option<String>,
+}
+
+impl CookieFilter {
+    pub fn is_empty(&self) -> bool {
+        self.url.is_none() && self.domain.is_none() && self.name.is_none()
+    }
+}
+
+/// `cookies set <name>=<value>`'s cookie.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct CookieSpec {
+    pub name: String,
+    pub value: String,
+    /// `--url`: the cookie's URL (its host, path and scheme). Without it
+    /// or `domain`, the active tab's URL.
+    #[serde(default)]
+    pub url: Option<String>,
+    /// `--domain`: `example.com` for that host only, `.example.com` for
+    /// its subdomains too (as Playwright's `addCookies` has it).
+    #[serde(default)]
+    pub domain: Option<String>,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub secure: bool,
+    #[serde(default)]
+    pub http_only: bool,
+    /// `Strict`, `Lax` or `None`.
+    #[serde(default)]
+    pub same_site: Option<String>,
+    /// Seconds since 1970; a session cookie without.
+    #[serde(default)]
+    pub expires: Option<f64>,
+}
+
+/// `storage local|session [list|get|set|remove|clear]` (plan 07,
+/// milestone 7.4): a frame's Web Storage.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StorageRequest {
+    pub area: StorageArea,
+    pub op: StorageOp,
+    /// `--origin`: a frame of this origin; the main frame without.
+    #[serde(default)]
+    pub origin: Option<String>,
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// The output budget (0 = none).
+    #[serde(default)]
+    pub max_chars: usize,
+    pub timeout_ms: u64,
+}
+
+/// `localStorage` or `sessionStorage`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StorageArea {
+    #[default]
+    Local,
+    Session,
+}
+
+impl StorageArea {
+    /// `local` or `session`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Local => "local",
+            Self::Session => "session",
+        }
+    }
+
+    /// The global's name: `localStorage` or `sessionStorage`.
+    pub fn global(self) -> &'static str {
+        match self {
+            Self::Local => "localStorage",
+            Self::Session => "sessionStorage",
+        }
+    }
+}
+
+/// What `storage` does.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum StorageOp {
+    List,
+    Get { key: String },
+    Set { key: String, value: String },
+    Remove { key: String },
+    Clear,
+}
+
+impl StorageOp {
+    /// The action's name.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::List => "list",
+            Self::Get { .. } => "get",
+            Self::Set { .. } => "set",
+            Self::Remove { .. } => "remove",
+            Self::Clear => "clear",
+        }
+    }
+}
+
+/// `state save <file>`: writes the session's cookies and storage.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StateSaveRequest {
+    /// Where to write it (absolute).
+    pub path: PathBuf,
+    /// `--indexeddb`: also each origin's IndexedDB databases.
+    #[serde(default)]
+    pub indexed_db: bool,
+    pub timeout_ms: u64,
+}
+
+/// `state load <file>`: gives the session a storage state's cookies and
+/// storage.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StateLoadRequest {
+    pub state: StorageState,
+    /// The file it was read from (absolute), for the output.
+    #[serde(default)]
+    pub path: Option<PathBuf>,
     pub timeout_ms: u64,
 }
 

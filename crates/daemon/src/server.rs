@@ -506,6 +506,8 @@ impl Daemon {
             base_url: None,
             tab: None,
             restart: false,
+            // It holds secrets, and a later daemon must not load it again.
+            state: None,
             ..p.request.clone()
         };
         let result = self.engine.open(p.request).await;
