@@ -21,7 +21,7 @@ for a human watching (`highlight`, `inspect`), mocking and blocking requests
 `throttle`, `cpu-throttle`, `time`, `permissions`), scripts and functions
 for every page (`init-script`, `expose`, `unexpose`), cookies, storage and
 saved logins (`cookies`, `storage`, `state`), raw CDP calls, scripts
-(`batch`, `run`), `install`/`uninstall`, and help for people and agents
+(`batch`, `run`, `convert`), `install`/`uninstall`, and help for people and agents
 (`help`, `skill`, `completions`, `schema`) work so far:
 
 ```sh
@@ -507,6 +507,12 @@ wait --url /dashboard
 EOF
 ```
 
+Coming from Playwright? [docs/migrating-from-playwright.md](docs/migrating-from-playwright.md)
+maps its API (locators, actions, waits, `expect`, mocking, contexts) to
+commands, and `chrome-cdp convert tests/login.spec.ts -o login.cdp`
+translates a simple test file into a script, with a `# TODO` line for each
+statement it cannot translate.
+
 `chrome-cdp --help` fits on one screen: the commands most tasks need, by
 task, and the locator grammar. `help commands` lists every command, `help
 <command>` shows one in full (each has examples), and `help
@@ -556,3 +562,5 @@ is older than its sources.
 ## Docs
 
 The design and roadmap live in [docs/plans/](docs/plans/00-overview.md).
+[docs/migrating-from-playwright.md](docs/migrating-from-playwright.md)
+maps Playwright's API to chrome-cdp commands.
