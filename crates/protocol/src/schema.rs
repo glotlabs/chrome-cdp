@@ -177,6 +177,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<NetworkClearData>),
     },
     CommandSchema {
+        name: "screenshot",
+        summary: "the image file saved: the viewport, the full page or an element",
+        schema: || schema_for!(Envelope<ScreenshotData>),
+    },
+    CommandSchema {
+        name: "pdf",
+        summary: "the PDF file the page was printed to",
+        schema: || schema_for!(Envelope<PdfData>),
+    },
+    CommandSchema {
         name: "snapshot",
         summary: "the page's accessibility tree, with refs on what can be acted on",
         schema: || schema_for!(Envelope<SnapshotData>),

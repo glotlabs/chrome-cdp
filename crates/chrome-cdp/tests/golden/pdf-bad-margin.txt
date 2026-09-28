@@ -1,0 +1,11 @@
+$ chrome-cdp pdf --margin 1cm,2
+exit: 2
+--- stderr
+error: invalid value '1cm,2' for '--margin <LENGTHS>': `2` is not a length; use e.g. 1cm, 10mm, 0.5in or 20px
+  hint: chrome-cdp pdf --help
+
+$ chrome-cdp pdf --margin 1cm,2 --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"invalid value '1cm,2' for '--margin <LENGTHS>': `2` is not a length; use e.g. 1cm, 10mm, 0.5in or 20px","hint":"chrome-cdp pdf --help"}}
+

@@ -32,6 +32,8 @@ pub const CONSOLE: &str = "console";
 pub const NETWORK: &str = "network";
 pub const NETWORK_SHOW: &str = "network_show";
 pub const NETWORK_CLEAR: &str = "network_clear";
+pub const SCREENSHOT: &str = "screenshot";
+pub const PDF: &str = "pdf";
 
 /// `hello`: the first call on every connection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

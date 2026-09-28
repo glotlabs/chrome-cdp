@@ -727,6 +727,24 @@ const CASES: &[Case] = &[
         fixture: Fixture::Session,
     },
     Case {
+        name: "screenshot-element",
+        args: &["screenshot", "#red"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/shots/index.html"),
+    },
+    Case {
+        name: "screenshot-quality-png",
+        args: &["screenshot", "--quality", "80"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "pdf-bad-margin",
+        args: &["pdf", "--margin", "1cm,2"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
         name: "goto-auth-required",
         args: &["goto", "{site}/auth/"],
         modes: ERR,

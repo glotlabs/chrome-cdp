@@ -90,12 +90,15 @@ async fn serve(opts: &ServeOptions) -> Result<u8, String> {
     let pid = std::process::id();
     std::fs::write(&paths.pid, format!("{pid}\n"))
         .map_err(|e| format!("cannot write the pid: {e}"))?;
+    let engine = Engine::new(
+        &opts.session,
+        Some(paths.chrome_log.clone()),
+        Some(paths.dir.join("downloads")),
+    );
+    // Screenshots and PDFs go to `shots/` and `pdfs/` next to downloads.
+    engine.set_output_dir(paths.dir.clone());
     let daemon = Arc::new(Daemon {
-        engine: Engine::new(
-            &opts.session,
-            Some(paths.chrome_log.clone()),
-            Some(paths.dir.join("downloads")),
-        ),
+        engine,
         build: opts.build.clone(),
         pid,
         started_at: SystemTime::now()
@@ -366,6 +369,14 @@ impl Daemon {
             },
             rpc::NETWORK_CLEAR => match params(req.params) {
                 Ok(p) => output(self.engine.network_clear(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::SCREENSHOT => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.screenshot(p)).await),
+                Err(e) => Err(e),
+            },
+            rpc::PDF => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.pdf(p)).await),
                 Err(e) => Err(e),
             },
             rpc::DOWNLOADS => match params(req.params) {

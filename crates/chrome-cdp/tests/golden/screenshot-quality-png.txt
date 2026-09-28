@@ -1,0 +1,11 @@
+$ chrome-cdp screenshot --quality 80
+exit: 2
+--- stderr
+error: --quality is for jpeg and webp; png is lossless
+  hint: chrome-cdp screenshot --format jpeg --quality 80
+
+$ chrome-cdp screenshot --quality 80 --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"--quality is for jpeg and webp; png is lossless","hint":"chrome-cdp screenshot --format jpeg --quality 80"}}
+

@@ -4,8 +4,9 @@
 //! navigation (milestone 3.3): `goto`, `back`, `forward` and `reload`;
 //! `wait` (milestone 3.4); `dialog` and `downloads` (milestone 3.5);
 //! `snapshot` (plan 04); and the read commands `find`, `text`, `html`,
-//! `attr`, `value`, `count`, `box` and `markdown` (milestone 4.5); and
-//! `console` and `errors` (plan 06, milestone 6.1).
+//! `attr`, `value`, `count`, `box` and `markdown` (milestone 4.5);
+//! `console` and `errors` (plan 06, milestone 6.1), `network` (6.2), and
+//! `screenshot` and `pdf` (6.3).
 //!
 //! Each one finds the session's daemon (starting it when the command needs
 //! a browser), sends one call, and returns the daemon's `Output` or
@@ -13,6 +14,8 @@
 //! Anything that needs no daemon (argument checks, finding and installing
 //! Chrome, with its progress bar) happens on this side first.
 
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use daemon::client::{self, Session};
@@ -22,9 +25,10 @@ use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
     Action, ActionRequest, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
     ConsoleRequest, DialogRequest, DownloadsRequest, ElementState, FindRequest, HttpCredentials,
-    NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest, NetworkShowRequest,
-    OpenRequest, Read, ReadRequest, SnapshotRequest, TabCloseRequest, TabNewRequest,
-    TabSelectRequest, TabsRequest, WaitFor, WaitRequest,
+    ImageFormat, NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest,
+    NetworkShowRequest, OpenRequest, PdfRequest, Read, ReadRequest, ScreenshotRequest,
+    SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, WaitFor,
+    WaitRequest,
 };
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
@@ -34,9 +38,9 @@ use tokio::runtime::Runtime;
 use crate::cli::{
     AfterArgs, CdpArgs, CloseArgs, ConnectArgs, DEFAULT_TIMEOUT, DialogArgs, DialogCommand,
     DownloadsArgs, ElementStateArg, FindArgs, GlobalArgs, GotoArgs, HistoryArgs, IdleArgs,
-    LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, ReloadArgs, SessionsArgs, SnapshotArgs,
-    StatusArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, WAIT_TIMEOUT, WaitCmdArgs,
-    parse_duration,
+    ImageFormatArg, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, ReloadArgs,
+    ScreenshotArgs, SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs, TabArgs, TabCommand,
+    TabsArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -715,6 +719,115 @@ pub(crate) fn network(args: &NetworkArgs, global: &GlobalArgs) -> Result<Output,
                 .block_on(client.call_output(rpc::NETWORK_CLEAR, &request, wait))
         }
     }
+}
+
+/// `screenshot`: needs a running session. With `-o -`, the image goes to
+/// stdout and nothing else does.
+pub(crate) fn screenshot(args: &ScreenshotArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let (path, stdout) = output_path(args.output.as_deref(), global, "screenshot")?;
+    let format = args
+        .format
+        .map(ImageFormatArg::to_format)
+        .or_else(|| path.as_deref().and_then(ImageFormat::from_path))
+        .unwrap_or_default();
+    let request = ScreenshotRequest {
+        tab: ctx.tab.clone(),
+        locator: args.locator.clone(),
+        full: args.full,
+        format,
+        quality: args.quality,
+        path,
+        scale: args.scale.to_scale(),
+        max_size: args.max_size,
+        omit_background: args.omit_background,
+        mask: args.mask.clone(),
+        annotate: args.annotate,
+        strict_refs: args.refs.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(ctx.timeout),
+    };
+    engine::check_screenshot(&request)?;
+    let mut client = running_session(&ctx)?;
+    let output =
+        ctx.runtime
+            .block_on(client.call_output(rpc::SCREENSHOT, &request, ctx.timeout + QUICK))?;
+    if stdout {
+        to_stdout(output)
+    } else {
+        Ok(output)
+    }
+}
+
+/// `pdf`: needs a running session. With `-o -`, the PDF goes to stdout
+/// and nothing else does.
+pub(crate) fn pdf(args: &PdfArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let (path, stdout) = output_path(args.output.as_deref(), global, "pdf")?;
+    let request = PdfRequest {
+        tab: ctx.tab.clone(),
+        path,
+        format: args.format.to_paper(),
+        landscape: args.landscape,
+        background: args.background,
+        margin: args.margin,
+        timeout_ms: millis(ctx.timeout),
+    };
+    let mut client = running_session(&ctx)?;
+    let output =
+        ctx.runtime
+            .block_on(client.call_output(rpc::PDF, &request, ctx.timeout + QUICK))?;
+    if stdout {
+        to_stdout(output)
+    } else {
+        Ok(output)
+    }
+}
+
+/// `-o` as an absolute path, and whether it is `-` (stdout; then the
+/// daemon saves to its own directory and [`to_stdout`] moves the file).
+fn output_path(
+    output: Option<&Path>,
+    global: &GlobalArgs,
+    command: &str,
+) -> Result<(Option<PathBuf>, bool), ErrorInfo> {
+    match output {
+        None => Ok((None, false)),
+        Some(path) if path.as_os_str() == "-" => {
+            if global.json {
+                return Err(
+                    bad_args("-o - writes the file to stdout, where --json cannot go too")
+                        .hint(Hint::run(Cmd::new(command).switch("json"))),
+                );
+            }
+            Ok((None, true))
+        }
+        Some(path) => Ok((Some(PathBuf::from(input::absolute_path(path)?)), false)),
+    }
+}
+
+/// Writes the file `output` names to stdout and deletes it; the command
+/// then prints nothing else there (warnings stay on stderr).
+fn to_stdout(output: Output) -> Result<Output, ErrorInfo> {
+    let path = output
+        .data
+        .get("path")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let bytes = std::fs::read(&path).map_err(|e| bad_args(format!("cannot read {path}: {e}")))?;
+    let _ = std::fs::remove_file(&path);
+    let mut out = std::io::stdout().lock();
+    // A closed stdout (`| head`) is not an error worth reporting.
+    let _ = out.write_all(&bytes).and_then(|()| out.flush());
+    Ok(Output {
+        text: String::new(),
+        quiet: Some(String::new()),
+        limit: None,
+        ..output
+    })
 }
 
 /// How long one `--follow` call waits for new entries before asking

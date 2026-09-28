@@ -774,6 +774,43 @@ Examples:
     )]
     Network(NetworkArgs),
 
+    /// Save an image of the page, the whole page or one element.
+    #[command(after_help = "\
+Prints the file's path (-q: only the path); the image goes to the
+session's shots/ directory (1.png, 2.png, …) unless -o names a file, or
+-o - for stdout. The format follows -o's extension unless --format says.
+
+Images are in CSS pixels (--scale css) and at most --max-size pixels on
+their longest side (scaled down to fit; 0 for no limit), so a point in the
+image is a point on the page. An element is scrolled into view (and waited
+for) first, and the image is its box. --annotate labels the elements
+`snapshot -i` gives refs with those refs; --mask paints over elements.
+Both are drawn only for the screenshot. Needs a running session.
+
+Examples:
+  chrome-cdp screenshot
+  chrome-cdp screenshot --annotate            # label the refs in the image
+  chrome-cdp screenshot e12                   # one element
+  chrome-cdp screenshot --full -o page.png    # the whole page
+  chrome-cdp screenshot --mask '.price' --mask e7
+  chrome-cdp screenshot --format jpeg --quality 70 -o - > shot.jpg")]
+    Screenshot(ScreenshotArgs),
+
+    /// Print the page to a PDF file (headless browsers only).
+    #[command(after_help = "\
+Prints the file's path (-q: only the path); the PDF goes to the session's
+pdfs/ directory (1.pdf, 2.pdf, …) unless -o names a file, or -o - for
+stdout. Chrome prints the page as its print dialog would: with the print
+media styles, on pages of --format paper. Chrome prints only when headless.
+Needs a running session.
+
+Examples:
+  chrome-cdp pdf
+  chrome-cdp pdf -o invoice.pdf --format A4 --background
+  chrome-cdp pdf --landscape --margin 1cm
+  chrome-cdp pdf --margin 10mm,15mm           # top and bottom, left and right")]
+    Pdf(PdfArgs),
+
     /// Make one raw CDP call on the session's browser or current page.
     #[command(after_help = "\
 Starts the session's browser first if it has none.
@@ -1895,6 +1932,152 @@ pub(crate) struct NetworkShowArgs {
 #[derive(Debug, Args)]
 pub(crate) struct NetworkClearArgs {}
 
+#[derive(Debug, Args)]
+pub(crate) struct ScreenshotArgs {
+    /// Capture only this element: a ref (e12) or a locator that matches
+    /// one.
+    #[arg(value_name = "LOCATOR", conflicts_with = "full")]
+    pub(crate) locator: Option<String>,
+
+    /// The whole page, not only what the viewport shows.
+    #[arg(long)]
+    pub(crate) full: bool,
+
+    /// The image format; else the -o file's extension, else png.
+    #[arg(long, value_enum, value_name = "FORMAT")]
+    pub(crate) format: Option<ImageFormatArg>,
+
+    /// Quality from 0 to 100, for jpeg and webp.
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u8).range(0..=100))]
+    pub(crate) quality: Option<u8>,
+
+    /// Where to save it (`-` for stdout); a numbered file in the session's
+    /// shots/ directory if not given.
+    #[arg(short, long, value_name = "PATH")]
+    pub(crate) output: Option<PathBuf>,
+
+    /// css: one image pixel per CSS pixel; device: as many as the screen
+    /// has (the device pixel ratio).
+    #[arg(long, value_enum, default_value_t = ShotScaleArg::Css, value_name = "SCALE")]
+    pub(crate) scale: ShotScaleArg,
+
+    /// The longest side in pixels; a larger image is scaled down to fit
+    /// (0 = no limit).
+    #[arg(long, default_value_t = 1568, value_name = "PX")]
+    pub(crate) max_size: u32,
+
+    /// A transparent background where the page has none (png and webp).
+    #[arg(long)]
+    pub(crate) omit_background: bool,
+
+    /// Paint over the elements this locator matches (repeatable).
+    #[arg(long, value_name = "LOCATOR", action = ArgAction::Append)]
+    pub(crate) mask: Vec<String>,
+
+    /// Label the elements `snapshot -i` gives refs with their refs.
+    #[arg(long)]
+    pub(crate) annotate: bool,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+}
+
+/// `screenshot --format`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum ImageFormatArg {
+    Png,
+    Jpeg,
+    Webp,
+}
+
+impl ImageFormatArg {
+    pub(crate) fn to_format(self) -> engine::ImageFormat {
+        match self {
+            Self::Png => engine::ImageFormat::Png,
+            Self::Jpeg => engine::ImageFormat::Jpeg,
+            Self::Webp => engine::ImageFormat::Webp,
+        }
+    }
+}
+
+/// `screenshot --scale`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum ShotScaleArg {
+    /// One image pixel per CSS pixel.
+    Css,
+    /// The device pixel ratio.
+    Device,
+}
+
+impl ShotScaleArg {
+    pub(crate) fn to_scale(self) -> engine::ShotScale {
+        match self {
+            Self::Css => engine::ShotScale::Css,
+            Self::Device => engine::ShotScale::Device,
+        }
+    }
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct PdfArgs {
+    /// Where to save it (`-` for stdout); a numbered file in the session's
+    /// pdfs/ directory if not given.
+    #[arg(short, long, value_name = "PATH")]
+    pub(crate) output: Option<PathBuf>,
+
+    /// The paper size.
+    #[arg(long, value_enum, ignore_case = true, default_value_t = PaperArg::Letter, value_name = "PAPER")]
+    pub(crate) format: PaperArg,
+
+    /// Turn the paper sideways.
+    #[arg(long)]
+    pub(crate) landscape: bool,
+
+    /// Print background colours and images.
+    #[arg(long)]
+    pub(crate) background: bool,
+
+    /// Page margins: one to four lengths in CSS order (top, right, bottom,
+    /// left), each in in, cm, mm or px: 1cm, 10mm,15mm. Default 1cm.
+    #[arg(long, value_parser = parse_margin, value_name = "LENGTHS")]
+    pub(crate) margin: Option<engine::Margins>,
+}
+
+/// `pdf --format`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum PaperArg {
+    #[value(name = "Letter")]
+    Letter,
+    #[value(name = "Legal")]
+    Legal,
+    #[value(name = "Tabloid")]
+    Tabloid,
+    #[value(name = "A3")]
+    A3,
+    #[value(name = "A4")]
+    A4,
+    #[value(name = "A5")]
+    A5,
+}
+
+impl PaperArg {
+    pub(crate) fn to_paper(self) -> engine::PaperFormat {
+        match self {
+            Self::Letter => engine::PaperFormat::Letter,
+            Self::Legal => engine::PaperFormat::Legal,
+            Self::Tabloid => engine::PaperFormat::Tabloid,
+            Self::A3 => engine::PaperFormat::A3,
+            Self::A4 => engine::PaperFormat::A4,
+            Self::A5 => engine::PaperFormat::A5,
+        }
+    }
+}
+
+/// Parses `pdf --margin`.
+fn parse_margin(s: &str) -> Result<engine::Margins, String> {
+    engine::Margins::parse(s)
+}
+
 /// Parses one of `network --type`'s resource types.
 fn parse_type(s: &str) -> Result<String, String> {
     let kind = s.trim().to_ascii_lowercase();
@@ -2434,8 +2617,12 @@ mod tests {
     /// `dialog accept|dismiss` print one line (the dialog's text is cut).
     /// The input actions print a line naming their element(s) (names cut
     /// at 60 characters) or a point.
+    /// `screenshot` and `pdf` print a path and a line or two (at most 30
+    /// of `--annotate`'s refs are listed).
     const FIXED_SIZE: &[&str] = &[
         "schema",
+        "screenshot",
+        "pdf",
         "network clear",
         "count",
         "box",
