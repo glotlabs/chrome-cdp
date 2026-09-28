@@ -268,6 +268,38 @@ pub struct TabNewRequest {
     pub timeout_ms: u64,
 }
 
+/// `context new [url]`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContextNewRequest {
+    /// A URL to load in the context's first tab.
+    #[serde(default)]
+    pub url: Option<String>,
+    /// `base_url` from the config, for a relative `url`.
+    #[serde(default)]
+    pub base_url: Option<String>,
+    pub timeout_ms: u64,
+}
+
+/// `context list`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContextListRequest {
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
+/// `context close [id…] [--all]`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContextCloseRequest {
+    /// `c1`, …; none closes `--context`'s.
+    #[serde(default)]
+    pub ids: Vec<String>,
+    /// Every context of the session.
+    #[serde(default)]
+    pub all: bool,
+    pub timeout_ms: u64,
+}
+
 /// `tab <id>`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TabSelectRequest {

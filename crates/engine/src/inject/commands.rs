@@ -3,7 +3,9 @@
 //!
 //! Scripts and exposed functions belong to the session, not to a tab: they
 //! go to every tab, popup and frame, those opened later too, and stay when
-//! the browser is restarted. None of these commands takes a tab lock.
+//! the browser is restarted. With `--context`, they belong to that browser
+//! context and go only to its pages. None of these commands takes a tab
+//! lock.
 
 use std::fmt::Write as _;
 use std::time::Duration;
@@ -45,16 +47,18 @@ impl Engine {
                 ),
             ));
         }
-        self.check_compiles(&req, timeout).await?;
+        let scope = self.context_key()?;
+        let scope = scope.as_deref();
+        self.check_compiles(&req, scope, timeout).await?;
         let script = self
             .settings
             .injections
-            .add(&req.source, req.file.clone(), req.world);
+            .add(scope, &req.source, req.file.clone(), req.world);
         self.apply_injections(req.now, timeout).await;
         let added = self
             .settings
             .injections
-            .list()
+            .list(scope)
             .into_iter()
             .find(|s| s.id == script_name(script.id))
             .ok_or_else(|| ErrorInfo::new(ErrorKind::BadArgs, "the init script was removed"))?;
@@ -75,7 +79,7 @@ impl Engine {
         let data = InitScriptAddData {
             added,
             ran_now: req.now,
-            active: self.settings.injections.len(),
+            active: self.settings.injections.len(scope),
         };
         Ok(Output::typed(&data, text).quiet(quiet))
     }
@@ -85,13 +89,18 @@ impl Engine {
     async fn check_compiles(
         &self,
         req: &InitScriptAddRequest,
+        scope: Option<&str>,
         timeout: Duration,
     ) -> Result<(), ErrorInfo> {
         let running = match &*self.lock_state() {
             State::Running(running) => running.clone(),
             State::Crashed(_) | State::Empty => return Ok(()),
         };
-        let Ok(page) = running.tabs.page(None, timeout).await else {
+        let page = match scope {
+            Some(scope) => running.tabs.page_in(scope, None, timeout).await,
+            None => running.tabs.page(None, timeout).await,
+        };
+        let Ok(page) = page else {
             return Ok(());
         };
         let params = runtime::CompileScriptParams::new(req.source.clone(), String::new(), false);
@@ -129,8 +138,9 @@ impl Engine {
     }
 
     /// `init-script list`: the scripts, in the order they run.
-    pub fn init_script_list(&self, req: &InitScriptListRequest) -> Output {
-        let scripts = self.settings.injections.list();
+    pub fn init_script_list(&self, req: &InitScriptListRequest) -> Result<Output, ErrorInfo> {
+        let scope = self.context_key()?;
+        let scripts = self.settings.injections.list(scope.as_deref());
         let mut text = String::new();
         for script in &scripts {
             let _ = writeln!(text, "{}", script_line(script));
@@ -148,9 +158,9 @@ impl Engine {
         let quiet: Vec<&str> = scripts.iter().map(|s| s.id.as_str()).collect();
         let quiet = quiet.join("\n");
         let data = InitScriptsData { scripts };
-        Output::typed(&data, text.trim_end().to_owned())
+        Ok(Output::typed(&data, text.trim_end().to_owned())
             .quiet(quiet)
-            .limit(req.max_chars, "--max-chars 0 for all of it")
+            .limit(req.max_chars, "--max-chars 0 for all of it"))
     }
 
     /// `init-script remove`: takes scripts out of new documents; pages
@@ -160,8 +170,10 @@ impl Engine {
         req: InitScriptRemoveRequest,
     ) -> Result<Output, ErrorInfo> {
         let injections = &self.settings.injections;
+        let scope = self.context_key()?;
+        let scope = scope.as_deref();
         let removed = if req.all {
-            injections.clear()
+            injections.clear(scope)
         } else {
             if req.ids.is_empty() {
                 return Err(
@@ -185,7 +197,7 @@ impl Engine {
                 .iter()
                 .map(|id| parse_script_id(id))
                 .collect::<Result<Vec<u32>, _>>()?;
-            injections.remove(&ids).map_err(|missing| {
+            injections.remove(scope, &ids).map_err(|missing| {
                 ErrorInfo::new(
                     ErrorKind::NotFound,
                     format!("there is no init script {}", script_name(missing)),
@@ -198,7 +210,7 @@ impl Engine {
         };
         self.apply_injections(false, millis(req.timeout_ms)).await;
         let removed: Vec<String> = removed.into_iter().map(script_name).collect();
-        let active = injections.len();
+        let active = injections.len(scope);
         let mut text = if removed.is_empty() {
             "no init scripts to remove".to_owned()
         } else {
@@ -227,11 +239,13 @@ impl Engine {
         for name in &req.names {
             check_binding_name(name)?;
         }
+        let scope = self.context_key()?;
+        let scope = scope.as_deref();
         let changed = if req.remove {
             if req.all {
-                injections.unexpose_all()
+                injections.unexpose_all(scope)
             } else {
-                injections.unexpose(&req.names).map_err(|missing| {
+                injections.unexpose(scope, &req.names).map_err(|missing| {
                     ErrorInfo::new(
                         ErrorKind::NotFound,
                         format!("no function called `{missing}` is exposed"),
@@ -240,12 +254,12 @@ impl Engine {
                 })?
             }
         } else {
-            injections.expose(&req.names)
+            injections.expose(scope, &req.names)
         };
         if !changed.is_empty() {
             self.apply_injections(false, millis(req.timeout_ms)).await;
         }
-        let bindings = injections.bindings();
+        let bindings = injections.bindings(scope);
         let text = expose_text(&req, &changed, &bindings, &self.session);
         let quiet = bindings.join("\n");
         let data = ExposeData { changed, bindings };

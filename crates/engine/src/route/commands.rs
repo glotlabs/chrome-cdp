@@ -2,7 +2,8 @@
 //!
 //! Rules belong to the session, not to a tab: they apply to every tab,
 //! popup and frame, those opened later too, and stay when the browser is
-//! restarted. None of these commands takes a tab lock.
+//! restarted. With `--context`, they belong to that browser context and
+//! apply only in it. None of these commands takes a tab lock.
 
 use std::fmt::Write as _;
 
@@ -27,22 +28,28 @@ impl Engine {
                 )),
             );
         }
-        let added = self.settings.routes.add(&req.rules)?;
+        let scope = self.context_key()?;
+        let mut rules = req.rules;
+        for rule in &mut rules {
+            rule.context.clone_from(&scope);
+        }
+        let added = self.settings.routes.add(&rules)?;
         self.apply_routes(millis(req.timeout_ms)).await;
         let text: Vec<String> = added.iter().map(rule_line).collect();
         let quiet: Vec<&str> = added.iter().map(|r| r.id.as_str()).collect();
         let quiet = quiet.join("\n");
         let data = RouteData {
             added,
-            active: self.settings.routes.len(),
+            active: self.settings.routes.count(scope.as_deref()),
         };
         Ok(Output::typed(&data, text.join("\n")).quiet(quiet))
     }
 
     /// `routes`: the rules with their hits, or with `--log` the requests
     /// routing saw.
-    pub fn routes(&self, req: &RoutesRequest) -> Output {
-        let routes = self.settings.routes.list();
+    pub fn routes(&self, req: &RoutesRequest) -> Result<Output, ErrorInfo> {
+        let scope = self.context_key()?;
+        let routes = self.settings.routes.list(scope.as_deref());
         if !req.log {
             let mut text = String::new();
             for rule in &routes {
@@ -64,11 +71,11 @@ impl Engine {
                 log: None,
                 skipped: 0,
             };
-            return Output::typed(&data, text.trim_end().to_owned())
+            return Ok(Output::typed(&data, text.trim_end().to_owned())
                 .quiet(quiet)
-                .limit(req.max_chars, "--max-chars 0 for all of it");
+                .limit(req.max_chars, "--max-chars 0 for all of it"));
         }
-        let (log, skipped) = self.settings.routes.journal(req.limit);
+        let (log, skipped) = self.settings.routes.journal(scope.as_deref(), req.limit);
         let mut text = String::new();
         if skipped > 0 {
             let more = usize::try_from(skipped).unwrap_or(usize::MAX) + req.limit;
@@ -99,19 +106,20 @@ impl Engine {
             log: Some(log),
             skipped,
         };
-        Output::typed(&data, text.trim_end().to_owned())
+        Ok(Output::typed(&data, text.trim_end().to_owned())
             .quiet(quiet)
             .limit(
                 req.max_chars,
                 "--max-chars 0 for all of it, or --limit N for fewer",
-            )
+            ))
     }
 
     /// `unroute`: removes rules; without any left, requests are no longer
     /// intercepted.
     pub async fn unroute(&self, req: UnrouteRequest) -> Result<Output, ErrorInfo> {
+        let scope = self.context_key()?;
         let removed = if req.all {
-            self.settings.routes.clear()
+            self.settings.routes.clear(scope.as_deref())
         } else {
             if req.ids.is_empty() {
                 return Err(ErrorInfo::new(ErrorKind::BadArgs, "no route to remove")
@@ -127,17 +135,23 @@ impl Engine {
                 .iter()
                 .map(|id| parse_route_id(id))
                 .collect::<Result<Vec<u32>, _>>()?;
-            self.settings.routes.remove(&ids).map_err(|missing| {
-                ErrorInfo::new(
-                    ErrorKind::NotFound,
-                    format!("there is no route {}", route_name(missing)),
-                )
-                .hint(Hint::run(Cmd::new("routes").session(&self.session)).why("lists the routes"))
-            })?
+            self.settings
+                .routes
+                .remove(scope.as_deref(), &ids)
+                .map_err(|missing| {
+                    ErrorInfo::new(
+                        ErrorKind::NotFound,
+                        format!("there is no route {}", route_name(missing)),
+                    )
+                    .hint(
+                        Hint::run(Cmd::new("routes").session(&self.session))
+                            .why("lists the routes"),
+                    )
+                })?
         };
         self.apply_routes(millis(req.timeout_ms)).await;
         let removed: Vec<String> = removed.into_iter().map(route_name).collect();
-        let active = self.settings.routes.len();
+        let active = self.settings.routes.count(scope.as_deref());
         let mut text = if removed.is_empty() {
             "no routes to remove".to_owned()
         } else {

@@ -21,6 +21,12 @@
 //! unmatched (it is in a set's scope), or lets it go on. The journal says
 //! which mock answered each request.
 //!
+//! Milestone 11.4 gives each browser context of ours (`context new`) its
+//! own rules, mock sets and journal entries: every method takes the
+//! *scope*, Chrome's id of such a context, or `None` for the session's
+//! default context (and any context chrome-cdp did not make). A request
+//! only meets the rules and mock sets of its own scope.
+//!
 //! [`act`] carries a decision out on the request's session: fulfil, fail,
 //! continue (changed), or continue and patch the JSON response.
 
@@ -72,6 +78,7 @@ impl Default for Router {
                 last_id: 0,
                 rules: Vec::new(),
                 mocks: Mocks::new(0),
+                scoped: std::collections::HashMap::new(),
                 journal: VecDeque::new(),
                 seq: 0,
             }),
@@ -85,11 +92,12 @@ struct Table {
     last_id: u32,
     /// In the order they are tried.
     rules: Vec<Rule>,
-    /// The mock sets in use (session-wide; plan 11.4 adds per-context
-    /// sets for parallel tests), tried after the rules.
+    /// The mock sets in use in the default scope, tried after the rules.
     mocks: Mocks,
-    /// The newest requests routing saw, oldest first.
-    journal: VecDeque<RoutedRequest>,
+    /// Those of each context of ours, by scope.
+    scoped: std::collections::HashMap<String, Mocks>,
+    /// The newest requests routing saw, oldest first, with their scope.
+    journal: VecDeque<(Option<String>, RoutedRequest)>,
     /// The last journal sequence number given.
     seq: u64,
 }
@@ -104,6 +112,7 @@ struct Rule {
     methods: Vec<String>,
     /// Lower case, as `network --type`.
     resource_types: Vec<String>,
+    /// Its scope: the only one whose requests it sees.
     context: Option<String>,
     /// Matches left before it is removed.
     left: Option<u32>,
@@ -166,7 +175,8 @@ pub(crate) struct Request<'a> {
     pub(crate) resource_type: &'a str,
     /// The request's headers (a JSON object).
     pub(crate) headers: &'a Value,
-    /// The browser context of its target.
+    /// The scope of its target's browser context (see the module
+    /// documentation).
     pub(crate) context: Option<&'a str>,
     /// Its tab.
     pub(crate) tab: Option<u32>,
@@ -220,18 +230,42 @@ impl Router {
     /// intercepted).
     pub(crate) fn is_active(&self) -> bool {
         let table = lock(&self.table);
-        !table.rules.is_empty() || !table.mocks.is_empty()
+        !table.rules.is_empty()
+            || !table.mocks.is_empty()
+            || table.scoped.values().any(|m| !m.is_empty())
     }
 
-    /// Whether mock sets are in use (and paused requests need their
-    /// bodies and the time).
-    pub(crate) fn has_mocks(&self) -> bool {
-        !lock(&self.table).mocks.is_empty()
+    /// Whether mock sets are in use in `scope` (and its paused requests
+    /// need their bodies and the time).
+    pub(crate) fn has_mocks(&self, scope: Option<&str>) -> bool {
+        let table = lock(&self.table);
+        table.mocks_of(scope).is_some_and(|m| !m.is_empty())
     }
 
-    /// How many rules exist.
-    pub(crate) fn len(&self) -> usize {
-        lock(&self.table).rules.len()
+    /// How many rules `scope` has.
+    pub(crate) fn count(&self, scope: Option<&str>) -> usize {
+        lock(&self.table)
+            .rules
+            .iter()
+            .filter(|r| r.context.as_deref() == scope)
+            .count()
+    }
+
+    /// The names of the mock sets `scope` uses.
+    pub(crate) fn mock_names(&self, scope: Option<&str>) -> Vec<String> {
+        let table = lock(&self.table);
+        table
+            .mocks_of(scope)
+            .map(|m| m.info(false).into_iter().map(|s| s.name).collect())
+            .unwrap_or_default()
+    }
+
+    /// Drops the rules and mock sets of `scope`, a context that closed.
+    pub(crate) fn drop_scope(&self, scope: &str) {
+        let mut table = lock(&self.table);
+        table.rules.retain(|r| r.context.as_deref() != Some(scope));
+        table.scoped.remove(scope);
+        table.journal.retain(|(s, _)| s.as_deref() != Some(scope));
     }
 
     /// Adds `specs` after the existing rules, all or none: the first bad
@@ -249,42 +283,58 @@ impl Router {
         Ok(added)
     }
 
-    /// Removes rules `ids`; an id that is no rule is a `NotFound` and
-    /// nothing is removed.
-    pub(crate) fn remove(&self, ids: &[u32]) -> Result<Vec<u32>, u32> {
+    /// Removes rules `ids` of `scope`; an id that is no rule there is a
+    /// `NotFound` and nothing is removed.
+    pub(crate) fn remove(&self, scope: Option<&str>, ids: &[u32]) -> Result<Vec<u32>, u32> {
         let mut table = lock(&self.table);
-        if let Some(&missing) = ids
-            .iter()
-            .find(|&&id| !table.rules.iter().any(|r| r.id == id))
-        {
+        if let Some(&missing) = ids.iter().find(|&&id| {
+            !table
+                .rules
+                .iter()
+                .any(|r| r.id == id && r.context.as_deref() == scope)
+        }) {
             return Err(missing);
         }
         table.rules.retain(|r| !ids.contains(&r.id));
         Ok(ids.to_vec())
     }
 
-    /// Removes every rule; returns their ids.
-    pub(crate) fn clear(&self) -> Vec<u32> {
+    /// Removes every rule of `scope`; returns their ids.
+    pub(crate) fn clear(&self, scope: Option<&str>) -> Vec<u32> {
         let mut table = lock(&self.table);
-        table.rules.drain(..).map(|r| r.id).collect()
+        let (gone, kept): (Vec<Rule>, Vec<Rule>) = std::mem::take(&mut table.rules)
+            .into_iter()
+            .partition(|r| r.context.as_deref() == scope);
+        table.rules = kept;
+        gone.into_iter().map(|r| r.id).collect()
     }
 
-    /// The rules, in the order they are tried.
-    pub(crate) fn list(&self) -> Vec<RouteInfo> {
-        lock(&self.table).rules.iter().map(Rule::info).collect()
+    /// The rules of `scope`, in the order they are tried.
+    pub(crate) fn list(&self, scope: Option<&str>) -> Vec<RouteInfo> {
+        lock(&self.table)
+            .rules
+            .iter()
+            .filter(|r| r.context.as_deref() == scope)
+            .map(Rule::info)
+            .collect()
     }
 
-    /// The newest `limit` journal entries (0 = all), oldest first, and how
-    /// many older ones were left out.
-    pub(crate) fn journal(&self, limit: usize) -> (Vec<RoutedRequest>, u64) {
+    /// The newest `limit` journal entries of `scope` (0 = all), oldest
+    /// first, and how many older ones were left out.
+    pub(crate) fn journal(&self, scope: Option<&str>, limit: usize) -> (Vec<RoutedRequest>, u64) {
         let table = lock(&self.table);
+        let entries: Vec<RoutedRequest> = table
+            .journal
+            .iter()
+            .filter(|(s, _)| s.as_deref() == scope)
+            .map(|(_, e)| e.clone())
+            .collect();
         let skip = if limit == 0 {
             0
         } else {
-            table.journal.len().saturating_sub(limit)
+            entries.len().saturating_sub(limit)
         };
-        let entries = table.journal.iter().skip(skip).cloned().collect();
-        (entries, skip as u64)
+        (entries.into_iter().skip(skip).collect(), skip as u64)
     }
 
     /// Picks what to do with `req`, counts the hit, and logs it. The
@@ -344,20 +394,40 @@ impl Router {
     /// that could not be applied).
     pub(crate) fn amend(&self, seq: u64, note: &str) {
         let mut table = lock(&self.table);
-        if let Some(entry) = table.journal.iter_mut().rev().find(|e| e.seq == seq) {
+        if let Some((_, entry)) = table.journal.iter_mut().rev().find(|(_, e)| e.seq == seq) {
             let _ = write!(entry.outcome, " ({note})");
         }
     }
 }
 
 impl Table {
+    /// The mock sets of `scope`, if it has any.
+    fn mocks_of(&self, scope: Option<&str>) -> Option<&Mocks> {
+        match scope {
+            None => Some(&self.mocks),
+            Some(scope) => self.scoped.get(scope),
+        }
+    }
+
+    /// The mock sets of `scope`, made (empty) if it has none yet.
+    fn mocks_in(&mut self, scope: Option<&str>) -> &mut Mocks {
+        match scope {
+            None => &mut self.mocks,
+            Some(scope) => self
+                .scoped
+                .entry(scope.to_owned())
+                .or_insert_with(|| Mocks::new(0)),
+        }
+    }
+
     /// What the mock sets do with a request no rule handles.
     fn mock(&mut self, req: &Request<'_>) -> Decision {
-        if self.mocks.is_empty() {
+        if self.mocks_of(req.context).is_none_or(Mocks::is_empty) {
             self.log(req, None, "continue".into());
             return Decision::Pass;
         }
-        self.mocks.refresh();
+        let mocks = self.mocks_in(req.context);
+        mocks.refresh();
         let headers: Vec<(String, String)> = req
             .headers
             .as_object()
@@ -371,7 +441,7 @@ impl Table {
             headers: &headers,
             body: req.body,
         };
-        match self.mocks.decide(&request, req.now_ms) {
+        match mocks.decide(&request, req.now_ms) {
             Outcome::Pass => {
                 self.log(req, None, "continue".into());
                 Decision::Pass
@@ -407,7 +477,7 @@ impl Table {
 
     fn log(&mut self, req: &Request<'_>, rule: Option<u32>, outcome: String) -> u64 {
         let seq = self.log_mock(req, None, None, outcome);
-        if let Some(entry) = self.journal.back_mut() {
+        if let Some((_, entry)) = self.journal.back_mut() {
             entry.route = rule.map(route_name);
         }
         seq
@@ -424,18 +494,22 @@ impl Table {
         if self.journal.len() == JOURNAL {
             self.journal.pop_front();
         }
-        self.journal.push_back(RoutedRequest {
-            seq: self.seq,
-            time_ms: now_ms(),
-            tab: req.tab.map(tab_name),
-            method: req.method.to_owned(),
-            url: req.url.to_owned(),
-            resource_type: req.resource_type.to_ascii_lowercase(),
-            route: None,
-            mock,
-            unmatched,
-            outcome,
-        });
+        let scope = req.context.map(str::to_owned);
+        self.journal.push_back((
+            scope,
+            RoutedRequest {
+                seq: self.seq,
+                time_ms: now_ms(),
+                tab: req.tab.map(tab_name),
+                method: req.method.to_owned(),
+                url: req.url.to_owned(),
+                resource_type: req.resource_type.to_ascii_lowercase(),
+                route: None,
+                mock,
+                unmatched,
+                outcome,
+            },
+        ));
         self.seq
     }
 }
@@ -448,10 +522,7 @@ impl Rule {
                     .resource_types
                     .iter()
                     .any(|t| same_type(t, req.resource_type)))
-            && self
-                .context
-                .as_deref()
-                .is_none_or(|c| req.context == Some(c))
+            && self.context.as_deref() == req.context
             && self.pattern.matches(req.url)
     }
 
@@ -903,10 +974,10 @@ mod tests {
         assert_eq!(rule_of(&d), Some(2));
         let (d, _) = router.decide(&req("GET", "http://x/app.js", "Script"));
         assert_eq!(rule_of(&d), None);
-        let hits: Vec<u64> = router.list().iter().map(|r| r.hits).collect();
+        let hits: Vec<u64> = router.list(None).iter().map(|r| r.hits).collect();
         assert_eq!(hits, [1, 1]);
         // Every request is in the journal, with the rule that handled it.
-        let (log, skipped) = router.journal(0);
+        let (log, skipped) = router.journal(None, 0);
         assert_eq!(skipped, 0);
         let routes: Vec<_> = log.iter().map(|e| e.route.as_deref()).collect();
         assert_eq!(routes, [Some("r1"), Some("r2"), None]);
@@ -915,7 +986,7 @@ mod tests {
         assert_eq!(log[2].outcome, "continue");
         assert_eq!(log[2].resource_type, "script");
         assert_eq!(log[0].tab.as_deref(), Some("t1"));
-        let (log, skipped) = router.journal(1);
+        let (log, skipped) = router.journal(None, 1);
         assert_eq!((log.len(), skipped), (1, 2));
     }
 
@@ -928,7 +999,7 @@ mod tests {
         let mut other = spec("/other", abort());
         other.context = Some("C2".into());
         router.add(&[post, other]).unwrap();
-        let info = &router.list()[0];
+        let info = &router.list(None)[0];
         assert_eq!(info.methods, ["POST"]);
         assert_eq!(info.resource_types, ["xhr"]);
         assert!(rule_of(&router.decide(&req("POST", "http://x/api/a", "XHR")).0).is_some());
@@ -939,6 +1010,18 @@ mod tests {
         assert!(rule_of(&router.decide(&in_c2).0).is_none());
         in_c2.context = Some("C2");
         assert!(rule_of(&router.decide(&in_c2).0).is_some());
+        // A rule of the default scope never sees another scope's requests.
+        let mut in_c2 = req("POST", "http://x/api/a", "XHR");
+        in_c2.context = Some("C2");
+        assert!(rule_of(&router.decide(&in_c2).0).is_none());
+        assert_eq!(router.list(Some("C2")).len(), 1);
+        assert_eq!(router.count(None), 1);
+        let (log, _) = router.journal(Some("C2"), 0);
+        assert_eq!(log.len(), 2);
+        router.drop_scope("C2");
+        assert!(router.list(Some("C2")).is_empty());
+        assert!(router.journal(Some("C2"), 0).0.is_empty());
+        assert_eq!(router.count(None), 1);
     }
 
     #[test]
@@ -947,10 +1030,10 @@ mod tests {
         let mut once = spec("/a", abort());
         once.times = Some(2);
         router.add(&[once]).unwrap();
-        assert_eq!(router.list()[0].left, Some(2));
+        assert_eq!(router.list(None)[0].left, Some(2));
         let (d, emptied) = router.decide(&req("GET", "http://x/a", "Fetch"));
         assert!(rule_of(&d).is_some() && !emptied);
-        assert_eq!(router.list()[0].left, Some(1));
+        assert_eq!(router.list(None)[0].left, Some(1));
         let (d, emptied) = router.decide(&req("GET", "http://x/a", "Fetch"));
         assert!(rule_of(&d).is_some() && emptied);
         assert!(!router.is_active());
@@ -988,7 +1071,7 @@ mod tests {
             Decision::Pass
         ));
         // Preflights are no hits.
-        assert_eq!(router.list()[0].hits, 0);
+        assert_eq!(router.list(None)[0].hits, 0);
     }
 
     #[test]
@@ -1001,10 +1084,10 @@ mod tests {
                 spec("/c", abort()),
             ])
             .unwrap();
-        assert_eq!(router.remove(&[2]), Ok(vec![2]));
-        assert_eq!(router.remove(&[1, 9]), Err(9));
-        assert_eq!(router.len(), 2);
-        assert_eq!(router.clear(), [1, 3]);
+        assert_eq!(router.remove(None, &[2]), Ok(vec![2]));
+        assert_eq!(router.remove(None, &[1, 9]), Err(9));
+        assert_eq!(router.count(None), 2);
+        assert_eq!(router.clear(None), [1, 3]);
         // Ids are never reused.
         let added = router.add(&[spec("/d", abort())]).unwrap();
         assert_eq!(added[0].id, "r4");
@@ -1066,7 +1149,7 @@ mod tests {
             assert_eq!(err.exit_code(), 2);
             assert!(err.message.contains(message), "{}", err.message);
         }
-        assert_eq!(router.len(), 0);
+        assert_eq!(router.count(None), 0);
     }
 
     #[test]

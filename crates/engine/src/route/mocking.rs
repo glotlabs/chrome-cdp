@@ -3,7 +3,9 @@
 //! (milestone 11.3).
 //!
 //! Mock sets belong to the session, as routing rules do: they apply to
-//! every tab, popup and frame, and stay when the browser is restarted. The
+//! every tab, popup and frame, and stay when the browser is restarted.
+//! With `--context`, a browser context has its own sets, state and log
+//! (milestone 11.4), which is how each test of a run gets fresh ones. The
 //! CLI finds the sets' files; the daemon reads them here, so a mock file's
 //! problems come back as the command's error.
 
@@ -29,55 +31,67 @@ impl Router {
     /// also returns warnings about them.
     fn use_mocks(
         &self,
+        scope: Option<&str>,
         sets: Vec<MockSet>,
         add: bool,
         seed: u64,
     ) -> (Vec<MockSetInfo>, Vec<String>) {
         let mut table = lock(&self.table);
+        let mocks = table.mocks_in(scope);
         if !add {
-            table.mocks = Mocks::new(seed);
+            *mocks = Mocks::new(seed);
         }
-        table.mocks.apply(sets, add);
-        (table.mocks.info(false), table.mocks.undeclared())
+        mocks.apply(sets, add);
+        (mocks.info(false), mocks.undeclared())
     }
 
-    /// Runs `f` on the mocks in use, after looking for changed files.
-    pub(crate) fn with_mocks<T>(&self, f: impl FnOnce(&mut Mocks) -> T) -> T {
+    /// Runs `f` on the mocks in use in `scope`, after looking for changed
+    /// files.
+    pub(crate) fn with_mocks<T>(&self, scope: Option<&str>, f: impl FnOnce(&mut Mocks) -> T) -> T {
         let mut table = lock(&self.table);
-        table.mocks.refresh();
-        f(&mut table.mocks)
+        let mocks = table.mocks_in(scope);
+        mocks.refresh();
+        f(mocks)
     }
 
     /// Turns sets `names` off (all without names); a name not in use is
     /// `Err`.
-    fn mocks_off(&self, names: &[String]) -> Result<(Vec<String>, Vec<MockSetInfo>), String> {
+    fn mocks_off(
+        &self,
+        scope: Option<&str>,
+        names: &[String],
+    ) -> Result<(Vec<String>, Vec<MockSetInfo>), String> {
         let mut table = lock(&self.table);
+        let mocks = table.mocks_in(scope);
         let removed = if names.is_empty() {
-            table.mocks.clear()
+            mocks.clear()
         } else {
-            table.mocks.remove(names)?
+            mocks.remove(names)?
         };
-        Ok((removed, table.mocks.info(false)))
+        Ok((removed, mocks.info(false)))
     }
 
     /// The sets in use, with their mocks.
-    fn mock_sets(&self, mocks: bool) -> Vec<MockSetInfo> {
+    fn mock_sets(&self, scope: Option<&str>, with_mocks: bool) -> Vec<MockSetInfo> {
         let mut table = lock(&self.table);
-        table.mocks.refresh();
-        table.mocks.info(mocks)
+        let mocks = table.mocks_in(scope);
+        mocks.refresh();
+        mocks.info(with_mocks)
     }
 
-    fn reset_mocks(&self) -> Vec<MockSetInfo> {
+    fn reset_mocks(&self, scope: Option<&str>) -> Vec<MockSetInfo> {
         let mut table = lock(&self.table);
-        table.mocks.reset();
-        table.mocks.info(false)
+        let mocks = table.mocks_in(scope);
+        mocks.reset();
+        mocks.info(false)
     }
 
     /// Which rule or mock would answer `req`, counting nothing.
     fn explain(&self, req: &Request<'_>, headers: &[(String, String)]) -> MockExplainData {
         let mut table = lock(&self.table);
-        table.mocks.refresh();
-        let mut data = table.mocks.explain(&mock::Request {
+        let mocks = table.mocks_in(req.context);
+        mocks.refresh();
+        let mut data = mocks.explain(&mock::Request {
             method: req.method,
             url: req.url,
             headers,
@@ -105,7 +119,11 @@ impl Engine {
             .iter()
             .map(MockSet::load)
             .collect::<Result<Vec<_>, _>>()?;
-        let (sets, warnings) = self.settings.routes.use_mocks(sets, req.add, req.seed);
+        let scope = self.context_key()?;
+        let (sets, warnings) =
+            self.settings
+                .routes
+                .use_mocks(scope.as_deref(), sets, req.add, req.seed);
         self.apply_routes(millis(req.timeout_ms)).await;
         let quiet: Vec<&str> = sets.iter().map(|s| s.name.as_str()).collect();
         let quiet = quiet.join("\n");
@@ -125,10 +143,11 @@ impl Engine {
     /// `mock off`: turns sets off; without any left (and no rules),
     /// requests are no longer intercepted.
     pub async fn mock_off(&self, req: MockOffRequest) -> Result<Output, ErrorInfo> {
+        let scope = self.context_key()?;
         let (removed, sets) = self
             .settings
             .routes
-            .mocks_off(&req.sets)
+            .mocks_off(scope.as_deref(), &req.sets)
             .map_err(|missing| {
                 ErrorInfo::new(
                     ErrorKind::NotFound,
@@ -157,8 +176,9 @@ impl Engine {
     }
 
     /// `mock list`: the sets in use with their mocks and hits.
-    pub fn mock_list(&self, req: &MockListRequest) -> Output {
-        let sets = self.settings.routes.mock_sets(true);
+    pub fn mock_list(&self, req: &MockListRequest) -> Result<Output, ErrorInfo> {
+        let scope = self.context_key()?;
+        let sets = self.settings.routes.mock_sets(scope.as_deref(), true);
         let text = if sets.is_empty() {
             format!(
                 "no mock sets in use; {} applies one",
@@ -177,15 +197,16 @@ impl Engine {
             available: None,
             dir: None,
         };
-        Output::typed(&data, text)
+        Ok(Output::typed(&data, text)
             .quiet(quiet)
-            .limit(req.max_chars, "--max-chars 0 for all of it")
+            .limit(req.max_chars, "--max-chars 0 for all of it"))
     }
 
     /// `mock log`: the requests a mock answered or a set left unmatched
     /// (with `--all`, every request routing saw).
-    pub fn mock_log(&self, req: &MockLogRequest) -> Output {
-        let (all, _) = self.settings.routes.journal(0);
+    pub fn mock_log(&self, req: &MockLogRequest) -> Result<Output, ErrorInfo> {
+        let scope = self.context_key()?;
+        let (all, _) = self.settings.routes.journal(scope.as_deref(), 0);
         let kept: Vec<_> = all
             .into_iter()
             .filter(|e| {
@@ -223,13 +244,18 @@ impl Engine {
             let _ = writeln!(text, "{}", mock::text::log_line(entry));
         }
         if log.is_empty() {
-            text.push_str(match (self.settings.routes.has_mocks(), req.unmatched) {
-                (false, _) => {
-                    "no mocked requests; no mock sets are in use (chrome-cdp mock use <set>)"
-                }
-                (true, true) => "no unmatched requests",
-                (true, false) => "no mocked requests yet",
-            });
+            text.push_str(
+                match (
+                    self.settings.routes.has_mocks(scope.as_deref()),
+                    req.unmatched,
+                ) {
+                    (false, _) => {
+                        "no mocked requests; no mock sets are in use (chrome-cdp mock use <set>)"
+                    }
+                    (true, true) => "no unmatched requests",
+                    (true, false) => "no mocked requests yet",
+                },
+            );
         }
         let quiet: Vec<&str> = log.iter().map(|e| e.url.as_str()).collect();
         let quiet = quiet.join("\n");
@@ -237,18 +263,19 @@ impl Engine {
             log,
             skipped: skip as u64,
         };
-        Output::typed(&data, text.trim_end().to_owned())
+        Ok(Output::typed(&data, text.trim_end().to_owned())
             .quiet(quiet)
             .limit(
                 req.max_chars,
                 "--max-chars 0 for all of it, or --limit N for fewer",
-            )
+            ))
     }
 
     /// `mock reset`: hit counters (`{{seq}}`), sequences, named values,
     /// collections and random values start over.
-    pub fn mock_reset(&self) -> Output {
-        let sets = self.settings.routes.reset_mocks();
+    pub fn mock_reset(&self) -> Result<Output, ErrorInfo> {
+        let scope = self.context_key()?;
+        let sets = self.settings.routes.reset_mocks(scope.as_deref());
         let names: Vec<&str> = sets.iter().map(|s| s.name.as_str()).collect();
         let text = if sets.is_empty() {
             "no mock sets in use; nothing to reset".to_owned()
@@ -264,14 +291,15 @@ impl Engine {
             available: None,
             dir: None,
         };
-        Output::typed(&data, text).quiet(quiet)
+        Ok(Output::typed(&data, text).quiet(quiet))
     }
 
     /// `mock state [name] [--set name=value…]`: the named values and
     /// collections, or one of them; `--set` changes values first.
     pub fn mock_state(&self, req: &MockStateRequest) -> Result<Output, ErrorInfo> {
         let session = self.session.clone();
-        let result = self.settings.routes.with_mocks(|mocks| {
+        let scope = self.context_key()?;
+        let result = self.settings.routes.with_mocks(scope.as_deref(), |mocks| {
             if mocks.is_empty() {
                 return Err(no_sets(&session, "state"));
             }
@@ -344,7 +372,8 @@ impl Engine {
             },
             (None, None) => Seed::Start,
         };
-        let (info, from) = self.settings.routes.with_mocks(|mocks| {
+        let scope = self.context_key()?;
+        let (info, from) = self.settings.routes.with_mocks(scope.as_deref(), |mocks| {
             if mocks.is_empty() {
                 return Err(no_sets(&session, "seed"));
             }
@@ -376,7 +405,8 @@ impl Engine {
 
     /// `mock explain`: which rule or mock of the session would answer a
     /// request, and why each other mock would not.
-    pub fn mock_explain(&self, req: &MockExplainRequest) -> Output {
+    pub fn mock_explain(&self, req: &MockExplainRequest) -> Result<Output, ErrorInfo> {
+        let scope = self.context_key()?;
         let headers_json: serde_json::Map<String, serde_json::Value> = req
             .headers
             .iter()
@@ -389,7 +419,7 @@ impl Engine {
                 method: &req.method,
                 resource_type: "Fetch",
                 headers: &headers_json,
-                context: None,
+                context: scope.as_deref(),
                 tab: None,
                 body: req.body.as_deref().map(str::as_bytes),
                 now_ms: 0,
@@ -401,9 +431,9 @@ impl Engine {
             .answer
             .as_ref()
             .map_or_else(String::new, |m| m.at.clone());
-        Output::typed(&data, text)
+        Ok(Output::typed(&data, text)
             .quiet(quiet)
-            .limit(req.max_chars, "--max-chars 0 for all of it, or --limit N")
+            .limit(req.max_chars, "--max-chars 0 for all of it, or --limit N"))
     }
 }
 

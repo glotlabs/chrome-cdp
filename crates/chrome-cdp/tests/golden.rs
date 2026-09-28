@@ -500,6 +500,34 @@ const CASES: &[Case] = &[
         fixture: Fixture::NoSessions,
     },
     Case {
+        name: "context-new",
+        args: &["context", "new", "data:text/html,<title>Own</title>"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "context-list",
+        args: &["context", "list"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open"],
+            &["context", "new", "data:text/html,<title>Own</title>"],
+            &["context", "new"],
+        ]),
+    },
+    Case {
+        name: "context-close-none",
+        args: &["context", "close", "--all"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "context-unknown",
+        args: &["--context", "c9", "tabs"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
         name: "tab-new",
         args: &["tab", "new", "data:text/html,<title>Two</title>"],
         modes: ALL,

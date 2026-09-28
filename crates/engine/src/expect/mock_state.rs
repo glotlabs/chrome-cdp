@@ -124,8 +124,9 @@ impl Engine {
         let timeout = millis(req.timeout_ms);
         let deadline = start + timeout;
         let mut tries: u64 = 0;
+        let scope = self.context_key()?;
         loop {
-            let item = self.settings.routes.with_mocks(|mocks| {
+            let item = self.settings.routes.with_mocks(scope.as_deref(), |mocks| {
                 if mocks.is_empty() {
                     return Err(ErrorInfo::new(
                         ErrorKind::NotFound,

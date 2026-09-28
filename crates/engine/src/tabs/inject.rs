@@ -65,11 +65,12 @@ pub(super) async fn apply(shared: &Arc<Shared>, now: bool, timeout: Duration) ->
 /// difference as done, and sends the calls for it (in order). Returns them
 /// to await.
 fn sync(shared: &Arc<Shared>, session_id: &str, session: &Session, now: bool) -> Vec<Step> {
-    let wanted = shared.settings.injections.wanted();
     let mut state = shared.lock();
     let Some(host) = state.hosts.get_mut(session_id) else {
         return Vec::new();
     };
+    // Each session gets its own context's items (see `crate::context`).
+    let wanted = shared.settings.injections.wanted(host.scope.as_deref());
     let mut calls = Vec::new();
     let gone: Vec<Key> = host
         .injected

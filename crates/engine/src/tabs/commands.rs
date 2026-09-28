@@ -38,11 +38,11 @@ impl Engine {
         timeout: Duration,
     ) -> Result<Page, ErrorInfo> {
         let id = tab.map(parse_tab_id).transpose()?;
-        let page = running
-            .tabs
-            .page(id, timeout)
-            .await
-            .map_err(|e| self.tab_error(running, e))?;
+        let page = match self.current_context()? {
+            Some(scope) => running.tabs.page_in(&scope.browser_id, id, timeout).await,
+            None => running.tabs.page(id, timeout).await,
+        }
+        .map_err(|e| self.tab_error(running, e))?;
         running.tabs.begin_command(page.id);
         Ok(page)
     }
@@ -70,6 +70,34 @@ impl Engine {
                 )
                 .hint(Hint::run(Cmd::new("tabs").session(&self.session)).why("lists them"))
                 .details(json!({ "tab": tab_name(id), "open": open }))
+            }
+            TabError::OtherContext(id) => {
+                let context = self.current_context().ok().flatten().map(|s| s.name());
+                let context = context.as_deref().unwrap_or("the default context");
+                let tab = running.tabs.info(id);
+                let theirs = tab
+                    .as_ref()
+                    .and_then(|t| t.context.clone())
+                    .unwrap_or_else(|| "the default context".to_owned());
+                let hint = match tab.as_ref().and_then(|t| t.context.clone()) {
+                    Some(c) => Hint::run(
+                        Cmd::new("tab")
+                            .arg(tab_name(id))
+                            .flag("context", c)
+                            .session(&self.session),
+                    ),
+                    None => Hint::text(format!(
+                        "leave out --context to use {}; {} lists the tabs of this context",
+                        tab_name(id),
+                        Cmd::new("tabs").session(&self.session)
+                    )),
+                };
+                ErrorInfo::new(
+                    ErrorKind::NotFound,
+                    format!("tab {} is in {theirs}, not in {context}", tab_name(id)),
+                )
+                .hint(hint)
+                .details(json!({ "tab": tab_name(id), "context": theirs }))
             }
             TabError::NotAttached => ErrorInfo::new(
                 ErrorKind::ProtocolError,
@@ -234,11 +262,16 @@ impl Engine {
     /// `tabs`: every tab, the active one marked.
     pub async fn tabs(&self, req: TabsRequest) -> Result<Output, ErrorInfo> {
         let running = self.running()?;
-        let tabs = running
+        let scope = self.current_context()?;
+        let mut tabs = running
             .tabs
             .list(millis(req.timeout_ms))
             .await
             .map_err(|e| from_cdp(&e, &self.session))?;
+        if let Some(scope) = &scope {
+            let name = scope.name();
+            tabs.retain(|t| t.context.as_deref() == Some(name.as_str()));
+        }
         let text = if tabs.is_empty() {
             format!(
                 "no tabs; open one: {}",
@@ -257,6 +290,11 @@ impl Engine {
                     }
                     if t.dialog.is_some() {
                         title.push_str(" (dialog open)");
+                    }
+                    if scope.is_none()
+                        && let Some(context) = &t.context
+                    {
+                        let _ = write!(title, " [{context}]");
                     }
                     vec![
                         format!("{} {}", if t.active { "*" } else { " " }, t.id),
@@ -305,16 +343,23 @@ impl Engine {
         let running = self.running()?;
         let timeout = millis(req.timeout_ms);
         let mark = running.tabs.mark();
+        let scope = self.current_context()?;
+        let browser_id = scope.as_ref().map(|s| s.browser_id.as_str());
         let page = running
             .tabs
-            .create(BLANK, timeout)
+            .create_in(BLANK, browser_id, timeout)
             .await
             .map_err(|e| self.tab_error(&running, e))?;
-        running
-            .tabs
-            .activate(page.id, timeout)
-            .await
-            .map_err(|e| self.tab_error(&running, e))?;
+        match browser_id {
+            Some(browser_id) => running.tabs.activate_in(browser_id, page.id),
+            None => {
+                running
+                    .tabs
+                    .activate(page.id, timeout)
+                    .await
+                    .map_err(|e| self.tab_error(&running, e))?;
+            }
+        }
         let mut warnings = Vec::new();
         if let Some(url) = &req.url {
             let _tab = self.tabs.lock(&page.target_id).await;
@@ -341,11 +386,23 @@ impl Engine {
         let id = parse_tab_id(&req.tab)?;
         let running = self.running()?;
         let timeout = millis(req.timeout_ms);
-        running
-            .tabs
-            .activate(id, timeout)
-            .await
-            .map_err(|e| self.tab_error(&running, e))?;
+        match self.current_context()? {
+            Some(scope) => {
+                running
+                    .tabs
+                    .page_in(&scope.browser_id, Some(id), timeout)
+                    .await
+                    .map_err(|e| self.tab_error(&running, e))?;
+                running.tabs.activate_in(&scope.browser_id, id);
+            }
+            None => {
+                running
+                    .tabs
+                    .activate(id, timeout)
+                    .await
+                    .map_err(|e| self.tab_error(&running, e))?;
+            }
+        }
         let tab = self.tab_info(&running, id).await;
         let text = format!("switched to tab {}", describe_tab(&tab));
         Ok(Output::typed(&TabData { tab: tab.clone() }, text).quiet(tab.id))
@@ -359,7 +416,10 @@ impl Engine {
         let timeout = millis(req.timeout_ms);
         let page = self.page(&running, req.tab.as_deref(), timeout).await?;
         let closed = tab_name(page.id);
-        let last = running.tabs.count() <= 1;
+        let scope = self.current_context()?;
+        // A context of ours may be left without tabs; the browser keeps
+        // the default context's.
+        let last = scope.is_none() && running.tabs.count() <= 1;
         if last && req.close_browser {
             let data = TabCloseData {
                 closed: closed.clone(),
@@ -395,7 +455,10 @@ impl Engine {
                 .await
                 .map_err(|e| self.tab_error(&running, e))?;
         }
-        let active = match running.tabs.active() {
+        let active = match scope.as_ref().map_or_else(
+            || running.tabs.active(),
+            |s| running.tabs.active_in(&s.browser_id),
+        ) {
             Some(id) => Some(self.tab_info(&running, id).await),
             None => None,
         };
@@ -437,6 +500,7 @@ impl Engine {
             opener: None,
             crashed: false,
             dialog: None,
+            context: None,
         })
     }
 }
@@ -469,7 +533,7 @@ pub(crate) fn path_of(url: &str) -> &str {
 }
 
 /// A new tab's URL is empty until it commits a navigation.
-fn shown_url(url: &str) -> &str {
+pub(crate) fn shown_url(url: &str) -> &str {
     if url.is_empty() { BLANK } else { url }
 }
 

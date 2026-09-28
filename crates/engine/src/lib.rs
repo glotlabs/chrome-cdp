@@ -29,6 +29,7 @@
 //! (`state`, 7.4).
 
 mod clipboard;
+mod context;
 mod dialog;
 mod downloads;
 mod emulate;
@@ -68,6 +69,7 @@ use protocol::schema::{BrowserInfo, BrowserKind, OpenData, ProfileInfo, SessionS
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 use tokio::sync::Notify;
 
+pub use context::{in_context, parse_context_id};
 pub use emulate::commands::device_list;
 pub use emulate::{
     DEVICES, Device, PERMISSIONS, check_permission, default_viewport, device_viewport, find_device,
@@ -88,21 +90,21 @@ pub use raw::check_cdp;
 pub use read::check_read;
 pub use request::{
     A11yLevel, Action, ActionRequest, Button, CdpRequest, ClipboardOp, ClipboardRequest,
-    ConnectRequest, ConsoleRequest, CookieFilter, CookieSpec, CookiesOp, CookiesRequest,
-    CoverageStartRequest, CoverageStopRequest, DialogPolicy, DialogRequest, DownloadsRequest,
-    ElementState, EmulateRequest, EmulationChange, EvalRequest, EvalWorld, ExpectRequest,
-    ExpectScreenshotRequest, ExpectSnapshotRequest, Expectation, ExposeRequest, FindRequest,
-    HarContent, HarStartRequest, HarStopRequest, HighlightRequest, HttpCredentials, ImageFormat,
-    InitScriptAddRequest, InitScriptListRequest, InitScriptRemoveRequest, InspectRequest, Margins,
-    MarkRequest, Matcher, MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest,
-    MockSeedRequest, MockStateCheck, MockStateRequest, MockUseRequest, Modifier, MouseOp,
-    NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest, NetworkShowRequest,
-    OpenRequest, PaperFormat, PdfRequest, PerfRequest, PermissionsOp, PermissionsRequest, Read,
-    ReadRequest, RouteAction, RouteBody, RouteRequest, RouteSpec, RoutesRequest, ScreenshotRequest,
-    ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest, StateLoadRequest,
-    StateSaveRequest, StatusRange, StorageArea, StorageOp, StorageRequest, TabCloseRequest,
-    TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest, TraceStopRequest,
-    UnrouteRequest, WaitFor, WaitRequest, WaitUntil,
+    ConnectRequest, ConsoleRequest, ContextCloseRequest, ContextListRequest, ContextNewRequest,
+    CookieFilter, CookieSpec, CookiesOp, CookiesRequest, CoverageStartRequest, CoverageStopRequest,
+    DialogPolicy, DialogRequest, DownloadsRequest, ElementState, EmulateRequest, EmulationChange,
+    EvalRequest, EvalWorld, ExpectRequest, ExpectScreenshotRequest, ExpectSnapshotRequest,
+    Expectation, ExposeRequest, FindRequest, HarContent, HarStartRequest, HarStopRequest,
+    HighlightRequest, HttpCredentials, ImageFormat, InitScriptAddRequest, InitScriptListRequest,
+    InitScriptRemoveRequest, InspectRequest, Margins, MarkRequest, Matcher, MockExplainRequest,
+    MockListRequest, MockLogRequest, MockOffRequest, MockSeedRequest, MockStateCheck,
+    MockStateRequest, MockUseRequest, Modifier, MouseOp, NavigateRequest, Navigation,
+    NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest,
+    PerfRequest, PermissionsOp, PermissionsRequest, Read, ReadRequest, RouteAction, RouteBody,
+    RouteRequest, RouteSpec, RoutesRequest, ScreenshotRequest, ScrollTo, ShotScale, Since,
+    SnapshotEngine, SnapshotRequest, StateLoadRequest, StateSaveRequest, StatusRange, StorageArea,
+    StorageOp, StorageRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
+    Target, TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use state::{OriginState, StateCookie, StorageState};
@@ -604,6 +606,10 @@ impl Engine {
         launched: Option<Launched>,
     ) -> Arc<Running> {
         let generation = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
+        // Browser contexts die with their browser.
+        for scope in self.settings.contexts.clear() {
+            self.forget_scope(&scope.browser_id);
+        }
         let stop = Arc::new(Notify::new());
         let default_viewport = default_viewport_for(&spec);
         let running = Arc::new(Running {
@@ -761,7 +767,9 @@ impl Engine {
     /// tab, popup and frame from now on, including those of a browser
     /// started later (`init-script add` without the checks).
     pub async fn add_init_script(&self, source: &str, timeout: Duration) -> Result<(), ErrorInfo> {
-        self.settings.injections.add(source, None, EvalWorld::Main);
+        self.settings
+            .injections
+            .add(None, source, None, EvalWorld::Main);
         self.apply_injections(false, timeout).await;
         Ok(())
     }

@@ -329,6 +329,9 @@ impl Aspects {
 #[derive(Debug, Default)]
 pub(crate) struct Emulator {
     state: Mutex<Emulation>,
+    /// Each browser context of ours has its own (plan 11.4), starting
+    /// from nothing emulated; by scope (see `crate::context`).
+    scoped: Mutex<std::collections::HashMap<String, Emulation>>,
     permissions: Mutex<Vec<PermissionInfo>>,
     /// Serialises the commands that change them.
     pub(crate) changing: tokio::sync::Mutex<()>,
@@ -345,6 +348,28 @@ impl Emulator {
 
     pub(crate) fn set(&self, state: Emulation) {
         *lock(&self.state) = state;
+    }
+
+    /// What `scope` emulates: the session's with `None`.
+    pub(crate) fn get_in(&self, scope: Option<&str>) -> Emulation {
+        match scope {
+            None => self.get(),
+            Some(scope) => lock(&self.scoped).get(scope).cloned().unwrap_or_default(),
+        }
+    }
+
+    pub(crate) fn set_in(&self, scope: Option<&str>, state: Emulation) {
+        match scope {
+            None => self.set(state),
+            Some(scope) => {
+                lock(&self.scoped).insert(scope.to_owned(), state);
+            }
+        }
+    }
+
+    /// Forgets what `scope`, a context that closed, emulated.
+    pub(crate) fn drop_scope(&self, scope: &str) {
+        lock(&self.scoped).remove(scope);
     }
 
     pub(crate) fn permissions(&self) -> Vec<PermissionInfo> {

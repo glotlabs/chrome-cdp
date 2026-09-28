@@ -48,6 +48,8 @@ pub struct Client {
     session: String,
     /// What the daemon said to `hello`.
     pub hello: HelloResult,
+    /// `--context`: the browser context every call acts in.
+    pub context: Option<String>,
 }
 
 impl Client {
@@ -68,6 +70,7 @@ impl Client {
                 pid: 0,
                 state: protocol::schema::SessionState::Idle,
             },
+            context: None,
         };
         let hello = Hello {
             build: build.to_owned(),
@@ -90,7 +93,8 @@ impl Client {
         let id = self.next_id;
         self.next_id += 1;
         let params = serde_json::to_value(params).unwrap_or(Value::Null);
-        let mut line = serde_json::to_vec(&Request::new(id, method, params)).unwrap_or_default();
+        let request = Request::new(id, method, params).in_context(self.context.clone());
+        let mut line = serde_json::to_vec(&request).unwrap_or_default();
         line.push(b'\n');
         let lost = |why: String| {
             ErrorInfo::new(

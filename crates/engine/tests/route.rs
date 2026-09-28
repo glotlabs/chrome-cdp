@@ -171,11 +171,13 @@ async fn add(engine: &Engine, rules: Vec<RouteSpec>) -> RouteData {
 }
 
 fn routes(engine: &Engine, log: bool) -> (String, RoutesData) {
-    let out = engine.routes(&RoutesRequest {
-        log,
-        limit: 0,
-        max_chars: 0,
-    });
+    let out = engine
+        .routes(&RoutesRequest {
+            log,
+            limit: 0,
+            max_chars: 0,
+        })
+        .unwrap();
     (out.text, serde_json::from_value(out.data).unwrap())
 }
 

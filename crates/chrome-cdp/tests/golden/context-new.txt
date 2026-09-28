@@ -1,0 +1,16 @@
+$ chrome-cdp context new 'data:text/html,<title>Own</title>'
+exit: 0
+--- stdout
+created context c1 with tab t2 data:text/html,<title>Own</title>
+use it: chrome-cdp snapshot --context c1
+
+$ chrome-cdp context new 'data:text/html,<title>Own</title>' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"context":{"active":"t2","id":"c1","routes":0,"tabs":["t2"]},"tab":{"active":true,"context":"c1","id":"t2","title":"Own","url":"data:text/html,<title>Own</title>"}}}
+
+$ chrome-cdp context new 'data:text/html,<title>Own</title>' -q
+exit: 0
+--- stdout
+c1
+

@@ -1,0 +1,17 @@
+$ chrome-cdp context list
+exit: 0
+--- stdout
+c1  tabs *t2
+c2  tabs *t3
+
+$ chrome-cdp context list --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"contexts":[{"active":"t2","id":"c1","routes":0,"tabs":["t2"]},{"active":"t3","id":"c2","routes":0,"tabs":["t3"]}]}}
+
+$ chrome-cdp context list -q
+exit: 0
+--- stdout
+c1
+c2
+

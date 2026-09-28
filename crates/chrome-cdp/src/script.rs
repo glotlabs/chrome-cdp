@@ -318,6 +318,9 @@ fn inherit(step: &mut GlobalArgs, matches: &ArgMatches, script: &GlobalArgs) {
     if !given("tab") {
         step.tab.clone_from(&script.tab);
     }
+    if !given("context") {
+        step.context.clone_from(&script.context);
+    }
     if !given("quiet") {
         step.quiet = script.quiet;
     }

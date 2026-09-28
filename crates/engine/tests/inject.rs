@@ -163,7 +163,9 @@ async fn try_remove(
 }
 
 fn list(engine: &Engine) -> InitScriptsData {
-    let out = engine.init_script_list(&InitScriptListRequest { max_chars: 0 });
+    let out = engine
+        .init_script_list(&InitScriptListRequest { max_chars: 0 })
+        .unwrap();
     serde_json::from_value(out.data).unwrap()
 }
 

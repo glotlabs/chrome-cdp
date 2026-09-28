@@ -176,7 +176,10 @@ fn paused(
         return;
     }
     let request = &params["request"];
-    let mocks = routes.has_mocks();
+    // Rules and mock sets see the scope, not Chrome's own context id.
+    let scope = shared.settings.contexts.scope_of(context);
+    let context = scope.as_deref();
+    let mocks = routes.has_mocks(context);
     let body = if mocks { post_data(request) } else { None };
     let (decision, emptied) = routes.decide(&route::Request {
         url: request["url"].as_str().unwrap_or_default(),
@@ -186,7 +189,7 @@ fn paused(
         context,
         tab,
         body: body.as_deref(),
-        now_ms: if mocks { now_ms(shared) } else { 0 },
+        now_ms: if mocks { now_ms(shared, context) } else { 0 },
     });
     match &decision {
         Decision::Route { rule, .. } => {
@@ -225,8 +228,8 @@ fn post_data(request: &serde_json::Value) -> Option<Vec<u8>> {
 
 /// Now for mock templates: the session's frozen time (`time freeze`), or
 /// the real one.
-fn now_ms(shared: &Shared) -> i64 {
-    shared.settings.emulation.get().time.map_or_else(
+fn now_ms(shared: &Shared, scope: Option<&str>) -> i64 {
+    shared.settings.emulation.get_in(scope).time.map_or_else(
         || {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

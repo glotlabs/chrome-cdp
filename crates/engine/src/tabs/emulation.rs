@@ -33,7 +33,13 @@ pub(super) fn setup_steps(
     main: bool,
     steps: &mut Vec<(&str, Step)>,
 ) {
-    let state = shared.settings.emulation.get();
+    let scope = session.id().and_then(|id| {
+        lock(&shared.state)
+            .hosts
+            .get(id)
+            .and_then(|h| h.scope.clone())
+    });
+    let state = shared.settings.emulation.get_in(scope.as_deref());
     let default = shared.default_viewport.as_ref();
     let aspects = Aspects::set(&state, default.is_some());
     steps.extend(calls(&state, default, aspects, main, session));
@@ -54,14 +60,20 @@ pub(super) fn setup_steps(
     }
 }
 
-/// Sends what changed (`aspects`) to every page and iframe session.
-/// Returns the errors Chrome gave (an unknown time zone, say).
-pub(super) async fn apply(shared: &Shared, aspects: Aspects, timeout: Duration) -> Vec<String> {
-    let state = shared.settings.emulation.get();
+/// Sends what changed (`aspects`) to every page and iframe session of
+/// `scope`. Returns the errors Chrome gave (an unknown time zone, say).
+pub(super) async fn apply(
+    shared: &Shared,
+    aspects: Aspects,
+    scope: Option<&str>,
+    timeout: Duration,
+) -> Vec<String> {
+    let state = shared.settings.emulation.get_in(scope);
     let default = shared.default_viewport.as_ref();
     let hosts: Vec<(String, Session, bool, Option<String>)> = lock(&shared.state)
         .hosts
         .iter()
+        .filter(|(_, h)| h.scope.as_deref() == scope)
         .map(|(id, h)| {
             (
                 id.clone(),

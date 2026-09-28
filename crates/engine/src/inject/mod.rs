@@ -56,6 +56,9 @@ pub(crate) struct Injector {
     table: Mutex<Table>,
 }
 
+/// Every item belongs to a scope (see `crate::context`): `None` for the
+/// session's default context, or a browser context of ours. Ids and
+/// serial numbers are the session's, whatever the scope.
 #[derive(Debug, Default)]
 struct Table {
     /// The last script id given.
@@ -63,11 +66,13 @@ struct Table {
     /// In the order they run.
     scripts: Vec<Arc<Script>>,
     /// Exposed functions, oldest first, each with the serial number it was
-    /// exposed under (a name exposed again is a new binding to sessions).
-    bindings: Vec<(String, u32)>,
+    /// exposed under (a name exposed again is a new binding to sessions),
+    /// and its scope.
+    bindings: Vec<(String, u32, Option<String>)>,
     /// The last binding serial number given.
     last_serial: u32,
-    /// Storage seeds (`state load`), by origin; at most one per origin.
+    /// Storage seeds (`state load`), by origin; at most one per origin and
+    /// scope.
     seeds: Vec<(String, Arc<Script>)>,
     /// The last seed id given.
     last_seed: u32,
@@ -83,6 +88,7 @@ pub(crate) struct Script {
     file: Option<PathBuf>,
     preview: String,
     size: u64,
+    scope: Option<String>,
 }
 
 /// What a page or iframe session has (or should have) of the session's
@@ -166,8 +172,14 @@ impl Script {
 }
 
 impl Injector {
-    /// Adds a script that runs after the ones there are.
-    pub(crate) fn add(&self, source: &str, file: Option<PathBuf>, world: EvalWorld) -> Arc<Script> {
+    /// Adds a script of `scope` that runs after the ones there are.
+    pub(crate) fn add(
+        &self,
+        scope: Option<&str>,
+        source: &str,
+        file: Option<PathBuf>,
+        world: EvalWorld,
+    ) -> Arc<Script> {
         let mut table = lock(&self.table);
         table.last_id += 1;
         let id = table.last_id;
@@ -178,28 +190,40 @@ impl Injector {
             preview: preview(source),
             size: source.len() as u64,
             file,
+            scope: scope.map(str::to_owned),
         });
         table.scripts.push(script.clone());
         script
     }
 
-    /// The scripts, in the order they run.
-    pub(crate) fn list(&self) -> Vec<InitScriptInfo> {
-        lock(&self.table).scripts.iter().map(|s| s.info()).collect()
-    }
-
-    pub(crate) fn len(&self) -> usize {
-        lock(&self.table).scripts.len()
-    }
-
-    /// Removes scripts `ids`, or none if one of them is not there (its id
-    /// is the error).
-    pub(crate) fn remove(&self, ids: &[u32]) -> Result<Vec<u32>, u32> {
-        let mut table = lock(&self.table);
-        if let Some(&missing) = ids
+    /// The scripts of `scope`, in the order they run.
+    pub(crate) fn list(&self, scope: Option<&str>) -> Vec<InitScriptInfo> {
+        lock(&self.table)
+            .scripts
             .iter()
-            .find(|&&id| !table.scripts.iter().any(|s| s.id == id))
-        {
+            .filter(|s| s.scope.as_deref() == scope)
+            .map(|s| s.info())
+            .collect()
+    }
+
+    pub(crate) fn len(&self, scope: Option<&str>) -> usize {
+        lock(&self.table)
+            .scripts
+            .iter()
+            .filter(|s| s.scope.as_deref() == scope)
+            .count()
+    }
+
+    /// Removes scripts `ids` of `scope`, or none if one of them is not
+    /// there (its id is the error).
+    pub(crate) fn remove(&self, scope: Option<&str>, ids: &[u32]) -> Result<Vec<u32>, u32> {
+        let mut table = lock(&self.table);
+        if let Some(&missing) = ids.iter().find(|&&id| {
+            !table
+                .scripts
+                .iter()
+                .any(|s| s.id == id && s.scope.as_deref() == scope)
+        }) {
             return Err(missing);
         }
         table.scripts.retain(|s| !ids.contains(&s.id));
@@ -208,64 +232,86 @@ impl Injector {
         Ok(removed)
     }
 
-    /// Removes every script; returns their ids.
-    pub(crate) fn clear(&self) -> Vec<u32> {
-        lock(&self.table).scripts.drain(..).map(|s| s.id).collect()
+    /// Removes every script of `scope`; returns their ids.
+    pub(crate) fn clear(&self, scope: Option<&str>) -> Vec<u32> {
+        let mut table = lock(&self.table);
+        let (gone, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut table.scripts)
+            .into_iter()
+            .partition(|s| s.scope.as_deref() == scope);
+        table.scripts = kept;
+        gone.iter().map(|s| s.id).collect()
     }
 
-    /// Exposes `names` (checked); returns those that were not yet.
-    pub(crate) fn expose(&self, names: &[String]) -> Vec<String> {
+    /// Exposes `names` (checked) in `scope`; returns those that were not
+    /// yet.
+    pub(crate) fn expose(&self, scope: Option<&str>, names: &[String]) -> Vec<String> {
         let mut table = lock(&self.table);
         let mut added = Vec::new();
         for name in names {
-            if table.bindings.iter().any(|(n, _)| n == name) {
+            if table
+                .bindings
+                .iter()
+                .any(|(n, _, s)| n == name && s.as_deref() == scope)
+            {
                 continue;
             }
             table.last_serial += 1;
             let serial = table.last_serial;
-            table.bindings.push((name.clone(), serial));
+            table
+                .bindings
+                .push((name.clone(), serial, scope.map(str::to_owned)));
             added.push(name.clone());
         }
         added
     }
 
-    /// Takes `names` away, or none if one of them is not exposed (it is the
-    /// error).
-    pub(crate) fn unexpose(&self, names: &[String]) -> Result<Vec<String>, String> {
+    /// Takes `names` away from `scope`, or none if one of them is not
+    /// exposed (it is the error).
+    pub(crate) fn unexpose(
+        &self,
+        scope: Option<&str>,
+        names: &[String],
+    ) -> Result<Vec<String>, String> {
         let mut table = lock(&self.table);
-        if let Some(missing) = names
-            .iter()
-            .find(|name| !table.bindings.iter().any(|(n, _)| n == *name))
-        {
+        if let Some(missing) = names.iter().find(|name| {
+            !table
+                .bindings
+                .iter()
+                .any(|(n, _, s)| n == *name && s.as_deref() == scope)
+        }) {
             return Err(missing.clone());
         }
-        table.bindings.retain(|(n, _)| !names.contains(n));
+        table
+            .bindings
+            .retain(|(n, _, s)| s.as_deref() != scope || !names.contains(n));
         let mut removed = names.to_vec();
         removed.dedup();
         Ok(removed)
     }
 
-    /// Takes every exposed function away; returns their names.
-    pub(crate) fn unexpose_all(&self) -> Vec<String> {
-        lock(&self.table)
-            .bindings
-            .drain(..)
-            .map(|(n, _)| n)
-            .collect()
+    /// Takes every exposed function of `scope` away; returns their names.
+    pub(crate) fn unexpose_all(&self, scope: Option<&str>) -> Vec<String> {
+        let mut table = lock(&self.table);
+        let (gone, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut table.bindings)
+            .into_iter()
+            .partition(|(_, _, s)| s.as_deref() == scope);
+        table.bindings = kept;
+        gone.into_iter().map(|(n, _, _)| n).collect()
     }
 
-    /// The exposed functions' names, oldest first.
-    pub(crate) fn bindings(&self) -> Vec<String> {
+    /// The names of the functions exposed in `scope`, oldest first.
+    pub(crate) fn bindings(&self, scope: Option<&str>) -> Vec<String> {
         lock(&self.table)
             .bindings
             .iter()
-            .map(|(n, _)| n.clone())
+            .filter(|(_, _, s)| s.as_deref() == scope)
+            .map(|(n, _, _)| n.clone())
             .collect()
     }
 
     /// Adds `source`, an isolated-world script, as the storage seed of
-    /// `origin`, in place of an earlier one.
-    pub(crate) fn seed(&self, origin: &str, source: &str) {
+    /// `origin` in `scope`, in place of an earlier one.
+    pub(crate) fn seed(&self, scope: Option<&str>, origin: &str, source: &str) {
         let mut table = lock(&self.table);
         table.last_seed += 1;
         let id = table.last_seed;
@@ -276,45 +322,65 @@ impl Injector {
             file: None,
             preview: String::new(),
             size: source.len() as u64,
+            scope: scope.map(str::to_owned),
         });
-        table.seeds.retain(|(o, _)| o != origin);
+        table
+            .seeds
+            .retain(|(o, s)| o != origin || s.scope.as_deref() != scope);
         table.seeds.push((origin.to_owned(), script));
     }
 
-    /// Takes out `origin`'s seed, which has done its work; returns whether
-    /// there was one.
-    pub(crate) fn seeded(&self, origin: &str) -> bool {
+    /// Takes out `origin`'s seed in `scope`, which has done its work;
+    /// returns whether there was one.
+    pub(crate) fn seeded(&self, scope: Option<&str>, origin: &str) -> bool {
         let mut table = lock(&self.table);
         let before = table.seeds.len();
-        table.seeds.retain(|(o, _)| o != origin);
+        table
+            .seeds
+            .retain(|(o, s)| o != origin || s.scope.as_deref() != scope);
         table.seeds.len() != before
     }
 
-    /// What every page and iframe session should have, in the order it is
-    /// added: the exposed functions first (so init scripts can call them),
-    /// then the storage seeds (after their binding), so init scripts see
-    /// the storage they give, then the scripts.
-    pub(crate) fn wanted(&self) -> Vec<(Key, Wanted)> {
+    /// Drops everything of `scope`, a context that closed.
+    pub(crate) fn drop_scope(&self, scope: &str) {
+        let mut table = lock(&self.table);
+        let theirs = |s: &Option<String>| s.as_deref() == Some(scope);
+        table.scripts.retain(|s| !theirs(&s.scope));
+        table.bindings.retain(|(_, _, s)| !theirs(s));
+        table.seeds.retain(|(_, s)| !theirs(&s.scope));
+    }
+
+    /// What every page and iframe session of `scope` should have, in the
+    /// order it is added: the exposed functions first (so init scripts can
+    /// call them), then the storage seeds (after their binding), so init
+    /// scripts see the storage they give, then the scripts.
+    pub(crate) fn wanted(&self, scope: Option<&str>) -> Vec<(Key, Wanted)> {
         let table = lock(&self.table);
-        let bindings = table.bindings.iter().map(|(name, serial)| {
-            (
-                Key::Binding {
-                    name: name.clone(),
-                    serial: *serial,
-                },
-                Wanted::Binding(name.clone()),
-            )
-        });
+        let bindings = table
+            .bindings
+            .iter()
+            .filter(|(_, _, s)| s.as_deref() == scope)
+            .map(|(name, serial, _)| {
+                (
+                    Key::Binding {
+                        name: name.clone(),
+                        serial: *serial,
+                    },
+                    Wanted::Binding(name.clone()),
+                )
+            });
         let scripts = table
             .scripts
             .iter()
+            .filter(|s| s.scope.as_deref() == scope)
             .map(|s| (Key::Script(s.id), Wanted::Script(s.clone())));
-        let seed_binding =
-            (!table.seeds.is_empty()).then_some((Key::SeedBinding, Wanted::SeedBinding));
-        let seeds = table
+        let seeds: Vec<_> = table
             .seeds
             .iter()
-            .map(|(_, s)| (Key::Seed(s.id), Wanted::Script(s.clone())));
+            .filter(|(_, s)| s.scope.as_deref() == scope)
+            .map(|(_, s)| (Key::Seed(s.id), Wanted::Script(s.clone())))
+            .collect();
+        let seed_binding = (!seeds.is_empty()).then_some((Key::SeedBinding, Wanted::SeedBinding));
         bindings
             .chain(seed_binding)
             .chain(seeds)
@@ -378,14 +444,14 @@ mod tests {
     #[test]
     fn scripts_get_ids_that_are_never_reused() {
         let injector = Injector::default();
-        let a = injector.add("window.a = 1", None, EvalWorld::Main);
-        let b = injector.add("\n\n  window.b = 2;\nmore", None, EvalWorld::Isolated);
+        let a = injector.add(None, "window.a = 1", None, EvalWorld::Main);
+        let b = injector.add(None, "\n\n  window.b = 2;\nmore", None, EvalWorld::Isolated);
         assert_eq!((a.id, b.id), (1, 2));
-        assert_eq!(injector.remove(&[1]), Ok(vec![1]));
-        assert_eq!(injector.remove(&[1]), Err(1));
-        let c = injector.add("x", Some("/tmp/x.js".into()), EvalWorld::Main);
+        assert_eq!(injector.remove(None, &[1]), Ok(vec![1]));
+        assert_eq!(injector.remove(None, &[1]), Err(1));
+        let c = injector.add(None, "x", Some("/tmp/x.js".into()), EvalWorld::Main);
         assert_eq!(c.id, 3);
-        let list = injector.list();
+        let list = injector.list(None);
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].id, "s2");
         assert_eq!(list[0].world, "isolated");
@@ -393,8 +459,46 @@ mod tests {
         assert_eq!(list[1].file.as_deref(), Some("/tmp/x.js"));
         assert!(c.source.ends_with("\n//# sourceURL=file:///tmp/x.js"));
         assert!(b.source.ends_with("\n//# sourceURL=init-script-s2.js"));
-        assert_eq!(injector.clear(), vec![2, 3]);
-        assert_eq!(injector.len(), 0);
+        assert_eq!(injector.clear(None), vec![2, 3]);
+        assert_eq!(injector.len(None), 0);
+    }
+
+    #[test]
+    fn each_scope_has_its_own_injections() {
+        let injector = Injector::default();
+        let names = |n: &[&str]| n.iter().map(|&s| s.to_owned()).collect::<Vec<_>>();
+        injector.add(None, "a", None, EvalWorld::Main);
+        let b = injector.add(Some("C1"), "b", None, EvalWorld::Main);
+        injector.expose(Some("C1"), &names(&["f"]));
+        injector.seed(Some("C1"), "https://x", "seed()");
+        assert_eq!(injector.len(None), 1);
+        assert_eq!(injector.list(Some("C1"))[0].id, "s2");
+        // Another scope's script is not there to remove.
+        assert_eq!(injector.remove(None, &[b.id]), Err(b.id));
+        assert!(injector.bindings(None).is_empty());
+        let keys: Vec<Key> = injector.wanted(None).into_iter().map(|(k, _)| k).collect();
+        assert_eq!(keys, vec![Key::Script(1)]);
+        let keys: Vec<Key> = injector
+            .wanted(Some("C1"))
+            .into_iter()
+            .map(|(k, _)| k)
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                Key::Binding {
+                    name: "f".into(),
+                    serial: 1
+                },
+                Key::SeedBinding,
+                Key::Seed(1),
+                Key::Script(2),
+            ]
+        );
+        assert!(!injector.seeded(None, "https://x"));
+        injector.drop_scope("C1");
+        assert!(injector.wanted(Some("C1")).is_empty());
+        assert_eq!(injector.len(None), 1);
     }
 
     #[test]
@@ -402,15 +506,15 @@ mod tests {
         let injector = Injector::default();
         let names = |n: &[&str]| n.iter().map(|&s| s.to_owned()).collect::<Vec<_>>();
         assert_eq!(
-            injector.expose(&names(&["a", "b", "a"])),
+            injector.expose(None, &names(&["a", "b", "a"])),
             names(&["a", "b"])
         );
-        assert_eq!(injector.expose(&names(&["a"])), names(&[]));
-        assert_eq!(injector.unexpose(&names(&["c"])), Err("c".to_owned()));
-        assert_eq!(injector.unexpose(&names(&["a"])), Ok(names(&["a"])));
-        injector.expose(&names(&["a"]));
-        injector.add("x", None, EvalWorld::Main);
-        let keys: Vec<Key> = injector.wanted().into_iter().map(|(k, _)| k).collect();
+        assert_eq!(injector.expose(None, &names(&["a"])), names(&[]));
+        assert_eq!(injector.unexpose(None, &names(&["c"])), Err("c".to_owned()));
+        assert_eq!(injector.unexpose(None, &names(&["a"])), Ok(names(&["a"])));
+        injector.expose(None, &names(&["a"]));
+        injector.add(None, "x", None, EvalWorld::Main);
+        let keys: Vec<Key> = injector.wanted(None).into_iter().map(|(k, _)| k).collect();
         assert_eq!(
             keys,
             vec![

@@ -667,6 +667,13 @@
           "description": "Whether commands act on this tab when no `--tab` is given.",
           "type": "boolean"
         },
+        "context": {
+          "description": "The browser context it is in (`c1`, from `chrome-cdp context\nnew`); absent for the session's default context.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "crashed": {
           "description": "Whether its page crashed; `chrome-cdp reload` brings it back.",
           "type": "boolean"

@@ -126,11 +126,14 @@ impl Engine {
         running: &Running,
         timeout: Duration,
     ) -> Result<Vec<Cookie>, ErrorInfo> {
+        let params = storage::GetCookiesParams {
+            browser_context_id: self.context_key()?,
+        };
         Ok(running
             .conn
             .browser()
             .with_timeout(timeout)
-            .call(storage::GetCookiesParams::default())
+            .call(params)
             .await
             .map_err(|e| from_cdp(&e, &self.session))?
             .cookies)
@@ -250,11 +253,13 @@ impl Engine {
             }
             info.hint(Hint::text(refusal_hint(&spec, same_site)))
         };
+        let mut params = storage::SetCookiesParams::new(vec![param]);
+        params.browser_context_id = self.context_key()?;
         running
             .conn
             .browser()
             .with_timeout(timeout)
-            .call(storage::SetCookiesParams::new(vec![param]))
+            .call(params)
             .await
             .map_err(|e| refused(Some(e.to_string())))?;
         let stored = self
@@ -288,7 +293,11 @@ impl Engine {
                 "give the cookie's --url (e.g. --url https://example.com) or --domain",
             ))
         };
-        let Ok(page) = running.tabs.page(None, timeout).await else {
+        let page = match self.context_key()? {
+            Some(scope) => running.tabs.page_in(&scope, None, timeout).await,
+            None => running.tabs.page(None, timeout).await,
+        };
+        let Ok(page) = page else {
             return Err(no_page());
         };
         let url = running
@@ -313,17 +322,23 @@ impl Engine {
         timeout: Duration,
     ) -> Result<Output, ErrorInfo> {
         let browser = running.conn.browser().with_timeout(timeout);
+        let scope = self.context_key()?;
         let removed = if filter.is_empty() {
             let count = self.all_cookies(running, timeout).await?.len();
+            let params = storage::ClearCookiesParams {
+                browser_context_id: scope,
+            };
             browser
-                .call(storage::ClearCookiesParams::default())
+                .call(params)
                 .await
                 .map_err(|e| from_cdp(&e, &self.session))?;
             count
         } else {
             let cookies = self.find_cookies(running, filter, timeout).await?;
             if !cookies.is_empty() {
-                let params = storage::SetCookiesParams::new(cookies.iter().map(expired).collect());
+                let mut params =
+                    storage::SetCookiesParams::new(cookies.iter().map(expired).collect());
+                params.browser_context_id = scope;
                 browser
                     .call(params)
                     .await
@@ -530,11 +545,12 @@ impl Engine {
     pub async fn state_save(&self, req: StateSaveRequest) -> Result<Output, ErrorInfo> {
         let timeout = millis(req.timeout_ms);
         let running = self.running()?;
+        let scope = self.context_key()?;
         let cookies = self.all_cookies(&running, timeout).await?;
         let mut warnings = Vec::new();
         let mut origins = Vec::new();
         let expression = format!("({LIBRARY}).collect({})", req.indexed_db);
-        for (tab, frame, origin) in open_origins(&running) {
+        for (tab, frame, origin) in open_origins(&running, scope.as_deref()) {
             let collected = match running
                 .tabs
                 .context(tab, &frame, World::Isolated, timeout)
@@ -612,27 +628,25 @@ impl Engine {
             ));
         }
         let browser = running.conn.browser().with_timeout(timeout);
+        let scope = self.context_key()?;
+        let set_cookies = |params: Vec<CookieParam>| {
+            let mut set = storage::SetCookiesParams::new(params);
+            set.browser_context_id.clone_from(&scope);
+            set
+        };
         let params: Vec<CookieParam> = live.iter().map(|c| cookie_param(c)).collect();
         let mut loaded = live.len();
-        if !params.is_empty()
-            && browser
-                .call(storage::SetCookiesParams::new(params.clone()))
-                .await
-                .is_err()
-        {
+        if !params.is_empty() && browser.call(set_cookies(params.clone())).await.is_err() {
             // One bad cookie fails them all: set them one by one.
             for param in params {
                 let name = param.name.clone();
-                if let Err(e) = browser
-                    .call(storage::SetCookiesParams::new(vec![param]))
-                    .await
-                {
+                if let Err(e) = browser.call(set_cookies(vec![param])).await {
                     loaded -= 1;
                     warnings.push(format!("Chrome refused cookie {name}: {e}"));
                 }
             }
         }
-        let open = open_origins(&running);
+        let open = open_origins(&running, scope.as_deref());
         let mut origins = Vec::new();
         let mut seeded = false;
         for origin in &req.state.origins {
@@ -668,7 +682,7 @@ impl Engine {
             }
             if applied != "now" {
                 let seed = format!("({LIBRARY}).seed({payload}, {});", json!(SEED_BINDING));
-                self.settings.injections.seed(name, &seed);
+                self.settings.injections.seed(scope.as_deref(), name, &seed);
                 seeded = true;
             }
             let mut info = origin_info(origin, Some(applied));
@@ -687,11 +701,16 @@ impl Engine {
     }
 }
 
-/// Every origin with a frame open, each once: `(tab, frame id, origin)`,
-/// the active tab's frames first.
-fn open_origins(running: &Running) -> Vec<(u32, String, String)> {
-    let mut tabs = running.tabs.tab_ids();
-    if let Some(active) = running.tabs.active() {
+/// Every origin with a frame open in `scope` (a context of ours, or the
+/// default one), each once: `(tab, frame id, origin)`, the active tab's
+/// frames first.
+fn open_origins(running: &Running, scope: Option<&str>) -> Vec<(u32, String, String)> {
+    let mut tabs = running.tabs.tab_ids_in(scope);
+    let active = match scope {
+        Some(scope) => running.tabs.active_in(scope),
+        None => running.tabs.active(),
+    };
+    if let Some(active) = active {
         tabs.retain(|&t| t != active);
         tabs.insert(0, active);
     }

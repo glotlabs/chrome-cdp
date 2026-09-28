@@ -1,0 +1,12 @@
+$ chrome-cdp --context c9 tabs
+exit: 1
+--- stderr
+error: no context c9 in session default
+  contexts: none
+  hint: chrome-cdp context new   (makes one), or chrome-cdp context list
+
+$ chrome-cdp --context c9 tabs --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"no context c9 in session default","hint":"chrome-cdp context new   (makes one), or chrome-cdp context list","notes":[{"label":"contexts","text":"none"}],"details":{"context":"c9","open":[]}}}
+

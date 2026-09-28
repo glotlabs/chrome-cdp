@@ -319,8 +319,11 @@ fn the_commented_collection_works() {
     let collection: String = rest
         .lines()
         .skip_while(|l| *l != "# [[collection]]")
-        .map(|l| format!("{}\n", l.trim_start_matches("# ")))
-        .collect();
+        .fold(String::new(), |mut out, l| {
+            out.push_str(l.trim_start_matches("# "));
+            out.push('\n');
+            out
+        });
     assert!(
         collection.contains("seed = \"data/items.json\""),
         "{collection}"

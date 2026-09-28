@@ -1,0 +1,13 @@
+$ chrome-cdp context close --all
+exit: 0
+--- stdout
+no contexts to close
+
+$ chrome-cdp context close --all --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"closed":[],"tabs":[]}}
+
+$ chrome-cdp context close --all -q
+exit: 0
+

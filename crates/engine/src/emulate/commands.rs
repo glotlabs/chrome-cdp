@@ -46,11 +46,13 @@ impl Engine {
     pub async fn emulate(&self, req: EmulateRequest) -> Result<Output, ErrorInfo> {
         let timeout = millis(req.timeout_ms);
         let emulator = &self.settings.emulation;
+        let scope = self.context_key()?;
+        let scope = scope.as_deref();
         let _changing = emulator.changing.lock().await;
-        let before = emulator.get();
+        let before = emulator.get_in(scope);
         let mut after = before.clone();
         change(&mut after, &req.change, &self.session)?;
-        emulator.set(after.clone());
+        emulator.set_in(scope, after.clone());
         let geolocation = matches!(
             req.change,
             EmulationChange::Geolocation {
@@ -63,16 +65,16 @@ impl Engine {
         let aspects = Aspects::changed(&before, &after);
         if let Some(running) = self.running_now() {
             if let Some(check) = intl_check(&req.change)
-                && !self.passes(&running, &check, timeout).await
+                && !self.passes(&running, scope, &check, timeout).await
             {
-                emulator.set(before);
+                emulator.set_in(scope, before);
                 return Err(self.refused(&req.change, "Invalid"));
             }
             if aspects.any() {
-                let errors = running.tabs.apply_emulation(aspects, timeout).await;
+                let errors = running.tabs.apply_emulation(aspects, scope, timeout).await;
                 if let Some(refused) = errors.iter().find(|e| e.contains("Invalid")) {
-                    emulator.set(before);
-                    running.tabs.apply_emulation(aspects, timeout).await;
+                    emulator.set_in(scope, before);
+                    running.tabs.apply_emulation(aspects, scope, timeout).await;
                     return Err(self.refused(&req.change, refused));
                 }
             }
@@ -102,10 +104,15 @@ impl Engine {
     async fn passes(
         &self,
         running: &Running,
+        scope: Option<&str>,
         expression: &str,
         timeout: std::time::Duration,
     ) -> bool {
-        let Ok(page) = running.tabs.page(None, timeout).await else {
+        let page = match scope {
+            Some(scope) => running.tabs.page_in(scope, None, timeout).await,
+            None => running.tabs.page(None, timeout).await,
+        };
+        let Ok(page) = page else {
             return true;
         };
         let mut params = runtime::EvaluateParams::new(expression.to_owned());

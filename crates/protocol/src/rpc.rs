@@ -31,6 +31,11 @@ pub struct Request {
     /// The method's params object (`null` when it takes none).
     #[serde(default)]
     pub params: Value,
+    /// `--context`: the browser context (`c1`) the call acts in. Like
+    /// `--session` it says where a command runs, not what it does, so it
+    /// travels beside the params rather than in each method's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
 }
 
 impl Request {
@@ -41,7 +46,15 @@ impl Request {
             id,
             method: method.into(),
             params,
+            context: None,
         }
+    }
+
+    /// The request, acting in browser context `context`.
+    #[must_use]
+    pub fn in_context(mut self, context: Option<String>) -> Self {
+        self.context = context;
+        self
     }
 }
 

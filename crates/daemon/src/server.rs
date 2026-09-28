@@ -290,7 +290,20 @@ impl Daemon {
         let _busy = self.busy(&req.method);
         let id = req.id;
         let mut exit = false;
-        let result = match req.method.as_str() {
+        // `--context`: the engine picks the context's tab and settings.
+        let context = req.context.clone();
+        let result = engine::in_context(context, Box::pin(self.call(req, &mut exit))).await;
+        let response = match result {
+            Ok(value) => Response::ok(id, value),
+            Err(error) => Response::err(Some(id), error),
+        };
+        (response, exit)
+    }
+
+    /// Runs one call; sets `exit` when the daemon should exit after
+    /// answering.
+    async fn call(&self, req: Request, exit: &mut bool) -> Result<Value, RpcError> {
+        match req.method.as_str() {
             rpc::HELLO => Ok(json!(HelloResult {
                 build: self.build.clone(),
                 session: self.paths.name.clone(),
@@ -308,9 +321,21 @@ impl Daemon {
                 Err(e) => Err(e),
             },
             rpc::CLOSE => {
-                exit = true;
+                *exit = true;
                 Ok(json!(self.close_session().await))
             }
+            rpc::CONTEXT_NEW => match params(req.params) {
+                Ok(p) => output(self.engine.context_new(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::CONTEXT_LIST => match params(req.params) {
+                Ok(p) => output(self.engine.context_list(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::CONTEXT_CLOSE => match params(req.params) {
+                Ok(p) => output(self.engine.context_close(p).await),
+                Err(e) => Err(e),
+            },
             rpc::TABS => match params(req.params) {
                 Ok(p) => output(self.engine.tabs(p).await),
                 Err(e) => Err(e),
@@ -392,7 +417,7 @@ impl Daemon {
                 Err(e) => Err(e),
             },
             rpc::ROUTES => match params(req.params) {
-                Ok(p) => output(Ok(self.engine.routes(&p))),
+                Ok(p) => output(self.engine.routes(&p)),
                 Err(e) => Err(e),
             },
             rpc::UNROUTE => match params(req.params) {
@@ -408,14 +433,14 @@ impl Daemon {
                 Err(e) => Err(e),
             },
             rpc::MOCK_LIST => match params(req.params) {
-                Ok(p) => output(Ok(self.engine.mock_list(&p))),
+                Ok(p) => output(self.engine.mock_list(&p)),
                 Err(e) => Err(e),
             },
             rpc::MOCK_LOG => match params(req.params) {
-                Ok(p) => output(Ok(self.engine.mock_log(&p))),
+                Ok(p) => output(self.engine.mock_log(&p)),
                 Err(e) => Err(e),
             },
-            rpc::MOCK_RESET => output(Ok(self.engine.mock_reset())),
+            rpc::MOCK_RESET => output(self.engine.mock_reset()),
             rpc::MOCK_STATE => match params(req.params) {
                 Ok(p) => output(self.engine.mock_state(&p)),
                 Err(e) => Err(e),
@@ -425,7 +450,7 @@ impl Daemon {
                 Err(e) => Err(e),
             },
             rpc::MOCK_EXPLAIN => match params(req.params) {
-                Ok(p) => output(Ok(self.engine.mock_explain(&p))),
+                Ok(p) => output(self.engine.mock_explain(&p)),
                 Err(e) => Err(e),
             },
             rpc::INIT_SCRIPT_ADD => match params(req.params) {
@@ -433,7 +458,7 @@ impl Daemon {
                 Err(e) => Err(e),
             },
             rpc::INIT_SCRIPT_LIST => match params(req.params) {
-                Ok(p) => output(Ok(self.engine.init_script_list(&p))),
+                Ok(p) => output(self.engine.init_script_list(&p)),
                 Err(e) => Err(e),
             },
             rpc::INIT_SCRIPT_REMOVE => match params(req.params) {
@@ -525,7 +550,7 @@ impl Daemon {
                     Ok(closed) => {
                         if closed.close_session {
                             // `tab close --close-browser` on the last tab.
-                            exit = true;
+                            *exit = true;
                             self.close_session().await;
                         }
                         output(Ok(closed.output))
@@ -538,12 +563,7 @@ impl Daemon {
                 RpcError::METHOD_NOT_FOUND,
                 format!("no method `{other}`"),
             )),
-        };
-        let response = match result {
-            Ok(value) => Response::ok(id, value),
-            Err(error) => Response::err(Some(id), error),
-        };
-        (response, exit)
+        }
     }
 
     /// Closes the browser; the daemon exits after answering.

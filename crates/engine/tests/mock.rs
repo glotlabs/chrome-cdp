@@ -127,24 +127,28 @@ async fn use_sets(engine: &Engine, dir: &Path, names: &[&str], add: bool) -> Moc
 }
 
 fn log(engine: &Engine, unmatched: bool) -> (String, MockLogData) {
-    let out = engine.mock_log(&MockLogRequest {
-        unmatched,
-        all: false,
-        limit: 0,
-        max_chars: 0,
-    });
+    let out = engine
+        .mock_log(&MockLogRequest {
+            unmatched,
+            all: false,
+            limit: 0,
+            max_chars: 0,
+        })
+        .unwrap();
     (out.text, serde_json::from_value(out.data).unwrap())
 }
 
 fn explain(engine: &Engine, method: &str, url: &str) -> (String, MockExplainData) {
-    let out = engine.mock_explain(&MockExplainRequest {
-        method: method.into(),
-        url: url.into(),
-        headers: Vec::new(),
-        body: None,
-        limit: 0,
-        max_chars: 0,
-    });
+    let out = engine
+        .mock_explain(&MockExplainRequest {
+            method: method.into(),
+            url: url.into(),
+            headers: Vec::new(),
+            body: None,
+            limit: 0,
+            max_chars: 0,
+        })
+        .unwrap();
     (out.text, serde_json::from_value(out.data).unwrap())
 }
 
@@ -241,7 +245,7 @@ async fn mock_sets_answer_the_page() {
     assert_eq!(data.log.len(), 1, "{text}");
 
     // Hits per mock.
-    let out = engine.mock_list(&MockListRequest { max_chars: 0 });
+    let out = engine.mock_list(&MockListRequest { max_chars: 0 }).unwrap();
     assert!(
         out.text
             .contains("base.toml:20 \"order\" POST /mock/api/orders → fulfill 201 json "),
@@ -251,7 +255,7 @@ async fn mock_sets_answer_the_page() {
     assert!(out.text.contains("(2 hits)"), "{}", out.text);
 
     // `{{seq}}` starts over after a reset.
-    engine.mock_reset();
+    engine.mock_reset().unwrap();
     assert_eq!(
         fetch(&engine, "/mock/api/orders", &post(r#"{"qty":1}"#)).await[1]["n"],
         json!(1)
@@ -621,7 +625,7 @@ async fn stateful_mocks_follow_the_page() {
         text.contains("stateful.toml:41 \"todos\" fulfill 201 (todos: created 3)"),
         "{text}"
     );
-    let out = engine.mock_list(&MockListRequest { max_chars: 0 });
+    let out = engine.mock_list(&MockListRequest { max_chars: 0 }).unwrap();
     assert!(
         out.text
             .contains("stateful  5 mocks, 1 collection  scope /mock/api/**"),
@@ -656,7 +660,7 @@ async fn stateful_mocks_follow_the_page() {
         fetch(&engine, "/mock/api/todos?done=true", "{}").await,
         json!([200, [{"id": 12, "title": "Three", "done": true}]])
     );
-    engine.mock_reset();
+    engine.mock_reset().unwrap();
     expect_state(&engine, "todos", count(2), false, 1000)
         .await
         .unwrap();

@@ -1,0 +1,380 @@
+//! Browser contexts (`context new|list|close` and `--context`; plan 11,
+//! milestone 11.4) against a real Chrome (`CHROME_PATH`; skipped without
+//! it unless `CHROME_CDP_REQUIRE_CHROME` is set): each context has its own
+//! tabs, cookies, storage, routes, mock sets and state, init scripts and
+//! emulation.
+
+#![allow(clippy::unwrap_used, clippy::print_stderr)]
+
+use std::future::Future;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use browser::Host;
+use engine::{
+    ContextCloseRequest, ContextListRequest, ContextNewRequest, EmulateRequest, EmulationChange,
+    Engine, EvalRequest, EvalWorld, InitScriptAddRequest, MockStateRequest, MockUseRequest,
+    NavigateRequest, Navigation, OpenRequest, RouteAction, RouteRequest, RouteSpec, TabNewRequest,
+    TabsRequest, WaitUntil, in_context,
+};
+use fixtures::Fixtures;
+use protocol::ErrorKind;
+use protocol::schema::{
+    ContextCloseData, ContextNewData, ContextsData, EvalData, MockStateData, TabsData, Viewport,
+};
+use serde_json::{Value, json};
+
+const TIMEOUT_MS: u64 = 30_000;
+
+fn chrome_path() -> Option<PathBuf> {
+    match std::env::var_os("CHROME_PATH") {
+        Some(p) if !p.is_empty() => Some(PathBuf::from(p)),
+        _ => {
+            assert!(
+                std::env::var_os("CHROME_CDP_REQUIRE_CHROME").is_none(),
+                "CHROME_CDP_REQUIRE_CHROME is set but CHROME_PATH is not"
+            );
+            eprintln!("skipping: set CHROME_PATH to run tests against a real Chrome");
+            None
+        }
+    }
+}
+
+async fn start(path: &Path, name: &str) -> Arc<Engine> {
+    let engine = Engine::new(name, None, None);
+    let chrome = browser::discover(Some(path), &Host::current()).unwrap();
+    engine
+        .open(OpenRequest {
+            chrome: Some(chrome),
+            timeout_ms: TIMEOUT_MS,
+            ..OpenRequest::default()
+        })
+        .await
+        .unwrap();
+    engine
+}
+
+/// Runs `fut` as a call with `--context context` would.
+async fn within<F: Future>(context: &str, fut: F) -> F::Output {
+    in_context(Some(context.to_owned()), Box::pin(fut)).await
+}
+
+async fn new_context(engine: &Engine, url: &str) -> ContextNewData {
+    let out = engine
+        .context_new(ContextNewRequest {
+            url: Some(url.to_owned()),
+            base_url: None,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("context new: {}", e.to_text()));
+    serde_json::from_value(out.data).unwrap()
+}
+
+async fn goto(engine: &Engine, url: &str) {
+    engine
+        .navigate(NavigateRequest {
+            navigation: Navigation::Goto {
+                url: url.to_owned(),
+                base_url: None,
+            },
+            wait: WaitUntil::Settle,
+            tab: None,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("goto {url}: {}", e.to_text()));
+}
+
+/// `script`'s value in the active tab (of the call's context).
+async fn eval(engine: &Engine, script: &str) -> Value {
+    let out = engine
+        .eval(EvalRequest {
+            script: script.to_owned(),
+            locator: None,
+            frame: None,
+            world: EvalWorld::Main,
+            tab: None,
+            strict_refs: false,
+            testid_attribute: None,
+            sourcemaps: false,
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 0,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("{script}: {}", e.to_text()));
+    let data: EvalData = serde_json::from_value(out.data).unwrap();
+    data.value
+}
+
+/// The status of a fetch, or `failed`.
+async fn status(engine: &Engine, url: &str) -> Value {
+    let script = format!("fetch({url:?}).then((r) => r.status, () => 'failed')");
+    eval(engine, &script).await
+}
+
+async fn use_sets(engine: &Engine, names: &[&str]) {
+    let dir = fixtures::site_dir().join("mock/mocks");
+    engine
+        .mock_use(MockUseRequest {
+            sets: names
+                .iter()
+                .map(|n| mock::Source {
+                    name: (*n).to_owned(),
+                    file: dir.join(format!("{n}.toml")),
+                    base: dir.clone(),
+                })
+                .collect(),
+            add: false,
+            seed: 0,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("mock use: {}", e.to_text()));
+}
+
+fn state(engine: &Engine) -> MockStateData {
+    let out = engine
+        .mock_state(&MockStateRequest {
+            name: None,
+            set: Vec::new(),
+            max_chars: 0,
+        })
+        .unwrap();
+    serde_json::from_value(out.data).unwrap()
+}
+
+async fn tabs(engine: &Engine) -> TabsData {
+    let out = engine
+        .tabs(TabsRequest {
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 0,
+        })
+        .await
+        .unwrap();
+    serde_json::from_value(out.data).unwrap()
+}
+
+#[tokio::test]
+async fn contexts_keep_cookies_mocks_and_routes_apart() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "context-apart").await;
+    let page = site.url("/mock/index.html");
+    goto(&engine, &page).await;
+
+    let c1 = new_context(&engine, &page).await;
+    assert_eq!(c1.context.id, "c1");
+    assert_eq!(c1.tab.context.as_deref(), Some("c1"));
+    assert!(c1.tab.active);
+    let c2 = new_context(&engine, &page).await;
+    assert_eq!(c2.context.id, "c2");
+
+    // Mock sets: c1's answer in c1 only.
+    within("c1", use_sets(&engine, &["base"])).await;
+    assert_eq!(
+        within("c1", status(&engine, "/mock/api/products")).await,
+        json!(200)
+    );
+    assert_ne!(
+        within("c2", status(&engine, "/mock/api/products")).await,
+        json!(200)
+    );
+    assert_ne!(status(&engine, "/mock/api/products").await, json!(200));
+
+    // Mock state: each context's sets keep their own.
+    within("c2", use_sets(&engine, &["stateful"])).await;
+    within("c1", use_sets(&engine, &["stateful"])).await;
+    let login = "fetch('/mock/api/login', {method: 'POST', headers: {'content-type': \
+                 'application/json'}, body: '{\"email\":\"a@example.com\"}'}).then((r) => r.status)";
+    assert_eq!(within("c1", eval(&engine, login)).await, json!(200));
+    assert_eq!(
+        within("c1", async { state(&engine) }).await.values["logged_in"],
+        json!(true)
+    );
+    assert_eq!(
+        within("c2", async { state(&engine) }).await.values["logged_in"],
+        json!(false)
+    );
+
+    // Routes: c2's rule sees c2's requests only.
+    within(
+        "c2",
+        engine.route(RouteRequest {
+            rules: vec![RouteSpec {
+                pattern: "**/items*".into(),
+                label: None,
+                methods: Vec::new(),
+                resource_types: Vec::new(),
+                times: None,
+                delay_ms: 0,
+                context: None,
+                action: RouteAction::Abort {
+                    reason: "failed".into(),
+                },
+            }],
+            timeout_ms: TIMEOUT_MS,
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        within("c2", status(&engine, "/items?n=1")).await,
+        json!("failed")
+    );
+    assert_eq!(
+        within("c1", status(&engine, "/items?n=1")).await,
+        json!(200)
+    );
+    assert_eq!(status(&engine, "/items?n=1").await, json!(200));
+
+    // Cookies and storage are Chrome's per context.
+    within(
+        "c1",
+        eval(&engine, "document.cookie = 'who=c1'; localStorage.x = 'c1'"),
+    )
+    .await;
+    assert_eq!(
+        within("c1", eval(&engine, "document.cookie")).await,
+        json!("who=c1")
+    );
+    assert_eq!(
+        within("c2", eval(&engine, "document.cookie")).await,
+        json!("")
+    );
+    assert_eq!(eval(&engine, "localStorage.x ?? null").await, Value::Null);
+
+    // The list says what each context has.
+    let out = engine
+        .context_list(ContextListRequest {
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 0,
+        })
+        .await
+        .unwrap();
+    let list: ContextsData = serde_json::from_value(out.data).unwrap();
+    assert_eq!(list.contexts.len(), 2);
+    assert_eq!(list.contexts[0].mocks, ["stateful"]);
+    assert_eq!(list.contexts[1].routes, 1);
+    assert!(out.text.contains("c1  tabs *t"), "{}", out.text);
+}
+
+#[tokio::test]
+async fn a_context_has_its_own_tabs_emulation_and_init_scripts() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "context-tabs").await;
+    let page = site.url("/tabs/popup-target.html");
+    goto(&engine, &page).await;
+    let c1 = new_context(&engine, &page).await;
+    let first = c1.tab.id.clone();
+
+    // A second tab in c1 becomes c1's active tab, not the session's.
+    let out = within(
+        "c1",
+        engine.tab_new(TabNewRequest {
+            url: Some(page.clone()),
+            base_url: None,
+            timeout_ms: TIMEOUT_MS,
+        }),
+    )
+    .await
+    .unwrap();
+    let second = out.data["tab"]["id"].as_str().unwrap().to_owned();
+    let in_c1 = within("c1", tabs(&engine)).await;
+    let ids: Vec<&str> = in_c1.tabs.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, [first.as_str(), second.as_str()]);
+    assert!(in_c1.tabs[1].active);
+    let all = tabs(&engine).await;
+    assert_eq!(all.tabs.len(), 3);
+    assert!(all.tabs[0].active && all.tabs[0].context.is_none());
+
+    // --tab of another context is refused.
+    let err = within(
+        "c1",
+        engine.eval(EvalRequest {
+            script: "1".into(),
+            locator: None,
+            frame: None,
+            world: EvalWorld::Main,
+            tab: Some("t1".into()),
+            strict_refs: false,
+            testid_attribute: None,
+            sourcemaps: false,
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 0,
+        }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::NotFound);
+    assert!(err.message.contains("not in c1"), "{}", err.message);
+
+    // Emulation: c1's viewport, the session's elsewhere.
+    within(
+        "c1",
+        engine.emulate(EmulateRequest {
+            change: EmulationChange::Viewport {
+                viewport: Some(Viewport {
+                    width: 390,
+                    height: 844,
+                    dpr: 1.0,
+                    mobile: false,
+                    touch: false,
+                    screen_width: None,
+                    screen_height: None,
+                }),
+            },
+            timeout_ms: TIMEOUT_MS,
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(within("c1", eval(&engine, "innerWidth")).await, json!(390));
+    assert_eq!(eval(&engine, "innerWidth").await, json!(1280));
+
+    // Init scripts: c1's run in c1's documents only.
+    within(
+        "c1",
+        engine.init_script_add(InitScriptAddRequest {
+            source: "window.__ctx = 'c1'".into(),
+            file: None,
+            world: EvalWorld::Main,
+            now: true,
+            timeout_ms: TIMEOUT_MS,
+        }),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        within("c1", eval(&engine, "window.__ctx ?? null")).await,
+        json!("c1")
+    );
+    assert_eq!(eval(&engine, "window.__ctx ?? null").await, Value::Null);
+
+    // Closing c1 closes its tabs and forgets it.
+    let out = engine
+        .context_close(ContextCloseRequest {
+            ids: vec!["c1".into()],
+            all: false,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap();
+    let closed: ContextCloseData = serde_json::from_value(out.data).unwrap();
+    assert_eq!(closed.closed, ["c1"]);
+    assert_eq!(closed.tabs, [first, second]);
+    assert_eq!(tabs(&engine).await.tabs.len(), 1);
+    let err = within(
+        "c1",
+        engine.tabs(TabsRequest {
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 0,
+        }),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::NotFound);
+    // Ids are never reused.
+    assert_eq!(new_context(&engine, &page).await.context.id, "c2");
+}

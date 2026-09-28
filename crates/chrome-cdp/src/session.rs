@@ -25,13 +25,14 @@ use daemon::paths::{Env, SessionPaths, check_name};
 use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
     Action, ActionRequest, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
-    ConsoleRequest, CoverageStartRequest, CoverageStopRequest, DialogRequest, DownloadsRequest,
-    ElementState, EvalRequest, FindRequest, HarStartRequest, HarStopRequest, HighlightRequest,
-    HttpCredentials, ImageFormat, InspectRequest, NavigateRequest, Navigation, NetworkClearRequest,
-    NetworkRequest, NetworkShowRequest, OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest,
-    RouteRequest, RoutesRequest, ScreenshotRequest, SnapshotRequest, TabCloseRequest,
-    TabNewRequest, TabSelectRequest, TabsRequest, TraceStartRequest, TraceStopRequest,
-    UnrouteRequest, WaitFor, WaitRequest,
+    ConsoleRequest, ContextCloseRequest, ContextListRequest, ContextNewRequest,
+    CoverageStartRequest, CoverageStopRequest, DialogRequest, DownloadsRequest, ElementState,
+    EvalRequest, FindRequest, HarStartRequest, HarStopRequest, HighlightRequest, HttpCredentials,
+    ImageFormat, InspectRequest, NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest,
+    NetworkShowRequest, OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest, RouteRequest,
+    RoutesRequest, ScreenshotRequest, SnapshotRequest, TabCloseRequest, TabNewRequest,
+    TabSelectRequest, TabsRequest, TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor,
+    WaitRequest,
 };
 use engine::{
     CookieFilter, CookieSpec, CookiesOp, CookiesRequest, StateLoadRequest, StateSaveRequest,
@@ -45,15 +46,16 @@ use serde_json::{Map, Value, json};
 use tokio::runtime::Runtime;
 
 use crate::cli::{
-    AfterArgs, BlockArgs, CdpArgs, CloseArgs, ConnectArgs, CookieFilterArgs, CookieSetArgs,
-    CookiesArgs, CookiesCommand, CoverageArgs, CoverageCommand, DEFAULT_TIMEOUT, DialogArgs,
-    DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, FindArgs, GlobalArgs, GotoArgs,
-    HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs, ImageFormatArg, InitScriptAddArgs,
-    InitScriptArgs, InitScriptCommand, InspectArgs, LogReadArgs, NetworkArgs, NetworkCommand,
-    OpenArgs, PdfArgs, PermissionsArgs, PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs,
-    ScreenshotArgs, SessionsArgs, SnapshotArgs, StateArgs, StateCommand, StatusArgs,
-    StorageActionArg, StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs,
-    TraceArgs, TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    AfterArgs, BlockArgs, CdpArgs, CloseArgs, ConnectArgs, ContextArgs, ContextCommand,
+    CookieFilterArgs, CookieSetArgs, CookiesArgs, CookiesCommand, CoverageArgs, CoverageCommand,
+    DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, FindArgs,
+    GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs,
+    ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs, LogReadArgs,
+    NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs, PermissionsCommand,
+    ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs, StateArgs,
+    StateCommand, StatusArgs, StorageActionArg, StorageAreaArg, StorageArgs, StrictRefsArgs,
+    TabArgs, TabCommand, TabsArgs, TraceArgs, TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs,
+    parse_duration,
 };
 use crate::{input, version};
 
@@ -69,6 +71,8 @@ struct Ctx {
     timeout: Duration,
     /// `--tab`.
     tab: Option<String>,
+    /// `--context`: every call acts in this browser context.
+    context: Option<String>,
     /// `base_url` from the config.
     base_url: Option<String>,
 }
@@ -100,6 +104,7 @@ impl Ctx {
             runtime,
             timeout: global.timeout_or(default),
             tab: global.tab.clone(),
+            context: global.context.clone(),
             base_url: global.base_url.clone(),
         })
     }
@@ -109,11 +114,13 @@ impl Ctx {
     }
 
     fn start(&self) -> Result<Session, ErrorInfo> {
-        self.runtime.block_on(client::connect_or_start(
+        let mut session = self.runtime.block_on(client::connect_or_start(
             &self.env,
             &self.paths,
             &self.build,
-        ))
+        ))?;
+        session.client.context.clone_from(&self.context);
+        Ok(session)
     }
 
     /// How long a call that launches Chrome or loads a page may take: the
@@ -460,7 +467,8 @@ fn with_browser(ctx: &Ctx) -> Result<(Session, Vec<String>), ErrorInfo> {
 /// The running session's daemon; tab commands other than `tab new` need
 /// one and do not start it.
 fn running_session(ctx: &Ctx) -> Result<daemon::client::Client, ErrorInfo> {
-    ctx.runtime
+    let mut client = ctx
+        .runtime
         .block_on(client::connect(&ctx.paths, &ctx.build))?
         .ok_or_else(|| {
             ErrorInfo::new(
@@ -468,7 +476,9 @@ fn running_session(ctx: &Ctx) -> Result<daemon::client::Client, ErrorInfo> {
                 format!("session {} is not running", ctx.session()),
             )
             .hint(Hint::run(Cmd::new("open").session(ctx.session())))
-        })
+        })?;
+    client.context.clone_from(&ctx.context);
+    Ok(client)
 }
 
 /// Checks a `--tab` before any daemon starts.
@@ -486,6 +496,64 @@ pub(crate) fn tabs(args: &TabsArgs, global: &GlobalArgs) -> Result<Output, Error
     };
     ctx.runtime
         .block_on(client.call_output(rpc::TABS, &request, ctx.timeout + QUICK))
+}
+
+/// `context new|list|close`.
+pub(crate) fn context(args: &ContextArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_context(global.context.as_deref())?;
+    match &args.command {
+        ContextCommand::New(new) => {
+            let url = new.url.as_deref().map(engine::normalize_url).transpose()?;
+            let ctx = Ctx::new(global)?;
+            let (mut session, warnings) = with_browser(&ctx)?;
+            let request = ContextNewRequest {
+                url,
+                base_url: ctx.base_url.clone(),
+                timeout_ms: millis(ctx.timeout),
+            };
+            let output = ctx.runtime.block_on(session.client.call_output(
+                rpc::CONTEXT_NEW,
+                &request,
+                ctx.long_wait(),
+            ))?;
+            Ok(warnings.into_iter().fold(output, Output::warning))
+        }
+        ContextCommand::List(list) => {
+            let ctx = Ctx::new(global)?;
+            let mut client = running_session(&ctx)?;
+            let request = ContextListRequest {
+                timeout_ms: millis(ctx.timeout),
+                max_chars: list.max_chars,
+            };
+            ctx.runtime.block_on(client.call_output(
+                rpc::CONTEXT_LIST,
+                &request,
+                ctx.timeout + QUICK,
+            ))
+        }
+        ContextCommand::Close(close) => {
+            for id in &close.ids {
+                engine::parse_context_id(id)?;
+            }
+            let ctx = Ctx::new(global)?;
+            let mut client = running_session(&ctx)?;
+            let request = ContextCloseRequest {
+                ids: close.ids.clone(),
+                all: close.all,
+                timeout_ms: millis(ctx.timeout),
+            };
+            ctx.runtime
+                .block_on(client.call_output(rpc::CONTEXT_CLOSE, &request, ctx.long_wait()))
+        }
+    }
+}
+
+/// Checks a `--context` before any daemon starts.
+fn check_context(context: Option<&str>) -> Result<(), ErrorInfo> {
+    context
+        .map(engine::parse_context_id)
+        .transpose()
+        .map(|_| ())
 }
 
 /// `tab <id>`, `tab new [url]` and `tab close [id]`.
@@ -1116,6 +1184,7 @@ pub(crate) fn call_if_running<T: serde::Serialize>(
     else {
         return Ok(None);
     };
+    client.context.clone_from(&ctx.context);
     ctx.runtime
         .block_on(client.call_output(method, request, ctx.timeout + QUICK))
         .map(Some)

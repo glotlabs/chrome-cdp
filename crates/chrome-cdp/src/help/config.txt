@@ -59,7 +59,8 @@ A web server runs in its own process group with its output in
 
 Environment variables:
   CHROME_CDP_JSON, CHROME_CDP_QUIET, CHROME_CDP_SESSION,
-  CHROME_CDP_TIMEOUT, CHROME_CDP_TAB    the global flags
+  CHROME_CDP_TIMEOUT, CHROME_CDP_TAB,
+  CHROME_CDP_CONTEXT                    the global flags
   CHROME_CDP_LOG                        log filter, e.g. cdp=trace
   CHROME_CDP_SNAP, CHROME_CDP_NO_WAIT_AFTER, CHROME_CDP_STRICT_REFS
   CHROME_CDP_TESTID_ATTRIBUTE           as testid_attribute

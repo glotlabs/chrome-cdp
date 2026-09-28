@@ -88,6 +88,11 @@ pub(crate) struct GlobalArgs {
     #[arg(long, global = true, env = "CHROME_CDP_TAB", value_name = "ID")]
     pub(crate) tab: Option<String>,
 
+    /// The browser context to act in, e.g. c1 (see `chrome-cdp context`):
+    /// its tabs, cookies, routes and mocks. Default: the session's own.
+    #[arg(long, global = true, env = "CHROME_CDP_CONTEXT", value_name = "ID")]
+    pub(crate) context: Option<String>,
+
     /// Log to stderr: -v info, -vv debug, -vvv trace. CHROME_CDP_LOG
     /// (e.g. cdp=trace) overrides it.
     #[arg(short, long, global = true, action = ArgAction::Count)]
@@ -245,6 +250,26 @@ Examples:
   chrome-cdp tab close t3"
     )]
     Tab(TabArgs),
+
+    /// Make, list or close browser contexts: isolated cookies, storage,
+    /// routes and mocks in one browser.
+    #[command(after_help = "\
+A context is like an incognito window: its own cookies, storage and
+cache, plus its own routes, mock sets, init scripts and emulation, none
+of which it shares with the session's default context or other contexts.
+Contexts have ids (c1, c2, …) in the order they were made, never reused.
+Any command takes --context <id> (or CHROME_CDP_CONTEXT) to act in one; a
+page command then acts on the context's active tab. `chrome-cdp test`
+runs each test in a fresh context.
+
+Examples:
+  chrome-cdp context new /login                 # c1, with a tab at base_url/login
+  chrome-cdp --context c1 fill label=Email a@example.com
+  chrome-cdp context new -q                     # prints just the id
+  chrome-cdp context list
+  chrome-cdp context close c1
+  chrome-cdp context close --all")]
+    Context(ContextArgs),
 
     /// Load a URL in the current tab and wait for it.
     #[command(after_help = "\
@@ -4755,6 +4780,71 @@ pub(crate) struct TabsArgs {
 }
 
 #[derive(Debug, Args)]
+pub(crate) struct ContextArgs {
+    #[command(subcommand)]
+    pub(crate) command: ContextCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum ContextCommand {
+    /// Make a browser context with one tab, optionally loading a URL.
+    #[command(after_help = "\
+Starts the session's browser first if it has none. The new context starts
+with nothing: no cookies, storage, routes, mock sets, init scripts or
+emulation.
+
+Examples:
+  chrome-cdp context new
+  chrome-cdp context new https://example.com
+  chrome-cdp context new /login -q      # prints just the id (with base_url)")]
+    New(ContextNewArgs),
+
+    /// List the contexts, their tabs (`*` marks the active one) and
+    /// settings.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp context list
+  chrome-cdp context list -q     # one id per line")]
+    List(ContextListArgs),
+
+    /// Close contexts with their tabs, and drop their settings.
+    #[command(after_help = "\
+Without an id, closes --context's.
+
+Examples:
+  chrome-cdp context close c1
+  chrome-cdp --context c2 context close
+  chrome-cdp context close --all")]
+    Close(ContextCloseArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ContextNewArgs {
+    /// A URL to load; without a scheme, https:// (or http:// for
+    /// localhost) is added.
+    #[arg(value_name = "URL")]
+    pub(crate) url: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ContextListArgs {
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ContextCloseArgs {
+    /// The contexts to close, e.g. c1.
+    #[arg(value_name = "ID", conflicts_with = "all")]
+    pub(crate) ids: Vec<String>,
+
+    /// Close every context of the session.
+    #[arg(long)]
+    pub(crate) all: bool,
+}
+
+#[derive(Debug, Args)]
 pub(crate) struct TabArgs {
     #[command(subcommand)]
     pub(crate) command: Option<TabCommand>,
@@ -5048,6 +5138,8 @@ mod tests {
         "close",
         "sessions",
         "tab",
+        "context new",
+        "context close",
         "tab new",
         "tab close",
         "goto",

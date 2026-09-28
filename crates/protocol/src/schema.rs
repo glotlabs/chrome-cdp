@@ -134,6 +134,21 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<TabCloseData>),
     },
     CommandSchema {
+        name: "context new",
+        summary: "the browser context created and its first tab",
+        schema: || schema_for!(Envelope<ContextNewData>),
+    },
+    CommandSchema {
+        name: "context list",
+        summary: "the browser contexts made with context new, with their tabs",
+        schema: || schema_for!(Envelope<ContextsData>),
+    },
+    CommandSchema {
+        name: "context close",
+        summary: "the browser context closed and the tabs that closed with it",
+        schema: || schema_for!(Envelope<ContextCloseData>),
+    },
+    CommandSchema {
         name: "goto",
         summary: "the page loaded: final URL, title and HTTP status",
         schema: || schema_for!(Envelope<NavigateData>),
@@ -1140,6 +1155,10 @@ pub struct TabInfo {
     /// A dialog that waits for `chrome-cdp dialog accept|dismiss`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dialog: Option<DialogInfo>,
+    /// The browser context it is in (`c1`, from `chrome-cdp context
+    /// new`); absent for the session's default context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
 }
 
 /// A JavaScript dialog (`alert`, `confirm`, `prompt`, `beforeunload`).
@@ -2770,6 +2789,50 @@ pub struct TabsData {
 pub struct TabData {
     /// The tab, now active.
     pub tab: TabInfo,
+}
+
+/// A browser context made with `chrome-cdp context new`: its own
+/// cookies, storage, cache, routes, mock sets and emulation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ContextInfo {
+    /// The context's id, `c1`, `c2`, …: given in the order contexts are
+    /// made and never reused within a session. `--context` takes it.
+    pub id: String,
+    /// Its tabs, by id.
+    pub tabs: Vec<String>,
+    /// The tab commands with `--context` act on when no `--tab` is given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active: Option<String>,
+    /// The mock sets it uses, in the order they were applied.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mocks: Vec<String>,
+    /// How many routing rules it has.
+    #[serde(default)]
+    pub routes: usize,
+}
+
+/// `data` of `chrome-cdp context new --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ContextNewData {
+    pub context: ContextInfo,
+    /// Its first tab.
+    pub tab: TabInfo,
+}
+
+/// `data` of `chrome-cdp context list --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ContextsData {
+    /// Every context made with `context new` and not closed, by id.
+    pub contexts: Vec<ContextInfo>,
+}
+
+/// `data` of `chrome-cdp context close --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ContextCloseData {
+    /// The ids of the contexts closed.
+    pub closed: Vec<String>,
+    /// The tabs that closed with them.
+    pub tabs: Vec<String>,
 }
 
 /// `data` of `chrome-cdp tab close --json`.

@@ -535,7 +535,9 @@ async fn state_survives_a_new_session() {
     eval(&second, "localStorage.setItem('token', 'changed')").await;
     reload(&second).await;
     assert_eq!(eval(&second, "window.first.token").await, json!("changed"));
-    let scripts = second.init_script_list(&InitScriptListRequest { max_chars: 0 });
+    let scripts = second
+        .init_script_list(&InitScriptListRequest { max_chars: 0 })
+        .unwrap();
     let scripts: InitScriptsData = serde_json::from_value(scripts.data).unwrap();
     assert!(scripts.scripts.is_empty());
     second.close().await;

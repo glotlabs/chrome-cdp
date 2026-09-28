@@ -140,6 +140,8 @@ pub(crate) struct Settings {
     pub(crate) emulation: Emulator,
     /// Init scripts and exposed functions (plan 07).
     pub(crate) injections: Injector,
+    /// The browser contexts made with `context new` (plan 11).
+    pub(crate) contexts: crate::context::Contexts,
 }
 
 impl Settings {
@@ -240,6 +242,8 @@ struct State {
     active: Option<u32>,
     /// Tab ids by when they were last active, most recent last.
     recent: Vec<u32>,
+    /// The active tab of each context of ours, by Chrome's context id.
+    context_active: HashMap<String, u32>,
     /// Page and iframe sessions (they take init scripts), by session id.
     hosts: HashMap<String, Host>,
     /// Targets commands created (or found at start): not "opened" events.
@@ -265,6 +269,9 @@ struct Tab {
     url: String,
     title: String,
     opener_target: Option<String>,
+    /// Chrome's id of its browser context, when it is one of ours
+    /// (`context new`), with our id for it (`c1`).
+    context: Option<(String, String)>,
     /// Set up and resumed; commands may use it.
     ready: bool,
     /// Its frames, also those of its OOPIF sessions.
@@ -316,6 +323,9 @@ struct Host {
     tab: Option<u32>,
     /// A page's own session, not an iframe's: it has the viewport.
     main: bool,
+    /// Its context's settings key: Chrome's context id for a context of
+    /// ours, `None` for the session's default one.
+    scope: Option<String>,
     /// The id of its frozen clock script (`time freeze`), if it has one.
     clock: Option<String>,
     /// The init scripts and exposed functions it has, with the id of
@@ -351,6 +361,7 @@ impl Tabs {
                 tabs: BTreeMap::new(),
                 active: None,
                 recent: Vec::new(),
+                context_active: HashMap::new(),
                 hosts: HashMap::new(),
                 ours: HashSet::new(),
                 opened: VecDeque::new(),
@@ -486,8 +497,13 @@ impl Tabs {
     /// Sends a change of the session's emulation (`aspects`) to every page
     /// and iframe session (new ones get it during [`setup`]). Returns the
     /// errors Chrome gave.
-    pub(crate) async fn apply_emulation(&self, aspects: Aspects, timeout: Duration) -> Vec<String> {
-        emulation::apply(&self.shared, aspects, timeout).await
+    pub(crate) async fn apply_emulation(
+        &self,
+        aspects: Aspects,
+        scope: Option<&str>,
+        timeout: Duration,
+    ) -> Vec<String> {
+        emulation::apply(&self.shared, aspects, scope, timeout).await
     }
 
     /// The viewport of pages without their own, if there is one.
@@ -547,11 +563,25 @@ impl Tabs {
     /// Opens a tab at `url` and waits until it is set up. It does not
     /// become active.
     pub(crate) async fn create(&self, url: &str, timeout: Duration) -> Result<Page, TabError> {
+        self.create_in(url, None, timeout).await
+    }
+
+    /// Opens a tab at `url` in Chrome's context `browser_context` (the
+    /// default one with `None`), and waits until it is set up. It does
+    /// not become active.
+    pub(crate) async fn create_in(
+        &self,
+        url: &str,
+        browser_context: Option<&str>,
+        timeout: Duration,
+    ) -> Result<Page, TabError> {
+        let mut params = target::CreateTargetParams::new(url.to_owned());
+        params.browser_context_id = browser_context.map(str::to_owned);
         let created = self
             .conn
             .browser()
             .with_timeout(timeout)
-            .call(target::CreateTargetParams::new(url.to_owned()))
+            .call(params)
             .await?;
         let target_id = created.target_id;
         self.shared.lock().ours.insert(target_id.clone());
@@ -569,6 +599,88 @@ impl Tabs {
             .find(|(_, t)| t.target_id == target_id)
             .and_then(|(&id, _)| state.page(id))
             .ok_or(TabError::NotAttached)
+    }
+
+    /// The tab `id`, which must be in Chrome's context `browser_id` (of
+    /// ours), or the context's active one. Without any tab in the
+    /// context, opens a blank one there.
+    pub(crate) async fn page_in(
+        &self,
+        browser_id: &str,
+        id: Option<u32>,
+        timeout: Duration,
+    ) -> Result<Page, TabError> {
+        if let Some(id) = id {
+            let page = self.page(Some(id), timeout).await?;
+            if !self.shared.lock().in_scope(id, Some(browser_id)) {
+                return Err(TabError::OtherContext(id));
+            }
+            return Ok(page);
+        }
+        {
+            let mut state = self.shared.lock();
+            if let Some(id) = state.current_in(browser_id) {
+                state.activate_in(browser_id, id);
+                if let Some(page) = state.page(id) {
+                    return Ok(page);
+                }
+            }
+        }
+        let page = self.create_in(BLANK, Some(browser_id), timeout).await?;
+        self.shared.lock().activate_in(browser_id, page.id);
+        Ok(page)
+    }
+
+    /// Makes `id` the active tab of Chrome's context `browser_id` (of
+    /// ours), leaving the session's active tab alone.
+    pub(crate) fn activate_in(&self, browser_id: &str, id: u32) {
+        self.shared.lock().activate_in(browser_id, id);
+        self.shared.bump();
+    }
+
+    /// The active tab of Chrome's context `browser_id` (of ours).
+    pub(crate) fn active_in(&self, browser_id: &str) -> Option<u32> {
+        self.shared.lock().current_in(browser_id)
+    }
+
+    /// The ready tabs of Chrome's context `browser_id` (of ours), by id.
+    pub(crate) fn in_context(&self, browser_id: &str) -> Vec<u32> {
+        let state = self.shared.lock();
+        state
+            .tabs
+            .iter()
+            .filter(|&(&id, t)| t.ready && state.in_scope(id, Some(browser_id)))
+            .map(|(&id, _)| id)
+            .collect()
+    }
+
+    /// The ready tabs of `scope` (Chrome's id of a context of ours, or
+    /// `None` for the others), by id.
+    pub(crate) fn tab_ids_in(&self, scope: Option<&str>) -> Vec<u32> {
+        let state = self.shared.lock();
+        state
+            .tabs
+            .iter()
+            .filter(|&(&id, t)| t.ready && state.in_scope(id, scope))
+            .map(|(&id, _)| id)
+            .collect()
+    }
+
+    /// Forgets the tabs of Chrome's context `browser_id` (disposed of).
+    pub(crate) fn drop_context_tabs(&self, browser_id: &str) {
+        let mut state = self.shared.lock();
+        let ids: Vec<u32> = state
+            .tabs
+            .keys()
+            .copied()
+            .filter(|&id| state.in_scope(id, Some(browser_id)))
+            .collect();
+        for id in ids {
+            state.remove(id);
+        }
+        state.context_active.remove(browser_id);
+        drop(state);
+        self.shared.bump();
     }
 
     /// Makes `id` the active tab and brings it to the front.
@@ -1183,6 +1295,8 @@ impl From<cdp::CdpError> for FrameError {
 pub(crate) enum TabError {
     /// No open tab has this id.
     NoSuchTab(u32),
+    /// The tab is not in the context `--context` names.
+    OtherContext(u32),
     /// Chrome created the tab but never announced it.
     NotAttached,
     Cdp(cdp::CdpError),
@@ -1225,18 +1339,62 @@ impl State {
         self.active = Some(id);
         self.recent.retain(|&r| r != id);
         self.recent.push(id);
+        if let Some((browser_id, _)) = self.tabs.get(&id).and_then(|t| t.context.clone()) {
+            self.context_active.insert(browser_id, id);
+        }
+    }
+
+    /// Makes `id` the active tab of its context (of ours) only.
+    fn activate_in(&mut self, browser_id: &str, id: u32) {
+        self.recent.retain(|&r| r != id);
+        self.recent.push(id);
+        self.context_active.insert(browser_id.to_owned(), id);
+    }
+
+    /// Whether tab `id` is in Chrome's context `browser_id` (of ours), or
+    /// with `None`, in none of ours.
+    fn in_scope(&self, id: u32, browser_id: Option<&str>) -> bool {
+        self.tabs
+            .get(&id)
+            .is_some_and(|t| t.context.as_ref().map(|c| c.0.as_str()) == browser_id)
+    }
+
+    /// The tab commands in context `browser_id` act on: its active one,
+    /// else the one active most recently, else its newest.
+    fn current_in(&self, browser_id: &str) -> Option<u32> {
+        let ready = |id: &u32| {
+            self.tabs.get(id).is_some_and(|t| t.ready) && self.in_scope(*id, Some(browser_id))
+        };
+        self.context_active
+            .get(browser_id)
+            .copied()
+            .filter(ready)
+            .or_else(|| self.recent.iter().rev().copied().find(ready))
+            .or_else(|| self.tabs.keys().rev().copied().find(ready))
     }
 
     /// The tab to fall back to when there is no active one: the one active
-    /// most recently, else the newest.
+    /// most recently, else the newest; one outside the contexts of ours
+    /// first.
     fn fallback(&self) -> Option<u32> {
         let ready = |id: &u32| self.tabs.get(id).is_some_and(|t| t.ready);
+        let default = |id: &u32| ready(id) && self.in_scope(*id, None);
         self.recent
             .iter()
             .rev()
             .copied()
-            .find(ready)
-            .or_else(|| self.tabs.keys().rev().copied().find(ready))
+            .find(default)
+            .or_else(|| self.tabs.keys().rev().copied().find(default))
+            .or_else(|| self.fallback_any(ready))
+    }
+
+    fn fallback_any(&self, ready: impl Fn(&u32) -> bool) -> Option<u32> {
+        self.recent
+            .iter()
+            .rev()
+            .copied()
+            .find(&ready)
+            .or_else(|| self.tabs.keys().rev().copied().find(&ready))
     }
 
     fn remove(&mut self, id: u32) {
@@ -1269,9 +1427,13 @@ impl State {
 
     fn info(&self, id: u32) -> TabInfo {
         let tab = &self.tabs[&id];
+        let active = match &tab.context {
+            Some((browser_id, _)) => self.context_active.get(browser_id) == Some(&id),
+            None => self.active == Some(id),
+        };
         TabInfo {
             id: tab_name(id),
-            active: self.active == Some(id),
+            active,
             title: tab.title.clone(),
             url: tab.url.clone(),
             opener: tab
@@ -1281,6 +1443,7 @@ impl State {
                 .map(tab_name),
             crashed: tab.crashed.is_some(),
             dialog: tab.dialog.as_ref().map(|d| d.info.clone()),
+            context: tab.context.as_ref().map(|c| c.1.clone()),
         }
     }
 
@@ -1365,7 +1528,7 @@ async fn watch_host(
                 }
             }
             "Runtime.bindingCalled" if event.params["name"] == SEED_BINDING => {
-                seeded(&shared, &event);
+                seeded(&shared, &session_id, &event);
             }
             "Runtime.consoleAPICalled"
             | "Runtime.exceptionThrown"
@@ -1407,11 +1570,16 @@ async fn watch_host(
 
 /// A storage seed gave an origin's document its storage: it is taken out
 /// of every page and iframe session (plan 07, milestone 7.4).
-fn seeded(shared: &Arc<Shared>, event: &RawEvent) {
+fn seeded(shared: &Arc<Shared>, session_id: &str, event: &RawEvent) {
     let Some(origin) = event.params["payload"].as_str() else {
         return;
     };
-    if shared.settings.injections.seeded(origin) {
+    let scope = shared
+        .lock()
+        .hosts
+        .get(session_id)
+        .and_then(|h| h.scope.clone());
+    if shared.settings.injections.seeded(scope.as_deref(), origin) {
         tracing::debug!("{origin} got its storage; its seed is taken out");
         let shared2 = shared.clone();
         shared.spawn(async move {
@@ -1582,6 +1750,9 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
     let info = attached.target_info;
     let session_id = attached.session_id;
     let session = shared.conn.session(session_id.clone());
+    let contexts = &shared.settings.contexts;
+    let scope = contexts.scope_of(info.browser_context_id.as_deref());
+    let context = scope.clone().zip(contexts.name_of(scope.as_deref()));
     let new_tab = if matches!(parent, Parent::Browser) && is_tab(&info) {
         let mut state = shared.lock();
         let id = state.next_id;
@@ -1594,6 +1765,7 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
                 url: info.url.clone(),
                 title: info.title.clone(),
                 opener_target: info.opener_id.clone(),
+                context,
                 ready: false,
                 frames: FrameTree::new(&info.target_id, &session_id),
                 network: Network::default(),
@@ -1636,6 +1808,7 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
                 session: session.clone(),
                 tab,
                 main: info.r#type == "page",
+                scope,
                 clock: None,
                 injected: HashMap::new(),
             },
