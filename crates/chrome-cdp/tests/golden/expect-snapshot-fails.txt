@@ -1,0 +1,24 @@
+$ chrome-cdp expect-snapshot login --dir <sandbox>/b --timeout 300ms
+exit: 1
+--- stderr
+error: expect-snapshot login failed: the page differs from the baseline
+  baseline: <sandbox>/b/login.txt
+  actual: 7 lines, 1 line added, 1 removed (after 300ms, <n> retries)
+  diff:
+    --- baseline
+    +++ page
+    @@ -2,6 +2,6 @@
+       - form
+         - textbox "Email"
+         - textbox "Password" (password)
+    -    - button "Sign in"
+    +    - button "Continue"
+       - navigation "Footer"
+         - link "Help" → /help
+  hint: chrome-cdp expect-snapshot login --dir <sandbox>/b --update   (if the page is right and the baseline is out of date)
+
+$ chrome-cdp expect-snapshot login --dir <sandbox>/b --timeout 300ms --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect-snapshot login failed: the page differs from the baseline","hint":"chrome-cdp expect-snapshot login --dir <sandbox>/b --update   (if the page is right and the baseline is out of date)","notes":[{"label":"baseline","text":"<sandbox>/b/login.txt"},{"label":"actual","text":"7 lines, 1 line added, 1 removed (after 300ms, <n> retries)"},{"label":"diff","text":"--- baseline\n+++ page\n@@ -2,6 +2,6 @@\n   - form\n     - textbox \"Email\"\n     - textbox \"Password\" (password)\n-    - button \"Sign in\"\n+    - button \"Continue\"\n   - navigation \"Footer\"\n     - link \"Help\" → /help"}],"details":{"added":1,"baseline":"<sandbox>/b/login.txt","diff":"--- baseline\n+++ page\n@@ -2,6 +2,6 @@\n   - form\n     - textbox \"Email\"\n     - textbox \"Password\" (password)\n-    - button \"Sign in\"\n+    - button \"Continue\"\n   - navigation \"Footer\"\n     - link \"Help\" → /help\n","removed":1,"retries":<n>,"timeout_ms":300}}}
+

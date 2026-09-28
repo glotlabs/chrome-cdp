@@ -1,0 +1,25 @@
+$ chrome-cdp expect-snapshot login --dir <sandbox>/b --update
+exit: 0
+--- stdout
+updated baseline <sandbox>/b/login.txt (1 line added, 1 removed):
+--- baseline
++++ page
+@@ -2,6 +2,6 @@
+   - form
+     - textbox "Email"
+     - textbox "Password" (password)
+-    - button "Sign in"
++    - button "Continue"
+   - navigation "Footer"
+     - link "Help" → /help
+
+$ chrome-cdp expect-snapshot login --dir <sandbox>/b --update --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"baseline":"<sandbox>/b/login.txt","elapsed_ms":<ms>,"lines":7,"name":"login","result":"unchanged","retries":<n>,"snapshot":"- main\n  - form\n    - textbox \"Email\"\n    - textbox \"Password\" (password)\n    - button \"Continue\"\n  - navigation \"Footer\"\n    - link \"Help\" → /help","tab":"t1"}}
+
+$ chrome-cdp expect-snapshot login --dir <sandbox>/b --update -q
+exit: 0
+--- stdout
+<sandbox>/b/login.txt
+

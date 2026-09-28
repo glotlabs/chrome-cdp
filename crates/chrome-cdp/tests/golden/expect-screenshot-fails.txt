@@ -1,0 +1,14 @@
+$ chrome-cdp expect-screenshot box '#box' --dir <sandbox>/b --timeout 300ms
+exit: 1
+--- stderr
+error: expect-screenshot box failed: 7,200 pixels (100.00%) differ from the baseline
+  baseline: <sandbox>/b/box-<os>.png
+  actual: <sandbox>/run/chrome-cdp/default/shots/1.png (120x60, after 300ms, <n> retries)
+  diff: <sandbox>/run/chrome-cdp/default/shots/2.png (changes in red)
+  hint: chrome-cdp expect-screenshot box '#box' --dir <sandbox>/b --update   (if the page is right and the baseline is out of date)
+
+$ chrome-cdp expect-screenshot box '#box' --dir <sandbox>/b --timeout 300ms --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect-screenshot box failed: 7,200 pixels (100.00%) differ from the baseline","hint":"chrome-cdp expect-screenshot box '#box' --dir <sandbox>/b --update   (if the page is right and the baseline is out of date)","notes":[{"label":"baseline","text":"<sandbox>/b/box-<os>.png"},{"label":"actual","text":"<sandbox>/run/chrome-cdp/default/shots/3.png (120x60, after 300ms, <n> retries)"},{"label":"diff","text":"<sandbox>/run/chrome-cdp/default/shots/4.png (changes in red)"}],"details":{"actual":"<sandbox>/run/chrome-cdp/default/shots/3.png","baseline":"<sandbox>/b/box-<os>.png","baseline_height":60,"baseline_width":120,"diff":"<sandbox>/run/chrome-cdp/default/shots/4.png","diff_pixels":7200,"height":60,"max_diff_pixels":0,"retries":<n>,"threshold":0.1,"timeout_ms":300,"width":120}}}
+

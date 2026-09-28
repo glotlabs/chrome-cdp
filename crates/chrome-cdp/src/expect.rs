@@ -1,6 +1,9 @@
 //! `expect` (plan 09, milestone 9.1): its arguments as the engine's
-//! [`Expectation`], checked before any daemon starts.
+//! [`Expectation`], checked before any daemon starts; and where
+//! `expect-snapshot` and `expect-screenshot` (milestone 9.2) keep their
+//! baselines.
 
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use engine::{A11yLevel, Expectation};
@@ -120,13 +123,71 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
     })
 }
 
+/// The baselines' directory in a project: `.chrome-cdp/<kind>` of the
+/// nearest directory up from `cwd` with `.chrome-cdp.toml`, `.chrome-cdp/`
+/// or `.git`, else of `cwd`.
+fn project_baselines(cwd: &Path, kind: &str) -> PathBuf {
+    let root = cwd
+        .ancestors()
+        .find(|dir| {
+            dir.join(crate::config::PROJECT_FILE).is_file()
+                || dir.join(".chrome-cdp").is_dir()
+                || dir.join(".git").exists()
+        })
+        .unwrap_or(cwd);
+    root.join(".chrome-cdp").join(kind)
+}
+
+/// The baseline file of `name`: in `dir` (`--dir`) or the project's
+/// `.chrome-cdp/<kind>`, named `<name><suffix>` (a trailing `extension`
+/// typed with the name is not doubled).
+fn baseline_path(
+    dir: Option<&Path>,
+    kind: &str,
+    name: &str,
+    extension: &str,
+    suffix: &str,
+) -> Result<PathBuf, ErrorInfo> {
+    let dir = if let Some(dir) = dir {
+        PathBuf::from(input::absolute_path(dir)?)
+    } else {
+        let cwd = std::env::current_dir().map_err(|e| {
+            ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("cannot read the current directory: {e}"),
+            )
+        })?;
+        project_baselines(&cwd, kind)
+    };
+    let stem = name.strip_suffix(extension).unwrap_or(name);
+    Ok(dir.join(format!("{stem}{suffix}")))
+}
+
+/// `expect-snapshot`'s baseline: `<name>.txt`.
+pub(crate) fn snapshot_baseline(dir: Option<&Path>, name: &str) -> Result<PathBuf, ErrorInfo> {
+    baseline_path(dir, "snapshots", name, ".txt", ".txt")
+}
+
+/// `expect-screenshot`'s baseline: `<name>-<os>.png`, one per platform,
+/// since fonts render differently on each.
+pub(crate) fn screenshot_baseline(dir: Option<&Path>, name: &str) -> Result<PathBuf, ErrorInfo> {
+    let suffix = format!("-{}.png", std::env::consts::OS);
+    baseline_path(dir, "screenshots", name, ".png", &suffix)
+}
+
+/// Whether a missing baseline is stored (the first run) rather than a
+/// failure: not in CI, where it would pass without checking anything.
+pub(crate) fn create_missing() -> bool {
+    !std::env::var("CI").is_ok_and(|v| !v.is_empty() && v != "0" && v != "false")
+}
+
 #[cfg(test)]
 mod tests {
     use clap::Parser as _;
     use engine::{Expectation, Matcher};
     use protocol::ErrorKind;
 
-    use super::expectation;
+    use super::{expectation, project_baselines, screenshot_baseline, snapshot_baseline};
     use crate::cli::{Cli, Command};
 
     fn parse(args: &[&str]) -> Result<Expectation, protocol::ErrorInfo> {
@@ -225,5 +286,46 @@ mod tests {
                 "{args:?}"
             );
         }
+    }
+
+    #[test]
+    fn baselines_live_in_the_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("app/src/.git")).unwrap();
+        std::fs::create_dir_all(root.join("app/src/deep")).unwrap();
+        // Nothing marks a project: the current directory.
+        assert_eq!(
+            project_baselines(&root.join("app"), "snapshots"),
+            root.join("app/.chrome-cdp/snapshots")
+        );
+        // The nearest of .git, .chrome-cdp.toml and .chrome-cdp/.
+        assert_eq!(
+            project_baselines(&root.join("app/src/deep"), "snapshots"),
+            root.join("app/src/.chrome-cdp/snapshots")
+        );
+        std::fs::write(root.join("app/src/deep/.chrome-cdp.toml"), "").unwrap();
+        assert_eq!(
+            project_baselines(&root.join("app/src/deep"), "screenshots"),
+            root.join("app/src/deep/.chrome-cdp/screenshots")
+        );
+    }
+
+    #[test]
+    fn baseline_files_are_named_after_the_baseline() {
+        let dir = std::path::Path::new("/b");
+        assert_eq!(
+            snapshot_baseline(Some(dir), "checkout/cart").unwrap(),
+            dir.join("checkout/cart.txt")
+        );
+        assert_eq!(
+            snapshot_baseline(Some(dir), "login.txt").unwrap(),
+            dir.join("login.txt")
+        );
+        let os = std::env::consts::OS;
+        assert_eq!(
+            screenshot_baseline(Some(dir), "home.png").unwrap(),
+            dir.join(format!("home-{os}.png"))
+        );
     }
 }

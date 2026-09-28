@@ -1,0 +1,11 @@
+$ chrome-cdp expect-screenshot box --threshold 2
+exit: 2
+--- stderr
+error: --threshold goes from 0 to 1, got 2
+  hint: chrome-cdp expect-screenshot box --threshold 0.1
+
+$ chrome-cdp expect-screenshot box --threshold 2 --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"--threshold goes from 0 to 1, got 2","hint":"chrome-cdp expect-screenshot box --threshold 0.1"}}
+

@@ -646,6 +646,62 @@ pub(crate) fn expect(
         .block_on(client.call_output(rpc::EXPECT, &request, ctx.timeout + QUICK))
 }
 
+/// `expect-snapshot <name>`: needs a running session.
+pub(crate) fn expect_snapshot(
+    args: &crate::cli::ExpectSnapshotArgs,
+    global: &GlobalArgs,
+) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::with_default(global, crate::expect::EXPECT_TIMEOUT)?;
+    let request = engine::ExpectSnapshotRequest {
+        name: args.name.clone(),
+        path: crate::expect::snapshot_baseline(args.dir.as_deref(), &args.name)?,
+        scope: args.scope.clone(),
+        full: args.full,
+        update: args.update,
+        create: crate::expect::create_missing(),
+        dir: args.dir.as_ref().map(|d| d.display().to_string()),
+        tab: ctx.tab.clone(),
+        strict_refs: args.refs.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(ctx.timeout),
+        max_chars: args.max_chars,
+    };
+    engine::check_expect_snapshot(&request)?;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::EXPECT_SNAPSHOT, &request, ctx.timeout + QUICK))
+}
+
+/// `expect-screenshot <name>`: needs a running session.
+pub(crate) fn expect_screenshot(
+    args: &crate::cli::ExpectScreenshotArgs,
+    global: &GlobalArgs,
+) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::with_default(global, crate::expect::EXPECT_TIMEOUT)?;
+    let request = engine::ExpectScreenshotRequest {
+        name: args.name.clone(),
+        path: crate::expect::screenshot_baseline(args.dir.as_deref(), &args.name)?,
+        locator: args.locator.clone(),
+        full: args.full,
+        mask: args.mask.clone(),
+        threshold: args.threshold,
+        max_diff_pixels: args.max_diff_pixels,
+        update: args.update,
+        create: crate::expect::create_missing(),
+        dir: args.dir.as_ref().map(|d| d.display().to_string()),
+        tab: ctx.tab.clone(),
+        strict_refs: args.refs.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(ctx.timeout),
+    };
+    engine::check_expect_screenshot(&request)?;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::EXPECT_SCREENSHOT, &request, ctx.timeout + QUICK))
+}
+
 /// `mark <name>`: needs a running session.
 pub(crate) fn mark(args: &crate::cli::MarkArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     if !crate::cli::is_mark_name(&args.name) {

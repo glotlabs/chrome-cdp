@@ -1,0 +1,11 @@
+$ chrome-cdp expect-snapshot ../login
+exit: 2
+--- stderr
+error: "../login" cannot name a baseline: use letters, digits, -, _ and . (not first), and / for folders
+  hint: chrome-cdp expect-snapshot login-form
+
+$ chrome-cdp expect-snapshot ../login --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"\"../login\" cannot name a baseline: use letters, digits, -, _ and . (not first), and / for folders","hint":"chrome-cdp expect-snapshot login-form"}}
+

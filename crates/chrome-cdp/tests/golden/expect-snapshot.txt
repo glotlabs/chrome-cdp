@@ -1,0 +1,15 @@
+$ chrome-cdp expect-snapshot login --dir <sandbox>/b
+exit: 0
+--- stdout
+passed: expect-snapshot login: 7 lines as in the baseline (<ms>)
+
+$ chrome-cdp expect-snapshot login --dir <sandbox>/b --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"baseline":"<sandbox>/b/login.txt","elapsed_ms":<ms>,"lines":7,"name":"login","result":"passed","retries":<n>,"snapshot":"- main\n  - form\n    - textbox \"Email\"\n    - textbox \"Password\" (password)\n    - button \"Sign in\"\n  - navigation \"Footer\"\n    - link \"Help\" → /help","tab":"t1"}}
+
+$ chrome-cdp expect-snapshot login --dir <sandbox>/b -q
+exit: 0
+--- stdout
+<sandbox>/b/login.txt
+

@@ -97,6 +97,8 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Wait(args)) => session::wait(&args, &cli.global),
         Some(Command::Expect(args)) => session::expect(&args, &cli.global),
         Some(Command::Mark(args)) => session::mark(&args, &cli.global),
+        Some(Command::ExpectSnapshot(args)) => session::expect_snapshot(&args, &cli.global),
+        Some(Command::ExpectScreenshot(args)) => session::expect_screenshot(&args, &cli.global),
         Some(Command::Dialog(args)) => session::dialog(&args, &cli.global),
         Some(Command::Downloads(args)) => session::downloads(&args, &cli.global),
         Some(Command::Console(args)) => {

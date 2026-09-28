@@ -1,0 +1,15 @@
+$ chrome-cdp expect-screenshot box '#box' --dir <sandbox>/b
+exit: 0
+--- stdout
+passed: expect-screenshot box: 120x60 as in the baseline (<ms>)
+
+$ chrome-cdp expect-screenshot box '#box' --dir <sandbox>/b --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"baseline":"<sandbox>/b/box-<os>.png","diff_pixels":0,"elapsed_ms":<ms>,"height":60,"name":"box","result":"passed","retries":<n>,"tab":"t1","width":120}}
+
+$ chrome-cdp expect-screenshot box '#box' --dir <sandbox>/b -q
+exit: 0
+--- stdout
+<sandbox>/b/box-<os>.png
+

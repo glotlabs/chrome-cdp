@@ -1,11 +1,11 @@
-$ chrome-cdp console --since yesterday
+$ chrome-cdp console --since '2 days'
 exit: 2
 --- stderr
-error: invalid value 'yesterday' for '--since <WHEN>': `yesterday` is not `last`, an entry number such as 12, or a duration such as 30s
+error: invalid value '2 days' for '--since <WHEN>': `2 days` is not `last`, an entry number such as 12, a duration such as 30s, or a mark's name
   hint: chrome-cdp console --help
 
-$ chrome-cdp console --since yesterday --json
+$ chrome-cdp console --since '2 days' --json
 exit: 2
 --- stdout
-{"ok":false,"error":{"kind":"BadArgs","message":"invalid value 'yesterday' for '--since <WHEN>': `yesterday` is not `last`, an entry number such as 12, or a duration such as 30s","hint":"chrome-cdp console --help"}}
+{"ok":false,"error":{"kind":"BadArgs","message":"invalid value '2 days' for '--since <WHEN>': `2 days` is not `last`, an entry number such as 12, a duration such as 30s, or a mark's name","hint":"chrome-cdp console --help"}}
 

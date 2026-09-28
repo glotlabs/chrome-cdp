@@ -109,7 +109,10 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
             "clipboard",
         ],
     ),
-    ("Verifying", &["expect", "mark"]),
+    (
+        "Verifying",
+        &["expect", "expect-snapshot", "expect-screenshot", "mark"],
+    ),
     (
         "Observing and debugging",
         &[

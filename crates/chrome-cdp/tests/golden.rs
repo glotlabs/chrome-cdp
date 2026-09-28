@@ -69,6 +69,20 @@ struct Case {
 const ALL: &[&str] = &["", "--json", "-q"];
 const ERR: &[&str] = &["", "--json"];
 
+/// The baseline fixture after its snapshot and box were stored as
+/// baselines (in `{sandbox}/b`) and the page changed: the button reads
+/// "Continue" and the box is red.
+const BASELINE_CHANGED: &[&[&str]] = &[
+    &["open", "{site}/expect/baseline.html"],
+    &["expect-snapshot", "login", "--dir", "{sandbox}/b"],
+    &["expect-screenshot", "box", "#box", "--dir", "{sandbox}/b"],
+    &[
+        "eval",
+        "document.getElementById('go').textContent = 'Continue'; \
+         document.getElementById('box').style.background = '#cc3333'",
+    ],
+];
+
 /// The re-render fixture after a snapshot and a remount: every ref of the
 /// snapshot names a node that is gone.
 const REMOUNTED: &[&[&str]] = &[
@@ -581,6 +595,76 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/expect/index.html"),
     },
     Case {
+        name: "expect-snapshot",
+        args: &["expect-snapshot", "login", "--dir", "{sandbox}/b"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/expect/baseline.html"],
+            &["expect-snapshot", "login", "--dir", "{sandbox}/b"],
+        ]),
+    },
+    Case {
+        name: "expect-snapshot-fails",
+        args: &[
+            "expect-snapshot",
+            "login",
+            "--dir",
+            "{sandbox}/b",
+            "--timeout",
+            "300ms",
+        ],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(BASELINE_CHANGED),
+    },
+    Case {
+        // The text form updates the baseline; the others find it up to date.
+        name: "expect-snapshot-update",
+        args: &[
+            "expect-snapshot",
+            "login",
+            "--dir",
+            "{sandbox}/b",
+            "--update",
+        ],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(BASELINE_CHANGED),
+    },
+    Case {
+        name: "expect-snapshot-bad-name",
+        args: &["expect-snapshot", "../login"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "expect-screenshot",
+        args: &["expect-screenshot", "box", "#box", "--dir", "{sandbox}/b"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/expect/baseline.html"],
+            &["expect-screenshot", "box", "#box", "--dir", "{sandbox}/b"],
+        ]),
+    },
+    Case {
+        name: "expect-screenshot-fails",
+        args: &[
+            "expect-screenshot",
+            "box",
+            "#box",
+            "--dir",
+            "{sandbox}/b",
+            "--timeout",
+            "300ms",
+        ],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(BASELINE_CHANGED),
+    },
+    Case {
+        name: "expect-screenshot-bad-threshold",
+        args: &["expect-screenshot", "box", "--threshold", "2"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
         name: "wait-fn",
         args: &["wait", "--fn", "6 * 7"],
         modes: ALL,
@@ -838,7 +922,7 @@ const CASES: &[Case] = &[
     },
     Case {
         name: "console-bad-since",
-        args: &["console", "--since", "yesterday"],
+        args: &["console", "--since", "2 days"],
         modes: ERR,
         fixture: Fixture::None,
     },
@@ -1853,6 +1937,8 @@ impl Normalizer {
         Self(vec![
             (sha, "<sha>"),
             (env!("CARGO_PKG_VERSION").to_owned(), "<version>"),
+            // `expect-screenshot` keeps a baseline per platform.
+            (format!("-{}.png", std::env::consts::OS), "-<os>.png"),
         ])
     }
 

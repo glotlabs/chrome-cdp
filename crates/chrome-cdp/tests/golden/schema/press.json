@@ -600,7 +600,7 @@
           "type": "string"
         },
         "text": {
-          "description": "One line of text.",
+          "description": "One line of text, or several for a block such as a diff (the\ntext form prints them indented under the label).",
           "type": "string"
         }
       },

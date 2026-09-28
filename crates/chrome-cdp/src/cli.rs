@@ -387,6 +387,51 @@ Examples:
   chrome-cdp network --since before-save")]
     Mark(MarkArgs),
 
+    /// Compare the page's snapshot with a stored text baseline; a diff shows what changed.
+    #[command(after_help = "\
+Reads the active tab (or --tab) as `snapshot -i` shows it, without refs
+(and long lists in full), and compares it with the baseline
+.chrome-cdp/snapshots/<NAME>.txt, reading again until they match or
+--timeout (default 5s) passes. A failure exits 1 (ExpectFailed) with a
+unified diff: - lines are the baseline's, + lines the page's.
+
+--update stores the page as the baseline instead, once two reads in a row
+are alike. A first run with no baseline stores it too, unless the CI
+environment variable is set: then a missing baseline fails. Commit the
+files. They live in .chrome-cdp/ of the nearest directory up with
+.chrome-cdp.toml, .chrome-cdp/ or .git (else the current one); --dir puts
+them elsewhere. Needs a running session.
+
+Examples:
+  chrome-cdp expect-snapshot login
+  chrome-cdp expect-snapshot checkout/cart --scope 'role=main'
+  chrome-cdp expect-snapshot login --update
+  chrome-cdp expect-snapshot home --full --timeout 10s")]
+    ExpectSnapshot(ExpectSnapshotArgs),
+
+    /// Compare a screenshot with a stored PNG baseline, pixel by pixel (experimental).
+    #[command(after_help = "\
+Takes a screenshot of the active tab's viewport (or the --full page, or the
+element LOCATOR names) in CSS pixels and compares it with the baseline
+.chrome-cdp/screenshots/<NAME>-<os>.png, taking it again until it matches
+or --timeout (default 5s) passes. A pixel has changed when its colour moved
+more than --threshold (0 to 1); up to --max-diff-pixels may change. A
+failure exits 1 (ExpectFailed) and saves the screenshot and a diff image
+(changes in red) where `screenshot` saves its files.
+
+Experimental: fonts render differently on each OS (so each OS has its own
+baseline) and may change with Chrome's version. expect-snapshot is the
+sturdier check. --mask paints over what changes on every load (clocks,
+ads). --update, a first run, CI and --dir work as in expect-snapshot.
+Needs a running session.
+
+Examples:
+  chrome-cdp expect-screenshot home
+  chrome-cdp expect-screenshot logo 'role=img[name=\"Acme\"]'
+  chrome-cdp expect-screenshot dashboard --full --mask '.clock'
+  chrome-cdp expect-screenshot home --update")]
+    ExpectScreenshot(ExpectScreenshotArgs),
+
     /// Show the page as an accessibility tree, with refs (e12) to act on.
     #[command(after_help = "\
 One node per line, two spaces per level:
@@ -4195,6 +4240,82 @@ pub(crate) struct MarkArgs {
     pub(crate) name: String,
 }
 
+/// `expect-snapshot`.
+#[derive(Debug, Args)]
+pub(crate) struct ExpectSnapshotArgs {
+    /// The baseline's name: letters, digits, -, _ and ., with / for
+    /// folders (login, checkout/cart).
+    #[arg(value_name = "NAME")]
+    pub(crate) name: String,
+
+    /// Only this element's subtree (any locator).
+    #[arg(long, value_name = "LOCATOR")]
+    pub(crate) scope: Option<String>,
+
+    /// Every node (as `snapshot --all` shows them), not only what
+    /// `snapshot -i` shows.
+    #[arg(long)]
+    pub(crate) full: bool,
+
+    /// Store the page as the baseline instead of comparing.
+    #[arg(long)]
+    pub(crate) update: bool,
+
+    /// The directory of the baselines, instead of the project's
+    /// .chrome-cdp/snapshots.
+    #[arg(long, value_name = "DIR")]
+    pub(crate) dir: Option<PathBuf>,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+
+    /// Bound the output to this many characters (0 = no limit); also
+    /// bounds a failure's diff.
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+/// `expect-screenshot`.
+#[derive(Debug, Args)]
+pub(crate) struct ExpectScreenshotArgs {
+    /// The baseline's name: letters, digits, -, _ and ., with / for
+    /// folders (home, checkout/cart).
+    #[arg(value_name = "NAME")]
+    pub(crate) name: String,
+
+    /// Capture only this element (any locator).
+    #[arg(value_name = "LOCATOR", conflicts_with = "full")]
+    pub(crate) locator: Option<String>,
+
+    /// The whole page, not only the viewport.
+    #[arg(long)]
+    pub(crate) full: bool,
+
+    /// Paint over the elements this locator matches (repeatable).
+    #[arg(long, value_name = "LOCATOR", action = ArgAction::Append)]
+    pub(crate) mask: Vec<String>,
+
+    /// How far (0 to 1) a pixel's colour may move before it has changed.
+    #[arg(long, default_value_t = 0.1, value_name = "T")]
+    pub(crate) threshold: f64,
+
+    /// How many pixels may change and still pass.
+    #[arg(long, default_value_t = 0, value_name = "N")]
+    pub(crate) max_diff_pixels: u64,
+
+    /// Store the page as the baseline instead of comparing.
+    #[arg(long)]
+    pub(crate) update: bool,
+
+    /// The directory of the baselines, instead of the project's
+    /// .chrome-cdp/screenshots.
+    #[arg(long, value_name = "DIR")]
+    pub(crate) dir: Option<PathBuf>,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+}
+
 /// `wait <locator> --state`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum ElementStateArg {
@@ -4493,9 +4614,11 @@ mod tests {
     /// and `unexpose` a line of names. `cookies set` and `cookies clear`
     /// print a line; `state save` and `state load` a line per origin of
     /// the file the user chose; `mark` a line with the name the user
-    /// chose.
+    /// chose. `expect-screenshot` prints a line (a failure's notes are
+    /// paths and counts).
     const FIXED_SIZE: &[&str] = &[
         "mark",
+        "expect-screenshot",
         "emulate",
         "viewport",
         "geo",
