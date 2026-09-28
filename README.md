@@ -285,8 +285,9 @@ those refs, so a model can map what it sees to what it can click; `--mask
 <locator>` paints over elements (prices, dates) for stable images.
 `--format jpeg|webp`, `--quality`, `--scale device` and `--omit-background`
 do what they say. `pdf` prints the page to the session's `pdfs` directory
-(or `-o`) with `--format A4|Letter|…`, `--landscape`, `--background` and
-`--margin 1cm`; Chrome prints only when headless.
+(or `-o`) with `--format A4|Letter|…`, `--landscape`, `--background`,
+`--margin 1cm`, `--pages 1-3,5` and `--css-page-size` (the page's `@page`
+size wins); Chrome prints only when headless.
 
 `eval <js>` runs a script in the page like a line typed into DevTools'
 console (statements, top-level `await`, a user gesture) and prints its value:

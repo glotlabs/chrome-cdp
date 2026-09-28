@@ -561,6 +561,8 @@ async fn pdf_prints_the_page() {
         landscape,
         background: true,
         margin: Some(Margins::parse("0").unwrap()),
+        pages: None,
+        css_page_size: false,
         timeout_ms: TIMEOUT_MS,
     };
     let output = engine.pdf(pdf(PaperFormat::A4, false, None)).await.unwrap();
@@ -591,6 +593,61 @@ async fn pdf_prints_the_page() {
     assert!(data.landscape);
     // 20,000px on 8.5in tall pages.
     assert_eq!(data.pages, Some(25), "{}", output.text);
+
+    // Some pages only.
+    let output = engine
+        .pdf(PdfRequest {
+            pages: Some("2-3,5".to_owned()),
+            ..pdf(PaperFormat::A4, false, None)
+        })
+        .await
+        .unwrap();
+    let data: PdfData = serde_json::from_value(output.data.clone()).unwrap();
+    assert_eq!(data.pages, Some(3), "{}", output.text);
+    for pages in ["40", "x"] {
+        let err = engine
+            .pdf(PdfRequest {
+                pages: Some(pages.to_owned()),
+                ..pdf(PaperFormat::A4, false, None)
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind, ErrorKind::BadArgs, "{}", err.to_text());
+        assert!(
+            err.message.starts_with(&format!("--pages {pages} ")),
+            "{}",
+            err.message
+        );
+    }
+
+    // The page's `@page` size (4in, 288pt), else A4's paper (596pt wide),
+    // the 4in pages scaled up to fit.
+    goto(&engine, &Fixtures::shared().url("/shots/page-size.html")).await;
+    let width = |path: &str| {
+        let pdf = String::from_utf8_lossy(&std::fs::read(path).unwrap()).into_owned();
+        let at = pdf.find("/MediaBox [").unwrap() + "/MediaBox [".len();
+        let numbers: Vec<f64> = pdf[at..]
+            .split(']')
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .map(|n| n.parse().unwrap())
+            .collect();
+        format!("{:.0}", numbers[2] - numbers[0])
+    };
+    let output = engine.pdf(pdf(PaperFormat::A4, false, None)).await.unwrap();
+    let data: PdfData = serde_json::from_value(output.data.clone()).unwrap();
+    assert_eq!(width(&data.path), "596", "{}", output.text);
+    let output = engine
+        .pdf(PdfRequest {
+            css_page_size: true,
+            ..pdf(PaperFormat::A4, false, None)
+        })
+        .await
+        .unwrap();
+    let data: PdfData = serde_json::from_value(output.data.clone()).unwrap();
+    assert_eq!(width(&data.path), "288", "{}", output.text);
+    assert_eq!(data.pages, Some(3), "{}", output.text);
 
     engine.close().await;
 }

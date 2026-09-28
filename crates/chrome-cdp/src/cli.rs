@@ -809,7 +809,8 @@ Examples:
   chrome-cdp pdf
   chrome-cdp pdf -o invoice.pdf --format A4 --background
   chrome-cdp pdf --landscape --margin 1cm
-  chrome-cdp pdf --margin 10mm,15mm           # top and bottom, left and right")]
+  chrome-cdp pdf --margin 10mm,15mm           # top and bottom, left and right
+  chrome-cdp pdf --pages 1-3,5 --css-page-size")]
     Pdf(PdfArgs),
 
     /// Run JavaScript in the page and print its value.
@@ -2398,6 +2399,16 @@ pub(crate) struct PdfArgs {
     /// left), each in in, cm, mm or px: 1cm, 10mm,15mm. Default 1cm.
     #[arg(long, value_parser = parse_margin, value_name = "LENGTHS")]
     pub(crate) margin: Option<engine::Margins>,
+
+    /// Print only these pages: numbers and ranges, comma-separated (1-3,5;
+    /// 3- runs to the end). Default all.
+    #[arg(long, value_name = "RANGES")]
+    pub(crate) pages: Option<String>,
+
+    /// Use the page's own CSS `@page` size where it sets one, instead of
+    /// --format.
+    #[arg(long)]
+    pub(crate) css_page_size: bool,
 }
 
 /// `pdf --format`.

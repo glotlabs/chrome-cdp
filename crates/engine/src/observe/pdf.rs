@@ -42,6 +42,8 @@ impl Engine {
             margin_right: req.margin.map(|m| m.right),
             margin_bottom: req.margin.map(|m| m.bottom),
             margin_left: req.margin.map(|m| m.left),
+            page_ranges: req.pages.clone(),
+            prefer_css_page_size: Some(req.css_page_size),
             ..cdp_page::PrintToPdfParams::default()
         };
         let print = async {
@@ -50,11 +52,11 @@ impl Engine {
                 .call(params)
                 .await
                 .map_err(|e| {
-                    if e.to_string()
-                        .to_ascii_lowercase()
-                        .contains("not implemented")
-                    {
+                    let message = e.to_string().to_ascii_lowercase();
+                    if message.contains("not implemented") {
                         self.pdf_headed()
+                    } else if message.contains("page range") {
+                        self.pdf_bad_pages(req.pages.as_deref().unwrap_or_default(), &message)
                     } else {
                         from_cdp(&e, &self.session)
                     }
@@ -104,6 +106,23 @@ impl Engine {
         };
         let output = Output::typed(&data, text).quiet(path_text);
         Ok(self.report_events(&running, mark, output, None).await)
+    }
+
+    /// Chrome refused `--pages`: its syntax, or pages past the end.
+    fn pdf_bad_pages(&self, pages: &str, message: &str) -> ErrorInfo {
+        let why = if message.contains("exceeds") {
+            "goes past the last page"
+        } else {
+            "is not a list of pages and ranges"
+        };
+        ErrorInfo::new(ErrorKind::BadArgs, format!("--pages {pages} {why}")).hint(
+            Hint::run(
+                Cmd::new("pdf")
+                    .flag("pages", "1-3,5")
+                    .session(&self.session),
+            )
+            .why("pages 1 to 3, and 5; 3- runs to the end"),
+        )
     }
 
     fn pdf_headed(&self) -> ErrorInfo {

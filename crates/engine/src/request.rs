@@ -942,6 +942,12 @@ pub struct PdfRequest {
     /// `--margin`; Chrome's (1cm) if `None`.
     #[serde(default)]
     pub margin: Option<Margins>,
+    /// `--pages`: the pages to print, e.g. `1-3,5`; all if `None`.
+    #[serde(default)]
+    pub pages: Option<String>,
+    /// `--css-page-size`: the page's CSS `@page` size wins over `format`.
+    #[serde(default)]
+    pub css_page_size: bool,
     pub timeout_ms: u64,
 }
 

@@ -836,6 +836,8 @@ pub(crate) fn pdf(args: &PdfArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
         landscape: args.landscape,
         background: args.background,
         margin: args.margin,
+        pages: args.pages.clone(),
+        css_page_size: args.css_page_size,
         timeout_ms: millis(ctx.timeout),
     };
     let mut client = running_session(&ctx)?;
