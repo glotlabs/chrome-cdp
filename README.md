@@ -211,14 +211,14 @@ quiet. Lines follow the action's own only when something happened:
 clicked e6 button "Sign in"
 → navigated to https://acme.test/dashboard "Dashboard" (200)
 ! console error: TypeError: x is undefined (app.js:12)
-! request failed: POST /api/session (500)
+! request failed: #42 POST /api/session (500)
 ! opened tab t2 (https://acme.test/help); switch to it: chrome-cdp tab t2
 ```
 
 Also reported: `pushState` navigations (`(same document)`), dialogs the
 session answered, downloads, and focus moving to another form (`! focus
 moved to e14 textbox "Code"`). Failed requests count only on the page's own
-origin. `--json` lists them all in `events`. `--no-wait-after` returns once
+origin; `#42` is the request's id for `network show 42`. `--json` lists them all in `events`. `--no-wait-after` returns once
 the input is sent; `--snap` appends what changed on the page (`snapshot
 --diff -i`), and `snap_after_action = "diff"` in the config files makes that
 the default (`--no-snap` turns it off for one command).

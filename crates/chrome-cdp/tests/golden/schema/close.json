@@ -504,6 +504,15 @@
                 "null"
               ]
             },
+            "id": {
+              "description": "Its id in the tab's network log (`network show <id>`), if the\nlog has it.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "method": {
               "type": "string"
             },

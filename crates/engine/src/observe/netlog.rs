@@ -140,6 +140,16 @@ impl NetLog {
         self.records.iter()
     }
 
+    /// The id of the newest record of request `request_id` of session
+    /// `session` (a redirect's last hop), if the log still has one.
+    pub(crate) fn id_of(&self, session: &str, request_id: &str) -> Option<u64> {
+        self.records
+            .iter()
+            .rev()
+            .find(|r| r.request_id == request_id && r.session == session)
+            .map(|r| r.entry.id)
+    }
+
     /// Record `id`, if the log still has it.
     pub(crate) fn get(&self, id: u64) -> Option<&Record> {
         let i = self.records.partition_point(|r| r.entry.id < id);

@@ -13,8 +13,8 @@ use std::time::Duration;
 
 use browser::Host;
 use engine::{
-    Action, ActionRequest, Button, Engine, LocateOptions, NavigateRequest, Navigation, OpenRequest,
-    WaitUntil,
+    Action, ActionRequest, Button, Engine, LocateOptions, NavigateRequest, Navigation,
+    NetworkShowRequest, OpenRequest, WaitUntil,
 };
 use fixtures::Fixtures;
 use protocol::Output;
@@ -262,9 +262,25 @@ async fn console_errors_and_failed_requests_are_reported() {
     let out = act(&engine, click("#save")).await;
     assert_eq!(
         report(&out),
-        ["! request failed: POST /actions/report-api?status=500 (500)"]
+        ["! request failed: #3 POST /actions/report-api?status=500 (500)"]
     );
     assert_eq!(text(&engine, "#out").await, "saved: 500");
+    // The id is the request's in the network log, for `network show 3`.
+    let shown = engine
+        .network_show(NetworkShowRequest {
+            tab: None,
+            id: 3,
+            headers: false,
+            body: false,
+            request_body: false,
+            output: None,
+            timeout_ms: 5_000,
+            max_chars: 0,
+        })
+        .await
+        .unwrap();
+    let url = shown.data["request"]["url"].as_str().unwrap();
+    assert!(url.ends_with("/actions/report-api?status=500"), "{url}");
 
     // More failures than it lists: `network --failed` has them all.
     let out = act(&engine, click("#many-failures")).await;
@@ -390,7 +406,7 @@ async fn no_wait_after_and_snap() {
     let lines = report(&out);
     assert_eq!(
         lines[0],
-        "! request failed: POST /actions/report-api?status=500 (500)"
+        "! request failed: #4 POST /actions/report-api?status=500 (500)"
     );
     assert_eq!(lines[1], format!("page t1 \"Report\" {page}"));
     assert_eq!(

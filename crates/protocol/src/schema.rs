@@ -2127,6 +2127,10 @@ pub enum Event {
     RequestFailed {
         /// The tab, e.g. `t1`.
         tab: String,
+        /// Its id in the tab's network log (`network show <id>`), if the
+        /// log has it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<u64>,
         method: String,
         url: String,
         /// Chrome's resource type: `Document`, `Fetch`, `XHR`, `Script`, …

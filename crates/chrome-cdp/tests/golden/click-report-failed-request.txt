@@ -2,12 +2,12 @@ $ chrome-cdp click '#save'
 exit: 0
 --- stdout
 clicked e1 button "Save"
-! request failed: POST /actions/report-api?status=500 (500)
+! request failed: #3 POST /actions/report-api?status=500 (500)
 
 $ chrome-cdp click '#save' --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"action":"click","button":"left","count":1,"element":{"name":"Save","ref":"e1","role":"button","tag":"button"},"locator":"#save","point":{"x":31.2,"y":300.38},"tab":"t1"},"events":[{"type":"request_failed","tab":"t1","method":"POST","url":"<site>/actions/report-api?status=500","resource_type":"Fetch","status":500}]}
+{"ok":true,"data":{"action":"click","button":"left","count":1,"element":{"name":"Save","ref":"e1","role":"button","tag":"button"},"locator":"#save","point":{"x":31.2,"y":300.38},"tab":"t1"},"events":[{"type":"request_failed","tab":"t1","id":4,"method":"POST","url":"<site>/actions/report-api?status=500","resource_type":"Fetch","status":500}]}
 
 $ chrome-cdp click '#save' -q
 exit: 0

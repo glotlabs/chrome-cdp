@@ -79,6 +79,10 @@ pub(crate) struct Failure {
     pub(crate) status: Option<u16>,
     /// Chrome's error, if it did not: `net::ERR_CONNECTION_REFUSED`.
     pub(crate) error: Option<String>,
+    /// The session that sent it and its id there, to find it in the
+    /// tab's network log.
+    pub(crate) session: String,
+    pub(crate) request_id: String,
 }
 
 /// The network activity of one tab.
@@ -189,6 +193,8 @@ impl Network {
                             kind: params["type"].as_str().unwrap_or("Other").to_owned(),
                             status,
                             error: None,
+                            session: key.0.clone(),
+                            request_id: key.1.clone(),
                         },
                     );
                 }
@@ -213,6 +219,8 @@ impl Network {
                             kind: done.kind,
                             status: None,
                             error: Some(text(&params["errorText"])),
+                            session: key.0,
+                            request_id: key.1,
                         },
                     );
                 }

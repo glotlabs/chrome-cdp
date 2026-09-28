@@ -334,6 +334,11 @@ impl Actor<'_> {
             .filter(|f| !(f.kind == "Document" && Some(f.url.as_str()) == navigated_to))
             .map(|f| Event::RequestFailed {
                 tab: self.tab(),
+                id: self
+                    .running
+                    .tabs
+                    .netlog(self.page.id, |log| log.id_of(&f.session, &f.request_id))
+                    .flatten(),
                 method: f.method,
                 url: f.url,
                 resource_type: f.kind,

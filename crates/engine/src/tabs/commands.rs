@@ -211,6 +211,7 @@ impl Engine {
                 format!("console error: {message}{place}")
             }
             Event::RequestFailed {
+                id,
                 method,
                 url,
                 status,
@@ -221,7 +222,8 @@ impl Engine {
                     .map(|s| s.to_string())
                     .or_else(|| error.clone())
                     .unwrap_or_default();
-                format!("request failed: {method} {} ({why})", path_of(url))
+                let id = id.map(|id| format!("#{id} ")).unwrap_or_default();
+                format!("request failed: {id}{method} {} ({why})", path_of(url))
             }
             Event::FocusMoved { element, .. } => {
                 format!("focus moved to {}", crate::input::describe(element))
