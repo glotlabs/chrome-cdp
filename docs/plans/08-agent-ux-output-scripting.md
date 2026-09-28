@@ -1,6 +1,6 @@
 # Plan 08 — Agent UX, output contract & scripting
 
-Status: IN PROGRESS (8.1 done)
+Status: IN PROGRESS (8.1-8.2 done)
 Depends on: 01. Cross-cutting: every plan follows §2–§4.
 
 ## Goal
@@ -177,7 +177,7 @@ Robot Framework). Treat it as a specified format from day one:
 - [ ] A fresh Claude Code session given only `chrome-cdp skill` completes the
       plan 10 agent benchmark tasks without reading other docs.
 - [ ] A `batch` of 10 steps runs ≥ 3× faster than 10 separate invocations.
-- [ ] `docs/scenario-syntax.md` exists, and the parser's test suite includes
+- [x] `docs/scenario-syntax.md` exists, and the parser's test suite includes
       one test per grammar rule, plus a fuzz target
       (`cargo fuzz`: never panics, and spans are always within the input).
 
@@ -203,3 +203,14 @@ _(append here)_
 - 8.1: The CLI tests point `XDG_CONFIG_HOME` at an empty directory in `CARGO_TARGET_TMPDIR`. It has to exist and be writable, because Chrome keeps its crash reports there and exits at startup otherwise.
 - 8.1: The release binary grew from 1.7 MB to 2.0 MB (x86_64 Linux) with `schemars` and `toml`.
 - (from plan 05, milestone 5.5) `--snap`, `--no-snap` and `--no-wait-after` landed as flags of the action commands only (with `CHROME_CDP_SNAP` and `CHROME_CDP_NO_WAIT_AFTER`), plus the config key `snap_after_action`; actions also took `--max-chars`, since `--snap` makes their output grow with the page.
+- 8.2: `batch` and `run` run each step in the CLI process through the same `run(cli)` a single command uses, so a step costs no process start or config load. Each step still opens its own daemon connection (connect + `hello`) rather than sharing one stream; the commands are written around one call each, and a shared connection is a follow-up if the benchmark needs it.
+- 8.2: The whole script is checked before the first step: syntax, variables, clap parsing of every line, unknown directives (only `@syntax` in `batch`/`run`), nested `batch`/`run`, and `--json` on a line of a text script. All problems are reported at once: the first as the message (`file:line:col: …`), the rest as `also:` notes (up to 10), and all in `details.problems`, exit 2. Runtime errors of a step get the same `file:line:col: ` prefix.
+- 8.2: Output per step: text prints `[n/total] <line as written> ✓|✗` then the step's own rendering; `-q` prints only the steps' quiet output; `--json` prints one line per step: `{"step","total","at","command"}` followed by the step's envelope fields (`protocol::schema::StepInfo`; `chrome-cdp schema batch`). A script that fails the check prints one plain error envelope. The exit code is the first failed step's; text modes end with a line on stderr saying where the script stopped or which steps failed.
+- 8.2: Progress lines show the line as written, variables unexpanded, so values from `${env:…}` never reach the output.
+- 8.2: Lines inherit `--session`, `--timeout`, `--tab`, `-q`, `-v` and the config values of the `batch`/`run` call; a flag written on the line wins for that line. A step's `-` (stdin) argument fails in `batch`, whose stdin is the script.
+- 8.2: Variables: `batch` and `run` fill in `${name}` (`--var`), `${env:X}` and `${data:file#/ptr}` (relative to the script's folder; the current one for `batch`). The plan 11 forms (`var:`, `secret:`, `saved.…`, `test.id`, `run.id`) parse but are errors in `batch`/`run`. A value never splits into several words.
+- 8.2: Grammar details the plan left open: inside double quotes, backslashes other than `\"`, `\\` and `\n` stay as written (`"\d+"`), as in a shell; outside quotes `\` escapes one character; a continuation needs whitespace before the trailing `\` (so `word\` is an error, not an escape); comment lines may sit at any indentation; a wrongly indented block is one error. CRLF line ends and tabs between words are allowed.
+- 8.2: The parser returns every syntax error plus the tree of the lines without errors, and keeps comments (full-line and trailing) in the tree, for plan 11's `check` and `fmt`. `@syntax` is taken out of the tree into `Script::syntax`.
+- 8.2: `ScriptError` has no `From` into `ErrorInfo`: a second `From` impl into `ErrorInfo` breaks `?` type inference in `engine`. The CLI converts explicitly.
+- 8.2: The fuzz target is `fuzz/` (a cargo-fuzz crate outside the workspace, `cargo +nightly fuzz run parse_script`). cargo-fuzz is not installed where 8.2 was built, so it was only type-checked; a proptest in `protocol::script::tests` checks the same two properties on every `cargo test`.
+- 8.2: The "batch of 10 steps ≥ 3x faster" criterion has an ignored benchmark, `batch_beats_separate_invocations` in `crates/chrome-cdp/tests/bench.rs`. Deferred: benchmarks run after all plans.
