@@ -854,6 +854,8 @@ impl Files {
 
     /// The data file path for `stem` with extension `ext`.
     fn take(&mut self, stem: &str, ext: &str) -> String {
+        // `products.json` stays that, not `products.json.json`.
+        let stem = stem.strip_suffix(&format!(".{ext}")).unwrap_or(stem);
         let mut path = format!("{}/{stem}.{ext}", self.dir);
         let mut n = 2;
         while !self.used.insert(path.clone()) {
