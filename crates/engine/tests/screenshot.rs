@@ -327,6 +327,14 @@ async fn viewport_element_and_full_page() {
         "{}",
         output.text
     );
+    assert_eq!(
+        output.warnings,
+        [
+            "the 800x20000 area was shrunk to 63x1568, too small to read; chrome-cdp screenshot \
+             --full --max-size 0 --session engine-shot-test keeps its size, or a locator captures \
+             one part"
+        ]
+    );
     let image = Image::load(&data.path);
     assert!(near(image.pixel(30, 1560), [255, 0, 0]));
 

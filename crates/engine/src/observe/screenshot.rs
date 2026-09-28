@@ -819,9 +819,31 @@ impl Shot<'_> {
         for warning in drawn.warnings {
             output = output.warning(warning);
         }
+        if downscaled && scale < SMALL {
+            let mut cmd = Cmd::new("screenshot");
+            if self.req.full {
+                cmd = cmd.switch("full");
+            }
+            if let Some(locator) = locator {
+                cmd = cmd.arg(locator.to_string());
+            }
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let (w, h) = (
+                capture.clip.width.round() as u64,
+                capture.clip.height.round() as u64,
+            );
+            output = output.warning(format!(
+                "the {w}x{h} area was shrunk to {width}x{height}, too small to read; {} keeps \
+                 its size, or a locator captures one part",
+                cmd.flag("max-size", "0").session(self.session())
+            ));
+        }
         Ok(output)
     }
 }
+
+/// Below this many image pixels per CSS pixel, text is too small to read.
+const SMALL: f64 = 0.5;
 
 /// Image pixels per CSS pixel for `capture`, and whether `max_size` made
 /// it smaller than `scale` asks.
