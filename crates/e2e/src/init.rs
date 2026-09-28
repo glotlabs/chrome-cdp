@@ -376,7 +376,8 @@ fn config_section(server: Option<&Server>) -> String {
          timeout = \"30s\"\n\
          artifacts = \"{DEFAULT_ARTIFACTS}\"\n\
          viewport = \"1280x800\"\n\
-         # watch = [\"src/**\"]   # test --watch also reruns every test when these change\n\n\
+         # watch = [\"src/**\"]   # test --watch also reruns every test when these change\n\
+         # openapi = \"api/openapi.yaml\"   # `mock check` (and test) check the mocks against it\n\n\
          # Every test sees the same time, random values, locale and time zone,\n\
          # and no animations (docs/e2e/determinism.md). To change that:\n\
          # [e2e.determinism]\n\
