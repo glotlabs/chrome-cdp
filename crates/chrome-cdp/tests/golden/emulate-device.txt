@@ -1,0 +1,19 @@
+$ chrome-cdp emulate iphone 15
+exit: 0
+--- stdout
+device iPhone 15
+viewport 393x659 @3x, mobile, touch, screen 393x852
+user agent Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1
+
+$ chrome-cdp emulate iphone 15 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"default_viewport":{"dpr":1.0,"height":800,"mobile":false,"touch":false,"width":1280},"emulation":{"device":"iPhone 15","user_agent":"Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1","viewport":{"dpr":3.0,"height":659,"mobile":true,"screen_height":852,"screen_width":393,"touch":true,"width":393}}}}
+
+$ chrome-cdp emulate iphone 15 -q
+exit: 0
+--- stdout
+device iPhone 15
+viewport 393x659 @3x, mobile, touch, screen 393x852
+user agent Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.6 Mobile/15E148 Safari/604.1
+

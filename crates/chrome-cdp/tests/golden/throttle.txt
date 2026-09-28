@@ -1,0 +1,15 @@
+$ chrome-cdp throttle slow-3g
+exit: 0
+--- stdout
+throttle slow-3g: latency 2s, 400kbit/s down, 400kbit/s up
+
+$ chrome-cdp throttle slow-3g --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"default_viewport":{"dpr":1.0,"height":800,"mobile":false,"touch":false,"width":1280},"emulation":{"throttle":{"download_kbps":400.0,"latency_ms":2000.0,"preset":"slow-3g","upload_kbps":400.0}}}}
+
+$ chrome-cdp throttle slow-3g -q
+exit: 0
+--- stdout
+throttle slow-3g: latency 2s, 400kbit/s down, 400kbit/s up
+

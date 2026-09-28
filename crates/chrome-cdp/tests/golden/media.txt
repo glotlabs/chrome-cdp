@@ -1,0 +1,5 @@
+$ chrome-cdp media --color-scheme dark --reduced-motion reduce
+exit: 0
+--- stdout
+media prefers-color-scheme dark, prefers-reduced-motion reduce
+

@@ -1,0 +1,12 @@
+$ chrome-cdp emulate 'iPhone 99'
+exit: 2
+--- stderr
+error: no device is called `iPhone 99`
+  did you mean: iPhone SE, iPhone X, iPhone 11
+  hint: chrome-cdp emulate 'iPhone SE'
+
+$ chrome-cdp emulate 'iPhone 99' --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"no device is called `iPhone 99`","hint":"chrome-cdp emulate 'iPhone SE'","notes":[{"label":"did you mean","text":"iPhone SE, iPhone X, iPhone 11"}]}}
+

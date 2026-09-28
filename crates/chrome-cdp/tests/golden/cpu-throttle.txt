@@ -1,0 +1,5 @@
+$ chrome-cdp cpu-throttle 4
+exit: 0
+--- stdout
+cpu-throttle: 4x slower
+

@@ -55,6 +55,14 @@ one of each. Features you enable are removed from the disabled list.
 
 The first page is `about:blank`.
 
+`open --fake-media` adds `--use-fake-device-for-media-stream` (a fake
+camera and microphone) and `--use-fake-ui-for-media-stream` (pages get
+them without a prompt), for testing calls and recordings.
+
+In headless mode pages get a 1280x800 viewport (`Emulation.setDeviceMetricsOverride`),
+not the odd size of headless Chrome's window, unless a `--window-size` of yours
+sets it; `viewport` and `emulate` change it.
+
 ## The sandbox
 
 Chrome's sandbox stays on. chrome-cdp adds `--no-sandbox` only when:

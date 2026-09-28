@@ -33,6 +33,7 @@ use engine::{
     TabNewRequest, TabSelectRequest, TabsRequest, TraceStartRequest, TraceStopRequest,
     UnrouteRequest, WaitFor, WaitRequest,
 };
+use engine::{EmulateRequest, EmulationChange, PermissionsOp, PermissionsRequest};
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
 use serde_json::{Map, Value, json};
@@ -43,9 +44,9 @@ use crate::cli::{
     DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, FindArgs,
     GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs,
     ImageFormatArg, InspectArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs,
-    ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs, StatusArgs,
-    StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs, TraceCommand, UnrouteArgs,
-    WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    PermissionsArgs, PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs,
+    SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs,
+    TraceArgs, TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -154,6 +155,9 @@ pub(crate) fn open(args: &OpenArgs, global: &GlobalArgs) -> Result<Output, Error
         .transpose()?;
     let launch = &args.launch;
     browser::launch::flags::check_extra(&launch.chrome_args)?;
+    if let Some(device) = &args.device {
+        engine::find_device(device, &global.session)?;
+    }
     if let Some(name) = &launch.profile {
         browser::launch::check_profile_name(name)?;
     }
@@ -196,7 +200,7 @@ fn open_in(
         chrome_flag: launch.chrome.clone(),
         headed: launch.headed.then_some(true),
         profile: launch.profile(),
-        chrome_args: launch.chrome_args.clone(),
+        chrome_args: launch.chrome_args(),
         restart: args.restart,
         url,
         base_url: ctx.base_url.clone(),
@@ -204,6 +208,7 @@ fn open_in(
         follow_popups: args.follow_popups.then_some(true),
         ignore_https_errors: args.ignore_https_errors.then_some(true),
         bypass_service_worker: args.bypass_service_worker.then_some(true),
+        device: args.device.clone(),
         dialogs: args.dialogs.map(crate::cli::Dialogs::to_engine),
         http_credentials,
         console_buffer: args
@@ -255,6 +260,9 @@ fn keep_previous_options(request: &mut OpenRequest, previous: &OpenRequest) {
     }
     if request.bypass_service_worker.is_none() {
         request.bypass_service_worker = previous.bypass_service_worker;
+    }
+    if request.device.is_none() {
+        request.device.clone_from(&previous.device);
     }
     if request.dialogs.is_none() {
         request.dialogs = previous.dialogs;
@@ -914,6 +922,67 @@ pub(crate) fn unroute(args: &UnrouteArgs, global: &GlobalArgs) -> Result<Output,
         ctx.runtime
             .block_on(client.call_output(rpc::UNROUTE, &request, ctx.timeout + QUICK))?;
     Ok(every_tab(output, &ctx))
+}
+
+/// The emulation commands (`emulate`, `viewport`, `geo`, …): need a
+/// running session.
+pub(crate) fn emulate(change: EmulationChange, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let request = EmulateRequest {
+        change,
+        timeout_ms: millis(ctx.timeout),
+    };
+    let output =
+        ctx.runtime
+            .block_on(client.call_output(rpc::EMULATE, &request, ctx.timeout + QUICK))?;
+    Ok(if ctx.tab.is_some() {
+        output.warning("emulation applies to every tab of the session; --tab is ignored")
+    } else {
+        output
+    })
+}
+
+/// `permissions`: needs a running session.
+pub(crate) fn permissions(
+    args: &PermissionsArgs,
+    global: &GlobalArgs,
+) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let (op, names, origin) = match &args.command {
+        None => (PermissionsOp::List, Vec::new(), None),
+        Some(PermissionsCommand::Grant(a)) => {
+            (PermissionsOp::Grant, a.names.clone(), a.origin.clone())
+        }
+        Some(PermissionsCommand::Deny(a)) => {
+            (PermissionsOp::Deny, a.names.clone(), a.origin.clone())
+        }
+        Some(PermissionsCommand::Reset(a)) => {
+            (PermissionsOp::Reset, a.names.clone(), a.origin.clone())
+        }
+    };
+    for name in &names {
+        engine::check_permission(name, &global.session)?;
+    }
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let request = PermissionsRequest {
+        op,
+        names,
+        origin,
+        timeout_ms: millis(ctx.timeout),
+    };
+    let output = ctx.runtime.block_on(client.call_output(
+        rpc::PERMISSIONS,
+        &request,
+        ctx.timeout + QUICK,
+    ))?;
+    Ok(if ctx.tab.is_some() {
+        output.warning("permissions apply to every tab of the session; --tab is ignored")
+    } else {
+        output
+    })
 }
 
 /// Routes belong to the session: a `--tab` is no scope for them.

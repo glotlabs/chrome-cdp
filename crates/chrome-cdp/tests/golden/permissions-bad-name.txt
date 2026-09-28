@@ -1,0 +1,12 @@
+$ chrome-cdp permissions grant notification
+exit: 2
+--- stderr
+error: `notification` is not a permission chrome-cdp knows
+  permissions: geolocation, notifications, clipboard-read, clipboard-write, camera, microphone, midi, midi-sysex, background-sync, persistent-storage, screen-wake-lock, local-fonts, storage-access, idle-detection, window-management, accelerometer, gyroscope, magnetometer, payment-handler
+  hint: chrome-cdp permissions grant notifications
+
+$ chrome-cdp permissions grant notification --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"`notification` is not a permission chrome-cdp knows","hint":"chrome-cdp permissions grant notifications","notes":[{"label":"permissions","text":"geolocation, notifications, clipboard-read, clipboard-write, camera, microphone, midi, midi-sysex, background-sync, persistent-storage, screen-wake-lock, local-fonts, storage-access, idle-detection, window-management, accelerometer, gyroscope, magnetometer, payment-handler"}]}}
+

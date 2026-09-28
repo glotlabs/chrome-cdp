@@ -1,0 +1,11 @@
+$ chrome-cdp geo 91,0
+exit: 2
+--- stderr
+error: 91,0 is off the globe: latitude is -90 to 90, longitude -180 to 180
+  hint: chrome-cdp geo 59.9139,10.7522
+
+$ chrome-cdp geo 91,0 --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"91,0 is off the globe: latitude is -90 to 90, longitude -180 to 180","hint":"chrome-cdp geo 59.9139,10.7522"}}
+

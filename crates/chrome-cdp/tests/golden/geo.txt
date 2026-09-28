@@ -1,0 +1,15 @@
+$ chrome-cdp geo -33.8688,151.2093 --accuracy 50
+exit: 0
+--- stdout
+geolocation -33.8688,151.2093 (accuracy 50m)
+
+$ chrome-cdp geo -33.8688,151.2093 --accuracy 50 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"default_viewport":{"dpr":1.0,"height":800,"mobile":false,"touch":false,"width":1280},"emulation":{"geolocation":{"accuracy":50.0,"latitude":-33.8688,"longitude":151.2093}}}}
+
+$ chrome-cdp geo -33.8688,151.2093 --accuracy 50 -q
+exit: 0
+--- stdout
+geolocation -33.8688,151.2093 (accuracy 50m)
+

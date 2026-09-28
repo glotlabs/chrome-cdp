@@ -1,0 +1,11 @@
+$ chrome-cdp viewport 390
+exit: 2
+--- stderr
+error: `390` is not a size; use WIDTHxHEIGHT, e.g. 1440x900
+  hint: chrome-cdp viewport 1440x900
+
+$ chrome-cdp viewport 390 --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"`390` is not a size; use WIDTHxHEIGHT, e.g. 1440x900","hint":"chrome-cdp viewport 1440x900"}}
+

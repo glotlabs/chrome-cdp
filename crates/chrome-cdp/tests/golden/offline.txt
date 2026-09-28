@@ -1,0 +1,5 @@
+$ chrome-cdp offline on
+exit: 0
+--- stdout
+offline: requests fail and navigator.onLine is false
+

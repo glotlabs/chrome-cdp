@@ -16,7 +16,9 @@ forms (`press`, `type`, `fill`, `select`, `check`, `uncheck`, `focus`,
 (`network`), what it looks like (`screenshot`, `pdf`), JavaScript (`eval`),
 recordings and measurements (`har`, `trace`, `perf`, `coverage`), helpers
 for a human watching (`highlight`, `inspect`), mocking and blocking requests
-(`route`, `block`, `routes`, `unroute`), raw CDP calls,
+(`route`, `block`, `routes`, `unroute`), devices and the environment
+(`emulate`, `viewport`, `geo`, `tz`, `locale`, `ua`, `media`, `offline`,
+`throttle`, `cpu-throttle`, `time`, `permissions`), raw CDP calls,
 `install`/`uninstall` and `schema` work so far:
 
 ```sh
@@ -33,6 +35,7 @@ chrome-cdp wait --text 'Welcome back'  # instead of sleep
 chrome-cdp errors                     # exceptions and error logs not seen yet
 chrome-cdp network --failed           # #42 POST 500 /api/login xhr 12KB 340ms
 chrome-cdp route '**/api/cart' --json-body '{"items":[]}'  # mock an API for every tab
+chrome-cdp emulate 'iPhone 15'        # viewport, pixel ratio, touch and user agent
 chrome-cdp screenshot --annotate      # …/shots/1.png: 1280x720 png, 48KB; refs labelled
 chrome-cdp eval --in e9 'el.value'   # ada@example.com
 chrome-cdp perf                       # load timing, LCP/CLS/INP rated, blocking time, heap
@@ -297,6 +300,39 @@ workers (which would answer before the routes) and the HTTP cache; `open
 --bypass-service-worker` skips service workers without routes too. A mocked
 response to another origin allows the page's origin, and CORS preflights for
 it are answered, so mocking a cross-origin API just works.
+
+Emulation shapes the environment pages run in. Like routes, every setting
+belongs to the session: it applies to every tab, popup and frame, the ones
+opened later too, before the page's first script runs, and stays until it
+is reset. In headless mode pages get a fixed 1280x800 viewport until one is
+set (a `--chrome-arg=--window-size=…` of yours wins; headed, the window
+decides).
+
+```sh
+chrome-cdp emulate 'iPhone 15'          # a device: viewport, pixel ratio, mobile, touch, user agent
+chrome-cdp emulate --list               # 45 phones, tablets and desktops (from Playwright's table)
+chrome-cdp open --device 'Pixel 7' localhost:3000   # the same, before the first page loads
+chrome-cdp viewport 1440x900 --dpr 2    # or 390x844 --mobile --touch; `viewport reset`
+chrome-cdp geo 59.9139,10.7522          # navigator.geolocation (the permission is granted)
+chrome-cdp tz Europe/Berlin             # time zone; `locale de-DE` sets Intl and Accept-Language
+chrome-cdp ua 'MyBot/1.0'
+chrome-cdp media --color-scheme dark --reduced-motion reduce   # also --type print, --forced-colors active
+chrome-cdp offline on                   # requests fail, navigator.onLine is false
+chrome-cdp throttle slow-3g             # fast-3g, 4g, or --latency 300ms --down 1000 --up 500
+chrome-cdp cpu-throttle 4
+chrome-cdp time freeze 2026-01-31T09:30:00Z   # Date is frozen; `time advance 90s`, `time reset`
+chrome-cdp permissions grant notifications camera --origin http://localhost:3000
+chrome-cdp emulate                      # what the session emulates; `emulate reset` turns it all off
+```
+
+Each command has a `reset` (or `off`). `time freeze` replaces `Date` (and
+`Intl.DateTimeFormat` without a date) with an init script; timers and
+animations keep running in real time, since Chrome's virtual time stalls
+page loads. Permissions (`permissions`, and the ones `geo` and `clipboard`
+grant) belong to the browser: `permissions` lists them, `permissions reset`
+takes them back. `open --fake-media` gives pages a fake camera and
+microphone. Out-of-process iframes get every setting but the pixel ratio,
+which Chrome sets only on the page.
 
 `screenshot` saves an image of the viewport, the whole page (`--full`) or one
 element (`screenshot e12`, scrolled into view first) and prints its path:

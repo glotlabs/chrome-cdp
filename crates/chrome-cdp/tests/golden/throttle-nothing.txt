@@ -1,0 +1,12 @@
+$ chrome-cdp throttle
+exit: 2
+--- stderr
+error: throttle needs a preset, --latency, --down or --up
+  presets: slow-3g, fast-3g, 4g
+  hint: chrome-cdp throttle slow-3g
+
+$ chrome-cdp throttle --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"throttle needs a preset, --latency, --down or --up","hint":"chrome-cdp throttle slow-3g","notes":[{"label":"presets","text":"slow-3g, fast-3g, 4g"}]}}
+

@@ -175,7 +175,8 @@ Examples:
   chrome-cdp open --headed                          # with a window
   chrome-cdp open --profile work https://app.test   # keeps logins
   chrome-cdp open --session shop http://localhost:3000
-  chrome-cdp open --restart --chrome-arg=--window-size=1280,800
+  chrome-cdp open --device 'iPhone 15' http://localhost:3000
+  chrome-cdp open --restart --chrome-arg=--window-size=1920,1080
   chrome-cdp open --follow-popups                   # popups become the active tab
   chrome-cdp open --dialogs dismiss                 # answer every dialog with Cancel
   chrome-cdp open --http-credentials ada:s3cret http://localhost:8080/admin")]
@@ -843,6 +844,146 @@ Examples:
   chrome-cdp unroute --all")]
     Unroute(UnrouteArgs),
 
+    /// Make pages look like a phone, tablet or desktop; list or reset.
+    #[command(after_help = "\
+A device sets the viewport, pixel ratio, mobile mode, touch and user agent
+(the table comes from Playwright's device descriptors). Without DEVICE,
+prints everything the session emulates; `emulate reset` turns all of it
+off (viewport, user agent, locale, time zone, geolocation, media,
+network, CPU and time). Emulation belongs to the session: it applies to
+every tab, popup and frame, those opened later too, before the page's
+first script runs.
+
+Examples:
+  chrome-cdp emulate 'iPhone 15'
+  chrome-cdp emulate Pixel 7 landscape
+  chrome-cdp emulate --list
+  chrome-cdp emulate                      # what the session emulates
+  chrome-cdp emulate reset")]
+    Emulate(EmulateArgs),
+
+    /// Set the viewport: WIDTHxHEIGHT, pixel ratio, mobile, touch.
+    #[command(after_help = "\
+In headless mode pages get 1280x800 until a viewport is set (unless
+--chrome-arg=--window-size sets the window); headed, the window decides.
+`viewport reset` goes back to that. Applies to every tab of the session.
+
+Examples:
+  chrome-cdp viewport 1440x900
+  chrome-cdp viewport 390x844 --dpr 3 --mobile --touch
+  chrome-cdp viewport reset")]
+    Viewport(ViewportArgs),
+
+    /// Set where navigator.geolocation says the device is.
+    #[command(after_help = "\
+Also grants the geolocation permission to every origin, so pages get the
+position without asking. `geo reset` stops emulating the position.
+
+Examples:
+  chrome-cdp geo 59.9139,10.7522
+  chrome-cdp geo -33.8688,151.2093 --accuracy 50
+  chrome-cdp geo reset")]
+    Geo(GeoArgs),
+
+    /// Set the time zone pages see (an IANA name).
+    #[command(after_help = "\
+Examples:
+  chrome-cdp tz Europe/Berlin
+  chrome-cdp tz America/New_York
+  chrome-cdp tz reset")]
+    Tz(NameArgs),
+
+    /// Set the locale: Intl formats, navigator.language, Accept-Language.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp locale de-DE
+  chrome-cdp locale ja-JP
+  chrome-cdp locale reset")]
+    Locale(NameArgs),
+
+    /// Set the user agent pages and servers see.
+    #[command(after_help = "\
+`emulate <device>` sets a device's user agent with its viewport.
+
+Examples:
+  chrome-cdp ua 'Mozilla/5.0 (compatible; MyBot/1.0)'
+  chrome-cdp ua reset")]
+    Ua(UaArgs),
+
+    /// Emulate CSS media: print, dark mode, reduced motion, forced colors.
+    #[command(after_help = "\
+Each flag sets one media feature and keeps the others; `media reset` gives
+all of them back to the browser.
+
+Examples:
+  chrome-cdp media --color-scheme dark
+  chrome-cdp media --reduced-motion reduce --forced-colors active
+  chrome-cdp media --type print
+  chrome-cdp media reset")]
+    Media(MediaArgs),
+
+    /// Take the network away (requests fail, navigator.onLine is false).
+    #[command(after_help = "\
+Examples:
+  chrome-cdp offline on
+  chrome-cdp offline off")]
+    Offline(OfflineArgs),
+
+    /// Slow the network: a preset, or latency and bandwidth.
+    #[command(after_help = "\
+Presets (as in Chrome DevTools): slow-3g (2s latency, 400kbit/s both
+ways), fast-3g (563ms, 1440kbit/s down, 675kbit/s up), 4g (165ms,
+8100kbit/s down, 1350kbit/s up). Flags change a preset's values, or set
+their own.
+
+Examples:
+  chrome-cdp throttle slow-3g
+  chrome-cdp throttle --latency 300ms --down 1000 --up 500
+  chrome-cdp throttle off")]
+    Throttle(ThrottleArgs),
+
+    /// Slow the CPU down by a factor (4 = four times slower).
+    #[command(
+        name = "cpu-throttle",
+        after_help = "\
+Examples:
+  chrome-cdp cpu-throttle 4
+  chrome-cdp cpu-throttle off"
+    )]
+    CpuThrottle(CpuThrottleArgs),
+
+    /// List, grant, deny or reset permissions (geolocation, camera, …).
+    #[command(after_help = "\
+Without a subcommand, lists the permissions the session set (`geo` and
+`clipboard` grant some too). Permissions belong to the browser, so they
+apply to every tab; without --origin, to every origin. For camera and
+microphone streams, start the browser with `open --fake-media`.
+
+Examples:
+  chrome-cdp permissions
+  chrome-cdp permissions grant notifications
+  chrome-cdp permissions grant camera microphone --origin http://localhost:3000
+  chrome-cdp permissions deny geolocation
+  chrome-cdp permissions reset")]
+    Permissions(PermissionsArgs),
+
+    /// Freeze the time pages see, move it on, or give the real one back.
+    #[command(
+        subcommand_required = true,
+        arg_required_else_help = true,
+        after_help = "\
+While frozen, `Date` (and `Intl.DateTimeFormat` without a date) gives the
+frozen time in every tab and frame, from each page's first script on.
+Timers and animations keep running in real time. It is an init script
+that replaces `Date`, not Chrome's virtual time, which stalls page loads.
+
+Examples:
+  chrome-cdp time freeze 2026-01-31T09:30:00Z
+  chrome-cdp time advance 90s
+  chrome-cdp time reset"
+    )]
+    Time(TimeArgs),
+
     /// Save an image of the page, the whole page or one element.
     #[command(after_help = "\
 Prints the file's path (-q: only the path); the image goes to the
@@ -1105,6 +1246,11 @@ pub(crate) struct OpenArgs {
     /// Close a running browser first and start one with these options.
     #[arg(long)]
     pub(crate) restart: bool,
+
+    /// Emulate this device (as `emulate <device>`) before loading URL.
+    /// The session keeps it, like `emulate`.
+    #[arg(long, value_name = "DEVICE")]
+    pub(crate) device: Option<String>,
 
     /// Make popups (window.open, target=_blank) the active tab as they
     /// open. The session keeps this setting.
@@ -2354,6 +2500,261 @@ pub(crate) struct UnrouteArgs {
 }
 
 #[derive(Debug, Args)]
+pub(crate) struct EmulateArgs {
+    /// A device name as `--list` shows it (case and spaces are loose), or
+    /// `reset`. Without it, prints what the session emulates.
+    #[arg(value_name = "DEVICE", num_args = 0.., conflicts_with = "list")]
+    pub(crate) device: Vec<String>,
+
+    /// List the devices.
+    #[arg(long)]
+    pub(crate) list: bool,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ViewportArgs {
+    /// WIDTHxHEIGHT in CSS pixels (e.g. 1440x900), or `reset`.
+    #[arg(value_name = "SIZE")]
+    pub(crate) size: String,
+
+    /// The device pixel ratio (devicePixelRatio), e.g. 2 or 3.
+    #[arg(long, value_name = "N")]
+    pub(crate) dpr: Option<f64>,
+
+    /// A mobile browser: the page's meta viewport counts, scrollbars
+    /// overlay.
+    #[arg(long)]
+    pub(crate) mobile: bool,
+
+    /// Touch events, and navigator.maxTouchPoints > 0 (for `tap`).
+    #[arg(long)]
+    pub(crate) touch: bool,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct GeoArgs {
+    /// LATITUDE,LONGITUDE in degrees (e.g. 59.9139,10.7522), or `reset`.
+    #[arg(value_name = "LAT,LON", allow_hyphen_values = true)]
+    pub(crate) position: String,
+
+    /// How precise the position is, in metres.
+    #[arg(long, default_value_t = 10.0, value_name = "METRES")]
+    pub(crate) accuracy: f64,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct NameArgs {
+    /// The value, or `reset` for the browser's own.
+    #[arg(value_name = "NAME")]
+    pub(crate) name: String,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct UaArgs {
+    /// The user agent (`-` reads stdin), or `reset`.
+    #[arg(value_name = "USER-AGENT")]
+    pub(crate) user_agent: String,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MediaArgs {
+    /// `reset`: every media feature back to the browser's own.
+    #[arg(value_name = "reset", value_parser = ["reset"], conflicts_with_all = ["type", "color_scheme", "reduced_motion", "forced_colors"])]
+    pub(crate) reset: Option<String>,
+
+    /// The media type.
+    #[arg(long = "type", value_parser = ["screen", "print"], value_name = "TYPE")]
+    pub(crate) r#type: Option<String>,
+
+    /// prefers-color-scheme.
+    #[arg(long, value_parser = ["light", "dark"], value_name = "SCHEME")]
+    pub(crate) color_scheme: Option<String>,
+
+    /// prefers-reduced-motion.
+    #[arg(long, value_parser = ["reduce", "no-preference"], value_name = "VALUE")]
+    pub(crate) reduced_motion: Option<String>,
+
+    /// forced-colors (Windows high contrast).
+    #[arg(long, value_parser = ["active", "none"], value_name = "VALUE")]
+    pub(crate) forced_colors: Option<String>,
+}
+
+/// `on` or `off`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum OnOff {
+    On,
+    Off,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct OfflineArgs {
+    /// `on` takes the network away, `off` gives it back.
+    #[arg(value_enum, value_name = "on|off")]
+    pub(crate) state: OnOff,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ThrottleArgs {
+    /// slow-3g, fast-3g, 4g, or `off`.
+    #[arg(value_name = "PRESET")]
+    pub(crate) preset: Option<String>,
+
+    /// Added before each response starts, e.g. 300ms.
+    #[arg(long, value_parser = parse_duration, value_name = "DURATION")]
+    pub(crate) latency: Option<Duration>,
+
+    /// Download bandwidth in kbit/s.
+    #[arg(long, value_name = "KBPS")]
+    pub(crate) down: Option<f64>,
+
+    /// Upload bandwidth in kbit/s.
+    #[arg(long, value_name = "KBPS")]
+    pub(crate) up: Option<f64>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct CpuThrottleArgs {
+    /// How many times slower (1 or `off`: full speed).
+    #[arg(value_name = "RATE")]
+    pub(crate) rate: String,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct PermissionsArgs {
+    #[command(subcommand)]
+    pub(crate) command: Option<PermissionsCommand>,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum PermissionsCommand {
+    /// Grant permissions, to every origin or to --origin.
+    #[command(after_help = "\
+Names: geolocation, notifications, clipboard-read, clipboard-write, camera,
+microphone, midi, midi-sysex, background-sync, persistent-storage,
+screen-wake-lock, local-fonts, storage-access, idle-detection,
+window-management, accelerometer, gyroscope, magnetometer, payment-handler.
+
+Examples:
+  chrome-cdp permissions grant notifications
+  chrome-cdp permissions grant camera microphone --origin http://localhost:3000")]
+    Grant(PermissionNamesArgs),
+
+    /// Deny permissions, to every origin or to --origin.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp permissions deny geolocation
+  chrome-cdp permissions deny notifications --origin https://example.com")]
+    Deny(PermissionNamesArgs),
+
+    /// Put permissions back to asking (all of them without names).
+    #[command(after_help = "\
+Examples:
+  chrome-cdp permissions reset
+  chrome-cdp permissions reset notifications")]
+    Reset(PermissionResetArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct PermissionNamesArgs {
+    /// Permission names, as the Permissions API has them.
+    #[arg(value_name = "NAME", required = true)]
+    pub(crate) names: Vec<String>,
+
+    /// Only for this origin (e.g. https://example.com).
+    #[arg(long, value_name = "ORIGIN")]
+    pub(crate) origin: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct PermissionResetArgs {
+    /// Permission names; every permission without.
+    #[arg(value_name = "NAME")]
+    pub(crate) names: Vec<String>,
+
+    /// Only for this origin.
+    #[arg(long, value_name = "ORIGIN")]
+    pub(crate) origin: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct TimeArgs {
+    #[command(subcommand)]
+    pub(crate) command: TimeCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum TimeCommand {
+    /// Freeze the time pages see (default: now).
+    #[command(after_help = "\
+TIME is ISO 8601 (UTC unless it has an offset) or ms since 1970.
+
+Examples:
+  chrome-cdp time freeze
+  chrome-cdp time freeze 2026-01-31T09:30:00Z
+  chrome-cdp time freeze 2026-12-24T18:00+01:00")]
+    Freeze(TimeFreezeArgs),
+
+    /// Move the frozen time on.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp time advance 90s
+  chrome-cdp time advance 2h
+  chrome-cdp time advance 1500        # ms")]
+    Advance(TimeAdvanceArgs),
+
+    /// Give pages the real time back.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp time reset")]
+    Reset,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct TimeFreezeArgs {
+    /// ISO 8601, e.g. 2026-01-31T09:30:00Z, or ms since 1970.
+    #[arg(value_name = "TIME")]
+    pub(crate) time: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct TimeAdvanceArgs {
+    /// How far: 1500 (ms), 90s, 15m, 2h, 7d.
+    #[arg(value_name = "DURATION", value_parser = parse_advance)]
+    pub(crate) by: u64,
+}
+
+/// `time advance`'s duration in ms: a number of ms, or with a unit (ms,
+/// s, m, h, d).
+pub(crate) fn parse_advance(text: &str) -> Result<u64, String> {
+    let text = text.trim();
+    let split = text
+        .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .unwrap_or(text.len());
+    let (number, unit) = text.split_at(split);
+    let number: f64 = number
+        .parse()
+        .map_err(|_| format!("`{text}` is not a duration; use e.g. 1500, 90s, 15m or 2h"))?;
+    let scale = match unit {
+        "" | "ms" => 1.0,
+        "s" => 1000.0,
+        "m" => 60_000.0,
+        "h" => 3_600_000.0,
+        "d" => 86_400_000.0,
+        _ => {
+            return Err(format!(
+                "`{text}` has an unknown unit; use ms, s, m, h or d"
+            ));
+        }
+    };
+    let ms = (number * scale).round();
+    if ms < 1.0 || ms > 1e15 {
+        return Err(format!("`{text}` is out of range"));
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Ok(ms as u64)
+}
+
+#[derive(Debug, Args)]
 pub(crate) struct HarArgs {
     #[command(subcommand)]
     pub(crate) command: HarCommand,
@@ -3085,6 +3486,12 @@ pub(crate) struct DaemonArgs {
     pub(crate) no_browser_grace: Option<Duration>,
 }
 
+/// The flags `open --fake-media` adds.
+const FAKE_MEDIA: &[&str] = &[
+    "--use-fake-device-for-media-stream",
+    "--use-fake-ui-for-media-stream",
+];
+
 /// How to find and launch Chrome (`open`).
 #[derive(Debug, Args)]
 pub(crate) struct LaunchArgs {
@@ -3120,9 +3527,28 @@ pub(crate) struct LaunchArgs {
     /// repeat it for more. docs/chrome-flags.md lists chrome-cdp's own.
     #[arg(long = "chrome-arg", value_name = "FLAG", allow_hyphen_values = true)]
     pub(crate) chrome_args: Vec<String>,
+
+    /// Give pages a fake camera and microphone, and allow them without a
+    /// prompt (--use-fake-device-for-media-stream,
+    /// --use-fake-ui-for-media-stream).
+    #[arg(long)]
+    pub(crate) fake_media: bool,
 }
 
 impl LaunchArgs {
+    /// `--chrome-arg`s, with `--fake-media`'s flags.
+    pub(crate) fn chrome_args(&self) -> Vec<String> {
+        let mut args = self.chrome_args.clone();
+        if self.fake_media {
+            for flag in FAKE_MEDIA {
+                if !args.iter().any(|a| a == flag) {
+                    args.push((*flag).to_owned());
+                }
+            }
+        }
+        args
+    }
+
     /// The profile asked for; `None` leaves it to the session (a temporary
     /// one for a new browser).
     pub(crate) fn profile(&self) -> Option<browser::ProfileChoice> {
@@ -3246,7 +3672,26 @@ mod tests {
     /// at 60 characters) or a point.
     /// `screenshot` and `pdf` print a path and a line or two (at most 30
     /// of `--annotate`'s refs are listed).
+    /// The emulation commands print a line per setting (`emulate --list`
+    /// the fixed device table); `permissions` a line per permission the
+    /// user set.
     const FIXED_SIZE: &[&str] = &[
+        "emulate",
+        "viewport",
+        "geo",
+        "tz",
+        "locale",
+        "ua",
+        "media",
+        "offline",
+        "throttle",
+        "cpu-throttle",
+        "permissions grant",
+        "permissions deny",
+        "permissions reset",
+        "time freeze",
+        "time advance",
+        "time reset",
         "schema",
         "route",
         "block",

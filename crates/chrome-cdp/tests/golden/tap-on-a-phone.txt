@@ -1,0 +1,15 @@
+$ chrome-cdp tap '#tap'
+exit: 0
+--- stdout
+tapped e1 button "Tap me"
+
+$ chrome-cdp tap '#tap' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"action":"tap","element":{"name":"Tap me","ref":"e1","role":"button","tag":"button"},"locator":"#tap","point":{"x":37.86,"y":18.5},"tab":"t1"}}
+
+$ chrome-cdp tap '#tap' -q
+exit: 0
+--- stdout
+e1
+

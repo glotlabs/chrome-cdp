@@ -13,6 +13,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Mode, Output};
 
 mod cli;
 mod config;
+mod emulate;
 mod input;
 mod install;
 mod log;
@@ -94,6 +95,26 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Block(args)) => session::block(&args, &cli.global),
         Some(Command::Routes(args)) => session::routes(&args, &cli.global),
         Some(Command::Unroute(args)) => session::unroute(&args, &cli.global),
+        Some(Command::Emulate(args)) => {
+            if args.list {
+                Ok(engine::device_list())
+            } else {
+                session::emulate(emulate::emulate(&args, &cli.global.session)?, &cli.global)
+            }
+        }
+        Some(Command::Viewport(args)) => session::emulate(emulate::viewport(&args)?, &cli.global),
+        Some(Command::Geo(args)) => session::emulate(emulate::geo(&args)?, &cli.global),
+        Some(Command::Tz(args)) => session::emulate(emulate::timezone(&args), &cli.global),
+        Some(Command::Locale(args)) => session::emulate(emulate::locale(&args), &cli.global),
+        Some(Command::Ua(args)) => session::emulate(emulate::user_agent(&args)?, &cli.global),
+        Some(Command::Media(args)) => session::emulate(emulate::media(&args)?, &cli.global),
+        Some(Command::Offline(args)) => session::emulate(emulate::offline(&args), &cli.global),
+        Some(Command::Throttle(args)) => session::emulate(emulate::throttle(&args)?, &cli.global),
+        Some(Command::CpuThrottle(args)) => {
+            session::emulate(emulate::cpu_throttle(&args)?, &cli.global)
+        }
+        Some(Command::Time(args)) => session::emulate(emulate::time(&args.command)?, &cli.global),
+        Some(Command::Permissions(args)) => session::permissions(&args, &cli.global),
         Some(Command::Screenshot(args)) => session::screenshot(&args, &cli.global),
         Some(Command::Pdf(args)) => session::pdf(&args, &cli.global),
         Some(Command::Eval(args)) => session::eval(&args, &cli.global),

@@ -1,0 +1,11 @@
+$ chrome-cdp tz Mars/Base
+exit: 2
+--- stderr
+error: Chrome does not know the time zone `Mars/Base`
+  hint: chrome-cdp tz Europe/Berlin
+
+$ chrome-cdp tz Mars/Base --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"Chrome does not know the time zone `Mars/Base`","hint":"chrome-cdp tz Europe/Berlin"}}
+

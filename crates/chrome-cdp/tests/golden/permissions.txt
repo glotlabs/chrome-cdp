@@ -1,0 +1,19 @@
+$ chrome-cdp permissions
+exit: 0
+--- stdout
+notifications  granted  every origin
+camera         granted  every origin
+geolocation    denied   https://example.com
+
+$ chrome-cdp permissions --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"permissions":[{"name":"notifications","setting":"granted"},{"name":"camera","setting":"granted"},{"name":"geolocation","origin":"https://example.com","setting":"denied"}]}}
+
+$ chrome-cdp permissions -q
+exit: 0
+--- stdout
+notifications  granted  every origin
+camera         granted  every origin
+geolocation    denied   https://example.com
+

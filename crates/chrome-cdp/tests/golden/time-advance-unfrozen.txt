@@ -1,0 +1,11 @@
+$ chrome-cdp time advance 90s
+exit: 2
+--- stderr
+error: the time is not frozen, so it cannot advance
+  hint: chrome-cdp time freeze   (freezes it at the current time)
+
+$ chrome-cdp time advance 90s --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"the time is not frozen, so it cannot advance","hint":"chrome-cdp time freeze   (freezes it at the current time)"}}
+

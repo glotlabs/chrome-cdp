@@ -1,0 +1,15 @@
+$ chrome-cdp time freeze 2026-12-24T18:00+01:00
+exit: 0
+--- stdout
+time frozen at 2026-12-24T17:00:00.000Z
+
+$ chrome-cdp time freeze 2026-12-24T18:00+01:00 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"default_viewport":{"dpr":1.0,"height":800,"mobile":false,"touch":false,"width":1280},"emulation":{"time":{"epoch_ms":1798131600000,"iso":"2026-12-24T17:00:00.000Z"}}}}
+
+$ chrome-cdp time freeze 2026-12-24T18:00+01:00 -q
+exit: 0
+--- stdout
+time frozen at 2026-12-24T17:00:00.000Z
+

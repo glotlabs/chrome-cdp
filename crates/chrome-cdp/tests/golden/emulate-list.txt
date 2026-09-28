@@ -1,0 +1,90 @@
+$ chrome-cdp emulate --list
+exit: 0
+--- stdout
+iPhone SE                      320x568   @2x      mobile, touch
+iPhone SE landscape            568x320   @2x      mobile, touch
+iPhone SE (3rd gen)            375x667   @2x      mobile, touch
+iPhone SE (3rd gen) landscape  667x375   @2x      mobile, touch
+iPhone X                       375x812   @3x      mobile, touch
+iPhone X landscape             812x375   @3x      mobile, touch
+iPhone 11                      414x715   @2x      mobile, touch
+iPhone 11 landscape            800x364   @2x      mobile, touch
+iPhone 12                      390x664   @3x      mobile, touch
+iPhone 12 landscape            750x340   @3x      mobile, touch
+iPhone 12 Mini                 375x629   @3x      mobile, touch
+iPhone 12 Mini landscape       712x325   @3x      mobile, touch
+iPhone 13                      390x664   @3x      mobile, touch
+iPhone 13 landscape            750x342   @3x      mobile, touch
+iPhone 13 Mini                 375x629   @3x      mobile, touch
+iPhone 13 Mini landscape       712x327   @3x      mobile, touch
+iPhone 13 Pro Max              428x746   @3x      mobile, touch
+iPhone 13 Pro Max landscape    832x380   @3x      mobile, touch
+iPhone 14                      390x664   @3x      mobile, touch
+iPhone 14 landscape            750x340   @3x      mobile, touch
+iPhone 14 Pro Max              430x740   @3x      mobile, touch
+iPhone 14 Pro Max landscape    814x380   @3x      mobile, touch
+iPhone 15                      393x659   @3x      mobile, touch
+iPhone 15 landscape            734x343   @3x      mobile, touch
+iPhone 15 Pro                  393x659   @3x      mobile, touch
+iPhone 15 Pro landscape        734x343   @3x      mobile, touch
+iPhone 15 Pro Max              430x739   @3x      mobile, touch
+iPhone 15 Pro Max landscape    814x380   @3x      mobile, touch
+iPhone 16                      393x659   @3x      mobile, touch
+iPhone 16 landscape            734x343   @3x      mobile, touch
+iPhone 16 Pro                  402x681   @3x      mobile, touch
+iPhone 16 Pro landscape        756x352   @3x      mobile, touch
+iPhone 16 Pro Max              440x763   @3x      mobile, touch
+iPhone 16 Pro Max landscape    838x390   @3x      mobile, touch
+iPhone 17                      402x681   @3x      mobile, touch
+iPhone 17 landscape            756x352   @3x      mobile, touch
+iPhone 17 Pro                  402x681   @3x      mobile, touch
+iPhone 17 Pro landscape        756x352   @3x      mobile, touch
+iPhone 17 Pro Max              440x763   @3x      mobile, touch
+iPhone 17 Pro Max landscape    838x390   @3x      mobile, touch
+iPad (gen 7)                   810x1080  @2x      mobile, touch
+iPad (gen 7) landscape         1080x810  @2x      mobile, touch
+iPad (gen 11)                  656x944   @2.5x    mobile, touch
+iPad (gen 11) landscape        944x656   @2.5x    mobile, touch
+iPad Mini                      768x1024  @2x      mobile, touch
+iPad Mini landscape            1024x768  @2x      mobile, touch
+iPad Pro 11                    834x1194  @2x      mobile, touch
+iPad Pro 11 landscape          1194x834  @2x      mobile, touch
+Pixel 5                        393x727   @2.75x   mobile, touch
+Pixel 5 landscape              802x293   @2.75x   mobile, touch
+Pixel 7                        412x839   @2.625x  mobile, touch
+Pixel 7 landscape              863x360   @2.625x  mobile, touch
+Pixel 8                        412x839   @2.625x  mobile, touch
+Pixel 8 landscape              863x360   @2.625x  mobile, touch
+Pixel 8 Pro                    448x921   @3x      mobile, touch
+Pixel 8 Pro landscape          945x396   @3x      mobile, touch
+Pixel 9                        360x732   @3x      mobile, touch
+Pixel 9 landscape              756x308   @3x      mobile, touch
+Pixel 9 Pro                    427x876   @3x      mobile, touch
+Pixel 9 Pro landscape          900x375   @3x      mobile, touch
+Pixel 10                       360x732   @3x      mobile, touch
+Pixel 10 landscape             756x308   @3x      mobile, touch
+Pixel 10 Pro                   427x876   @3x      mobile, touch
+Pixel 10 Pro landscape         900x375   @3x      mobile, touch
+Galaxy S8                      360x740   @3x      mobile, touch
+Galaxy S8 landscape            740x360   @3x      mobile, touch
+Galaxy S9+                     320x658   @4.5x    mobile, touch
+Galaxy S9+ landscape           658x320   @4.5x    mobile, touch
+Galaxy S24                     360x780   @3x      mobile, touch
+Galaxy S24 landscape           780x360   @3x      mobile, touch
+Galaxy A55                     480x1040  @2.25x   mobile, touch
+Galaxy A55 landscape           1040x480  @2.25x   mobile, touch
+Galaxy Tab S4                  712x1138  @2.25x   mobile, touch
+Galaxy Tab S4 landscape        1138x712  @2.25x   mobile, touch
+Galaxy Tab S9                  640x1024  @2.5x    mobile, touch
+Galaxy Tab S9 landscape        1024x640  @2.5x    mobile, touch
+Galaxy Z Fold 7                984x1016  @2x      mobile, touch
+Galaxy Z Fold 7 landscape      1040x932  @2x      mobile, touch
+Galaxy Z Flip 7                360x764   @3x      mobile, touch
+Galaxy Z Flip 7 landscape      788x308   @3x      mobile, touch
+Moto G4                        360x640   @3x      mobile, touch
+Moto G4 landscape              640x360   @3x      mobile, touch
+Desktop Chrome                 1280x720  @1x      desktop
+Desktop Chrome HiDPI           1280x720  @2x      desktop
+Desktop Safari                 1280x720  @2x      desktop
+Desktop Firefox                1280x720  @1x      desktop
+
