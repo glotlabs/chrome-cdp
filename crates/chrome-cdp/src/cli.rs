@@ -376,12 +376,15 @@ Examples:
     #[command(after_help = "\
 A mark belongs to the tab (the active one, or --tab). Setting a name again
 moves it. `expect --no-errors --since <name>` and `expect
---no-failed-requests --since <name>` look only at what happened after it.
+--no-failed-requests --since <name>` look only at what happened after it,
+as do `console`, `errors` and `network` with `--since <name>`. A name
+starts with a letter: letters, digits, -, _ and . follow.
 
 Examples:
   chrome-cdp mark before-save
   chrome-cdp click 'role=button[name=\"Save\"]'
-  chrome-cdp expect --no-errors --since before-save")]
+  chrome-cdp expect --no-errors --since before-save
+  chrome-cdp network --since before-save")]
     Mark(MarkArgs),
 
     /// Show the page as an accessibility tree, with refs (e12) to act on.
@@ -2466,8 +2469,8 @@ pub(crate) struct ErrorsArgs {
 #[derive(Debug, Args)]
 pub(crate) struct LogReadArgs {
     /// Where to start: `last` (what this command has not shown yet), an
-    /// entry number such as 12 (0 for all), or a duration such as 30s
-    /// (logged in the last 30 seconds).
+    /// entry number such as 12 (0 for all), a duration such as 30s
+    /// (logged in the last 30 seconds), or a mark (see `mark`).
     #[arg(long, default_value = "last", value_parser = parse_since, value_name = "WHEN")]
     pub(crate) since: engine::Since,
 
@@ -2577,8 +2580,8 @@ pub(crate) struct NetworkListArgs {
     pub(crate) status: Vec<engine::StatusRange>,
 
     /// Where to start: `last` (what this command has not shown yet), a
-    /// request id such as 12 (0 for all), or a duration such as 30s
-    /// (started in the last 30 seconds).
+    /// request id such as 12 (0 for all), a duration such as 30s
+    /// (started in the last 30 seconds), or a mark (see `mark`).
     #[arg(long, default_value = "last", value_parser = parse_since, value_name = "WHEN")]
     pub(crate) since: engine::Since,
 
@@ -3748,8 +3751,8 @@ fn parse_request_id(s: &str) -> Result<u64, String> {
         .map_err(|_| format!("`{s}` is not a request id such as 42 (see `chrome-cdp network`)"))
 }
 
-/// Parses `--since`: `last`, an entry number (`12` or `#12`), or a
-/// duration (`30s`).
+/// Parses `--since`: `last`, an entry number (`12` or `#12`), a
+/// duration (`30s`), or the name of a `mark`.
 pub(crate) fn parse_since(s: &str) -> Result<engine::Since, String> {
     let s = s.trim();
     if s == "last" {
@@ -3759,12 +3762,28 @@ pub(crate) fn parse_since(s: &str) -> Result<engine::Since, String> {
     if let Ok(seq) = number.parse::<u64>() {
         return Ok(engine::Since::Seq { seq });
     }
-    let ago = parse_duration(s).map_err(|_| {
-        format!("`{s}` is not `last`, an entry number such as 12, or a duration such as 30s")
-    })?;
-    Ok(engine::Since::Ago {
-        ms: u64::try_from(ago.as_millis()).unwrap_or(u64::MAX),
-    })
+    if let Ok(ago) = parse_duration(s) {
+        return Ok(engine::Since::Ago {
+            ms: u64::try_from(ago.as_millis()).unwrap_or(u64::MAX),
+        });
+    }
+    if is_mark_name(s) {
+        return Ok(engine::Since::Mark { name: s.to_owned() });
+    }
+    Err(format!(
+        "`{s}` is not `last`, an entry number such as 12, a duration such as 30s, or a mark's name"
+    ))
+}
+
+/// Whether `name` can name a `mark`: a letter, then letters, digits, `-`,
+/// `_` or `.`, and not something `--since` reads otherwise (`last`, `5m`).
+pub(crate) fn is_mark_name(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_ascii_alphabetic())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        && name != "last"
+        && parse_duration(name).is_err()
 }
 
 #[derive(Debug, Args)]
@@ -4613,6 +4632,27 @@ mod tests {
         };
         assert_eq!(args.idle.idle_timeout, Some(Duration::ZERO));
         assert!(Cli::try_parse_from(["chrome-cdp", "open", "--idle-timeout", "5"]).is_err());
+    }
+
+    #[test]
+    fn since_takes_marks_by_name() {
+        use super::{is_mark_name, parse_since};
+        assert_eq!(parse_since("last"), Ok(engine::Since::Last));
+        assert_eq!(parse_since("#12"), Ok(engine::Since::Seq { seq: 12 }));
+        assert_eq!(parse_since("30s"), Ok(engine::Since::Ago { ms: 30_000 }));
+        assert_eq!(
+            parse_since("before-save"),
+            Ok(engine::Since::Mark {
+                name: "before-save".into()
+            })
+        );
+        assert!(parse_since("x y").is_err());
+        for name in ["before-save", "step_2", "v1.2", "lastly"] {
+            assert!(is_mark_name(name), "{name}");
+        }
+        for name in ["last", "5m", "2", "-x", "a b", ""] {
+            assert!(!is_mark_name(name), "{name}");
+        }
     }
 
     #[test]

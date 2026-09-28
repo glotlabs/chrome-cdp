@@ -69,21 +69,28 @@ impl Engine {
             ));
         };
         match running.tabs.named_mark(page.id, name) {
-            Ok(marks) => Ok((marks, format!("since mark {name:?}"))),
-            Err(names) => {
-                let mut info = ErrorInfo::new(
-                    ErrorKind::BadArgs,
-                    format!("tab {} has no mark {name:?}", tab_name(page.id)),
-                );
-                if !names.is_empty() {
-                    info = info.note("marks", names.join(", "));
-                }
-                Err(info.hint(
-                    Hint::run(Cmd::new("mark").arg(name).session(&self.session))
-                        .why("sets it; then act, then expect … --since it"),
-                ))
-            }
+            Ok(marks) => Ok((
+                (marks.network, marks.console),
+                format!("since mark {name:?}"),
+            )),
+            Err(names) => Err(self.no_mark(page.id, name, &names)),
         }
+    }
+
+    /// The error for `--since <name>` when tab `id` has no such mark but
+    /// `names`.
+    pub(crate) fn no_mark(&self, id: u32, name: &str, names: &[String]) -> ErrorInfo {
+        let mut info = ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("tab {} has no mark {name:?}", tab_name(id)),
+        );
+        if !names.is_empty() {
+            info = info.note("marks", names.join(", "));
+        }
+        info.hint(
+            Hint::run(Cmd::new("mark").arg(name).session(&self.session))
+                .why("sets it; then act, then look at what happened --since it"),
+        )
     }
 
     /// `--no-errors`: no uncaught exception or console error since the

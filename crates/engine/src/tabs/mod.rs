@@ -284,8 +284,8 @@ struct Tab {
     /// The network and console marks when the main frame's document
     /// committed: where `expect --no-errors` starts by default.
     document_marks: (u64, u64),
-    /// `mark <name>`: named network and console marks.
-    marks: HashMap<String, (u64, u64)>,
+    /// `mark <name>`: named log marks.
+    marks: HashMap<String, Marks>,
     /// A dialog waiting for `chrome-cdp dialog`.
     dialog: Option<OpenDialog>,
     /// When its page crashed (in the event sequence), until it is loaded
@@ -295,6 +295,17 @@ struct Tab {
     snapshot: SnapshotMemory,
     /// Where the mouse is and what it holds, as chrome-cdp sent it.
     pointer: Pointer,
+}
+
+/// Where a tab's logs were at a `mark`: the network tracker's
+/// sequence ([`Tabs::failures_since`]), the console's
+/// ([`Tabs::console_errors_since`], `console --since`) and the network
+/// log's last request id (`network --since`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Marks {
+    pub(crate) network: u64,
+    pub(crate) console: u64,
+    pub(crate) netlog: u64,
 }
 
 /// A page or iframe session.
@@ -976,15 +987,19 @@ impl Tabs {
 
     /// Sets tab `id`'s mark `name` to its log marks now; the marks it
     /// replaces, if it had one (`None` also if the tab is gone).
-    pub(crate) fn set_mark(&self, id: u32, name: &str) -> Option<(u64, u64)> {
+    pub(crate) fn set_mark(&self, id: u32, name: &str) -> Option<Marks> {
         let mut state = self.shared.lock();
         let tab = state.tabs.get_mut(&id)?;
-        let now = (tab.network.seq(), tab.console.seq());
+        let now = Marks {
+            network: tab.network.seq(),
+            console: tab.console.seq(),
+            netlog: tab.netlog.seq(),
+        };
         tab.marks.insert(name.to_owned(), now)
     }
 
     /// Tab `id`'s mark `name`, or the names it has (sorted).
-    pub(crate) fn named_mark(&self, id: u32, name: &str) -> Result<(u64, u64), Vec<String>> {
+    pub(crate) fn named_mark(&self, id: u32, name: &str) -> Result<Marks, Vec<String>> {
         let state = self.shared.lock();
         let Some(tab) = state.tabs.get(&id) else {
             return Err(Vec::new());

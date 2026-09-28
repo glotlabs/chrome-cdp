@@ -55,7 +55,7 @@ impl Engine {
     /// `console` and `errors` (with `req.errors`): the tab's entries after
     /// `--since`, filtered, the newest `--limit`. With `wait_ms` and
     /// nothing to show, waits that long for an entry (`--follow`).
-    pub async fn console(&self, req: ConsoleRequest) -> Result<Output, ErrorInfo> {
+    pub async fn console(&self, mut req: ConsoleRequest) -> Result<Output, ErrorInfo> {
         let grep = req.grep.as_deref().map(grep_regex).transpose()?;
         let running = self.running()?;
         let timeout = millis(req.timeout_ms);
@@ -67,6 +67,13 @@ impl Engine {
             .page(id, timeout)
             .await
             .map_err(|e| self.tab_error(&running, e))?;
+        if let Since::Mark { name } = &req.since {
+            let marks = running
+                .tabs
+                .named_mark(page.id, name)
+                .map_err(|names| self.no_mark(page.id, name, &names))?;
+            req.since = Since::Seq { seq: marks.console };
+        }
         let frames = running.tabs.frames(page.id);
         let main_url = frames.first().map(|f| f.url.clone()).unwrap_or_default();
         let page_origin = origin(&main_url).map(str::to_owned);
@@ -148,7 +155,7 @@ impl Engine {
             let limit = req.limit + selection.skipped;
             let cmd = self
                 .console_cmd(req)
-                .flag("since", since_arg(req.since, selection.base))
+                .flag("since", since_arg(&req.since, selection.base))
                 .flag("limit", limit.to_string());
             let _ = writeln!(
                 text,
@@ -304,7 +311,8 @@ fn select(
         console.cursors.console
     };
     let (base, since_ms) = match req.since {
-        Since::Last => (cursor, 0),
+        // A mark is a `Seq` by now.
+        Since::Last | Since::Mark { .. } => (cursor, 0),
         Since::Seq { seq } => (seq, 0),
         Since::Ago { ms } => (0, now_ms.saturating_sub(ms)),
     };
@@ -363,7 +371,7 @@ fn is_error(entry: &ConsoleEntry, page_origin: Option<&str>) -> bool {
 }
 
 /// `--since` as typed for a hint: where a selection started.
-fn since_arg(since: Since, base: u64) -> String {
+fn since_arg(since: &Since, base: u64) -> String {
     match since {
         Since::Ago { ms } => format!("{ms}ms"),
         _ => base.to_string(),

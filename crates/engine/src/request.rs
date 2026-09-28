@@ -632,8 +632,8 @@ pub struct DownloadsRequest {
     pub max_chars: usize,
 }
 
-/// Where `console` and `errors` start (`--since`).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// Where `console`, `errors` and `network` start (`--since`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Since {
     /// After the entries this command showed last time (per tab).
@@ -643,6 +643,8 @@ pub enum Since {
     Seq { seq: u64 },
     /// Logged in the last `ms` milliseconds.
     Ago { ms: u64 },
+    /// After the tab's `mark <name>`.
+    Mark { name: String },
 }
 
 /// `console` and `errors`.

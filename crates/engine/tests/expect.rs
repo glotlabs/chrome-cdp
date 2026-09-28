@@ -12,11 +12,12 @@ use std::time::Duration;
 
 use browser::Host;
 use engine::{
-    A11yLevel, Engine, ExpectRequest, Expectation, MarkRequest, Matcher, NavigateRequest,
-    Navigation, OpenRequest, SnapshotRequest, WaitUntil, World,
+    A11yLevel, ConsoleRequest, Engine, ExpectRequest, Expectation, MarkRequest, Matcher,
+    NavigateRequest, Navigation, NetworkRequest, OpenRequest, Since, SnapshotRequest, WaitUntil,
+    World,
 };
 use fixtures::Fixtures;
-use protocol::schema::ExpectData;
+use protocol::schema::{ConsoleData, ExpectData, Level, NetworkData};
 use protocol::{ErrorInfo, ErrorKind, Output};
 
 const TIMEOUT_MS: u64 = 30_000;
@@ -81,17 +82,16 @@ async fn expect(
     not: bool,
     timeout_ms: u64,
 ) -> Result<Output, ErrorInfo> {
-    engine
-        .expect(ExpectRequest {
-            expectation: expectation.clone(),
-            not,
-            tab: None,
-            strict_refs: false,
-            testid_attribute: None,
-            timeout_ms,
-            max_chars: 20_000,
-        })
-        .await
+    Box::pin(engine.expect(ExpectRequest {
+        expectation: expectation.clone(),
+        not,
+        tab: None,
+        strict_refs: false,
+        testid_attribute: None,
+        timeout_ms,
+        max_chars: 20_000,
+    }))
+    .await
 }
 
 async fn passes(engine: &Engine, expectation: &Expectation, not: bool) -> ExpectData {
@@ -441,6 +441,56 @@ async fn errors_and_failed_requests_since_the_page_or_a_mark() {
     assert!(err.to_text().contains("  failed: #"), "{}", err.to_text());
     assert!(err.to_text().contains("GET /expect/missing.json (404)"));
     passes(&engine, &no_failed(Some("https://example.com")), false).await;
+
+    // `errors` and `network` read from a mark too.
+    let since = Since::Mark {
+        name: "before".into(),
+    };
+    let errors = engine
+        .console(ConsoleRequest {
+            errors: true,
+            tab: None,
+            level: Level::Error,
+            since: since.clone(),
+            grep: None,
+            limit: 0,
+            wait_ms: 0,
+            sourcemaps: false,
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 0,
+        })
+        .await
+        .unwrap();
+    let errors: ConsoleData = serde_json::from_value(errors.data).unwrap();
+    assert!(
+        errors.entries.iter().any(|e| e.text.contains("boom")),
+        "{errors:?}"
+    );
+    let requests = engine
+        .network(NetworkRequest {
+            tab: None,
+            failed: false,
+            types: Vec::new(),
+            url: None,
+            method: None,
+            status: Vec::new(),
+            since,
+            limit: 0,
+            wait_ms: 0,
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 0,
+        })
+        .await
+        .unwrap();
+    let requests: NetworkData = serde_json::from_value(requests.data).unwrap();
+    // Chrome may ask for the favicon after the mark too.
+    let urls: Vec<&str> = requests
+        .requests
+        .iter()
+        .map(|r| r.url.as_str())
+        .filter(|u| !u.ends_with("/favicon.ico"))
+        .collect();
+    assert_eq!(urls, [site.url("/expect/missing.json")], "{urls:?}");
 
     // A mark after them leaves them out.
     engine

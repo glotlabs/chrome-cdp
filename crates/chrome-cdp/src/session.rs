@@ -648,9 +648,13 @@ pub(crate) fn expect(
 
 /// `mark <name>`: needs a running session.
 pub(crate) fn mark(args: &crate::cli::MarkArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
-    if args.name.trim().is_empty() {
-        return Err(bad_args("the mark's name is empty")
-            .hint(Hint::run(Cmd::new("mark").arg("before-save"))));
+    if !crate::cli::is_mark_name(&args.name) {
+        return Err(bad_args(format!(
+            "{:?} cannot name a mark: start with a letter, then letters, digits, -, _ or . \
+             (and not last or a duration, which --since reads as such)",
+            args.name
+        ))
+        .hint(Hint::run(Cmd::new("mark").arg("before-save"))));
     }
     check_tab(global.tab.as_deref())?;
     let ctx = Ctx::new(global)?;
@@ -839,7 +843,7 @@ pub(crate) fn network(args: &NetworkArgs, global: &GlobalArgs) -> Result<Output,
                 url: list.url.clone(),
                 method: list.method.clone(),
                 status: list.status.clone(),
-                since: list.since,
+                since: list.since.clone(),
                 limit: list.limit,
                 wait_ms: 0,
                 timeout_ms,
@@ -1592,7 +1596,7 @@ pub(crate) fn console(
         } else {
             level
         },
-        since: read.since,
+        since: read.since.clone(),
         grep: read.grep.clone(),
         limit: read.limit,
         wait_ms: 0,

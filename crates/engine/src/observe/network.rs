@@ -110,12 +110,19 @@ impl Engine {
     /// `network`: the tab's requests after `--since`, filtered, the newest
     /// `--limit`. With `wait_ms` and nothing to show, waits that long for
     /// one (`--follow`).
-    pub async fn network(&self, req: NetworkRequest) -> Result<Output, ErrorInfo> {
+    pub async fn network(&self, mut req: NetworkRequest) -> Result<Output, ErrorInfo> {
         let url = req.url.as_deref().map(UrlPattern::parse).transpose()?;
         let running = self.running()?;
         let page = self
             .log_page(&running, req.tab.as_deref(), req.timeout_ms)
             .await?;
+        if let Since::Mark { name } = &req.since {
+            let marks = running
+                .tabs
+                .named_mark(page.id, name)
+                .map_err(|names| self.no_mark(page.id, name, &names))?;
+            req.since = Since::Seq { seq: marks.netlog };
+        }
         let page_origin = page_origin(&running, page.id);
         let filter = Filter { req: &req, url };
         let deadline = Instant::now() + Duration::from_millis(req.wait_ms);
@@ -579,7 +586,8 @@ fn select(log: &mut NetLog, filter: &Filter<'_>, now_ms: u64) -> Selection {
     let req = filter.req;
     let cursor = log.cursor;
     let (base, since_ms) = match req.since {
-        Since::Last => (cursor, 0),
+        // A mark is a `Seq` by now.
+        Since::Last | Since::Mark { .. } => (cursor, 0),
         Since::Seq { seq } => (seq, 0),
         Since::Ago { ms } => (0, now_ms.saturating_sub(ms)),
     };
