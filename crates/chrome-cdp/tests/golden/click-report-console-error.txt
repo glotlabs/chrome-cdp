@@ -1,0 +1,16 @@
+$ chrome-cdp click '#throw'
+exit: 0
+--- stdout
+clicked e1 button "Throw"
+! console error: TypeError: Cannot read properties of null (reading 'x') (report.html:17)
+
+$ chrome-cdp click '#throw' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"action":"click","button":"left","count":1,"element":{"name":"Throw","ref":"e1","role":"button","tag":"button"},"locator":"#throw","point":{"x":34.52,"y":246.38},"tab":"t1"},"events":[{"type":"console_error","tab":"t1","message":"TypeError: Cannot read properties of null (reading 'x')","url":"<site>/actions/report.html","line":17,"column":45,"uncaught":true}]}
+
+$ chrome-cdp click '#throw' -q
+exit: 0
+--- stdout
+e1
+

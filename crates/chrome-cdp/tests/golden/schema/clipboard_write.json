@@ -1,5 +1,35 @@
 {
   "$defs": {
+    "ActedElement": {
+      "description": "An element an action acted on, as the output names it.",
+      "properties": {
+        "name": {
+          "description": "Its accessible name (or text), cut to 60 characters.",
+          "type": "string"
+        },
+        "ref": {
+          "description": "Its ref, e.g. `e6` (absent if the page changed before one could\nbe given).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "description": "Its role (`generic` for none).",
+          "type": "string"
+        },
+        "tag": {
+          "description": "Its tag name, lower case.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "name",
+        "tag"
+      ],
+      "type": "object"
+    },
     "ClipboardWriteData": {
       "description": "`data` of `chrome-cdp clipboard write --json`.",
       "properties": {
@@ -334,6 +364,184 @@
           },
           "required": [
             "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The action made the tab's main frame navigate (a link, a form, a\nscript): where it is now, once loaded and settled.",
+          "properties": {
+            "error": {
+              "description": "Chrome's error when the page could not load\n(`net::ERR_CONNECTION_REFUSED`; the tab shows an error page).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "loaded": {
+              "description": "Whether the load event fired before the time ran out.",
+              "type": "boolean"
+            },
+            "restored": {
+              "description": "It came back from the back/forward cache.",
+              "type": "boolean"
+            },
+            "same_document": {
+              "description": "It stayed in the document (`pushState`, `#fragment`).",
+              "type": "boolean"
+            },
+            "status": {
+              "description": "The main document's HTTP status (absent for same-document\nnavigations and non-HTTP pages).",
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "tab": {
+              "description": "The tab, e.g. `t1`.",
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "type": {
+              "const": "navigated",
+              "type": "string"
+            },
+            "url": {
+              "description": "The URL it is at now.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tab",
+            "url",
+            "title",
+            "loaded"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The page logged an error (`console.error`, a failed\n`console.assert`) or threw one nothing caught, after the command\nbegan.",
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "message": {
+              "description": "The message's first line, e.g. `TypeError: x is undefined`.",
+              "type": "string"
+            },
+            "tab": {
+              "description": "The tab, e.g. `t1`.",
+              "type": "string"
+            },
+            "type": {
+              "const": "console_error",
+              "type": "string"
+            },
+            "uncaught": {
+              "description": "An uncaught exception (else a `console.error` call).",
+              "type": "boolean"
+            },
+            "url": {
+              "description": "The script it came from, with its line and column (1-based).",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "tab",
+            "message",
+            "uncaught"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A request of the page to its own origin failed after the command\nbegan: an HTTP status of 400 or more, or no response.",
+          "properties": {
+            "error": {
+              "description": "Chrome's error if it did not, e.g. `net::ERR_CONNECTION_REFUSED`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "method": {
+              "type": "string"
+            },
+            "resource_type": {
+              "description": "Chrome's resource type: `Document`, `Fetch`, `XHR`, `Script`, …",
+              "type": "string"
+            },
+            "status": {
+              "description": "The HTTP status, if the server answered.",
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "tab": {
+              "description": "The tab, e.g. `t1`.",
+              "type": "string"
+            },
+            "type": {
+              "const": "request_failed",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tab",
+            "method",
+            "url",
+            "resource_type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Focus moved to an element of another form than before (or into a\nform, or out of one) that the action did not act on: a dialog or\nthe next step of a flow took it.",
+          "properties": {
+            "element": {
+              "$ref": "#/$defs/ActedElement"
+            },
+            "tab": {
+              "description": "The tab, e.g. `t1`.",
+              "type": "string"
+            },
+            "type": {
+              "const": "focus_moved",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tab",
+            "element"
           ],
           "type": "object"
         }

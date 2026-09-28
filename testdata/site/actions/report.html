@@ -1,0 +1,34 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Report</title>
+<!-- The post-action report (plan 05, milestone 5.5): each control does
+     one thing an action's report has a line for, or nothing. -->
+<style>
+  body { font: 16px sans-serif; }
+  p { margin: 6px 0; }
+</style>
+<h1>Report</h1>
+<p><button id="nothing">Nothing</button>
+<p><a id="next" href="report-next.html">Next page</a>
+<p><a id="missing" href="report-missing.html">Missing page</a>
+<p><button id="later" onclick="setTimeout(() => { location.href = 'report-next.html?later'; }, 100)">Go later</button>
+<p><button id="push" onclick="history.pushState({}, '', '?tab=settings'); document.title = 'Settings';">Settings</button>
+<p><button id="log-error" onclick="console.error('save failed:', 500)">Log error</button>
+<p><button id="throw" onclick="null.x">Throw</button>
+<p><button id="many-errors" onclick="for (let i = 1; i <= 7; i++) console.error('error ' + i)">Many errors</button>
+<p><button id="save" onclick="fetch('report-api?status=500', { method: 'POST' }).then((r) => { out.textContent = 'saved: ' + r.status; })">Save</button>
+<p><button id="slow" onclick="fetch('report.html?delay=400').then(() => { out.textContent = 'loaded'; })">Load slowly</button>
+<p><button id="other" onclick="fetch('{{ORIGIN_B}}/actions/nope?status=500', { mode: 'no-cors' }).then(() => { out.textContent = 'other done'; })">Other origin</button>
+<p><a id="popup" href="report-next.html?popup" target="_blank">Help</a>
+<p><button id="alert" onclick="alert('Saved')">Alert</button>
+<p><a id="download" href="/downloads/report.txt?download=report.txt">Download</a>
+<p><a id="no-content" href="report.html?status=204">No content</a>
+<form id="login">
+  <p><label>User <input id="user" name="user"></label>
+  <p><button id="continue" type="button" onclick="document.getElementById('code').focus()">Continue</button>
+  <p><label>Password <input id="password" type="password" name="password"></label>
+</form>
+<form id="verify">
+  <p><label>Code <input id="code" name="code"></label>
+</form>
+<p id="out"></p>

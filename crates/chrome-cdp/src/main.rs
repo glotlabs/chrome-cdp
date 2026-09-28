@@ -161,6 +161,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
                 }
             }),
             args.pointer.refs.strict_refs,
+            &args.pointer.after,
             &cli.global,
         ),
         Some(Command::Dblclick(args)) => session::act(
@@ -176,6 +177,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
                 }
             }),
             args.pointer.refs.strict_refs,
+            &args.pointer.after,
             &cli.global,
         ),
         Some(Command::Hover(args)) => session::act(
@@ -188,6 +190,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
                 }
             }),
             args.pointer.refs.strict_refs,
+            &args.pointer.after,
             &cli.global,
         ),
         Some(Command::Tap(args)) => session::act(
@@ -200,6 +203,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
                 }
             }),
             args.pointer.refs.strict_refs,
+            &args.pointer.after,
             &cli.global,
         ),
         Some(Command::Drag(args)) => session::act(
@@ -210,6 +214,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
                 force: args.force,
             },
             args.refs.strict_refs,
+            &args.after,
             &cli.global,
         ),
         Some(Command::Scroll(args)) => session::act(
@@ -220,11 +225,13 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
                 force: args.force,
             },
             args.refs.strict_refs,
+            &args.after,
             &cli.global,
         ),
         Some(Command::Mouse(args)) => session::act(
             engine::Action::Mouse(mouse_op(&args.command)),
             false,
+            &args.after,
             &cli.global,
         ),
         Some(Command::Press(args)) => session::act(
@@ -233,6 +240,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
                 locator: args.locator.clone(),
             },
             args.refs.strict_refs,
+            &args.after,
             &cli.global,
         ),
         Some(Command::Type(args)) => session::act(
@@ -245,6 +253,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
                 force: args.force,
             },
             args.refs.strict_refs,
+            &args.after,
             &cli.global,
         ),
         Some(Command::Fill(args)) => session::act(
@@ -254,6 +263,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
                 force: args.force,
             },
             args.refs.strict_refs,
+            &args.after,
             &cli.global,
         ),
         Some(Command::Select(args)) => session::act(
@@ -263,6 +273,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
                 force: args.force,
             },
             args.refs.strict_refs,
+            &args.after,
             &cli.global,
         ),
         Some(Command::Check(args)) => session::act(
@@ -272,6 +283,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
                 force: args.force,
             },
             args.refs.strict_refs,
+            &args.after,
             &cli.global,
         ),
         Some(Command::Uncheck(args)) => session::act(
@@ -281,6 +293,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
                 force: args.force,
             },
             args.refs.strict_refs,
+            &args.after,
             &cli.global,
         ),
         Some(Command::Focus(args)) => session::act(
@@ -288,6 +301,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
                 locator: args.locator.clone(),
             },
             args.refs.strict_refs,
+            &args.after,
             &cli.global,
         ),
         Some(Command::Blur(args)) => session::act(
@@ -295,6 +309,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
                 locator: args.locator.clone(),
             },
             args.refs.strict_refs,
+            &args.after,
             &cli.global,
         ),
         Some(Command::Upload(args)) => session::act(
@@ -309,6 +324,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
                 force: args.force,
             },
             args.refs.strict_refs,
+            &args.after,
             &cli.global,
         ),
         // Handled in `main`.

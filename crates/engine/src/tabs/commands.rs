@@ -91,6 +91,22 @@ impl Engine {
         mut output: Output,
         shown: Option<&DownloadInfo>,
     ) -> Output {
+        for event in self.events_since(running, mark, shown).await {
+            output = output.warning(self.event_line(&event));
+            output = output.event(event);
+        }
+        output
+    }
+
+    /// What [`Engine::report_events`] reports: the tabs that opened since
+    /// `mark` (with their URLs, once they have one), dialogs answered
+    /// without a command, and downloads that began (except `shown`).
+    pub(crate) async fn events_since(
+        &self,
+        running: &Running,
+        mark: u64,
+        shown: Option<&DownloadInfo>,
+    ) -> Vec<Event> {
         let ids: Vec<u32> = running
             .tabs
             .opened_since(mark)
@@ -105,25 +121,28 @@ impl Engine {
             running.tabs.wait_for_urls(&ids, POPUP_URL_WAIT).await;
             let _ = running.tabs.refresh(Duration::from_secs(2)).await;
         }
-        let happened = running.tabs.opened_since(mark).into_iter().chain(
-            running
-                .tabs
-                .happened_since(mark)
-                .into_iter()
-                .filter(|event| match (event, shown) {
-                    (Event::Download(d), Some(shown)) => d.url != shown.url || d.file != shown.file,
-                    _ => true,
-                }),
-        );
-        for event in happened {
-            output = output.warning(self.event_line(&event));
-            output = output.event(event);
-        }
-        output
+        running
+            .tabs
+            .opened_since(mark)
+            .into_iter()
+            .chain(
+                running
+                    .tabs
+                    .happened_since(mark)
+                    .into_iter()
+                    .filter(|event| match (event, shown) {
+                        (Event::Download(d), Some(shown)) => {
+                            d.url != shown.url || d.file != shown.file
+                        }
+                        _ => true,
+                    }),
+            )
+            .collect()
     }
 
-    /// The warning line for `event`.
-    fn event_line(&self, event: &Event) -> String {
+    /// The line that reports `event` (a warning, or a line of an
+    /// action's report).
+    pub(crate) fn event_line(&self, event: &Event) -> String {
         match event {
             Event::TabOpened {
                 tab, url, active, ..
@@ -154,6 +173,59 @@ impl Engine {
                 format!("dialog: {} ({how})", describe_kind(kind, message))
             }
             Event::Download(download) => downloads::line(download, &self.session),
+            Event::Navigated {
+                url,
+                title,
+                status,
+                same_document,
+                restored,
+                error,
+                loaded,
+                ..
+            } => {
+                if let Some(error) = error {
+                    return format!("navigation to {url} failed: {error}");
+                }
+                let how = if *same_document {
+                    Some("same document".to_owned())
+                } else if *restored {
+                    Some("from the back/forward cache".to_owned())
+                } else if !loaded {
+                    Some("still loading".to_owned())
+                } else {
+                    status.map(|s| s.to_string())
+                };
+                let how = how.map(|h| format!(" ({h})")).unwrap_or_default();
+                format!("navigated to {} {title:?}{how}", shown_url(url))
+            }
+            Event::ConsoleError {
+                message, url, line, ..
+            } => {
+                let place = url
+                    .as_deref()
+                    .map(|url| {
+                        let file = file_name(url);
+                        line.map_or_else(|| format!(" ({file})"), |l| format!(" ({file}:{l})"))
+                    })
+                    .unwrap_or_default();
+                format!("console error: {message}{place}")
+            }
+            Event::RequestFailed {
+                method,
+                url,
+                status,
+                error,
+                ..
+            } => {
+                let why = status
+                    .map(|s| s.to_string())
+                    .or_else(|| error.clone())
+                    .unwrap_or_default();
+                format!("request failed: {method} {} ({why})", path_of(url))
+            }
+            Event::FocusMoved { element, .. } => {
+                format!("focus moved to {}", crate::input::describe(element))
+            }
         }
     }
 
@@ -372,7 +444,44 @@ fn describe_tab(tab: &TabInfo) -> String {
     format!("{} {} {:?}", tab.id, shown_url(&tab.url), tab.title)
 }
 
+/// The last part of a script's URL, `app.js` (the whole URL if it has
+/// none).
+fn file_name(url: &str) -> &str {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    match path.rsplit('/').next() {
+        Some(name) if !name.is_empty() && path.contains("://") => name,
+        _ => url,
+    }
+}
+
+/// A URL without its origin, `/api/save?x=1` (the whole URL if it has
+/// none).
+fn path_of(url: &str) -> &str {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url;
+    };
+    match rest.find(['/', '?', '#']) {
+        Some(at) => &url[scheme.len() + 3 + at..],
+        None => url,
+    }
+}
+
 /// A new tab's URL is empty until it commits a navigation.
 fn shown_url(url: &str) -> &str {
     if url.is_empty() { BLANK } else { url }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{file_name, path_of};
+
+    #[test]
+    fn urls_are_shortened_for_report_lines() {
+        assert_eq!(file_name("http://x/js/app.js?v=2"), "app.js");
+        assert_eq!(file_name("http://x/"), "http://x/");
+        assert_eq!(file_name("debugger://anon"), "anon");
+        assert_eq!(path_of("http://x:8080/api/save?id=1"), "/api/save?id=1");
+        assert_eq!(path_of("http://x:8080"), "http://x:8080");
+        assert_eq!(path_of("data:text/plain,hi"), "data:text/plain,hi");
+    }
 }

@@ -99,6 +99,11 @@ pub(crate) struct GlobalArgs {
     /// `None`.
     #[arg(skip)]
     pub(crate) testid_attribute: Option<String>,
+
+    /// `snap_after_action = "diff"` in the config files: actions add
+    /// `snapshot --diff -i` unless `--no-snap`.
+    #[arg(skip)]
+    pub(crate) snap_after_action: bool,
 }
 
 /// The timeout of navigation and of commands without their own default.
@@ -456,11 +461,15 @@ Waits (up to --timeout, 10s by default) until the element is visible,
 stable, enabled and not covered, scrolls it into view, then moves the
 mouse to its centre and presses and releases the button there: trusted
 events, as a user makes them. When something covers it, the error names
-what, with a ref, and a click that likely dismisses it. Needs a running
-session.
+what, with a ref, and a click that likely dismisses it. Then it waits
+for what the click caused (a new page to load, the requests it sent) and
+adds a line for each thing that happened: a navigation, a new tab, a
+dialog, a download, a console error, a failed request, focus moving to
+another form. Every action does. Needs a running session.
 
 Examples:
   chrome-cdp click e6
+  chrome-cdp click e6 --snap                  # and what changed on the page
   chrome-cdp click 'role=button[name=\"Sign in\"]'
   chrome-cdp click e6 --button right          # the context menu
   chrome-cdp click e12 --modifiers Shift      # select a range
@@ -900,6 +909,9 @@ pub(crate) struct UploadArgs {
 
     #[command(flatten)]
     pub(crate) refs: StrictRefsArgs,
+
+    #[command(flatten)]
+    pub(crate) after: AfterArgs,
 }
 
 #[derive(Debug, Args)]
@@ -1048,6 +1060,55 @@ impl SnapshotEngineArg {
     }
 }
 
+/// What an action does after its input (plan 05, milestone 5.5): wait
+/// for what it caused and report it, and `--snap`. Global, so `mouse`'s
+/// subcommands take them too.
+#[derive(Debug, Args)]
+pub(crate) struct AfterArgs {
+    /// Return once the input is sent, without waiting for the page to
+    /// react (a navigation to load, the requests it sent).
+    #[arg(
+        long,
+        global = true,
+        env = "CHROME_CDP_NO_WAIT_AFTER",
+        action = ArgAction::SetTrue,
+        value_parser = BoolishValueParser::new(),
+        hide_env_values = true
+    )]
+    pub(crate) no_wait_after: bool,
+
+    /// Then print what changed on the page: snapshot --diff -i
+    /// (snap_after_action = "diff" in the config files makes it the
+    /// default).
+    #[arg(
+        long,
+        global = true,
+        env = "CHROME_CDP_SNAP",
+        action = ArgAction::SetTrue,
+        value_parser = BoolishValueParser::new(),
+        hide_env_values = true,
+        overrides_with = "no_snap"
+    )]
+    pub(crate) snap: bool,
+
+    /// No snapshot after it, whatever the config files say.
+    #[arg(long, global = true, overrides_with = "snap")]
+    pub(crate) no_snap: bool,
+
+    /// Bound the output to this many characters (0 = no limit); only
+    /// --snap's snapshot grows with the page.
+    #[arg(long, global = true, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+impl AfterArgs {
+    /// Whether to add the snapshot: `--snap`, else `snap_after_action`
+    /// from the config files, unless `--no-snap`.
+    pub(crate) fn snap(&self, global: &GlobalArgs) -> bool {
+        !self.no_snap && (self.snap || global.snap_after_action)
+    }
+}
+
 /// `--strict-refs` for commands that take a locator.
 #[derive(Debug, Args)]
 pub(crate) struct StrictRefsArgs {
@@ -1145,6 +1206,9 @@ pub(crate) struct PointerArgs {
 
     #[command(flatten)]
     pub(crate) refs: StrictRefsArgs,
+
+    #[command(flatten)]
+    pub(crate) after: AfterArgs,
 }
 
 #[derive(Debug, Args)]
@@ -1203,6 +1267,9 @@ pub(crate) struct DragArgs {
 
     #[command(flatten)]
     pub(crate) refs: StrictRefsArgs,
+
+    #[command(flatten)]
+    pub(crate) after: AfterArgs,
 }
 
 #[derive(Debug, Args)]
@@ -1227,12 +1294,18 @@ pub(crate) struct ScrollArgs {
 
     #[command(flatten)]
     pub(crate) refs: StrictRefsArgs,
+
+    #[command(flatten)]
+    pub(crate) after: AfterArgs,
 }
 
 #[derive(Debug, Args)]
 pub(crate) struct MouseArgs {
     #[command(subcommand)]
     pub(crate) command: MouseCommand,
+
+    #[command(flatten)]
+    pub(crate) after: AfterArgs,
 }
 
 #[derive(Debug, Subcommand)]
@@ -1341,6 +1414,9 @@ pub(crate) struct PressArgs {
 
     #[command(flatten)]
     pub(crate) refs: StrictRefsArgs,
+
+    #[command(flatten)]
+    pub(crate) after: AfterArgs,
 }
 
 #[derive(Debug, Args)]
@@ -1365,6 +1441,9 @@ pub(crate) struct TypeArgs {
 
     #[command(flatten)]
     pub(crate) refs: StrictRefsArgs,
+
+    #[command(flatten)]
+    pub(crate) after: AfterArgs,
 }
 
 #[derive(Debug, Args)]
@@ -1383,6 +1462,9 @@ pub(crate) struct FillArgs {
 
     #[command(flatten)]
     pub(crate) refs: StrictRefsArgs,
+
+    #[command(flatten)]
+    pub(crate) after: AfterArgs,
 }
 
 #[derive(Debug, Args)]
@@ -1401,6 +1483,9 @@ pub(crate) struct SelectArgs {
 
     #[command(flatten)]
     pub(crate) refs: StrictRefsArgs,
+
+    #[command(flatten)]
+    pub(crate) after: AfterArgs,
 }
 
 #[derive(Debug, Args)]
@@ -1417,6 +1502,9 @@ pub(crate) struct CheckArgs {
 
     #[command(flatten)]
     pub(crate) refs: StrictRefsArgs,
+
+    #[command(flatten)]
+    pub(crate) after: AfterArgs,
 }
 
 #[derive(Debug, Args)]
@@ -1427,6 +1515,9 @@ pub(crate) struct FocusArgs {
 
     #[command(flatten)]
     pub(crate) refs: StrictRefsArgs,
+
+    #[command(flatten)]
+    pub(crate) after: AfterArgs,
 }
 
 #[derive(Debug, Args)]
@@ -2075,26 +2166,7 @@ mod tests {
         "reload",
         "dialog accept",
         "dialog dismiss",
-        "click",
-        "dblclick",
-        "hover",
-        "tap",
-        "drag",
-        "scroll",
-        "press",
-        "type",
-        "fill",
-        "select",
-        "check",
-        "uncheck",
-        "focus",
-        "blur",
-        "upload",
         "clipboard write",
-        "mouse move",
-        "mouse down",
-        "mouse up",
-        "mouse wheel",
     ];
 
     /// The plan 08 checklist: every command has an example in its help, a

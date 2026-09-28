@@ -825,4 +825,15 @@ pub struct ActionRequest {
     pub testid_attribute: Option<String>,
     /// How long to wait for the element to be actionable.
     pub timeout_ms: u64,
+    /// `--no-wait-after`: return once the input is sent, without waiting
+    /// for what it causes (the report still lists what already happened).
+    #[serde(default)]
+    pub no_wait_after: bool,
+    /// `--snap`: add `snapshot --diff -i` after the report.
+    #[serde(default)]
+    pub snap: bool,
+    /// The output budget (0 = none); only `--snap`'s snapshot grows with
+    /// the page.
+    #[serde(default)]
+    pub max_chars: usize,
 }

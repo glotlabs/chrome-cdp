@@ -1,0 +1,16 @@
+$ chrome-cdp click '#push'
+exit: 0
+--- stdout
+clicked e1 button "Settings"
+→ navigated to <site>/actions/report.html?tab=settings "Settings" (same document)
+
+$ chrome-cdp click '#push' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"action":"click","button":"left","count":1,"element":{"name":"Settings","ref":"e1","role":"button","tag":"button"},"locator":"#push","point":{"x":40.09,"y":192.38},"tab":"t1"},"events":[{"type":"navigated","tab":"t1","url":"<site>/actions/report.html?tab=settings","title":"Settings","same_document":true,"loaded":true}]}
+
+$ chrome-cdp click '#push' -q
+exit: 0
+--- stdout
+e1
+

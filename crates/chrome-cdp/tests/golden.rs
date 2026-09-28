@@ -946,6 +946,36 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/actions/feed.html"),
     },
     Case {
+        name: "click-report-failed-request",
+        args: &["click", "#save"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/actions/report.html"),
+    },
+    Case {
+        name: "click-report-console-error",
+        args: &["click", "#throw"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/actions/report.html"),
+    },
+    Case {
+        name: "click-report-same-document",
+        args: &["click", "#push"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/actions/report.html"),
+    },
+    Case {
+        name: "click-report-navigates",
+        args: &["click", "#next"],
+        modes: &[""],
+        fixture: Fixture::SessionAt("/actions/report.html"),
+    },
+    Case {
+        name: "click-snap",
+        args: &["click", "#nothing", "--snap"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[&["open", "{site}/actions/report.html"], &["snapshot"]]),
+    },
+    Case {
         name: "scroll-nothing",
         args: &["scroll"],
         modes: ERR,

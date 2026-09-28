@@ -13,8 +13,9 @@
 //! page sees trusted events in the order a user makes them; only values
 //! that take no typing (a date, a `<select>`) are set in the page.
 //! Milestone 5.4 adds `upload` (files into a file input, or the file
-//! chooser a click opens); `clipboard` lives in [`crate::clipboard`]. The
-//! post-action report (5.5) comes last.
+//! chooser a click opens); `clipboard` lives in [`crate::clipboard`].
+//! Milestone 5.5 adds the post-action report ([`report`]): after the
+//! input, each action waits for what it caused and says what happened.
 
 mod actionability;
 mod drag;
@@ -22,6 +23,7 @@ mod form;
 mod keyboard;
 mod keys;
 mod mouse;
+mod report;
 mod scroll;
 mod upload;
 
@@ -195,8 +197,12 @@ impl Engine {
             timeout,
             deadline: Instant::now() + timeout,
         };
-        let output = Box::pin(self.unless_blocked(&running, &page, mark, actor.run())).await?;
-        Ok(self.report_events(&running, mark, output, None).await)
+        let acted = async {
+            let before = actor.before().await;
+            let output = actor.run().await?;
+            actor.report(output, before, mark).await
+        };
+        Box::pin(self.unless_blocked(&running, &page, mark, acted)).await
     }
 }
 
@@ -400,7 +406,7 @@ impl Actor<'_> {
         let value = self
             .call(
                 target,
-                "function () { return globalThis.__ccdp.describe(this); }",
+                "function () { return globalThis.__ccdp.acted(this); }",
                 Vec::new(),
             )
             .await?;
@@ -600,6 +606,9 @@ mod tests {
             strict_refs: false,
             testid_attribute: None,
             timeout_ms: 1000,
+            no_wait_after: false,
+            snap: false,
+            max_chars: 0,
         }
     }
 

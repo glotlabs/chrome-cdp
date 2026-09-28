@@ -83,6 +83,9 @@ async fn act_within(
             strict_refs: false,
             testid_attribute: None,
             timeout_ms: u64::try_from(timeout.as_millis()).unwrap(),
+            no_wait_after: false,
+            snap: false,
+            max_chars: 0,
         })
         .await
 }

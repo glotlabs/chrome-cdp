@@ -1,0 +1,6 @@
+$ chrome-cdp click '#next'
+exit: 0
+--- stdout
+clicked e1 link "Next page"
+→ navigated to <site>/actions/report-next.html "Next" (200)
+

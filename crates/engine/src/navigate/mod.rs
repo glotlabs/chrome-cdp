@@ -19,7 +19,7 @@
 
 mod failure;
 mod url;
-mod watch;
+pub(crate) mod watch;
 
 use std::time::Duration;
 
@@ -638,7 +638,7 @@ pub(crate) async fn describe(page: &cdp::Session) -> cdp::Result<Shown> {
 }
 
 /// The `net::ERR_*` code of the error page the tab shows.
-async fn error_code(page: &cdp::Session) -> String {
+pub(crate) async fn error_code(page: &cdp::Session) -> String {
     let mut params = runtime::EvaluateParams::new(
         "typeof loadTimeDataRaw === 'object' && loadTimeDataRaw.errorCode || ''".into(),
     );

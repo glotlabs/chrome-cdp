@@ -14,7 +14,9 @@
 //! keys to [`File`] and apply them in [`apply`].
 //!
 //! `testid_attribute` (plan 04) names the attribute `testid=` locators
-//! read; `CHROME_CDP_TESTID_ATTRIBUTE` beats it.
+//! read; `CHROME_CDP_TESTID_ATTRIBUTE` beats it. `snap_after_action`
+//! (plan 05) is `"diff"` to have every action add `snapshot --diff -i`
+//! (as `--snap` does; `--no-snap` beats it), or `"off"`.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -30,7 +32,7 @@ use crate::cli::{GlobalArgs, parse_duration};
 pub(crate) const PROJECT_FILE: &str = ".chrome-cdp.toml";
 
 /// The keys a config file may set.
-const KEYS: &str = "session, timeout, base_url, testid_attribute";
+const KEYS: &str = "session, timeout, base_url, testid_attribute, snap_after_action";
 
 /// One config file as written.
 #[derive(Debug, Default, Deserialize)]
@@ -40,6 +42,7 @@ struct File {
     timeout: Option<String>,
     base_url: Option<String>,
     testid_attribute: Option<String>,
+    snap_after_action: Option<String>,
 }
 
 /// Validated settings from one or more files.
@@ -49,6 +52,8 @@ struct Settings {
     timeout: Option<Duration>,
     base_url: Option<String>,
     testid_attribute: Option<String>,
+    /// `snap_after_action`: `diff` is true, `off` false.
+    snap_after_action: Option<bool>,
 }
 
 impl Settings {
@@ -59,6 +64,7 @@ impl Settings {
             timeout: over.timeout.or(self.timeout),
             base_url: over.base_url.or(self.base_url),
             testid_attribute: over.testid_attribute.or(self.testid_attribute),
+            snap_after_action: over.snap_after_action.or(self.snap_after_action),
         }
     }
 }
@@ -96,6 +102,7 @@ pub(crate) fn apply(global: &mut GlobalArgs, matches: &ArgMatches) -> Result<(),
         })?),
         _ => settings.testid_attribute,
     };
+    global.snap_after_action = settings.snap_after_action.unwrap_or(false);
     Ok(())
 }
 
@@ -152,11 +159,22 @@ fn parse(text: &str) -> Result<Settings, String> {
         .testid_attribute
         .map(|a| check_attribute(&a).map_err(|m| format!("testid_attribute: {m}")))
         .transpose()?;
+    let snap_after_action = match file.snap_after_action.as_deref() {
+        None => None,
+        Some("diff") => Some(true),
+        Some("off") => Some(false),
+        Some(other) => {
+            return Err(format!(
+                "snap_after_action: `{other}` is not \"diff\" or \"off\""
+            ));
+        }
+    };
     Ok(Settings {
         session: file.session,
         timeout,
         base_url: file.base_url,
         testid_attribute,
+        snap_after_action,
     })
 }
 
@@ -202,7 +220,20 @@ mod tests {
                 timeout: Some(Duration::from_secs(5)),
                 base_url: Some("http://localhost:3000".into()),
                 testid_attribute: None,
+                snap_after_action: None,
             }
+        );
+        assert_eq!(
+            parse("snap_after_action = \"diff\"")
+                .unwrap()
+                .snap_after_action,
+            Some(true)
+        );
+        assert_eq!(
+            parse("snap_after_action = \"off\"")
+                .unwrap()
+                .snap_after_action,
+            Some(false)
         );
         assert_eq!(
             parse("testid_attribute = \"data-qa\"")
@@ -226,6 +257,10 @@ mod tests {
         assert_eq!(
             parse("base_url = \"/login\"").unwrap_err(),
             "base_url: `/login` is not an absolute http(s) or file URL"
+        );
+        assert_eq!(
+            parse("snap_after_action = \"full\"").unwrap_err(),
+            "snap_after_action: `full` is not \"diff\" or \"off\""
         );
         assert_eq!(
             parse("testid_attribute = \"data qa\"").unwrap_err(),

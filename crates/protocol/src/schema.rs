@@ -199,97 +199,97 @@ pub const COMMANDS: &[CommandSchema] = &[
     CommandSchema {
         name: "click",
         summary: "the element clicked, the point, button, click count and modifiers",
-        schema: || schema_for!(Envelope<PointerData>),
+        schema: || schema_for!(Envelope<Acted<PointerData>>),
     },
     CommandSchema {
         name: "dblclick",
         summary: "the element double-clicked and the point",
-        schema: || schema_for!(Envelope<PointerData>),
+        schema: || schema_for!(Envelope<Acted<PointerData>>),
     },
     CommandSchema {
         name: "hover",
         summary: "the element the mouse is over and the point",
-        schema: || schema_for!(Envelope<PointerData>),
+        schema: || schema_for!(Envelope<Acted<PointerData>>),
     },
     CommandSchema {
         name: "tap",
         summary: "the element tapped and the point",
-        schema: || schema_for!(Envelope<PointerData>),
+        schema: || schema_for!(Envelope<Acted<PointerData>>),
     },
     CommandSchema {
         name: "mouse move",
         summary: "where the mouse is now and the buttons held",
-        schema: || schema_for!(Envelope<MouseData>),
+        schema: || schema_for!(Envelope<Acted<MouseData>>),
     },
     CommandSchema {
         name: "mouse down",
         summary: "the button pressed, where, and the buttons held",
-        schema: || schema_for!(Envelope<MouseData>),
+        schema: || schema_for!(Envelope<Acted<MouseData>>),
     },
     CommandSchema {
         name: "mouse up",
         summary: "the button released, where, and the buttons held",
-        schema: || schema_for!(Envelope<MouseData>),
+        schema: || schema_for!(Envelope<Acted<MouseData>>),
     },
     CommandSchema {
         name: "mouse wheel",
         summary: "the wheel's deltas and where the mouse is",
-        schema: || schema_for!(Envelope<MouseData>),
+        schema: || schema_for!(Envelope<Acted<MouseData>>),
     },
     CommandSchema {
         name: "drag",
         summary: "the elements dragged from and to, the points, and how",
-        schema: || schema_for!(Envelope<DragResult>),
+        schema: || schema_for!(Envelope<Acted<DragResult>>),
     },
     CommandSchema {
         name: "scroll",
         summary: "what scrolled, its new scroll position, and which ends it reached",
-        schema: || schema_for!(Envelope<ScrollData>),
+        schema: || schema_for!(Envelope<Acted<ScrollData>>),
     },
     CommandSchema {
         name: "press",
         summary: "the keys pressed and the element that had focus",
-        schema: || schema_for!(Envelope<KeysData>),
+        schema: || schema_for!(Envelope<Acted<KeysData>>),
     },
     CommandSchema {
         name: "type",
         summary: "how many characters were typed and into which element",
-        schema: || schema_for!(Envelope<KeysData>),
+        schema: || schema_for!(Envelope<Acted<KeysData>>),
     },
     CommandSchema {
         name: "fill",
         summary: "the field filled and the value it holds now",
-        schema: || schema_for!(Envelope<FillData>),
+        schema: || schema_for!(Envelope<Acted<FillData>>),
     },
     CommandSchema {
         name: "select",
         summary: "the <select> and the options now selected",
-        schema: || schema_for!(Envelope<SelectData>),
+        schema: || schema_for!(Envelope<Acted<SelectData>>),
     },
     CommandSchema {
         name: "check",
         summary: "the checkbox, radio or switch, and whether it had to change",
-        schema: || schema_for!(Envelope<CheckData>),
+        schema: || schema_for!(Envelope<Acted<CheckData>>),
     },
     CommandSchema {
         name: "uncheck",
         summary: "the checkbox or switch, and whether it had to change",
-        schema: || schema_for!(Envelope<CheckData>),
+        schema: || schema_for!(Envelope<Acted<CheckData>>),
     },
     CommandSchema {
         name: "focus",
         summary: "the element that has focus now",
-        schema: || schema_for!(Envelope<FocusData>),
+        schema: || schema_for!(Envelope<Acted<FocusData>>),
     },
     CommandSchema {
         name: "blur",
         summary: "the element that lost focus",
-        schema: || schema_for!(Envelope<FocusData>),
+        schema: || schema_for!(Envelope<Acted<FocusData>>),
     },
     CommandSchema {
         name: "upload",
         summary: "the file input and the files it holds now",
-        schema: || schema_for!(Envelope<UploadData>),
+        schema: || schema_for!(Envelope<Acted<UploadData>>),
     },
     CommandSchema {
         name: "clipboard read",
@@ -940,6 +940,18 @@ pub struct MarkdownData {
     pub markdown: String,
 }
 
+/// `data` of an action (`click`, `fill`, …): its own fields, plus the
+/// snapshot `--snap` took after it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Acted<T> {
+    #[serde(flatten)]
+    pub data: T,
+    /// `--snap`: what changed on the page since the tab's last snapshot
+    /// (`snapshot --diff -i`), read after the action's consequences.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot: Option<SnapshotData>,
+}
+
 /// An element an action acted on, as the output names it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ActedElement {
@@ -1321,6 +1333,73 @@ pub enum Event {
     },
     /// A download started, or finished, while the command ran.
     Download(DownloadInfo),
+    /// The action made the tab's main frame navigate (a link, a form, a
+    /// script): where it is now, once loaded and settled.
+    Navigated {
+        /// The tab, e.g. `t1`.
+        tab: String,
+        /// The URL it is at now.
+        url: String,
+        title: String,
+        /// The main document's HTTP status (absent for same-document
+        /// navigations and non-HTTP pages).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status: Option<u16>,
+        /// It stayed in the document (`pushState`, `#fragment`).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        same_document: bool,
+        /// It came back from the back/forward cache.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        restored: bool,
+        /// Chrome's error when the page could not load
+        /// (`net::ERR_CONNECTION_REFUSED`; the tab shows an error page).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+        /// Whether the load event fired before the time ran out.
+        loaded: bool,
+    },
+    /// The page logged an error (`console.error`, a failed
+    /// `console.assert`) or threw one nothing caught, after the command
+    /// began.
+    ConsoleError {
+        /// The tab, e.g. `t1`.
+        tab: String,
+        /// The message's first line, e.g. `TypeError: x is undefined`.
+        message: String,
+        /// The script it came from, with its line and column (1-based).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        url: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        line: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        column: Option<u32>,
+        /// An uncaught exception (else a `console.error` call).
+        uncaught: bool,
+    },
+    /// A request of the page to its own origin failed after the command
+    /// began: an HTTP status of 400 or more, or no response.
+    RequestFailed {
+        /// The tab, e.g. `t1`.
+        tab: String,
+        method: String,
+        url: String,
+        /// Chrome's resource type: `Document`, `Fetch`, `XHR`, `Script`, …
+        resource_type: String,
+        /// The HTTP status, if the server answered.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        status: Option<u16>,
+        /// Chrome's error if it did not, e.g. `net::ERR_CONNECTION_REFUSED`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
+    },
+    /// Focus moved to an element of another form than before (or into a
+    /// form, or out of one) that the action did not act on: a dialog or
+    /// the next step of a flow took it.
+    FocusMoved {
+        /// The tab, e.g. `t1`.
+        tab: String,
+        element: ActedElement,
+    },
 }
 
 /// The `--json` envelope (see [`crate::Envelope`]) with `data: T`.

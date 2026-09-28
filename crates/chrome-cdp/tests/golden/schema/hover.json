@@ -1,5 +1,71 @@
 {
   "$defs": {
+    "Acted": {
+      "description": "`data` of an action (`click`, `fill`, …): its own fields, plus the\nsnapshot `--snap` took after it.",
+      "properties": {
+        "action": {
+          "description": "`click`, `dblclick`, `hover` or `tap`.",
+          "type": "string"
+        },
+        "button": {
+          "description": "The button (clicks).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "count": {
+          "description": "How many clicks (clicks).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "element": {
+          "$ref": "#/$defs/ActedElement"
+        },
+        "locator": {
+          "description": "The locator as given.",
+          "type": "string"
+        },
+        "modifiers": {
+          "description": "The modifier keys held: `Alt`, `Control`, `Meta`, `Shift`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "point": {
+          "$ref": "#/$defs/Point",
+          "description": "Where the events went, in the tab's viewport."
+        },
+        "snapshot": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SnapshotData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`--snap`: what changed on the page since the tab's last snapshot\n(`snapshot --diff -i`), read after the action's consequences."
+        },
+        "tab": {
+          "description": "The tab acted in, e.g. `t1`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tab",
+        "action",
+        "locator",
+        "element",
+        "point"
+      ],
+      "type": "object"
+    },
     "ActedElement": {
       "description": "An element an action acted on, as the output names it.",
       "properties": {
@@ -346,6 +412,184 @@
             "type"
           ],
           "type": "object"
+        },
+        {
+          "description": "The action made the tab's main frame navigate (a link, a form, a\nscript): where it is now, once loaded and settled.",
+          "properties": {
+            "error": {
+              "description": "Chrome's error when the page could not load\n(`net::ERR_CONNECTION_REFUSED`; the tab shows an error page).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "loaded": {
+              "description": "Whether the load event fired before the time ran out.",
+              "type": "boolean"
+            },
+            "restored": {
+              "description": "It came back from the back/forward cache.",
+              "type": "boolean"
+            },
+            "same_document": {
+              "description": "It stayed in the document (`pushState`, `#fragment`).",
+              "type": "boolean"
+            },
+            "status": {
+              "description": "The main document's HTTP status (absent for same-document\nnavigations and non-HTTP pages).",
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "tab": {
+              "description": "The tab, e.g. `t1`.",
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "type": {
+              "const": "navigated",
+              "type": "string"
+            },
+            "url": {
+              "description": "The URL it is at now.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tab",
+            "url",
+            "title",
+            "loaded"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The page logged an error (`console.error`, a failed\n`console.assert`) or threw one nothing caught, after the command\nbegan.",
+          "properties": {
+            "column": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "message": {
+              "description": "The message's first line, e.g. `TypeError: x is undefined`.",
+              "type": "string"
+            },
+            "tab": {
+              "description": "The tab, e.g. `t1`.",
+              "type": "string"
+            },
+            "type": {
+              "const": "console_error",
+              "type": "string"
+            },
+            "uncaught": {
+              "description": "An uncaught exception (else a `console.error` call).",
+              "type": "boolean"
+            },
+            "url": {
+              "description": "The script it came from, with its line and column (1-based).",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "tab",
+            "message",
+            "uncaught"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A request of the page to its own origin failed after the command\nbegan: an HTTP status of 400 or more, or no response.",
+          "properties": {
+            "error": {
+              "description": "Chrome's error if it did not, e.g. `net::ERR_CONNECTION_REFUSED`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "method": {
+              "type": "string"
+            },
+            "resource_type": {
+              "description": "Chrome's resource type: `Document`, `Fetch`, `XHR`, `Script`, …",
+              "type": "string"
+            },
+            "status": {
+              "description": "The HTTP status, if the server answered.",
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "tab": {
+              "description": "The tab, e.g. `t1`.",
+              "type": "string"
+            },
+            "type": {
+              "const": "request_failed",
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tab",
+            "method",
+            "url",
+            "resource_type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Focus moved to an element of another form than before (or into a\nform, or out of one) that the action did not act on: a dialog or\nthe next step of a flow took it.",
+          "properties": {
+            "element": {
+              "$ref": "#/$defs/ActedElement"
+            },
+            "tab": {
+              "description": "The tab, e.g. `t1`.",
+              "type": "string"
+            },
+            "type": {
+              "const": "focus_moved",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tab",
+            "element"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -370,7 +614,7 @@
     "OkEnvelope": {
       "properties": {
         "data": {
-          "$ref": "#/$defs/PointerData",
+          "$ref": "#/$defs/Acted",
           "description": "The command's result."
         },
         "events": {
@@ -427,22 +671,58 @@
       ],
       "type": "object"
     },
-    "PointerData": {
-      "description": "`data` of `chrome-cdp click`, `dblclick`, `hover` and `tap --json`.",
+    "SnapshotData": {
+      "description": "`data` of `chrome-cdp snapshot --json`.",
       "properties": {
-        "action": {
-          "description": "`click`, `dblclick`, `hover` or `tap`.",
-          "type": "string"
-        },
-        "button": {
-          "description": "The button (clicks).",
+        "diff": {
+          "description": "`--diff`: whether an earlier snapshot of the tab was compared.\nWithout one, `nodes` is the whole page, all marked `added`.",
           "type": [
-            "string",
+            "boolean",
             "null"
           ]
         },
-        "count": {
-          "description": "How many clicks (clicks).",
+        "engine": {
+          "description": "The engine that read the page: `ax` (Chrome's accessibility tree)\nor `dom` (chrome-cdp's own DOM walker).",
+          "type": "string"
+        },
+        "new_page": {
+          "description": "`--diff`: the main frame loaded a new document since the earlier\nsnapshot, so its nodes were compared by place, not by identity.",
+          "type": "boolean"
+        },
+        "nodes": {
+          "description": "The top-level nodes. With `--diff`, only the changed nodes and\ntheir ancestors (each with `change`).",
+          "items": {
+            "$ref": "#/$defs/SnapshotNode"
+          },
+          "type": "array"
+        },
+        "tab": {
+          "description": "The tab, e.g. `t1`.",
+          "type": "string"
+        },
+        "title": {
+          "description": "The document title.",
+          "type": "string"
+        },
+        "url": {
+          "description": "The main frame's URL.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tab",
+        "url",
+        "title",
+        "engine",
+        "nodes"
+      ],
+      "type": "object"
+    },
+    "SnapshotNode": {
+      "description": "One node of a snapshot, as one text line shows it:\n`role \"name\" [ref] (hN) value=\"…\" states… → href`.",
+      "properties": {
+        "below": {
+          "description": "How many nodes below this one `--depth` left out.",
           "format": "uint32",
           "minimum": 0,
           "type": [
@@ -450,35 +730,91 @@
             "null"
           ]
         },
-        "element": {
-          "$ref": "#/$defs/ActedElement"
+        "change": {
+          "description": "`--diff`: `added`, `removed` or `changed`; absent on the unchanged\nancestors shown for context.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
-        "locator": {
-          "description": "The locator as given.",
+        "children": {
+          "items": {
+            "$ref": "#/$defs/SnapshotNode"
+          },
+          "type": "array"
+        },
+        "file": {
+          "description": "A file input (`upload` sets it; a click opens a file chooser).",
+          "type": "boolean"
+        },
+        "href": {
+          "description": "A link's target; relative (`/pricing`) when on the frame's origin.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "level": {
+          "description": "A heading's level (1-6).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "more": {
+          "description": "How many more nodes of `role` the list has past this point (they\nare left out; `--all` shows them).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "The accessible name, or the text of a `text` node (or of a node\nwhose only content is that text).",
           "type": "string"
         },
-        "modifiers": {
-          "description": "The modifier keys held: `Alt`, `Control`, `Meta`, `Shift`.",
+        "password": {
+          "description": "A password field (its value is never shown).",
+          "type": "boolean"
+        },
+        "ref": {
+          "description": "The ref commands take (`e12`); only on nodes an agent can act on,\nunless `--all-refs`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "description": "The ARIA role (`button`, `link`, `heading`, …), `text` for text,\n`clickable` for an element that only looks and acts like a button,\nor `iframe`. With `more`, the role of the nodes left out.",
+          "type": "string"
+        },
+        "states": {
+          "description": "States that carry information, in this order: `checked`,\n`unchecked`, `mixed`, `expanded`, `collapsed`, `selected`,\n`disabled`, `readonly`, `required`, `invalid`, `focused`, `pressed`,\n`scrollable`.",
           "items": {
             "type": "string"
           },
           "type": "array"
         },
-        "point": {
-          "$ref": "#/$defs/Point",
-          "description": "Where the events went, in the tab's viewport."
+        "value": {
+          "description": "The value of a text box, combobox, slider or spin button. Never\nset for password fields.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
-        "tab": {
-          "description": "The tab acted in, e.g. `t1`.",
-          "type": "string"
+        "was": {
+          "description": "`--diff`, `changed`: the parts of the line that changed, as they\nwere (`unchecked`, `\"Old name\"`, `value=\"old\"`).",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
-        "tab",
-        "action",
-        "locator",
-        "element",
-        "point"
+        "role"
       ],
       "type": "object"
     },

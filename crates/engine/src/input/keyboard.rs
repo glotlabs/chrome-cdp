@@ -231,6 +231,15 @@ impl Actor<'_> {
     /// The element that has focus in the tab (inside shadow roots; an
     /// `<iframe>` when focus is in one), named; `None` when nothing has.
     async fn focused_element(&self) -> Result<Option<ActedElement>, ErrorInfo> {
+        self.page_element("globalThis.__ccdp.focused()").await
+    }
+
+    /// The element `expression` (which may use `__ccdp`) gives in the main
+    /// frame's isolated world, named; `None` for `null`.
+    pub(super) async fn page_element(
+        &self,
+        expression: &str,
+    ) -> Result<Option<ActedElement>, ErrorInfo> {
         let context = self
             .engine
             .frame_context(self.running, self.page, None, World::Isolated, self.timeout)
@@ -240,7 +249,7 @@ impl Actor<'_> {
         };
         let session = context.session.with_timeout(self.timeout);
         let mut params = runtime::CallFunctionOnParams::new(format!(
-            "function () {{ {GUARD} return globalThis.__ccdp.focused(); }}"
+            "function () {{ {GUARD} return {expression}; }}"
         ));
         params.execution_context_id = Some(context.context_id);
         let result = injected::call(&session, context.context_id, params)

@@ -30,10 +30,10 @@ use serde_json::{Map, Value, json};
 use tokio::runtime::Runtime;
 
 use crate::cli::{
-    CdpArgs, CloseArgs, ConnectArgs, DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs,
-    ElementStateArg, FindArgs, GlobalArgs, GotoArgs, HistoryArgs, IdleArgs, OpenArgs, ReloadArgs,
-    SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs,
-    WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    AfterArgs, CdpArgs, CloseArgs, ConnectArgs, DEFAULT_TIMEOUT, DialogArgs, DialogCommand,
+    DownloadsArgs, ElementStateArg, FindArgs, GlobalArgs, GotoArgs, HistoryArgs, IdleArgs,
+    OpenArgs, ReloadArgs, SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs, TabArgs,
+    TabCommand, TabsArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -574,6 +574,7 @@ pub(crate) fn read(
 pub(crate) fn act(
     action: Action,
     strict_refs: bool,
+    after: &AfterArgs,
     global: &GlobalArgs,
 ) -> Result<Output, ErrorInfo> {
     check_tab(global.tab.as_deref())?;
@@ -584,6 +585,9 @@ pub(crate) fn act(
         strict_refs,
         testid_attribute: global.testid_attribute.clone(),
         timeout_ms: millis(ctx.timeout),
+        no_wait_after: after.no_wait_after,
+        snap: after.snap(global),
+        max_chars: after.max_chars,
     };
     engine::check_action(&request)?;
     let mut client = running_session(&ctx)?;

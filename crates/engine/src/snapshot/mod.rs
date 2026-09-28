@@ -172,7 +172,28 @@ fn locate_options(req: &SnapshotRequest) -> LocateOptions {
 impl Engine {
     /// `snapshot`: the active tab (or `--tab`) as an accessibility tree.
     pub async fn snapshot(&self, req: SnapshotRequest) -> Result<Output, ErrorInfo> {
-        let options = locate_options(&req);
+        check_snapshot(&req)?;
+        let running = self.running()?;
+        let timeout = millis(req.timeout_ms);
+        let page = self.page(&running, req.tab.as_deref(), timeout).await?;
+        self.check_not_blocked(&running, &page)?;
+        let mark = running.tabs.mark();
+        let _tab = self.tabs.lock(&page.target_id).await;
+        let output = self.snapshot_page(&running, &page, &req, mark).await?;
+        Ok(self.report_events(&running, mark, output, None).await)
+    }
+
+    /// Reads `page` as `req` asks (its `tab` is not looked at); the caller
+    /// holds the tab's lock. `mark` is the event mark from before the
+    /// command, for a dialog that blocks the read.
+    pub(crate) async fn snapshot_page(
+        &self,
+        running: &Running,
+        page: &Page,
+        req: &SnapshotRequest,
+        mark: u64,
+    ) -> Result<Output, ErrorInfo> {
+        let options = locate_options(req);
         let scope = scope_locator(req.scope.as_deref(), &options)?;
         let view = View {
             interactive: req.interactive,
@@ -183,15 +204,10 @@ impl Engine {
             no_text: req.no_text,
         };
         let engine = req.engine.unwrap_or(DEFAULT_ENGINE);
-        let running = self.running()?;
         let timeout = millis(req.timeout_ms);
-        let page = self.page(&running, req.tab.as_deref(), timeout).await?;
-        self.check_not_blocked(&running, &page)?;
-        let mark = running.tabs.mark();
-        let _tab = self.tabs.lock(&page.target_id).await;
         let retry = |r: &str| Cmd::new("snapshot").flag("scope", r);
         let (scope_key, note) = self
-            .scope_key(&running, &page, scope.as_ref(), &options, &retry, timeout)
+            .scope_key(running, page, scope.as_ref(), &options, &retry, timeout)
             .await?;
         // A frame that loads a new document while the page is read would
         // leave refs on nodes that are gone: read it again.
@@ -214,8 +230,8 @@ impl Engine {
                     }
                     SnapshotEngine::Dom => {
                         DomReader {
-                            running: &running,
-                            page: &page,
+                            running,
+                            page,
                             engine: self,
                         }
                         .read(&frames, scope_key.as_ref(), timeout)
@@ -223,9 +239,9 @@ impl Engine {
                     }
                 }
             };
-            let capture = self.unless_blocked(&running, &page, mark, read).await?;
+            let capture = self.unless_blocked(running, page, mark, read).await?;
             let Some(current) = scoped(scope_key.as_ref(), &capture.nodes) else {
-                return Err(self.scope_gone(req.scope.as_deref(), &page));
+                return Err(self.scope_gone(req.scope.as_deref(), page));
             };
             let mut shown = prune::shape(current, &view);
             let assigned = running.tabs.snapshot_memory(page.id, |memory| {
@@ -298,7 +314,7 @@ impl Engine {
         if let Some(note) = note {
             output = output.warning(note);
         }
-        Ok(self.report_events(&running, mark, output, None).await)
+        Ok(output)
     }
 
     /// The node a `--scope` locator names, and the note if its ref was

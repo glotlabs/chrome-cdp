@@ -1,0 +1,17 @@
+$ chrome-cdp click '#nothing' --snap
+exit: 0
+--- stdout
+clicked e1 button "Nothing"
+page t1 "Report" <site>/actions/report.html
+~ - button "Nothing" [e1] focused (was not focused)
+
+$ chrome-cdp click '#nothing' --snap --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"action":"click","button":"left","count":1,"element":{"name":"Nothing","ref":"e1","role":"button","tag":"button"},"locator":"#nothing","point":{"x":38.98,"y":90.38},"snapshot":{"diff":true,"engine":"ax","nodes":[],"tab":"t1","title":"Report","url":"<site>/actions/report.html"},"tab":"t1"}}
+
+$ chrome-cdp click '#nothing' --snap -q
+exit: 0
+--- stdout
+e1
+
