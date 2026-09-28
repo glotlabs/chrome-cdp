@@ -375,7 +375,15 @@ fn config_section(server: Option<&Server>) -> String {
          retries = 0\n\
          timeout = \"30s\"\n\
          artifacts = \"{DEFAULT_ARTIFACTS}\"\n\
-         viewport = \"1280x800\"\n\n",
+         viewport = \"1280x800\"\n\n\
+         # Every test sees the same time, random values, locale and time zone,\n\
+         # and no animations (docs/e2e/determinism.md). To change that:\n\
+         # [e2e.determinism]\n\
+         # freeze_time = \"2026-01-01T10:00:00Z\"   # or false\n\
+         # random_seed = 0                        # or false\n\
+         # disable_animations = true\n\
+         # locale = \"en-US\"\n\
+         # timezone = \"UTC\"\n\n",
         url = toml_string(url),
     );
     match server {
