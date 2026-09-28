@@ -23,6 +23,7 @@
 <p><button id="alert" onclick="alert('Saved')">Alert</button>
 <p><a id="download" href="/downloads/report.txt?download=report.txt">Download</a>
 <p><a id="no-content" href="report.html?status=204">No content</a>
+<p><button id="many-failures" onclick="Promise.all([1, 2, 3, 4, 5, 6, 7].map((i) => fetch('report-api?status=404&n=' + i).then((r) => r.text()))).then(() => { out.textContent = 'all failed'; })">Many failures</button>
 <form id="login">
   <p><label>User <input id="user" name="user"></label>
   <p><button id="continue" type="button" onclick="document.getElementById('code').focus()">Continue</button>

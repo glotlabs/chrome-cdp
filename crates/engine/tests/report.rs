@@ -266,6 +266,15 @@ async fn console_errors_and_failed_requests_are_reported() {
     );
     assert_eq!(text(&engine, "#out").await, "saved: 500");
 
+    // More failures than it lists: `network --failed` has them all.
+    let out = act(&engine, click("#many-failures")).await;
+    let lines = report(&out);
+    assert_eq!(lines.len(), 6, "{lines:?}");
+    assert_eq!(
+        lines[5],
+        "! … and 2 more failed requests (chrome-cdp network --failed --session report-errors shows them)"
+    );
+
     // A slow request: the report waits for it and for what it renders.
     let out = act(&engine, click("#slow")).await;
     assert_eq!(report(&out), Vec::<&str>::new());

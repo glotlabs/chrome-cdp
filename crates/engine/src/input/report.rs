@@ -381,12 +381,13 @@ impl Actor<'_> {
         ] {
             if count > LISTED {
                 let more = count - LISTED;
-                lines.push(if console {
-                    let cmd = Cmd::new("errors").session(&self.engine.session);
-                    format!("! … and {more} more {what} ({cmd} shows them)")
+                let cmd = if console {
+                    Cmd::new("errors")
                 } else {
-                    format!("! … and {more} more {what}")
-                });
+                    Cmd::new("network").switch("failed")
+                };
+                let cmd = cmd.session(&self.engine.session);
+                lines.push(format!("! … and {more} more {what} ({cmd} shows them)"));
             }
         }
         lines
