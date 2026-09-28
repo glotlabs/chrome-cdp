@@ -1309,8 +1309,11 @@ Examples:
         after_help = "\
 While frozen, `Date` (and `Intl.DateTimeFormat` without a date) gives the
 frozen time in every tab and frame, from each page's first script on.
-Timers and animations keep running in real time. It is an init script
-that replaces `Date`, not Chrome's virtual time, which stalls page loads.
+Timers and animations keep running in real time. `time advance` also moves
+performance.now() on and runs the setTimeout and setInterval callbacks due
+by then (each once), so expiry, polling and debounce can be tested without
+waiting. It is an init script that replaces `Date`, not Chrome's virtual
+time, which stalls page loads.
 
 Examples:
   chrome-cdp time freeze 2026-01-31T09:30:00Z
@@ -3896,8 +3899,11 @@ Examples:
   chrome-cdp time freeze 2026-12-24T18:00+01:00")]
     Freeze(TimeFreezeArgs),
 
-    /// Move the frozen time on.
+    /// Move the frozen time on, running the timers due by then.
     #[command(after_help = "\
+Timers set before the time was frozen in a page that was already open are
+not run early.
+
 Examples:
   chrome-cdp time advance 90s
   chrome-cdp time advance 2h

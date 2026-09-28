@@ -16,7 +16,8 @@
 //!
 //! `time freeze` does not use Chrome's virtual time: pausing it stops
 //! timers and page loads, and letting it advance fires timers at once.
-//! An init script replaces `Date` instead ([`clock_script`]).
+//! An init script replaces `Date` instead ([`clock_script`]); moving the
+//! frozen time on also runs the page's timers due by then (plan 11.6).
 
 pub(crate) mod commands;
 mod devices;

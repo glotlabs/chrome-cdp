@@ -398,11 +398,27 @@ async fn each_setting_is_seen_by_page_js() {
         seen("[Date.now(), new Date().toISOString(), new Date(5).getTime(), new Date() instanceof Date, typeof Date()]").await,
         json!([1_769_851_800_000_i64, "2026-01-31T09:30:00.000Z", 5, true, "string"])
     );
+    // Timers set while frozen: moving on runs the ones due by then, each
+    // once and in the order they are due, and performance.now() moves too.
+    seen(
+        "window.fired = []; setTimeout(() => fired.push('60s'), 60_000); \
+          setTimeout((a) => fired.push(a), 30_000, '30s'); \
+          clearTimeout(setTimeout(() => fired.push('cleared'), 1_000)); \
+          setTimeout(() => fired.push('2m'), 120_000); \
+          window.every = setInterval(() => fired.push('every 20s'), 20_000); \
+          window.started = performance.now(); 0",
+    )
+    .await;
     emulate(&engine, EmulationChange::TimeAdvance { ms: 90_000 }).await;
     assert_eq!(
         seen("new Date().toISOString()").await,
         json!("2026-01-31T09:31:30.000Z")
     );
+    assert_eq!(
+        seen("new Promise((r) => setTimeout(r, 100)).then(() => [fired, performance.now() - started >= 90_000])").await,
+        json!([["every 20s", "30s", "60s"], true])
+    );
+    seen("clearInterval(every); 0").await;
     // A new document gets the moved time.
     goto(&engine, &site.url("/emulate/first.html")).await;
     assert_eq!(

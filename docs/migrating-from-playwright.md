@@ -373,8 +373,8 @@ they apply to every tab. `emulate reset` turns everything off.
 | `javaScriptEnabled: false` | `cdp Emulation.setScriptExecutionDisabled '{"value":true}'` | 🟡 |
 | `serviceWorkers: 'block'` | `open --bypass-service-worker` | ✅ |
 | `page.clock.setFixedTime(t)`, `clock.install({ time })` | `time freeze 2026-01-31T09:30:00Z` | ✅ |
-| `clock.fastForward('01:30')` | `time advance 90s` (moves `Date`; timers keep real time) | 🟡 |
-| `clock.runFor`, `pauseAt`, fake timers | — | ❌ |
+| `clock.fastForward('01:30')` | `time advance 90s` (moves `Date` and `performance.now()`, and runs the timers due by then, each once) | ✅ |
+| `clock.runFor`, `pauseAt`, paused timers | — (timers keep running in real time) | ❌ |
 | extensions (`--load-extension` in a persistent context) | `open --extension DIR` | ✅ |
 
 ## Tracing and debugging
