@@ -1,0 +1,9 @@
+# Error states: a mock set layered on top of base for one test.
+
+@test "shows an error page when the API is down"
+  @mocks errors/api-down
+  @backend mock
+  @allow-console-errors  # every API call fails on purpose
+  goto /
+  expect 'role=heading[name="Something went wrong"]' visible
+  expect role=alert text 'The shop is down for maintenance'

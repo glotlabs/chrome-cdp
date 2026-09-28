@@ -1,0 +1,22 @@
+# Signing in and out: the mocks keep "signed_in" as state.
+
+@test "signs in and out"
+  @include ../steps/sign-in.cdp email=ada@example.com
+  expect --url **/
+  click 'role=button[name="Sign out"]'
+  expect 'role=link[name="Sign in"]' visible
+  expect request POST /api/logout
+
+@test "stays signed in after a reload"
+  @include ../steps/sign-in.cdp email=ada@example.com
+  reload
+  expect 'text=Signed in as ada@example.com' visible
+
+@test "a wrong password is refused"
+  @allow-console-errors  # the 401 is a failed load
+  goto /login
+  fill label=Email ada@example.com
+  fill label=Password wrong
+  click 'role=button[name="Sign in"]'
+  expect role=alert text 'Wrong email or password'
+  expect request POST /api/login --json-body '{"email":"ada@example.com"}'

@@ -1,0 +1,8 @@
+#:schema https://raw.githubusercontent.com/glotlabs/chrome-cdp/main/docs/e2e/mocks.schema.json
+# Mock set "errors/api-down": every API request fails, as when the backend
+# is down. Layered last, so it answers before base.
+
+[[mock]]
+name = "api down"
+match = { path = "/api/**" }
+respond = { status = 503, json = { error = "The shop is down for maintenance" } }

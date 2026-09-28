@@ -1,0 +1,10 @@
+# A test that fails on purpose, outside `tests` so a normal run skips it:
+# the page asks for an API path no mock answers, and the run names the
+# closest mock and the command that explains it. Run it by path:
+#   chrome-cdp test e2e/fixtures/unmatched.cdp
+# (crates/chrome-cdp/tests/e2e_shop.rs checks its output.)
+
+@test "asks for a path no mock answers"
+  goto /
+  eval "fetch('/api/prodcts').then(r => r.status)"
+  expect 'role=heading[name="Products"]' visible

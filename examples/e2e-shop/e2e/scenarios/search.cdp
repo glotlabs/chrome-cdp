@@ -1,0 +1,16 @@
+# Search: the mocks pick an answer by the query string.
+
+@before
+  goto /
+
+@test "finds a product"
+  fill 'role=searchbox[name="Search"]' ${var:search}
+  press Enter
+  expect --url **/search?q=${var:search}
+  expect 'role=list[name="Results"] >> role=listitem' count 1
+  expect text=${var:keyboard} visible
+  expect request GET /api/search?q=${var:search}
+
+@test "says when nothing matches"
+  goto /search?q=zzz
+  expect 'text=No products match “zzz”.' visible

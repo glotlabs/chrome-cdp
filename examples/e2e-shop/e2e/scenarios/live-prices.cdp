@@ -1,0 +1,16 @@
+# Live prices over a WebSocket, pushed by the test (mock-only).
+@backend mock
+
+@before
+  goto /products/1
+  expect testid=price text $89.00
+
+@test "shows a pushed price"
+  mock ws send /api/live '{"type":"price","id":1,"price":79}'
+  expect testid=price text $79.00
+  expect 'text=(live)' visible
+
+@test "ignores other products' prices"
+  mock ws send /api/live '{"type":"price","id":2,"price":1}'
+  mock ws send /api/live '{"type":"price","id":1,"price":85}'
+  expect testid=price text $85.00

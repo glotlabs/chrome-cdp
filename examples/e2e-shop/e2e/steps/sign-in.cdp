@@ -1,0 +1,6 @@
+# Signs in: @include ../steps/sign-in.cdp email=…
+goto /login
+fill label=Email ${email}
+fill label=Password ${var:password}
+click 'role=button[name="Sign in"]'
+expect "text=Signed in as ${email}" visible

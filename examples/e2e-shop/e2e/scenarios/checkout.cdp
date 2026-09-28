@@ -1,0 +1,29 @@
+# Checkout: signed in, with an item in the cart.
+
+@before
+  @include ../steps/sign-in.cdp email=ada@example.com
+  goto /products/1
+  click 'role=button[name="Add to cart"]'
+  expect role=status text 'Added to cart'
+  goto /checkout
+
+@test "places an order"
+  expect 'text=1 item, total $89.00' visible
+  click 'role=button[name="Place order"]'
+  expect 'role=heading[name="Thank you!"]' visible
+  expect --url **/orders/*
+  expect 'role=link[name="Cart (0)"]' visible
+
+@test "retries when the shop is busy"
+  @mocks checkout
+  @backend mock
+  @allow-console-errors  # the 503 is a failed load
+  click 'role=button[name="Place order"]'
+  expect role=alert text 'The shop is busy. Please try again.'
+  click 'role=button[name="Try again"]'
+  expect 'role=heading[name="Thank you!"]' visible
+  expect request POST /api/orders --count 2
+
+@test "needs a signed-in user"
+  click 'role=button[name="Sign out"]'
+  expect 'text=Sign in to check out.' visible

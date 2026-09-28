@@ -1,0 +1,8 @@
+# ${var:…} values of the mocks (the data files in mocks/data); a real
+# backend's vars file overrides what differs on it.
+products = 3
+keyboard = "Mechanical keyboard"
+keyboard_price = "$89.00"
+mouse = "Wireless mouse"
+search = "keyboard"
+password = "secret"

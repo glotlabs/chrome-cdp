@@ -1,0 +1,10 @@
+#:schema https://raw.githubusercontent.com/glotlabs/chrome-cdp/main/docs/e2e/mocks.schema.json
+# Mock set "checkout": the first order fails with 503, like a busy
+# backend. After that the mock steps aside (after_sequence = "unmatched"),
+# and base's "orders" collection takes the order.
+
+[[mock]]
+name = "orders: busy once"
+match = { method = "POST", path = "/api/orders" }
+sequence = [{ status = 503, json = { error = "busy" } }]
+after_sequence = "unmatched"

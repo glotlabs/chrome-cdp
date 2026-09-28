@@ -1,0 +1,23 @@
+# The cart: an in-memory collection in the mocks, per test.
+
+@test "adds a product to the cart"
+  goto /products/2
+  click 'role=button[name="Add to cart"]'
+  expect role=status text 'Added to cart'
+  expect 'role=link[name="Cart (1)"]' visible
+  click 'role=link[name="Cart (1)"]'
+  expect 'role=list[name="Cart items"] >> role=listitem' count 1
+  expect text='Total: $25.00' visible
+
+@test "starts empty" @backend mock
+  goto /cart
+  expect 'text=Your cart is empty.' visible
+  expect mock-state cart count 0
+
+@test "removes a product"
+  # Arrange through the API: portable, as the mocks answer it too.
+  http POST /api/cart --json-body "{\"product_id\":1,\"name\":\"${var:keyboard}\",\"price\":89,\"qty\":1}" --expect-status 201
+  goto /cart
+  click "role=button[name=Remove ${var:keyboard}]"
+  expect 'text=Your cart is empty.' visible
+  expect request DELETE /api/cart/*

@@ -1,0 +1,23 @@
+# Browsing: the product list and a product page (a data file per id).
+@tags smoke
+
+@before
+  goto /
+
+@test "lists the products"
+  expect 'role=heading[name="Products"]' visible
+  expect 'role=list[name="Products"] >> role=listitem' count ${var:products}
+  expect text=${var:keyboard} visible
+
+@test "opens a product page"
+  click "role=link[name=${var:keyboard}]"
+  expect --url **/products/1
+  expect role=heading text ${var:keyboard}
+  expect testid=price text ${var:keyboard_price}
+
+@test "an unknown product is not found"
+  @allow-console-errors  # the page's own 404 counts as a console error
+  goto /products/99
+  expect 'role=heading[name="Product not found"]' visible
+  click 'role=link[name="Back to products"]'
+  expect --url **/

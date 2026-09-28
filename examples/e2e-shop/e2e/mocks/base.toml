@@ -1,0 +1,83 @@
+#:schema https://raw.githubusercontent.com/glotlabs/chrome-cdp/main/docs/e2e/mocks.schema.json
+# Mock set "base": the whole shop API. default_mocks applies it to every
+# test; a test layers other sets on top with @mocks.
+
+[settings]
+scope = ["/api/**"]              # the requests these mocks own
+unmatched = "fail"               # an /api request no mock answers fails the test
+
+# Signed in or not: login and logout change it, /api/me reads it.
+[state]
+signed_in = false
+email = ""
+
+# Products: the list is one data file, a product is a file per id. An id
+# with no file (/api/products/99) answers 404 on its own.
+[[mock]]
+name = "list products"
+match = { method = "GET", path = "/api/products" }
+respond = { json_file = "data/products.json" }
+
+[[mock]]
+name = "product by id"
+match = { method = "GET", path = "/api/products/:id" }
+respond = { json_file = "data/products/{{params.id}}.json" }
+
+# Search matches on the query string: the first mock that fits answers.
+[[mock]]
+name = "search: keyboard"
+match = { method = "GET", path = "/api/search", query = { q = "key*" } }
+respond = { json_file = "data/search-keyboard.json" }
+
+[[mock]]
+name = "search: nothing else"
+match = { method = "GET", path = "/api/search" }
+respond = { json = { query = "{{query.q}}", results = [] } }
+
+# Login: any email with the password "secret".
+[[mock]]
+name = "sign in"
+match = { method = "POST", path = "/api/login", json = { email = "*", password = "secret" } }
+respond = { json = { user = { email = "{{json.email}}" } } }
+set_state = { signed_in = true, email = "{{json.email}}" }
+
+[[mock]]
+name = "wrong password"
+match = { method = "POST", path = "/api/login" }
+respond = { status = 401, json = { error = "Wrong email or password" } }
+
+[[mock]]
+name = "sign out"
+match = { method = "POST", path = "/api/logout" }
+respond = { json = { ok = true } }
+set_state = { signed_in = false }
+
+[[mock]]
+name = "me: signed in"
+match = { method = "GET", path = "/api/me" }
+respond = { json = { user = { email = "{{state.email}}" } } }
+when = { signed_in = true }
+
+[[mock]]
+name = "me: signed out"
+match = { method = "GET", path = "/api/me" }
+respond = { json_file = "data/signed-out.json" }
+
+# The cart and the orders are in-memory collections: a POST shows up in
+# the next GET, and every test starts from an empty cart.
+[[collection]]
+name = "cart"
+path = "/api/cart"
+items = []
+
+[[collection]]
+name = "orders"
+path = "/api/orders"
+items = []
+
+# Live prices: the product page listens on this socket. Scenarios push
+# prices with `mock ws send /api/live '{"type": "price", …}'`.
+[[websocket]]
+name = "live prices"
+url = "/api/live"
+on_open = [{ send = { type = "hello" } }]

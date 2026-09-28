@@ -1,0 +1,27 @@
+# The example shop's E2E tests (plan 11): `chrome-cdp test` runs them
+# against the mocks in e2e/mocks, `chrome-cdp test --backend local`
+# against the real API. See README.md.
+
+[e2e]
+base_url = "http://localhost:4173"
+tests = ["e2e/scenarios/**/*.cdp"]
+mocks = "e2e/mocks"
+default_mocks = ["base"]
+vars = "e2e/vars/mock.toml"
+jobs = 4
+artifacts = "e2e/.results"
+
+# The built app (dist/ is committed), served by chrome-cdp itself: no Node.
+# While working on the app, run `npm run dev` instead; it serves on the
+# same port, and the run reuses it.
+[e2e.web_server]
+static = "dist"
+url = "http://localhost:4173"
+
+# The real API: the repository's fixture server serves dist/ and a
+# stateful /api on port 4174. It builds from source on the first run.
+[e2e.backends.local]
+mode = "real"
+base_url = "http://localhost:4174"
+vars = "e2e/vars/local.toml"
+web_server = { command = "cargo run --quiet --manifest-path ../../Cargo.toml -p fixtures -- --shop dist --port 4174", url = "http://localhost:4174/api/products", timeout = "600s" }
