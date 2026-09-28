@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>first script</title>
+<script>
+  // What the page's first script sees: init scripts ran already, and
+  // exposed functions are there.
+  window.first = {
+    init: window.__init || null,
+    isolated: typeof window.__isolated,
+    report: typeof window.report,
+    binding: typeof window.__chromeCdpExpose_report,
+  };
+  if (typeof window.report === "function") {
+    window.report("first", { n: 1, url: location.pathname });
+  }
+</script>
+</head>
+<body><p>The first script records what it sees in <code>window.first</code>.</p></body>
+</html>

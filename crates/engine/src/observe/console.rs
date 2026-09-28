@@ -11,6 +11,8 @@
 //! `Log.entryAdded` brings the browser's (failed loads, CSP violations,
 //! interventions, deprecations). Arguments are formatted as they arrive
 //! (see [`super::format`]), so an entry holds only text.
+//! `Runtime.bindingCalled` brings the calls of functions `expose` put in
+//! the page (`binding <name>(args)`).
 
 use std::collections::VecDeque;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -19,6 +21,7 @@ use protocol::schema::{ConsoleEntry, Level, StackFrame};
 use serde_json::Value;
 
 use super::format::{self, one_based};
+use crate::inject::BINDING_PREFIX;
 
 /// How many entries a tab keeps unless `open --console-buffer` says
 /// otherwise.
@@ -99,6 +102,10 @@ impl Console {
     ) -> bool {
         let (mut entry, exception_id) = match method {
             "Runtime.consoleAPICalled" => match console_call(params) {
+                Some(entry) => (entry, None),
+                None => return false,
+            },
+            "Runtime.bindingCalled" => match binding_call(params) {
                 Some(entry) => (entry, None),
                 None => return false,
             },
@@ -188,6 +195,27 @@ fn entry(level: Level, source: &str, kind: Option<&str>, text: String) -> Consol
         stack: Vec::new(),
         worker: None,
     }
+}
+
+/// A call of a function `expose` put in the page: `binding onSave({"id":
+/// 1}, "x")`, the arguments as JSON. `None` for a binding of someone else.
+fn binding_call(params: &Value) -> Option<ConsoleEntry> {
+    let name = params["name"].as_str()?.strip_prefix(BINDING_PREFIX)?;
+    let payload = params["payload"].as_str().unwrap_or_default();
+    let args = match serde_json::from_str::<Value>(payload) {
+        Ok(Value::Array(args)) => args
+            .iter()
+            .map(Value::to_string)
+            .collect::<Vec<_>>()
+            .join(", "),
+        _ => payload.to_owned(),
+    };
+    Some(entry(
+        Level::Info,
+        "binding",
+        Some(name),
+        format!("binding {name}({args})"),
+    ))
 }
 
 /// A `console.*` call; `None` for those that print nothing
@@ -406,6 +434,31 @@ mod tests {
         assert_eq!(entries[2].text, "Assertion failed: x > 0");
         // Chrome's own messages are not the page's errors.
         assert_eq!(console.errors_since(0).len(), 1);
+    }
+
+    #[test]
+    fn exposed_functions_calls() {
+        let mut console = Console::default();
+        let call = |name: &str, payload: &str| json!({ "name": name, "payload": payload, "executionContextId": 1 });
+        let mut logged =
+            |params: serde_json::Value| console.event("Runtime.bindingCalled", &params, None, CAP);
+        assert!(logged(call(
+            "__chromeCdpExpose_onSave",
+            r#"[{"id":1},"x",null]"#
+        )));
+        assert!(logged(call("__chromeCdpExpose_ping", "[]")));
+        assert!(logged(call("__chromeCdpExpose_raw", "not json")));
+        // Someone else's binding.
+        assert!(!logged(call("otherBinding", "[]")));
+        let entries: Vec<_> = console.entries().collect();
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].text, r#"binding onSave({"id":1}, "x", null)"#);
+        assert_eq!(entries[0].source, "binding");
+        assert_eq!(entries[0].kind.as_deref(), Some("onSave"));
+        assert_eq!(entries[0].level, Level::Info);
+        assert_eq!(entries[1].text, "binding ping()");
+        assert_eq!(entries[2].text, "binding raw(not json)");
+        assert!(console.errors_since(0).is_empty());
     }
 
     #[test]

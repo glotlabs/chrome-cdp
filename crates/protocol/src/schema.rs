@@ -222,6 +222,31 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<UnrouteData>),
     },
     CommandSchema {
+        name: "init-script add",
+        summary: "the init script added, and how many the session has",
+        schema: || schema_for!(Envelope<InitScriptAddData>),
+    },
+    CommandSchema {
+        name: "init-script list",
+        summary: "the session's init scripts, in the order they run",
+        schema: || schema_for!(Envelope<InitScriptsData>),
+    },
+    CommandSchema {
+        name: "init-script remove",
+        summary: "the init scripts removed, and how many are left",
+        schema: || schema_for!(Envelope<InitScriptRemoveData>),
+    },
+    CommandSchema {
+        name: "expose",
+        summary: "the functions exposed to pages, after adding some",
+        schema: || schema_for!(Envelope<ExposeData>),
+    },
+    CommandSchema {
+        name: "unexpose",
+        summary: "the functions exposed to pages, after removing some",
+        schema: || schema_for!(Envelope<ExposeData>),
+    },
+    CommandSchema {
         name: "emulate",
         summary: "what the session emulates, after a device or reset; with --list the devices",
         schema: || schema_for!(Envelope<EmulateData>),
@@ -1406,6 +1431,60 @@ pub struct UnrouteData {
     pub removed: Vec<String>,
     /// How many rules are left.
     pub active: usize,
+}
+
+/// An init script (`init-script`, plan 07): it runs in every new document
+/// of the session's tabs, popups and frames before the page's own scripts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InitScriptInfo {
+    /// `s1`, `s2`, …; never reused in a session.
+    pub id: String,
+    /// `main` (the page's own globals) or `isolated` (chrome-cdp's world,
+    /// as `eval --world isolated` sees it).
+    pub world: String,
+    /// The file it was read from (absolute); none for `--code` or stdin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    /// Its first line, cut at 60 characters.
+    pub preview: String,
+    /// Its size in bytes.
+    pub size: u64,
+}
+
+/// `data` of `chrome-cdp init-script add --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InitScriptAddData {
+    pub added: InitScriptInfo,
+    /// Whether it also ran in the documents open when it was added
+    /// (`--now`); otherwise it runs from their next navigation.
+    pub ran_now: bool,
+    /// How many init scripts the session has now.
+    pub active: usize,
+}
+
+/// `data` of `chrome-cdp init-script list --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InitScriptsData {
+    /// In the order they run.
+    pub scripts: Vec<InitScriptInfo>,
+}
+
+/// `data` of `chrome-cdp init-script remove --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InitScriptRemoveData {
+    /// The ids of the scripts removed.
+    pub removed: Vec<String>,
+    /// How many are left.
+    pub active: usize,
+}
+
+/// `data` of `chrome-cdp expose --json` and `chrome-cdp unexpose --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExposeData {
+    /// The names this command added (`expose`) or removed (`unexpose`).
+    pub changed: Vec<String>,
+    /// Every function the session exposes now, oldest first.
+    pub bindings: Vec<String>,
 }
 
 /// The page size and kind of screen (`viewport`, or a device's; plan 07).

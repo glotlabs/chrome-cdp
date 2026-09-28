@@ -27,7 +27,8 @@
 //! Plan 07 adds request routing: while the session has routes, every page
 //! and iframe session intercepts its requests (see [`fetch`]); and
 //! emulation, which every page and iframe session gets (see
-//! [`emulation`]).
+//! [`emulation`]), and so do init scripts and exposed functions (see
+//! [`inject`]).
 
 mod auth;
 pub(crate) mod commands;
@@ -35,6 +36,7 @@ pub(crate) mod dialogs;
 mod downloads;
 pub(crate) mod emulation;
 mod fetch;
+mod inject;
 mod locks;
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -52,6 +54,7 @@ use self::dialogs::OpenDialog;
 use self::downloads::Download;
 use crate::emulate::{Aspects, Emulator};
 use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
+use crate::inject::{Injector, Key};
 use crate::injected;
 use crate::input::Pointer;
 use crate::network::{Exchange, Failure, Idle, InFlight, Network};
@@ -112,8 +115,6 @@ pub fn parse_tab_id(text: &str) -> Result<u32, ErrorInfo> {
 /// Settings every new target gets before it runs (see [`setup`]).
 #[derive(Debug, Default)]
 pub(crate) struct Settings {
-    /// Scripts that run before any of a document's own.
-    init_scripts: Mutex<Vec<String>>,
     /// Whether a popup becomes the active tab.
     follow_popups: AtomicBool,
     /// Whether pages load despite certificate errors
@@ -137,6 +138,8 @@ pub(crate) struct Settings {
     pub(crate) routes: Router,
     /// What pages emulate, and the permissions (plan 07).
     pub(crate) emulation: Emulator,
+    /// Init scripts and exposed functions (plan 07).
+    pub(crate) injections: Injector,
 }
 
 impl Settings {
@@ -203,14 +206,6 @@ impl Settings {
 
     pub(crate) fn set_ignore_https_errors(&self, ignore: bool) {
         self.ignore_https_errors.store(ignore, Ordering::Relaxed);
-    }
-
-    pub(crate) fn add_init_script(&self, source: &str) {
-        lock(&self.init_scripts).push(source.to_owned());
-    }
-
-    fn init_scripts(&self) -> Vec<String> {
-        lock(&self.init_scripts).clone()
     }
 }
 
@@ -307,6 +302,9 @@ struct Host {
     main: bool,
     /// The id of its frozen clock script (`time freeze`), if it has one.
     clock: Option<String>,
+    /// The init scripts and exposed functions it has, with the id of
+    /// each one's script (`None` while Chrome is adding it).
+    injected: HashMap<Key, Option<String>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -1089,29 +1087,11 @@ impl Tabs {
         found.ok_or(last)
     }
 
-    /// Adds a script that runs before any of a document's own, in every tab
-    /// and frame from now on (plan 07's init scripts build on this).
-    pub(crate) async fn add_init_script(&self, source: &str, timeout: Duration) -> cdp::Result<()> {
-        self.shared.settings.add_init_script(source);
-        let hosts: Vec<Session> = self
-            .shared
-            .lock()
-            .hosts
-            .values()
-            .map(|h| h.session.clone())
-            .collect();
-        for host in hosts {
-            let result = host
-                .with_timeout(timeout)
-                .call(page::AddScriptToEvaluateOnNewDocumentParams::new(
-                    source.to_owned(),
-                ))
-                .await;
-            if let Err(e) = result {
-                tracing::debug!("cannot add the init script to a target: {e}");
-            }
-        }
-        Ok(())
+    /// Brings every page and iframe session in line with the session's
+    /// init scripts and exposed functions; with `now`, scripts added run in
+    /// the documents there are too. Returns the errors Chrome gave.
+    pub(crate) async fn apply_injections(&self, now: bool, timeout: Duration) -> Vec<String> {
+        inject::apply(&self.shared, now, timeout).await
     }
 }
 
@@ -1335,6 +1315,7 @@ async fn watch_host(
             "Runtime.consoleAPICalled"
             | "Runtime.exceptionThrown"
             | "Runtime.exceptionRevoked"
+            | "Runtime.bindingCalled"
             | "Log.entryAdded" => {
                 if let Some(tab) = tab {
                     console_event(&shared, tab, &event, None);
@@ -1583,6 +1564,7 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
                 tab,
                 main: info.r#type == "page",
                 clock: None,
+                injected: HashMap::new(),
             },
         );
         shared.spawn(watch_host(shared.clone(), events, session.clone(), tab));
@@ -1751,10 +1733,8 @@ async fn setup(
             page::AddScriptToEvaluateOnNewDocumentParams::new(observe::PERF_OBSERVER.to_owned());
         perf.world_name = Some(frames::WORLD_NAME.to_owned());
         steps.push(("the perf observer", step(session.call(perf))));
-        for source in shared.settings.init_scripts() {
-            let add = page::AddScriptToEvaluateOnNewDocumentParams::new(source);
-            steps.push(("an init script", step(session.call(add))));
-        }
+        // `init-script` and `expose` (see `inject`).
+        inject::setup_steps(shared, session, &mut steps);
         // Routes and HTTP authentication (see `fetch`).
         fetch::setup_steps(shared, session, &mut steps);
         // Devices, viewport, locale, … (see `emulation`).

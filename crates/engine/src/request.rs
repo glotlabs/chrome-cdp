@@ -819,6 +819,59 @@ pub struct UnrouteRequest {
     pub timeout_ms: u64,
 }
 
+/// `init-script add`: a script for every new document (plan 07,
+/// milestone 7.3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InitScriptAddRequest {
+    /// The script's source.
+    pub source: String,
+    /// The file it was read from (absolute), for `init-script list`.
+    #[serde(default)]
+    pub file: Option<PathBuf>,
+    /// `--world`: the page's own world, or chrome-cdp's isolated one.
+    #[serde(default)]
+    pub world: EvalWorld,
+    /// `--now`: run it in the documents there are too.
+    #[serde(default)]
+    pub now: bool,
+    pub timeout_ms: u64,
+}
+
+/// `init-script list`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InitScriptListRequest {
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
+/// `init-script remove`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InitScriptRemoveRequest {
+    /// The scripts' ids (`s1` or `1`).
+    #[serde(default)]
+    pub ids: Vec<String>,
+    /// `--all`: every script.
+    #[serde(default)]
+    pub all: bool,
+    pub timeout_ms: u64,
+}
+
+/// `expose` (with names) and `unexpose`: functions pages can call, whose
+/// calls go to the tab's console.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExposeRequest {
+    /// Global function names; `expose` without any lists them.
+    #[serde(default)]
+    pub names: Vec<String>,
+    /// Remove the names instead (`unexpose`).
+    #[serde(default)]
+    pub remove: bool,
+    /// With `remove`: every one.
+    #[serde(default)]
+    pub all: bool,
+    pub timeout_ms: u64,
+}
+
 /// `emulate`, `viewport`, `geo`, `tz`, `locale`, `ua`, `media`,
 /// `offline`, `throttle`, `cpu-throttle` and `time`: change what the
 /// session emulates (or only show it).

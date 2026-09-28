@@ -14,7 +14,7 @@ pub(crate) mod console;
 mod coverage;
 mod devtools;
 mod eval;
-mod format;
+pub(crate) mod format;
 mod har;
 pub(crate) mod netlog;
 mod network;

@@ -24,7 +24,8 @@
 //! starting with each tab's console and the `console` and `errors`
 //! commands (6.1), then its network log (6.2), and `screenshot` and `pdf`
 //! (6.3). Plan 07 adds request routing (`route`, 7.1) and emulation
-//! (`emulate`, 7.2).
+//! (`emulate`, 7.2), init scripts and exposed functions
+//! (`inject`, 7.3).
 
 mod clipboard;
 mod dialog;
@@ -33,6 +34,7 @@ mod emulate;
 mod endpoint;
 mod errors;
 mod frames;
+mod inject;
 mod injected;
 mod input;
 mod interrupt;
@@ -70,6 +72,7 @@ pub use emulate::{
 pub use endpoint::{Endpoint, parse_endpoint};
 pub use errors::from_cdp;
 pub use frames::{FrameInfo, WORLD_NAME, World};
+pub use inject::{MAX_SCRIPT, check_binding_name};
 pub use input::{ActionPoint, Checks, check_action, parse_modifiers};
 pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, parse_locator};
 pub use navigate::normalize_url;
@@ -80,14 +83,15 @@ pub use request::{
     Action, ActionRequest, Button, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
     ConsoleRequest, CoverageStartRequest, CoverageStopRequest, DialogPolicy, DialogRequest,
     DownloadsRequest, ElementState, EmulateRequest, EmulationChange, EvalRequest, EvalWorld,
-    FindRequest, HarContent, HarStartRequest, HarStopRequest, HighlightRequest, HttpCredentials,
-    ImageFormat, InspectRequest, Margins, Modifier, MouseOp, NavigateRequest, Navigation,
-    NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest,
-    PerfRequest, PermissionsOp, PermissionsRequest, Read, ReadRequest, RouteAction, RouteBody,
-    RouteRequest, RouteSpec, RoutesRequest, ScreenshotRequest, ScrollTo, ShotScale, Since,
-    SnapshotEngine, SnapshotRequest, StatusRange, TabCloseRequest, TabNewRequest, TabSelectRequest,
-    TabsRequest, Target, TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest,
-    WaitUntil,
+    ExposeRequest, FindRequest, HarContent, HarStartRequest, HarStopRequest, HighlightRequest,
+    HttpCredentials, ImageFormat, InitScriptAddRequest, InitScriptListRequest,
+    InitScriptRemoveRequest, InspectRequest, Margins, Modifier, MouseOp, NavigateRequest,
+    Navigation, NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat,
+    PdfRequest, PerfRequest, PermissionsOp, PermissionsRequest, Read, ReadRequest, RouteAction,
+    RouteBody, RouteRequest, RouteSpec, RoutesRequest, ScreenshotRequest, ScrollTo, ShotScale,
+    Since, SnapshotEngine, SnapshotRequest, StatusRange, TabCloseRequest, TabNewRequest,
+    TabSelectRequest, TabsRequest, Target, TraceStartRequest, TraceStopRequest, UnrouteRequest,
+    WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use tabs::commands::TabClosed;
@@ -715,22 +719,11 @@ impl Engine {
 
     /// Adds a script that runs before any of a document's own, in every
     /// tab, popup and frame from now on, including those of a browser
-    /// started later. Plan 07's init scripts build on it.
+    /// started later (`init-script add` without the checks).
     pub async fn add_init_script(&self, source: &str, timeout: Duration) -> Result<(), ErrorInfo> {
-        let running = match &*self.lock_state() {
-            State::Running(running) => Some(running.clone()),
-            State::Crashed(_) | State::Empty => None,
-        };
-        if let Some(running) = running {
-            running
-                .tabs
-                .add_init_script(source, timeout)
-                .await
-                .map_err(|e| from_cdp(&e, &self.session))
-        } else {
-            self.settings.add_init_script(source);
-            Ok(())
-        }
+        self.settings.injections.add(source, None, EvalWorld::Main);
+        self.apply_injections(false, timeout).await;
+        Ok(())
     }
 
     /// `status`: the browser and its tabs. Takes no tab lock.
