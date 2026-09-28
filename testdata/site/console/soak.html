@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Soak</title>
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <h1>Soak</h1>
+  <!-- Plan 06's soak test: 100 console messages a second, forever, with an
+       error and a request each second so the error and network logs fill too. -->
+  <script>
+    let n = 0;
+    setInterval(() => {
+      n++;
+      console.log('tick', n, { n, at: Date.now(), tags: ['a', 'b'] });
+      if (n % 100 === 0) {
+        console.error('soak error', n, new Error('tick ' + n));
+        fetch('data.json?n=' + n).then(r => r.text());
+      }
+    }, 10);
+  </script>
+</body>
+</html>
