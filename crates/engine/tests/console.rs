@@ -11,7 +11,7 @@ use std::time::Duration;
 use browser::Host;
 use engine::{
     Action, ActionRequest, Button, ConsoleRequest, Engine, NavigateRequest, Navigation,
-    OpenRequest, Since, WaitUntil,
+    OpenRequest, Since, WaitFor, WaitRequest, WaitUntil,
 };
 use fixtures::Fixtures;
 use protocol::Output;
@@ -202,7 +202,7 @@ async fn errors_surface_the_root_cause() {
         out.text,
         "#8 error uncaught TypeError: Cannot read properties of null (reading 'items')\n    \
          at failSync (/console/app.js:5:15)\n    \
-         at onclick (/console/index.html:10:42)"
+         at onclick (/console/index.html:12:42)"
             .replace("#8", &format!("#{}", data.entries[0].seq))
     );
     let error = &data.entries[0];
@@ -470,5 +470,47 @@ async fn bad_grep_is_a_usage_error() {
         "{}",
         err.message
     );
+    engine.close().await;
+}
+
+#[tokio::test]
+async fn wait_timeouts_name_unread_errors() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "console-wait").await;
+    goto(&engine, &site.url("/console/index.html")).await;
+    read(&engine, request(true)).await;
+    let wait = || WaitRequest {
+        condition: WaitFor::Text {
+            text: "Order placed".into(),
+            within: None,
+            gone: false,
+        },
+        tab: None,
+        strict_refs: false,
+        testid_attribute: None,
+        timeout_ms: 300,
+        max_chars: 0,
+    };
+    // Every error was read: nothing to say.
+    let err = engine.wait(wait()).await.unwrap_err();
+    assert!(
+        err.notes.iter().all(|n| n.label != "console errors"),
+        "{}",
+        err.to_text()
+    );
+
+    click(&engine, "#sync").await;
+    let err = engine.wait(wait()).await.unwrap_err();
+    let note = err
+        .notes
+        .iter()
+        .find(|n| n.label == "console errors")
+        .unwrap();
+    assert_eq!(
+        note.text,
+        "1 unread; chrome-cdp errors --session console-wait shows them"
+    );
+    assert_eq!(err.details.as_ref().unwrap()["console_errors"], 1);
     engine.close().await;
 }

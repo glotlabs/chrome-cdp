@@ -482,6 +482,7 @@ impl Engine {
             info = info.note("page", format!("{} {:?}", observed.url, observed.title));
             details["page"] = json!({ "url": observed.url, "title": observed.title });
         }
+        let info = self.note_unread_errors(page.id, info, &mut details);
         info.details(details)
     }
 
@@ -562,6 +563,7 @@ impl Engine {
             info = info.note("page", format!("{} {:?}", observed.url, observed.title));
             details["page"] = json!({ "url": observed.url, "title": observed.title });
         }
+        let info = self.note_unread_errors(page.id, info, &mut details);
         info.details(details)
     }
 }

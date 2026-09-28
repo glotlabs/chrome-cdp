@@ -676,6 +676,7 @@ impl Engine {
             }
             _ => Hint::run(again),
         };
+        let info = self.note_unread_errors(page.id, info, &mut details);
         info.hint(hint).details(details)
     }
 }

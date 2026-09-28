@@ -197,6 +197,51 @@ impl Engine {
     }
 }
 
+impl Engine {
+    /// Adds to a timeout error on tab `id` how many errors `errors` has
+    /// not shown yet (a note and `details.console_errors`): the page may
+    /// have failed instead of getting where it was going.
+    pub(crate) fn note_unread_errors(
+        &self,
+        id: u32,
+        info: ErrorInfo,
+        details: &mut serde_json::Value,
+    ) -> ErrorInfo {
+        let Ok(running) = self.running() else {
+            return info;
+        };
+        let main_url = running
+            .tabs
+            .frames(id)
+            .first()
+            .map(|f| f.url.clone())
+            .unwrap_or_default();
+        let page_origin = origin(&main_url);
+        let unread = running
+            .tabs
+            .console(id, |console| {
+                let cursor = console.cursors.errors;
+                console
+                    .entries()
+                    .filter(|e| e.seq > cursor && is_error(e, page_origin))
+                    .count()
+            })
+            .unwrap_or(0);
+        if unread == 0 {
+            return info;
+        }
+        details["console_errors"] = serde_json::json!(unread);
+        let mut cmd = Cmd::new("errors");
+        if running.tabs.active() != Some(id) {
+            cmd = cmd.flag("tab", tab_name(id));
+        }
+        info.note(
+            "console errors",
+            format!("{unread} unread; {} shows them", cmd.session(&self.session)),
+        )
+    }
+}
+
 /// `--grep`'s pattern, or a usage error.
 fn grep_regex(pattern: &str) -> Result<Regex, ErrorInfo> {
     Regex::new(pattern).map_err(|e| {

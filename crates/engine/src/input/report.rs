@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use cdp::domains::runtime;
 use protocol::schema::Event;
-use protocol::{ErrorInfo, Output};
+use protocol::{Cmd, ErrorInfo, Output};
 use serde_json::Value;
 use tokio::time::Instant;
 
@@ -375,9 +375,18 @@ impl Actor<'_> {
                 _ => format!("! {line}"),
             });
         }
-        for (count, what) in [(errors, "console errors"), (failures, "failed requests")] {
+        for (count, what, console) in [
+            (errors, "console errors", true),
+            (failures, "failed requests", false),
+        ] {
             if count > LISTED {
-                lines.push(format!("! … and {} more {what}", count - LISTED));
+                let more = count - LISTED;
+                lines.push(if console {
+                    let cmd = Cmd::new("errors").session(&self.engine.session);
+                    format!("! … and {more} more {what} ({cmd} shows them)")
+                } else {
+                    format!("! … and {more} more {what}")
+                });
             }
         }
         lines

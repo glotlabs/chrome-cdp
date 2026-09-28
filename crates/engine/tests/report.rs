@@ -252,7 +252,10 @@ async fn console_errors_and_failed_requests_are_reported() {
     let lines = report(&out);
     assert_eq!(lines.len(), 6, "{lines:?}");
     assert_eq!(lines[0], "! console error: error 1 (report.html:18)");
-    assert_eq!(lines[5], "! … and 2 more console errors");
+    assert_eq!(
+        lines[5],
+        "! … and 2 more console errors (chrome-cdp errors --session report-errors shows them)"
+    );
     assert_eq!(out.events.len(), 7);
 
     // The report waits for the request the click sent, and names it.
