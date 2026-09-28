@@ -73,7 +73,7 @@ pub use context::{in_context, parse_context_id};
 pub use emulate::commands::device_list;
 pub use emulate::{
     DEVICES, Device, PERMISSIONS, check_permission, default_viewport, device_viewport, find_device,
-    parse_time, throttle_preset, throttle_presets,
+    throttle_preset, throttle_presets,
 };
 pub use endpoint::{Endpoint, parse_endpoint};
 pub use errors::from_cdp;

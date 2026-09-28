@@ -3777,7 +3777,7 @@ pub(crate) fn parse_expires(text: &str) -> Result<f64, String> {
         return Ok((now + number * scale).floor());
     }
     #[allow(clippy::cast_precision_loss)]
-    engine::parse_time(text)
+    protocol::format::parse_time(text)
         .map(|ms| (ms / 1000) as f64)
         .map_err(|_| {
             format!(

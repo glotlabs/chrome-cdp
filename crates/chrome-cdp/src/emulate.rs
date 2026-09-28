@@ -269,7 +269,7 @@ pub(crate) fn time(command: &TimeCommand) -> Result<EmulationChange, ErrorInfo> 
     Ok(match command {
         TimeCommand::Freeze(args) => {
             let epoch_ms = if let Some(text) = &args.time {
-                engine::parse_time(text).map_err(|message| {
+                protocol::format::parse_time(text).map_err(|message| {
                     bad(
                         message,
                         Cmd::new("time").arg("freeze").arg("2026-01-31T09:30:00Z"),

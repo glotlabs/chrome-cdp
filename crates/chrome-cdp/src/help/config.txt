@@ -39,10 +39,12 @@ writes one). Paths are relative to the file; its base_url is also the
   env = { VITE_API_URL = "/api" }
   cwd = "."
 
-  [e2e.determinism]
-  freeze_time = "2026-01-01T10:00:00Z"  or false
-  random_seed = 42                     or false
-  disable_animations = true
+  [e2e.determinism]                    on by default in every test
+  freeze_time = "2026-01-01T10:00:00Z"  Date (the default time); or false
+  random_seed = 42                     Math.random, …; or false (default 0)
+  disable_animations = true            no CSS animations, reduced motion
+  locale = "en-US"                     or false for the browser's own
+  timezone = "UTC"                     or false
 
   [e2e.backends.local]                 a real backend: test --backend local
   mode = "real"

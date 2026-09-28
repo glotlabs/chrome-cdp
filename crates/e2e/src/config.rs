@@ -108,7 +108,8 @@ pub struct Config {
     pub viewport: Viewport,
     /// `[e2e.web_server]` or `[[e2e.web_server]]`, in the order written.
     pub web_servers: Vec<WebServer>,
-    /// `[e2e.determinism]` as written; plan 11.6 fills in its defaults.
+    /// `[e2e.determinism]` as written; [`Determinism::resolve`] fills in
+    /// the defaults.
     pub determinism: Determinism,
     /// `[e2e.backends.<name>]`, the real backends (plan 11.11).
     pub backends: BTreeMap<String, Backend>,
@@ -174,19 +175,23 @@ pub struct WebServer {
     pub cwd: PathBuf,
 }
 
-/// `[e2e.determinism]` (plan 11.6). `None` means "not set here".
+/// `[e2e.determinism]` (plan 11.6). `None` means "not set here";
+/// [`Determinism::resolve`] fills in the defaults.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Determinism {
     pub freeze_time: Option<FreezeTime>,
     pub random_seed: Option<RandomSeed>,
     pub disable_animations: Option<bool>,
+    pub locale: Option<Pin>,
+    pub timezone: Option<Pin>,
 }
 
 /// `freeze_time = false` or a time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FreezeTime {
     Off,
-    /// As written, e.g. `2026-01-01T10:00:00Z`; plan 11.6 parses it.
+    /// As written, e.g. `2026-01-01T10:00:00Z`; checked to parse (with
+    /// [`protocol::format::parse_time`]) when the config is read.
     At(String),
 }
 
@@ -195,6 +200,78 @@ pub enum FreezeTime {
 pub enum RandomSeed {
     Off,
     Seed(u64),
+}
+
+/// `locale` or `timezone`: a value, or `false` for the browser's own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Pin {
+    Off,
+    To(String),
+}
+
+/// The time tests see when `freeze_time` is not set.
+pub const DEFAULT_FREEZE_TIME: &str = "2026-01-01T10:00:00Z";
+/// Pages' `Math.random` and mocks' random values without `random_seed`.
+pub const DEFAULT_RANDOM_SEED: u64 = 0;
+/// The locale tests get when `locale` is not set.
+pub const DEFAULT_LOCALE: &str = "en-US";
+/// The time zone tests get when `timezone` is not set.
+pub const DEFAULT_TIMEZONE: &str = "UTC";
+
+/// What every test gets (plan 11.6): [`Determinism`] with the defaults
+/// filled in. `None` is off: the browser's own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fixed {
+    /// The time `Date` gives, as written.
+    pub freeze_time: Option<String>,
+    /// The seed of pages' `Math.random`, `crypto.randomUUID` and
+    /// `crypto.getRandomValues`.
+    pub random_seed: Option<u64>,
+    /// No CSS animations or transitions, and `prefers-reduced-motion`.
+    pub disable_animations: bool,
+    pub locale: Option<String>,
+    pub timezone: Option<String>,
+}
+
+impl Determinism {
+    /// These settings with `over`'s (a backend's) on top.
+    #[must_use]
+    pub fn with(&self, over: &Self) -> Self {
+        Self {
+            freeze_time: over
+                .freeze_time
+                .clone()
+                .or_else(|| self.freeze_time.clone()),
+            random_seed: over.random_seed.or(self.random_seed),
+            disable_animations: over.disable_animations.or(self.disable_animations),
+            locale: over.locale.clone().or_else(|| self.locale.clone()),
+            timezone: over.timezone.clone().or_else(|| self.timezone.clone()),
+        }
+    }
+
+    /// What tests get: the settings, else the defaults.
+    pub fn resolve(&self) -> Fixed {
+        let pin = |pin: &Option<Pin>, default: &str| match pin {
+            None => Some(default.to_owned()),
+            Some(Pin::To(value)) => Some(value.clone()),
+            Some(Pin::Off) => None,
+        };
+        Fixed {
+            freeze_time: match &self.freeze_time {
+                None => Some(DEFAULT_FREEZE_TIME.to_owned()),
+                Some(FreezeTime::At(time)) => Some(time.clone()),
+                Some(FreezeTime::Off) => None,
+            },
+            random_seed: match self.random_seed {
+                None => Some(DEFAULT_RANDOM_SEED),
+                Some(RandomSeed::Seed(seed)) => Some(seed),
+                Some(RandomSeed::Off) => None,
+            },
+            disable_animations: self.disable_animations.unwrap_or(true),
+            locale: pin(&self.locale, DEFAULT_LOCALE),
+            timezone: pin(&self.timezone, DEFAULT_TIMEZONE),
+        }
+    }
 }
 
 /// A real backend, `[e2e.backends.<name>]` (plan 11.11). Unset values
@@ -608,6 +685,8 @@ struct RawDeterminism {
     freeze_time: Option<FreezeTime>,
     random_seed: Option<RandomSeed>,
     disable_animations: Option<bool>,
+    locale: Option<Pin>,
+    timezone: Option<Pin>,
 }
 
 impl From<RawDeterminism> for Determinism {
@@ -616,6 +695,8 @@ impl From<RawDeterminism> for Determinism {
             freeze_time: raw.freeze_time,
             random_seed: raw.random_seed,
             disable_animations: raw.disable_animations,
+            locale: raw.locale,
+            timezone: raw.timezone,
         }
     }
 }
@@ -707,10 +788,10 @@ impl<'de> Deserialize<'de> for FreezeTime {
             }
             fn visit_str<E: de::Error>(self, s: &str) -> Result<FreezeTime, E> {
                 if s.trim().is_empty() {
-                    Err(E::invalid_value(de::Unexpected::Str(s), &self))
-                } else {
-                    Ok(FreezeTime::At(s.to_owned()))
+                    return Err(E::invalid_value(de::Unexpected::Str(s), &self));
                 }
+                protocol::format::parse_time(s).map_err(E::custom)?;
+                Ok(FreezeTime::At(s.trim().to_owned()))
             }
         }
         d.deserialize_any(V)
@@ -736,6 +817,33 @@ impl<'de> Deserialize<'de> for RandomSeed {
                 u64::try_from(n)
                     .map(RandomSeed::Seed)
                     .map_err(|_| E::invalid_value(de::Unexpected::Signed(n), &self))
+            }
+        }
+        d.deserialize_any(V)
+    }
+}
+
+impl<'de> Deserialize<'de> for Pin {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl Visitor<'_> for V {
+            type Value = Pin;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a name such as \"en-US\" or \"UTC\", or false for the browser's own")
+            }
+            fn visit_bool<E: de::Error>(self, b: bool) -> Result<Pin, E> {
+                if b {
+                    Err(E::invalid_value(de::Unexpected::Bool(b), &self))
+                } else {
+                    Ok(Pin::Off)
+                }
+            }
+            fn visit_str<E: de::Error>(self, s: &str) -> Result<Pin, E> {
+                if s.trim().is_empty() || s.contains(char::is_whitespace) {
+                    Err(E::invalid_value(de::Unexpected::Str(s), &self))
+                } else {
+                    Ok(Pin::To(s.to_owned()))
+                }
             }
         }
         d.deserialize_any(V)

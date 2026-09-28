@@ -124,6 +124,41 @@ fn defaults_fill_an_empty_section() {
     assert_eq!(c.viewport, DEFAULT_VIEWPORT);
     assert!(c.web_servers.is_empty() && c.default_mocks.is_empty());
     assert_eq!(c.determinism, super::Determinism::default());
+    assert_eq!(
+        c.determinism.resolve(),
+        super::Fixed {
+            freeze_time: Some("2026-01-01T10:00:00Z".into()),
+            random_seed: Some(0),
+            disable_animations: true,
+            locale: Some("en-US".into()),
+            timezone: Some("UTC".into()),
+        }
+    );
+}
+
+#[test]
+fn determinism_is_on_unless_turned_off() {
+    let c = parse(
+        "[e2e.determinism]\nfreeze_time = false\nrandom_seed = false\n\
+         disable_animations = false\nlocale = false\ntimezone = \"Europe/Oslo\"\n",
+    );
+    let fixed = c.determinism.resolve();
+    assert_eq!(
+        fixed,
+        super::Fixed {
+            freeze_time: None,
+            random_seed: None,
+            disable_animations: false,
+            locale: None,
+            timezone: Some("Europe/Oslo".into()),
+        }
+    );
+    // A backend's settings go on top of [e2e]'s.
+    let c = parse(EXAMPLE);
+    let staging = c.determinism.with(&c.backends["staging"].determinism);
+    assert_eq!(staging.freeze_time, Some(FreezeTime::Off));
+    assert_eq!(staging.random_seed, Some(RandomSeed::Seed(42)));
+    assert_eq!(staging.resolve().locale.as_deref(), Some("en-US"));
 }
 
 #[test]
@@ -196,6 +231,12 @@ fn rejects_bad_values() {
             .contains("a time such as \"2026-01-01T10:00:00Z\", or false")
     );
     assert!(error("[e2e.determinism]\nrandom_seed = -1\n").contains("a seed"));
+    assert!(
+        error("[e2e.determinism]\nfreeze_time = \"tomorrow\"\n")
+            .contains("`tomorrow` is not a time; use ISO 8601")
+    );
+    assert!(error("[e2e.determinism]\nlocale = true\n").contains("or false for the browser's own"));
+    assert!(error("[e2e.determinism]\ntimezone = \"\"\n").contains("such as \"en-US\""));
     assert!(error("[e2e.web_server]\ncommand = \" \"\nurl = \"http://a\"\n").ends_with("empty"));
 }
 
