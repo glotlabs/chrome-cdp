@@ -120,6 +120,11 @@ fn defaults_fill_an_empty_section() {
     assert_eq!(c.retries, 0);
     assert!(!c.allow_console_errors);
     assert!(parse("[e2e]\nallow_console_errors = true\n").allow_console_errors);
+    assert_eq!(c.openapi, None);
+    assert_eq!(
+        parse("[e2e]\nopenapi = \"api/openapi.yaml\"\n").openapi,
+        Some(PathBuf::from("/p/api/openapi.yaml"))
+    );
     assert!(c.watch.is_empty());
     assert_eq!(parse("[e2e]\nwatch = [\"dist/**\"]\n").watch, ["dist/**"]);
     assert_eq!(c.timeout, DEFAULT_TIMEOUT);

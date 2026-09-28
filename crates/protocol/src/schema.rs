@@ -319,6 +319,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<MockExplainData>),
     },
     CommandSchema {
+        name: "mock check",
+        summary: "the problems found in the mock files: file:line:col, severity, rule and message",
+        schema: || schema_for!(Envelope<MockCheckData>),
+    },
+    CommandSchema {
         name: "mock record",
         summary: "the mock file written from the session's requests, and its data files",
         schema: || schema_for!(Envelope<MockRecordData>),
@@ -3405,6 +3410,42 @@ pub struct MockSetsData {
     /// The mocks directory the sets were looked for in (absolute).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dir: Option<String>,
+}
+
+/// `data` of `chrome-cdp mock check --json` (and `details` of its
+/// error).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockCheckData {
+    /// The mock files checked (absolute).
+    pub files: Vec<String>,
+    /// The mocks and collections in them.
+    pub mocks: usize,
+    /// The OpenAPI spec they were checked against (absolute), if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub openapi: Option<String>,
+    pub errors: usize,
+    pub warnings: usize,
+    /// Errors first, then warnings, each by file and line.
+    pub problems: Vec<MockProblem>,
+}
+
+/// One problem `mock check` found.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockProblem {
+    /// The mock file (absolute).
+    pub file: String,
+    /// 1-based; 0 when the problem is the whole file's.
+    pub line: usize,
+    pub col: usize,
+    /// `error` or `warning`.
+    pub severity: String,
+    /// `load`, `unreachable`, `collection-shadowed`, `duplicate-collection`,
+    /// `undeclared-state`, `openapi-path`, `openapi-method`, `openapi-status`
+    /// or `openapi-body`.
+    pub rule: String,
+    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
 }
 
 /// `data` of `chrome-cdp mock record|import --json`.

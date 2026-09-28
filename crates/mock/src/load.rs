@@ -137,6 +137,13 @@ pub struct MockSet {
     pub(crate) reload_error: Option<String>,
 }
 
+/// A problem of a mock file, and where it is (line, column; 1-based).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Located {
+    pub at: Option<(usize, usize)>,
+    pub message: String,
+}
+
 /// A mock, checked and compiled.
 #[derive(Debug, Clone)]
 pub(crate) struct Mock {
@@ -199,24 +206,48 @@ impl MockSet {
     /// Checks mock file text `text` of `source`.
     pub fn parse(text: &str, source: &Source) -> Result<Self, ErrorInfo> {
         let file = &source.file;
-        let at = |span: Range<usize>, message: String| {
-            let (line, col) = line_col(text, span.start);
-            ErrorInfo::new(
-                ErrorKind::BadArgs,
-                format!("{}:{line}:{col}: {message}", file.display()),
-            )
-            .hint(format!(
-                "fix it in {}; `chrome-cdp mock --help` shows the format, `chrome-cdp schema mocks` its JSON Schema",
-                file.display()
-            ))
+        Self::parse_located(text, source).map_err(|e| {
+            let message = match e.at {
+                Some((line, col)) => format!("{}:{line}:{col}: {}", file.display(), e.message),
+                None => format!("{}: {}", file.display(), e.message),
+            };
+            let info = ErrorInfo::new(ErrorKind::BadArgs, message);
+            if e.at.is_some() {
+                info.hint(format!(
+                    "fix it in {}; `chrome-cdp mock --help` shows the format, `chrome-cdp schema mocks` its JSON Schema",
+                    file.display()
+                ))
+            } else {
+                info
+            }
+        })
+    }
+
+    /// Reads and checks the mock file of `source`; a problem comes with
+    /// its line and column (`mock check`).
+    pub fn load_located(source: &Source) -> Result<Self, Located> {
+        let modified = std::fs::metadata(&source.file)
+            .and_then(|m| m.modified())
+            .ok();
+        let text = std::fs::read_to_string(&source.file).map_err(|e| Located {
+            at: None,
+            message: format!("cannot read it: {e}"),
+        })?;
+        let mut set = Self::parse_located(&text, source)?;
+        set.modified = modified;
+        Ok(set)
+    }
+
+    fn parse_located(text: &str, source: &Source) -> Result<Self, Located> {
+        let at = |span: Range<usize>, message: String| Located {
+            at: Some(line_col(text, span.start)),
+            message,
         };
         let raw: RawFile = toml::from_str(text).map_err(|e| {
             let message = e.message().trim().to_owned();
             match e.span() {
                 Some(span) => at(span, message),
-                None => {
-                    ErrorInfo::new(ErrorKind::BadArgs, format!("{}: {message}", file.display()))
-                }
+                None => Located { at: None, message },
             }
         })?;
         let check = Check {

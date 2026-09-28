@@ -93,6 +93,9 @@ pub struct Config {
     pub mocks: PathBuf,
     /// Mock sets every test gets unless it says otherwise.
     pub default_mocks: Vec<String>,
+    /// An OpenAPI spec (JSON or YAML) `mock check` checks the mocks
+    /// against (plan 11.8).
+    pub openapi: Option<PathBuf>,
     /// The backend `test` uses without `--backend`: [`MOCK_BACKEND`] or a
     /// key of [`Self::backends`].
     pub default_backend: String,
@@ -439,6 +442,7 @@ impl Check<'_> {
                 .transpose()?
                 .unwrap_or_default(),
             default_backend,
+            openapi: raw.openapi.as_deref().map(|p| self.path(p)),
             jobs: raw.jobs.map_or(Jobs::Auto, Spanned::into_inner),
             retries: raw.retries.unwrap_or(0),
             allow_console_errors: raw.allow_console_errors.unwrap_or(false),
@@ -660,6 +664,7 @@ struct RawE2e {
     tests: Option<Spanned<Vec<String>>>,
     mocks: Option<String>,
     default_mocks: Option<Spanned<Vec<String>>>,
+    openapi: Option<String>,
     default_backend: Option<Spanned<String>>,
     jobs: Option<Spanned<Jobs>>,
     retries: Option<u32>,

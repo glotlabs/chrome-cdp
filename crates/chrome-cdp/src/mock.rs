@@ -1,5 +1,5 @@
 //! `mock use|off|list|log|reset|explain` (plan 11, milestone 11.2),
-//! `mock state|seed` (milestone 11.3) and `mock record|import`
+//! `mock state|seed` (milestone 11.3) and `mock record|import|check`
 //! (milestone 11.8).
 //!
 //! The CLI finds the project (the mocks directory, `default_mocks`, the
@@ -16,13 +16,13 @@ use engine::{
     MockSeedRequest, MockStateRequest, MockUseRequest,
 };
 use mock::{MockSet, Mocks, Source};
-use protocol::schema::{MockExplainData, MockRecordData, MockSetsData};
+use protocol::schema::{MockCheckData, MockExplainData, MockProblem, MockRecordData, MockSetsData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use serde_json::{Value, json};
 
 use crate::cli::{
-    GlobalArgs, MockArgs, MockCommand, MockExplainArgs, MockImportArgs, MockRecordArgs,
-    MockSeedArgs, MockStateArgs, MockUseArgs,
+    GlobalArgs, MockArgs, MockCheckArgs, MockCommand, MockExplainArgs, MockImportArgs,
+    MockRecordArgs, MockSeedArgs, MockStateArgs, MockUseArgs,
 };
 use crate::{input, route, session};
 
@@ -34,6 +34,8 @@ struct Project {
     defaults: Vec<String>,
     /// `[e2e.determinism] random_seed`, else 0.
     seed: u64,
+    /// `openapi` of [e2e] (absolute).
+    openapi: Option<PathBuf>,
     cwd: PathBuf,
 }
 
@@ -71,10 +73,26 @@ impl Project {
         };
         Ok(Self {
             dir,
+            openapi: config.as_ref().and_then(|c| c.openapi.clone()),
             defaults: config.map(|c| c.default_mocks).unwrap_or_default(),
             seed,
             cwd,
         })
+    }
+
+    /// The project of a `test` run's config.
+    fn of(config: &e2e::Config, cwd: PathBuf) -> Self {
+        let seed = match config.determinism.random_seed {
+            Some(e2e::config::RandomSeed::Seed(seed)) => seed,
+            _ => 0,
+        };
+        Self {
+            dir: config.mocks.clone(),
+            defaults: config.default_mocks.clone(),
+            seed,
+            openapi: config.openapi.clone(),
+            cwd,
+        }
     }
 
     /// The sources of sets `names`.
@@ -139,7 +157,165 @@ pub(crate) fn run(args: &MockArgs, global: &GlobalArgs) -> Result<Output, ErrorI
         MockCommand::Seed(args) => seed(args, global),
         MockCommand::Record(args) => record(args, global),
         MockCommand::Import(args) => import(args),
+        MockCommand::Check(args) => check(args),
     }
+}
+
+/// `mock check`.
+fn check(args: &MockCheckArgs) -> Result<Output, ErrorInfo> {
+    let project = Project::find(args.dir.as_deref())?;
+    let names = if args.sets.is_empty() {
+        let all = mock::available(&project.dir);
+        if all.is_empty() {
+            return Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("no mock files in {}", project.dir.display()),
+            )
+            .hint(
+                "write one (see `chrome-cdp mock --help`), or run `chrome-cdp init e2e`; --dir \
+                 names another directory",
+            ));
+        }
+        all
+    } else {
+        args.sets.clone()
+    };
+    let openapi = args
+        .openapi
+        .as_ref()
+        .map(|p| project.cwd.join(p))
+        .or_else(|| project.openapi.clone());
+    let data = check_sets(&project, &names, openapi.as_deref())?;
+    let text = check_text(&data);
+    if data.errors > 0 {
+        return Err(check_failed(
+            &data,
+            &Cmd::new("mock").arg("check").to_string(),
+        ));
+    }
+    let quiet = format!("{} {}", data.errors, data.warnings);
+    Ok(Output::typed(&data, text)
+        .quiet(quiet)
+        .limit(args.max_chars, "--max-chars 0 for all of it, or --json"))
+}
+
+/// `mock check` at the start of `test`: the sets the run uses (the
+/// defaults and every test's `@mocks`). Errors stop the run; the
+/// warnings come back to be shown.
+pub(crate) fn check_for_run(
+    config: &e2e::Config,
+    names: &[String],
+) -> Result<Vec<String>, ErrorInfo> {
+    if names.is_empty() {
+        return Ok(Vec::new());
+    }
+    let cwd = std::env::current_dir().unwrap_or_else(|_| config.root.clone());
+    let project = Project::of(config, cwd);
+    let data = check_sets(&project, names, config.openapi.as_deref())?;
+    if data.errors > 0 {
+        let mut cmd = Cmd::new("mock").arg("check");
+        for name in names {
+            cmd = cmd.arg(name);
+        }
+        return Err(check_failed(&data, &cmd.to_string()));
+    }
+    Ok(data.problems.iter().map(problem_line).collect())
+}
+
+/// Runs `mock check` on sets `names` of `project`, against `openapi`.
+fn check_sets(
+    project: &Project,
+    names: &[String],
+    openapi: Option<&Path>,
+) -> Result<MockCheckData, ErrorInfo> {
+    let spec = openapi
+        .map(|file| {
+            mock::openapi::OpenApi::load(file).map_err(|e| {
+                ErrorInfo::new(ErrorKind::BadArgs, format!("openapi: {e}")).hint(Hint::text(
+                    "give an OpenAPI 3 (or Swagger 2) spec, JSON or YAML",
+                ))
+            })
+        })
+        .transpose()?;
+    let sources = project.sources(names)?;
+    let checked = mock::check::check(&sources, &project.defaults, spec.as_ref());
+    let errors = checked
+        .problems
+        .iter()
+        .filter(|p| p.severity == "error")
+        .count();
+    Ok(MockCheckData {
+        files: sources
+            .iter()
+            .map(|s| s.file.display().to_string())
+            .collect(),
+        mocks: checked.mocks,
+        openapi: openapi.map(|p| p.display().to_string()),
+        errors,
+        warnings: checked.problems.len() - errors,
+        problems: checked.problems,
+    })
+}
+
+/// One problem as a line: `file:12:1: error [rule] message`.
+fn problem_line(p: &MockProblem) -> String {
+    let at = if p.line == 0 {
+        p.file.clone()
+    } else {
+        format!("{}:{}:{}", p.file, p.line, p.col)
+    };
+    format!("{at}: {} [{}] {}", p.severity, p.rule, p.message)
+}
+
+fn check_summary(data: &MockCheckData) -> String {
+    let plural =
+        |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    let mut text = format!(
+        "{}, {}: {}, {}",
+        plural(data.files.len(), "mock file", "mock files"),
+        plural(data.mocks, "mock", "mocks"),
+        plural(data.errors, "error", "errors"),
+        plural(data.warnings, "warning", "warnings"),
+    );
+    if let Some(spec) = &data.openapi {
+        let _ = write!(text, " (checked against {spec})");
+    }
+    text
+}
+
+fn check_text(data: &MockCheckData) -> String {
+    let mut text = String::new();
+    for p in &data.problems {
+        let _ = writeln!(text, "{}", problem_line(p));
+        if let Some(hint) = &p.hint {
+            let _ = writeln!(text, "  hint: {hint}");
+        }
+    }
+    text.push_str(&check_summary(data));
+    text
+}
+
+/// The error for a check with errors: the first one, the rest as notes.
+pub(crate) fn check_failed(data: &MockCheckData, command: &str) -> ErrorInfo {
+    const LISTED: usize = 10;
+    let mut problems = data.problems.iter();
+    let first = problems.next().map(problem_line).unwrap_or_default();
+    let mut info = ErrorInfo::new(ErrorKind::ExpectFailed, first);
+    if let Some(hint) = data.problems.first().and_then(|p| p.hint.clone()) {
+        info = info.note("fix", hint);
+    }
+    let rest: Vec<&MockProblem> = problems.collect();
+    for p in rest.iter().take(LISTED) {
+        info = info.note("also", problem_line(p));
+    }
+    if rest.len() > LISTED {
+        info = info.note("also", format!("{} more (see --json)", rest.len() - LISTED));
+    }
+    info.note("checked", check_summary(data))
+        .hint(Hint::text(format!(
+            "fix the errors in the mock files (or the spec), then run {command} again"
+        )))
+        .details(serde_json::to_value(data).unwrap_or(Value::Null))
 }
 
 /// `mock record`: the session's requests in scope, as a mock set.

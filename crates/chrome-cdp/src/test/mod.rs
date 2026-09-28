@@ -21,6 +21,7 @@ mod report_md;
 pub(crate) mod reporters;
 mod watch;
 
+use std::fmt::Write as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
@@ -50,6 +51,34 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
                 .why("lists the tests without --grep, --tags or --shard"),
         );
         return output::print(mode, Err(info));
+    }
+    // The mocks are checked before a browser starts (plan 11.8).
+    let mut sets: Vec<String> = plan.config.default_mocks.clone();
+    for test in &plan.tests {
+        for name in &test.settings.mocks {
+            if !sets.contains(name) {
+                sets.push(name.clone());
+            }
+        }
+    }
+    match crate::mock::check_for_run(&plan.config, &sets) {
+        Ok(warnings) if mode == Mode::Text => {
+            const SHOWN: usize = 5;
+            let mut text = String::new();
+            for w in warnings.iter().take(SHOWN) {
+                let _ = writeln!(text, "warning: {w}");
+            }
+            if warnings.len() > SHOWN {
+                let _ = writeln!(
+                    text,
+                    "warning: {} more from the mock check; `chrome-cdp mock check` lists them",
+                    warnings.len() - SHOWN
+                );
+            }
+            output::stderr(&text);
+        }
+        Ok(_) => {}
+        Err(info) => return output::print(mode, Err(info)),
     }
     let base = if explicit_session {
         global.session.clone()

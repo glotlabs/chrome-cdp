@@ -1553,6 +1553,44 @@ const CASES: &[Case] = &[
         ]),
     },
     Case {
+        name: "mock-check",
+        args: &["mock", "check"],
+        modes: ALL,
+        fixture: Fixture::Project(&[
+            (
+                "chrome-cdp.toml",
+                "[e2e]\nbase_url = \"http://localhost:5173\"\n",
+            ),
+            (
+                "e2e/mocks/base.toml",
+                "[settings]\nscope = [\"/api/**\"]\n\n[[mock]]\nname = \"product by id\"\nmatch = { method = \"GET\", path = \"/api/products/:id\" }\nrespond = { json = { id = 1, name = \"Keyboard\" } }\n\n[[mock]]\nname = \"product 7\"\nmatch = { method = \"GET\", path = \"/api/products/7\" }\nrespond = { json = { id = 7, name = \"Seven\" } }\n",
+            ),
+            (
+                "e2e/mocks/errors/api-down.toml",
+                "[[mock]]\nname = \"down\"\nmatch = { path = \"/api/**\" }\nrespond = { status = 503 }\n",
+            ),
+        ]),
+    },
+    Case {
+        name: "mock-check-openapi",
+        args: &["mock", "check"],
+        modes: ERR,
+        fixture: Fixture::Project(&[
+            (
+                "chrome-cdp.toml",
+                "[e2e]\nbase_url = \"http://localhost:5173\"\nopenapi = \"api/openapi.yaml\"\n",
+            ),
+            (
+                "api/openapi.yaml",
+                "openapi: 3.0.3\ninfo: { title: shop, version: \"1\" }\nservers:\n  - url: /api\npaths:\n  /products/{id}:\n    get:\n      responses:\n        \"200\":\n          description: one\n          content:\n            application/json:\n              schema:\n                type: object\n                required: [id, name, price_cents]\n                properties:\n                  id: { type: integer }\n                  name: { type: string }\n                  price_cents: { type: integer }\n        \"404\": { description: none }\n",
+            ),
+            (
+                "e2e/mocks/base.toml",
+                "[settings]\nscope = [\"/api/**\"]\n\n[[mock]]\nname = \"product by id\"\nmatch = { method = \"GET\", path = \"/api/products/:id\" }\nrespond = { json = { id = 1, name = \"Keyboard\", price = 12 } }\n\n[[mock]]\nname = \"gone\"\nmatch = { method = \"GET\", path = \"/api/products/0\" }\nrespond = { status = 410 }\n\n[[mock]]\nname = \"cart\"\nmatch = { method = \"GET\", path = \"/api/cart\" }\nrespond = { json = [] }\n",
+            ),
+        ]),
+    },
+    Case {
         name: "mock-record",
         args: &[
             "mock",

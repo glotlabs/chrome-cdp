@@ -1,0 +1,17 @@
+$ chrome-cdp mock check
+exit: 0
+--- stdout
+<tmp>/app/e2e/mocks/base.toml:9:1: warning [unreachable] mock "product 7" never answers: "product by id" (line 4) comes first and matches every request it does
+  hint: move "product 7" above "product by id", or narrow "product by id"'s match
+2 mock files, 3 mocks: 0 errors, 1 warning
+
+$ chrome-cdp mock check --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"errors":0,"files":["<tmp>/app/e2e/mocks/base.toml","<tmp>/app/e2e/mocks/errors/api-down.toml"],"mocks":3,"problems":[{"col":1,"file":"<tmp>/app/e2e/mocks/base.toml","hint":"move \"product 7\" above \"product by id\", or narrow \"product by id\"'s match","line":9,"message":"mock \"product 7\" never answers: \"product by id\" (line 4) comes first and matches every request it does","rule":"unreachable","severity":"warning"}],"warnings":1}}
+
+$ chrome-cdp mock check -q
+exit: 0
+--- stdout
+0 1
+

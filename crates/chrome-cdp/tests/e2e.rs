@@ -936,3 +936,38 @@ fn watch_runs_the_affected_tests_again_until_ctrl_c() {
     assert_eq!(status.code(), Some(0));
     assert!(project.sandbox.daemons().is_empty());
 }
+
+#[test]
+fn mock_check_errors_stop_the_run_before_the_browser_starts() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    std::fs::create_dir_all(project.root.join("api")).unwrap();
+    std::fs::write(
+        project.root.join("api/openapi.json"),
+        r#"{"openapi": "3.0.3", "servers": [{"url": "/e2e/api"}], "paths": {
+            "/price": {"get": {"responses": {"200": {"description": "the price",
+                "content": {"application/json": {"schema": {"type": "object",
+                    "required": ["price_cents"], "properties": {"price_cents": {"type": "integer"}}}}}}}}},
+            "/todos": {"get": {"responses": {"200": {"description": "list"}}}},
+            "/todos/{id}": {"get": {"responses": {"200": {"description": "one"}}}}
+        }}"#,
+    )
+    .unwrap();
+    let config = project.root.join("chrome-cdp.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(
+        &config,
+        text.replace("[e2e]\n", "[e2e]\nopenapi = \"api/openapi.json\"\n"),
+    )
+    .unwrap();
+    let out = project.test(&[]);
+    assert_eq!(out.status.code(), Some(1));
+    let err = stderr(&out);
+    assert!(
+        err.contains("mocks/shop.toml:6:1: error [openapi-body] mock \"price\" does not fit the spec's GET /price 200: $.price_cents: the spec requires it, the mock has none"),
+        "{err}"
+    );
+    assert!(err.contains("hint: fix the errors in the mock files (or the spec), then run chrome-cdp mock check shop sale again"), "{err}");
+    assert!(stdout(&out).is_empty(), "{}", stdout(&out));
+    assert!(project.sandbox.daemons().is_empty());
+}

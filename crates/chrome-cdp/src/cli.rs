@@ -3279,6 +3279,47 @@ Examples:
   chrome-cdp mock import requests.har --scope '/api/**'
   chrome-cdp mock import requests.har -o e2e/mocks/recorded.toml --force")]
     Import(MockImportArgs),
+
+    /// Lint mock files, and check them against an OpenAPI spec.
+    #[command(after_help = "\
+Checks every mock file in the mocks directory (or the SETs named) for what
+`mock use` would refuse (format, missing data files, templates), mocks an
+earlier one always answers for, collections a mock always answers for,
+collections of one name in two files, and state names no [state]
+declares. With an OpenAPI spec (--openapi, or `openapi` in [e2e]), each
+mock's path, method, status and JSON body must fit the operation it
+stands for, which catches mocks the real API has moved away from.
+
+Each problem reads file:line:col, severity, rule and message. Errors exit
+1; warnings alone exit 0. `chrome-cdp test` runs the check on the sets it
+uses before it starts, and stops on errors.
+
+Examples:
+  chrome-cdp mock check
+  chrome-cdp mock check base checkout --openapi api/openapi.yaml
+  chrome-cdp mock check --json")]
+    Check(MockCheckArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MockCheckArgs {
+    /// The sets to check (names in the mocks directory, or .toml paths);
+    /// every set in the mocks directory if none.
+    #[arg(value_name = "SET")]
+    pub(crate) sets: Vec<String>,
+
+    /// Check the mocks against this OpenAPI spec (JSON or YAML) instead of
+    /// the config's `openapi`.
+    #[arg(long, value_name = "FILE")]
+    pub(crate) openapi: Option<PathBuf>,
+
+    /// The mocks directory (default: `mocks` of [e2e], else ./e2e/mocks).
+    #[arg(long, value_name = "DIR")]
+    pub(crate) dir: Option<PathBuf>,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
 }
 
 #[derive(Debug, Args)]

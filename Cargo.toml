@@ -62,6 +62,9 @@ schemars = "1.2"
 tokio-tungstenite = { version = "0.30", default-features = false, features = ["connect", "handshake"] }
 tracing = "0.1"
 url = "2"
+# OpenAPI specs for `mock check` (plan 11.8); pure Rust and maintained,
+# unlike the serde YAML crates.
+yaml-rust2 = { version = "0.13", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt"] }
 # Chrome for Testing zips only use deflate; reading needs no other codec.
 zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }

@@ -38,7 +38,7 @@ pub(crate) struct Collection {
     pub(crate) name: String,
     pub(crate) line: usize,
     pub(crate) path: PathGlob,
-    item: PathGlob,
+    pub(crate) item: PathGlob,
     /// The id field.
     pub(crate) id: String,
     pub(crate) new_id: NewId,

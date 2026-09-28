@@ -135,6 +135,11 @@ impl PathGlob {
         self.regex.is_match(subject)
     }
 
+    /// The glob as written.
+    pub(crate) fn text(&self) -> &str {
+        &self.text
+    }
+
     /// Whether it is a path glob (else a full-URL glob).
     pub(crate) fn is_path(&self) -> bool {
         self.text.starts_with('/')

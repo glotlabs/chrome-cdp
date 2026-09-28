@@ -17,11 +17,14 @@
 //!   closest mocks, and [`RequestFilter`] of `expect request`);
 //! - `respond`: answers, data files, content types;
 //! - `template`: `{{params.id}}` and friends (`minijinja`);
+//! - [`check`] and [`openapi`]: `mock check`'s lints, and mocks against
+//!   an OpenAPI spec;
 //! - [`record`]: mock files from recorded traffic (`mock record`, `mock
 //!   import`);
 //! - `engine`: [`Mocks`];
 //! - [`text`]: the text form of the `mock` commands' output.
 
+pub mod check;
 mod closest;
 mod collection;
 mod engine;
@@ -29,6 +32,7 @@ pub mod file;
 mod glob;
 mod load;
 mod matcher;
+pub mod openapi;
 pub mod record;
 mod respond;
 mod template;
@@ -37,7 +41,7 @@ pub mod text;
 pub use closest::{RequestFilter, Verdict};
 pub use engine::{Answer, Mocks, Outcome, Seed, StateItem};
 pub use file::{AfterSequence, Cors, Unmatched, schema};
-pub use load::{MockSet, Source, available};
+pub use load::{Located, MockSet, Source, available};
 pub use matcher::{Request, json_contains};
 pub use respond::{
     MAX_FILE, NETWORK_ERRORS, Response, content_type, is_header_name, network_error,
@@ -45,6 +49,8 @@ pub use respond::{
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_check;
 #[cfg(test)]
 mod tests_record;
 #[cfg(test)]

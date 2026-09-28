@@ -1,0 +1,15 @@
+$ chrome-cdp mock check
+exit: 1
+--- stderr
+error: <tmp>/app/e2e/mocks/base.toml:4:1: error [openapi-body] mock "product by id" does not fit the spec's GET /products/{id} 200: $.price_cents: the spec requires it, the mock has none
+  also: <tmp>/app/e2e/mocks/base.toml:9:1: error [openapi-status] mock "gone" answers 410; the spec's GET /products/{id} has 200, 404
+  also: <tmp>/app/e2e/mocks/base.toml:14:1: error [openapi-path] mock "cart": the spec has no path /api/cart
+  also: <tmp>/app/e2e/mocks/base.toml:9:1: warning [unreachable] mock "gone" never answers: "product by id" (line 4) comes first and matches every request it does
+  checked: 1 mock file, 3 mocks: 3 errors, 1 warning (checked against <tmp>/app/api/openapi.yaml)
+  hint: fix the errors in the mock files (or the spec), then run chrome-cdp mock check again
+
+$ chrome-cdp mock check --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"<tmp>/app/e2e/mocks/base.toml:4:1: error [openapi-body] mock \"product by id\" does not fit the spec's GET /products/{id} 200: $.price_cents: the spec requires it, the mock has none","hint":"fix the errors in the mock files (or the spec), then run chrome-cdp mock check again","notes":[{"label":"also","text":"<tmp>/app/e2e/mocks/base.toml:9:1: error [openapi-status] mock \"gone\" answers 410; the spec's GET /products/{id} has 200, 404"},{"label":"also","text":"<tmp>/app/e2e/mocks/base.toml:14:1: error [openapi-path] mock \"cart\": the spec has no path /api/cart"},{"label":"also","text":"<tmp>/app/e2e/mocks/base.toml:9:1: warning [unreachable] mock \"gone\" never answers: \"product by id\" (line 4) comes first and matches every request it does"},{"label":"checked","text":"1 mock file, 3 mocks: 3 errors, 1 warning (checked against <tmp>/app/api/openapi.yaml)"}],"details":{"errors":3,"files":["<tmp>/app/e2e/mocks/base.toml"],"mocks":3,"openapi":"<tmp>/app/api/openapi.yaml","problems":[{"col":1,"file":"<tmp>/app/e2e/mocks/base.toml","line":4,"message":"mock \"product by id\" does not fit the spec's GET /products/{id} 200: $.price_cents: the spec requires it, the mock has none","rule":"openapi-body","severity":"error"},{"col":1,"file":"<tmp>/app/e2e/mocks/base.toml","line":9,"message":"mock \"gone\" answers 410; the spec's GET /products/{id} has 200, 404","rule":"openapi-status","severity":"error"},{"col":1,"file":"<tmp>/app/e2e/mocks/base.toml","hint":"fix the mock's path, or add the path to the spec","line":14,"message":"mock \"cart\": the spec has no path /api/cart","rule":"openapi-path","severity":"error"},{"col":1,"file":"<tmp>/app/e2e/mocks/base.toml","hint":"move \"gone\" above \"product by id\", or narrow \"product by id\"'s match","line":9,"message":"mock \"gone\" never answers: \"product by id\" (line 4) comes first and matches every request it does","rule":"unreachable","severity":"warning"}],"warnings":1}}}
+
