@@ -1,6 +1,6 @@
 # Plan 06 — Observability
 
-Status: IN PROGRESS (6.1 done)
+Status: IN PROGRESS (6.1-6.2 done)
 Depends on: 03 (can proceed in parallel with 04/05)
 
 ## Goal
@@ -133,3 +133,14 @@ _(append here)_
 - 6.1: Source maps are loaded through Chrome with `Network.loadNetworkResource` on the tab's main frame (as DevTools does: the page's cookies apply, no CORS), not by the daemon. The map comes from the `SourceMap` header or the script's last `sourceMappingURL` comment (inline `data:` maps too); `Debugger.scriptParsed` would give it directly but needs the `Debugger` domain on in every page. Outcomes, misses too, are cached per script URL for the browser's life; URLs of the tab's documents are never loaded (inline scripts). A mapping on an earlier generated line is not used. Frames keep their generated function name: a map's names belong to identifiers, not to the enclosing function.
 - 6.1: The acceptance criterion on RSS after a 1-hour soak is left unticked: deferred, benchmarks run after all plans. Buffers are bounded by construction (entries, text length and stack depth).
 - 6.1: Following up on plan 03 and 05 notes: a wait or navigation timeout adds `console errors: N unread; chrome-cdp errors shows them` (and `details.console_errors`), and the report's `… and N more console errors` line names `errors`.
+- 6.2: The network log (`engine::observe::netlog`) sits beside plan 03's request tracker (`engine::network`, for idle, `wait --request` and the report), fed the same `Network` events in `tabs::watch_host`; they stay separate because the tracker's in-flight and quiet-time bookkeeping serves waits, not history. Records are keyed by session and request id while live; ids (`#42`) count per tab and survive `network clear`.
+- 6.2: Each redirect hop is its own record (the 3xx with `redirect` naming the next URL), as in DevTools. `time_ms` is when the daemon saw the request start (one clock with `console`); durations use Chrome's monotonic timestamps.
+- 6.2: Headers are those of `requestWillBeSent` and `responseReceived`; the `…ExtraInfo` events (raw headers with cookies) are not merged yet, since they may arrive before their request and are ambiguous across redirect hops. Records keep up to 100 headers a side, 4,000 URL chars, and request bodies up to 8KB; longer bodies come from `Network.getRequestPostData` when asked for.
+- 6.2: `Network.enable` bounds what Chrome keeps (64MB of bodies a session, 10MB each, request bodies up to 64KB in events), and `Network.configureDurableMessages` (not `enable`'s deprecated `enableDurableMessages`) keeps response bodies in the browser process: without it Chrome dropped them on any navigation, even same-origin, so the response to a submit was gone by the time the agent asked.
+- 6.2: Chrome sends `loadingFinished` for a `fetch` only once the page reads the body, so a response whose body is never read stays `pending` with its status known. Lines show the status once headers are in (`#6 GET 404 /missing.json fetch`), and `network show` says "body still loading".
+- 6.2: `--failed` means no response (`state: failed`) or a status of 400 or more, pending body or not; requests canceled before a response (aborted fetches, navigations) are not failures but are listed as `canceled`.
+- 6.2: `--since last` works like `console`'s cursor, plus: a request shown while pending is shown once more when it ends (no response to a slow request goes unseen). `--since <id>` and `--since 30s` work as in `console`.
+- 6.2: `--type` takes Chrome's resource types in lower case (`xhr`, `fetch`, `document`, …, `websocket`); a custom parser names them in its error, since the CLI's error rendering drops clap's possible-values list. `--status` takes `404`, `4xx` or `500-599`, comma-separated, as does `--type`.
+- 6.2: A WebSocket is one record: status 101 while open, frames counted with their bytes, and the last 20 frames (200 chars of text each) for `network show`; `size` is the payload bytes.
+- 6.2: `network -q` prints the ids; `network show --body -q` prints just the body (for `> file`). JSON bodies are re-indented as they came (parsing into a `Value` would sort their keys); binary bodies are not shown.
+- 6.2: Requests of dedicated, shared and service workers are not recorded yet (workers get no `Network.enable`), and there is no `network --follow`; both are follow-ups.

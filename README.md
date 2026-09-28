@@ -12,8 +12,8 @@ and errors that say what to run next.
 `dblclick`, `hover`, `tap`, `drag`, `scroll`, `mouse`), the keyboard and
 forms (`press`, `type`, `fill`, `select`, `check`, `uncheck`, `focus`,
 `blur`), files and the clipboard (`upload`, `clipboard`), dialogs (`dialog`),
-`downloads`, what the page logged (`console`, `errors`), raw CDP calls,
-`install`/`uninstall` and `schema` work so far:
+`downloads`, what the page logged (`console`, `errors`) and requested
+(`network`), raw CDP calls, `install`/`uninstall` and `schema` work so far:
 
 ```sh
 chrome-cdp install                    # Chrome for Testing, if there is no Chrome
@@ -27,6 +27,7 @@ chrome-cdp press Enter                # pressed Enter in e9 textbox "Email"
 chrome-cdp markdown                   # the article, as Markdown
 chrome-cdp wait --text 'Welcome back'  # instead of sleep
 chrome-cdp errors                     # exceptions and error logs not seen yet
+chrome-cdp network --failed           # #42 POST 500 /api/login xhr 12KB 340ms
 chrome-cdp back
 chrome-cdp cdp --target page Runtime.evaluate '{"expression":"document.title"}'
 chrome-cdp tabs                       # * t1  https://example.com/  "Example Domain"
@@ -241,6 +242,25 @@ all, `--since 30s`, `--follow`). Stack frames of localhost pages (or with
 Each tab keeps its newest 1,000 entries (`open --console-buffer N`), and
 dedicated workers log into their tab's console. A wait that times out says
 how many errors are unread.
+
+The same goes for requests: `network` lists what the tab requested since it
+last ran, one line each, and a request it showed while pending once more when
+it ends. `--failed` keeps errors (no response, or a status of 400 or more)
+and `--type xhr,fetch`, `--url '**/api/**'`, `--method` and `--status 4xx`
+filter:
+
+```
+#41 GET 200 /api/items fetch 12KB 35ms
+#42 POST 500 /api/login xhr 1.2KB 340ms
+#43 GET failed http://localhost:4000/api fetch 4ms net::ERR_FAILED (CORS: MissingAllowOriginHeader)
+```
+
+`network show 42` prints one request in full (status, sizes, timing, what
+sent it); `--headers`, `--body` (JSON pretty-printed; with `-q`, just the
+body) and `--request-body` add the rest. Chrome keeps response bodies for a
+while, also after the page navigates away, and the output says when it no
+longer has one. Each tab keeps its newest 2,000 requests (`open
+--network-buffer N`); `network clear` empties the log.
 
 Downloads go to the session's `downloads` directory, named as the server
 suggests (`report (1).pdf` if the name is taken). `goto` to a file waits for
