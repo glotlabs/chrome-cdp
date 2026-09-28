@@ -30,6 +30,7 @@
 //! run: paths and `file.cdp:line`, `--grep`, `--tags`, `@only`, `@skip`
 //! and `--shard`.
 
+pub mod format;
 pub mod select;
 #[cfg(test)]
 mod tests;
