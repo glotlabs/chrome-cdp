@@ -38,7 +38,9 @@ browser, tabs and refs between commands. Output is compact text; add
    `screenshot` (prints the PNG path; look at the image).
 7. **Verify**: `chrome-cdp expect 'role=alert' text Saved`, `expect e6
    visible`, `expect '.row' count 3`, `expect --no-errors`. It retries
-   for 5s, and a failure (exit 1) says what it saw instead.
+   for 5s, and a failure (exit 1) says what it saw instead. To guard a
+   whole page, `expect-snapshot login` stores a baseline the first time,
+   then prints a diff when the page differs (`--update` accepts it).
 8. **Done**: `chrome-cdp close`.
 
 ## Locators
@@ -87,6 +89,7 @@ upload <loc> <file...>         file inputs
 wait <loc> | --text t | --url u | --idle
 expect <loc> visible|text t|value v|count n [--not]   assert, retrying
 expect --url u | --no-errors | --no-failed-requests | --a11y
+expect-snapshot <name>         snapshot -i vs a stored baseline; a diff if not
 screenshot [loc] [--full] [-o f.png]
 errors | console | network [--failed]
 eval '<js>'                    run JavaScript, print the value
