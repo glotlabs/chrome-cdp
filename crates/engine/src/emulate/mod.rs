@@ -27,6 +27,8 @@ use protocol::schema::{Emulation, PermissionInfo, Throttle, Viewport};
 use protocol::suggest::{self, squash};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 
+use crate::request::PermissionsOp;
+
 pub use devices::{DEVICES, Device};
 
 /// The viewport of a headless page without its own.
@@ -140,8 +142,8 @@ pub const PERMISSIONS: &[&str] = &[
     "payment-handler",
 ];
 
-/// Checks a permission name (any case).
-pub fn check_permission(name: &str, session: &str) -> Result<String, ErrorInfo> {
+/// Checks a permission name (any case) for `permissions <op>`.
+pub fn check_permission(name: &str, op: PermissionsOp, session: &str) -> Result<String, ErrorInfo> {
     let lower = name.trim().to_ascii_lowercase();
     if PERMISSIONS.contains(&lower.as_str()) {
         return Ok(lower);
@@ -157,7 +159,7 @@ pub fn check_permission(name: &str, session: &str) -> Result<String, ErrorInfo> 
     if let Some(closest) = closest {
         info = info.hint(Hint::run(
             Cmd::new("permissions")
-                .arg("grant")
+                .arg(op.name())
                 .arg(closest)
                 .session(session),
         ));
@@ -462,12 +464,16 @@ mod tests {
     #[test]
     fn permissions_are_checked() {
         assert_eq!(
-            check_permission("Geolocation", "default").unwrap(),
+            check_permission("Geolocation", PermissionsOp::Grant, "default").unwrap(),
             "geolocation"
         );
-        let err = check_permission("notification", "default")
+        let err = check_permission("notification", PermissionsOp::Grant, "default")
             .unwrap_err()
             .to_text();
         assert!(err.contains("permissions grant notifications"), "{err}");
+        let err = check_permission("camra", PermissionsOp::Deny, "default")
+            .unwrap_err()
+            .to_text();
+        assert!(err.contains("permissions deny camera"), "{err}");
     }
 }

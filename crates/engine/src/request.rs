@@ -1134,6 +1134,18 @@ pub enum PermissionsOp {
     Reset,
 }
 
+impl PermissionsOp {
+    /// Its subcommand of `permissions` (`list` is `permissions` alone).
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::List => "list",
+            Self::Grant => "grant",
+            Self::Deny => "deny",
+            Self::Reset => "reset",
+        }
+    }
+}
+
 /// `highlight`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HighlightRequest {

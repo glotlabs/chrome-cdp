@@ -1127,7 +1127,7 @@ pub(crate) fn permissions(
         }
     };
     for name in &names {
-        engine::check_permission(name, &global.session)?;
+        engine::check_permission(name, op, &global.session)?;
     }
     let ctx = Ctx::new(global)?;
     let mut client = running_session(&ctx)?;

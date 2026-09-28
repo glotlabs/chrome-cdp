@@ -155,7 +155,7 @@ impl Engine {
         let names = req
             .names
             .iter()
-            .map(|n| check_permission(n, &self.session))
+            .map(|n| check_permission(n, req.op, &self.session))
             .collect::<Result<Vec<String>, _>>()?;
         let origin = req.origin.as_deref().map(|o| o.trim_end_matches('/'));
         let running = self.running_now();
