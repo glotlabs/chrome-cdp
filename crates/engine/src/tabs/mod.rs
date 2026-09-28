@@ -1644,11 +1644,16 @@ async fn setup(
             step(session.call(cdp::domains::log::EnableParams::default())),
         ));
         // Response bodies kept in the browser process, so `network show
-        // --body` still has them after the page navigates.
-        steps.push((
-            "Network.configureDurableMessages",
-            step(session.call(durable_messages())),
-        ));
+        // --body` still has them after the page navigates. Sent before
+        // `Network.enable`, but not waited for with the other steps: in a
+        // new popup Chrome answers it only much later, and the tab must
+        // not wait for that to be ready.
+        let durable = session.call(durable_messages());
+        shared.spawn(async move {
+            if let Err(e) = durable.await {
+                tracing::debug!("cannot keep response bodies durably: {e}");
+            }
+        });
         // Requests, for network idle, `wait --request/--response` and
         // the network log.
         steps.push(("Network.enable", step(session.call(network_enable()))));
