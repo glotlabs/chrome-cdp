@@ -459,6 +459,11 @@ name = "e2e"
 version = "0.1.0"
 dependencies = [
  "browser",
+ "bytes",
+ "futures-util",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "mock",
  "protocol",
  "regex",
