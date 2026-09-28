@@ -1442,7 +1442,8 @@ fn verify_mocks_reports_drift_and_update_fixes_data_files() {
     );
 
     // Drift: the price's data file has a field the API lacks (and the
-    // right one with an old value), the todos' ids became strings.
+    // right one with an old value); the todos' ids became strings and
+    // their title is called name.
     let shop = project.root.join("mocks/shop.toml");
     let text = std::fs::read_to_string(&shop).unwrap();
     std::fs::write(
@@ -1450,7 +1451,15 @@ fn verify_mocks_reports_drift_and_update_fixes_data_files() {
         text.replace(
             "respond = { json = { price = 49 } }",
             "respond = { json_file = \"data/price.json\" }",
-        ),
+        ) + "\n[[mock]]\nname = \"stock\"\nmatch = { method = \"GET\", path = \"/e2e/api/stock\" }\nrespond = { json = { count = 3 } }\n",
+    )
+    .unwrap();
+    // …and a mocked endpoint the real API does not have.
+    let page = project.root.join(scenario);
+    let text = std::fs::read_to_string(&page).unwrap();
+    std::fs::write(
+        &page,
+        format!("{text}  eval \"fetch('/e2e/api/stock').then((r) => r.status)\"\n"),
     )
     .unwrap();
     let price = project.root.join("mocks/data/price.json");
@@ -1460,7 +1469,8 @@ fn verify_mocks_reports_drift_and_update_fixes_data_files() {
     std::fs::write(
         &todos,
         text.replace("\"id\": 1", "\"id\": \"1\"")
-            .replace("\"id\": 2", "\"id\": \"2\""),
+            .replace("\"id\": 2", "\"id\": \"2\"")
+            .replace("\"title\"", "\"name\""),
     )
     .unwrap();
 
@@ -1494,7 +1504,17 @@ fn verify_mocks_reports_drift_and_update_fixes_data_files() {
     assert!(
         drifted.contains(&(
             "shop.toml:11",
-            vec!["$[].id: the real answer has a number; the mock has a string"]
+            vec![
+                r#"$[]: the real answer has field "title" (string); the mock has "name" (string)"#,
+                "$[].id: the real answer has a number; the mock has a string",
+            ]
+        )),
+        "{drifted:?}"
+    );
+    assert!(
+        drifted.contains(&(
+            "shop.toml:16",
+            vec!["status: the real answer is 404; the mock's is 200"]
         )),
         "{drifted:?}"
     );
