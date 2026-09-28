@@ -139,7 +139,7 @@ inside it are not interpreted.
 |---|---|---|
 | `${name}` | `--var name=value` of `batch` and `run`; plan 11's `@include` parameters | `batch`, `run`, `test` |
 | `${env:NAME}` | the environment variable `NAME`; unset is an error, set-but-empty is `""` | `batch`, `run`, `test` |
-| `${data:file.json#/a/0}` | the value at a JSON pointer in a JSON file (relative to the script's folder; the whole file without `#`). Strings are used as is, other values as compact JSON | `batch`, `run`, `test` |
+| `${data:file.json#/a/0}` | the value at a JSON pointer in a JSON file (relative to the script's folder, or in `test` to the folder of the scenario or step file the line is in; the whole file without `#`). Strings are used as is, other values as compact JSON | `batch`, `run`, `test` |
 | `${var:name}` | the backend's vars file (plan 11) | `test` |
 | `${secret:name}` | like `env`, but masked in all output (plan 11) | `test` |
 | `${saved.x.y}` | a value a step saved with `--save x` (plan 11) | `test` |
@@ -165,7 +165,9 @@ inside it are not interpreted.
   - `batch` and `run` know only `@syntax`;
   - plan 11's `test` adds `@test`, `@before`, `@after`, `@before-all`,
     `@after-all`, `@include`, `@mocks`, `@tags`, `@skip`, `@only`,
-    `@timeout`, `@viewport`, `@device`, `@retries` and `@backend`.
+    `@timeout`, `@viewport`, `@device` and `@retries`
+    ([docs/e2e/scenarios.md](e2e/scenarios.md)), and `@backend` with
+    plan 11.11.
 - `@syntax N` declares the syntax version. It must come before any command
   or other directive (comments may precede it), takes one number, and has
   no body. Without it, a file is read as the current version. A newer
@@ -183,8 +185,11 @@ inside it are not interpreted.
 - Every line is checked against the command definitions before the first
   one runs, so a typo (`clik e6`, `--forse`) fails without touching the
   browser.
-- `batch` and `run` cannot be nested in a script. Reuse comes from
-  `@include` (plan 11).
+- `batch`, `run` and `test` cannot be nested in a script. Reuse comes
+  from `@include` (plan 11).
+- In a scenario, each line also runs in the test's own browser context
+  and session (`--context`, `--session`); see
+  [docs/e2e/scenarios.md](e2e/scenarios.md).
 - A text argument of `-` (read stdin) is not available in `batch`, whose
   stdin is the script.
 

@@ -1,0 +1,138 @@
+# Scenario files and `chrome-cdp test`
+
+A scenario is a `.cdp` file ([syntax](../scenario-syntax.md)) whose steps
+are chrome-cdp command lines, grouped into tests by directives.
+`chrome-cdp test` runs them, each test in a fresh browser context with
+its mocks. This page is the reference; plan 11 has the design.
+
+```
+# e2e/scenarios/checkout.cdp
+@mocks base checkout             # layered onto default_mocks
+@tags smoke checkout
+
+@before
+  state load ../state/user.json
+  goto /
+
+@test "lists products"
+  expect 'role=listitem' count 3
+  expect text=Mechanical keyboard visible
+
+@test "retries when the API is busy"
+  @retries 1
+  click 'role=button[name="Buy"]'
+  expect role=alert text "Please try again"
+
+@test "shows an error page when the API is down"
+  @mocks errors/api-down         # extra layer for this test only
+  reload
+  expect 'role=heading' text "Something went wrong"
+
+@test "empty cart" @skip "flaky upstream component, see #12"
+  click text=Cart
+```
+
+## Blocks
+
+| Directive | Holds |
+|---|---|
+| `@test "name" [settings…]` | a test: its steps, and settings for it alone |
+| `@before` | steps before each test of the file, in the test's context |
+| `@after` | steps after each test, in its context, also when it failed |
+| `@before-all` | steps once before the file's first test, in a context of their own |
+| `@after-all` | steps once after the file's last test, in a context of their own |
+
+A block's lines are indented 2 spaces. A command outside a block is an
+error. A test with no steps is an error unless it is skipped. A failed
+`@before-all` fails every test of the file; a failed `@after` or
+`@after-all` fails the test it ran after. Contexts are fresh, so a
+`@before-all` hands state to the tests through files:
+`state save auth.json` there, `state load auth.json` in `@before`.
+
+## Settings
+
+Written at the top of the file they apply to every test; in a test's
+body, or after its name on the `@test` line, to that test only.
+
+| Setting | Meaning |
+|---|---|
+| `@mocks set…` | mock sets layered onto `default_mocks`; the file's, then the test's |
+| `@tags tag…` | tags for `--tags`; the file's and the test's add up |
+| `@skip [reason]` | skipped, and reported with the reason |
+| `@only` | when any selected test has it, only those run |
+| `@timeout 60s` | the test's time limit (default: `timeout` in `[e2e]`, 30s) |
+| `@viewport 390x844` | the viewport (default: `viewport` in `[e2e]`, 1280x800) |
+| `@device "iPhone 15"` | a device of `chrome-cdp emulate list` |
+| `@retries N` | runs of a failed test before it counts as failed |
+
+## Reuse
+
+`@include ../steps/login.cdp email=admin@example.com` puts the lines of a
+step file in place of the `@include` line. Paths are relative to the file
+that includes. A step file holds commands and `@include` lines only; its
+lines see the parameters as `${email}`, and `${data:…}` paths are
+relative to it. `${env:X}` reads an environment variable.
+
+## Running
+
+```
+chrome-cdp test [PATH…] [--grep RE] [--tags smoke,!slow] [--jobs N]
+                [--jobs-isolation context|browser] [--shard 2/4]
+                [--retries N] [--bail] [--headed] [--update-snapshots]
+                [--list] [--json]
+```
+
+- Without paths, the `tests` globs of `[e2e]` find the files (default
+  `e2e/scenarios/**/*.cdp`). A path is a file, a folder, or `file.cdp:12`
+  for the test at line 12.
+- The order is fixed: files by path, tests as written. `--shard 2/4` runs
+  the second of four near-equal parts of that list.
+- Every file is read and every step checked against the commands before
+  anything starts; a problem fails the run with its `file:line:col`
+  (exit code 2).
+- The `[e2e.web_server]`s start first, unless something answers on their
+  URLs already. The run opens a browser session of its own and closes it
+  at the end.
+- Each test gets a new browser context: its own cookies, storage, cache,
+  routes, mock sets (and their state), init scripts and emulation. Mock
+  state starts over in every test. `--jobs N` runs N tests at once in one
+  Chrome; `--jobs-isolation browser` gives each job its own Chrome.
+- A step runs as `chrome-cdp <line> --session <run's> --context <test's>`.
+  Its timeout is cut to what is left of the test's time limit.
+- `expect-snapshot` and `expect-screenshot` baselines are in
+  `e2e/snapshots` of the project; `--update-snapshots` rewrites them.
+- A test that fails, then passes on a retry, is **flaky**: it counts as
+  passing and is always reported. `--bail` stops after the first failed
+  test; the rest are "not run".
+- Exit code 0: every test passed (or was flaky or skipped); 1: a test
+  failed; 2: a scenario or argument is wrong; 4: a web server or the
+  browser failed.
+
+The output is a line per test as it ends:
+
+```
+running 4 tests from 2 files, 2 at once
+✓ e2e/scenarios/checkout.cdp:8 lists products (1.1s)
+✗ e2e/scenarios/checkout.cdp:12 retries when the API is busy (1.6s)
+    failed at e2e/scenarios/checkout.cdp:15:3: expect role=alert text "Please try again"
+    error: expect failed: role=alert
+      …
+~ e2e/scenarios/cart.cdp:6 adds an item (2.3s; flaky: passed on try 2)
+- e2e/scenarios/checkout.cdp:24 empty cart (skipped: flaky upstream component, see #12)
+4 tests: 1 passed, 1 failed, 1 flaky, 1 skipped (4.2s)
+error: 1 of 4 tests failed
+  failed: e2e/scenarios/checkout.cdp:12 retries when the API is busy
+  hint: chrome-cdp test e2e/scenarios/checkout.cdp:12   (runs the first failed test again)
+```
+
+`--json` prints one envelope with every test's status, tries, duration
+and failure (the step's `file:line:col`, its text, and its error);
+`chrome-cdp schema test` has its schema.
+
+## Browser contexts outside tests
+
+Contexts are a general feature: `chrome-cdp context new [url]` makes one
+(`c1`, `c2`, …), `--context c1` on any command acts in it (its active tab,
+its cookies, routes and mocks), `context list` shows them and
+`context close c1` closes one. Two contexts are two users logged in side
+by side in one browser.
