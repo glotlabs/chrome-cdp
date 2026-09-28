@@ -608,10 +608,25 @@ mod tests {
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
 
+    /// Writes an executable script. A child process writes it: a file this
+    /// process had open for writing could be inherited by a process another
+    /// test forks meanwhile, and running the script would then fail with
+    /// "Text file busy".
     fn script(path: &Path, body: &str) -> PathBuf {
+        use std::io::Write as _;
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();
-        make_executable(path);
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "cat > \"$1\" && chmod 755 \"$1\"", "sh"])
+            .arg(path)
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        stdin
+            .write_all(format!("#!/bin/sh\n{body}\n").as_bytes())
+            .unwrap();
+        drop(stdin);
+        assert!(child.wait().unwrap().success());
         path.to_owned()
     }
 

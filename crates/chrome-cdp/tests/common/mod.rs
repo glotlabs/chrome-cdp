@@ -201,16 +201,25 @@ pub const FAKE_VERSION: &str = "154.0.0.0";
 /// A stand-in "Chrome": a shell script with the given body. It answers
 /// `--version` like a current Chrome, as discovery asks for it first.
 pub fn fake_chrome(dir: &tempfile::TempDir, body: &str) -> PathBuf {
-    use std::os::unix::fs::PermissionsExt as _;
+    use std::io::Write as _;
     let path = dir.path().join("chrome");
-    std::fs::write(
-        &path,
-        format!(
-            "#!/bin/sh\n[ \"$1\" = --version ] && {{ echo 'Chromium {FAKE_VERSION}'; exit 0; }}\n{body}\n"
-        ),
+    // A child process writes it: a file this process had open for writing
+    // could be inherited by a process another test forks meanwhile, and
+    // running it would then fail with "Text file busy".
+    let mut child = Command::new("sh")
+        .args(["-c", "cat > \"$1\" && chmod 755 \"$1\"", "sh"])
+        .arg(&path)
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    write!(
+        stdin,
+        "#!/bin/sh\n[ \"$1\" = --version ] && {{ echo 'Chromium {FAKE_VERSION}'; exit 0; }}\n{body}\n"
     )
     .unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    drop(stdin);
+    assert!(child.wait().unwrap().success());
     path
 }
 
