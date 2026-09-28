@@ -66,7 +66,7 @@ export function invisible(el: Element): string | null {
 const CONTROLS = new Set(['button', 'input', 'select', 'textarea', 'optgroup', 'option', 'fieldset']);
 
 /** Why the element is disabled, or `null`. */
-function disabled(el: Element): string | null {
+export function disabled(el: Element): string | null {
   if (CONTROLS.has(tag(el)) && el.matches(':disabled')) {
     if (el.hasAttribute('disabled')) return 'it has the disabled attribute';
     const parent = closest(el, (a) => a !== el && a.matches('fieldset:disabled, select:disabled, optgroup:disabled'));
@@ -83,7 +83,7 @@ const NOT_TEXT = new Set(['checkbox', 'radio', 'file', 'button', 'submit', 'rese
 
 /** Why the element cannot be edited: `final` when it is not a kind of
  * element that can be (waiting will not help). */
-function readOnly(el: Element): { why: string; final?: boolean } | null {
+export function readOnly(el: Element): { why: string; final?: boolean } | null {
   const name = tag(el);
   if (name === 'input') {
     const type = (el as HTMLInputElement).type;

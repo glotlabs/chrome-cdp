@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 8d8065276673589b
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: b353e087224690ca
 "use strict";
 (() => {
   // src/dom.ts
@@ -649,8 +649,8 @@
     return out;
   }
   function byText(m, scope, texts) {
-    const test = matcher(m);
-    const matches = (el) => test(texts.of(el));
+    const test2 = matcher(m);
+    const matches = (el) => test2(texts.of(el));
     const out = [];
     for (const el of descendants(scope)) {
       if (!matches(el) || !visible(el)) continue;
@@ -683,10 +683,10 @@
     return out;
   }
   function byAttribute(name, m, scope) {
-    const test = matcher(m);
+    const test2 = matcher(m);
     return descendants(scope).filter((el) => {
       const value2 = el.getAttribute(name);
-      return value2 !== null && test(value2);
+      return value2 !== null && test2(value2);
     });
   }
   function find(step, scope, texts) {
@@ -700,8 +700,8 @@
       case "role":
         return byRole(step, scope);
       case "label": {
-        const test = matcher(step.text);
-        return descendants(scope).filter((el) => labelsOf(el).some(test));
+        const test2 = matcher(step.text);
+        return descendants(scope).filter((el) => labelsOf(el).some(test2));
       }
       case "placeholder":
         return byAttribute("placeholder", step.text, scope);
@@ -732,8 +732,8 @@
           current = els.filter((el) => visible(el) === step.visible);
           break;
         case "has-text": {
-          const test = matcher(step.text);
-          current = els.filter((el) => test(texts.of(el)));
+          const test2 = matcher(step.text);
+          current = els.filter((el) => test2(texts.of(el)));
           break;
         }
         default: {
@@ -1252,8 +1252,8 @@ ${inner}
   // src/walker.ts
   function scrolls(el, style) {
     if (tag(el) === "html" || tag(el) === "body") return false;
-    const over = (v) => v === "auto" || v === "scroll" || v === "overlay";
-    return over(style.overflowY) && el.scrollHeight - el.clientHeight > 1 || over(style.overflowX) && el.scrollWidth - el.clientWidth > 1;
+    const over2 = (v) => v === "auto" || v === "scroll" || v === "overlay";
+    return over2(style.overflowY) && el.scrollHeight - el.clientHeight > 1 || over2(style.overflowX) && el.scrollWidth - el.clientWidth > 1;
   }
   function walk(scope) {
     const view = document.defaultView;
@@ -1337,9 +1337,9 @@ ${inner}
   }
   var norm2 = (s) => (s || "").replace(/\s+/g, " ").trim();
   var cut3 = (s, n) => s.length > n ? s.slice(0, n - 1) + "…" : s;
-  function closest(el, test) {
+  function closest(el, test2) {
     for (let a = el; a; a = parentOf(a)) {
-      if (test(a, getComputedStyle(a))) return a;
+      if (test2(a, getComputedStyle(a))) return a;
     }
     return null;
   }
@@ -1696,6 +1696,381 @@ ${inner}
     return formOf(el) === mark.form ? null : el;
   }
 
+  // src/expect.ts
+  var ArgError = class extends Error {
+    constructor(message) {
+      super(message);
+      this.name = "ArgError";
+    }
+  };
+  function test(p) {
+    if (p.mode === "regex") {
+      let re;
+      try {
+        re = new RegExp(p.value, (p.flags || "").replace(/[gy]/g, ""));
+      } catch (e) {
+        throw new ArgError(`/${p.value}/${p.flags || ""} is not a valid regex: ${e.message}`);
+      }
+      return (s) => re.test(s);
+    }
+    const want = norm(p.value);
+    if (p.mode === "exact") return (s) => norm(s) === want;
+    return (s) => norm(s).includes(want);
+  }
+  var SHOWN = 300;
+  var cut4 = (s) => s.length > SHOWN ? s.slice(0, SHOWN - 1) + "…" : s;
+  function textOf2(el) {
+    return visible(el) ? norm(text(el)) : norm(el.textContent);
+  }
+  var CHECKABLE2 = /* @__PURE__ */ new Set(["checkbox", "radio", "switch", "menuitemcheckbox", "menuitemradio"]);
+  function checked(el) {
+    const control = el instanceof HTMLLabelElement && el.control ? el.control : el;
+    if (control instanceof HTMLInputElement && (control.type === "checkbox" || control.type === "radio")) {
+      return control.indeterminate && control.type === "checkbox" ? "mixed" : control.checked;
+    }
+    if (!CHECKABLE2.has(roleOf(control) || "")) return null;
+    const aria = control.getAttribute("aria-checked");
+    return aria === "mixed" ? "mixed" : aria === "true";
+  }
+  function inViewport(el) {
+    return new Promise((resolve) => {
+      const observer = new IntersectionObserver((entries) => {
+        observer.disconnect();
+        resolve(entries[entries.length - 1].intersectionRatio);
+      });
+      observer.observe(el);
+      setTimeout(() => {
+        observer.disconnect();
+        const r = el.getBoundingClientRect();
+        const view = el.ownerDocument.defaultView;
+        const w = Math.max(0, Math.min(r.right, view.innerWidth) - Math.max(r.left, 0));
+        const h = Math.max(0, Math.min(r.bottom, view.innerHeight) - Math.max(r.top, 0));
+        resolve(r.width * r.height > 0 ? w * h / (r.width * r.height) : 0);
+      }, 200);
+    });
+  }
+  var canvas = null;
+  function colour(s) {
+    canvas = canvas || document.createElement("canvas").getContext("2d");
+    if (!canvas) return null;
+    canvas.fillStyle = "#010203";
+    canvas.fillStyle = s;
+    const first = canvas.fillStyle;
+    canvas.fillStyle = "#040506";
+    canvas.fillStyle = s;
+    return first === canvas.fillStyle ? String(first) : null;
+  }
+  function cssMatches(actual, p) {
+    if (p.mode === "regex") return test(p)(actual);
+    if (norm(actual) === norm(p.value)) return true;
+    const a = colour(actual);
+    return a !== null && a === colour(p.value);
+  }
+  var ONE = /* @__PURE__ */ new Set([
+    "visible",
+    "enabled",
+    "disabled",
+    "editable",
+    "checked",
+    "unchecked",
+    "focused",
+    "text",
+    "value",
+    "values",
+    "attr",
+    "class",
+    "css",
+    "in-viewport",
+    "hidden"
+  ]);
+  async function expectElements(spec, els) {
+    const count = els.length;
+    const m = spec.matcher;
+    if (m === "attached") return { pass: count > 0, actual: count, count };
+    if (m === "detached") return { pass: count === 0, actual: count, count };
+    if (m === "count") {
+      const c = spec.count || {};
+      const pass = (c.eq == null || count === c.eq) && (c.min == null || count >= c.min) && (c.max == null || count <= c.max);
+      return { pass, actual: count, count };
+    }
+    if (ONE.has(m) && count > 1) {
+      return { pass: false, invalid: `${count} elements match`, count };
+    }
+    if (count === 0) {
+      if (m === "visible") return { pass: false, state: "no element matches", count };
+      if (m === "hidden") return { pass: true, state: "no element matches", count };
+      return { pass: false, invalid: "no element matches", count };
+    }
+    const el = els[0];
+    const one2 = (pass, state, actual) => ({ pass, state, actual, count });
+    switch (m) {
+      case "visible":
+      case "hidden": {
+        const shown2 = visible(el);
+        const why = shown2 ? null : invisible(el);
+        const state = shown2 ? "visible" : `hidden${why ? ` (${why})` : ""}`;
+        return one2(m === "visible" ? shown2 : !shown2, state);
+      }
+      case "enabled":
+      case "disabled": {
+        const why = disabled(el);
+        return one2(m === "enabled" ? !why : !!why, why ? `disabled (${why})` : "enabled");
+      }
+      case "editable": {
+        const why = disabled(el) || readOnly(el)?.why || null;
+        return one2(!why, why ? `not editable (${why})` : "editable");
+      }
+      case "checked":
+      case "unchecked": {
+        const state = checked(el);
+        if (state === null) {
+          return { pass: false, invalid: `it is ${roleOf(el) || "an element"}, not a checkbox, radio or switch`, count };
+        }
+        const words = state === "mixed" ? "mixed" : state ? "checked" : "unchecked";
+        return one2(m === "checked" ? state === true : state === false, words);
+      }
+      case "focused": {
+        const f = focused(el);
+        if (f === el) return one2(true, "focused");
+        if (!f) return one2(false, "not focused (nothing has focus)");
+        const d = describe(f);
+        return one2(false, `not focused (${d.role}${d.name ? ` "${d.name}"` : ""} has focus)`);
+      }
+      case "in-viewport": {
+        const ratio = await inViewport(el);
+        return one2(ratio > 0, ratio > 0 ? `in the viewport (${Math.round(ratio * 100)}% of it)` : "outside the viewport", ratio);
+      }
+      case "text": {
+        const actual = textOf2(el);
+        return one2(test(spec.pattern)(actual), "", cut4(actual));
+      }
+      case "value":
+      case "values": {
+        const read = value(el);
+        if (read.error) return { pass: false, invalid: read.error, count };
+        if (m === "value") {
+          const actual2 = Array.isArray(read.value) ? read.value.join(", ") : read.value || "";
+          return one2(test(spec.pattern)(actual2), "", cut4(actual2));
+        }
+        const actual = Array.isArray(read.value) ? read.value : [read.value || ""];
+        const want = [...spec.values || []].sort();
+        const have = [...actual].sort();
+        return one2(want.length === have.length && want.every((v, i) => v === have[i]), "", actual);
+      }
+      case "attr": {
+        const actual = el.getAttribute(spec.name);
+        if (!spec.pattern) return one2(actual !== null, actual === null ? "no such attribute" : "", actual);
+        return one2(actual !== null && test(spec.pattern)(actual), actual === null ? "no such attribute" : "", actual === null ? null : cut4(actual));
+      }
+      case "class": {
+        const actual = norm(el.getAttribute("class"));
+        if (spec.pattern) return one2(test(spec.pattern)(actual), "", cut4(actual));
+        const want = norm(spec.name).split(" ");
+        return one2(want.every((c) => el.classList.contains(c)), "", cut4(actual));
+      }
+      case "css": {
+        const style = el.ownerDocument.defaultView.getComputedStyle(el);
+        const actual = style.getPropertyValue(spec.name);
+        return one2(cssMatches(actual, spec.pattern), "", cut4(actual));
+      }
+      default:
+        throw new ArgError(`unknown matcher ${m}`);
+    }
+  }
+  function expectPage(spec) {
+    if (spec.matcher === "title") {
+      const actual = document.title;
+      return { pass: test(spec.pattern)(actual), actual: cut4(actual), count: 0 };
+    }
+    throw new ArgError(`unknown page check ${spec.matcher}`);
+  }
+  function expectNamed(els) {
+    const shown2 = els.slice(0, 3);
+    return { json: JSON.stringify(shown2.map(describe)), els: shown2 };
+  }
+
+  // src/a11y.ts
+  function field(el) {
+    const t = tag(el);
+    if (t === "select" || t === "textarea") return true;
+    if (t !== "input") return false;
+    const type = (el.type || "text").toLowerCase();
+    return !["hidden", "button", "submit", "reset", "image"].includes(type);
+  }
+  function focusable(el) {
+    const h = el;
+    if (h.tabIndex < 0 || disabled(el)) return false;
+    if (h.tabIndex > 0 || el.hasAttribute("tabindex")) return true;
+    const t = tag(el);
+    if (t === "a" || t === "area") return el.hasAttribute("href");
+    return ["button", "input", "select", "textarea", "iframe", "summary"].includes(t) || h.isContentEditable;
+  }
+  function parseColour(s) {
+    const m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/.exec(s.trim());
+    if (!m) return null;
+    let a = m[4] === void 0 ? 1 : parseFloat(m[4]);
+    if (m[4] && m[4].endsWith("%")) a /= 100;
+    return [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]), a];
+  }
+  function over(top, under) {
+    const a = top[3];
+    return [0, 1, 2].map((i) => top[i] * a + under[i] * (1 - a)).concat(1);
+  }
+  function luminance(c) {
+    const [r, g, b] = [0, 1, 2].map((i) => {
+      const v = c[i] / 255;
+      return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  }
+  function background(el) {
+    const layers = [];
+    for (let a = el; a; a = a.parentElement) {
+      const style = getComputedStyle(a);
+      if (style.backgroundImage !== "none") return null;
+      const c = parseColour(style.backgroundColor);
+      if (c && c[3] > 0) {
+        layers.push(c);
+        if (c[3] >= 1) break;
+      }
+    }
+    let colour2 = [255, 255, 255, 1];
+    for (let i = layers.length - 1; i >= 0; i--) colour2 = over(layers[i], colour2);
+    return colour2;
+  }
+  function contrast(el) {
+    const own = Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && n.data.trim());
+    if (!own || !visible(el) || disabled(el)) return null;
+    const style = getComputedStyle(el);
+    const fg = parseColour(style.color);
+    const bg = background(el);
+    if (!fg || !bg) return null;
+    const text2 = over(fg, bg);
+    const [l1, l2] = [luminance(text2), luminance(bg)].sort((x, y) => y - x);
+    const ratio = (l1 + 0.05) / (l2 + 0.05);
+    const size = parseFloat(style.fontSize);
+    const large = size >= 24 || size >= 18.66 && parseInt(style.fontWeight, 10) >= 700;
+    const needed = large ? 3 : 4.5;
+    if (ratio >= needed) return null;
+    return `contrast ${ratio.toFixed(2)}:1, needs ${needed}:1`;
+  }
+  var RULES = [
+    {
+      id: "document-title",
+      wcag: "2.4.2",
+      level: "A",
+      help: "the page has no <title>",
+      page: (doc) => doc.title.trim() ? null : "the page has no <title>"
+    },
+    {
+      id: "html-has-lang",
+      wcag: "3.1.1",
+      level: "A",
+      help: "<html> has no lang attribute",
+      page: (doc) => doc.documentElement.getAttribute("lang")?.trim() ? null : "<html> has no lang attribute"
+    },
+    {
+      id: "image-alt",
+      wcag: "1.1.1",
+      level: "A",
+      help: "has no alt text",
+      check: (el) => tag(el) === "img" && roleOf(el) === "img" && !el.hasAttribute("alt") && !nameOf(el, "img")
+    },
+    {
+      id: "input-image-alt",
+      wcag: "1.1.1",
+      level: "A",
+      help: "is an image button with no alt text",
+      check: (el) => tag(el) === "input" && el.type === "image" && !(el.getAttribute("alt") || el.getAttribute("aria-label") || el.getAttribute("title") || "").trim()
+    },
+    {
+      id: "button-name",
+      wcag: "4.1.2",
+      level: "A",
+      help: "is a button with no name",
+      check: (el) => roleOf(el) === "button" && tag(el) !== "input" && !nameOf(el, "button")
+    },
+    {
+      id: "link-name",
+      wcag: "2.4.4",
+      level: "A",
+      help: "is a link with no name",
+      check: (el) => roleOf(el) === "link" && !nameOf(el, "link")
+    },
+    {
+      id: "label",
+      wcag: "4.1.2",
+      level: "A",
+      help: "is a form field with no label",
+      check: (el) => field(el) && !nameOf(el, roleOf(el) || "textbox")
+    },
+    {
+      id: "frame-title",
+      wcag: "4.1.2",
+      level: "A",
+      help: "is a frame with no title",
+      check: (el) => (tag(el) === "iframe" || tag(el) === "frame") && !nameOf(el, "iframe")
+    },
+    {
+      id: "aria-hidden-focus",
+      wcag: "4.1.2",
+      level: "A",
+      help: 'can take focus inside aria-hidden="true"',
+      check: (el) => focusable(el) && !!el.closest('[aria-hidden="true"]')
+    },
+    {
+      id: "meta-viewport",
+      wcag: "1.4.4",
+      level: "AA",
+      help: "the viewport meta tag stops zooming",
+      page: (doc) => {
+        const meta = doc.querySelector('meta[name="viewport"]');
+        const content = (meta?.getAttribute("content") || "").toLowerCase().replace(/\s/g, "");
+        if (/user-scalable=(no|0)(,|$)/.test(content)) return "the viewport meta tag has user-scalable=no";
+        const max = /maximum-scale=([\d.]+)/.exec(content);
+        if (max && parseFloat(max[1]) < 2) return `the viewport meta tag has maximum-scale=${max[1]}`;
+        return null;
+      }
+    },
+    {
+      id: "color-contrast",
+      wcag: "1.4.3",
+      level: "AA",
+      help: "has text with too little contrast",
+      check: (el) => contrast(el) || false
+    }
+  ];
+  var LISTED3 = 5;
+  function a11y(root, level2) {
+    const rules = RULES.filter((r) => level2 === "AA" || r.level === "A");
+    const violations = [];
+    const els = [];
+    const scope = root || document.documentElement;
+    const all = [scope, ...descendants(scope)];
+    const hidden2 = new Map(all.map((el) => [el, hiddenForAria(el)]));
+    for (const rule of rules) {
+      const v = { rule: rule.id, wcag: rule.wcag, level: rule.level, help: rule.help, count: 0, nodes: [] };
+      if (rule.page) {
+        if (root) continue;
+        const why = rule.page(document);
+        if (why) violations.push({ ...v, count: 1, page: why });
+        continue;
+      }
+      for (const el of all) {
+        if (rule.id === "aria-hidden-focus" ? !hidden2.get(el) || !visible(el) : hidden2.get(el)) continue;
+        const found = rule.check?.(el);
+        if (!found) continue;
+        v.count++;
+        if (v.nodes.length < LISTED3) {
+          v.nodes.push({ candidate: describe(el), why: typeof found === "string" ? found : void 0, index: els.length });
+          els.push(el);
+        }
+      }
+      if (v.count) violations.push(v);
+    }
+    return { json: JSON.stringify({ rules: rules.length, violations }), els };
+  }
+
   // src/index.ts
   var api = {
     version: 1,
@@ -1725,7 +2100,11 @@ ${inner}
     reaches,
     focusMark,
     acted,
-    focusMoved
+    focusMoved,
+    expectElements,
+    expectPage,
+    expectNamed,
+    a11y
   };
   if (!globalThis.__ccdp) globalThis.__ccdp = api;
 })();
