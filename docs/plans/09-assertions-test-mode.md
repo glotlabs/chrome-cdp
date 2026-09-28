@@ -1,6 +1,6 @@
 # Plan 09 — Assertions & test mode
 
-Status: IN PROGRESS (9.1-9.2 done; 9.3 moved to plan 11)
+Status: DONE (9.1, 9.2 and 9.4; 9.3 moved to plan 11)
 Depends on: 05, 08 (batch/run)
 Note: the test runner (formerly 9.3) is in plan 11.
 
@@ -81,7 +81,7 @@ which is required either way.
 ## Acceptance criteria
 
 - [x] Every failed expect includes actual vs expected and a hint.
-- [ ] `docs/migrating-from-playwright.md` covers every API in the parity
+- [x] `docs/migrating-from-playwright.md` covers every API in the parity
       matrix.
 
 ## Decisions log
@@ -105,3 +105,7 @@ _(append here)_
 - 9.2: A snapshot failure prints the unified diff (`- baseline`, `+ page`) as a block note: `ErrorInfo` notes may now hold several lines, printed indented under their label. It is cut at `--max-chars`; `details.diff` has all of it. A screenshot failure saves the screenshot and a diff image (the page faded, changes in red) where `screenshot` saves its files, so the baselines' directory only ever holds baselines to commit.
 - 9.2: `expect-screenshot` captures at CSS scale with no `--max-size`, so a baseline does not depend on the device pixel ratio. It does not hide the caret or stop animations as Playwright does; the retries cover a blinking caret, and `--mask` covers the rest. `--update` over a page whose changes are all under `--threshold` leaves the file alone (`unchanged`).
 - 9.2: The pass line is `passed: expect-snapshot login: 7 lines as in the baseline (12ms)`; `-q` prints the baseline's path. `expect-screenshot` counts as fixed-size output (no `--max-chars`): it prints one line, and a failure's notes are paths and counts.
+- 9.4: `convert` is included, with its own small JavaScript reader (`crates/chrome-cdp/src/convert/`: a lexer, a forgiving parser of statements, member-chain calls, literals and arrow functions, and the translator) instead of tree-sitter. The TypeScript grammar is a large generated C parser that needs a C toolchain and adds megabytes to the binary, and a test's calls need none of it. What it cannot read becomes a TODO line, so nothing is rejected.
+- 9.4: `convert <spec> [-o file]` writes one script: each test is a section after a `# test: describe > title` comment, with the `test.use` options (as emulation commands), then the `beforeEach` steps, the test's, and the `afterEach` steps; `beforeAll`/`afterAll` go once around them, and skipped tests are a `# skipped:` comment. The tests run one after another in one session, so a route added in `beforeEach` is added again for each test (harmless: the first rule answers). Plan 11 can emit its `@test` directives here instead.
+- 9.4: A statement it cannot translate becomes `# TODO line N (why, often with the command to use): code`, the source on one line; `--json` lists them in `todos`, and a warning counts them. It also follows locators kept in variables, `process.env.X` (as `${env:X}`), string constants, `const p = page.waitForResponse(…)` then `await p`, and `Promise.all([wait, action])` (the action, then the wait, since `wait --response` looks back to the previous command).
+- 9.4: The migration guide maps every row plan 10's parity matrix names (and the rest of Playwright's page, locator, context and expect APIs) with the same ✅/🟡/❌/➖ marks; `docs/playwright-parity.md` itself stays plan 10's.
