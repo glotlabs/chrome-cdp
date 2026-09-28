@@ -44,8 +44,14 @@
 //!   `headers` (lower-case names), for checking what a request carried.
 //!   It allows cross-origin requests from the other origin.
 //!
+//! - `/e2e/api/…` is a small stateful REST API (see [`api`]), the real
+//!   backend of the test runner's shop page; each server has its own
+//!   state.
+//!
 //! Add pages under `testdata/site` (and dynamic routes in [`respond`]) as
 //! milestones need them, rather than starting another server.
+
+mod api;
 
 use std::convert::Infallible;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};
@@ -55,7 +61,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use futures_util::{SinkExt as _, StreamExt as _};
-use http_body_util::Full;
+use http_body_util::{BodyExt as _, Full};
 use hyper::body::Incoming;
 use hyper::header::{
     AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_DISPOSITION, CONTENT_TYPE, HeaderValue,
@@ -128,6 +134,7 @@ impl Fixtures {
             root,
             a: fixtures.a.clone(),
             b: fixtures.b.clone(),
+            api: std::sync::Mutex::default(),
         });
         let https = fixtures.https.clone();
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -185,6 +192,7 @@ struct Site {
     root: PathBuf,
     a: String,
     b: String,
+    api: std::sync::Mutex<api::Api>,
 }
 
 async fn serve(listener: TcpListener, site: Arc<Site>, origin: String) {
@@ -239,6 +247,25 @@ where
         async move {
             if req.uri().path() == "/ws" {
                 return Ok::<_, Infallible>(websocket(&mut req));
+            }
+            if req.uri().path().starts_with(api::PREFIX) {
+                let (parts, body) = req.into_parts();
+                let body = body
+                    .collect()
+                    .await
+                    .map(http_body_util::Collected::to_bytes)
+                    .unwrap_or_default();
+                let cookie = parts
+                    .headers
+                    .get(hyper::header::COOKIE)
+                    .and_then(|v| v.to_str().ok());
+                return Ok::<_, Infallible>(api::respond(
+                    &site.api,
+                    &parts.method,
+                    parts.uri.path(),
+                    cookie,
+                    &body,
+                ));
             }
             Ok::<_, Infallible>(respond(&site, &origin, &req).await)
         }
