@@ -1,0 +1,17 @@
+$ chrome-cdp init-script list
+exit: 0
+--- stdout
+s1 main 'window.__a = 1;' 15B
+s2 isolated '// Marks the page' 33B
+
+$ chrome-cdp init-script list --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"scripts":[{"id":"s1","preview":"window.__a = 1;","size":15,"world":"main"},{"id":"s2","preview":"// Marks the page","size":33,"world":"isolated"}]}}
+
+$ chrome-cdp init-script list -q
+exit: 0
+--- stdout
+s1
+s2
+

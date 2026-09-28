@@ -82,6 +82,20 @@ const REMOUNTED: &[&[&str]] = &[
     ],
 ];
 
+/// A session with two init scripts, s1 (main world) and s2 (isolated).
+const TWO_SCRIPTS: &[&[&str]] = &[
+    &["open"],
+    &["init-script", "add", "--code", "window.__a = 1;"],
+    &[
+        "init-script",
+        "add",
+        "--world",
+        "isolated",
+        "--code",
+        "// Marks the page\nwindow.__b = 2;",
+    ],
+];
+
 /// A session with four routes, r1 to r4.
 const FOUR_ROUTES: &[&[&str]] = &[
     &["open"],
@@ -749,6 +763,87 @@ const CASES: &[Case] = &[
         ],
         modes: ALL,
         fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "init-script-add",
+        args: &["init-script", "add", "--code", "window.__stub = true"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "init-script-add-now",
+        args: &[
+            "init-script",
+            "add",
+            "--now",
+            "--world",
+            "isolated",
+            "--code",
+            "window.__stub = true",
+        ],
+        modes: &[""],
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "init-script-does-not-compile",
+        args: &["init-script", "add", "--code", "window.x = {;"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "init-script-list",
+        args: &["init-script", "list"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(TWO_SCRIPTS),
+    },
+    Case {
+        name: "init-script-list-none",
+        args: &["init-script", "list"],
+        modes: &[""],
+        fixture: Fixture::Session,
+    },
+    // Each mode would remove what the one before did: one mode a case.
+    Case {
+        name: "init-script-remove",
+        args: &["init-script", "remove", "s1"],
+        modes: &[""],
+        fixture: Fixture::SessionAfter(TWO_SCRIPTS),
+    },
+    Case {
+        name: "init-script-remove-all",
+        args: &["init-script", "remove", "--all"],
+        modes: &["--json"],
+        fixture: Fixture::SessionAfter(TWO_SCRIPTS),
+    },
+    Case {
+        name: "init-script-remove-missing",
+        args: &["init-script", "remove", "s9"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "expose",
+        args: &["expose", "onSave", "onLoad"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "expose-bad-name",
+        args: &["expose", "on-save"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "unexpose",
+        args: &["unexpose", "onSave"],
+        modes: &[""],
+        fixture: Fixture::SessionAfter(&[&["open"], &["expose", "onSave", "onLoad"]]),
+    },
+    Case {
+        name: "unexpose-missing",
+        args: &["unexpose", "nope"],
+        modes: ERR,
+        fixture: Fixture::Session,
     },
     Case {
         name: "route-no-action",

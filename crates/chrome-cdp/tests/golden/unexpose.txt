@@ -1,0 +1,5 @@
+$ chrome-cdp unexpose onSave
+exit: 0
+--- stdout
+removed onSave; still exposed: onLoad
+

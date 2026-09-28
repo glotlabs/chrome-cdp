@@ -1,0 +1,5 @@
+$ chrome-cdp init-script list
+exit: 0
+--- stdout
+no init scripts; chrome-cdp init-script add <file> adds one
+

@@ -1,0 +1,16 @@
+$ chrome-cdp expose onSave onLoad
+exit: 0
+--- stdout
+exposed onSave, onLoad; each call is logged as binding onSave(args) in chrome-cdp console
+
+$ chrome-cdp expose onSave onLoad --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"bindings":["onSave","onLoad"],"changed":["onSave","onLoad"]}}
+
+$ chrome-cdp expose onSave onLoad -q
+exit: 0
+--- stdout
+onSave
+onLoad
+

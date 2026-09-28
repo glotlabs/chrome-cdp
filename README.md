@@ -18,7 +18,8 @@ recordings and measurements (`har`, `trace`, `perf`, `coverage`), helpers
 for a human watching (`highlight`, `inspect`), mocking and blocking requests
 (`route`, `block`, `routes`, `unroute`), devices and the environment
 (`emulate`, `viewport`, `geo`, `tz`, `locale`, `ua`, `media`, `offline`,
-`throttle`, `cpu-throttle`, `time`, `permissions`), raw CDP calls,
+`throttle`, `cpu-throttle`, `time`, `permissions`), scripts and functions
+for every page (`init-script`, `expose`, `unexpose`), raw CDP calls,
 `install`/`uninstall` and `schema` work so far:
 
 ```sh
@@ -333,6 +334,27 @@ grant) belong to the browser: `permissions` lists them, `permissions reset`
 takes them back. `open --fake-media` gives pages a fake camera and
 microphone. Out-of-process iframes get every setting but the pixel ratio,
 which Chrome sets only on the page.
+
+Init scripts run in every new document of the session, before the page's
+own scripts: stub an API, set a feature flag, or record what the page does.
+Like routes and emulation they belong to the session and reach every tab,
+popup and frame. `expose` gives pages a function whose calls land in the
+tab's console, so a page (or an init script) can report back:
+
+```sh
+chrome-cdp init-script add ./stubs.js           # s1; runs from the next load (`reload`), or --now
+chrome-cdp init-script add --code 'window.FEATURE_X = true' --world isolated
+chrome-cdp init-script list                     # s1 main /home/me/app/stubs.js 2KB
+chrome-cdp init-script remove s1                # or --all
+chrome-cdp expose onCheckout                    # window.onCheckout(...) → console: binding onCheckout({"total":42})
+chrome-cdp unexpose onCheckout                  # or --all
+```
+
+A script is checked in the active tab when it is added, and one that does
+not compile is refused. Its errors name its file (or `init-script-s1.js`) at
+its own line numbers. `--world isolated` runs it where `eval --world
+isolated` runs: the same DOM, out of the page's reach. An exposed function
+takes any arguments (sent as JSON) and returns a promise.
 
 `screenshot` saves an image of the viewport, the whole page (`--full`) or one
 element (`screenshot e12`, scrolled into view first) and prints its path:

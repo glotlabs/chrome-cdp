@@ -1,0 +1,12 @@
+$ chrome-cdp init-script add --code 'window.x = {;'
+exit: 2
+--- stderr
+error: the init script does not compile: SyntaxError: Unexpected token ';'
+  at: line 1, column 13
+  hint: fix the script and add it again
+
+$ chrome-cdp init-script add --code 'window.x = {;' --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"the init script does not compile: SyntaxError: Unexpected token ';'","hint":"fix the script and add it again","notes":[{"label":"at","text":"line 1, column 13"}]}}
+

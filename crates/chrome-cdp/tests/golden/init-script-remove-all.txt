@@ -1,0 +1,5 @@
+$ chrome-cdp init-script remove --all --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"active":0,"removed":["s1","s2"]}}
+

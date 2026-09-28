@@ -1,0 +1,16 @@
+$ chrome-cdp init-script add --code 'window.__stub = true'
+exit: 0
+--- stdout
+s1 main 'window.__stub = true' 20B
+runs in every new document before its scripts; chrome-cdp reload runs it in the current page
+
+$ chrome-cdp init-script add --code 'window.__stub = true' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"active":1,"added":{"id":"s1","preview":"window.__stub = true","size":20,"world":"main"},"ran_now":false}}
+
+$ chrome-cdp init-script add --code 'window.__stub = true' -q
+exit: 0
+--- stdout
+s1
+

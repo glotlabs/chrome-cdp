@@ -1,0 +1,10 @@
+$ chrome-cdp expose on-save
+exit: 2
+--- stderr
+error: `on-save` cannot be a function name; use letters, digits, _ and $, not starting with a digit
+
+$ chrome-cdp expose on-save --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"`on-save` cannot be a function name; use letters, digits, _ and $, not starting with a digit"}}
+

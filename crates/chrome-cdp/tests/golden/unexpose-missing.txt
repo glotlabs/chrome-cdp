@@ -1,0 +1,11 @@
+$ chrome-cdp unexpose nope
+exit: 1
+--- stderr
+error: no function called `nope` is exposed
+  hint: chrome-cdp expose   (lists them)
+
+$ chrome-cdp unexpose nope --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"no function called `nope` is exposed","hint":"chrome-cdp expose   (lists them)"}}
+

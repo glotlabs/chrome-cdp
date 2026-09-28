@@ -383,6 +383,22 @@ impl Daemon {
                 Ok(p) => output(self.engine.unroute(p).await),
                 Err(e) => Err(e),
             },
+            rpc::INIT_SCRIPT_ADD => match params(req.params) {
+                Ok(p) => output(self.engine.init_script_add(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::INIT_SCRIPT_LIST => match params(req.params) {
+                Ok(p) => output(Ok(self.engine.init_script_list(&p))),
+                Err(e) => Err(e),
+            },
+            rpc::INIT_SCRIPT_REMOVE => match params(req.params) {
+                Ok(p) => output(self.engine.init_script_remove(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::EXPOSE => match params(req.params) {
+                Ok(p) => output(self.engine.expose(p).await),
+                Err(e) => Err(e),
+            },
             rpc::EMULATE => match params(req.params) {
                 Ok(p) => output(self.engine.emulate(p).await),
                 Err(e) => Err(e),

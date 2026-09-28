@@ -844,6 +844,47 @@ Examples:
   chrome-cdp unroute --all")]
     Unroute(UnrouteArgs),
 
+    /// Run scripts in every page before its own: add, list or remove.
+    #[command(
+        subcommand_required = true,
+        arg_required_else_help = true,
+        after_help = "\
+An init script runs in every new document of the session (tabs, popups
+and frames, those opened later too) before the page's own scripts, in the
+order they were added. Stub APIs, set feature flags, or record what the
+page does. Init scripts belong to the session and stay when the browser
+is restarted.
+
+Examples:
+  chrome-cdp init-script add ./stubs.js
+  chrome-cdp init-script add --code 'window.FEATURE_X = true' --now
+  chrome-cdp init-script list
+  chrome-cdp init-script remove s1"
+    )]
+    InitScript(InitScriptArgs),
+
+    /// Give pages a function whose calls show up in the console.
+    #[command(after_help = "\
+Each NAME becomes a global function in every page and frame of the session
+(the open ones at once, new ones before their first script). It takes any
+arguments and returns a promise; each call is logged in the tab's console
+as `binding NAME(args)`, the arguments as JSON, so `console` shows what
+the page reported. Without NAME, lists the exposed functions. `unexpose`
+takes them away.
+
+Examples:
+  chrome-cdp expose onCheckout
+  chrome-cdp console --grep 'binding onCheckout'
+  chrome-cdp expose")]
+    Expose(ExposeArgs),
+
+    /// Take exposed functions away from pages.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp unexpose onCheckout
+  chrome-cdp unexpose --all")]
+    Unexpose(UnexposeArgs),
+
     /// Make pages look like a phone, tablet or desktop; list or reset.
     #[command(after_help = "\
 A device sets the viewport, pixel ratio, mobile mode, touch and user agent
@@ -2500,6 +2541,109 @@ pub(crate) struct UnrouteArgs {
 }
 
 #[derive(Debug, Args)]
+pub(crate) struct InitScriptArgs {
+    #[command(subcommand)]
+    pub(crate) command: InitScriptCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum InitScriptCommand {
+    /// Add a script that runs in every new document before its own.
+    #[command(after_help = "\
+Prints the script's id (s1, s2, …), its world and size. It runs from each
+page's next load (`reload` for the current one), or at once in the open
+pages too with --now. The script is checked in the active tab first; one
+that does not compile is refused. Errors it throws name its file (or
+init-script-s1.js) in `console` and `errors`.
+
+--world main (the default) runs it with the page's globals, to stub or
+wrap them; --world isolated runs it where `eval --world isolated` runs,
+with the same DOM but out of the page's reach.
+
+Examples:
+  chrome-cdp init-script add ./stubs.js
+  chrome-cdp init-script add --code 'localStorage.setItem(\"tour-done\", \"1\")'
+  chrome-cdp init-script add --code 'window.FEATURE_X = true' --now
+  cat stubs.js | chrome-cdp init-script add -")]
+    Add(InitScriptAddArgs),
+
+    /// List the init scripts, in the order they run.
+    #[command(after_help = "\
+Each line reads: id, world, file (or the script's first line), size.
+
+Examples:
+  chrome-cdp init-script list")]
+    List(InitScriptListArgs),
+
+    /// Remove init scripts from new documents.
+    #[command(after_help = "\
+Open pages keep what a script already did until they load again.
+
+Examples:
+  chrome-cdp init-script remove s1
+  chrome-cdp init-script remove --all")]
+    Remove(InitScriptRemoveArgs),
+}
+
+#[derive(Debug, Args)]
+#[command(group = ArgGroup::new("script").required(true).args(["file", "code"]))]
+pub(crate) struct InitScriptAddArgs {
+    /// The script's file; `-` reads it from stdin.
+    #[arg(value_name = "FILE")]
+    pub(crate) file: Option<PathBuf>,
+
+    /// The script itself, instead of a file.
+    #[arg(long, value_name = "JS", conflicts_with = "file")]
+    pub(crate) code: Option<String>,
+
+    /// Where it runs: the page's own world, or chrome-cdp's isolated one.
+    #[arg(long, value_enum, default_value_t = WorldArg::Main)]
+    pub(crate) world: WorldArg,
+
+    /// Also run it in the documents open now.
+    #[arg(long)]
+    pub(crate) now: bool,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct InitScriptListArgs {
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+#[command(group = ArgGroup::new("which").required(true).args(["ids", "all"]))]
+pub(crate) struct InitScriptRemoveArgs {
+    /// The scripts' ids, as `init-script list` shows them (s1, s2, …).
+    #[arg(value_name = "ID")]
+    pub(crate) ids: Vec<String>,
+
+    /// Remove every init script.
+    #[arg(long, conflicts_with = "ids")]
+    pub(crate) all: bool,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ExposeArgs {
+    /// Global function names (letters, digits, _ and $).
+    #[arg(value_name = "NAME")]
+    pub(crate) names: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+#[command(group = ArgGroup::new("which").required(true).args(["names", "all"]))]
+pub(crate) struct UnexposeArgs {
+    /// The functions' names.
+    #[arg(value_name = "NAME")]
+    pub(crate) names: Vec<String>,
+
+    /// Take every exposed function away.
+    #[arg(long, conflicts_with = "names")]
+    pub(crate) all: bool,
+}
+
+#[derive(Debug, Args)]
 pub(crate) struct EmulateArgs {
     /// A device name as `--list` shows it (case and spaces are loose), or
     /// `reset`. Without it, prints what the session emulates.
@@ -3674,7 +3818,9 @@ mod tests {
     /// of `--annotate`'s refs are listed).
     /// The emulation commands print a line per setting (`emulate --list`
     /// the fixed device table); `permissions` a line per permission the
-    /// user set.
+    /// user set. `init-script add` prints a line about the script (its
+    /// first line cut at 60 characters) and `remove` its ids; `expose`
+    /// and `unexpose` a line of names.
     const FIXED_SIZE: &[&str] = &[
         "emulate",
         "viewport",
@@ -3696,6 +3842,10 @@ mod tests {
         "route",
         "block",
         "unroute",
+        "init-script add",
+        "init-script remove",
+        "expose",
+        "unexpose",
         "screenshot",
         "pdf",
         "har start",

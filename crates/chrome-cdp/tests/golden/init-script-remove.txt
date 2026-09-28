@@ -1,0 +1,5 @@
+$ chrome-cdp init-script remove s1
+exit: 0
+--- stdout
+removed s1 (open pages keep its effects until they load again); 1 init script left
+

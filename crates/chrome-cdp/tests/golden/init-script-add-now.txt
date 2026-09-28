@@ -1,0 +1,6 @@
+$ chrome-cdp init-script add --now --world isolated --code 'window.__stub = true'
+exit: 0
+--- stdout
+s1 isolated 'window.__stub = true' 20B
+ran in the open pages, and runs in every new document before its scripts
+

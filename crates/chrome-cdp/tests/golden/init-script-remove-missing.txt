@@ -1,0 +1,11 @@
+$ chrome-cdp init-script remove s9
+exit: 1
+--- stderr
+error: there is no init script s9
+  hint: chrome-cdp init-script list   (lists them)
+
+$ chrome-cdp init-script remove s9 --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"there is no init script s9","hint":"chrome-cdp init-script list   (lists them)"}}
+

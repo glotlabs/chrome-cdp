@@ -67,7 +67,7 @@ impl Engine {
         } else {
             let _ = write!(
                 text,
-                "runs in every new document before its scripts; {} runs it in this page",
+                "runs in every new document before its scripts; {} runs it in the current page",
                 Cmd::new("reload").session(&self.session)
             );
         }
@@ -203,7 +203,7 @@ impl Engine {
             "no init scripts to remove".to_owned()
         } else {
             format!(
-                "removed {} (open pages keep what it did until they load again)",
+                "removed {} (open pages keep its effects until they load again)",
                 removed.join(", ")
             )
         };
@@ -326,10 +326,10 @@ fn expose_text(
     if !changed.is_empty() {
         let _ = writeln!(
             text,
-            "exposed {}; page calls show in {} as binding {}(…)",
+            "exposed {}; each call is logged as binding {}(args) in {}",
             changed.join(", "),
-            Cmd::new("console").session(session),
-            changed[0]
+            changed[0],
+            Cmd::new("console").session(session)
         );
     }
     if !already.is_empty() {

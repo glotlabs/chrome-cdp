@@ -34,6 +34,7 @@ use engine::{
     UnrouteRequest, WaitFor, WaitRequest,
 };
 use engine::{EmulateRequest, EmulationChange, PermissionsOp, PermissionsRequest};
+use engine::{ExposeRequest, InitScriptAddRequest, InitScriptListRequest, InitScriptRemoveRequest};
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
 use serde_json::{Map, Value, json};
@@ -43,10 +44,11 @@ use crate::cli::{
     AfterArgs, BlockArgs, CdpArgs, CloseArgs, ConnectArgs, CoverageArgs, CoverageCommand,
     DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, FindArgs,
     GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs,
-    ImageFormatArg, InspectArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs,
-    PermissionsArgs, PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs,
-    SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs,
-    TraceArgs, TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs, LogReadArgs,
+    NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs, PermissionsCommand,
+    ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs, StatusArgs,
+    StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs, TraceCommand, UnrouteArgs,
+    WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -889,7 +891,7 @@ fn add_routes(rules: Vec<engine::RouteSpec>, global: &GlobalArgs) -> Result<Outp
     let output =
         ctx.runtime
             .block_on(client.call_output(rpc::ROUTE, &request, ctx.timeout + QUICK))?;
-    Ok(every_tab(output, &ctx))
+    Ok(every_tab(output, &ctx, "routes"))
 }
 
 /// `routes`: needs a running session.
@@ -905,7 +907,7 @@ pub(crate) fn routes(args: &RoutesArgs, global: &GlobalArgs) -> Result<Output, E
     let output =
         ctx.runtime
             .block_on(client.call_output(rpc::ROUTES, &request, ctx.timeout + QUICK))?;
-    Ok(every_tab(output, &ctx))
+    Ok(every_tab(output, &ctx, "routes"))
 }
 
 /// `unroute`: needs a running session.
@@ -921,7 +923,111 @@ pub(crate) fn unroute(args: &UnrouteArgs, global: &GlobalArgs) -> Result<Output,
     let output =
         ctx.runtime
             .block_on(client.call_output(rpc::UNROUTE, &request, ctx.timeout + QUICK))?;
-    Ok(every_tab(output, &ctx))
+    Ok(every_tab(output, &ctx, "routes"))
+}
+
+/// `init-script add|list|remove`: need a running session.
+pub(crate) fn init_script(args: &InitScriptArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let timeout_ms = millis(ctx.timeout);
+    // The script is read before the session is looked for.
+    let (method, request) = match &args.command {
+        InitScriptCommand::Add(add) => {
+            let mut request = init_script_request(add)?;
+            request.timeout_ms = timeout_ms;
+            (rpc::INIT_SCRIPT_ADD, json!(request))
+        }
+        InitScriptCommand::List(list) => (
+            rpc::INIT_SCRIPT_LIST,
+            json!(InitScriptListRequest {
+                max_chars: list.max_chars,
+            }),
+        ),
+        InitScriptCommand::Remove(remove) => (
+            rpc::INIT_SCRIPT_REMOVE,
+            json!(InitScriptRemoveRequest {
+                ids: remove.ids.clone(),
+                all: remove.all,
+                timeout_ms,
+            }),
+        ),
+    };
+    let mut client = running_session(&ctx)?;
+    let output = ctx
+        .runtime
+        .block_on(client.call_output(method, &request, ctx.timeout + QUICK))?;
+    Ok(every_tab(output, &ctx, "init scripts"))
+}
+
+/// `init-script add`'s request without its timeout: the script read from
+/// its file, stdin or `--code`.
+fn init_script_request(args: &InitScriptAddArgs) -> Result<InitScriptAddRequest, ErrorInfo> {
+    let (source, file) = match (&args.code, &args.file) {
+        (Some(code), _) => (code.clone(), None),
+        (None, Some(path)) if path.as_os_str() == "-" => {
+            (input::text_arg("-", "the init script")?, None)
+        }
+        (None, Some(path)) => {
+            let absolute = PathBuf::from(input::absolute_path(path)?);
+            (read_script(&absolute)?, Some(absolute))
+        }
+        (None, None) => {
+            return Err(ErrorInfo::new(ErrorKind::BadArgs, "no init script given")
+                .hint(Hint::run(Cmd::new("init-script").arg("add").raw("<file>"))));
+        }
+    };
+    Ok(InitScriptAddRequest {
+        source,
+        file,
+        world: args.world.to_engine(),
+        now: args.now,
+        timeout_ms: 0,
+    })
+}
+
+/// Reads an init script's file, up to [`engine::MAX_SCRIPT`] bytes.
+fn read_script(path: &Path) -> Result<String, ErrorInfo> {
+    let cannot = |e: &dyn std::fmt::Display| {
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("cannot read {}: {e}", path.display()),
+        )
+    };
+    let len = std::fs::metadata(path).map_err(|e| cannot(&e))?.len();
+    if len > engine::MAX_SCRIPT as u64 {
+        return Err(cannot(&format_args!(
+            "it is {}; the most an init script can be is {}",
+            protocol::format::size(len),
+            protocol::format::size(engine::MAX_SCRIPT as u64)
+        )));
+    }
+    std::fs::read_to_string(path).map_err(|e| cannot(&e))
+}
+
+/// `expose` and `unexpose`: need a running session.
+pub(crate) fn expose(
+    names: &[String],
+    remove: bool,
+    all: bool,
+    global: &GlobalArgs,
+) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    for name in names {
+        engine::check_binding_name(name)?;
+    }
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let request = ExposeRequest {
+        names: names.to_vec(),
+        remove,
+        all,
+        timeout_ms: millis(ctx.timeout),
+    };
+    let output =
+        ctx.runtime
+            .block_on(client.call_output(rpc::EXPOSE, &request, ctx.timeout + QUICK))?;
+    Ok(every_tab(output, &ctx, "exposed functions"))
 }
 
 /// The emulation commands (`emulate`, `viewport`, `geo`, …): need a
@@ -986,9 +1092,11 @@ pub(crate) fn permissions(
 }
 
 /// Routes belong to the session: a `--tab` is no scope for them.
-fn every_tab(output: Output, ctx: &Ctx) -> Output {
+fn every_tab(output: Output, ctx: &Ctx, what: &str) -> Output {
     if ctx.tab.is_some() {
-        output.warning("routes apply to every tab of the session; --tab is ignored")
+        output.warning(format!(
+            "{what} apply to every tab of the session; --tab is ignored"
+        ))
     } else {
         output
     }
@@ -1622,7 +1730,42 @@ mod tests {
     use protocol::ErrorKind;
     use serde_json::json;
 
-    use super::{check_method, delay_ms, keep_previous_options, parse_params};
+    use super::{check_method, delay_ms, init_script_request, keep_previous_options, parse_params};
+
+    #[test]
+    fn init_scripts_are_read_from_files_or_code() {
+        use clap::Parser as _;
+        let request = |args: &[&str]| {
+            let cli = crate::cli::Cli::try_parse_from(
+                ["chrome-cdp", "init-script", "add"].iter().chain(args),
+            )
+            .unwrap();
+            let Some(crate::cli::Command::InitScript(script)) = cli.command else {
+                panic!("not init-script");
+            };
+            let crate::cli::InitScriptCommand::Add(add) = script.command else {
+                panic!("not add");
+            };
+            init_script_request(&add)
+        };
+        let code = request(&["--code", "window.a = 1", "--world", "isolated"]).unwrap();
+        assert_eq!(code.source, "window.a = 1");
+        assert_eq!(code.file, None);
+        assert_eq!(code.world, engine::EvalWorld::Isolated);
+
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("stub.js");
+        std::fs::write(&file, "window.stub = true;\n").unwrap();
+        let from_file = request(&[file.to_str().unwrap(), "--now"]).unwrap();
+        assert_eq!(from_file.source, "window.stub = true;\n");
+        assert_eq!(from_file.file.as_deref(), Some(file.as_path()));
+        assert!(from_file.now);
+
+        let missing = dir.path().join("missing.js");
+        let err = request(&[missing.to_str().unwrap()]).unwrap_err();
+        assert_eq!(err.kind, ErrorKind::BadArgs);
+        assert!(err.message.contains("missing.js"), "{}", err.message);
+    }
 
     #[test]
     fn flags_that_need_another() {
