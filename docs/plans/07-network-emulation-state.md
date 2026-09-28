@@ -1,6 +1,6 @@
 # Plan 07 — Network control, emulation & state
 
-Status: IN PROGRESS (7.1-7.2 done)
+Status: IN PROGRESS (7.1-7.3 done)
 Depends on: 03 (parallel with 04–06)
 
 ## Goal
@@ -152,3 +152,10 @@ _(append here)_
 - 7.2: Actions under emulation: clicks through the actionability pipeline land at a pixel ratio of 2, on Pixel 7 without a meta viewport (the page laid out 980 wide and zoomed out), and on an iPad in landscape, and `tap` works on a device; no coordinate changes were needed. CSS `zoom` and pinch zoom stay untested (a follow-up).
 - 7.2: `tap`'s error without touch now suggests `emulate 'iPhone 15'` instead of a raw CDP call.
 - 7.2: Like routes, emulation settings and permissions do not survive a daemon replaced by a CLI upgrade (only `open --device` does, as a session option); a follow-up.
+- 7.3: Init scripts and exposed functions live in the session's settings (`Injector`), like routes and emulation, so they reach every tab, popup and OOPIF while it is paused and survive `open --restart`. Each page and iframe session records what it has by keys that are never reused (script ids; an exposed name gets a new serial each time), with the id Chrome gave, and a change sends each session only the difference, compared and recorded under the state lock so a session set up meanwhile gets each item once. It replaces the tab manager's unremovable internal list; 7.4's origin-scoped localStorage seeding can add its scripts through it.
+- 7.3: `--world isolated` is chrome-cdp's own isolated world, the one `eval --world isolated` uses, not a new world per script, so an agent can read what the script set there. A script could overwrite chrome-cdp's helpers in that world; the help says where it runs.
+- 7.3: `init-script add` takes `--now` (not in the plan): Chrome's `runImmediately`, to run the script in the open documents too. Without it a script runs from each page's next load, as Playwright's `addInitScript` does, and the output says `reload` runs it in the current page.
+- 7.3: The CLI reads the file (or stdin with `-`, or `--code`), up to 5MB, and sends the source; the absolute path is kept for `init-script list` and as the script's `sourceURL` (`file:///…`, or `init-script-s1.js` for code), so errors it throws name it at its own line numbers. A script is compiled (`Runtime.compileScript`, not run) in the active tab first, and one with a syntax error is refused (`BadArgs`, with its line and column). `init-script remove` says open pages keep what a script did until they load again.
+- 7.3: `expose <name…>` (the stretch goal) is done. A `Runtime.addBinding` under a hidden name (`__chromeCdpExpose_<name>`) plus a wrapper script (run in the open documents too) that takes the binding off the global object and puts a function under the name: it takes any arguments, sends them as a JSON array (`undefined` as `null`, bigints as strings) and returns a promise, as Playwright's `exposeFunction` does, though without a return value. A call is a console entry of level info, source `binding`, kind the name, text `binding onSave({"id":1}, "x")`. `expose` alone lists the functions; `unexpose <name…>|--all` (not in the plan) takes them away, from the open documents too. Exposing a name again is a no-op.
+- 7.3: Workers get neither: `Page.addScriptToEvaluateOnNewDocument` is not theirs (Playwright's init scripts skip workers too).
+- 7.3: The frozen clock (7.2) stays its own init script (`Host::clock`), since `time advance` replaces it in place; it could move onto the injector later. Like routes and emulation, init scripts and exposed functions do not survive a daemon replaced by a CLI upgrade (the follow-up now lists them too).
