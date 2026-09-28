@@ -11,6 +11,7 @@
 //!
 //! - [`file`]: the format as written, and its JSON Schema
 //!   (`chrome-cdp schema mocks`);
+//! - [`format`]: `chrome-cdp fmt` of mock files;
 //! - `load`: finding sets by name and compiling them;
 //! - `matcher`: conditions on a request, with the reason one fails;
 //! - `closest`: how close a request comes to them (unmatched requests'
@@ -31,8 +32,10 @@ pub mod check;
 mod closest;
 mod collection;
 pub mod drift;
+
 mod engine;
 pub mod file;
+pub mod format;
 mod glob;
 mod load;
 mod matcher;
