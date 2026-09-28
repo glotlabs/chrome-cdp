@@ -23,13 +23,13 @@
 //! and the mouse and pointer actions (5.2). Plan 06 adds `observe`,
 //! starting with each tab's console and the `console` and `errors`
 //! commands (6.1), then its network log (6.2), and `screenshot` and `pdf`
-//! (6.3). Plan 07 adds request routing (`route`, 7.1).
-//! Later plans add modules next to `tabs` and `navigate`: `page`,
-//! `emulate`.
+//! (6.3). Plan 07 adds request routing (`route`, 7.1) and emulation
+//! (`emulate`, 7.2).
 
 mod clipboard;
 mod dialog;
 mod downloads;
+mod emulate;
 mod endpoint;
 mod errors;
 mod frames;
@@ -62,6 +62,11 @@ use protocol::schema::{BrowserInfo, BrowserKind, OpenData, ProfileInfo, SessionS
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 use tokio::sync::Notify;
 
+pub use emulate::commands::device_list;
+pub use emulate::{
+    DEVICES, Device, PERMISSIONS, check_permission, default_viewport, device_viewport, find_device,
+    parse_time, throttle_preset, throttle_presets,
+};
 pub use endpoint::{Endpoint, parse_endpoint};
 pub use errors::from_cdp;
 pub use frames::{FrameInfo, WORLD_NAME, World};
@@ -74,14 +79,15 @@ pub use read::check_read;
 pub use request::{
     Action, ActionRequest, Button, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
     ConsoleRequest, CoverageStartRequest, CoverageStopRequest, DialogPolicy, DialogRequest,
-    DownloadsRequest, ElementState, EvalRequest, EvalWorld, FindRequest, HarContent,
-    HarStartRequest, HarStopRequest, HighlightRequest, HttpCredentials, ImageFormat,
-    InspectRequest, Margins, Modifier, MouseOp, NavigateRequest, Navigation, NetworkClearRequest,
-    NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest, PerfRequest, Read,
-    ReadRequest, RouteAction, RouteBody, RouteRequest, RouteSpec, RoutesRequest, ScreenshotRequest,
-    ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest, StatusRange, TabCloseRequest,
-    TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest, TraceStopRequest,
-    UnrouteRequest, WaitFor, WaitRequest, WaitUntil,
+    DownloadsRequest, ElementState, EmulateRequest, EmulationChange, EvalRequest, EvalWorld,
+    FindRequest, HarContent, HarStartRequest, HarStopRequest, HighlightRequest, HttpCredentials,
+    ImageFormat, InspectRequest, Margins, Modifier, MouseOp, NavigateRequest, Navigation,
+    NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest,
+    PerfRequest, PermissionsOp, PermissionsRequest, Read, ReadRequest, RouteAction, RouteBody,
+    RouteRequest, RouteSpec, RoutesRequest, ScreenshotRequest, ScrollTo, ShotScale, Since,
+    SnapshotEngine, SnapshotRequest, StatusRange, TabCloseRequest, TabNewRequest, TabSelectRequest,
+    TabsRequest, Target, TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest,
+    WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use tabs::commands::TabClosed;
@@ -286,6 +292,9 @@ impl Engine {
     pub async fn open(self: &Arc<Self>, req: OpenRequest) -> Result<Opened, ErrorInfo> {
         let timeout = millis(req.timeout_ms);
         let tab = req.tab.as_deref().map(parse_tab_id).transpose()?;
+        if let Some(device) = &req.device {
+            emulate::find_device(device, &self.session)?;
+        }
         let _lifecycle = self.lifecycle.lock().await;
         if let Some(follow) = req.follow_popups {
             self.settings.set_follow_popups(follow);
@@ -338,6 +347,15 @@ impl Engine {
             }
             None => (self.launch(&req, &mut warnings).await?, true),
         };
+        if let Some(device) = &req.device {
+            let change = EmulateRequest {
+                change: EmulationChange::Device {
+                    name: device.clone(),
+                },
+                timeout_ms: req.timeout_ms,
+            };
+            self.emulate(change).await?;
+        }
         let page = match &req.url {
             Some(url) => {
                 let tab = tab.map(tabs::tab_name);
@@ -361,6 +379,10 @@ impl Engine {
                 started,
                 browser: running.info.clone(),
                 page,
+                device: req
+                    .device
+                    .as_ref()
+                    .and(self.settings.emulation.get().device),
             },
             warnings,
         })
@@ -458,6 +480,7 @@ impl Engine {
                         started: false,
                         browser: running.info.clone(),
                         page: None,
+                        device: None,
                     },
                     warnings,
                 });
@@ -527,6 +550,7 @@ impl Engine {
                 started: true,
                 browser: running.info.clone(),
                 page: None,
+                device: None,
             },
             warnings,
         })
@@ -542,13 +566,14 @@ impl Engine {
     ) -> Arc<Running> {
         let generation = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
         let stop = Arc::new(Notify::new());
+        let default_viewport = default_viewport_for(&spec);
         let running = Arc::new(Running {
             generation,
             conn: conn.clone(),
             info,
             spec,
             started: Instant::now(),
-            tabs: Tabs::start(&conn, self.settings.clone()),
+            tabs: Tabs::start(&conn, self.settings.clone(), default_viewport),
             launched: Mutex::new(launched),
             stop: stop.clone(),
             mac: std::sync::OnceLock::new(),
@@ -776,6 +801,22 @@ impl Engine {
             }
             None => Closed::Detached,
         }
+    }
+}
+
+/// The viewport pages of a browser started with `spec` get without their
+/// own: 1280x800 in headless mode (unless `--window-size` sets it), none
+/// when a window sets it (headed, or a browser chrome-cdp connected to).
+fn default_viewport_for(spec: &Spec) -> Option<protocol::schema::Viewport> {
+    match spec {
+        Spec::Launched {
+            headed: false,
+            args,
+            ..
+        } if !args.iter().any(|a| a.starts_with("--window-size")) => {
+            Some(emulate::default_viewport())
+        }
+        Spec::Launched { .. } | Spec::Connected { .. } => None,
     }
 }
 

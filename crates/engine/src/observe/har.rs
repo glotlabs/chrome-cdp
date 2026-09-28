@@ -568,7 +568,7 @@ fn response_cookies(headers: &[Header]) -> Vec<Cookie> {
 }
 
 /// Unix ms as ISO 8601 in UTC: `2026-09-28T10:04:05.123Z`.
-fn iso8601(ms: u64) -> String {
+pub(crate) fn iso8601(ms: u64) -> String {
     let secs = ms / 1000;
     let days = i64::try_from(secs / 86_400).unwrap_or(0);
     let rest = secs % 86_400;

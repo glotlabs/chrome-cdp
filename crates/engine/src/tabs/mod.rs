@@ -5,7 +5,7 @@
 //! and out-of-process iframe session (their OOPIFs and dedicated workers),
 //! always with `waitForDebuggerOnStart`. A new target is paused before it
 //! runs any script; [`setup`] applies the session's settings to it (init
-//! scripts today; emulation and routes in plan 07), turns on the events
+//! scripts, routes and emulation), turns on the events
 //! that track its frames and execution contexts (milestone 3.2, see
 //! [`crate::frames`]), and only then resumes it. That is what makes
 //! settings apply to a popup's first script.
@@ -25,12 +25,15 @@
 //! [`Tabs::mark`].
 //!
 //! Plan 07 adds request routing: while the session has routes, every page
-//! and iframe session intercepts its requests (see [`fetch`]).
+//! and iframe session intercepts its requests (see [`fetch`]); and
+//! emulation, which every page and iframe session gets (see
+//! [`emulation`]).
 
 mod auth;
 pub(crate) mod commands;
 pub(crate) mod dialogs;
 mod downloads;
+pub(crate) mod emulation;
 mod fetch;
 mod locks;
 
@@ -43,10 +46,11 @@ use std::time::Duration;
 
 use cdp::domains::{browser, network, page, runtime, security, target};
 use cdp::{Connection, Event as _, RawEvent, RawEventStream, Session};
-use protocol::schema::{Event, TabInfo};
+use protocol::schema::{Event, TabInfo, Viewport};
 
 use self::dialogs::OpenDialog;
 use self::downloads::Download;
+use crate::emulate::{Aspects, Emulator};
 use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
 use crate::injected;
 use crate::input::Pointer;
@@ -131,6 +135,8 @@ pub(crate) struct Settings {
     bypass_service_worker: AtomicBool,
     /// The routing rules (plan 07).
     pub(crate) routes: Router,
+    /// What pages emulate, and the permissions (plan 07).
+    pub(crate) emulation: Emulator,
 }
 
 impl Settings {
@@ -224,6 +230,8 @@ struct Shared {
     changed: watch::Sender<u64>,
     /// Whether this browser was told to ignore certificate errors.
     security_applied: AtomicBool,
+    /// The viewport of pages without their own (headless mode).
+    default_viewport: Option<Viewport>,
     /// The watcher and setup tasks. They hold the connection, so they are
     /// stopped with the manager (a connected browser's WebSocket closes
     /// only when the last handle goes).
@@ -295,6 +303,10 @@ struct Host {
     session: Session,
     /// The tab whose frames it has (none for a prerender page).
     tab: Option<u32>,
+    /// A page's own session, not an iframe's: it has the viewport.
+    main: bool,
+    /// The id of its frozen clock script (`time freeze`), if it has one.
+    clock: Option<String>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -310,8 +322,13 @@ impl Drop for Tabs {
 }
 
 impl Tabs {
-    /// Starts watching `conn`'s targets. Call [`Tabs::init`] next.
-    pub(crate) fn start(conn: &Connection, settings: Arc<Settings>) -> Self {
+    /// Starts watching `conn`'s targets. Call [`Tabs::init`] next. Pages
+    /// without a viewport of their own get `default_viewport`.
+    pub(crate) fn start(
+        conn: &Connection,
+        settings: Arc<Settings>,
+        default_viewport: Option<Viewport>,
+    ) -> Self {
         let shared = Arc::new(Shared {
             conn: conn.clone(),
             settings,
@@ -330,6 +347,7 @@ impl Tabs {
             }),
             changed: watch::Sender::new(0),
             security_applied: AtomicBool::new(false),
+            default_viewport,
             tasks: Mutex::default(),
         });
         // Subscribe before anything can attach.
@@ -347,6 +365,7 @@ impl Tabs {
         let browser = self.conn.browser().with_timeout(timeout);
         self.apply_security(timeout).await?;
         self.manage_downloads(timeout).await;
+        emulation::apply_permissions(&self.shared, timeout).await;
         browser
             .call(target::SetDiscoverTargetsParams::new(true))
             .await?;
@@ -448,6 +467,18 @@ impl Tabs {
     /// `--bypass-service-worker` (new sessions get it during [`setup`]).
     pub(crate) async fn apply_interception(&self, timeout: Duration) {
         fetch::apply(&self.shared, timeout).await;
+    }
+
+    /// Sends a change of the session's emulation (`aspects`) to every page
+    /// and iframe session (new ones get it during [`setup`]). Returns the
+    /// errors Chrome gave.
+    pub(crate) async fn apply_emulation(&self, aspects: Aspects, timeout: Duration) -> Vec<String> {
+        emulation::apply(&self.shared, aspects, timeout).await
+    }
+
+    /// The viewport of pages without their own, if there is one.
+    pub(crate) fn default_viewport(&self) -> Option<Viewport> {
+        self.shared.default_viewport.clone()
     }
 
     /// Waits up to `timeout` for `done` to hold; `false` if it did not.
@@ -1550,6 +1581,8 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
             Host {
                 session: session.clone(),
                 tab,
+                main: info.r#type == "page",
+                clock: None,
             },
         );
         shared.spawn(watch_host(shared.clone(), events, session.clone(), tab));
@@ -1575,10 +1608,11 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
         Kind::Other
     };
     let waiting = attached.waiting_for_debugger;
+    let main = info.r#type == "page";
     let task_shared = shared.clone();
     shared.spawn(async move {
         let session = session.with_timeout(SETUP_TIMEOUT);
-        setup(&task_shared, &session, kind, tab, waiting).await;
+        setup(&task_shared, &session, kind, main, tab, waiting).await;
         if let Some(id) = new_tab {
             ready(&task_shared, id);
         }
@@ -1632,12 +1666,12 @@ enum Kind {
 /// renderer) only come once the target runs, so awaiting each step before
 /// sending the next would stall until the timeout.
 ///
-/// Later milestones add their per-target steps here (emulation in plan
-/// 07).
+/// `main` is set for a page's own session (not an iframe's).
 async fn setup(
     shared: &Arc<Shared>,
     session: &Session,
     kind: Kind,
+    main: bool,
     tab: Option<u32>,
     waiting: bool,
 ) {
@@ -1723,6 +1757,8 @@ async fn setup(
         }
         // Routes and HTTP authentication (see `fetch`).
         fetch::setup_steps(shared, session, &mut steps);
+        // Devices, viewport, locale, … (see `emulation`).
+        emulation::setup_steps(shared, session, main, &mut steps);
     }
     if waiting {
         let resume = runtime::RunIfWaitingForDebuggerParams::default();

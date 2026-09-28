@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>first script</title>
+<script>
+  // What the page's first script sees: emulation must apply already.
+  window.first = {
+    width: innerWidth,
+    dpr: devicePixelRatio,
+    touch: navigator.maxTouchPoints,
+    language: navigator.language,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    dark: matchMedia("(prefers-color-scheme: dark)").matches,
+    reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
+    onLine: navigator.onLine,
+    now: Date.now(),
+    userAgent: navigator.userAgent,
+  };
+</script>
+</head>
+<body><p>The first script records what it sees in <code>window.first</code>.</p></body>
+</html>

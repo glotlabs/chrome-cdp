@@ -23,6 +23,9 @@ pub fn opened(opened: &Opened) -> Output {
         (true, BrowserKind::Connected) => format!("connected session {session}: {browser}"),
         (false, _) => format!("session {session} is already open: {browser}"),
     };
+    if let Some(device) = &data.device {
+        let _ = write!(text, "\ndevice: {device}");
+    }
     let quiet = match &data.page {
         Some(page) => {
             let _ = write!(text, "\npage: {} {:?}", page.url, page.title);

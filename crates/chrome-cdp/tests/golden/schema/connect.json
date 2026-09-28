@@ -691,6 +691,13 @@
           "$ref": "#/$defs/BrowserInfo",
           "description": "The browser."
         },
+        "device": {
+          "description": "The device emulated (`--device`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "page": {
           "anyOf": [
             {

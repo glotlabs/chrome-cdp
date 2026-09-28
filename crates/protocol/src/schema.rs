@@ -222,6 +222,91 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<UnrouteData>),
     },
     CommandSchema {
+        name: "emulate",
+        summary: "what the session emulates, after a device or reset; with --list the devices",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
+        name: "viewport",
+        summary: "what the session emulates, after setting the viewport",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
+        name: "geo",
+        summary: "what the session emulates, after setting the geolocation",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
+        name: "tz",
+        summary: "what the session emulates, after setting the time zone",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
+        name: "locale",
+        summary: "what the session emulates, after setting the locale",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
+        name: "ua",
+        summary: "what the session emulates, after setting the user agent",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
+        name: "media",
+        summary: "what the session emulates, after setting CSS media features",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
+        name: "offline",
+        summary: "what the session emulates, after turning the network off or on",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
+        name: "throttle",
+        summary: "what the session emulates, after setting network throttling",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
+        name: "cpu-throttle",
+        summary: "what the session emulates, after setting CPU throttling",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
+        name: "time freeze",
+        summary: "what the session emulates, after freezing the time pages see",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
+        name: "time advance",
+        summary: "what the session emulates, after moving the frozen time on",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
+        name: "time reset",
+        summary: "what the session emulates, after giving pages the real time back",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
+        name: "permissions",
+        summary: "the permissions the session granted or denied",
+        schema: || schema_for!(Envelope<PermissionsData>),
+    },
+    CommandSchema {
+        name: "permissions grant",
+        summary: "the permissions the session set, after granting some",
+        schema: || schema_for!(Envelope<PermissionsData>),
+    },
+    CommandSchema {
+        name: "permissions deny",
+        summary: "the permissions the session set, after denying some",
+        schema: || schema_for!(Envelope<PermissionsData>),
+    },
+    CommandSchema {
+        name: "permissions reset",
+        summary: "the permissions the session set, after resetting some or all",
+        schema: || schema_for!(Envelope<PermissionsData>),
+    },
+    CommandSchema {
         name: "trace start",
         summary: "the tab whose performance trace is recording, and its categories",
         schema: || schema_for!(Envelope<TraceStartData>),
@@ -642,6 +727,9 @@ pub struct OpenData {
     /// The page opened, when a URL was given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub page: Option<PageInfo>,
+    /// The device emulated (`--device`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
 }
 
 /// `data` of `chrome-cdp close --json`.
@@ -1318,6 +1406,164 @@ pub struct UnrouteData {
     pub removed: Vec<String>,
     /// How many rules are left.
     pub active: usize,
+}
+
+/// The page size and kind of screen (`viewport`, or a device's; plan 07).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Viewport {
+    /// In CSS pixels.
+    pub width: u32,
+    pub height: u32,
+    /// `devicePixelRatio`.
+    pub dpr: f64,
+    /// A mobile browser: the meta viewport tag counts, scrollbars overlay.
+    pub mobile: bool,
+    /// Touch events and `navigator.maxTouchPoints` > 0.
+    pub touch: bool,
+    /// The screen (`screen.width`/`height`) if not the viewport's size.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screen_width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screen_height: Option<u32>,
+}
+
+/// Where `navigator.geolocation` says the device is (`geo`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Geolocation {
+    pub latitude: f64,
+    pub longitude: f64,
+    /// In metres.
+    pub accuracy: f64,
+}
+
+/// The CSS media the page sees (`media`); a feature left out is the
+/// browser's own.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Media {
+    /// `screen` or `print`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<String>,
+    /// `prefers-color-scheme`: `light` or `dark`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color_scheme: Option<String>,
+    /// `prefers-reduced-motion`: `reduce` or `no-preference`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reduced_motion: Option<String>,
+    /// `forced-colors`: `active` or `none`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forced_colors: Option<String>,
+}
+
+impl Media {
+    /// Whether nothing is emulated.
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// A slow network (`throttle`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Throttle {
+    /// `slow-3g`, `fast-3g` or `4g`; absent for custom values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset: Option<String>,
+    /// Added to every request before its response starts, in ms.
+    pub latency_ms: f64,
+    /// Download bandwidth in kbit/s; absent for no limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub download_kbps: Option<f64>,
+    /// Upload bandwidth in kbit/s; absent for no limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upload_kbps: Option<f64>,
+}
+
+/// The time pages see while it is frozen (`time freeze`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FrozenTime {
+    /// `Date.now()` in the page: ms since the Unix epoch.
+    pub epoch_ms: i64,
+    /// The same in ISO 8601 (UTC).
+    pub iso: String,
+}
+
+/// What the session emulates (plan 07). Every field left out (or
+/// `false`) is the browser's own.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct Emulation {
+    /// The device `emulate` made the pages look like, as long as its
+    /// viewport and user agent stay.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
+    /// The viewport; absent for the default (`default_viewport`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub viewport: Option<Viewport>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_agent: Option<String>,
+    /// A BCP 47 tag: `Intl`, `navigator.language` and `Accept-Language`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locale: Option<String>,
+    /// An IANA time zone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geolocation: Option<Geolocation>,
+    #[serde(default, skip_serializing_if = "Media::is_empty")]
+    pub media: Media,
+    /// Whether the network is off (`navigator.onLine` is false and
+    /// requests fail).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub offline: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub throttle: Option<Throttle>,
+    /// How many times slower the CPU runs (`cpu-throttle`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_throttle: Option<f64>,
+    /// The time `Date` gives while frozen (`time freeze`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time: Option<FrozenTime>,
+}
+
+/// A device `emulate` can be (`emulate --list`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DeviceInfo {
+    pub name: String,
+    pub viewport: Viewport,
+    pub user_agent: String,
+}
+
+/// `data` of `chrome-cdp emulate --json` and of `viewport`, `geo`, `tz`,
+/// `locale`, `ua`, `media`, `offline`, `throttle`, `cpu-throttle` and
+/// `time`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct EmulateData {
+    /// Everything the session emulates now.
+    pub emulation: Emulation,
+    /// The viewport pages get without one (1280x800 in headless mode;
+    /// absent when the window sets it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_viewport: Option<Viewport>,
+    /// With `emulate --list`: the devices.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub devices: Option<Vec<DeviceInfo>>,
+}
+
+/// A permission the session set (`permissions`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PermissionInfo {
+    /// As the Permissions API names it: `geolocation`, `notifications`, …
+    pub name: String,
+    /// `granted` or `denied`.
+    pub setting: String,
+    /// The origin it applies to; every origin if absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+}
+
+/// `data` of `chrome-cdp permissions --json` and its subcommands.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PermissionsData {
+    /// The permissions the session set, oldest first.
+    pub permissions: Vec<PermissionInfo>,
 }
 
 /// `data` of `chrome-cdp trace start --json`.

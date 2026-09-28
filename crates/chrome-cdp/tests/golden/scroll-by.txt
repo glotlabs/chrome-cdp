@@ -1,12 +1,12 @@
 $ chrome-cdp scroll --by 0,300
 exit: 0
 --- stdout
-scrolled the page to 0,300 (max 0,1654)
+scrolled the page to 0,300 (max 0,1291)
 
 $ chrome-cdp scroll --by 0,300 --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"at_bottom":false,"at_left":true,"at_right":true,"at_top":false,"max_x":0.0,"max_y":1654.0,"tab":"t1","x":0.0,"y":600.0}}
+{"ok":true,"data":{"at_bottom":false,"at_left":true,"at_right":true,"at_top":false,"max_x":0.0,"max_y":1291.0,"tab":"t1","x":0.0,"y":600.0}}
 
 $ chrome-cdp scroll --by 0,300 -q
 exit: 0

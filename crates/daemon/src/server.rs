@@ -383,6 +383,14 @@ impl Daemon {
                 Ok(p) => output(self.engine.unroute(p).await),
                 Err(e) => Err(e),
             },
+            rpc::EMULATE => match params(req.params) {
+                Ok(p) => output(self.engine.emulate(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::PERMISSIONS => match params(req.params) {
+                Ok(p) => output(self.engine.permissions(p).await),
+                Err(e) => Err(e),
+            },
             rpc::SCREENSHOT => match params(req.params) {
                 Ok(p) => output(Box::pin(self.engine.screenshot(p)).await),
                 Err(e) => Err(e),

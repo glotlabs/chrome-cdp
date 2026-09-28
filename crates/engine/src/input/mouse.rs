@@ -325,12 +325,10 @@ impl Actor<'_> {
         .hint(
             Hint::run(Cmd::new("click").arg(locator).session(self.session()))
                 .why("a mouse click")
-                .or(Cmd::new("cdp")
-                    .flag("target", "page")
-                    .arg("Emulation.setTouchEmulationEnabled")
-                    .arg(r#"{"enabled": true}"#)
-                    .session(self.session())
-                    .to_string()),
+                .or(format!(
+                    "{}   (a phone with touch)",
+                    Cmd::new("emulate").arg("iPhone 15").session(self.session())
+                )),
         )
     }
 

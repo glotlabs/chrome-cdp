@@ -6,8 +6,8 @@
 //! needs two things a user gives and an automated tab lacks: permission
 //! (granted to the page's origin with `Browser.setPermission`, and kept,
 //! as a user's "allow" is) and a focused document (emulated with
-//! `Emulation.setFocusEmulationEnabled` for the call only). Plan 07's
-//! permissions and emulation build on the same calls.
+//! `Emulation.setFocusEmulationEnabled` for the call only). The grants
+//! are the session's, so plan 07's `permissions` lists them.
 
 use cdp::domains::browser::{PermissionDescriptor, PermissionSetting, SetPermissionParams};
 use cdp::domains::emulation::SetFocusEmulationEnabledParams;
@@ -115,6 +115,10 @@ impl Engine {
                 .call(params)
                 .await
                 .map_err(|e| from_cdp(&e, &self.session))?;
+            // `permissions` lists it, and can take it back.
+            self.settings
+                .emulation
+                .record_permission(name, "granted", Some(&origin.origin));
         }
         let page_session = page.session.with_timeout(timeout);
         page_session

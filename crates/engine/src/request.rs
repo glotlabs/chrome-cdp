@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use browser::{Chrome, ProfileChoice};
+use protocol::schema::{Geolocation, Media, Throttle, Viewport};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -74,6 +75,10 @@ pub struct OpenRequest {
     /// keeps the session's setting (off at first).
     #[serde(default)]
     pub bypass_service_worker: Option<bool>,
+    /// `--device`: emulate this device (as `emulate <device>`) before
+    /// loading `url`.
+    #[serde(default)]
+    pub device: Option<String>,
     /// Bounds the launch and the page load.
     pub timeout_ms: u64,
 }
@@ -812,6 +817,92 @@ pub struct UnrouteRequest {
     #[serde(default)]
     pub all: bool,
     pub timeout_ms: u64,
+}
+
+/// `emulate`, `viewport`, `geo`, `tz`, `locale`, `ua`, `media`,
+/// `offline`, `throttle`, `cpu-throttle` and `time`: change what the
+/// session emulates (or only show it).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EmulateRequest {
+    pub change: EmulationChange,
+    pub timeout_ms: u64,
+}
+
+/// One change to the session's emulation. `None` puts a setting back to
+/// the browser's own.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum EmulationChange {
+    /// Change nothing (`emulate` alone).
+    Show,
+    /// Every setting back to the browser's own (`emulate reset`).
+    Reset,
+    /// A device of the table: viewport, touch, mobile and user agent.
+    Device {
+        name: String,
+    },
+    Viewport {
+        viewport: Option<Viewport>,
+    },
+    /// Also grants the geolocation permission to every origin.
+    Geolocation {
+        geolocation: Option<Geolocation>,
+    },
+    Timezone {
+        timezone: Option<String>,
+    },
+    Locale {
+        locale: Option<String>,
+    },
+    UserAgent {
+        user_agent: Option<String>,
+    },
+    /// The features given change; `None` resets them all.
+    Media {
+        media: Option<Media>,
+    },
+    Offline {
+        offline: bool,
+    },
+    Throttle {
+        throttle: Option<Throttle>,
+    },
+    /// 1 or `None` for full speed.
+    CpuThrottle {
+        rate: Option<f64>,
+    },
+    /// Pages see this time (ms since the Unix epoch) until it changes.
+    TimeFreeze {
+        epoch_ms: i64,
+    },
+    /// Moves the frozen time on.
+    TimeAdvance {
+        ms: u64,
+    },
+    TimeReset,
+}
+
+/// `permissions`: list, grant, deny or reset permissions.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PermissionsRequest {
+    pub op: PermissionsOp,
+    /// Permission names as the Permissions API has them (`geolocation`).
+    #[serde(default)]
+    pub names: Vec<String>,
+    /// `--origin`: only this origin; every origin if `None`.
+    #[serde(default)]
+    pub origin: Option<String>,
+    pub timeout_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PermissionsOp {
+    List,
+    Grant,
+    Deny,
+    /// Back to asking (all of them without names).
+    Reset,
 }
 
 /// `highlight`.
