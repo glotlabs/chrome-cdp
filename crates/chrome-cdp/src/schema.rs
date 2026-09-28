@@ -18,8 +18,9 @@ pub(crate) fn run(args: &SchemaArgs) -> Result<Output, ErrorInfo> {
             Some(first) => info
                 .note("did you mean", close.join(", "))
                 .hint(Hint::run(Cmd::new("schema").raw(*first))),
-            None => info
-                .hint(Hint::run(Cmd::new("schema")).why("lists the commands that have one")),
+            None => {
+                info.hint(Hint::run(Cmd::new("schema")).why("lists the commands that have one"))
+            }
         });
     };
     let schema = entry.schema();
