@@ -742,4 +742,51 @@ fn every_test_leaves_artifacts_and_a_failure_a_report() {
     for shot in shots {
         assert!(passes.join(shot.as_str().unwrap()).is_file(), "{shot}");
     }
+    // --reporter writes files besides stdout.
+    let (out, value) = project.json(&[
+        "scenarios/fail/fails.cdp",
+        "--reporter",
+        "text,json,junit=out/junit.xml,html",
+    ]);
+    assert_eq!(out.status.code(), Some(1));
+    let reporters = &value["error"]["details"]["reporters"];
+    let junit = project.root.join("out/junit.xml");
+    assert_eq!(reporters["junit"], junit.display().to_string(), "{value}");
+    let xml = std::fs::read_to_string(&junit).unwrap();
+    assert!(
+        xml.contains(
+            "<testcase name=\"fails on a missing element\" classname=\"scenarios/fail/fails.cdp\""
+        ),
+        "{xml}"
+    );
+    assert!(
+        xml.contains(
+            "<failure message=\"expect failed: text=Nowhere visible\" type=\"ExpectFailed\">"
+        ),
+        "{xml}"
+    );
+    let html = project.root.join("e2e/.results/report.html");
+    assert_eq!(reporters["html"], html.display().to_string());
+    let page = std::fs::read_to_string(&html).unwrap();
+    assert!(
+        page.contains("✗ scenarios/fail/fails.cdp:8 fails on a missing element"),
+        "{page}"
+    );
+    assert!(
+        page.contains("data:image/png;base64,"),
+        "failure.png is inlined"
+    );
+    let json: Value = serde_json::from_str(
+        &std::fs::read_to_string(project.root.join("e2e/.results/results.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(json["failed"], 1);
+    let text = stdout(&project.test(&["scenarios/fail/fails.cdp:5", "--reporter", "junit"]));
+    assert!(
+        text.contains(&format!(
+            "\njunit report: {}\n",
+            project.root.join("e2e/.results/junit.xml").display()
+        )),
+        "{text}"
+    );
 }

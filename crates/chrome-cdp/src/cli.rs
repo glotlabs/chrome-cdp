@@ -4932,6 +4932,11 @@ pub(crate) struct TestArgs {
     #[arg(long)]
     pub(crate) trace: bool,
 
+    /// Also write reports to files, comma-separated: json, junit, html
+    /// (in the artifacts directory, or NAME=FILE); text is stdout.
+    #[arg(long, value_delimiter = ',', value_parser = crate::test::reporters::parse, value_name = "NAMES")]
+    pub(crate) reporter: Vec<crate::test::reporters::Reporter>,
+
     /// Bound the JSON output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 200_000, value_name = "N")]
     pub(crate) max_chars: usize,

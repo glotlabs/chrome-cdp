@@ -596,6 +596,29 @@
       ],
       "type": "object"
     },
+    "TestDebug": {
+      "description": "The browser context `chrome-cdp test --debug` left open after the\nfirst failure, with its mocks still in use.",
+      "properties": {
+        "context": {
+          "description": "The context (`--context`), e.g. `c3`.",
+          "type": "string"
+        },
+        "session": {
+          "description": "The session it is in (`--session`), e.g. `test-debug`.",
+          "type": "string"
+        },
+        "test": {
+          "description": "The test, as `file:line`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session",
+        "context",
+        "test"
+      ],
+      "type": "object"
+    },
     "TestFailure": {
       "description": "The step a test failed at, and its error.",
       "properties": {
@@ -733,6 +756,17 @@
     "TestRunData": {
       "description": "`data` of `chrome-cdp test --json` (and `details` of its error when a\ntest failed).",
       "properties": {
+        "debug": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TestDebug"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`--debug`: the failed test's browser context, left open."
+        },
         "duration_ms": {
           "description": "How long the run took (0 for `--list`).",
           "format": "uint64",
@@ -773,6 +807,13 @@
             "integer",
             "null"
           ]
+        },
+        "reporters": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The files `--reporter` wrote (absolute), by reporter: `json`,\n`junit`, `html`.",
+          "type": "object"
         },
         "shard": {
           "description": "`--shard`, as given.",

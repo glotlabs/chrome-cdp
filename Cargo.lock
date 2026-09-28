@@ -234,6 +234,7 @@ dependencies = [
 name = "chrome-cdp"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "browser",
  "cdp",
  "clap",

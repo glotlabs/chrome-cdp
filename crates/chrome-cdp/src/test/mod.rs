@@ -18,6 +18,7 @@ mod exec;
 mod plan;
 mod report;
 mod report_md;
+pub(crate) mod reporters;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -98,9 +99,24 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
         Err(info) => return output::print(mode, Err(info)),
     };
     let duration = started.elapsed();
-    let data = report::data(&plan, &outcomes, duration, args.shard.as_deref());
+    let mut data = report::data(&plan, &outcomes, duration, args.shard.as_deref());
+    let written = reporters::write(&args.reporter, &data, &plan.config.artifacts);
+    let mut unwritten = None;
+    match written {
+        Ok(written) => data.reporters = written.into_iter().collect(),
+        Err(info) => unwritten = Some(info.message),
+    }
     let summary = report::summary(&data, duration);
-    let result = report::finish(&plan, &data, duration, args.max_chars);
+    let mut result = report::finish(&plan, &data, duration, args.max_chars);
+    if let Some(warning) = unwritten {
+        result = match result {
+            Ok(mut out) => {
+                out.warnings.push(warning);
+                Ok(out)
+            }
+            Err(info) => Err(info.note("warning", warning)),
+        };
+    }
     if mode == Mode::Text && result.is_err() {
         output::stdout(&format!("{summary}\n{}", report::reports(&data)));
     }

@@ -116,6 +116,8 @@ pub(super) fn data(
         shard: shard.map(str::to_owned),
         listed: false,
         repeat: (plan.repeat > 1).then_some(plan.repeat),
+        reporters: std::collections::BTreeMap::new(),
+        debug: None,
     }
 }
 
@@ -166,7 +168,8 @@ pub(super) fn summary(data: &TestRunData, duration: Duration) -> String {
 }
 
 /// The closing list of the failed (and flaky) tests' `report.md` files,
-/// one per line after a heading; empty when there is none.
+/// one per line after a heading, then the files `--reporter` wrote; empty
+/// when there is none.
 pub(super) fn reports(data: &TestRunData) -> String {
     let mut seen: Vec<&str> = Vec::new();
     let mut text = String::new();
@@ -180,10 +183,14 @@ pub(super) fn reports(data: &TestRunData) -> String {
         seen.push(report);
         let _ = writeln!(text, "  {report}");
     }
-    if text.is_empty() {
-        return text;
+    let mut out = String::new();
+    if !text.is_empty() {
+        out = format!("failure reports:\n{text}");
     }
-    format!("failure reports:\n{text}")
+    for (reporter, path) in &data.reporters {
+        let _ = writeln!(out, "{reporter} report: {path}");
+    }
+    out
 }
 
 /// The run's result: an [`Output`] when no test failed, else an error
@@ -294,6 +301,8 @@ pub(super) fn listed(plan: &Plan, shard: Option<&str>, max_chars: usize) -> Outp
         shard: shard.map(str::to_owned),
         listed: true,
         repeat: None,
+        reporters: std::collections::BTreeMap::new(),
+        debug: None,
     };
     Output::typed(&data, text)
         .quiet(quiet.join("\n"))

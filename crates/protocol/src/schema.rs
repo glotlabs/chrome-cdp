@@ -3524,6 +3524,25 @@ pub struct TestRunData {
     /// `--repeat`: how many times each test ran.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repeat: Option<u32>,
+    /// The files `--reporter` wrote (absolute), by reporter: `json`,
+    /// `junit`, `html`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub reporters: BTreeMap<String, String>,
+    /// `--debug`: the failed test's browser context, left open.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub debug: Option<TestDebug>,
+}
+
+/// The browser context `chrome-cdp test --debug` left open after the
+/// first failure, with its mocks still in use.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TestDebug {
+    /// The session it is in (`--session`), e.g. `test-debug`.
+    pub session: String,
+    /// The context (`--context`), e.g. `c3`.
+    pub context: String,
+    /// The test, as `file:line`.
+    pub test: String,
 }
 
 /// One test of `chrome-cdp test`.
