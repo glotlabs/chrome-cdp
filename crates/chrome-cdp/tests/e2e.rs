@@ -176,7 +176,13 @@ fn failures_skips_and_flaky_tests_are_reported() {
     // Hints do not name the run's session, which is gone.
     assert!(!text.contains("--session test-"), "{text}");
     let err = stderr(&out);
-    assert!(err.starts_with("error: 1 of 4 tests failed\n"), "{err}");
+    // flaky.cdp's test has no expect: `lint`'s warning comes first (11.12).
+    assert!(
+        err.starts_with(
+            "warning: 1 lint warning; `chrome-cdp lint` lists them\nerror: 1 of 4 tests failed\n"
+        ),
+        "{err}"
+    );
     assert!(
         err.contains("hint: chrome-cdp test scenarios/fail/fails.cdp:8"),
         "{err}"
