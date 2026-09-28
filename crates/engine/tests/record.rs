@@ -244,6 +244,11 @@ async fn har_records_every_tab_from_the_start() {
     assert_eq!(post["request"]["postData"]["text"], r#"{"a":1}"#);
     assert_eq!(post["request"]["postData"]["mimeType"], "application/json");
     assert_eq!(post["request"]["queryString"][0]["name"], "n");
+    let cookies = post["request"]["cookies"].as_array().unwrap();
+    assert!(
+        cookies.iter().any(|c| c["name"] == "sid" && c["value"] == "abc"),
+        "{cookies:?}"
+    );
     assert_eq!(post["response"]["status"], 200);
     assert_eq!(post["_resourceType"], "fetch");
     let items: Value =

@@ -13,6 +13,13 @@
 //!
 //! Records are keyed by session and request id while they are live, since
 //! each session numbers its own requests.
+//!
+//! The headers of `requestWillBeSent` and `responseReceived` leave out
+//! cookies and other headers the network stack adds; the `…ExtraInfo`
+//! events carry the headers as sent and received, and replace them. They
+//! may come before or after the event they belong to, so one that finds
+//! no record without raw headers waits in `pending` for the next one of
+//! its request (a response's also for its status).
 
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -41,6 +48,11 @@ const HEADER_LEN: usize = 2000;
 /// Chrome (`Network.getRequestPostData`) when asked for.
 const POST_DATA_LEN: usize = 8 * 1024;
 
+/// How many requests' early `…ExtraInfo` headers are kept, and how far
+/// back a late one looks for its record.
+const PENDING: usize = 256;
+const RAW_SEARCH: usize = 200;
+
 /// How many WebSocket frames a record keeps, and how much of each text.
 const FRAMES: usize = 20;
 const FRAME_TEXT: usize = 200;
@@ -59,6 +71,9 @@ pub(crate) struct Record {
     pub(crate) post_data: Option<String>,
     pub(crate) has_post_data: bool,
     pub(crate) frames: VecDeque<WebSocketFrame>,
+    /// Whether the headers are the raw ones of the `…ExtraInfo` events.
+    raw_request: bool,
+    raw_response: bool,
     /// Chrome's monotonic clock (seconds) when it started, and when its
     /// response headers were in.
     started: Option<f64>,
@@ -81,6 +96,19 @@ pub(crate) struct NetLog {
     /// Records `network` showed while they were pending: it shows them
     /// once more when they end.
     pub(crate) reshow: BTreeSet<u64>,
+    /// `…ExtraInfo` headers that came before their record.
+    pending: HashMap<(String, String), Pending>,
+    pending_seq: u64,
+}
+
+/// Raw headers waiting for their record.
+#[derive(Debug, Default)]
+struct Pending {
+    /// When the first came, to drop the oldest.
+    seq: u64,
+    requests: VecDeque<Vec<Header>>,
+    /// With the status they came with.
+    responses: VecDeque<(Option<u16>, Vec<Header>)>,
 }
 
 impl NetLog {
@@ -115,6 +143,7 @@ impl NetLog {
         let cleared = self.records.len();
         self.records.clear();
         self.live.clear();
+        self.pending.clear();
         self.reshow.clear();
         self.cleared = self.seq;
         self.cursor = self.seq;
@@ -135,18 +164,29 @@ impl NetLog {
         };
         let key = (session.to_owned(), id.to_owned());
         match method {
+            "Network.requestWillBeSentExtraInfo" => {
+                let raw = headers(&params["headers"]);
+                return self.raw_request(key, raw);
+            }
+            "Network.responseReceivedExtraInfo" => {
+                let raw = headers(&params["headers"]);
+                return self.raw_response(key, status(&params["statusCode"]), raw);
+            }
             "Network.requestWillBeSent" => {
-                if params["redirectResponse"].is_object()
-                    && let Some(hop) = self.live_record(&key)
-                {
+                if params["redirectResponse"].is_object() {
                     let response = &params["redirectResponse"];
-                    hop.response(response);
-                    hop.entry.size = whole(&response["encodedDataLength"]);
-                    hop.entry.redirect = Some(cut(text(&params["request"]["url"]), URL_LEN));
-                    hop.end(params["timestamp"].as_f64());
-                    hop.entry.state = RequestState::Done;
+                    let raw = self.take_response(&key, status(&response["status"]));
+                    if let Some(hop) = self.live_record(&key) {
+                        hop.response(response);
+                        hop.entry.size = whole(&response["encodedDataLength"]);
+                        hop.entry.redirect = Some(cut(text(&params["request"]["url"]), URL_LEN));
+                        hop.end(params["timestamp"].as_f64());
+                        hop.entry.state = RequestState::Done;
+                        hop.set_raw_response(raw);
+                    }
                 }
-                let record = request(session, id, params);
+                let mut record = request(session, id, params);
+                record.set_raw_request(self.take_request(&key));
                 self.push(key, record, capacity);
             }
             "Network.webSocketCreated" => {
@@ -157,18 +197,118 @@ impl NetLog {
                 self.push(key, record, capacity);
             }
             _ => {
+                let raw = if method == "Network.responseReceived" && self.live.contains_key(&key) {
+                    self.take_response(&key, status(&params["response"]["status"]))
+                } else {
+                    None
+                };
                 let Some(record) = self.live_record(&key) else {
                     return false;
                 };
                 if !record.apply(method, params) {
                     return false;
                 }
+                record.set_raw_response(raw);
                 if record.entry.state != RequestState::Pending {
                     self.live.remove(&key);
                 }
             }
         }
         true
+    }
+
+    /// Takes in a request's raw headers; `false` if they wait for their
+    /// record.
+    fn raw_request(&mut self, key: (String, String), raw: Vec<Header>) -> bool {
+        if let Some(record) = self.raw_target(&key, |r| !r.raw_request) {
+            record.set_raw_request(Some(raw));
+            return true;
+        }
+        self.pending_for(key).requests.push_back(raw);
+        false
+    }
+
+    /// Takes in a response's raw headers; `false` if they wait for their
+    /// record.
+    fn raw_response(
+        &mut self,
+        key: (String, String),
+        status: Option<u16>,
+        raw: Vec<Header>,
+    ) -> bool {
+        let found = self.raw_target(&key, |r| {
+            !r.raw_response
+                && r.entry.status.is_some()
+                && (status.is_none() || r.entry.status == status)
+        });
+        if let Some(record) = found {
+            record.set_raw_response(Some(raw));
+            return true;
+        }
+        self.pending_for(key).responses.push_back((status, raw));
+        false
+    }
+
+    /// The newest record of `key` (live or ended not long ago) that `wants`
+    /// the raw headers.
+    fn raw_target(
+        &mut self,
+        key: &(String, String),
+        wants: impl Fn(&Record) -> bool,
+    ) -> Option<&mut Record> {
+        self.records
+            .iter_mut()
+            .rev()
+            .take(RAW_SEARCH)
+            .find(|r| r.session == key.0 && r.request_id == key.1 && wants(r))
+    }
+
+    fn pending_for(&mut self, key: (String, String)) -> &mut Pending {
+        if !self.pending.contains_key(&key) && self.pending.len() >= PENDING {
+            let oldest = self
+                .pending
+                .iter()
+                .min_by_key(|(_, p)| p.seq)
+                .map(|(k, _)| k.clone());
+            if let Some(oldest) = oldest {
+                self.pending.remove(&oldest);
+            }
+        }
+        self.pending_seq += 1;
+        let seq = self.pending_seq;
+        self.pending.entry(key).or_insert_with(|| Pending {
+            seq,
+            ..Pending::default()
+        })
+    }
+
+    /// The raw request headers that came before `key`'s record.
+    fn take_request(&mut self, key: &(String, String)) -> Option<Vec<Header>> {
+        let pending = self.pending.get_mut(key)?;
+        let raw = pending.requests.pop_front();
+        if pending.requests.is_empty() && pending.responses.is_empty() {
+            self.pending.remove(key);
+        }
+        raw
+    }
+
+    /// The raw response headers of status `status` that came before the
+    /// response of `key`.
+    fn take_response(
+        &mut self,
+        key: &(String, String),
+        status: Option<u16>,
+    ) -> Option<Vec<Header>> {
+        let pending = self.pending.get_mut(key)?;
+        let at = pending
+            .responses
+            .iter()
+            .position(|(s, _)| s.is_none() || status.is_none() || *s == status)?;
+        let raw = pending.responses.remove(at).map(|(_, raw)| raw);
+        if pending.requests.is_empty() && pending.responses.is_empty() {
+            self.pending.remove(key);
+        }
+        raw
     }
 
     fn live_record(&mut self, key: &(String, String)) -> Option<&mut Record> {
@@ -230,6 +370,8 @@ impl Record {
             post_data: None,
             has_post_data: false,
             frames: VecDeque::new(),
+            raw_request: false,
+            raw_response: false,
             started: None,
             headers_end: None,
         }
@@ -286,7 +428,9 @@ impl Record {
                 let response = &params["response"];
                 self.entry.status = status(&response["status"]);
                 self.entry.status_text = non_empty(&response["statusText"]);
-                self.response_headers = headers(&response["headers"]);
+                if !self.raw_response {
+                    self.response_headers = headers(&response["headers"]);
+                }
             }
             "Network.webSocketFrameSent" | "Network.webSocketFrameReceived" => {
                 self.frame(method == "Network.webSocketFrameSent", &params["response"]);
@@ -310,6 +454,22 @@ impl Record {
         true
     }
 
+    /// Replaces the request headers with the raw ones, if given.
+    fn set_raw_request(&mut self, raw: Option<Vec<Header>>) {
+        if let Some(raw) = raw {
+            self.request_headers = raw;
+            self.raw_request = true;
+        }
+    }
+
+    /// Replaces the response headers with the raw ones, if given.
+    fn set_raw_response(&mut self, raw: Option<Vec<Header>>) {
+        if let Some(raw) = raw {
+            self.response_headers = raw;
+            self.raw_response = true;
+        }
+    }
+
     /// Takes in a `Network.Response`.
     fn response(&mut self, response: &Value) {
         self.entry.status = status(&response["status"]);
@@ -322,10 +482,13 @@ impl Record {
         } else if response["fromPrefetchCache"].as_bool() == Some(true) {
             self.entry.cache = Some("prefetch".to_owned());
         }
-        self.response_headers = headers(&response["headers"]);
+        if !self.raw_response {
+            self.response_headers = headers(&response["headers"]);
+        }
         // The headers Chrome actually sent (with cookies), if it says.
         if let Some(sent) = response["requestHeaders"].as_object()
             && !sent.is_empty()
+            && !self.raw_request
         {
             self.request_headers = headers(&response["requestHeaders"]);
         }
@@ -704,6 +867,93 @@ mod tests {
         assert_eq!(entry.state, RequestState::Done);
         assert_eq!(entry.duration_ms, Some(1000));
         assert!(entry.websocket.as_ref().unwrap().closed);
+    }
+
+    fn header<'a>(headers: &'a [protocol::schema::Header], name: &str) -> Option<&'a str> {
+        headers
+            .iter()
+            .find(|h| h.name == name)
+            .map(|h| h.value.as_str())
+    }
+
+    #[test]
+    fn raw_headers_replace_the_provisional_ones_in_any_order() {
+        let mut log = NetLog::default();
+        // Request ExtraInfo first, response ExtraInfo after the response.
+        assert!(!event(
+            &mut log,
+            "Network.requestWillBeSentExtraInfo",
+            &json!({ "requestId": "1", "headers": { "Cookie": "sid=1", "Accept": "*/*" } }),
+        ));
+        sent(&mut log, "1", "GET", "http://x/a", "Fetch", 1.0);
+        event(
+            &mut log,
+            "Network.responseReceived",
+            &json!({ "requestId": "1", "type": "Fetch", "response": { "status": 200, "headers": { "A": "1" } } }),
+        );
+        assert!(event(
+            &mut log,
+            "Network.responseReceivedExtraInfo",
+            &json!({ "requestId": "1", "statusCode": 200, "headers": { "Set-Cookie": "t=2", "A": "1" } }),
+        ));
+        let record = log.get(1).unwrap();
+        assert_eq!(header(&record.request_headers, "Cookie"), Some("sid=1"));
+        assert_eq!(header(&record.response_headers, "Set-Cookie"), Some("t=2"));
+
+        // A redirect: each hop's raw response comes before the event that
+        // carries that response.
+        sent(&mut log, "2", "GET", "http://x/old", "Document", 2.0);
+        event(
+            &mut log,
+            "Network.responseReceivedExtraInfo",
+            &json!({ "requestId": "2", "statusCode": 302, "headers": { "Location": "/new", "Set-Cookie": "r=1" } }),
+        );
+        event(
+            &mut log,
+            "Network.requestWillBeSent",
+            &json!({
+                "requestId": "2", "type": "Document", "timestamp": 2.1,
+                "request": { "method": "GET", "url": "http://x/new", "headers": {} },
+                "redirectResponse": { "url": "http://x/old", "status": 302, "headers": { "Location": "/new" } },
+            }),
+        );
+        event(
+            &mut log,
+            "Network.responseReceivedExtraInfo",
+            &json!({ "requestId": "2", "statusCode": 200, "headers": { "Set-Cookie": "n=1" } }),
+        );
+        event(
+            &mut log,
+            "Network.responseReceived",
+            &json!({ "requestId": "2", "type": "Document", "response": { "status": 200, "headers": {} } }),
+        );
+        let hop = log.get(2).unwrap();
+        assert_eq!(header(&hop.response_headers, "Set-Cookie"), Some("r=1"));
+        let next = log.get(3).unwrap();
+        assert_eq!(header(&next.response_headers, "Set-Cookie"), Some("n=1"));
+        assert!(log.pending.is_empty());
+
+        // Late, after the request ended.
+        event(
+            &mut log,
+            "Network.loadingFinished",
+            &json!({ "requestId": "2", "timestamp": 3.0, "encodedDataLength": 1 }),
+        );
+        sent(&mut log, "3", "GET", "http://x/b", "Fetch", 4.0);
+        event(
+            &mut log,
+            "Network.loadingFailed",
+            &json!({ "requestId": "3", "timestamp": 4.1, "errorText": "net::ERR_FAILED" }),
+        );
+        assert!(event(
+            &mut log,
+            "Network.requestWillBeSentExtraInfo",
+            &json!({ "requestId": "3", "headers": { "Cookie": "late=1" } }),
+        ));
+        assert_eq!(
+            header(&log.get(4).unwrap().request_headers, "Cookie"),
+            Some("late=1")
+        );
     }
 
     #[test]

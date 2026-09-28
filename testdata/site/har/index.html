@@ -8,12 +8,14 @@
 </head>
 <body>
   <h1>HAR</h1>
-  <!-- A binary body (embedded in base64) and a POST with a JSON body. -->
+  <!-- A binary body (embedded in base64) and a POST with a JSON body and a cookie. -->
   <img src="dot.png" alt="dot">
   <button id="post" onclick="post()">Post</button>
   <p id="out"></p>
   <script>
     function post() {
+      // Sent only in the raw headers (Network.requestWillBeSentExtraInfo).
+      document.cookie = 'sid=abc; path=/';
       fetch('/items?n=2', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
