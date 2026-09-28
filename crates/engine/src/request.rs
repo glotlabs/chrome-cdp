@@ -674,6 +674,25 @@ pub struct PerfRequest {
     pub timeout_ms: u64,
 }
 
+/// `coverage start`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoverageStartRequest {
+    /// `--tab`: the tab to measure; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    pub timeout_ms: u64,
+}
+
+/// `coverage stop`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoverageStopRequest {
+    /// `--limit`: the files with the most unused bytes (0 = all).
+    pub limit: usize,
+    pub timeout_ms: u64,
+    #[serde(default)]
+    pub max_chars: usize,
+}
+
 /// An image format (`screenshot --format`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

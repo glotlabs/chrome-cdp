@@ -824,6 +824,12 @@ const CASES: &[Case] = &[
         fixture: Fixture::Session,
     },
     Case {
+        name: "coverage-stop-not-measuring",
+        args: &["coverage", "stop"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
         name: "goto-auth-required",
         args: &["goto", "{site}/auth/"],
         modes: ERR,

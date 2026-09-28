@@ -403,6 +403,14 @@ impl Daemon {
                 Ok(p) => output(Box::pin(self.engine.perf(p)).await),
                 Err(e) => Err(e),
             },
+            rpc::COVERAGE_START => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.coverage_start(p)).await),
+                Err(e) => Err(e),
+            },
+            rpc::COVERAGE_STOP => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.coverage_stop(p)).await),
+                Err(e) => Err(e),
+            },
             rpc::DOWNLOADS => match params(req.params) {
                 Ok(p) => output(self.engine.downloads(p)),
                 Err(e) => Err(e),

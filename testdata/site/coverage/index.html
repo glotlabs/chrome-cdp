@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Coverage</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    h1 { color: navy; }
+    .never-used-inline { color: red; }
+  </style>
+</head>
+<body>
+  <h1>Coverage</h1>
+  <button id="run" onclick="used()">Run</button>
+  <p id="out"></p>
+  <script src="app.js"></script>
+  <script>
+    function inlineNeverCalled() {
+      return 'this inline function never runs';
+    }
+  </script>
+</body>
+</html>

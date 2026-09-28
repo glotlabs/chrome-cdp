@@ -1,6 +1,6 @@
 //! Recordings against a real Chrome (`CHROME_PATH`; skipped without it
 //! unless `CHROME_CDP_REQUIRE_CHROME` is set) and the fixture site: `har`
-//! and `trace` (plan 06, milestone 6.5).
+//! `trace` and `coverage` (plan 06, milestone 6.5).
 
 #![allow(clippy::unwrap_used, clippy::print_stderr)]
 
@@ -9,13 +9,15 @@ use std::sync::Arc;
 
 use browser::Host;
 use engine::{
-    Action, ActionRequest, Button, Engine, HarContent, HarStartRequest, HarStopRequest,
-    NavigateRequest, Navigation, OpenRequest, TabNewRequest, TraceStartRequest, TraceStopRequest,
-    WaitUntil,
+    Action, ActionRequest, Button, CoverageStartRequest, CoverageStopRequest, Engine, HarContent,
+    HarStartRequest, HarStopRequest, NavigateRequest, Navigation, OpenRequest, TabNewRequest,
+    TraceStartRequest, TraceStopRequest, WaitUntil,
 };
 use fixtures::Fixtures;
 use protocol::ErrorKind;
-use protocol::schema::{HarStartData, HarStopData, TraceStartData, TraceStopData};
+use protocol::schema::{
+    CoverageStartData, CoverageStopData, HarStartData, HarStopData, TraceStartData, TraceStopData,
+};
 use serde_json::Value;
 
 const TIMEOUT_MS: u64 = 30_000;
@@ -370,5 +372,88 @@ async fn trace_saves_a_performance_trace() {
     let names = event_names(&trace);
     assert!(!names.contains(&"Screenshot"));
     assert!(names.contains(&"ParseHTML"), "{names:?}");
+    engine.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn coverage_sums_up_unused_bytes() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "record-coverage").await;
+
+    let stop = CoverageStopRequest {
+        limit: 20,
+        timeout_ms: TIMEOUT_MS,
+        max_chars: 0,
+    };
+    let err = engine.coverage_stop(stop.clone()).await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::BadArgs);
+    assert!(
+        err.to_text().contains("coverage start"),
+        "{}",
+        err.to_text()
+    );
+
+    let start_req = CoverageStartRequest {
+        tab: None,
+        timeout_ms: TIMEOUT_MS,
+    };
+    let out = engine.coverage_start(start_req.clone()).await.unwrap();
+    let data: CoverageStartData = serde_json::from_value(out.data).unwrap();
+    assert!(!data.already);
+    let out = engine.coverage_start(start_req).await.unwrap();
+    assert!(out.data["already"].as_bool().unwrap());
+    let url = site.url("/coverage/index.html");
+    goto(&engine, &url).await;
+    click(&engine, "#run").await;
+
+    let out = engine
+        .coverage_stop(stop.clone())
+        .await
+        .unwrap_or_else(|e| panic!("coverage stop: {}", e.to_text()));
+    eprintln!("{}", out.text);
+    let data: CoverageStopData = serde_json::from_value(out.data.clone()).unwrap();
+    let file = |end: &str, inline: bool| {
+        data.files
+            .iter()
+            .find(|f| f.url.ends_with(end) && f.inline == inline)
+            .unwrap_or_else(|| panic!("no {end}: {:?}", data.files))
+    };
+    let app = file("/coverage/app.js", false);
+    let source = std::fs::read_to_string(fixtures::site_dir().join("coverage/app.js")).unwrap();
+    assert_eq!(app.total, source.len() as u64);
+    // `unused` never ran; `used` did.
+    let unused_fn = source.find("function unused").unwrap();
+    assert!(
+        app.unused >= (source.len() - unused_fn - 1) as u64,
+        "{app:?}"
+    );
+    assert!(app.unused < app.total, "{app:?}");
+    let inline_js = file("/coverage/index.html", true);
+    assert_eq!(inline_js.kind, "js");
+    assert!(inline_js.unused > 0);
+    let css = data
+        .files
+        .iter()
+        .find(|f| f.url.ends_with("/coverage/style.css"))
+        .unwrap();
+    let sheet = std::fs::read_to_string(fixtures::site_dir().join("coverage/style.css")).unwrap();
+    assert_eq!(css.total, sheet.len() as u64);
+    let unused_rules = sheet.find(".nothing").unwrap();
+    assert!(
+        css.unused >= (sheet.len() - unused_rules - 1) as u64,
+        "{css:?}"
+    );
+    let inline_css = data
+        .files
+        .iter()
+        .find(|f| f.kind == "css" && f.inline)
+        .unwrap();
+    assert!(inline_css.unused > 0 && inline_css.unused < inline_css.total);
+    assert_eq!(data.js.files, 2);
+    assert_eq!(data.css.files, 2);
+    assert!(out.text.starts_with("JS: 2 files, "), "{}", out.text);
+    // Stopped: the next stop needs a new start.
+    assert!(engine.coverage_stop(stop).await.is_err());
     engine.close().await;
 }

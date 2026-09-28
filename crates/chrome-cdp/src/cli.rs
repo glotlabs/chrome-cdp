@@ -886,6 +886,24 @@ Examples:
   chrome-cdp perf --json | jq .lcp")]
     Perf(PerfArgs),
 
+    /// Measure how much of the page's JavaScript and CSS is unused.
+    #[command(
+        subcommand_required = true,
+        arg_required_else_help = true,
+        after_help = "\
+`coverage start` turns on V8's block coverage and CSS rule tracking in the
+tab; `coverage stop` lists the scripts and stylesheets by unused bytes
+(code that never ran, rules that never matched), as DevTools' Coverage
+panel does. Inline scripts and styles are summed per document. Needs a
+running session.
+
+Examples:
+  chrome-cdp coverage start
+  chrome-cdp reload && chrome-cdp click e4 && chrome-cdp coverage stop
+  chrome-cdp coverage stop --limit 5 --json"
+    )]
+    Coverage(CoverageArgs),
+
     /// Make one raw CDP call on the session's browser or current page.
     #[command(after_help = "\
 Starts the session's browser first if it has none. --tab and --frame send
@@ -2224,6 +2242,48 @@ pub(crate) struct TraceStopArgs {
 pub(crate) struct PerfArgs {}
 
 #[derive(Debug, Args)]
+pub(crate) struct CoverageArgs {
+    #[command(subcommand)]
+    pub(crate) command: CoverageCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum CoverageCommand {
+    /// Start measuring the tab's JavaScript and CSS coverage.
+    #[command(after_help = "\
+Starting while it measures changes nothing and says so. Load or reload the
+page after starting to count its startup code.
+
+Examples:
+  chrome-cdp coverage start
+  chrome-cdp coverage start --tab t2")]
+    Start(CoverageStartArgs),
+
+    /// Stop measuring and list the files by unused bytes.
+    #[command(after_help = "\
+-q prints one line per file: unused, total and URL, tab-separated.
+
+Examples:
+  chrome-cdp coverage stop
+  chrome-cdp coverage stop --limit 0          # every file")]
+    Stop(CoverageStopArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct CoverageStartArgs {}
+
+#[derive(Debug, Args)]
+pub(crate) struct CoverageStopArgs {
+    /// List at most this many files, most unused bytes first (0 = all).
+    #[arg(long, default_value_t = 20, value_name = "N")]
+    pub(crate) limit: usize,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
 pub(crate) struct PdfArgs {
     /// Where to save it (`-` for stdout); a numbered file in the session's
     /// pdfs/ directory if not given.
@@ -2895,6 +2955,7 @@ mod tests {
         "trace start",
         "trace stop",
         "perf",
+        "coverage start",
         "network clear",
         "count",
         "box",

@@ -24,11 +24,12 @@ use daemon::paths::{Env, SessionPaths, check_name};
 use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
     Action, ActionRequest, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
-    ConsoleRequest, DialogRequest, DownloadsRequest, ElementState, EvalRequest, FindRequest,
-    HarStartRequest, HarStopRequest, HttpCredentials, ImageFormat, NavigateRequest, Navigation,
-    NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PdfRequest, PerfRequest,
-    Read, ReadRequest, ScreenshotRequest, SnapshotRequest, TabCloseRequest, TabNewRequest,
-    TabSelectRequest, TabsRequest, TraceStartRequest, TraceStopRequest, WaitFor, WaitRequest,
+    ConsoleRequest, CoverageStartRequest, CoverageStopRequest, DialogRequest, DownloadsRequest,
+    ElementState, EvalRequest, FindRequest, HarStartRequest, HarStopRequest, HttpCredentials,
+    ImageFormat, NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest,
+    NetworkShowRequest, OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest, ScreenshotRequest,
+    SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
+    TraceStartRequest, TraceStopRequest, WaitFor, WaitRequest,
 };
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
@@ -36,12 +37,12 @@ use serde_json::{Map, Value, json};
 use tokio::runtime::Runtime;
 
 use crate::cli::{
-    AfterArgs, CdpArgs, CloseArgs, ConnectArgs, DEFAULT_TIMEOUT, DialogArgs, DialogCommand,
-    DownloadsArgs, ElementStateArg, EvalArgs, FindArgs, GlobalArgs, GotoArgs, HarArgs, HarCommand,
-    HistoryArgs, IdleArgs, ImageFormatArg, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs,
-    PdfArgs, ReloadArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs,
-    TabArgs, TabCommand, TabsArgs, TraceArgs, TraceCommand, WAIT_TIMEOUT, WaitCmdArgs,
-    parse_duration,
+    AfterArgs, CdpArgs, CloseArgs, ConnectArgs, CoverageArgs, CoverageCommand, DEFAULT_TIMEOUT,
+    DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, FindArgs, GlobalArgs,
+    GotoArgs, HarArgs, HarCommand, HistoryArgs, IdleArgs, ImageFormatArg, LogReadArgs, NetworkArgs,
+    NetworkCommand, OpenArgs, PdfArgs, ReloadArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs,
+    StatusArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs, TraceCommand,
+    WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -894,6 +895,39 @@ pub(crate) fn perf(global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     };
     ctx.runtime
         .block_on(client.call_output(rpc::PERF, &request, ctx.timeout + QUICK))
+}
+
+/// `coverage start` and `coverage stop`: need a running session.
+pub(crate) fn coverage(args: &CoverageArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let timeout_ms = millis(ctx.timeout);
+    match &args.command {
+        CoverageCommand::Start(_) => {
+            let request = CoverageStartRequest {
+                tab: ctx.tab.clone(),
+                timeout_ms,
+            };
+            ctx.runtime.block_on(client.call_output(
+                rpc::COVERAGE_START,
+                &request,
+                ctx.timeout + QUICK,
+            ))
+        }
+        CoverageCommand::Stop(stop) => {
+            let request = CoverageStopRequest {
+                limit: stop.limit,
+                timeout_ms,
+                max_chars: stop.max_chars,
+            };
+            ctx.runtime.block_on(client.call_output(
+                rpc::COVERAGE_STOP,
+                &request,
+                ctx.timeout + QUICK,
+            ))
+        }
+    }
 }
 
 /// `-o` as an absolute path, and whether it is `-` (stdout; then the

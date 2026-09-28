@@ -1,0 +1,11 @@
+$ chrome-cdp coverage stop
+exit: 2
+--- stderr
+error: session default is not measuring coverage
+  hint: chrome-cdp coverage start   (then act, then coverage stop)
+
+$ chrome-cdp coverage stop --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"session default is not measuring coverage","hint":"chrome-cdp coverage start   (then act, then coverage stop)"}}
+

@@ -217,6 +217,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<PerfData>),
     },
     CommandSchema {
+        name: "coverage start",
+        summary: "the tab whose JavaScript and CSS coverage is measured",
+        schema: || schema_for!(Envelope<CoverageStartData>),
+    },
+    CommandSchema {
+        name: "coverage stop",
+        summary: "unused JavaScript and CSS bytes, in total and per file",
+        schema: || schema_for!(Envelope<CoverageStopData>),
+    },
+    CommandSchema {
         name: "snapshot",
         summary: "the page's accessibility tree, with refs on what can be acted on",
         schema: || schema_for!(Envelope<SnapshotData>),
@@ -1298,6 +1308,55 @@ pub struct PerfInp {
     pub event: String,
     /// Its target, e.g. `button#save`.
     pub target: Option<String>,
+}
+
+/// `data` of `chrome-cdp coverage start --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CoverageStartData {
+    /// The tab measured, e.g. `t1`.
+    pub tab: String,
+    /// Whether coverage was on already (it goes on from its start).
+    pub already: bool,
+}
+
+/// `data` of `chrome-cdp coverage stop --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CoverageStopData {
+    /// The tab measured, e.g. `t1`.
+    pub tab: String,
+    /// JavaScript: all files together.
+    pub js: CoverageTotal,
+    /// CSS: all stylesheets together.
+    pub css: CoverageTotal,
+    /// The files with the most unused bytes first (`--limit` of them).
+    pub files: Vec<CoverageFile>,
+    /// Files `--limit` left out.
+    pub skipped: usize,
+    /// How long it measured, in ms.
+    pub duration_ms: u64,
+}
+
+/// Coverage of all files of one kind.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CoverageTotal {
+    pub files: usize,
+    /// Their size (in characters, as DevTools' Coverage panel counts).
+    pub total: u64,
+    /// What never ran (JS) or never matched (CSS).
+    pub unused: u64,
+}
+
+/// Coverage of one file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CoverageFile {
+    /// `js` or `css`.
+    pub kind: String,
+    /// The script's or stylesheet's URL; the document's for inline ones.
+    pub url: String,
+    /// Inline `<script>`s or `<style>`s of the document, summed.
+    pub inline: bool,
+    pub total: u64,
+    pub unused: u64,
 }
 
 /// `data` of `chrome-cdp cdp --json`.
