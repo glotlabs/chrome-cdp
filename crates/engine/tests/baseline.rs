@@ -570,3 +570,50 @@ async fn expect_screenshot_against_a_png_baseline() {
     assert_eq!(err.kind, ErrorKind::BadArgs, "{}", err.to_text());
     assert!(err.message.contains("is not a PNG"), "{}", err.message);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn expect_screenshot_stills_the_page() {
+    let Some(chrome) = chrome_path() else { return };
+    let out = tempfile::tempdir().unwrap();
+    let engine = start(&chrome, "engine-baseline-still", out.path()).await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("moving-test.png");
+    goto(&engine, "/expect/moving.html").await;
+    let moving = ExpectScreenshotRequest {
+        name: "moving".into(),
+        locator: Some("#stage".into()),
+        ..screenshot_request(&path)
+    };
+
+    // A blinking caret, a spinner and a sliding bar: still for the
+    // capture, so the baseline settles at once and matches again.
+    let (output, data) = screenshot_ok(&engine, moving.clone()).await;
+    assert_eq!(data.result, BaselineResult::Created);
+    assert!(output.warnings.is_empty(), "{:?}", output.warnings);
+    for _ in 0..3 {
+        let (_, data) = screenshot_ok(
+            &engine,
+            ExpectScreenshotRequest {
+                timeout_ms: SHORT_MS,
+                ..moving.clone()
+            },
+        )
+        .await;
+        assert_eq!(data.result, BaselineResult::Passed);
+        assert_eq!(data.diff_pixels, 0);
+    }
+
+    // Afterwards the spinner turns again, and the page has no extra style.
+    let state = engine
+        .evaluate(
+            None,
+            None,
+            World::Main,
+            "[document.getAnimations().filter(a => a.playState === 'running').length, \
+             document.querySelectorAll('style').length]",
+            TIMEOUT,
+        )
+        .await
+        .unwrap();
+    assert_eq!(state, serde_json::json!([1, 1]));
+}

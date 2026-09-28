@@ -14,6 +14,12 @@
 //! document, with boxes positioned in document coordinates. Masks paint
 //! over every match; labels name the refs `snapshot -i` would give, so a
 //! vision agent can map what it sees to refs (Set-of-Marks).
+//!
+//! `expect-screenshot` (plan 09) captures a still page: each frame's
+//! caret is hidden, finite animations and transitions are finished and
+//! endless ones cancelled for the capture, as Playwright's
+//! `toHaveScreenshot` does, so a focused field or a spinner does not make
+//! its baseline flaky. The endless ones play again afterwards.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -81,7 +87,35 @@ const OVERLAY_JS: &str = r"function (els, labels) {
 }";
 
 /// Removes what [`OVERLAY_JS`] drew.
-const CLEAR_JS: &str = "function () { for (const el of document.querySelectorAll('chrome-cdp-overlay')) el.remove(); }";
+const CLEAR_JS: &str = r"function () {
+  for (const el of document.querySelectorAll('chrome-cdp-overlay')) el.remove();
+  const still = globalThis.__ccdpStill;
+  if (still) {
+    delete globalThis.__ccdpStill;
+    still.style.remove();
+    for (const a of still.endless) a.play();
+  }
+}";
+
+/// Stills a frame's document for a capture (see the module docs); undone
+/// by [`CLEAR_JS`].
+const STILL_JS: &str = r"function () {
+  if (globalThis.__ccdpStill) return;
+  const style = document.createElement('style');
+  style.textContent = '*, *::before, *::after { caret-color: transparent !important; }';
+  (document.head || document.documentElement).append(style);
+  const endless = [];
+  for (const a of document.getAnimations()) {
+    const end = a.effect ? a.effect.getComputedTiming().endTime : 0;
+    if (end === Infinity) {
+      a.cancel();
+      endless.push(a);
+    } else {
+      try { a.finish(); } catch (e) { a.cancel(); }
+    }
+  }
+  globalThis.__ccdpStill = { style, endless };
+}";
 
 /// Checks a screenshot request's arguments without a browser, so the CLI
 /// can fail before it starts one.
@@ -239,8 +273,9 @@ impl Engine {
 }
 
 impl Engine {
-    /// A screenshot as `req` asks, as bytes instead of a file (`req.path`
-    /// is not looked at), and the warnings `screenshot` would print. The
+    /// A screenshot as `req` asks of a still page (`expect-screenshot`'s),
+    /// as bytes instead of a file (`req.path` is not looked at), and the
+    /// warnings `screenshot` would print. The
     /// caller holds the tab's lock and handles a dialog that blocks it.
     pub(crate) async fn screenshot_bytes(
         &self,
@@ -260,7 +295,7 @@ impl Engine {
             timeout: deadline.saturating_duration_since(Instant::now()),
             deadline,
         };
-        let (capture, drawn, bytes) = shot.take(locator.as_ref(), &masks, mark).await?;
+        let (capture, drawn, bytes) = shot.take(locator.as_ref(), &masks, mark, true).await?;
         let mut warnings: Vec<String> = capture.note.into_iter().collect();
         warnings.extend(drawn.warnings);
         Ok((bytes, warnings))
@@ -284,23 +319,27 @@ impl Shot<'_> {
         masks: &[Locator],
         mark: u64,
     ) -> Result<Output, ErrorInfo> {
-        let (capture, drawn, bytes) = self.take(locator, masks, mark).await?;
+        let (capture, drawn, bytes) = self.take(locator, masks, mark, false).await?;
         self.output(locator, &capture, drawn, &bytes)
     }
 
-    /// Finds the area, draws the masks and labels, takes the image and
-    /// clears what was drawn.
+    /// Finds the area, draws the masks and labels (on a `still` page),
+    /// takes the image and clears what was drawn.
     async fn take(
         &self,
         locator: Option<&Locator>,
         masks: &[Locator],
         mark: u64,
+        still: bool,
     ) -> Result<(Capture, Drawn, Vec<u8>), ErrorInfo> {
         let capture = match locator {
             Some(locator) => self.element(locator).await?,
             None => self.page_area().await?,
         };
         let mut drawn = Drawn::default();
+        if still {
+            self.still(&mut drawn).await;
+        }
         let result = async {
             self.draw(masks, mark, &capture, &mut drawn).await?;
             self.capture(&capture).await
@@ -573,6 +612,38 @@ impl Shot<'_> {
             .and_then(|v| v.as_f64())
             .filter(|dpr| dpr.is_finite() && *dpr > 0.0)
             .unwrap_or(1.0))
+    }
+
+    /// Stills every frame of the page with [`STILL_JS`] (best effort: a
+    /// frame without a document yet is left as it is).
+    async fn still(&self, drawn: &mut Drawn) {
+        for frame in self.running.tabs.frames(self.page.id) {
+            let Ok(context) = self
+                .engine
+                .frame_context(
+                    self.running,
+                    self.page,
+                    Some(&frame.id),
+                    World::Isolated,
+                    self.left(),
+                )
+                .await
+            else {
+                continue;
+            };
+            let mut params = runtime::CallFunctionOnParams::new(STILL_JS.to_owned());
+            params.execution_context_id = Some(context.context_id);
+            if context
+                .session
+                .with_timeout(self.left())
+                .call(params)
+                .await
+                .is_ok()
+                && !drawn.frames.contains(&frame.id)
+            {
+                drawn.frames.push(frame.id);
+            }
+        }
     }
 
     /// Draws the masks and the labels.

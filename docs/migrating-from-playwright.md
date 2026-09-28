@@ -266,7 +266,7 @@ what it saw and what to run next. `--not` inverts element matchers,
 | `toHaveAccessibleDescription`, `toHaveJSProperty` | `wait --fn`, or `eval --in LOC 'el => el.value'` | 🟡 |
 | `expect(page).toHaveURL(/dashboard/)` | `expect --url /dashboard/` (a string is a part of the URL or a glob) | ✅ |
 | `expect(page).toHaveTitle('Home')` | `expect --title Home --exact` (without `--exact`: contains) | ✅ |
-| `toHaveScreenshot('home.png')` | `expect-screenshot home` (`--full`, `--mask LOC`, `--threshold`, `--max-diff-pixels`; experimental) | ✅ |
+| `toHaveScreenshot('home.png')` | `expect-screenshot home` (`--full`, `--mask LOC`, `--threshold`, `--max-diff-pixels`; the caret is hidden and animations stopped, like `animations: 'disabled'`; experimental) | ✅ |
 | `toMatchAriaSnapshot(template)` | `expect-snapshot NAME [--scope LOC]`: a stored text baseline of `snapshot -i`, a diff on failure | 🟡 |
 | `--update-snapshots` | `expect-snapshot NAME --update`, `expect-screenshot NAME --update` | ✅ |
 | `expect(response).toBeOK()` | `wait --response URL --status 200`; `goto` warns on a 4xx/5xx | 🟡 |
