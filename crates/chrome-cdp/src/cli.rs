@@ -770,6 +770,7 @@ Examples:
   chrome-cdp network --failed --since 0            # every failed request so far
   chrome-cdp network --type xhr,fetch --url '**/api/**'
   chrome-cdp network --status 4xx --method POST
+  chrome-cdp network --follow --type fetch         # watch requests as they come
   chrome-cdp network show 42 --body                # the response body of #42"
     )]
     Network(NetworkArgs),
@@ -2026,6 +2027,11 @@ pub(crate) struct NetworkListArgs {
     /// Show at most this many requests, the newest (0 = all).
     #[arg(long, default_value_t = 50, value_name = "N")]
     pub(crate) limit: usize,
+
+    /// Keep printing new requests (and pending ones as they end) as they
+    /// come, until Ctrl-C (or --timeout, if given).
+    #[arg(short, long)]
+    pub(crate) follow: bool,
 
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]

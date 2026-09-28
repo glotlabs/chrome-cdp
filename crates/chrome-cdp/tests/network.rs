@@ -8,6 +8,9 @@
 
 mod common;
 
+use std::process::Stdio;
+use std::time::{Duration, Instant};
+
 use common::{Sandbox, chrome_path, code, json_out, run, stderr, stdout};
 use fixtures::Fixtures;
 
@@ -98,4 +101,46 @@ fn list_show_and_clear() {
         "{}",
         stderr(&out)
     );
+}
+
+#[test]
+fn follow_prints_requests_as_they_come() {
+    let Some(chrome) = chrome_path() else { return };
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let page = Fixtures::shared().url("/network/index.html");
+    let out = sandbox.run(&["open", &page]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    sandbox.run(&["network"]);
+
+    let start = Instant::now();
+    let follow = sandbox
+        .cli()
+        .args(["network", "--follow", "--type", "fetch", "--timeout", "4s"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(500));
+    let out = sandbox.run(&["click", "#items"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["click", "#missing"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = follow.wait_with_output().unwrap();
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    // It ran until --timeout.
+    assert!(start.elapsed() >= Duration::from_secs(4));
+    assert_eq!(stderr(&out), "following t1's network; Ctrl-C stops\n");
+    let text = stdout(&out);
+    let items = text.find(" GET 200 /items?n=300 fetch ").expect(&text);
+    // The page never reads the 404's body, so Chrome never ends it.
+    let missing = text
+        .find(" GET pending /network/missing.json fetch")
+        .expect(&text);
+    assert!(items < missing, "{text}");
+    // Pending requests show again when they end.
+    assert!(text.contains(" GET pending /items?n=300 fetch"), "{text}");
+    // The hint to `network show` came with the first batch only.
+    assert!(!text.contains("shows one in full"), "{text}");
+    // The first, empty batch printed nothing.
+    assert!(!text.contains("no new requests"), "{text}");
 }

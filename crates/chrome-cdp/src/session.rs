@@ -716,7 +716,7 @@ pub(crate) fn network(args: &NetworkArgs, global: &GlobalArgs) -> Result<Output,
     match &args.command {
         None => {
             let list = &args.list;
-            let request = NetworkRequest {
+            let mut request = NetworkRequest {
                 tab: ctx.tab.clone(),
                 failed: list.failed,
                 types: list.types.clone(),
@@ -725,11 +725,23 @@ pub(crate) fn network(args: &NetworkArgs, global: &GlobalArgs) -> Result<Output,
                 status: list.status.clone(),
                 since: list.since,
                 limit: list.limit,
+                wait_ms: 0,
                 timeout_ms,
                 max_chars: list.max_chars,
             };
-            ctx.runtime
-                .block_on(client.call_output(rpc::NETWORK, &request, wait))
+            if !list.follow {
+                return ctx
+                    .runtime
+                    .block_on(client.call_output(rpc::NETWORK, &request, wait));
+            }
+            follow(global, "network", "requests", |poll, first| {
+                request.wait_ms = millis(poll);
+                if !first {
+                    request.since = engine::Since::Last;
+                }
+                ctx.runtime
+                    .block_on(client.call_output(rpc::NETWORK, &request, poll + wait))
+            })
         }
         Some(NetworkCommand::Show(show)) => {
             let output = match show.output.as_deref() {
@@ -1061,7 +1073,28 @@ pub(crate) fn console(
             ctx.timeout + QUICK,
         ));
     }
-    // Until Ctrl-C, or `--timeout` if given.
+    let what = if errors { "errors" } else { "console" };
+    follow(global, what, "entries", |wait, first| {
+        request.wait_ms = millis(wait);
+        if !first {
+            // From now on, what is new since the last batch.
+            request.since = engine::Since::Last;
+        }
+        ctx.runtime
+            .block_on(client.call_output(rpc::CONSOLE, &request, wait + ctx.timeout + QUICK))
+    })
+}
+
+/// `--follow`: calls `call` with how long the daemon may wait for
+/// something new (and whether it is the first call) until Ctrl-C, or
+/// `--timeout` if given, printing each batch whose `data[key]` list is not
+/// empty; returns the last, empty one. `what` names what is followed.
+fn follow(
+    global: &GlobalArgs,
+    what: &str,
+    key: &str,
+    mut call: impl FnMut(Duration, bool) -> Result<Output, ErrorInfo>,
+) -> Result<Output, ErrorInfo> {
     let deadline = global.timeout.map(|t| std::time::Instant::now() + t);
     let mode = global.mode();
     let mut first = true;
@@ -1072,23 +1105,13 @@ pub(crate) fn console(
         } else {
             left.unwrap_or(FOLLOW_POLL).min(FOLLOW_POLL)
         };
-        request.wait_ms = millis(wait);
-        let mut output = ctx.runtime.block_on(client.call_output(
-            rpc::CONSOLE,
-            &request,
-            wait + ctx.timeout + QUICK,
-        ))?;
-        let shown = output.data["entries"]
-            .as_array()
-            .is_some_and(|e| !e.is_empty());
+        let mut output = call(wait, first)?;
+        let shown = output.data[key].as_array().is_some_and(|e| !e.is_empty());
         if first && mode == Mode::Text {
             let tab = output.data["tab"].as_str().unwrap_or("the tab");
-            let what = if errors { "errors" } else { "console" };
             crate::output::stderr(&format!("following {tab}'s {what}; Ctrl-C stops\n"));
         }
         first = false;
-        // From now on, what is new since the last batch.
-        request.since = engine::Since::Last;
         if left.is_some_and(|l| l.is_zero()) {
             if !shown {
                 output.text.clear();

@@ -99,6 +99,9 @@ pub(crate) struct NetLog {
     /// `…ExtraInfo` headers that came before their record.
     pending: HashMap<(String, String), Pending>,
     pending_seq: u64,
+    /// Counts the events that changed the log, for `network --follow` to
+    /// wait on.
+    changes: u64,
 }
 
 /// Raw headers waiting for their record.
@@ -115,6 +118,11 @@ impl NetLog {
     /// The id of the last record.
     pub(crate) fn seq(&self) -> u64 {
         self.seq
+    }
+
+    /// How many events changed the log so far.
+    pub(crate) fn changes(&self) -> u64 {
+        self.changes
     }
 
     /// The newest record dropped to make room (0 if none was).
@@ -159,6 +167,14 @@ impl NetLog {
         params: &Value,
         capacity: usize,
     ) -> bool {
+        let changed = self.apply(session, method, params, capacity);
+        if changed {
+            self.changes += 1;
+        }
+        changed
+    }
+
+    fn apply(&mut self, session: &str, method: &str, params: &Value, capacity: usize) -> bool {
         let Some(id) = params["requestId"].as_str() else {
             return false;
         };

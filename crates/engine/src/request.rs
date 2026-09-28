@@ -565,6 +565,10 @@ pub struct NetworkRequest {
     pub since: Since,
     /// `--limit`: the most requests shown, the newest (0 = all).
     pub limit: usize,
+    /// For `--follow`: with nothing new, wait up to this long for a
+    /// request (or the end of one shown pending) before answering.
+    #[serde(default)]
+    pub wait_ms: u64,
     pub timeout_ms: u64,
     /// The output budget (0 = none).
     pub max_chars: usize,

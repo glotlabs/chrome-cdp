@@ -966,6 +966,17 @@ impl Tabs {
         .is_some()
     }
 
+    /// Waits until tab `id`'s network log changed after its change count
+    /// `after` (or the tab is gone); `false` if `deadline` passed first.
+    pub(crate) async fn netlog_changed(&self, id: u32, after: u64, deadline: Instant) -> bool {
+        self.watch(deadline, |state, _| match state.tabs.get(&id) {
+            Some(tab) if tab.netlog.changes() <= after => Check::Later(None),
+            _ => Check::Done(()),
+        })
+        .await
+        .is_some()
+    }
+
     /// Calls `f` with tab `id`'s network log (`None` if the tab is gone).
     pub(crate) fn netlog<R>(&self, id: u32, f: impl FnOnce(&mut NetLog) -> R) -> Option<R> {
         self.shared

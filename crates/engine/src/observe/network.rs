@@ -21,6 +21,7 @@ use protocol::schema::{
     Body, NetworkClearData, NetworkData, NetworkEntry, NetworkShowData, RequestState,
 };
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format as units};
+use tokio::time::Instant;
 
 use super::commands::shown_url;
 use super::netlog::{NetLog, Record};
@@ -107,7 +108,8 @@ fn failed(entry: &NetworkEntry) -> bool {
 
 impl Engine {
     /// `network`: the tab's requests after `--since`, filtered, the newest
-    /// `--limit`.
+    /// `--limit`. With `wait_ms` and nothing to show, waits that long for
+    /// one (`--follow`).
     pub async fn network(&self, req: NetworkRequest) -> Result<Output, ErrorInfo> {
         let url = req.url.as_deref().map(UrlPattern::parse).transpose()?;
         let running = self.running()?;
@@ -116,10 +118,25 @@ impl Engine {
             .await?;
         let page_origin = page_origin(&running, page.id);
         let filter = Filter { req: &req, url };
-        let selection = running
-            .tabs
-            .netlog(page.id, |log| select(log, &filter, now_ms()))
-            .ok_or_else(|| self.tab_error(&running, TabError::NoSuchTab(page.id)))?;
+        let deadline = Instant::now() + Duration::from_millis(req.wait_ms);
+        let selection = loop {
+            let (selection, changes) = running
+                .tabs
+                .netlog(page.id, |log| {
+                    (select(log, &filter, now_ms()), log.changes())
+                })
+                .ok_or_else(|| self.tab_error(&running, TabError::NoSuchTab(page.id)))?;
+            if !selection.requests.is_empty() || Instant::now() >= deadline {
+                break selection;
+            }
+            if !running
+                .tabs
+                .netlog_changed(page.id, changes, deadline)
+                .await
+            {
+                break selection;
+            }
+        };
         Ok(self.network_output(&page, &req, selection, page_origin.as_deref()))
     }
 
@@ -164,7 +181,10 @@ impl Engine {
                 let _ = write!(text, "; {cmd} shows the earlier ones");
             }
             text.push('\n');
-        } else if let Some(last) = selection.requests.last() {
+        } else if let Some(last) = selection.requests.last()
+            // `--follow`'s later batches: said once is enough.
+            && req.wait_ms == 0
+        {
             let cmd = self.network_show_cmd(page, last.id);
             let _ = writeln!(text, "{cmd} shows one in full");
         }
@@ -971,6 +991,7 @@ mod tests {
             status: Vec::new(),
             since: Since::Last,
             limit: 50,
+            wait_ms: 0,
             timeout_ms: 1000,
             max_chars: 0,
         }

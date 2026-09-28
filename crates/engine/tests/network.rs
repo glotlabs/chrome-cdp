@@ -102,6 +102,7 @@ fn request() -> NetworkRequest {
         status: Vec::new(),
         since: Since::Last,
         limit: 50,
+        wait_ms: 0,
         timeout_ms: TIMEOUT_MS,
         max_chars: 0,
     }
@@ -544,6 +545,55 @@ async fn pending_requests_redirects_and_websockets() {
         "{}",
         out.text
     );
+    engine.close().await;
+}
+
+#[tokio::test]
+async fn follow_waits_for_the_next_request() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "network-follow", None).await;
+    goto(&engine, &site.url("/network/index.html")).await;
+    list(&engine, request()).await;
+    let follow = NetworkRequest {
+        wait_ms: 20_000,
+        ..request()
+    };
+
+    let clicker = engine.clone();
+    let clicked = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        click(&clicker, "#items").await;
+    });
+    let (_, data) = list(&engine, follow.clone()).await;
+    clicked.await.unwrap();
+    assert_eq!(data.requests.len(), 1, "{data:?}");
+    assert!(data.requests[0].url.contains("/items?n=300"), "{data:?}");
+
+    // A request shown pending is new again when it ends: following sees
+    // it twice, and then waits no more for it.
+    click_with(&engine, "#slow", true).await;
+    let mut states = Vec::new();
+    let started = Instant::now();
+    while states.last() != Some(&RequestState::Done) {
+        assert!(started.elapsed() < Duration::from_secs(15), "{states:?}");
+        let (_, data) = list(&engine, follow.clone()).await;
+        let slow = find(&data, "delay=1500");
+        states.push(slow.state);
+    }
+    assert_eq!(states, [RequestState::Pending, RequestState::Done]);
+    // Nothing new: it waits `wait_ms`, then answers empty.
+    let waited = Instant::now();
+    let (_, data) = list(
+        &engine,
+        NetworkRequest {
+            wait_ms: 300,
+            ..request()
+        },
+    )
+    .await;
+    assert!(data.requests.is_empty(), "{data:?}");
+    assert!(waited.elapsed() >= Duration::from_millis(300));
     engine.close().await;
 }
 

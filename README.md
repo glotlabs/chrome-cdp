@@ -253,7 +253,7 @@ The same goes for requests: `network` lists what the tab requested since it
 last ran, one line each, and a request it showed while pending once more when
 it ends. `--failed` keeps errors (no response, or a status of 400 or more)
 and `--type xhr,fetch`, `--url '**/api/**'`, `--method` and `--status 4xx`
-filter:
+filter; `--follow` keeps printing requests as they come:
 
 ```
 #41 GET 200 /api/items fetch 12KB 35ms
