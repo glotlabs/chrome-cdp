@@ -334,6 +334,8 @@ impl Table {
             url: req.url.to_owned(),
             resource_type: req.resource_type.to_ascii_lowercase(),
             route: rule.map(route_name),
+            mock: None,
+            unmatched: None,
             outcome,
         });
         self.seq

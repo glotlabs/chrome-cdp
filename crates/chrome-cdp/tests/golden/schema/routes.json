@@ -536,6 +536,41 @@
         }
       ]
     },
+    "MockRef": {
+      "description": "A mock of a mock file (plan 11): where it is and what it is called.",
+      "properties": {
+        "at": {
+          "description": "`base.toml:14`: the file relative to the mocks directory, and the\nline.",
+          "type": "string"
+        },
+        "file": {
+          "description": "The mock file (absolute).",
+          "type": "string"
+        },
+        "line": {
+          "description": "The line of its `[[mock]]`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "description": "Its `name`, or `METHOD path` when it has none.",
+          "type": "string"
+        },
+        "set": {
+          "description": "Its mock set, e.g. `base` or `errors/api-down`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "set",
+        "name",
+        "file",
+        "line",
+        "at"
+      ],
+      "type": "object"
+    },
     "Note": {
       "description": "One labelled line of an error's text form.",
       "properties": {
@@ -683,6 +718,17 @@
         "method": {
           "type": "string"
         },
+        "mock": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MockRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The mock that answered it (plan 11), when no rule did."
+        },
         "outcome": {
           "description": "What happened: `fulfill 200`, `abort failed`, `continue`, …",
           "type": "string"
@@ -716,6 +762,13 @@
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        },
+        "unmatched": {
+          "description": "The mock set whose `scope` it is in, when no mock answered it:\nit was unmatched, and the set's `unmatched` policy handled it.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "url": {
           "type": "string"

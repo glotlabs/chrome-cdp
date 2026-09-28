@@ -18,6 +18,7 @@ daemon = { path = "crates/daemon" }
 protocol = { path = "crates/protocol" }
 fixtures = { path = "crates/fixtures" }
 e2e = { path = "crates/e2e" }
+mock = { path = "crates/mock" }
 
 # External crates.
 base64 = "0.22"
@@ -31,6 +32,9 @@ http-body-util = "0.1"
 hyper = { version = "1", default-features = false, features = ["http1", "server"] }
 hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
 libc = "0.2"
+# Templates in mock files (plan 11): `{{params.id}}`, `{{uuid}}`, …
+minijinja = { version = "2", default-features = false, features = ["builtins", "serde"] }
+percent-encoding = "2"
 # Decodes and encodes `expect-screenshot` baselines (and screenshots in tests).
 png = "0.18"
 proptest = "1"

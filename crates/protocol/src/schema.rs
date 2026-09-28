@@ -8,6 +8,8 @@
 //! A new command adds its data type below and one [`CommandSchema`] entry;
 //! the CLI's checklist test fails for a command that has none.
 
+use std::collections::BTreeMap;
+
 use schemars::{JsonSchema, Schema, schema_for};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -1645,6 +1647,13 @@ pub struct RoutedRequest {
     /// unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub route: Option<String>,
+    /// The mock that answered it (plan 11), when no rule did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mock: Option<MockRef>,
+    /// The mock set whose `scope` it is in, when no mock answered it:
+    /// it was unmatched, and the set's `unmatched` policy handled it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unmatched: Option<String>,
     /// What happened: `fulfill 200`, `abort failed`, `continue`, …
     pub outcome: String,
 }
@@ -3188,4 +3197,133 @@ mod tests {
             assert!(ok["data"].get(field).is_some());
         }
     }
+}
+
+/// A mock of a mock file (plan 11): where it is and what it is called.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockRef {
+    /// Its mock set, e.g. `base` or `errors/api-down`.
+    pub set: String,
+    /// Its `name`, or `METHOD path` when it has none.
+    pub name: String,
+    /// The mock file (absolute).
+    pub file: String,
+    /// The line of its `[[mock]]`.
+    pub line: usize,
+    /// `base.toml:14`: the file relative to the mocks directory, and the
+    /// line.
+    pub at: String,
+}
+
+/// A mock set in use (plan 11): one mock file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockSetInfo {
+    /// The set's name: its file's path in the mocks directory, without
+    /// `.toml`.
+    pub name: String,
+    /// The mock file (absolute).
+    pub file: String,
+    /// How many mocks it has.
+    pub count: usize,
+    /// The requests it owns (`[settings] scope`), as written.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scope: Vec<String>,
+    /// What an in-scope request no mock answers gets: `fail`,
+    /// `passthrough` or `abort`.
+    pub unmatched: String,
+    /// `auto` or `off`.
+    pub cors: String,
+    /// The delay its answers get, e.g. `0ms` or `50ms..200ms`.
+    pub latency: String,
+    /// Why the file's latest change was not loaded; the set keeps its
+    /// previous version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reload_error: Option<String>,
+    /// Its mocks, in the order they are tried (`mock list`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mocks: Vec<MockInfo>,
+}
+
+/// A mock, as `mock list` shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockInfo {
+    #[serde(flatten)]
+    pub mock: MockRef,
+    /// What it matches: `GET /api/products/:id`.
+    pub matches: String,
+    /// What it answers: `json_file data/products/{{params.id}}.json`.
+    pub responds: String,
+    /// How many requests it answered.
+    pub hits: u64,
+}
+
+/// `data` of `chrome-cdp mock use|list|reset --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockSetsData {
+    /// The sets in use, in the order they are tried (the last applied
+    /// first).
+    pub sets: Vec<MockSetInfo>,
+    /// With `mock list --available`: the sets in the mocks directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub available: Option<Vec<String>>,
+    /// The mocks directory the sets were looked for in (absolute).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dir: Option<String>,
+}
+
+/// `data` of `chrome-cdp mock off --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockOffData {
+    /// The sets turned off.
+    pub removed: Vec<String>,
+    /// The sets still in use, in the order they are tried.
+    pub sets: Vec<MockSetInfo>,
+}
+
+/// `data` of `chrome-cdp mock log --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockLogData {
+    /// The requests, oldest first.
+    pub log: Vec<RoutedRequest>,
+    /// Older requests `--limit` left out.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub skipped: u64,
+}
+
+/// One mock's verdict in `mock explain`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockCheck {
+    #[serde(flatten)]
+    pub mock: MockRef,
+    /// Whether it matches the request.
+    pub matches: bool,
+    /// Why it does not match (the first condition that fails), or why a
+    /// match does not answer (an earlier mock does).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// `data` of `chrome-cdp mock explain --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockExplainData {
+    pub method: String,
+    /// The request's URL, made absolute.
+    pub url: String,
+    /// The routing rule that answers it before any mock (`route`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<String>,
+    /// The mock that answers it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answer: Option<MockRef>,
+    /// What the answer is: `fulfill 200 json_file data/products/7.json`,
+    /// or for an unmatched request what its set's policy does.
+    pub outcome: String,
+    /// The values the answering mock's path captured (`:id`).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, String>,
+    /// The set whose scope the request is in; none if it is in no scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    /// Every mock, in the order they are tried.
+    pub checked: Vec<MockCheck>,
 }
