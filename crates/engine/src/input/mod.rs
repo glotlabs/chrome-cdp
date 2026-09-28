@@ -52,6 +52,7 @@ use crate::tabs::{Page, tab_name};
 use crate::{Engine, Running};
 
 use actionability::Actionable;
+pub(crate) use actionability::waits_for;
 
 /// Checks the arguments of an action without a browser.
 pub fn check_action(req: &ActionRequest) -> Result<(), ErrorInfo> {

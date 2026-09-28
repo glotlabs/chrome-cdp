@@ -22,7 +22,8 @@
 //! starting with the actionability pipeline every action runs (5.1)
 //! and the mouse and pointer actions (5.2). Plan 06 adds `observe`,
 //! starting with each tab's console and the `console` and `errors`
-//! commands (6.1).
+//! commands (6.1), then its network log (6.2), and `screenshot` and `pdf`
+//! (6.3).
 //! Later plans add modules next to `tabs` and `navigate`: `page`,
 //! `emulate`, `route`.
 
@@ -66,15 +67,16 @@ pub use frames::{FrameInfo, WORLD_NAME, World};
 pub use input::{ActionPoint, Checks, check_action, parse_modifiers};
 pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, parse_locator};
 pub use navigate::normalize_url;
-pub use observe::RESOURCE_TYPES;
+pub use observe::{RESOURCE_TYPES, check_screenshot};
 pub use read::check_read;
 pub use request::{
     Action, ActionRequest, Button, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
     ConsoleRequest, DialogPolicy, DialogRequest, DownloadsRequest, ElementState, FindRequest,
-    HttpCredentials, Modifier, MouseOp, NavigateRequest, Navigation, NetworkClearRequest,
-    NetworkRequest, NetworkShowRequest, OpenRequest, Read, ReadRequest, ScrollTo, Since,
-    SnapshotEngine, SnapshotRequest, StatusRange, TabCloseRequest, TabNewRequest, TabSelectRequest,
-    TabsRequest, Target, WaitFor, WaitRequest, WaitUntil,
+    HttpCredentials, ImageFormat, Margins, Modifier, MouseOp, NavigateRequest, Navigation,
+    NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest,
+    Read, ReadRequest, ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine,
+    SnapshotRequest, StatusRange, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
+    Target, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use tabs::commands::TabClosed;
@@ -97,6 +99,9 @@ pub struct Engine {
     tabs: TabLocks,
     /// What every new target gets before it runs; kept across browsers.
     settings: Arc<Settings>,
+    /// Where `screenshot` and `pdf` save files without `-o` (the session
+    /// directory); see [`Engine::set_output_dir`].
+    output_dir: std::sync::OnceLock<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -202,7 +207,23 @@ impl Engine {
             generation: AtomicU64::new(0),
             tabs: TabLocks::default(),
             settings: Arc::new(Settings::new(downloads)),
+            output_dir: std::sync::OnceLock::new(),
         })
+    }
+
+    /// Makes `screenshot` save to `<dir>/shots/` and `pdf` to
+    /// `<dir>/pdfs/` when given no path. Only the first call counts;
+    /// without one, they save under the system's temporary directory.
+    pub fn set_output_dir(&self, dir: PathBuf) {
+        let _ = self.output_dir.set(dir);
+    }
+
+    /// The directory `screenshot` and `pdf` save in by default.
+    fn output_dir(&self) -> PathBuf {
+        self.output_dir
+            .get()
+            .cloned()
+            .unwrap_or_else(|| std::env::temp_dir().join(format!("chrome-cdp-{}", self.session)))
     }
 
     /// The session name.

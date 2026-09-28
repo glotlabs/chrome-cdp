@@ -1057,6 +1057,55 @@ pub struct NetworkClearData {
     pub cleared: usize,
 }
 
+/// `data` of `chrome-cdp screenshot --json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ScreenshotData {
+    /// The tab captured, e.g. `t1`.
+    pub tab: String,
+    /// The image file (absolute).
+    pub path: String,
+    /// `png`, `jpeg` or `webp`.
+    pub format: String,
+    /// The image's size in pixels.
+    pub width: u32,
+    pub height: u32,
+    /// The file's size in bytes.
+    pub bytes: u64,
+    /// The element captured; `null` for the viewport or the full page.
+    pub locator: Option<String>,
+    /// `--full`: the whole page.
+    pub full: bool,
+    /// Image pixels per CSS pixel: 1 at `--scale css`, the device pixel
+    /// ratio at `--scale device`, less when `--max-size` scaled it down.
+    /// A point (x, y) in the image is (x / scale, y / scale) from the
+    /// captured area's top-left corner, in CSS pixels.
+    pub scale: f64,
+    /// The capture was scaled down to fit `--max-size`.
+    pub downscaled: bool,
+    /// `--annotate`: the refs labelled in the image.
+    #[serde(default)]
+    pub annotated: Vec<String>,
+    /// `--mask`: how many elements were painted over.
+    #[serde(default)]
+    pub masked: usize,
+}
+
+/// `data` of `chrome-cdp pdf --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PdfData {
+    /// The tab printed, e.g. `t1`.
+    pub tab: String,
+    /// The PDF file (absolute).
+    pub path: String,
+    /// The file's size in bytes.
+    pub bytes: u64,
+    /// How many pages it has, when that could be read from the file.
+    pub pages: Option<u32>,
+    /// The paper size: `Letter`, `A4`, …
+    pub paper: String,
+    pub landscape: bool,
+}
+
 /// `data` of `chrome-cdp snapshot --json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SnapshotData {

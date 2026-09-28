@@ -112,6 +112,17 @@ impl Reader for DomReader<'_> {
     }
 }
 
+/// What [`Engine::read_tree`] read: the capture, the nodes shown (with
+/// their refs), the tab's previous tree shaped the same way (for
+/// `--diff`), and whether the main frame loaded a new page since.
+#[derive(Debug)]
+struct Tree {
+    capture: Capture,
+    shown: Vec<Node>,
+    before: Option<Vec<Node>>,
+    new_page: bool,
+}
+
 /// What a tab remembers between snapshots.
 #[derive(Debug, Default)]
 pub(crate) struct Memory {
@@ -209,62 +220,14 @@ impl Engine {
         let (scope_key, note) = self
             .scope_key(running, page, scope.as_ref(), &options, &retry, timeout)
             .await?;
-        // A frame that loads a new document while the page is read would
-        // leave refs on nodes that are gone: read it again.
-        let mut attempts = 0;
-        let (capture, shown, before, new_page) = loop {
-            attempts += 1;
-            let generation = running
-                .tabs
-                .snapshot_memory(page.id, |m| m.refs.generation())
-                .unwrap_or_default();
-            let frames = running.tabs.frame_sources(page.id);
-            let read = async {
-                match engine {
-                    SnapshotEngine::Ax => {
-                        AxReader {
-                            session: &self.session,
-                        }
-                        .read(&frames, scope_key.as_ref(), timeout)
-                        .await
-                    }
-                    SnapshotEngine::Dom => {
-                        DomReader {
-                            running,
-                            page,
-                            engine: self,
-                        }
-                        .read(&frames, scope_key.as_ref(), timeout)
-                        .await
-                    }
-                }
-            };
-            let capture = self.unless_blocked(running, page, mark, read).await?;
-            let Some(current) = scoped(scope_key.as_ref(), &capture.nodes) else {
-                return Err(self.scope_gone(req.scope.as_deref(), page));
-            };
-            let mut shown = prune::shape(current, &view);
-            let assigned = running.tabs.snapshot_memory(page.id, |memory| {
-                if memory.refs.generation() != generation && attempts < READ_ATTEMPTS {
-                    return None;
-                }
-                prune::assign_refs(&mut shown, &mut memory.refs, view.all_refs, engine);
-                let before = memory.last.replace(capture.nodes.clone());
-                let new_page = std::mem::take(&mut memory.new_page) && before.is_some();
-                let before = before.map(|old| {
-                    let mut old =
-                        prune::shape(scoped(scope_key.as_ref(), &old).unwrap_or_default(), &view);
-                    prune::lookup_refs(&mut old, &memory.refs);
-                    old
-                });
-                Some((before, new_page))
-            });
-            match assigned {
-                Some(Some((before, new_page))) => break (capture, shown, before, new_page),
-                Some(None) => {}
-                None => break (capture, shown, None, false),
-            }
-        };
+        let Tree {
+            capture,
+            shown,
+            before,
+            new_page,
+        } = self
+            .read_tree(running, page, req, &view, scope_key.as_ref(), mark)
+            .await?;
 
         let tab = tab_name(page.id);
         let mut text = format!(
@@ -315,6 +278,135 @@ impl Engine {
             output = output.warning(note);
         }
         Ok(output)
+    }
+
+    /// Reads `page` with `req`'s engine and gives refs to the nodes
+    /// `view` shows (the subtree of `scope_key`, if given), remembering
+    /// the tree for the next `--diff`. The caller holds the tab's lock.
+    async fn read_tree(
+        &self,
+        running: &Running,
+        page: &Page,
+        req: &SnapshotRequest,
+        view: &View,
+        scope_key: Option<&NodeKey>,
+        mark: u64,
+    ) -> Result<Tree, ErrorInfo> {
+        let engine = req.engine.unwrap_or(DEFAULT_ENGINE);
+        let timeout = millis(req.timeout_ms);
+        // A frame that loads a new document while the page is read would
+        // leave refs on nodes that are gone: read it again.
+        let mut attempts = 0;
+        loop {
+            attempts += 1;
+            let generation = running
+                .tabs
+                .snapshot_memory(page.id, |m| m.refs.generation())
+                .unwrap_or_default();
+            let frames = running.tabs.frame_sources(page.id);
+            let read = async {
+                match engine {
+                    SnapshotEngine::Ax => {
+                        AxReader {
+                            session: &self.session,
+                        }
+                        .read(&frames, scope_key, timeout)
+                        .await
+                    }
+                    SnapshotEngine::Dom => {
+                        DomReader {
+                            running,
+                            page,
+                            engine: self,
+                        }
+                        .read(&frames, scope_key, timeout)
+                        .await
+                    }
+                }
+            };
+            let capture = self.unless_blocked(running, page, mark, read).await?;
+            let Some(current) = scoped(scope_key, &capture.nodes) else {
+                return Err(self.scope_gone(req.scope.as_deref(), page));
+            };
+            let mut shown = prune::shape(current, view);
+            let assigned = running.tabs.snapshot_memory(page.id, |memory| {
+                if memory.refs.generation() != generation && attempts < READ_ATTEMPTS {
+                    return None;
+                }
+                prune::assign_refs(&mut shown, &mut memory.refs, view.all_refs, engine);
+                let before = memory.last.replace(capture.nodes.clone());
+                let new_page = std::mem::take(&mut memory.new_page) && before.is_some();
+                let before = before.map(|old| {
+                    let mut old = prune::shape(scoped(scope_key, &old).unwrap_or_default(), view);
+                    prune::lookup_refs(&mut old, &memory.refs);
+                    old
+                });
+                Some((before, new_page))
+            });
+            match assigned {
+                Some(Some((before, new_page))) => {
+                    return Ok(Tree {
+                        capture,
+                        shown,
+                        before,
+                        new_page,
+                    });
+                }
+                Some(None) => {}
+                None => {
+                    return Ok(Tree {
+                        capture,
+                        shown,
+                        before: None,
+                        new_page: false,
+                    });
+                }
+            }
+        }
+    }
+
+    /// The refs `snapshot -i` shows for `page` now, with their nodes, in
+    /// page order; reading them counts as the tab's last snapshot (for
+    /// `--diff`). The caller holds the tab's lock.
+    pub(crate) async fn interactive_refs(
+        &self,
+        running: &Running,
+        page: &Page,
+        mark: u64,
+        timeout: Duration,
+    ) -> Result<Vec<(u32, NodeKey)>, ErrorInfo> {
+        let req = SnapshotRequest {
+            tab: None,
+            interactive: true,
+            scope: None,
+            depth: None,
+            diff: false,
+            all_refs: false,
+            all: false,
+            text_limit: 0,
+            no_text: false,
+            engine: None,
+            strict_refs: false,
+            testid_attribute: None,
+            timeout_ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+            max_chars: 0,
+        };
+        let view = View {
+            interactive: true,
+            ..View::default()
+        };
+        let tree = self
+            .read_tree(running, page, &req, &view, None, mark)
+            .await?;
+        let mut refs = Vec::new();
+        for node in &tree.shown {
+            node.walk(&mut |n| {
+                if let (Some(reference), Some(key)) = (n.reference, &n.key) {
+                    refs.push((reference, key.clone()));
+                }
+            });
+        }
+        Ok(refs)
     }
 
     /// The node a `--scope` locator names, and the note if its ref was

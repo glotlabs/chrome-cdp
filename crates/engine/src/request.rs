@@ -533,6 +533,221 @@ pub struct NetworkClearRequest {
     pub timeout_ms: u64,
 }
 
+/// An image format (`screenshot --format`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ImageFormat {
+    #[default]
+    Png,
+    Jpeg,
+    Webp,
+}
+
+impl ImageFormat {
+    /// Its name, as typed.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Jpeg => "jpeg",
+            Self::Webp => "webp",
+        }
+    }
+
+    /// The file extension it is saved with.
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Jpeg => "jpg",
+            Self::Webp => "webp",
+        }
+    }
+
+    /// The format a file name's extension names (`.jpg`, `.JPEG`, …).
+    pub fn from_path(path: &std::path::Path) -> Option<Self> {
+        let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+        match ext.as_str() {
+            "png" => Some(Self::Png),
+            "jpg" | "jpeg" => Some(Self::Jpeg),
+            "webp" => Some(Self::Webp),
+            _ => None,
+        }
+    }
+}
+
+/// How many image pixels a CSS pixel takes (`screenshot --scale`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ShotScale {
+    /// One: the image's pixels are CSS pixels, whatever the screen.
+    #[default]
+    Css,
+    /// The device pixel ratio: as sharp as the screen shows it.
+    Device,
+}
+
+/// `screenshot`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScreenshotRequest {
+    /// `--tab`: the tab to capture; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// Capture only this element (scrolled into view first).
+    #[serde(default)]
+    pub locator: Option<String>,
+    /// `--full`: the whole page, not only the viewport.
+    #[serde(default)]
+    pub full: bool,
+    #[serde(default)]
+    pub format: ImageFormat,
+    /// `--quality`: 0 to 100, for jpeg and webp.
+    #[serde(default)]
+    pub quality: Option<u8>,
+    /// `-o`: an absolute path; `<session dir>/shots/<n>.<ext>` if `None`.
+    #[serde(default)]
+    pub path: Option<PathBuf>,
+    #[serde(default)]
+    pub scale: ShotScale,
+    /// `--max-size`: the longest side in image pixels; a larger capture is
+    /// scaled down to fit (0 = no limit).
+    pub max_size: u32,
+    /// `--omit-background`: a transparent background where the page has
+    /// none (png and webp).
+    #[serde(default)]
+    pub omit_background: bool,
+    /// `--mask`: locators whose matches are painted over.
+    #[serde(default)]
+    pub mask: Vec<String>,
+    /// `--annotate`: label the elements `snapshot -i` gives refs with
+    /// those refs.
+    #[serde(default)]
+    pub annotate: bool,
+    /// `--strict-refs`: a ref whose element is gone is an error, never
+    /// re-resolved by role and name.
+    #[serde(default)]
+    pub strict_refs: bool,
+    /// The attribute `testid=` locators read; `data-testid` if `None`.
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    pub timeout_ms: u64,
+}
+
+/// A paper size for `pdf --format`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PaperFormat {
+    #[default]
+    Letter,
+    Legal,
+    Tabloid,
+    A3,
+    A4,
+    A5,
+}
+
+impl PaperFormat {
+    /// Its name, as typed.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Letter => "Letter",
+            Self::Legal => "Legal",
+            Self::Tabloid => "Tabloid",
+            Self::A3 => "A3",
+            Self::A4 => "A4",
+            Self::A5 => "A5",
+        }
+    }
+
+    /// Width and height in inches, portrait.
+    pub fn inches(self) -> (f64, f64) {
+        match self {
+            Self::Letter => (8.5, 11.0),
+            Self::Legal => (8.5, 14.0),
+            Self::Tabloid => (11.0, 17.0),
+            Self::A3 => (11.69, 16.54),
+            Self::A4 => (8.27, 11.69),
+            Self::A5 => (5.83, 8.27),
+        }
+    }
+}
+
+/// Page margins in inches (`pdf --margin`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Margins {
+    pub top: f64,
+    pub right: f64,
+    pub bottom: f64,
+    pub left: f64,
+}
+
+impl Margins {
+    /// Parses one to four lengths, comma-separated, in CSS order (`1cm`;
+    /// `10mm,20mm`: top and bottom, then left and right; `top,right,
+    /// bottom,left`). A length is a number with `in`, `cm`, `mm` or `px`
+    /// (1/96 in); a bare `0` needs no unit.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let lengths = text
+            .split(',')
+            .map(|part| inches(part.trim()))
+            .collect::<Result<Vec<f64>, String>>()?;
+        let [top, right, bottom, left] = match lengths.as_slice() {
+            [all] => [*all; 4],
+            [y, x] => [*y, *x, *y, *x],
+            [top, x, bottom] => [*top, *x, *bottom, *x],
+            [top, right, bottom, left] => [*top, *right, *bottom, *left],
+            _ => return Err("give 1 to 4 lengths, comma-separated".to_owned()),
+        };
+        Ok(Self {
+            top,
+            right,
+            bottom,
+            left,
+        })
+    }
+}
+
+/// A length such as `1cm`, `0.5in`, `10mm`, `20px` or `0`, in inches.
+fn inches(text: &str) -> Result<f64, String> {
+    let bad = || format!("`{text}` is not a length; use e.g. 1cm, 10mm, 0.5in or 20px");
+    let split = text
+        .find(|c: char| c.is_ascii_alphabetic())
+        .unwrap_or(text.len());
+    let (number, unit) = text.split_at(split);
+    let number: f64 = number.trim().parse().map_err(|_| bad())?;
+    if !number.is_finite() || number < 0.0 {
+        return Err(bad());
+    }
+    let per_inch = match unit.to_ascii_lowercase().as_str() {
+        "" if number == 0.0 => 1.0,
+        "in" => 1.0,
+        "cm" => 2.54,
+        "mm" => 25.4,
+        "px" => 96.0,
+        _ => return Err(bad()),
+    };
+    Ok(number / per_inch)
+}
+
+/// `pdf`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PdfRequest {
+    /// `--tab`: the tab to print; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// `-o`: an absolute path; `<session dir>/pdfs/<n>.pdf` if `None`.
+    #[serde(default)]
+    pub path: Option<PathBuf>,
+    #[serde(default)]
+    pub format: PaperFormat,
+    #[serde(default)]
+    pub landscape: bool,
+    /// `--background`: print background colours and images.
+    #[serde(default)]
+    pub background: bool,
+    /// `--margin`; Chrome's (1cm) if `None`.
+    #[serde(default)]
+    pub margin: Option<Margins>,
+    pub timeout_ms: u64,
+}
+
 /// Which engine reads the page for `snapshot` (`--engine`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -986,4 +1201,27 @@ pub struct ActionRequest {
     /// the page.
     #[serde(default)]
     pub max_chars: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Margins;
+
+    #[test]
+    fn margins_take_one_to_four_lengths_in_css_order() {
+        let m = Margins::parse("1in").unwrap();
+        assert_eq!((m.top, m.right, m.bottom, m.left), (1.0, 1.0, 1.0, 1.0));
+        let m = Margins::parse("0, 96px").unwrap();
+        assert_eq!((m.top, m.right, m.bottom, m.left), (0.0, 1.0, 0.0, 1.0));
+        let m = Margins::parse("2.54cm,25.4mm,0,1in").unwrap();
+        assert_eq!((m.top, m.right, m.bottom, m.left), (1.0, 1.0, 0.0, 1.0));
+        assert!(
+            Margins::parse("1")
+                .unwrap_err()
+                .contains("`1` is not a length")
+        );
+        assert!(Margins::parse("-1cm").is_err());
+        assert!(Margins::parse("1pt").is_err());
+        assert!(Margins::parse("1cm,1cm,1cm,1cm,1cm").is_err());
+    }
 }

@@ -95,6 +95,45 @@ impl Engine {
     }
 }
 
+impl Engine {
+    /// Where frame `frame`'s viewport starts in tab `page`'s: the offsets of
+    /// the `<iframe>` content boxes it is in, added up.
+    pub(crate) async fn frame_offset(
+        &self,
+        running: &Running,
+        page: &Page,
+        frame: &str,
+        timeout: Duration,
+    ) -> Result<(f64, f64), ErrorInfo> {
+        let (mut x, mut y) = (0.0, 0.0);
+        let mut frame = frame.to_owned();
+        let frames = running.tabs.frames(page.id);
+        while frames.iter().any(|f| f.id == frame && f.parent.is_some()) {
+            let (parent, context, root) = self.frame_owner(running, page, &frame, timeout).await?;
+            let mut params =
+                cdp::domains::runtime::CallFunctionOnParams::new(CONTENT_ORIGIN_JS.to_owned());
+            params.object_id = Some(root.object_id.clone());
+            params.return_by_value = Some(true);
+            let result = context.session.with_timeout(timeout).call(params).await;
+            let release = cdp::domains::runtime::ReleaseObjectParams {
+                object_id: root.object_id,
+            };
+            let _ = context.session.call(release).await;
+            let result = result.map_err(|e| crate::from_cdp(&e, &self.session))?;
+            if let Some([dx, dy]) = result
+                .result
+                .value
+                .and_then(|v| serde_json::from_value::<[f64; 2]>(v).ok())
+            {
+                x += dx;
+                y += dy;
+            }
+            frame = parent;
+        }
+        Ok((x, y))
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct Shown {
     text: String,
@@ -402,7 +441,10 @@ impl Reader<'_> {
         let rect: Option<[f64; 4]> = parse(&called.value)?;
         let rect = match rect {
             Some([x, y, width, height]) => {
-                let (dx, dy) = self.frame_offset(&called.frame).await?;
+                let (dx, dy) = self
+                    .engine
+                    .frame_offset(self.running, self.page, &called.frame, self.timeout)
+                    .await?;
                 Some(Rect {
                     x: round(x + dx),
                     y: round(y + dy),
@@ -462,44 +504,6 @@ impl Reader<'_> {
             ));
         }
         Ok(Self::noted(output, &called))
-    }
-
-    /// Where frame `frame`'s viewport starts in the tab's: the offsets of
-    /// the `<iframe>` content boxes it is in, added up.
-    async fn frame_offset(&self, frame: &str) -> Result<(f64, f64), ErrorInfo> {
-        let (mut x, mut y) = (0.0, 0.0);
-        let mut frame = frame.to_owned();
-        let frames = self.running.tabs.frames(self.page.id);
-        while frames.iter().any(|f| f.id == frame && f.parent.is_some()) {
-            let (parent, context, root) = self
-                .engine
-                .frame_owner(self.running, self.page, &frame, self.timeout)
-                .await?;
-            let mut params =
-                cdp::domains::runtime::CallFunctionOnParams::new(CONTENT_ORIGIN_JS.to_owned());
-            params.object_id = Some(root.object_id.clone());
-            params.return_by_value = Some(true);
-            let result = context
-                .session
-                .with_timeout(self.timeout)
-                .call(params)
-                .await;
-            let release = cdp::domains::runtime::ReleaseObjectParams {
-                object_id: root.object_id,
-            };
-            let _ = context.session.call(release).await;
-            let result = result.map_err(|e| crate::from_cdp(&e, &self.engine.session))?;
-            if let Some([dx, dy]) = result
-                .result
-                .value
-                .and_then(|v| serde_json::from_value::<[f64; 2]>(v).ok())
-            {
-                x += dx;
-                y += dy;
-            }
-            frame = parent;
-        }
-        Ok((x, y))
     }
 
     async fn markdown(&self) -> Result<Output, ErrorInfo> {

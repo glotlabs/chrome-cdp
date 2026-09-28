@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Tall page</title>
+<style>
+  /* No scrollbar, so the page is as wide on every OS. */
+  html { scrollbar-width: none; }
+  body { margin: 0; font: 16px sans-serif; }
+  .band { height: 1000px; display: flex; align-items: center; justify-content: center; font-size: 48px; }
+  .band:nth-child(odd) { background: #dde; }
+  .band:nth-child(even) { background: #ede; }
+  #last { background: rgb(255, 0, 0); }
+</style>
+</head>
+<body>
+<script>
+  // 20 bands of 1000px: a 20,000px tall page, the last band red.
+  for (let i = 1; i <= 20; i++) {
+    const band = document.createElement('div');
+    band.className = 'band';
+    band.textContent = 'band ' + i;
+    if (i === 20) band.id = 'last';
+    document.body.append(band);
+  }
+</script>
+</body>
+</html>

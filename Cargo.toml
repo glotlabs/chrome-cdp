@@ -29,6 +29,8 @@ http-body-util = "0.1"
 hyper = { version = "1", default-features = false, features = ["http1", "server"] }
 hyper-util = { version = "0.1", default-features = false, features = ["tokio"] }
 libc = "0.2"
+# Decodes screenshots in tests.
+png = "0.18"
 proptest = "1"
 # HTTPS for `chrome-cdp install`: rustls with ring, never OpenSSL (overview §3).
 regex = "1"

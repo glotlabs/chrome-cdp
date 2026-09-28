@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Shots</title>
+<style>
+  /* No background: --omit-background leaves the empty parts transparent.
+     No scrollbar, so the viewport is as wide on every OS. */
+  html { scrollbar-width: none; }
+  body { margin: 0; font: 16px sans-serif; }
+  #red { position: absolute; left: 20px; top: 20px; width: 200px; height: 100px; background: rgb(255, 0, 0); }
+  #secret { position: absolute; left: 240px; top: 20px; width: 120px; height: 40px; background: rgb(0, 0, 255); color: #fff; }
+  #frame { position: absolute; left: 20px; top: 140px; width: 240px; height: 120px; border: 0; }
+  #hidden { display: none; }
+  #below { position: absolute; left: 30px; top: 3000px; width: 150px; height: 50px; background: rgb(0, 128, 0); }
+  #spacer { height: 3200px; }
+</style>
+</head>
+<body>
+<div id="red"></div>
+<div id="secret">4111 1111</div>
+<iframe id="frame" name="inner" src="frame.html"></iframe>
+<div id="hidden">never shown</div>
+<div id="below"></div>
+<div id="spacer"></div>
+<script>
+  // An element that appears late, for the wait before an element shot.
+  setTimeout(() => {
+    const late = document.createElement('div');
+    late.id = 'late';
+    late.style.cssText = 'position: absolute; left: 400px; top: 20px; width: 60px; height: 30px; background: rgb(255, 255, 0);';
+    document.body.append(late);
+  }, 400);
+</script>
+</body>
+</html>
