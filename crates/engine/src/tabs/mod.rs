@@ -190,7 +190,7 @@ impl Settings {
         *lock(&self.http_credentials) = Some(credentials);
     }
 
-    fn http_credentials(&self) -> Option<HttpCredentials> {
+    pub(crate) fn http_credentials(&self) -> Option<HttpCredentials> {
         lock(&self.http_credentials).clone()
     }
 
@@ -208,6 +208,10 @@ impl Settings {
 
     pub(crate) fn set_ignore_https_errors(&self, ignore: bool) {
         self.ignore_https_errors.store(ignore, Ordering::Relaxed);
+    }
+
+    pub(crate) fn ignores_https_errors(&self) -> bool {
+        self.ignore_https_errors.load(Ordering::Relaxed)
     }
 }
 

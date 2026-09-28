@@ -19,6 +19,7 @@ mod emulate;
 mod expect;
 mod help;
 mod history;
+mod http;
 mod init;
 mod input;
 mod install;
@@ -141,6 +142,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Routes(args)) => session::routes(&args, &cli.global),
         Some(Command::Unroute(args)) => session::unroute(&args, &cli.global),
         Some(Command::Mock(args)) => mock::run(&args, &cli.global),
+        Some(Command::Http(args)) => http::run(&args, &cli.global),
         Some(Command::InitScript(args)) => session::init_script(&args, &cli.global),
         Some(Command::Expose(args)) => session::expose(&args.names, false, false, &cli.global),
         Some(Command::Unexpose(args)) => session::expose(&args.names, true, args.all, &cli.global),

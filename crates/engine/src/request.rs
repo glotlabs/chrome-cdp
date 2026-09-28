@@ -1241,6 +1241,23 @@ pub struct MockExplainRequest {
     pub max_chars: usize,
 }
 
+/// `http`: a request sent from the browser context, outside the page
+/// (plan 11, milestone 11.11).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HttpRequest {
+    /// Upper case.
+    pub method: String,
+    /// An absolute http(s) URL.
+    pub url: String,
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
+    #[serde(default)]
+    pub body: Option<String>,
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
 /// `mock state`: the mocks' named values and collections (plan 11,
 /// milestone 11.3).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

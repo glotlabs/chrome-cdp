@@ -50,6 +50,7 @@ pub const MOCK_RESET: &str = "mock_reset";
 pub const MOCK_EXPLAIN: &str = "mock_explain";
 pub const MOCK_STATE: &str = "mock_state";
 pub const MOCK_SEED: &str = "mock_seed";
+pub const HTTP: &str = "http";
 pub const INIT_SCRIPT_ADD: &str = "init_script_add";
 pub const INIT_SCRIPT_LIST: &str = "init_script_list";
 pub const INIT_SCRIPT_REMOVE: &str = "init_script_remove";

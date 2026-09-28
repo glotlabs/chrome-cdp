@@ -505,6 +505,10 @@ impl Daemon {
                 Ok(p) => output(self.engine.mock_explain(&p)),
                 Err(e) => Err(e),
             },
+            rpc::HTTP => match params(req.params) {
+                Ok(p) => output(self.engine.http(p).await),
+                Err(e) => Err(e),
+            },
             rpc::INIT_SCRIPT_ADD => match params(req.params) {
                 Ok(p) => output(self.engine.init_script_add(p).await),
                 Err(e) => Err(e),

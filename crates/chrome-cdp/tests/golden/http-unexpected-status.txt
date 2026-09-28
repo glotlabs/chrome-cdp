@@ -1,0 +1,13 @@
+$ chrome-cdp http POST <site>/mock/api/cart --json-body '{"sku":"kb"}'
+exit: 1
+--- stderr
+error: POST <site>/mock/api/cart answered 501, not 2xx
+  body: {"error":"chrome-cdp: no mock for POST /mock/api/cart (in the scope of mock set base)","hint":"chrome-cdp mock explain POST '<site>/mock/api/cart'"}
+  answered by: no mock; mock set base's unmatched policy
+  hint: if 501 is what the test expects, say so: chrome-cdp http POST <site>/mock/api/cart --expect-status 501
+
+$ chrome-cdp http POST <site>/mock/api/cart --json-body '{"sku":"kb"}' --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"POST <site>/mock/api/cart answered 501, not 2xx","hint":"if 501 is what the test expects, say so: chrome-cdp http POST <site>/mock/api/cart --expect-status 501","notes":[{"label":"body","text":"{\"error\":\"chrome-cdp: no mock for POST /mock/api/cart (in the scope of mock set base)\",\"hint\":\"chrome-cdp mock explain POST '<site>/mock/api/cart'\"}"},{"label":"answered by","text":"no mock; mock set base's unmatched policy"}],"details":{"answered_by":"unmatched","body":{"error":"chrome-cdp: no mock for POST /mock/api/cart (in the scope of mock set base)","hint":"chrome-cdp mock explain POST '<site>/mock/api/cart'"},"elapsed_ms":<ms>,"headers":{"content-type":"application/json","x-chrome-cdp-unmatched":"base"},"json":true,"method":"POST","size":164,"status":501,"unmatched":"base","url":"<site>/mock/api/cart"}}}
+

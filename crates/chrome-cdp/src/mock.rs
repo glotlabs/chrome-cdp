@@ -812,7 +812,7 @@ fn explain_here(args: &MockExplainArgs, request: &MockExplainRequest) -> Result<
 
 /// `url` made absolute against `base` (or `http://localhost`, which the
 /// `bool` says).
-fn absolute_url(url: &str, base: Option<&str>) -> Result<(String, bool), ErrorInfo> {
+pub(crate) fn absolute_url(url: &str, base: Option<&str>) -> Result<(String, bool), ErrorInfo> {
     if url.starts_with('/') {
         let (base, guessed) = match base {
             Some(base) => (base, false),

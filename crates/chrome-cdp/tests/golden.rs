@@ -1382,6 +1382,30 @@ const CASES: &[Case] = &[
         ]),
     },
     Case {
+        name: "http-mocked",
+        args: &["http", "GET", "{site}/mock/api/products"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(MOCKED),
+    },
+    Case {
+        name: "http-unexpected-status",
+        args: &[
+            "http",
+            "POST",
+            "{site}/mock/api/cart",
+            "--json-body",
+            "{\"sku\":\"kb\"}",
+        ],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(MOCKED),
+    },
+    Case {
+        name: "http-bad-status-flag",
+        args: &["http", "GET", "/x", "--expect-status", "2x"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
         name: "mock-list",
         args: &["mock", "list"],
         modes: ALL,

@@ -1,0 +1,16 @@
+$ chrome-cdp http GET <site>/mock/api/products
+exit: 0
+--- stdout
+200 GET <site>/mock/api/products (<ms>, mock sale.toml:2, 40B)
+[{"id":1,"name":"Keyboard","sale":true}]
+
+$ chrome-cdp http GET <site>/mock/api/products --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"answered_by":"mock","body":[{"id":1,"name":"Keyboard","sale":true}],"elapsed_ms":<ms>,"headers":{"content-type":"application/json"},"json":true,"method":"GET","mock":{"at":"sale.toml:2","file":"<mocks>/sale.toml","line":2,"name":"on sale","set":"sale"},"size":40,"status":200,"url":"<site>/mock/api/products"}}
+
+$ chrome-cdp http GET <site>/mock/api/products -q
+exit: 0
+--- stdout
+[{"id":1,"name":"Keyboard","sale":true}]
+

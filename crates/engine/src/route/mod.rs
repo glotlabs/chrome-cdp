@@ -390,6 +390,17 @@ impl Router {
         )
     }
 
+    /// Journal entry `seq`, if it is still kept.
+    pub(crate) fn entry(&self, seq: u64) -> Option<RoutedRequest> {
+        let table = lock(&self.table);
+        table
+            .journal
+            .iter()
+            .rev()
+            .find(|(_, e)| e.seq == seq)
+            .map(|(_, e)| e.clone())
+    }
+
     /// Adds to what the journal says happened to request `seq` (a patch
     /// that could not be applied).
     pub(crate) fn amend(&self, seq: u64, note: &str) {
@@ -846,7 +857,7 @@ fn parse_reason(text: &str) -> Result<ErrorReason, ErrorInfo> {
         .map_err(|e| bad(format!("`{text}`: {e}")))
 }
 
-fn reason_name(reason: ErrorReason) -> &'static str {
+pub(crate) fn reason_name(reason: ErrorReason) -> &'static str {
     let name = serde_json::to_value(reason).ok();
     ABORT_REASONS
         .iter()

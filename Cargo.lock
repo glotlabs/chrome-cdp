@@ -486,6 +486,8 @@ dependencies = [
  "png",
  "protocol",
  "regex",
+ "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "similar",

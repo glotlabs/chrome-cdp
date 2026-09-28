@@ -324,6 +324,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<MockCheckData>),
     },
     CommandSchema {
+        name: "http",
+        summary: "the answer to a request sent from the browser context: status, headers, body, and whether a mock, a route or the network answered",
+        schema: || schema_for!(Envelope<HttpData>),
+    },
+    CommandSchema {
         name: "mock record",
         summary: "the mock file written from the session's requests, and its data files",
         schema: || schema_for!(Envelope<MockRecordData>),
@@ -3351,6 +3356,44 @@ pub struct MockRef {
     /// `base.toml:14`: the file relative to the mocks directory, and the
     /// line.
     pub at: String,
+}
+
+/// `data` of `chrome-cdp http --json` (plan 11, milestone 11.11): a
+/// request sent from the browser context, with its cookies, outside the
+/// page.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct HttpData {
+    pub method: String,
+    /// The URL (absolute).
+    pub url: String,
+    pub status: u16,
+    /// The response headers, names in lower case; repeated ones joined
+    /// with `, ` (`set-cookie` with a newline).
+    pub headers: BTreeMap<String, String>,
+    /// The body: its JSON value when it is JSON, else its text (`null`
+    /// for an empty or binary body).
+    pub body: serde_json::Value,
+    /// Whether [`HttpData::body`] is the parsed JSON.
+    pub json: bool,
+    /// The body's size in bytes.
+    pub size: usize,
+    /// Who answered: `network`, `mock`, `route` or `unmatched` (a mock
+    /// set's `unmatched` policy).
+    pub answered_by: String,
+    /// The mock that answered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mock: Option<MockRef>,
+    /// The route rule that answered (`r2`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<String>,
+    /// The mock set whose `unmatched` policy answered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unmatched: Option<String>,
+    /// The cookies the answer set in the browser context, by name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cookies_set: Vec<String>,
+    /// How long it took, redirects and a mock's delay included.
+    pub elapsed_ms: u64,
 }
 
 /// A mock set in use (plan 11): one mock file.

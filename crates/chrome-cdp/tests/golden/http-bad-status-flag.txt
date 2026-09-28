@@ -1,0 +1,11 @@
+$ chrome-cdp http GET /x --expect-status 2x
+exit: 2
+--- stderr
+error: --expect-status: `2x` is not a status
+  hint: give statuses like 201, 2xx or 200,204, or any
+
+$ chrome-cdp http GET /x --expect-status 2x --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"--expect-status: `2x` is not a status","hint":"give statuses like 201, 2xx or 200,204, or any"}}
+
