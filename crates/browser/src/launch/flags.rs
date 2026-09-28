@@ -63,6 +63,11 @@ pub const DISABLED_FEATURES: &[&str] = &[
     "PaintHolding",
 ];
 
+/// Added when `open --extension` asks for extensions: it lets
+/// `Extensions.loadUnpacked` load them over the pipe, which branded Chrome
+/// allows where it ignores `--load-extension`.
+pub const EXTENSIONS_FLAG: &str = "--enable-unsafe-extension-debugging";
+
 /// The flags for `os`, in [`FLAGS`] order, plus `--disable-features`.
 pub fn default_flags(os: Os, headed: bool) -> Vec<String> {
     let mut flags: Vec<String> = FLAGS
@@ -116,13 +121,14 @@ pub fn check_extra(extra: &[String]) -> Result<(), ErrorInfo> {
 }
 
 /// The full argument list after the program name: the defaults for `os`,
-/// `--no-sandbox` if asked, the profile, the user's extra flags, and the
-/// first page. A user `--disable-features` / `--enable-features` is merged
+/// `--no-sandbox` if asked, [`EXTENSIONS_FLAG`] for extensions, the
+/// profile, the user's extra flags, and the first page. A user `--disable-features` / `--enable-features` is merged
 /// with ours, since Chrome only honours the last of each.
 pub(crate) fn command_line(
     os: Os,
     headed: bool,
     no_sandbox: bool,
+    extensions: bool,
     profile: &Path,
     extra: &[String],
 ) -> Vec<String> {
@@ -134,7 +140,7 @@ pub(crate) fn command_line(
             disabled.extend(list.split(',').filter(|f| !f.is_empty()).map(str::to_owned));
         } else if let Some(list) = arg.strip_prefix("--enable-features=") {
             enabled.extend(list.split(',').filter(|f| !f.is_empty()).map(str::to_owned));
-        } else if arg == "--no-sandbox" && no_sandbox {
+        } else if (arg == "--no-sandbox" && no_sandbox) || (arg == EXTENSIONS_FLAG && extensions) {
             // Already added below.
         } else {
             rest.push(arg.clone());
@@ -158,6 +164,9 @@ pub(crate) fn command_line(
     if no_sandbox {
         args.push("--no-sandbox".into());
     }
+    if extensions {
+        args.push(EXTENSIONS_FLAG.into());
+    }
     args.push(format!("--user-data-dir={}", profile.display()));
     args.extend(rest);
     args.push("about:blank".into());
@@ -168,7 +177,9 @@ pub(crate) fn command_line(
 mod tests {
     use std::path::Path;
 
-    use super::{DISABLED_FEATURES, FLAGS, check_extra, command_line, default_flags};
+    use super::{
+        DISABLED_FEATURES, EXTENSIONS_FLAG, FLAGS, check_extra, command_line, default_flags,
+    };
     use crate::host::Os;
 
     fn strings(args: &[&str]) -> Vec<String> {
@@ -202,6 +213,7 @@ mod tests {
             Os::Linux,
             false,
             false,
+            false,
             Path::new("/p"),
             &strings(&["--lang=de"]),
         );
@@ -216,16 +228,19 @@ mod tests {
             Os::Linux,
             false,
             true,
+            true,
             Path::new("/p"),
-            &strings(&["--no-sandbox"]),
+            &strings(&["--no-sandbox", EXTENSIONS_FLAG]),
         );
         assert_eq!(args.iter().filter(|a| *a == "--no-sandbox").count(), 1);
+        assert_eq!(args.iter().filter(|a| *a == EXTENSIONS_FLAG).count(), 1);
     }
 
     #[test]
     fn user_features_are_merged_with_ours() {
         let args = command_line(
             Os::Linux,
+            false,
             false,
             false,
             Path::new("/p"),
@@ -271,6 +286,7 @@ mod tests {
                 "{flag} is not in docs/chrome-flags.md"
             );
         }
+        assert!(doc.contains(&format!("`{EXTENSIONS_FLAG}`")));
         for feature in DISABLED_FEATURES {
             assert!(
                 doc.contains(&format!("`{feature}`")),

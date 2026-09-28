@@ -59,6 +59,13 @@ The first page is `about:blank`.
 camera and microphone) and `--use-fake-ui-for-media-stream` (pages get
 them without a prompt), for testing calls and recordings.
 
+`open --extension <dir>` adds `--enable-unsafe-extension-debugging` and
+loads each unpacked extension over the pipe with `Extensions.loadUnpacked`,
+before the first URL. Unlike `--load-extension`, which Google Chrome 137 and
+later ignore, this works in branded Chrome as well as Chrome for Testing and
+Chromium, and a broken manifest is an error instead of a silent no-op.
+chrome-headless-shell cannot load extensions.
+
 In headless mode pages get a 1280x800 viewport (`Emulation.setDeviceMetricsOverride`),
 not the odd size of headless Chrome's window, unless a `--window-size` of yours
 sets it; `viewport` and `emulate` change it.

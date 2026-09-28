@@ -57,6 +57,8 @@ pub struct LaunchOptions {
     pub profile: ProfileChoice,
     /// Extra flags (`--chrome-arg`), after chrome-cdp's own.
     pub args: Vec<String>,
+    /// Let `Extensions.loadUnpacked` load extensions (`open --extension`).
+    pub extensions: bool,
     /// Where to keep Chrome's stderr (the session's `chrome.log`).
     pub log_file: Option<PathBuf>,
     /// Bounds the startup handshake and every later CDP call.
@@ -69,6 +71,7 @@ impl Default for LaunchOptions {
             headed: false,
             profile: ProfileChoice::Ephemeral,
             args: Vec::new(),
+            extensions: false,
             log_file: None,
             timeout: Duration::from_secs(30),
         }
@@ -105,6 +108,19 @@ pub async fn launch(
     flags::check_extra(&opts.args)?;
     if opts.headed {
         check_can_open_a_window(chrome, host)?;
+    }
+    if opts.extensions && chrome.headless_shell {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!(
+                "{} is chrome-headless-shell, which cannot load extensions",
+                chrome.path.display()
+            ),
+        )
+        .hint(
+            Hint::text("drop --extension")
+                .or(format!("install full Chrome: {}", Cmd::new("install"))),
+        ));
     }
 
     let mut warnings = Vec::new();
@@ -143,6 +159,7 @@ pub async fn launch(
         host.os,
         opts.headed,
         no_sandbox_reason.is_some(),
+        opts.extensions,
         &profile.dir,
         &opts.args,
     );
