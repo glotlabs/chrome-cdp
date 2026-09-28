@@ -597,6 +597,80 @@ fn repeat_runs_each_test_and_fails_a_flaky_one() {
     assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
 }
 
+/// A test's `steps.jsonl` less what timing decides: each step's
+/// `start_ms` and `duration_ms`, and the durations outputs give
+/// (`goto`'s `(865ms)`).
+fn steps_without_timings(path: &Path) -> Vec<Value> {
+    let duration = regex::Regex::new(r"\([0-9.]+(ms|s)\)").unwrap();
+    std::fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .map(|line| {
+            let mut step: Value = serde_json::from_str(line).unwrap();
+            let step_map = step.as_object_mut().unwrap();
+            step_map.remove("start_ms");
+            step_map.remove("duration_ms");
+            if let Some(Value::String(output)) = step_map.get_mut("output") {
+                *output = duration.replace_all(output, "(…)").into_owned();
+            }
+            step
+        })
+        .collect()
+}
+
+#[test]
+fn twenty_runs_record_the_same_steps_and_screenshots() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let args = ["scenarios/determinism", "--repeat", "20", "--jobs", "4"];
+    let out = project.test(&[&args[..], &["--trace"]].concat());
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}{}",
+        stdout(&out),
+        stderr(&out)
+    );
+
+    let results = project
+        .root
+        .join("e2e/.results/scenarios/determinism/determinism.cdp");
+    let tests: Vec<PathBuf> = std::fs::read_dir(&results)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(tests.len(), 4, "{tests:?}");
+    for test in tests {
+        let first = test.join("run-1");
+        let steps = steps_without_timings(&first.join("steps.jsonl"));
+        let mut shots: Vec<PathBuf> = std::fs::read_dir(first.join("trace"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        shots.sort();
+        // --trace shoots the test's own steps, not the runner's setup.
+        assert!(!shots.is_empty(), "{}", test.display());
+        for n in 2..=20 {
+            let run = test.join(format!("run-{n}"));
+            assert_eq!(
+                steps_without_timings(&run.join("steps.jsonl")),
+                steps,
+                "{}",
+                run.display()
+            );
+            for shot in &shots {
+                let other = run.join("trace").join(shot.file_name().unwrap());
+                assert!(
+                    std::fs::read(&other).unwrap() == std::fs::read(shot).unwrap(),
+                    "{} differs from {}",
+                    other.display(),
+                    shot.display()
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn every_test_leaves_artifacts_and_a_failure_a_report() {
     let Some(chrome) = chrome_path() else { return };
