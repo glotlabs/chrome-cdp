@@ -1049,6 +1049,13 @@ pub(crate) struct OpenArgs {
     #[arg(long)]
     pub(crate) ignore_https_errors: bool,
 
+    /// Send requests past service workers to the network, even without
+    /// routes (routes always do, since a service worker would answer
+    /// before them). The session keeps this setting; it applies to a
+    /// running browser too.
+    #[arg(long)]
+    pub(crate) bypass_service_worker: bool,
+
     /// How to answer JavaScript dialogs. The session keeps this setting.
     #[arg(long, value_enum, value_name = "POLICY")]
     pub(crate) dialogs: Option<Dialogs>,

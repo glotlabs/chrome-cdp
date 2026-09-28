@@ -533,6 +533,9 @@ fn keep_settings(launch: &mut OpenRequest, newer: &OpenRequest) {
     if newer.ignore_https_errors.is_some() {
         launch.ignore_https_errors = newer.ignore_https_errors;
     }
+    if newer.bypass_service_worker.is_some() {
+        launch.bypass_service_worker = newer.bypass_service_worker;
+    }
     if newer.dialogs.is_some() {
         launch.dialogs = newer.dialogs;
     }

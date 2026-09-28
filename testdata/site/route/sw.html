@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Service worker</title></head>
+<body>
+<p>Registers sw.js, which answers /route/api/sw itself.</p>
+<script>
+  // Resolves once sw.js controls this page.
+  window.controlled = navigator.serviceWorker.register("sw.js").then(
+    () =>
+      new Promise((resolve) => {
+        if (navigator.serviceWorker.controller) return resolve(true);
+        navigator.serviceWorker.addEventListener("controllerchange", () => resolve(true));
+      }),
+  );
+</script>
+</body>
+</html>

@@ -23,11 +23,15 @@
 //! openings, dialogs answered without a command, and downloads share one
 //! event sequence, so a command reports what happened since its
 //! [`Tabs::mark`].
+//!
+//! Plan 07 adds request routing: while the session has routes, every page
+//! and iframe session intercepts its requests (see [`fetch`]).
 
 mod auth;
 pub(crate) mod commands;
 pub(crate) mod dialogs;
 mod downloads;
+mod fetch;
 mod locks;
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -41,7 +45,6 @@ use cdp::domains::{browser, network, page, runtime, security, target};
 use cdp::{Connection, Event as _, RawEvent, RawEventStream, Session};
 use protocol::schema::{Event, TabInfo};
 
-use self::auth::Auth;
 use self::dialogs::OpenDialog;
 use self::downloads::Download;
 use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
@@ -52,6 +55,7 @@ use crate::observe;
 use crate::observe::console::{self, Console, ConsoleError};
 use crate::observe::netlog::{self, NetLog};
 use crate::request::{DialogPolicy, HttpCredentials};
+use crate::route::Router;
 use crate::snapshot::{FrameSource, Memory as SnapshotMemory};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 use tokio::sync::watch;
@@ -122,6 +126,11 @@ pub(crate) struct Settings {
     /// How many requests each tab's network log keeps (`open
     /// --network-buffer`).
     network_buffer: AtomicUsize,
+    /// Whether requests skip service workers without routes too (`open
+    /// --bypass-service-worker`).
+    bypass_service_worker: AtomicBool,
+    /// The routing rules (plan 07).
+    pub(crate) routes: Router,
 }
 
 impl Settings {
@@ -174,6 +183,14 @@ impl Settings {
         lock(&self.http_credentials).clone()
     }
 
+    pub(crate) fn set_bypass_service_worker(&self, bypass: bool) {
+        self.bypass_service_worker.store(bypass, Ordering::Relaxed);
+    }
+
+    fn bypass_service_worker(&self) -> bool {
+        self.bypass_service_worker.load(Ordering::Relaxed)
+    }
+
     pub(crate) fn set_follow_popups(&self, follow: bool) {
         self.follow_popups.store(follow, Ordering::Relaxed);
     }
@@ -207,6 +224,8 @@ struct Shared {
     changed: watch::Sender<u64>,
     /// Whether this browser was told to ignore certificate errors.
     security_applied: AtomicBool,
+    /// What its sessions were told to intercept.
+    interception: Mutex<fetch::Interception>,
     /// The watcher and setup tasks. They hold the connection, so they are
     /// stopped with the manager (a connected browser's WebSocket closes
     /// only when the last handle goes).
@@ -313,6 +332,7 @@ impl Tabs {
             }),
             changed: watch::Sender::new(0),
             security_applied: AtomicBool::new(false),
+            interception: Mutex::default(),
             tasks: Mutex::default(),
         });
         // Subscribe before anything can attach.
@@ -426,24 +446,11 @@ impl Tabs {
         }
     }
 
-    /// Turns on answering HTTP authentication challenges in every page and
-    /// frame session (new ones get it during [`setup`]).
-    pub(crate) async fn apply_credentials(&self, timeout: Duration) {
-        if self.shared.settings.http_credentials().is_none() {
-            return;
-        }
-        let hosts: Vec<Session> = self
-            .shared
-            .lock()
-            .hosts
-            .values()
-            .map(|h| h.session.clone())
-            .collect();
-        for host in hosts {
-            if let Err(e) = host.with_timeout(timeout).call(auth::enable()).await {
-                tracing::debug!("cannot intercept requests of a target: {e}");
-            }
-        }
+    /// Brings request interception in every page and frame session in
+    /// line with the session's routes, HTTP credentials and
+    /// `--bypass-service-worker` (new sessions get it during [`setup`]).
+    pub(crate) async fn apply_interception(&self, timeout: Duration) {
+        fetch::apply(&self.shared, timeout).await;
     }
 
     /// Waits up to `timeout` for `done` to hold; `false` if it did not.
@@ -1274,8 +1281,9 @@ async fn watch_browser(shared: Arc<Shared>, mut events: RawEventStream) {
 
 /// Handles a page or iframe session's events: its own auto-attached
 /// targets (OOPIFs, workers) and their detaching, the frame and execution
-/// context events of tab `tab`'s frames it owns, its dialogs, its crash,
-/// and its intercepted requests.
+/// context events of tab `tab`'s frames it owns, its dialogs and its
+/// crash. Its intercepted requests have their own task
+/// ([`fetch::watch_fetch`]).
 async fn watch_host(
     shared: Arc<Shared>,
     mut events: RawEventStream,
@@ -1283,7 +1291,6 @@ async fn watch_host(
     tab: Option<u32>,
 ) {
     let session_id = session.id().unwrap_or_default().to_owned();
-    let mut auth = Auth::default();
     while let Some(event) = events.next().await {
         match event.method.as_str() {
             target::AttachedToTarget::NAME => attached(&shared, &event, Parent::Host(tab)),
@@ -1292,8 +1299,6 @@ async fn watch_host(
                     detached(&shared, session_id);
                 }
             }
-            "Fetch.requestPaused" => Auth::request_paused(&shared, &session, &event),
-            "Fetch.authRequired" => auth.auth_required(&shared, &session, &event),
             method if method.starts_with("Network.") => {
                 if let Some(tab) = tab {
                     network_event(&shared, &session_id, tab, method, &event);
@@ -1542,6 +1547,7 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
         // Before auto-attach and the domains are turned on for it, so no
         // child and no frame event is missed.
         let events = session.events();
+        let fetch_events = session.events_lossless("Fetch.");
         shared.lock().hosts.insert(
             session_id.clone(),
             Host {
@@ -1550,6 +1556,13 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
             },
         );
         shared.spawn(watch_host(shared.clone(), events, session.clone(), tab));
+        shared.spawn(fetch::watch_fetch(
+            shared.clone(),
+            fetch_events,
+            session.clone(),
+            tab,
+            info.browser_context_id.clone(),
+        ));
     }
     // A dedicated worker of a tab: its console goes to the tab's.
     let worker = info.r#type == "worker" && matches!(parent, Parent::Host(Some(_)));
@@ -1622,8 +1635,8 @@ enum Kind {
 /// renderer) only come once the target runs, so awaiting each step before
 /// sending the next would stall until the timeout.
 ///
-/// Later milestones add their per-target steps here (emulation and routes
-/// in plan 07).
+/// Later milestones add their per-target steps here (emulation in plan
+/// 07).
 async fn setup(
     shared: &Arc<Shared>,
     session: &Session,
@@ -1711,10 +1724,8 @@ async fn setup(
             let add = page::AddScriptToEvaluateOnNewDocumentParams::new(source);
             steps.push(("an init script", step(session.call(add))));
         }
-        // Answers HTTP authentication challenges (see `auth`).
-        if shared.settings.http_credentials().is_some() {
-            steps.push(("Fetch.enable", step(session.call(auth::enable()))));
-        }
+        // Routes and HTTP authentication (see `fetch`).
+        fetch::setup_steps(shared, session, &mut steps);
     }
     if waiting {
         let resume = runtime::RunIfWaitingForDebuggerParams::default();

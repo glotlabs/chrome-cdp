@@ -202,6 +202,26 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<HarStopData>),
     },
     CommandSchema {
+        name: "route",
+        summary: "the routing rules added, and how many are active",
+        schema: || schema_for!(Envelope<RouteData>),
+    },
+    CommandSchema {
+        name: "block",
+        summary: "the blocking rules added, and how many are active",
+        schema: || schema_for!(Envelope<RouteData>),
+    },
+    CommandSchema {
+        name: "routes",
+        summary: "the routing rules with their hit counts, or with --log the requests they routed",
+        schema: || schema_for!(Envelope<RoutesData>),
+    },
+    CommandSchema {
+        name: "unroute",
+        summary: "the routing rules removed, and how many are left",
+        schema: || schema_for!(Envelope<UnrouteData>),
+    },
+    CommandSchema {
         name: "trace start",
         summary: "the tab whose performance trace is recording, and its categories",
         schema: || schema_for!(Envelope<TraceStartData>),
@@ -1206,6 +1226,98 @@ pub struct HarStopData {
     pub dropped: u64,
     /// How long it recorded, in ms.
     pub duration_ms: u64,
+}
+
+/// A routing rule (`route`, `block`; plan 07).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RouteInfo {
+    /// Its id, e.g. `r1`: counted per session, never reused.
+    pub id: String,
+    /// The URL pattern as typed: a glob, a `/regex/`, or a part of the URL.
+    pub pattern: String,
+    /// What the rule is called instead of its pattern (`block --ads`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// The methods it matches (upper case); any if empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub methods: Vec<String>,
+    /// The resource types it matches (as `network --type`); any if empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resource_types: Vec<String>,
+    /// `fulfill`, `abort`, `continue` or `patch_json`.
+    pub action: String,
+    /// The action in a few words: `fulfill 200 application/json 17B`.
+    pub summary: String,
+    /// The status it answers with (`fulfill`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<u16>,
+    /// How long it waits before acting, in ms.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub delay_ms: u64,
+    /// How many requests it matched.
+    pub hits: u64,
+    /// How many more matches before it is removed (`--times`); no limit
+    /// if absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub left: Option<u32>,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(n: &u64) -> bool {
+    *n == 0
+}
+
+/// `data` of `chrome-cdp route --json` and `chrome-cdp block --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RouteData {
+    /// The rules added, in the order they are tried.
+    pub added: Vec<RouteInfo>,
+    /// How many rules the session has now.
+    pub active: usize,
+}
+
+/// A request that routing saw (`routes --log`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RoutedRequest {
+    /// Counts every request routing saw in the session.
+    pub seq: u64,
+    /// When the daemon saw it (ms since the Unix epoch).
+    pub time_ms: u64,
+    /// The tab, e.g. `t1`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab: Option<String>,
+    pub method: String,
+    pub url: String,
+    /// Its resource type, as `network --type` names them.
+    pub resource_type: String,
+    /// The rule that handled it; none if no rule matched and it went on
+    /// unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<String>,
+    /// What happened: `fulfill 200`, `abort failed`, `continue`, …
+    pub outcome: String,
+}
+
+/// `data` of `chrome-cdp routes --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RoutesData {
+    /// The rules, in the order they are tried.
+    pub routes: Vec<RouteInfo>,
+    /// With `--log`: the newest requests routing saw, oldest first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log: Option<Vec<RoutedRequest>>,
+    /// With `--log`: older requests `--limit` left out.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub skipped: u64,
+}
+
+/// `data` of `chrome-cdp unroute --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct UnrouteData {
+    /// The ids of the rules removed.
+    pub removed: Vec<String>,
+    /// How many rules are left.
+    pub active: usize,
 }
 
 /// `data` of `chrome-cdp trace start --json`.

@@ -200,6 +200,7 @@ fn open_in(
         tab,
         follow_popups: args.follow_popups.then_some(true),
         ignore_https_errors: args.ignore_https_errors.then_some(true),
+        bypass_service_worker: args.bypass_service_worker.then_some(true),
         dialogs: args.dialogs.map(crate::cli::Dialogs::to_engine),
         http_credentials,
         console_buffer: args
@@ -248,6 +249,9 @@ fn keep_previous_options(request: &mut OpenRequest, previous: &OpenRequest) {
     }
     if request.ignore_https_errors.is_none() {
         request.ignore_https_errors = previous.ignore_https_errors;
+    }
+    if request.bypass_service_worker.is_none() {
+        request.bypass_service_worker = previous.bypass_service_worker;
     }
     if request.dialogs.is_none() {
         request.dialogs = previous.dialogs;

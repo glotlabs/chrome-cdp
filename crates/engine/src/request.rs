@@ -69,6 +69,11 @@ pub struct OpenRequest {
     /// `None` keeps the session's (2,000 at first).
     #[serde(default)]
     pub network_buffer: Option<usize>,
+    /// `--bypass-service-worker`: whether requests skip service workers
+    /// even without routes (they always do while routes exist); `None`
+    /// keeps the session's setting (off at first).
+    #[serde(default)]
+    pub bypass_service_worker: Option<bool>,
     /// Bounds the launch and the page load.
     pub timeout_ms: u64,
 }
@@ -699,6 +704,114 @@ pub struct CoverageStopRequest {
     pub timeout_ms: u64,
     #[serde(default)]
     pub max_chars: usize,
+}
+
+/// One routing rule, as `route` and `block` give it (plan 07, milestone
+/// 7.1). The engine checks and compiles it when it is added.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RouteSpec {
+    /// The URL pattern: a glob (`**/api/*`), a `/regex/`, or a part of the
+    /// URL, as for `wait --url`.
+    pub pattern: String,
+    /// What to call the rule instead of its pattern (`block --ads`).
+    #[serde(default)]
+    pub label: Option<String>,
+    /// `--method`: only requests with one of these methods; any if empty.
+    #[serde(default)]
+    pub methods: Vec<String>,
+    /// `--resource-type`: only requests of these types (as `network
+    /// --type` names them); any if empty.
+    #[serde(default)]
+    pub resource_types: Vec<String>,
+    /// `--times`: the rule is removed after this many matches.
+    #[serde(default)]
+    pub times: Option<u32>,
+    /// `--delay`: how long to hold a matched request before acting.
+    #[serde(default)]
+    pub delay_ms: u64,
+    /// The browser context whose requests the rule applies to; every
+    /// context's if `None`. For per-context mocks (plan 11).
+    #[serde(default)]
+    pub context: Option<String>,
+    pub action: RouteAction,
+}
+
+/// What a routing rule does with a request it matches.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RouteAction {
+    /// Answer it without the network (`--status`, `--body`, `--json`,
+    /// `--body-file`, `--header`).
+    Fulfill {
+        status: u16,
+        #[serde(default)]
+        headers: Vec<(String, String)>,
+        #[serde(default)]
+        body: RouteBody,
+    },
+    /// Fail it with a network error (`--abort [reason]`): `failed`,
+    /// `blockedbyclient`, `timedout`, … (Chrome's `Network.ErrorReason`,
+    /// any case).
+    Abort { reason: String },
+    /// Send it on, changed (`--set-header`, `--remove-header`,
+    /// `--rewrite-url`), or as it is (`--delay` alone).
+    Continue {
+        #[serde(default)]
+        set_headers: Vec<(String, String)>,
+        #[serde(default)]
+        remove_headers: Vec<String>,
+        #[serde(default)]
+        url: Option<String>,
+    },
+    /// Send it on, then deep-merge `patch` into its JSON response (JSON
+    /// merge patch: `null` removes a key).
+    PatchJson { patch: Value },
+}
+
+/// The body of a fulfilled request.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RouteBody {
+    #[default]
+    Empty,
+    /// `--body`: text, `text/plain` unless a header says otherwise.
+    Text { text: String },
+    /// `--json`: `application/json`.
+    Json { value: Value },
+    /// `--body-file`: read when the rule is added; its type follows the
+    /// extension. An absolute path.
+    File { path: PathBuf },
+}
+
+/// `route` and `block`: add routing rules, tried after the existing ones.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RouteRequest {
+    pub rules: Vec<RouteSpec>,
+    pub timeout_ms: u64,
+}
+
+/// `routes`: the rules, or with `log` the requests routing saw.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoutesRequest {
+    /// `--log`: list the requests routing saw instead.
+    #[serde(default)]
+    pub log: bool,
+    /// `--limit`: with `log`, the newest this many (0 = all).
+    pub limit: usize,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
+/// `unroute`: remove rules.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnrouteRequest {
+    /// The rules' ids (`r1` or `1`).
+    #[serde(default)]
+    pub ids: Vec<String>,
+    /// `--all`: every rule.
+    #[serde(default)]
+    pub all: bool,
+    pub timeout_ms: u64,
 }
 
 /// `highlight`.

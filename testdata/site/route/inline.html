@@ -1,0 +1,14 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>waiting</title>
+<script>
+  // Fired by the first script of the page: a route must already apply.
+  fetch("/route/api/first")
+    .then((r) => r.text())
+    .then((text) => { document.title = text.trim(); });
+</script>
+</head>
+<body><p>An inline script fetches /route/api/first on load.</p></body>
+</html>

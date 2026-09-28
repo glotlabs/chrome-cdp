@@ -23,9 +23,9 @@
 //! and the mouse and pointer actions (5.2). Plan 06 adds `observe`,
 //! starting with each tab's console and the `console` and `errors`
 //! commands (6.1), then its network log (6.2), and `screenshot` and `pdf`
-//! (6.3).
+//! (6.3). Plan 07 adds request routing (`route`, 7.1).
 //! Later plans add modules next to `tabs` and `navigate`: `page`,
-//! `emulate`, `route`.
+//! `emulate`.
 
 mod clipboard;
 mod dialog;
@@ -44,6 +44,7 @@ mod pattern;
 mod raw;
 mod read;
 mod request;
+mod route;
 mod snapshot;
 mod tabs;
 mod wait;
@@ -77,9 +78,10 @@ pub use request::{
     HarStartRequest, HarStopRequest, HighlightRequest, HttpCredentials, ImageFormat,
     InspectRequest, Margins, Modifier, MouseOp, NavigateRequest, Navigation, NetworkClearRequest,
     NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest, PerfRequest, Read,
-    ReadRequest, ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest,
-    StatusRange, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target,
-    TraceStartRequest, TraceStopRequest, WaitFor, WaitRequest, WaitUntil,
+    ReadRequest, RouteAction, RouteBody, RouteRequest, RouteSpec, RoutesRequest, ScreenshotRequest,
+    ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest, StatusRange, TabCloseRequest,
+    TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest, TraceStopRequest,
+    UnrouteRequest, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use tabs::commands::TabClosed;
@@ -303,6 +305,9 @@ impl Engine {
         if let Some(requests) = req.network_buffer {
             self.settings.set_network_buffer(requests);
         }
+        if let Some(bypass) = req.bypass_service_worker {
+            self.settings.set_bypass_service_worker(bypass);
+        }
         let mut warnings = Vec::new();
         let current = match &*self.lock_state() {
             State::Running(running) => Some(running.clone()),
@@ -326,8 +331,8 @@ impl Engine {
                         .await
                         .map_err(|e| from_cdp(&e, &self.session))?;
                 }
-                if req.http_credentials.is_some() {
-                    running.tabs.apply_credentials(timeout).await;
+                if req.http_credentials.is_some() || req.bypass_service_worker.is_some() {
+                    running.tabs.apply_interception(timeout).await;
                 }
                 (running, false)
             }

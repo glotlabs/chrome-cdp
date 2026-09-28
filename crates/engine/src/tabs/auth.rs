@@ -10,8 +10,8 @@
 //! stays off and requests are not paused at all.
 //!
 //! Plan 07's routes intercept requests through the same `Fetch` domain;
-//! they take over [`request_paused`] (fulfil, fail or continue) and turn
-//! interception on for their patterns too.
+//! [`super::fetch`] turns interception on for either and hands challenges
+//! here.
 
 use std::collections::HashSet;
 
@@ -21,18 +21,6 @@ use cdp::{RawEvent, Session};
 use super::{Shared, decode};
 use crate::request::HttpCredentials;
 
-/// `Fetch.enable` for a session of a browser with credentials.
-pub(super) fn enable() -> fetch::EnableParams {
-    fetch::EnableParams {
-        patterns: Some(vec![fetch::RequestPattern {
-            url_pattern: Some("*".into()),
-            resource_type: None,
-            request_stage: None,
-        }]),
-        handle_auth_requests: Some(true),
-    }
-}
-
 /// A host session's authentication state: the requests already answered
 /// with the credentials.
 #[derive(Debug, Default)]
@@ -41,20 +29,6 @@ pub(super) struct Auth {
 }
 
 impl Auth {
-    /// `Fetch.requestPaused`: lets the request go on.
-    pub(super) fn request_paused(shared: &Shared, session: &Session, event: &RawEvent) {
-        let Some(request_id) = event.params["requestId"].as_str() else {
-            return;
-        };
-        let call = session.call(fetch::ContinueRequestParams::new(request_id.to_owned()));
-        shared.spawn(async move {
-            if let Err(e) = call.await {
-                // The request or its target is gone.
-                tracing::debug!("cannot continue a request: {e}");
-            }
-        });
-    }
-
     /// `Fetch.authRequired`: answers with the session's credentials, once
     /// per request.
     pub(super) fn auth_required(&mut self, shared: &Shared, session: &Session, event: &RawEvent) {

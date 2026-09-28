@@ -37,6 +37,10 @@
 //!   one open).
 //! - `/items?n=<count>` answers a JSON array of `count` items (default
 //!   10), for pages that need a large JSON response.
+//! - `/echo` (any method, any path under it) answers with the request as
+//!   JSON: `method`, `path`, `query`, `origin` (the serving origin) and
+//!   `headers` (lower-case names), for checking what a request carried.
+//!   It allows cross-origin requests from the other origin.
 //!
 //! Add pages under `testdata/site` (and dynamic routes in [`respond`]) as
 //! milestones need them, rather than starting another server.
@@ -278,6 +282,9 @@ async fn respond(site: &Site, origin: &str, req: &Request<Incoming>) -> Response
     if path == "/redirect" {
         return redirect(query);
     }
+    if path == "/echo" || path.starts_with("/echo/") {
+        return echo(origin, req);
+    }
     if path.starts_with("/auth/")
         && req.headers().get(AUTHORIZATION).map(HeaderValue::as_bytes)
             != Some(AUTH_HEADER.as_bytes())
@@ -384,6 +391,45 @@ fn items(query: &str) -> Response<Full<Bytes>> {
         "application/json",
         Bytes::from(format!("[{}]", items.join(","))),
     )
+}
+
+/// `/echo`: the request as JSON.
+fn echo(origin: &str, req: &Request<Incoming>) -> Response<Full<Bytes>> {
+    let headers: serde_json::Map<String, serde_json::Value> = req
+        .headers()
+        .iter()
+        .map(|(name, value)| {
+            (
+                name.as_str().to_owned(),
+                String::from_utf8_lossy(value.as_bytes()).into(),
+            )
+        })
+        .collect();
+    let body = serde_json::json!({
+        "method": req.method().as_str(),
+        "path": req.uri().path(),
+        "query": req.uri().query().unwrap_or_default(),
+        "origin": origin,
+        "headers": headers,
+    });
+    let mut response = response(
+        StatusCode::OK,
+        "application/json",
+        Bytes::from(body.to_string()),
+    );
+    if let Some(from) = req.headers().get(hyper::header::ORIGIN) {
+        let cors = response.headers_mut();
+        cors.insert(hyper::header::ACCESS_CONTROL_ALLOW_ORIGIN, from.clone());
+        cors.insert(
+            hyper::header::ACCESS_CONTROL_ALLOW_HEADERS,
+            HeaderValue::from_static("*"),
+        );
+        cors.insert(
+            hyper::header::ACCESS_CONTROL_ALLOW_METHODS,
+            HeaderValue::from_static("GET, POST, PUT, PATCH, DELETE"),
+        );
+    }
+    response
 }
 
 /// `/redirect?to=<path>&n=<hops>`: one 302 hop of the chain.
@@ -613,6 +659,19 @@ mod tests {
         let mut bytes = Vec::new();
         let _ = stream.read_to_end(&mut bytes);
         assert!(!bytes.starts_with(b"HTTP/"), "{bytes:?}");
+    }
+
+    #[test]
+    fn echo_describes_the_request() {
+        let f = Fixtures::shared();
+        let text = get_raw(&f.url("/echo/x?a=1"), "X-Test: yes\r\n");
+        assert!(text.starts_with("HTTP/1.1 200"), "{text}");
+        let body = text.split("\r\n\r\n").nth(1).unwrap();
+        let json: serde_json::Value = serde_json::from_str(body).unwrap();
+        assert_eq!(json["method"], "GET");
+        assert_eq!(json["path"], "/echo/x");
+        assert_eq!(json["query"], "a=1");
+        assert_eq!(json["headers"]["x-test"], "yes");
     }
 
     #[test]
