@@ -12,13 +12,22 @@
 //! needs it meanwhile waits), in a context of its own; its `@after-all`
 //! runs after its last test. A failed `@before-all` fails every test of
 //! the file.
+//!
+//! After each step the runner reads the context's mock log (milestone
+//! 11.5): a request no mock answered, in the scope of a set whose
+//! `unmatched = "fail"`, fails the test at that step, naming the mocks
+//! that came closest. A step that failed on its own gets them as notes,
+//! since a 501 is the likely cause. After a test's own steps pass,
+//! `expect --no-errors --all-tabs` runs unless `allow_console_errors`
+//! (config) or `@allow-console-errors` (test) allows them.
 
+use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use protocol::schema::TestFailure;
-use protocol::{ErrorInfo, ErrorKind, Hint, Output};
+use protocol::schema::{MockLogData, RoutedRequest, TestFailure};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 
 use e2e::scenario::Settings;
 
@@ -129,6 +138,7 @@ pub(super) fn execute(
                             plan,
                             options,
                             session,
+                            seen: Cell::new(0),
                         };
                         let outcome = match runner.before_all(test, &before_all[test.file]) {
                             Err(failure) => Outcome {
@@ -193,6 +203,8 @@ struct Runner<'a> {
     plan: &'a Plan,
     options: &'a Options,
     session: &'a str,
+    /// The last mock log entry looked at for unmatched requests.
+    seen: Cell<u64>,
 }
 
 /// A step's place in a test, for its failure.
@@ -252,7 +264,8 @@ impl Runner<'_> {
         let result = (|| {
             self.settle(&context, &test.settings, &span, deadline)?;
             self.steps(&hooks.before, &context, deadline, Part::Hook("before"))?;
-            self.steps(&test.steps, &context, deadline, Part::Test)
+            self.steps(&test.steps, &context, deadline, Part::Test)?;
+            self.no_errors(test, &context, &span)
         })();
         // `@after` runs whatever happened, while there is time.
         let after = self.steps(
@@ -330,10 +343,82 @@ impl Runner<'_> {
         part: Part,
     ) -> Result<(), Box<TestFailure>> {
         for step in steps {
-            self.step(step, context, deadline)
-                .map_err(|error| failure(step, part, self.forget_session(error)))?;
+            let result = self.step(step, context, deadline);
+            let unmatched = self.unmatched(context);
+            let error = match result {
+                Err(error) => with_unmatched(error, &unmatched),
+                Ok(()) if !unmatched.is_empty() => {
+                    unmatched_error(&unmatched, &self.mock_sets(context))
+                }
+                Ok(()) => continue,
+            };
+            return Err(failure(step, part, self.forget_session(error)));
         }
         Ok(())
+    }
+
+    /// The requests of `context` that went unmatched in the scope of a
+    /// set whose `unmatched = "fail"`, since the last look.
+    fn unmatched(&self, context: &str) -> Vec<RoutedRequest> {
+        let Ok(out) = self.invoke(
+            &["mock", "log", "--unmatched", "--limit", "0"],
+            Some(context),
+            None,
+        ) else {
+            return Vec::new();
+        };
+        let Ok(data) = serde_json::from_value::<MockLogData>(out.data) else {
+            return Vec::new();
+        };
+        let seen = self.seen.get();
+        let fresh: Vec<RoutedRequest> = data
+            .log
+            .into_iter()
+            .filter(|e| e.seq > seen && e.policy.as_deref() == Some("fail"))
+            .collect();
+        if let Some(last) = fresh.iter().map(|e| e.seq).max() {
+            self.seen.set(last);
+        }
+        fresh
+    }
+
+    /// The names of the mock sets `context` uses, for a `mock explain`
+    /// hint.
+    fn mock_sets(&self, context: &str) -> Vec<String> {
+        self.invoke(&["mock", "list"], Some(context), None)
+            .ok()
+            .and_then(|out| {
+                out.data["sets"].as_array().map(|sets| {
+                    // Listed in the order they are tried: the last applied
+                    // first.
+                    sets.iter()
+                        .rev()
+                        .filter_map(|s| s["name"].as_str().map(str::to_owned))
+                        .collect()
+                })
+            })
+            .unwrap_or_default()
+    }
+
+    /// `expect --no-errors --all-tabs` after a test's own steps, unless
+    /// console errors are allowed.
+    fn no_errors(&self, test: &Planned, context: &str, span: &str) -> Result<(), Box<TestFailure>> {
+        if self.plan.config.allow_console_errors || test.settings.allow_console_errors {
+            return Ok(());
+        }
+        let words = ["expect", "--no-errors", "--all-tabs"];
+        self.invoke(&words, Some(context), None).map(drop).map_err(|error| {
+            let error = self.forget_session(error).hint(Hint::text(
+                "fix the error; if the test expects it, add @allow-console-errors to the test (or allow_console_errors = true to [e2e])",
+            ));
+            Box::new(TestFailure {
+                at: span.to_owned(),
+                step: words.join(" "),
+                hook: Some("check".to_owned()),
+                via: Vec::new(),
+                error,
+            })
+        })
     }
 
     /// Runs one step, within the test's time.
@@ -492,6 +577,66 @@ fn failure(step: &Prepared, part: Part, error: ErrorInfo) -> Box<TestFailure> {
         error,
     })
 }
+
+/// The failure of a step after which requests went unmatched.
+fn unmatched_error(unmatched: &[RoutedRequest], sets: &[String]) -> ErrorInfo {
+    let first = &unmatched[0];
+    let message = match unmatched.len() {
+        1 => format!("unmatched request: {} {}", first.method, first.url),
+        n => format!(
+            "{n} unmatched requests; the first: {} {}",
+            first.method, first.url
+        ),
+    };
+    let mut info = ErrorInfo::new(ErrorKind::ExpectFailed, message);
+    if let Some(set) = &first.unmatched {
+        info = info.note(
+            "scope",
+            format!("mock set {set}, whose unmatched = \"fail\" answered it 501"),
+        );
+    }
+    if first.closest.is_empty() {
+        info = info.note("closest mock", "none has a path like it");
+    }
+    for check in &first.closest {
+        info = info.note("closest mock", mock::text::closest_line(check));
+    }
+    for other in unmatched.iter().skip(1).take(UNMATCHED_LISTED) {
+        info = info.note("unmatched", format!("{} {}", other.method, other.url));
+    }
+    let mut explain = Cmd::new("mock")
+        .arg("explain")
+        .arg(&first.method)
+        .arg(&first.url);
+    if !sets.is_empty() {
+        explain = explain.flag("mocks", sets.join(","));
+    }
+    info.hint(format!("add a mock for it, or run {explain}"))
+        .details(serde_json::json!({ "unmatched": unmatched }))
+}
+
+/// `error` of a step that failed, with the requests that went unmatched
+/// meanwhile (a 501 is the likely cause).
+fn with_unmatched(mut error: ErrorInfo, unmatched: &[RoutedRequest]) -> ErrorInfo {
+    for entry in unmatched.iter().take(UNMATCHED_LISTED) {
+        let mut text = format!("{} {} (no mock answered it", entry.method, entry.url);
+        if let Some(check) = entry.closest.first() {
+            text.push_str("; closest mock: ");
+            text.push_str(&mock::text::closest_line(check));
+        }
+        text.push(')');
+        error = error.note("unmatched", text);
+    }
+    if !unmatched.is_empty()
+        && let Some(serde_json::Value::Object(details)) = &mut error.details
+    {
+        details.insert("unmatched".into(), serde_json::json!(unmatched));
+    }
+    error
+}
+
+/// How many unmatched requests a failure lists.
+const UNMATCHED_LISTED: usize = 3;
 
 /// A failure of what the runner does around a test's steps.
 fn setup_failure(at: &str, step: &str, error: ErrorInfo) -> Box<TestFailure> {

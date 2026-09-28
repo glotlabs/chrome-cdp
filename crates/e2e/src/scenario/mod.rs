@@ -17,7 +17,7 @@
 //!
 //! [`load`] reads one file into a [`Scenario`]: its settings (file-level
 //! `@mocks`, `@tags`, `@skip`, `@only`, `@timeout`, `@viewport`,
-//! `@device`, `@retries`), its hooks (`@before`, `@after`, `@before-all`,
+//! `@device`, `@retries`, `@allow-console-errors`), its hooks (`@before`, `@after`, `@before-all`,
 //! `@after-all`) and its tests, each with its own settings (written in its
 //! body or after its name) and steps. `@include file k=v` inlines a step
 //! file (commands and further `@include`s only), relative to the file that
@@ -60,6 +60,7 @@ pub const DIRECTIVES: &[&str] = &[
     "viewport",
     "device",
     "retries",
+    "allow-console-errors",
     "syntax",
 ];
 
@@ -68,7 +69,15 @@ const BLOCKS: &[&str] = &["test", "before", "after", "before-all", "after-all"];
 
 /// The directives that set something, for the file or one test.
 const SETTINGS: &[&str] = &[
-    "mocks", "tags", "skip", "only", "timeout", "viewport", "device", "retries",
+    "mocks",
+    "tags",
+    "skip",
+    "only",
+    "timeout",
+    "viewport",
+    "device",
+    "retries",
+    "allow-console-errors",
 ];
 
 /// A file's or a test's settings.
@@ -85,6 +94,9 @@ pub struct Settings {
     /// A device of `chrome-cdp emulate list`.
     pub device: Option<String>,
     pub retries: Option<u32>,
+    /// `@allow-console-errors`: the runner does not check `expect
+    /// --no-errors` at the end of the test.
+    pub allow_console_errors: bool,
 }
 
 impl Settings {
@@ -117,6 +129,7 @@ impl Settings {
             viewport,
             device,
             retries: inner.retries.or(self.retries),
+            allow_console_errors: self.allow_console_errors || inner.allow_console_errors,
         }
     }
 }
@@ -449,6 +462,14 @@ impl Loader {
             }
             "only" => {
                 settings.only = true;
+                None
+            }
+            "allow-console-errors" if !words.is_empty() => Some(err(
+                "@allow-console-errors takes no arguments".into(),
+                "write @allow-console-errors alone",
+            )),
+            "allow-console-errors" => {
+                settings.allow_console_errors = true;
                 None
             }
             "timeout" => match one(&words).map(|w| parse_duration(&w)) {

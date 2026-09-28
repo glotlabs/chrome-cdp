@@ -59,6 +59,7 @@ fn failure_text(failure: &TestFailure, label: &str) -> String {
     let mut text = String::new();
     let hook = match failure.hook.as_deref() {
         Some("setup") => " (setting up the test)".to_owned(),
+        Some("check") => " (checked after the test's steps)".to_owned(),
         Some(hook) => format!(" (in @{hook})"),
         None => String::new(),
     };

@@ -608,7 +608,7 @@
           "description": "The step's error."
         },
         "hook": {
-          "description": "`before`, `after`, `before-all` or `after-all` for a hook's step;\nabsent for the test's own and the runner's (`setup`).",
+          "description": "`before`, `after`, `before-all` or `after-all` for a hook's step;\n`setup` for what the runner does before the steps, `check` for its\nchecks after them (`expect --no-errors --all-tabs`); absent for\nthe test's own.",
           "type": [
             "string",
             "null"

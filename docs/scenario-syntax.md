@@ -165,7 +165,8 @@ inside it are not interpreted.
   - `batch` and `run` know only `@syntax`;
   - plan 11's `test` adds `@test`, `@before`, `@after`, `@before-all`,
     `@after-all`, `@include`, `@mocks`, `@tags`, `@skip`, `@only`,
-    `@timeout`, `@viewport`, `@device` and `@retries`
+    `@timeout`, `@viewport`, `@device`, `@retries` and
+    `@allow-console-errors`
     ([docs/e2e/scenarios.md](e2e/scenarios.md)), and `@backend` with
     plan 11.11.
 - `@syntax N` declares the syntax version. It must come before any command

@@ -90,6 +90,17 @@ fn a_scenario_has_settings_hooks_and_tests() {
         Some("flaky upstream component, see #12")
     );
     assert_eq!(s.tests[3].end_line, u32::MAX);
+    assert!(!s.settings_of(3).allow_console_errors);
+}
+
+#[test]
+fn console_errors_are_allowed_per_test_or_file() {
+    let s = load_text("@test \"a\"\n  reload\n\n@test \"b\" @allow-console-errors\n  reload\n")
+        .unwrap();
+    assert!(!s.settings_of(0).allow_console_errors);
+    assert!(s.settings_of(1).allow_console_errors);
+    let s = load_text("@allow-console-errors\n\n@test \"a\"\n  reload\n").unwrap();
+    assert!(s.settings_of(0).allow_console_errors);
 }
 
 #[test]
@@ -138,6 +149,10 @@ fn directives_are_checked() {
         (
             "@test \"x\" @retries\n  reload\n",
             "s.cdp:1:11: @retries takes a number",
+        ),
+        (
+            "@test \"x\" @allow-console-errors yes\n  reload\n",
+            "s.cdp:1:11: @allow-console-errors takes no arguments",
         ),
         (
             "@timeout soon\n@test \"x\"\n  reload\n",

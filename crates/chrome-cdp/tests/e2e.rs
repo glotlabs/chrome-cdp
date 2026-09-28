@@ -373,3 +373,75 @@ fn a_chrome_per_job_and_snapshot_baselines_in_the_project() {
     let out = project.test(&["scenarios/pass/snap.cdp"]);
     assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
 }
+
+#[test]
+fn requests_unmatched_requests_and_console_errors() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let out = project.test(&["scenarios/checks", "--jobs", "1"]);
+    assert_eq!(out.status.code(), Some(1));
+    let text = stdout(&out);
+    eprintln!("{text}");
+    assert!(
+        text.contains("✓ scenarios/checks/checks.cdp:6 posts the todo it adds ("),
+        "{text}"
+    );
+    // An unmatched request fails the step after which it was seen, with
+    // the mock that comes closest.
+    assert!(
+        text.contains("✗ scenarios/checks/checks.cdp:14 fails on an unmatched request ("),
+        "{text}"
+    );
+    assert!(
+        text.contains(
+            "    failed at scenarios/checks/checks.cdp:15:3: eval \"fetch('/e2e/api/prices?user=7').then((r) => r.status)\"\n    error: unmatched request: GET http://"
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains("/e2e/api/prices?user=7\n      scope: mock set shop, whose unmatched = \"fail\" answered it 501\n      closest mock: shop.toml:6 \"price\": path differs: expects /e2e/api/price, got /e2e/api/prices\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("      hint: add a mock for it, or run chrome-cdp mock explain GET 'http://"),
+        "{text}"
+    );
+    assert!(
+        text.contains("/e2e/api/prices?user=7' --mocks shop\n"),
+        "{text}"
+    );
+    // A step that failed on its own names what went unmatched meanwhile.
+    assert!(
+        text.contains(
+            "failed at scenarios/checks/checks.cdp:20:3: expect --title 'status 200' --timeout 1s"
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains("/e2e/api/prices (no mock answered it; closest mock: shop.toml:6 \"price\": path differs"),
+        "{text}"
+    );
+    // Console errors fail a test unless it allows them.
+    assert!(
+        text.contains("    failed at scenarios/checks/checks.cdp:22: expect --no-errors --all-tabs (checked after the test's steps)\n"),
+        "{text}"
+    );
+    assert!(text.contains(": boom: the cart is gone (eval:"), "{text}");
+    assert!(text.contains("@allow-console-errors"), "{text}");
+    assert!(
+        text.contains("✓ scenarios/checks/checks.cdp:25 may log a console error ("),
+        "{text}"
+    );
+    assert!(text.contains("5 tests: 2 passed, 3 failed ("), "{text}");
+
+    // allow_console_errors in the config allows them everywhere.
+    let config = project.root.join("chrome-cdp.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(
+        &config,
+        text.replace("[e2e]\n", "[e2e]\nallow_console_errors = true\n"),
+    )
+    .unwrap();
+    let (_, value) = project.json(&["scenarios/checks/checks.cdp:22"]);
+    assert_eq!(value["ok"], true, "{value}");
+}

@@ -98,6 +98,9 @@ pub struct Config {
     pub default_backend: String,
     pub jobs: Jobs,
     pub retries: u32,
+    /// Whether a test may log console errors; if not (the default), the
+    /// runner checks `expect --no-errors` at the end of each (plan 11.5).
+    pub allow_console_errors: bool,
     /// A test's time limit.
     pub timeout: Duration,
     /// Where test artifacts go (`.results`).
@@ -358,6 +361,7 @@ impl Check<'_> {
             default_backend,
             jobs: raw.jobs.map_or(Jobs::Auto, Spanned::into_inner),
             retries: raw.retries.unwrap_or(0),
+            allow_console_errors: raw.allow_console_errors.unwrap_or(false),
             timeout: raw
                 .timeout
                 .map(|t| duration("e2e.timeout", &t))
@@ -578,6 +582,7 @@ struct RawE2e {
     default_backend: Option<Spanned<String>>,
     jobs: Option<Spanned<Jobs>>,
     retries: Option<u32>,
+    allow_console_errors: Option<bool>,
     timeout: Option<Spanned<String>>,
     artifacts: Option<String>,
     viewport: Option<Spanned<String>>,

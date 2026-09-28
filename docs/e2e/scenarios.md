@@ -64,6 +64,62 @@ body, or after its name on the `@test` line, to that test only.
 | `@viewport 390x844` | the viewport (default: `viewport` in `[e2e]`, 1280x800) |
 | `@device "iPhone 15"` | a device of `chrome-cdp emulate list` |
 | `@retries N` | runs of a failed test before it counts as failed |
+| `@allow-console-errors` | console errors do not fail the test (see [Checks](#checks-the-runner-adds)) |
+
+## Requests the app sent
+
+`expect request <METHOD> <PATH>` checks the requests the test's pages
+sent, mocked or not; `expect no-request <METHOD> <PATH>` checks none was:
+
+```
+@test "retries when the API is busy"
+  mark before-buy
+  click 'role=button[name="Buy"]'
+  expect request POST /api/orders --json-body '{"qty":1}' --count 2 --since before-buy
+  expect no-request DELETE '/api/cart/**'
+```
+
+- `PATH` is a path glob (`*` within a segment, `**` across them, `:id`
+  for a segment), `**/orders` for any prefix, a full-URL glob, or `*`.
+  `METHOD` may be `*`.
+- `--query k=v`, `--header 'Name: value'` (values are globs) and
+  `--json-body` (a subset of the JSON body, as a mock's `match.json`)
+  narrow it down.
+- `--count N`, `--min N`, `--max N` say how many; the default is at least
+  one. It waits (up to `--timeout`) for enough requests; too many fail at
+  once. `--since <mark>` counts only those after a `mark`.
+- A failure lists the matching requests and the ones that came closest,
+  with the condition each fails:
+
+  ```
+  error: expect failed: request POST /api/orders --json-body '{"qty":3}'
+    expected: a request POST /api/orders with json {"qty":3}
+    actual: 0 requests (after 5s, 199 retries)
+    similar: t1 #7 POST http://localhost:5173/api/orders → 201: json $.qty: expects 3, got 2
+    hint: chrome-cdp network show 7   (shows the closest request in full, body and headers)
+  ```
+
+## Checks the runner adds
+
+- **Unmatched requests fail the test.** After each step, the runner reads
+  the test's mock log. A request no mock answered, in the scope of a set
+  with `unmatched = "fail"` (the default), fails the test at that step,
+  with the mocks that come closest to it:
+
+  ```
+  failed at e2e/scenarios/cart.cdp:9:3: click text=Cart
+  error: unmatched request: GET http://localhost:5173/api/cart?user=7
+    scope: mock set base, whose unmatched = "fail" answered it 501
+    closest mock: base.toml:31 "cart": path differs: expects /api/carts, got /api/cart
+    hint: add a mock for it, or run chrome-cdp mock explain GET 'http://localhost:5173/api/cart?user=7' --mocks base
+  ```
+
+  When the step failed on its own (the app showed an error instead of
+  the cart), the unmatched requests are listed under its error.
+- **Console errors fail the test.** After a test's steps pass, the runner
+  checks `expect --no-errors --all-tabs`: no uncaught exception or
+  `console.error` in any of its tabs. `@allow-console-errors` on a test
+  (or a file) or `allow_console_errors = true` in `[e2e]` turns this off.
 
 ## Reuse
 

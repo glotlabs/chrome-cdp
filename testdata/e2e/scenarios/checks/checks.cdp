@@ -1,0 +1,26 @@
+# Plan 11.5: request assertions, unmatched requests and console errors.
+@before
+  goto /e2e/shop.html
+  expect 'role=listitem' count 2
+
+@test "posts the todo it adds"
+  mark before-add
+  fill 'label=New todo' Milk
+  press Enter
+  expect request POST /e2e/api/todos --json-body '{"title":"Milk"}' --count 1 --since before-add
+  expect request GET /e2e/api/todos --min 2
+  expect no-request DELETE '/e2e/api/**'
+
+@test "fails on an unmatched request"
+  eval "fetch('/e2e/api/prices?user=7').then((r) => r.status)"
+  expect text='Price: 49' visible
+
+@test "names the unmatched request a failed step saw"
+  eval "setTimeout(() => fetch('/e2e/api/prices').then((r) => { document.title = 'status ' + r.status }), 100)"
+  expect --title 'status 200' --timeout 1s
+
+@test "fails on a console error"
+  eval "console.error('boom: the cart is gone')"
+
+@test "may log a console error" @allow-console-errors
+  eval "console.error('expected')"
