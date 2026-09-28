@@ -19,6 +19,7 @@
 //! - `template`: `{{params.id}}` and friends (`minijinja`);
 //! - [`check`] and [`openapi`]: `mock check`'s lints, and mocks against
 //!   an OpenAPI spec;
+//! - [`drift`]: real answers against the mocks' (`test --verify-mocks`);
 //! - [`record`]: mock files from recorded traffic (`mock record`, `mock
 //!   import`);
 //! - `engine`: [`Mocks`];
@@ -27,6 +28,7 @@
 pub mod check;
 mod closest;
 mod collection;
+pub mod drift;
 mod engine;
 pub mod file;
 mod glob;

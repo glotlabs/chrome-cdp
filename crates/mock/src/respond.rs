@@ -158,6 +158,8 @@ pub(crate) struct Rendered {
     pub(crate) response: Response,
     /// Worth saying in the journal: `no data/products/9.json`.
     pub(crate) note: Option<String>,
+    /// The JSON data file the body is, as is (not a template).
+    pub(crate) data_file: Option<std::path::PathBuf>,
 }
 
 impl Respond {
@@ -174,6 +176,7 @@ impl Respond {
                 return Ok(Rendered {
                     response: Response::Abort { reason },
                     note: None,
+                    data_file: None,
                 });
             }
             Self::Passthrough(patch) => {
@@ -184,6 +187,7 @@ impl Respond {
                 return Ok(Rendered {
                     response: Response::Passthrough { patch },
                     note: None,
+                    data_file: None,
                 });
             }
             Self::Fulfill {
@@ -196,6 +200,7 @@ impl Respond {
             .iter()
             .map(|(n, v)| Ok((n.clone(), template::render(v, ctx)?)))
             .collect::<Result<_, String>>()?;
+        let mut data_file = None;
         let (bytes, kind): (Vec<u8>, Option<&str>) = match body {
             Body::Empty => (Vec::new(), None),
             Body::Json(value) => (
@@ -216,6 +221,7 @@ impl Respond {
                         return Ok(Rendered {
                             response: Response::json(404, &body, cors),
                             note: Some(format!("no {rel}")),
+                            data_file: None,
                         });
                     }
                     Err(Missing::Unreadable(why)) => return Err(format!("{rel}: {why}")),
@@ -228,6 +234,7 @@ impl Respond {
                             serde_json::to_vec(&template::render_json(&value, ctx)?)
                                 .unwrap_or_default()
                         } else {
+                            data_file = Some(file.clone());
                             bytes
                         };
                         (bytes, Some("application/json"))
@@ -258,6 +265,7 @@ impl Respond {
                 cors,
             },
             note: None,
+            data_file,
         })
     }
 

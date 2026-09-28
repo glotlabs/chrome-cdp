@@ -188,6 +188,11 @@ impl Mock {
 }
 
 impl MockSet {
+    /// The set's `scope`, as written.
+    pub fn scope(&self) -> &[String] {
+        &self.scope_text
+    }
+
     /// Reads and checks the mock file of `source`.
     pub fn load(source: &Source) -> Result<Self, ErrorInfo> {
         let file = &source.file;

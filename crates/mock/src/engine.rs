@@ -40,6 +40,9 @@ pub struct Answer {
     /// What the journal says: `fulfill 200`, `fulfill 404 (no
     /// data/products/9.json)`, `fulfill 500 (mock error: …)`.
     pub outcome: String,
+    /// The JSON data file the body is, when it is one as is (not a
+    /// template): what `test --verify-mocks --update` rewrites.
+    pub data_file: Option<std::path::PathBuf>,
 }
 
 /// What mocks do with a request.
@@ -542,6 +545,7 @@ impl Mocks {
                     response: rendered.response,
                     delay,
                     outcome,
+                    data_file: rendered.data_file,
                 }
             }
             Err(error) => {
@@ -553,6 +557,7 @@ impl Mocks {
                     mock,
                     response: Response::json(500, &body, cors),
                     delay: Duration::ZERO,
+                    data_file: None,
                 }
             }
         };
@@ -571,6 +576,7 @@ impl Mocks {
             outcome: format!("{} ({note})", response.outcome()),
             response,
             delay: latency.sample(|n| self.rng.below(n)),
+            data_file: None,
         }
     }
 
