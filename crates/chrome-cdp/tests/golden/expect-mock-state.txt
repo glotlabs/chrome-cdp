@@ -1,0 +1,15 @@
+$ chrome-cdp expect mock-state todos count 3
+exit: 0
+--- stdout
+passed: mock-state todos count 3 (<ms>)
+
+$ chrome-cdp expect mock-state todos count 3 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"actual":3,"assertion":"mock-state todos count 3","count":3,"elapsed_ms":<ms>,"expected":"todos with 3 items","retries":<n>}}
+
+$ chrome-cdp expect mock-state todos count 3 -q
+exit: 0
+--- stdout
+3 items
+

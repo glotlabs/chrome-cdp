@@ -1,0 +1,20 @@
+$ chrome-cdp mock state
+exit: 0
+--- stdout
+logged_in = true
+user = "ada@example.com"
+collections:
+todos  3 items  /mock/api/todos  (stateful.toml:41)
+
+$ chrome-cdp mock state --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"collections":[{"at":"stateful.toml:41","count":3,"file":"<mocks>/stateful.toml","line":41,"name":"todos","path":"/mock/api/todos","set":"stateful"}],"values":{"logged_in":true,"user":"ada@example.com"}}}
+
+$ chrome-cdp mock state -q
+exit: 0
+--- stdout
+logged_in
+user
+todos
+

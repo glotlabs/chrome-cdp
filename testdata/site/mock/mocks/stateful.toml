@@ -1,0 +1,45 @@
+# Stateful mocks the engine tests use (plan 11, milestone 11.3): a
+# sequence, named state for a login, and a collection.
+[settings]
+scope = ["/mock/api/**"]
+
+[state]
+logged_in = false
+
+[[mock]]
+name = "save: busy once, then ok"
+match = { method = "POST", path = "/mock/api/save" }
+sequence = [
+  { status = 503, json = { error = "busy" } },
+  { json = { saved = true, try = "{{seq}}" } },
+]
+
+[[mock]]
+name = "login"
+match = { method = "POST", path = "/mock/api/login" }
+respond = { json = { ok = true } }
+set_state = { logged_in = true, user = "{{json.email}}" }
+
+[[mock]]
+name = "logout"
+match = { method = "POST", path = "/mock/api/logout" }
+respond = { status = 204 }
+set_state = { logged_in = false }
+unset_state = ["user"]
+
+[[mock]]
+name = "me"
+match = { method = "GET", path = "/mock/api/me" }
+when = { logged_in = true }
+respond = { json = { email = "{{state.user}}" } }
+
+[[mock]]
+name = "me, logged out"
+match = { method = "GET", path = "/mock/api/me" }
+respond = { status = 401, json = { error = "log in first" } }
+
+[[collection]]
+name = "todos"
+path = "/mock/api/todos"
+seed = "data/todos.json"
+list = { filter_query = true }

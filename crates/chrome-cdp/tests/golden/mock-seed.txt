@@ -1,0 +1,15 @@
+$ chrome-cdp mock seed todos
+exit: 0
+--- stdout
+todos starts over with its 2 seed items
+
+$ chrome-cdp mock seed todos --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"collection":{"at":"stateful.toml:41","count":2,"file":"<mocks>/stateful.toml","line":41,"name":"todos","path":"/mock/api/todos","set":"stateful"},"from":"seed"}}
+
+$ chrome-cdp mock seed todos -q
+exit: 0
+--- stdout
+2
+

@@ -1,5 +1,6 @@
 //! Mock sets (`mock use|off|list|log|reset|explain`; plan 11, milestone
-//! 11.2) against a real Chrome (`CHROME_PATH`; skipped without it unless
+//! 11.2) and their state (`mock state|seed`, `expect mock-state`;
+//! milestone 11.3) against a real Chrome (`CHROME_PATH`; skipped without it unless
 //! `CHROME_CDP_REQUIRE_CHROME` is set), the fixture site's `mock/` page and
 //! its mock files in `mock/mocks/`.
 
@@ -10,12 +11,17 @@ use std::sync::Arc;
 
 use browser::Host;
 use engine::{
-    EmulateRequest, EmulationChange, Engine, EvalRequest, EvalWorld, MockExplainRequest,
-    MockListRequest, MockLogRequest, MockOffRequest, MockUseRequest, NavigateRequest, Navigation,
-    OpenRequest, RouteAction, RouteBody, RouteRequest, RouteSpec, WaitUntil,
+    EmulateRequest, EmulationChange, Engine, EvalRequest, EvalWorld, ExpectRequest, Expectation,
+    MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest, MockSeedRequest,
+    MockStateCheck, MockStateRequest, MockUseRequest, NavigateRequest, Navigation, OpenRequest,
+    RouteAction, RouteBody, RouteRequest, RouteSpec, WaitUntil,
 };
 use fixtures::Fixtures;
-use protocol::schema::{EvalData, MockExplainData, MockLogData, MockOffData, MockSetsData};
+use protocol::ErrorKind;
+use protocol::schema::{
+    EvalData, ExpectData, MockExplainData, MockLogData, MockOffData, MockSeedData, MockSetsData,
+    MockStateData,
+};
 use serde_json::{Value, json};
 
 const TIMEOUT_MS: u64 = 30_000;
@@ -431,9 +437,239 @@ async fn frozen_time_and_changed_files() {
         .unwrap_err();
     assert!(
         err.message
-            .ends_with("bad.toml:1:1: the mock has no `respond`"),
+            .ends_with("bad.toml:1:1: the mock has no `respond` or `sequence`"),
         "{}",
         err.message
     );
     assert_eq!(err.exit_code(), 2);
+}
+
+/// `expect mock-state <name> <check>` with `timeout_ms`.
+async fn expect_state(
+    engine: &Engine,
+    name: &str,
+    check: MockStateCheck,
+    not: bool,
+    timeout_ms: u64,
+) -> Result<ExpectData, protocol::ErrorInfo> {
+    let out = Box::pin(engine.expect(ExpectRequest {
+        expectation: Expectation::MockState {
+            name: name.into(),
+            check,
+        },
+        not,
+        tab: None,
+        strict_refs: false,
+        testid_attribute: None,
+        timeout_ms,
+        max_chars: 0,
+    }))
+    .await?;
+    Ok(serde_json::from_value(out.data).unwrap())
+}
+
+fn count(n: u64) -> MockStateCheck {
+    MockStateCheck::Count {
+        count: Some(n),
+        min: None,
+        max: None,
+    }
+}
+
+fn state(engine: &Engine, name: Option<&str>, set: &[(&str, Value)]) -> (String, MockStateData) {
+    let out = engine
+        .mock_state(&MockStateRequest {
+            name: name.map(str::to_owned),
+            set: set
+                .iter()
+                .map(|(n, v)| ((*n).to_owned(), v.clone()))
+                .collect(),
+            max_chars: 0,
+        })
+        .unwrap_or_else(|e| panic!("mock state: {}", e.to_text()));
+    (out.text, serde_json::from_value(out.data).unwrap())
+}
+
+#[tokio::test]
+async fn stateful_mocks_follow_the_page() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "mock-stateful").await;
+    let dir = mocks_dir();
+
+    // Without mock sets there is no state to look at.
+    let err = expect_state(&engine, "todos", count(2), false, 100)
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::NotFound);
+
+    let used = use_sets(&engine, &dir, &["stateful"], false).await;
+    assert_eq!((used.sets[0].count, used.sets[0].collections), (5, 1));
+    goto(&engine, &site.url("/mock/todos.html")).await;
+    expect_state(&engine, "todos", count(2), false, 5000)
+        .await
+        .unwrap();
+    assert_eq!(
+        eval(&engine, "document.querySelectorAll('li').length").await,
+        json!(2)
+    );
+
+    // The page adds a todo; it is in the next list, and in the state.
+    eval(&engine, "addTodo('Ship it')").await;
+    assert_eq!(
+        eval(
+            &engine,
+            "[...document.querySelectorAll('li')].map(l => l.textContent)"
+        )
+        .await,
+        json!(["Buy milk", "Write tests", "Ship it"])
+    );
+    let passed = expect_state(
+        &engine,
+        "todos",
+        MockStateCheck::Contains {
+            value: json!({"id": 3, "title": "Ship it"}),
+        },
+        false,
+        5000,
+    )
+    .await
+    .unwrap();
+    assert_eq!(passed.count, Some(3));
+    let (text, data) = state(&engine, Some("todos"), &[]);
+    assert_eq!(data.collection.unwrap().count, 3);
+    assert!(text.contains("\"title\": \"Ship it\""), "{text}");
+
+    // `expect` waits for requests the page sends later.
+    eval(&engine, "setTimeout(() => addTodo('Later'), 300), 0").await;
+    let passed = expect_state(&engine, "todos", count(4), false, 5000)
+        .await
+        .unwrap();
+    assert!(passed.retries > 0, "{passed:?}");
+    assert!(passed.tab.is_empty());
+    let err = expect_state(&engine, "todos", count(9), false, 200)
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::ExpectFailed);
+    let text = err.to_text();
+    assert!(text.contains("expected: todos with 9 items"), "{text}");
+    assert!(text.contains("actual: 4 items (after 200ms"), "{text}");
+    assert!(
+        text.contains("hint: chrome-cdp mock state todos --session mock-stateful"),
+        "{text}"
+    );
+
+    // A sequence: busy once, then saved.
+    let post = "{method: 'POST'}";
+    assert_eq!(
+        fetch(&engine, "/mock/api/save", post).await,
+        json!([503, {"error": "busy"}])
+    );
+    assert_eq!(
+        fetch(&engine, "/mock/api/save", post).await,
+        json!([200, {"saved": true, "try": 2}])
+    );
+
+    // Named state: log in, look, log out.
+    assert_eq!(fetch(&engine, "/mock/api/me", "{}").await[0], json!(401));
+    let login = "{method: 'POST', headers: {'content-type': 'application/json'}, \
+                 body: JSON.stringify({email: 'ada@example.com'})}";
+    fetch(&engine, "/mock/api/login", login).await;
+    assert_eq!(
+        fetch(&engine, "/mock/api/me", "{}").await,
+        json!([200, {"email": "ada@example.com"}])
+    );
+    expect_state(
+        &engine,
+        "logged_in",
+        MockStateCheck::Value { value: json!(true) },
+        false,
+        1000,
+    )
+    .await
+    .unwrap();
+    let (text, data) = state(&engine, None, &[]);
+    assert_eq!(data.values["user"], json!("ada@example.com"));
+    assert!(
+        text.starts_with("logged_in = true\nuser = \"ada@example.com\"\ncollections:\ntodos  4 items  /mock/api/todos  (stateful.toml:"),
+        "{text}"
+    );
+    // --set changes a value by hand.
+    let (text, _) = state(&engine, None, &[("logged_in", json!(false))]);
+    assert!(
+        text.starts_with("set logged_in\nlogged_in = false"),
+        "{text}"
+    );
+    assert_eq!(fetch(&engine, "/mock/api/me", "{}").await[0], json!(401));
+    let err = engine
+        .mock_state(&MockStateRequest {
+            name: Some("loged_in".into()),
+            set: Vec::new(),
+            max_chars: 0,
+        })
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::NotFound);
+    assert!(
+        err.to_text().contains("mock state logged_in"),
+        "{}",
+        err.to_text()
+    );
+
+    // The journal and the list say what the collection did.
+    let (text, _) = log(&engine, false);
+    assert!(
+        text.contains("stateful.toml:41 \"todos\" fulfill 201 (todos: created 3)"),
+        "{text}"
+    );
+    let out = engine.mock_list(&MockListRequest { max_chars: 0 });
+    assert!(
+        out.text
+            .contains("stateful  5 mocks, 1 collection  scope /mock/api/**"),
+        "{}",
+        out.text
+    );
+    assert!(
+        out.text.contains(
+            "\"save: busy once, then ok\" POST /mock/api/save → sequence 2/2 (then repeat-last)"
+        ),
+        "{}",
+        out.text
+    );
+
+    // Seed from a data file, then start over.
+    let out = engine
+        .mock_seed(&MockSeedRequest {
+            name: "todos".into(),
+            file: Some("data/more-todos.json".into()),
+            items: None,
+            cwd: None,
+        })
+        .unwrap_or_else(|e| panic!("{}", e.to_text()));
+    let seeded: MockSeedData = serde_json::from_value(out.data).unwrap();
+    assert_eq!(seeded.collection.count, 5);
+    assert!(
+        out.text.starts_with("seeded todos with 5 items from /"),
+        "{}",
+        out.text
+    );
+    assert_eq!(
+        fetch(&engine, "/mock/api/todos?done=true", "{}").await,
+        json!([200, [{"id": 12, "title": "Three", "done": true}]])
+    );
+    engine.mock_reset();
+    expect_state(&engine, "todos", count(2), false, 1000)
+        .await
+        .unwrap();
+    expect_state(
+        &engine,
+        "logged_in",
+        MockStateCheck::Value {
+            value: json!(false),
+        },
+        false,
+        1000,
+    )
+    .await
+    .unwrap();
+    assert_eq!(fetch(&engine, "/mock/api/save", post).await[0], json!(503));
 }

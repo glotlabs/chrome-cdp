@@ -572,12 +572,11 @@
           "type": "integer"
         },
         "tab": {
-          "description": "The tab checked, e.g. `t1`.",
+          "description": "The tab checked, e.g. `t1`; left out for `expect mock-state`,\nwhich checks the session's mocks.",
           "type": "string"
         }
       },
       "required": [
-        "tab",
         "assertion",
         "expected",
         "actual",

@@ -14,3 +14,11 @@ respond = { json_file = "data/items.json" }
 name = "item by id"
 match = { method = "GET", path = "/api/items/:id" }
 respond = { json = { id = "{{params.id}}", name = "Item {{params.id}}" } }
+
+# Or keep the items in memory instead of the two mocks above: GET lists
+# them, POST adds one (the next GET shows it), GET/PUT/PATCH/DELETE
+# /api/items/:id work on one. `mock reset` starts them over.
+# [[collection]]
+# name = "items"
+# path = "/api/items"
+# seed = "data/items.json"

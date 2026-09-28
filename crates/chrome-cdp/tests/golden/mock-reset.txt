@@ -1,7 +1,7 @@
 $ chrome-cdp mock reset
 exit: 0
 --- stdout
-reset sale, base: hit counters and random values start over
+reset sale, base: hit counters, sequences, named values, collections and random values start over
 
 $ chrome-cdp mock reset --json
 exit: 0

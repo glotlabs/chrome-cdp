@@ -1,0 +1,37 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Todos</title>
+<h1>Todos</h1>
+<p>A small app on the <code>stateful</code> mock set's
+<code>/mock/api/todos</code> collection.</p>
+<form id="add">
+  <label>New todo <input name="title"></label>
+  <button>Add</button>
+</form>
+<ul id="list"></ul>
+<script>
+  const list = document.getElementById("list");
+  async function load() {
+    const todos = await (await fetch("/mock/api/todos")).json();
+    list.replaceChildren(...todos.map((t) => {
+      const li = document.createElement("li");
+      li.textContent = t.title;
+      return li;
+    }));
+  }
+  async function addTodo(title) {
+    await fetch("/mock/api/todos", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title, done: false }),
+    });
+    await load();
+  }
+  document.getElementById("add").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = e.target.elements.title;
+    addTodo(input.value);
+    input.value = "";
+  });
+  load();
+</script>

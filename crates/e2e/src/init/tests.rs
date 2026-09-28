@@ -305,3 +305,33 @@ fn the_mock_set_written_is_a_valid_mock_set() {
     let other = explain("http://localhost:5173/api/users");
     assert_eq!(other.scope.as_deref(), Some("base"));
 }
+
+/// The collection the mock set shows in a comment works once uncommented
+/// in place of the two mocks.
+#[test]
+fn the_commented_collection_works() {
+    let dir = project(&[]);
+    run(dir.path(), FrameworkChoice::None).unwrap();
+    let config = Config::find(dir.path()).unwrap();
+    let file = config.mocks.join("base.toml");
+    let text = std::fs::read_to_string(&file).unwrap();
+    let (settings, rest) = text.split_once("[[mock]]").unwrap();
+    let collection: String = rest
+        .lines()
+        .skip_while(|l| *l != "# [[collection]]")
+        .map(|l| format!("{}\n", l.trim_start_matches("# ")))
+        .collect();
+    assert!(
+        collection.contains("seed = \"data/items.json\""),
+        "{collection}"
+    );
+    std::fs::write(&file, format!("{settings}{collection}")).unwrap();
+    let source = mock::Source::find(&config.mocks, dir.path(), "base").unwrap();
+    let set = mock::MockSet::load(&source).unwrap_or_else(|e| panic!("{}", e.message));
+    let mut mocks = mock::Mocks::new(0);
+    mocks.apply(vec![set], false);
+    let Some(mock::StateItem::Collection { items, .. }) = mocks.lookup("items") else {
+        panic!("no collection items");
+    };
+    assert_eq!(items.len(), 2);
+}

@@ -85,6 +85,20 @@ const MOCKED: &[&[&str]] = &[
     &["eval", "fetch('/items?n=1').then((r) => r.status)"],
 ];
 
+/// The todos page on the `stateful` mock set, after it added a todo and
+/// logged in.
+const STATEFUL: &[&[&str]] = &[
+    &["open"],
+    &["mock", "use", "--dir", "{mocks}", "stateful"],
+    &["goto", "{site}/mock/todos.html"],
+    &["eval", "addTodo('Ship it')"],
+    &[
+        "eval",
+        "fetch('/mock/api/login', {method: 'POST', body: JSON.stringify({email: 'ada@example.com'}), \
+         headers: {'content-type': 'application/json'}}).then((r) => r.status)",
+    ],
+];
+
 /// The baseline fixture after its snapshot and box were stored as
 /// baselines (in `{sandbox}/b`) and the page changed: the button reads
 /// "Continue" and the box is red.
@@ -1315,6 +1329,50 @@ const CASES: &[Case] = &[
         args: &["mock", "reset"],
         modes: ALL,
         fixture: Fixture::SessionAfter(MOCKED),
+    },
+    Case {
+        name: "mock-state",
+        args: &["mock", "state"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(STATEFUL),
+    },
+    Case {
+        name: "mock-state-todos",
+        args: &["mock", "state", "todos"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(STATEFUL),
+    },
+    Case {
+        name: "mock-state-unknown",
+        args: &["mock", "state", "todo"],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(STATEFUL),
+    },
+    Case {
+        name: "mock-seed",
+        args: &["mock", "seed", "todos"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(STATEFUL),
+    },
+    Case {
+        name: "expect-mock-state",
+        args: &["expect", "mock-state", "todos", "count", "3"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(STATEFUL),
+    },
+    Case {
+        name: "expect-mock-state-fails",
+        args: &[
+            "expect",
+            "mock-state",
+            "todos",
+            "contains",
+            "{\"title\":\"Milk\"}",
+            "--timeout",
+            "300ms",
+        ],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(STATEFUL),
     },
     // Each mode would turn off what the one before did: one mode a case.
     Case {

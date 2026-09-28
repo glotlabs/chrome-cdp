@@ -591,6 +591,12 @@
     "MockSetInfo": {
       "description": "A mock set in use (plan 11): one mock file.",
       "properties": {
+        "collections": {
+          "description": "How many collections it has.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
         "cors": {
           "description": "`auto` or `off`.",
           "type": "string"

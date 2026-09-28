@@ -3,15 +3,17 @@ exit: 0
 --- stdout
 base
 sale
+stateful
 
 $ chrome-cdp mock list --available --dir <mocks> --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"available":["base","sale"],"dir":"<mocks>","sets":[]}}
+{"ok":true,"data":{"available":["base","sale","stateful"],"dir":"<mocks>","sets":[]}}
 
 $ chrome-cdp mock list --available --dir <mocks> -q
 exit: 0
 --- stdout
 base
 sale
+stateful
 

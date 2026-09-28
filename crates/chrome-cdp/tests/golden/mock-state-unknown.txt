@@ -1,0 +1,12 @@
+$ chrome-cdp mock state todo
+exit: 1
+--- stderr
+error: the mocks have no named value or collection todo
+  names: todos, logged_in, user
+  hint: chrome-cdp mock state todos   (did you mean this?)
+
+$ chrome-cdp mock state todo --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"the mocks have no named value or collection todo","hint":"chrome-cdp mock state todos   (did you mean this?)","notes":[{"label":"names","text":"todos, logged_in, user"}]}}
+

@@ -1,0 +1,13 @@
+$ chrome-cdp expect mock-state todos contains '{"title":"Milk"}' --timeout 300ms
+exit: 1
+--- stderr
+error: expect failed: mock-state todos contains '{"title":"Milk"}'
+  expected: todos containing {"title":"Milk"}
+  actual: none of its 3 items matches (after 300ms, <n> retries)
+  hint: chrome-cdp mock state todos   (shows it all), or chrome-cdp mock log shows which mock answered each request
+
+$ chrome-cdp expect mock-state todos contains '{"title":"Milk"}' --timeout 300ms --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect failed: mock-state todos contains '{\"title\":\"Milk\"}'","hint":"chrome-cdp mock state todos   (shows it all), or chrome-cdp mock log shows which mock answered each request","notes":[{"label":"expected","text":"todos containing {\"title\":\"Milk\"}"},{"label":"actual","text":"none of its 3 items matches (after 300ms, <n> retries)"}],"details":{"actual":[{"done":false,"id":1,"title":"Buy milk"},{"done":true,"id":2,"title":"Write tests"},{"done":false,"id":3,"title":"Ship it"}],"assertion":"mock-state todos contains '{\"title\":\"Milk\"}'","expected":"todos containing {\"title\":\"Milk\"}","retries":<n>,"timeout_ms":300}}}
+

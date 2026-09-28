@@ -545,6 +545,28 @@ Mock files are checked when they are applied, with each problem at
 `file:line:col`, and read again when they change. `route` rules come before
 any mock.
 
+Mocks can keep state, so flows like "create, then list" or "log in, then
+load the profile" work without code. A `sequence` answers differently on
+each call (busy once, then ok). `[state]` declares named values that mocks
+require (`when = { logged_in = true }`) and change (`set_state`). A
+`[[collection]]` is a fake REST resource seeded from a data file: `GET`
+lists it, `POST` adds to it, and `GET`/`PUT`/`PATCH`/`DELETE` work on
+`/:id`:
+
+```toml
+[[collection]]
+name = "todos"
+path = "/api/todos"
+seed = "data/todos.json"
+```
+
+```sh
+chrome-cdp mock state todos                      # the collection's items now
+chrome-cdp expect mock-state todos count 3       # retried until the page's POST lands
+chrome-cdp mock seed todos data/many-todos.json  # other items
+chrome-cdp mock reset                            # counters, sequences, state and collections start over
+```
+
 `chrome-cdp --help` fits on one screen: the commands most tasks need, by
 task, and the locator grammar. `help commands` lists every command, `help
 <command>` shows one in full (each has examples), and `help
