@@ -7,7 +7,7 @@
 
 use std::process::ExitCode;
 
-use clap::error::ErrorKind as ClapErrorKind;
+use clap::error::{ContextKind, ContextValue, ErrorKind as ClapErrorKind};
 use clap::{CommandFactory as _, FromArgMatches as _};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Mode, Output};
 
@@ -431,7 +431,8 @@ fn usage_error(e: &clap::Error) -> u8 {
 
 /// Turns clap's error text into an [`ErrorInfo`]: its first line is the
 /// message, its `tip:` lines ("a similar argument exists: '--json'") are
-/// notes, and the hint is the failing command's `--help`. `args` are the
+/// notes, and the hint is the command line with the mistyped subcommand or
+/// flag corrected, else the failing command's `--help`. `args` are the
 /// arguments clap parsed, without the program name.
 fn usage_info(e: &clap::Error, args: &[String]) -> ErrorInfo {
     let rendered = e.render().to_string();
@@ -467,10 +468,50 @@ fn usage_info(e: &clap::Error, args: &[String]) -> ErrorInfo {
     let tips = rendered
         .lines()
         .filter_map(|l| l.trim().strip_prefix("tip: "));
-    tips.fold(ErrorInfo::new(ErrorKind::BadArgs, message), |info, tip| {
+    let info = tips.fold(ErrorInfo::new(ErrorKind::BadArgs, message), |info, tip| {
         info.note("tip", tip)
-    })
-    .hint(Cmd::new(&command).switch("help"))
+    });
+    match corrected(e, args) {
+        Some(fixed) => info.hint(fixed),
+        None => info.hint(Cmd::new(&command).switch("help")),
+    }
+}
+
+/// The command line with its mistyped subcommand or flag replaced by the
+/// one clap suggests (`clik e1` → `chrome-cdp click e1`), when one
+/// suggestion is closest.
+fn corrected(e: &clap::Error, args: &[String]) -> Option<Cmd> {
+    let (typo, suggestion) = match e.kind() {
+        ClapErrorKind::InvalidSubcommand => (
+            ContextKind::InvalidSubcommand,
+            ContextKind::SuggestedSubcommand,
+        ),
+        ClapErrorKind::UnknownArgument => (ContextKind::InvalidArg, ContextKind::SuggestedArg),
+        _ => return None,
+    };
+    let Some(ContextValue::String(typo)) = e.get(typo) else {
+        return None;
+    };
+    let suggestion = match e.get(suggestion)? {
+        ContextValue::String(one) => one.as_str(),
+        // clap's matching is loose (`scheme`: check, schema); keep the
+        // closest.
+        ContextValue::Strings(list) => {
+            match protocol::suggest::similar(typo, list.iter().map(String::as_str), 2)[..] {
+                [one] => one,
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    // clap also suggests `-- --jsn`, to pass the flag as a value.
+    if suggestion.contains(' ') {
+        return None;
+    }
+    let at = args.iter().position(|a| a == typo)?;
+    Some(args.iter().enumerate().fold(Cmd::new(""), |cmd, (i, arg)| {
+        cmd.arg(if i == at { suggestion } else { arg })
+    }))
 }
 
 /// `chrome-cdp tab close [OPTIONS] <N>` → `tab close`.

@@ -93,6 +93,31 @@ fn usage_errors_exit_2_and_honour_json() {
 }
 
 #[test]
+fn typos_hint_the_corrected_command() {
+    let hint = |args: &[&str]| {
+        let out = run(cli().args(args));
+        assert_eq!(code(&out), 2);
+        stderr(&out)
+            .lines()
+            .find_map(|l| l.strip_prefix("  hint: "))
+            .unwrap_or_default()
+            .to_owned()
+    };
+    assert_eq!(
+        hint(&["clik", "text=Sign in"]),
+        "chrome-cdp click 'text=Sign in'"
+    );
+    assert_eq!(
+        hint(&["click", "--jsn", "e1"]),
+        "chrome-cdp click --json e1"
+    );
+    // clap offers check and schema; schema is closer.
+    assert_eq!(hint(&["scheme", "version"]), "chrome-cdp schema version");
+    // Nothing close: the help.
+    assert_eq!(hint(&["frobnicate"]), "chrome-cdp --help");
+}
+
+#[test]
 fn global_flags_have_env_vars() {
     let out = run(cli().arg("-V").env("CHROME_CDP_JSON", "1"));
     assert_eq!(json_out(&out)["ok"], json!(true));

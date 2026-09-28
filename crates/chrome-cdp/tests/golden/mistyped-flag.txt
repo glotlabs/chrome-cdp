@@ -3,5 +3,5 @@ exit: 2
 --- stderr
 error: unexpected argument '--jsn' found
   tip: a similar argument exists: '--json'
-  hint: chrome-cdp cdp --help
+  hint: chrome-cdp cdp Browser.getVersion --json
 

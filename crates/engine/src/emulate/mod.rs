@@ -24,6 +24,7 @@ mod devices;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use protocol::schema::{Emulation, PermissionInfo, Throttle, Viewport};
+use protocol::suggest::{self, squash};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 
 pub use devices::{DEVICES, Device};
@@ -55,14 +56,6 @@ pub fn device_viewport(device: &Device) -> Viewport {
     }
 }
 
-/// Lower case letters and digits only: `iphone13promax`.
-fn squash(name: &str) -> String {
-    name.chars()
-        .filter(char::is_ascii_alphanumeric)
-        .map(|c| c.to_ascii_lowercase())
-        .collect()
-}
-
 /// The device called `name` (case, spaces and punctuation do not count:
 /// `iphone-13` is `iPhone 13`), or an error with the closest names.
 pub fn find_device(name: &str, session: &str) -> Result<&'static Device, ErrorInfo> {
@@ -82,13 +75,7 @@ pub fn find_device(name: &str, session: &str) -> Result<&'static Device, ErrorIn
         .take(3)
         .collect();
     if close.is_empty() {
-        let mut scored: Vec<(usize, &str)> = DEVICES
-            .iter()
-            .map(|d| (distance(&squash(d.name), &wanted), d.name))
-            .filter(|&(score, _)| score <= 3)
-            .collect();
-        scored.sort_by_key(|&(score, _)| score);
-        close = scored.into_iter().map(|(_, n)| n).take(3).collect();
+        close = suggest::similar(name, DEVICES.iter().map(|d| d.name), 3);
     }
     let mut info = ErrorInfo::new(ErrorKind::BadArgs, format!("no device is called `{name}`"));
     if !close.is_empty() {
@@ -101,22 +88,6 @@ pub fn find_device(name: &str, session: &str) -> Result<&'static Device, ErrorIn
         }
     };
     Err(info.hint(hint))
-}
-
-/// Levenshtein distance.
-fn distance(a: &str, b: &str) -> usize {
-    let b: Vec<char> = b.chars().collect();
-    let mut row: Vec<usize> = (0..=b.len()).collect();
-    for (i, ca) in a.chars().enumerate() {
-        let mut previous = row[0];
-        row[0] = i + 1;
-        for (j, cb) in b.iter().enumerate() {
-            let substituted = previous + usize::from(ca != *cb);
-            previous = row[j + 1];
-            row[j + 1] = substituted.min(row[j] + 1).min(previous + 1);
-        }
-    }
-    row[b.len()]
 }
 
 /// `throttle`'s presets, as Chrome DevTools has them: latency in ms,
@@ -175,12 +146,9 @@ pub fn check_permission(name: &str, session: &str) -> Result<String, ErrorInfo> 
     if PERMISSIONS.contains(&lower.as_str()) {
         return Ok(lower);
     }
-    let closest = PERMISSIONS
-        .iter()
-        .map(|p| (distance(p, &lower), *p))
-        .filter(|&(score, _)| score <= 3)
-        .min_by_key(|&(score, _)| score)
-        .map(|(_, p)| p);
+    let closest = suggest::similar(&lower, PERMISSIONS.iter().copied(), 1)
+        .into_iter()
+        .next();
     let mut info = ErrorInfo::new(
         ErrorKind::BadArgs,
         format!("`{name}` is not a permission chrome-cdp knows"),

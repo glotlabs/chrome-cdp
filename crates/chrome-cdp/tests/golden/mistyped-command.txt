@@ -3,10 +3,10 @@ exit: 2
 --- stderr
 error: unrecognized subcommand 'scheme'
   tip: some similar subcommands exist: 'check', 'schema'
-  hint: chrome-cdp --help
+  hint: chrome-cdp schema
 
 $ chrome-cdp scheme --json
 exit: 2
 --- stdout
-{"ok":false,"error":{"kind":"BadArgs","message":"unrecognized subcommand 'scheme'","hint":"chrome-cdp --help","notes":[{"label":"tip","text":"some similar subcommands exist: 'check', 'schema'"}]}}
+{"ok":false,"error":{"kind":"BadArgs","message":"unrecognized subcommand 'scheme'","hint":"chrome-cdp schema --json","notes":[{"label":"tip","text":"some similar subcommands exist: 'check', 'schema'"}]}}
 

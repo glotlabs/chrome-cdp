@@ -108,14 +108,19 @@ pub fn check_action(req: &ActionRequest) -> Result<(), ErrorInfo> {
                 options.parse(locator)?;
             }
             if let Err(message) = keys::parse(keys) {
-                return Err(ErrorInfo::new(
+                let info = ErrorInfo::new(
                     ErrorKind::BadArgs,
                     format!(
                         "{message}; name keys like Enter, Tab, ArrowDown, F1, a or A, \
                          and hold them together with + (Control+A, Mod+Shift+Z)"
                     ),
-                )
-                .hint(Hint::run(Cmd::new("press").arg("Control+A Backspace"))));
+                );
+                return Err(match keys::suggest(keys) {
+                    Some(fixed) => info
+                        .note("did you mean", &fixed)
+                        .hint(Hint::run(Cmd::new("press").arg(fixed))),
+                    None => info.hint(Hint::run(Cmd::new("press").arg("Control+A Backspace"))),
+                });
             }
         }
         Action::Type { text, locator, .. } => {

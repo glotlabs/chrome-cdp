@@ -220,6 +220,36 @@ pub(crate) fn parse(keys: &str) -> Result<Vec<Chord>, String> {
     Ok(chords)
 }
 
+/// `keys` with its first unknown key replaced by the key name closest to
+/// it (`Entr` → `Enter`, `Control+Shit+Z` → `Control+Shift+Z`), for a
+/// "did you mean"; `None` if no key is unknown or none is close.
+pub(crate) fn suggest(keys: &str) -> Option<String> {
+    let chords: Vec<Chord> = keys.split_whitespace().map(split_chord).collect();
+    let unknown = chords
+        .iter()
+        .flatten()
+        .find(|name| !is_mod(name) && find(name).is_none())?;
+    // Names of more than one letter: single characters are never typos.
+    let names = LAYOUT
+        .iter()
+        .map(|d| d.key)
+        .chain(SYNONYMS.iter().map(|(synonym, _)| *synonym))
+        .chain(["Mod"])
+        .filter(|name| name.chars().count() > 1);
+    let closest = *protocol::suggest::similar(unknown, names, 1).first()?;
+    let fixed: Vec<String> = chords
+        .iter()
+        .map(|chord| {
+            chord
+                .iter()
+                .map(|name| if name == unknown { closest } else { name })
+                .collect::<Vec<_>>()
+                .join("+")
+        })
+        .collect();
+    Some(fixed.join(" "))
+}
+
 /// `Control+A` → `[Control, A]`; `Shift++` → `[Shift, +]`.
 fn split_chord(chord: &str) -> Chord {
     let mut keys = Vec::new();
@@ -377,6 +407,14 @@ mod tests {
         assert_eq!(parse("Mod+a").unwrap(), vec![chord("Mod+a")]);
         assert_eq!(parse("  ").unwrap_err(), "no keys to press");
         assert_eq!(parse("Control+Nope").unwrap_err(), "unknown key `Nope`");
+        assert_eq!(suggest("Entr").as_deref(), Some("Enter"));
+        assert_eq!(
+            suggest("Control+Shit+Z Tab").as_deref(),
+            Some("Control+Shift+Z Tab")
+        );
+        assert_eq!(suggest("arowdown").as_deref(), Some("ArrowDown"));
+        assert_eq!(suggest("Control+A"), None);
+        assert_eq!(suggest("Qwertyuiop"), None);
     }
 
     #[test]
