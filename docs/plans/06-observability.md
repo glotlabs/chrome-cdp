@@ -1,6 +1,6 @@
 # Plan 06 — Observability
 
-Status: TODO
+Status: IN PROGRESS (6.1 done)
 Depends on: 03 (can proceed in parallel with 04/05)
 
 ## Goal
@@ -113,10 +113,23 @@ console output, errors and network activity into bounded buffers, so
 
 - [ ] Buffers are bounded. The daemon's RSS stays under 150 MB after a 1-hour
       soak test on a page that logs 100 msgs/s.
-- [ ] `errors` after a failed action always surfaces the root-cause exception
+- [x] `errors` after a failed action always surfaces the root-cause exception
       on the fixtures.
 - [ ] Screenshot of a 20k-px-tall page works on both OSes.
 
 ## Decisions log
 
 _(append here)_
+- 6.1: The console buffer grew from milestone 5.5's error log (`engine::console`, now `engine::observe::console`), fed by the same `watch_host` events; the post-action report reads its errors from it. `Log.enable` joined `Runtime.enable` in every page and iframe session's setup, before the target resumes.
+- 6.1: Dedicated workers get `Runtime.enable` and `Log.enable` too, and log into their tab's console (`worker` names the script). A worker's `Log` repeats its console calls with `source: "worker"`; those are skipped. Shared and service workers have no tab and are not recorded yet.
+- 6.1: Entries hold only text: arguments are formatted on arrival from `RemoteObject.preview` (`%s`/`%d`/`%o`/`%c`, `{a: 1}`, `[1, 2]`, `Map(1) {'k' => 1}`), never fetched. Text is kept up to 4,000 chars and 5 stack frames. For `console.error(err)` the stack is the error's own (parsed from its `stack` text), not the call's: where it was thrown is the root cause. `Runtime.exceptionRevoked` (a rejection handled late) removes the entry.
+- 6.1: `time_ms` is when the daemon received the entry (not CDP's timestamp, whose clock differs between `Runtime` and `Log`), so `--since 30s` compares one clock.
+- 6.1: Read cursors are per tab and per command: `console` and `errors` each show what they have not shown, so reading one does not hide entries from the other. A call moves its cursor to the newest entry it showed.
+- 6.1: `--limit` (default 50) keeps the newest entries; a line says how many earlier ones were left out and the `--since <seq> --limit <n>` that shows them. Entries the ring buffer dropped before they were read are counted in `dropped` and a warning naming `open --console-buffer`.
+- 6.1: `--level` defaults to `info`: `console.debug` and Chrome's verbose messages (violations) are hidden, as in DevTools' default levels. A level shows itself and everything more severe.
+- 6.1: `errors` is every error-level entry, except failed loads (Chrome's `Log` `network` messages, which already name the URL and status) from other origins and `/favicon.ico`. Taking failed loads from the console rather than merging in the network tracker keeps one sequence, one cursor and one `--since` for `errors`; the CORS explanation Chrome logs is an error of the page's origin and stays.
+- 6.1: `--follow` is a long poll, not a streaming RPC: the CLI asks with `wait_ms` (at most 25 s), the daemon answers when an entry arrives, and the CLI prints each non-empty batch (in `--json`, one envelope per batch) until Ctrl-C, or `--timeout` if given.
+- 6.1: `console` and `errors` take no tab lock and do not count as a page command (they would move `wait --request`'s "previous command" mark), so they work while an action runs or a dialog is open.
+- 6.1: Source maps are loaded through Chrome with `Network.loadNetworkResource` on the tab's main frame (as DevTools does: the page's cookies apply, no CORS), not by the daemon. The map comes from the `SourceMap` header or the script's last `sourceMappingURL` comment (inline `data:` maps too); `Debugger.scriptParsed` would give it directly but needs the `Debugger` domain on in every page. Outcomes, misses too, are cached per script URL for the browser's life; URLs of the tab's documents are never loaded (inline scripts). A mapping on an earlier generated line is not used. Frames keep their generated function name: a map's names belong to identifiers, not to the enclosing function.
+- 6.1: The acceptance criterion on RSS after a 1-hour soak is left unticked: deferred, benchmarks run after all plans. Buffers are bounded by construction (entries, text length and stack depth).
+- 6.1: Following up on plan 03 and 05 notes: a wait or navigation timeout adds `console errors: N unread; chrome-cdp errors shows them` (and `details.console_errors`), and the report's `… and N more console errors` line names `errors`.

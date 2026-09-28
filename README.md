@@ -12,7 +12,8 @@ and errors that say what to run next.
 `dblclick`, `hover`, `tap`, `drag`, `scroll`, `mouse`), the keyboard and
 forms (`press`, `type`, `fill`, `select`, `check`, `uncheck`, `focus`,
 `blur`), files and the clipboard (`upload`, `clipboard`), dialogs (`dialog`),
-`downloads`, raw CDP calls, `install`/`uninstall` and `schema` work so far:
+`downloads`, what the page logged (`console`, `errors`), raw CDP calls,
+`install`/`uninstall` and `schema` work so far:
 
 ```sh
 chrome-cdp install                    # Chrome for Testing, if there is no Chrome
@@ -25,6 +26,7 @@ chrome-cdp fill e9 'ada@example.com'  # filled e9 textbox "Email"
 chrome-cdp press Enter                # pressed Enter in e9 textbox "Email"
 chrome-cdp markdown                   # the article, as Markdown
 chrome-cdp wait --text 'Welcome back'  # instead of sleep
+chrome-cdp errors                     # exceptions and error logs not seen yet
 chrome-cdp back
 chrome-cdp cdp --target page Runtime.evaluate '{"expression":"document.title"}'
 chrome-cdp tabs                       # * t1  https://example.com/  "Example Domain"
@@ -221,6 +223,24 @@ at once with exit code 5: `dialog open in tab t1: confirm "Delete item?"`.
 `dialog accept [text]` or `dialog dismiss` answers it; `tabs` shows open
 dialogs. `open --dialogs accept|dismiss|manual` changes the policy for the
 session (`manual`: every dialog waits for `dialog`).
+
+Every tab records its console from the moment it opens, so `errors` and
+`console` work after the fact: `errors` shows the uncaught exceptions,
+`console.error`s, CSP violations and failed loads from the page's own origin
+that it has not shown before, each with the top of its stack; `console`
+shows every message (`--level warn|error|debug`, `--grep`, `--since 0` for
+all, `--since 30s`, `--follow`). Stack frames of localhost pages (or with
+`--sourcemaps`) point at the original sources through their source maps:
+
+```
+#7 error uncaught TypeError: Cannot read properties of undefined (reading 'code')
+    at e (/src/cart.ts:7:29)
+    at /src/main.ts:7:3
+```
+
+Each tab keeps its newest 1,000 entries (`open --console-buffer N`), and
+dedicated workers log into their tab's console. A wait that times out says
+how many errors are unread.
 
 Downloads go to the session's `downloads` directory, named as the server
 suggests (`report (1).pdf` if the name is taken). `goto` to a file waits for
