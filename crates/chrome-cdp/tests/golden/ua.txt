@@ -1,0 +1,15 @@
+$ chrome-cdp ua TestBot/1.0
+exit: 0
+--- stdout
+user agent TestBot/1.0
+
+$ chrome-cdp ua TestBot/1.0 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"default_viewport":{"dpr":1.0,"height":800,"mobile":false,"touch":false,"width":1280},"emulation":{"user_agent":"TestBot/1.0"}}}
+
+$ chrome-cdp ua TestBot/1.0 -q
+exit: 0
+--- stdout
+user agent TestBot/1.0
+

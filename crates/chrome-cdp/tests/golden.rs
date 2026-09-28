@@ -792,6 +792,12 @@ const CASES: &[Case] = &[
         fixture: Fixture::None,
     },
     Case {
+        name: "network-clear",
+        args: &["network", "clear"],
+        modes: &[""],
+        fixture: Fixture::SessionAt("/network/index.html"),
+    },
+    Case {
         name: "network-show-missing",
         args: &["network", "show", "#999"],
         modes: ERR,
@@ -1140,6 +1146,18 @@ const CASES: &[Case] = &[
         args: &["trace", "stop"],
         modes: ERR,
         fixture: Fixture::Session,
+    },
+    Case {
+        name: "coverage-start",
+        args: &["coverage", "start"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "perf-not-running",
+        args: &["perf"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
     },
     Case {
         name: "coverage-stop-not-measuring",
@@ -1543,6 +1561,42 @@ const CASES: &[Case] = &[
         ]),
     },
     Case {
+        name: "locale",
+        args: &["locale", "fr-CA"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "ua",
+        args: &["ua", "TestBot/1.0"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "time-reset",
+        args: &["time", "reset"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[&["open"], &["time", "freeze", "2026-01-31T09:30:00Z"]]),
+    },
+    Case {
+        name: "permissions-deny",
+        args: &[
+            "permissions",
+            "deny",
+            "camera",
+            "--origin",
+            "https://example.com",
+        ],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "permissions-reset",
+        args: &["permissions", "reset"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[&["open"], &["permissions", "grant", "notifications"]]),
+    },
+    Case {
         name: "permissions-bad-name",
         args: &["permissions", "grant", "notification"],
         modes: ERR,
@@ -1551,6 +1605,18 @@ const CASES: &[Case] = &[
     Case {
         name: "mouse-move",
         args: &["mouse", "move", "10", "20.5"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "mouse-down",
+        args: &["mouse", "down", "--button", "right"],
+        modes: &[""],
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "mouse-up",
+        args: &["mouse", "up"],
         modes: ALL,
         fixture: Fixture::Session,
     },
@@ -1625,6 +1691,19 @@ const CASES: &[Case] = &[
         args: &["run", "{scripts}/bad.cdp"],
         modes: ERR,
         fixture: Fixture::NoSessions,
+    },
+    Case {
+        // The tests' stdin is empty.
+        name: "batch-empty",
+        args: &["batch"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
+        name: "completions-unknown-shell",
+        args: &["completions", "tcsh"],
+        modes: ERR,
+        fixture: Fixture::None,
     },
     Case {
         name: "run",

@@ -1,0 +1,5 @@
+$ chrome-cdp mouse down --button right
+exit: 0
+--- stdout
+pressed the right button at 0,0
+

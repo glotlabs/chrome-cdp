@@ -1,0 +1,15 @@
+$ chrome-cdp time reset
+exit: 0
+--- stdout
+time: real
+
+$ chrome-cdp time reset --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"default_viewport":{"dpr":1.0,"height":800,"mobile":false,"touch":false,"width":1280},"emulation":{}}}
+
+$ chrome-cdp time reset -q
+exit: 0
+--- stdout
+time: real
+

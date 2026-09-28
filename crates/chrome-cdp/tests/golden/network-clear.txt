@@ -1,0 +1,5 @@
+$ chrome-cdp network clear
+exit: 0
+--- stdout
+cleared 3 requests from t1's network log
+

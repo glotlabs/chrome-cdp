@@ -1,0 +1,11 @@
+$ chrome-cdp batch
+exit: 2
+--- stderr
+error: <stdin>:1:1: the script has no commands
+  hint: write one command per line, e.g. goto example.com
+
+$ chrome-cdp batch --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"<stdin>:1:1: the script has no commands","hint":"write one command per line, e.g. goto example.com","details":{"problems":[{"at":"<stdin>:1:1","message":"the script has no commands"}]}}}
+

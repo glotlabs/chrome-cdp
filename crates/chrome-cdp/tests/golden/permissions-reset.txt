@@ -1,0 +1,15 @@
+$ chrome-cdp permissions reset
+exit: 0
+--- stdout
+every permission is back to asking
+
+$ chrome-cdp permissions reset --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"permissions":[]}}
+
+$ chrome-cdp permissions reset -q
+exit: 0
+--- stdout
+every permission is back to asking
+

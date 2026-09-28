@@ -1,0 +1,15 @@
+$ chrome-cdp coverage start
+exit: 0
+--- stdout
+measuring the JavaScript and CSS coverage of t1; act, then chrome-cdp coverage stop shows what was not used
+
+$ chrome-cdp coverage start --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"already":false,"tab":"t1"}}
+
+$ chrome-cdp coverage start -q
+exit: 0
+--- stdout
+t1
+

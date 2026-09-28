@@ -1,0 +1,15 @@
+$ chrome-cdp mouse up
+exit: 0
+--- stdout
+released the left button at 0,0
+
+$ chrome-cdp mouse up --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"action":"up","button":"left","buttons":0,"point":{"x":0.0,"y":0.0},"tab":"t1"}}
+
+$ chrome-cdp mouse up -q
+exit: 0
+--- stdout
+0,0
+

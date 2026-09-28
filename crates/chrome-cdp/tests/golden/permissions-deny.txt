@@ -1,0 +1,15 @@
+$ chrome-cdp permissions deny camera --origin https://example.com
+exit: 0
+--- stdout
+denied camera for https://example.com
+
+$ chrome-cdp permissions deny camera --origin https://example.com --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"permissions":[{"name":"camera","origin":"https://example.com","setting":"denied"}]}}
+
+$ chrome-cdp permissions deny camera --origin https://example.com -q
+exit: 0
+--- stdout
+denied camera for https://example.com
+

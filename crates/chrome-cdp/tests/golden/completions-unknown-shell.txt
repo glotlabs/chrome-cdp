@@ -1,0 +1,12 @@
+$ chrome-cdp completions tcsh
+exit: 2
+--- stderr
+error: invalid value 'tcsh' for '<SHELL>'
+  tip: a similar value exists: 'zsh'
+  hint: chrome-cdp completions --help
+
+$ chrome-cdp completions tcsh --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"invalid value 'tcsh' for '<SHELL>'","hint":"chrome-cdp completions --help","notes":[{"label":"tip","text":"a similar value exists: 'zsh'"}]}}
+
