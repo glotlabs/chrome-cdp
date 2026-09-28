@@ -28,7 +28,7 @@ use crate::route::{self, Decision, PendingPatches};
 
 /// What a page or iframe session intercepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Interception {
+pub(super) struct Interception {
     /// `Fetch` is on.
     fetch: bool,
     /// Requests skip service workers.
@@ -64,6 +64,11 @@ fn enable(shared: &Shared) -> fetch::EnableParams {
 /// The setup steps of a new page or iframe session (see `super::setup`).
 pub(super) fn setup_steps(shared: &Shared, session: &Session, steps: &mut Vec<(&str, Step)>) {
     let wanted = wanted(shared);
+    if let Some(id) = session.id()
+        && let Some(host) = lock(&shared.state).hosts.get_mut(id)
+    {
+        host.interception = Some(wanted);
+    }
     if wanted.fetch {
         steps.push(("Fetch.enable", step(session.call(enable(shared)))));
     }
@@ -79,15 +84,20 @@ pub(super) fn setup_steps(shared: &Shared, session: &Session, steps: &mut Vec<(&
 
 /// Brings every page and iframe session in line with the settings (after
 /// routes or credentials changed); new sessions get them in their setup.
-/// Every setting is sent, on or off: a session set up while rules existed
-/// (before a restart, say) must be turned off too, and turning off what is
-/// off costs a call and no harm.
-pub(super) async fn apply(shared: &Shared, timeout: Duration) {
+/// A session that already intercepts as wanted is left alone: `Fetch.enable`
+/// again would drop the requests it holds paused (another context's
+/// navigation, say). With `force` (new credentials), every session gets
+/// every setting.
+pub(super) async fn apply(shared: &Shared, timeout: Duration, force: bool) {
     let now = wanted(shared);
     let hosts: Vec<Session> = lock(&shared.state)
         .hosts
-        .values()
-        .map(|h| h.session.with_timeout(timeout))
+        .values_mut()
+        .filter(|h| force || h.interception != Some(now))
+        .map(|h| {
+            h.interception = Some(now);
+            h.session.with_timeout(timeout)
+        })
         .collect();
     let mut calls: Vec<Step> = Vec::new();
     for host in &hosts {
@@ -203,7 +213,7 @@ fn paused(
     if emptied {
         // The last rule ran out: stop intercepting.
         let shared_task = shared.clone();
-        shared.spawn(async move { apply(&shared_task, super::SETUP_TIMEOUT).await });
+        shared.spawn(async move { apply(&shared_task, super::SETUP_TIMEOUT, false).await });
     }
 }
 

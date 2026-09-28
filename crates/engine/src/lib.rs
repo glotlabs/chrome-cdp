@@ -360,7 +360,7 @@ impl Engine {
                         .map_err(|e| from_cdp(&e, &self.session))?;
                 }
                 if req.http_credentials.is_some() || req.bypass_service_worker.is_some() {
-                    running.tabs.apply_interception(timeout).await;
+                    running.tabs.apply_interception(timeout, true).await;
                 }
                 (running, false)
             }

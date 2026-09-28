@@ -179,7 +179,7 @@ impl Engine {
             State::Crashed(_) | State::Empty => None,
         };
         if let Some(running) = running {
-            running.tabs.apply_interception(timeout).await;
+            running.tabs.apply_interception(timeout, false).await;
         }
     }
 }

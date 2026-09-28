@@ -452,7 +452,7 @@ impl Engine {
         }
         running.tabs.drop_context_tabs(&scope.browser_id);
         self.forget_scope(&scope.browser_id);
-        running.tabs.apply_interception(timeout).await;
+        running.tabs.apply_interception(timeout, false).await;
     }
 
     fn context_info(&self, running: &Running, scope: &Scope) -> ContextInfo {

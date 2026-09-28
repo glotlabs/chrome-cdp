@@ -328,6 +328,8 @@ struct Host {
     scope: Option<String>,
     /// The id of its frozen clock script (`time freeze`), if it has one.
     clock: Option<String>,
+    /// What it was last told to intercept.
+    interception: Option<fetch::Interception>,
     /// The init scripts and exposed functions it has, with the id of
     /// each one's script (`None` while Chrome is adding it).
     injected: HashMap<Key, Option<String>>,
@@ -490,8 +492,10 @@ impl Tabs {
     /// Brings request interception in every page and frame session in
     /// line with the session's routes, HTTP credentials and
     /// `--bypass-service-worker` (new sessions get it during [`setup`]).
-    pub(crate) async fn apply_interception(&self, timeout: Duration) {
-        fetch::apply(&self.shared, timeout).await;
+    /// Only sessions whose interception changes get calls, unless `force`
+    /// (the credentials may be new).
+    pub(crate) async fn apply_interception(&self, timeout: Duration, force: bool) {
+        fetch::apply(&self.shared, timeout, force).await;
     }
 
     /// Sends a change of the session's emulation (`aspects`) to every page
@@ -1810,6 +1814,7 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
                 main: info.r#type == "page",
                 scope,
                 clock: None,
+                interception: None,
                 injected: HashMap::new(),
             },
         );
