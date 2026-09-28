@@ -118,6 +118,9 @@ sent, mocked or not; `expect no-request <METHOD> <PATH>` checks none was:
 
   When the step failed on its own (the app showed an error instead of
   the cart), the unmatched requests are listed under its error.
+  WebSockets in a set's scope that no `[[websocket]]` mock takes, and a
+  `mock_server`'s requests of the test, count too
+  ([beyond fetches](beyond-fetch.md)).
 - **Console errors fail the test.** After a test's steps pass, the runner
   checks `expect --no-errors --all-tabs`: no uncaught exception or
   `console.error` in any of its tabs. `@allow-console-errors` on a test

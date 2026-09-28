@@ -1160,6 +1160,88 @@ fn mock_only_commands_fail_against_a_real_backend() {
         error["error"]["hint"],
         "mark the test @backend mock, so real backends skip it"
     );
+    let error = &value["error"]["details"]["tests"][1]["error"];
+    assert_eq!(error["at"], "scenarios/backends-bad/unmarked.cdp:8:3");
+    assert_eq!(
+        error["error"]["message"],
+        "mock ws send needs the mocks, and backend local is real"
+    );
+}
+
+/// A free port on 127.0.0.1.
+fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
+
+#[test]
+fn a_mock_server_answers_server_side_fetches_per_test() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let config = project.root.join("chrome-cdp.toml");
+    let base = std::fs::read_to_string(&config).unwrap();
+    let port = free_port();
+    std::fs::write(
+        &config,
+        format!(
+            "{base}\n[e2e.web_server]\ncommand = \"exit 3\"\nurl = \"{}\"\nmock_server = {{ port = {port} }}\n",
+            Fixtures::shared().a()
+        ),
+    )
+    .unwrap();
+    let dir = project.root.join("scenarios/ssr");
+    std::fs::create_dir_all(&dir).unwrap();
+    // The SSR page's server fetches the mock server with the test's
+    // header: each test has state of its own, so each sees `n` = 1.
+    let page = format!("/e2e/ssr?api=http://127.0.0.1:{port}");
+    let mut scenario = String::from("@mocks ssr\n");
+    for name in ["first", "second"] {
+        let _ = write!(
+            scenario,
+            "\n@test \"{name}\"\n  goto {page}\n  expect text='The server got: 200 {{\"greeting\":\"hello from the mock server\",\"n\":1}}' visible\n  expect '#test' text 'Test header: none' --not\n"
+        );
+    }
+    std::fs::write(dir.join("ssr.cdp"), scenario).unwrap();
+    // Without @mocks ssr, the greeting is in shop's scope but not mocked:
+    // the server's unmatched request fails the test.
+    std::fs::write(
+        dir.join("other.cdp"),
+        format!(
+            "@test \"unmatched\"\n  goto {page}\n  expect text='The server got: 501' visible\n"
+        ),
+    )
+    .unwrap();
+
+    let (out, value) = project.json(&["scenarios/ssr/ssr.cdp"]);
+    assert_eq!(out.status.code(), Some(0), "{value}");
+    assert_eq!(
+        statuses(&value),
+        [
+            ("passed".into(), "first".into()),
+            ("passed".into(), "second".into()),
+        ]
+    );
+    let first = value["data"]["tests"][0]["artifacts"].as_str().unwrap();
+    let requests = std::fs::read_to_string(Path::new(first).join("requests.txt")).unwrap();
+    assert!(
+        requests.contains(&format!("== mock server http://127.0.0.1:{port}")),
+        "{requests}"
+    );
+    assert!(
+        requests.contains(r#"server → ssr.toml:6 "greeting" fulfill 200"#),
+        "{requests}"
+    );
+    // A second run starts the server on the port again.
+    let (out, value) = project.json(&["scenarios/ssr/other.cdp"]);
+    assert_eq!(out.status.code(), Some(1), "{value}");
+    let failure = &value["error"]["details"]["tests"][0]["error"]["error"];
+    assert_eq!(
+        failure["message"],
+        format!("unmatched request: GET http://127.0.0.1:{port}/e2e/api/greeting")
+    );
 }
 
 #[test]

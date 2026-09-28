@@ -59,48 +59,56 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
     let options = options(&plan, args, global, explicit_session);
     let stop = AtomicBool::new(false);
     let servers_started = AtomicBool::new(false);
-    let ran = with_servers(&plan, &stop, mode, &servers_started, args.watch, || {
-        with_backend(&plan, mode, || {
-            run_tests(&options, args.headed, || {
-                let started = Instant::now();
-                starting(&plan, mode);
-                let outcomes = execute(&plan, &options, &stop, mode);
-                if !args.watch {
-                    return Ran::Once(outcomes, started.elapsed());
-                }
-                let kept = None;
-                let servers = servers_started.load(Ordering::SeqCst);
-                let code = conclude(
-                    &plan,
-                    args,
-                    &outcomes,
-                    started.elapsed(),
-                    kept,
-                    servers,
-                    &options,
-                    mode,
-                );
-                let rerun = |plan: &Plan| {
+    let ran = with_servers(
+        &plan,
+        &options.mock_server,
+        &stop,
+        mode,
+        &servers_started,
+        args.watch,
+        || {
+            with_backend(&plan, mode, || {
+                run_tests(&options, args.headed, || {
                     let started = Instant::now();
-                    starting(plan, mode);
-                    let outcomes = execute(plan, &options, &stop, mode);
-                    conclude(
-                        plan,
+                    starting(&plan, mode);
+                    let outcomes = execute(&plan, &options, &stop, mode);
+                    if !args.watch {
+                        return Ran::Once(outcomes, started.elapsed());
+                    }
+                    let kept = None;
+                    let servers = servers_started.load(Ordering::SeqCst);
+                    let code = conclude(
+                        &plan,
                         args,
                         &outcomes,
                         started.elapsed(),
-                        None,
+                        kept,
                         servers,
                         &options,
                         mode,
-                    )
-                };
-                let make = || Plan::make(args, global, None);
-                let explicit = !args.paths.is_empty();
-                Ran::Watched(watch::run(&plan, code, &stop, mode, rerun, make, explicit))
+                    );
+                    let rerun = |plan: &Plan| {
+                        let started = Instant::now();
+                        starting(plan, mode);
+                        let outcomes = execute(plan, &options, &stop, mode);
+                        conclude(
+                            plan,
+                            args,
+                            &outcomes,
+                            started.elapsed(),
+                            None,
+                            servers,
+                            &options,
+                            mode,
+                        )
+                    };
+                    let make = || Plan::make(args, global, None);
+                    let explicit = !args.paths.is_empty();
+                    Ran::Watched(watch::run(&plan, code, &stop, mode, rerun, make, explicit))
+                })
             })
-        })
-    });
+        },
+    );
     match ran.and_then(|r| r) {
         Ok((Ran::Once(outcomes, duration), kept)) => conclude(
             &plan,
@@ -220,6 +228,7 @@ fn options(plan: &Plan, args: &TestArgs, global: &GlobalArgs, explicit_session: 
         record: args
             .record_mocks
             .then(|| std::sync::Mutex::new(std::collections::BTreeMap::new())),
+        mock_server: std::sync::OnceLock::new(),
     }
 }
 
@@ -457,11 +466,60 @@ fn close(global: &GlobalArgs, session: &str, own: bool) {
     }
 }
 
+/// The variable that gives web servers the mock server's URL.
+const MOCK_URL_ENV: &str = "CHROME_CDP_MOCK_URL";
+
+/// Starts the `mock_server` of `web_servers` (in mock mode), serving the
+/// default mocks to requests without a test's header; returns its URL.
+/// A run's second call (`--watch`) finds it running.
+fn start_mock_server(
+    plan: &Plan,
+    web_servers: &[e2e::config::WebServer],
+    started: &std::sync::OnceLock<e2e::mock_server::MockServer>,
+    mode: Mode,
+) -> Result<Option<String>, ErrorInfo> {
+    if plan.real() {
+        return Ok(None);
+    }
+    let Some(wanted) = web_servers.iter().find_map(|w| w.mock_server.as_ref()) else {
+        return Ok(None);
+    };
+    if let Some(server) = started.get() {
+        return Ok(Some(server.url()));
+    }
+    let config = &plan.config;
+    let cwd = std::env::current_dir().unwrap_or_else(|_| config.root.clone());
+    let sets = config
+        .default_mocks
+        .iter()
+        .map(|name| mock::MockSet::load(&mock::Source::find(&config.mocks, &cwd, name)?))
+        .collect::<Result<Vec<_>, _>>()?;
+    let seed = plan.determinism.random_seed.unwrap_or_default();
+    let addr = std::net::SocketAddr::new(wanted.host, wanted.port);
+    let server = e2e::mock_server::MockServer::start(addr, sets, seed, None).map_err(|e| {
+        ErrorInfo::new(
+            ErrorKind::LaunchFailed,
+            format!("the mock_server cannot listen on {addr}: {e}"),
+        )
+        .hint(Hint::text(
+            "stop what listens there (a `chrome-cdp mock serve`?), or give mock_server another port",
+        ))
+    })?;
+    let url = server.url();
+    if mode == Mode::Text {
+        output::stdout(&format!("mock server {url}\n"));
+    }
+    let _ = started.set(server);
+    Ok(Some(url))
+}
+
 /// Runs `work` with the config's web servers up (unless there are none),
 /// and stops them after. A server that exits, or Ctrl-C, stops the run:
 /// `stop` is set, so the tests not started are not run.
+#[allow(clippy::too_many_arguments)]
 fn with_servers<T: Send>(
     plan: &Plan,
+    mock_server: &std::sync::OnceLock<e2e::mock_server::MockServer>,
     stop: &AtomicBool,
     mode: Mode,
     started: &AtomicBool,
@@ -489,7 +547,16 @@ fn with_servers<T: Send>(
             format!("cannot create {}: {e}", config.artifacts.display()),
         )
     })?;
-    let mut servers = runtime.block_on(WebServers::start(web_servers, &config.artifacts))?;
+    let mut web_servers = web_servers.clone();
+    if let Some(url) = start_mock_server(plan, &web_servers, mock_server, mode)? {
+        for server in &mut web_servers {
+            server
+                .env
+                .entry(MOCK_URL_ENV.to_owned())
+                .or_insert_with(|| url.clone());
+        }
+    }
+    let mut servers = runtime.block_on(WebServers::start(&web_servers, &config.artifacts))?;
     started.store(
         servers.servers().iter().any(|s| !s.reused),
         Ordering::SeqCst,

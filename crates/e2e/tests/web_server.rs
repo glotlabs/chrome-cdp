@@ -84,6 +84,7 @@ fn helper(port: u16, before: &str, env: &[(&str, &str)]) -> WebServer {
         timeout: Duration::from_secs(20),
         env: vars,
         cwd: std::env::temp_dir(),
+        mock_server: None,
     }
 }
 

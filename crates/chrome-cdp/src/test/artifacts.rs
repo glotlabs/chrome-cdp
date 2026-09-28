@@ -238,7 +238,15 @@ pub(super) struct Logs {
 
 /// Writes `console.txt` and `requests.txt` into `dir`, from every tab of
 /// `context`.
-pub(super) fn logs(dir: &Path, context: &str, invoke: &Invoke<'_>) -> Logs {
+/// `served` is the mock server's URL and its requests of the test, if
+/// the run has one (plan 11.9); `requests.txt` lists them after the
+/// browser's.
+pub(super) fn logs(
+    dir: &Path,
+    context: &str,
+    served: Option<(String, Vec<RoutedRequest>)>,
+    invoke: &Invoke<'_>,
+) -> Logs {
     let mut logs = Logs::default();
     let tabs = invoke(&["context", "list", "--max-chars", "0"])
         .ok()
@@ -287,7 +295,16 @@ pub(super) fn logs(dir: &Path, context: &str, invoke: &Invoke<'_>) -> Logs {
         .and_then(|out| serde_json::from_value::<MockLogData>(out.data).ok())
         .map(|data| data.log)
         .unwrap_or_default();
-    let (text, bad) = journal(&networks, routed);
+    let (mut text, bad) = journal(&networks, routed);
+    if let Some((url, served)) = served {
+        let _ = writeln!(text, "\n== mock server {url}");
+        for entry in &served {
+            let _ = writeln!(text, "{}", mock::text::log_line(entry));
+        }
+        if served.is_empty() {
+            text.push_str("no requests\n");
+        }
+    }
     write(&dir.join(REQUESTS), &text);
     logs.bad_requests = bad;
     logs

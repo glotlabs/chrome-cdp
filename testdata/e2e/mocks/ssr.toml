@@ -1,0 +1,9 @@
+# What the SSR fixture page's server fetches (/e2e/ssr, plan 11.9), served
+# by the run's mock_server; `{{seq}}` shows whose state it is.
+[settings]
+scope = ["/e2e/api/**"]
+
+[[mock]]
+name = "greeting"
+match = { method = "GET", path = "/e2e/api/greeting" }
+respond = { json = { greeting = "hello from the mock server", n = "{{seq}}" } }

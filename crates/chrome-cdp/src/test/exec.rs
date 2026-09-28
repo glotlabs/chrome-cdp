@@ -106,6 +106,9 @@ pub(super) struct Options {
     /// `--record-mocks`: each passed test's (by index) exchanges, and the
     /// scope they were recorded in.
     pub(super) record: Option<Mutex<super::record::Recorded>>,
+    /// The `mock_server` of the web servers (plan 11.9), once started:
+    /// each test gets a partition of its own, with its own sets.
+    pub(super) mock_server: std::sync::OnceLock<e2e::mock_server::MockServer>,
 }
 
 /// The browser context `--debug` kept.
@@ -202,6 +205,7 @@ pub(super) fn execute(
                             options,
                             session,
                             seen: Cell::new(0),
+                            seen_served: Cell::new(0),
                             warnings: RefCell::new(Vec::new()),
                             recorder: RefCell::new(None),
                             test_id: RefCell::new(String::new()),
@@ -340,6 +344,8 @@ struct Runner<'a> {
     session: &'a str,
     /// The last mock log entry looked at for unmatched requests.
     seen: Cell<u64>,
+    /// The same, of the mock server's journal.
+    seen_served: Cell<u64>,
     /// The warnings of steps the report shows.
     warnings: RefCell<Vec<String>>,
     /// The steps of the test (or hook) running now, and its artifacts.
@@ -505,9 +511,16 @@ impl Runner<'_> {
                 if let Some(sets) = verify {
                     self.verify(&context, sets);
                 }
-                logs = artifacts::logs(dir, &context, &|words| {
+                let id = self.test_id.borrow().clone();
+                let served = self
+                    .served()
+                    .map(|server| (server.url(), server.journal(Some(&id))));
+                logs = artifacts::logs(dir, &context, served, &|words| {
                     self.invoke(words, Some(&context), None)
                 });
+                if let Some(server) = self.served() {
+                    server.close_partition(&id);
+                }
                 if !kept {
                     self.close_context(&context);
                 }
@@ -676,8 +689,40 @@ impl Runner<'_> {
                     .collect()
             })
         };
-        if let Some(words) = words {
+        let served = self.served();
+        let id = self.test_id.borrow().clone();
+        let mut tagged: Vec<String> = Vec::new();
+        if let (Some(server), Some(_)) = (served, &words) {
+            // The server's partition for the test, with the test's sets;
+            // the context's requests to the app and to the server say
+            // which it is.
+            let sets = self.plan.mock_mode_sets(settings);
+            let loaded = self
+                .load_sets(&sets)
+                .map_err(|e| setup_failure(span, "mock serve", e))?;
+            let frozen = self
+                .plan
+                .determinism
+                .freeze_time
+                .as_deref()
+                .and_then(|t| protocol::format::parse_time(t).ok());
+            server.partition(&id, loaded, frozen);
+            tagged.extend(["--test-id".to_owned(), id.clone()]);
+            let origins = self
+                .plan
+                .backend
+                .web_servers
+                .iter()
+                .map(|w| w.url.clone())
+                .chain(self.plan.backend.base_url.clone())
+                .chain(std::iter::once(server.url()));
+            for origin in origins {
+                tagged.extend(["--test-origin".to_owned(), origin]);
+            }
+        }
+        if let Some(mut words) = words {
             let text = words.join(" ");
+            words.extend(tagged.iter().map(String::as_str));
             self.setup(&words, Some(context), Some(deadline), span)
                 .map_err(|e| setup_failure(span, &text, e))?;
         }
@@ -760,9 +805,50 @@ impl Runner<'_> {
         Ok(())
     }
 
+    /// The mock server, in mock mode.
+    fn served(&self) -> Option<&e2e::mock_server::MockServer> {
+        self.options.mock_server.get().filter(|_| !self.plan.real())
+    }
+
+    /// Mock sets `names` of the project, read (`mock check` already
+    /// checked them).
+    fn load_sets(&self, names: &[String]) -> Result<Vec<mock::MockSet>, ErrorInfo> {
+        let config = &self.plan.config;
+        let cwd = std::env::current_dir().unwrap_or_else(|_| config.root.clone());
+        names
+            .iter()
+            .map(|name| mock::MockSet::load(&mock::Source::find(&config.mocks, &cwd, name)?))
+            .collect()
+    }
+
+    /// The mock server's requests of the running try that went
+    /// unmatched in a `fail` set's scope, since the last look.
+    fn unmatched_served(&self) -> Vec<RoutedRequest> {
+        let Some(server) = self.served() else {
+            return Vec::new();
+        };
+        let seen = self.seen_served.get();
+        let fresh: Vec<RoutedRequest> = server
+            .journal(Some(&self.test_id.borrow()))
+            .into_iter()
+            .filter(|e| e.seq > seen && e.policy.as_deref() == Some("fail"))
+            .collect();
+        if let Some(last) = fresh.iter().map(|e| e.seq).max() {
+            self.seen_served.set(last);
+        }
+        fresh
+    }
+
     /// The requests of `context` that went unmatched in the scope of a
     /// set whose `unmatched = "fail"`, since the last look.
     fn unmatched(&self, context: &str) -> Vec<RoutedRequest> {
+        let mut fresh = self.unmatched_in(context);
+        fresh.extend(self.unmatched_served());
+        fresh
+    }
+
+    /// [`Self::unmatched`] of the browser's requests.
+    fn unmatched_in(&self, context: &str) -> Vec<RoutedRequest> {
         let Ok(out) = self.invoke(
             &["mock", "log", "--unmatched", "--limit", "0"],
             Some(context),
@@ -1015,6 +1101,7 @@ impl Runner<'_> {
             Some(Command::Mock(args)) => match &args.command {
                 MockCommand::State(_) => Some("mock state"),
                 MockCommand::Seed(_) => Some("mock seed"),
+                MockCommand::Ws(_) => Some("mock ws send"),
                 _ => None,
             },
             Some(Command::Expect(args)) if args.target.as_deref() == Some("mock-state") => {

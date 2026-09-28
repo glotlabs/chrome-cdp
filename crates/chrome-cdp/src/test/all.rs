@@ -112,14 +112,22 @@ fn once(
     let stop = AtomicBool::new(false);
     let servers = AtomicBool::new(false);
     let started = Instant::now();
-    let ran = with_servers(plan, &stop, mode, &servers, false, || {
-        with_backend(plan, mode, || {
-            run_tests(&options, args.headed, || {
-                starting(plan, mode);
-                execute(plan, &options, &stop, mode)
+    let ran = with_servers(
+        plan,
+        &options.mock_server,
+        &stop,
+        mode,
+        &servers,
+        false,
+        || {
+            with_backend(plan, mode, || {
+                run_tests(&options, args.headed, || {
+                    starting(plan, mode);
+                    execute(plan, &options, &stop, mode)
+                })
             })
-        })
-    });
+        },
+    );
     let (outcomes, _) = ran.and_then(|r| r)?;
     let mut data = report::data(plan, &outcomes, started.elapsed(), args.shard.as_deref());
     for test in &mut data.tests {

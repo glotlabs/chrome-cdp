@@ -2,3 +2,7 @@
 @test "looks at mock state"
   goto /e2e/shop.html
   expect mock-state todos count 2
+
+@test "pushes a WebSocket message"
+  goto /e2e/shop.html
+  mock ws send '/e2e/ws/**' '{"type":"price"}'

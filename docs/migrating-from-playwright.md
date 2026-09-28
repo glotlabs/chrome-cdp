@@ -342,6 +342,9 @@ rule that matches handles a request.
 | requests the routes saw | `routes` (hits per rule) | ✅ |
 | blocking images, fonts, ads | `block --images --fonts --ads`, `block PATTERN` | ✅ |
 | `setExtraHTTPHeaders(h)` | `route '**' --set-header 'Name: v'` | 🟡 |
+| `page.routeWebSocket(url, handler)` | a `[[websocket]]` mock (`on_open`, `on_message`), and `mock ws send` ([docs/e2e/beyond-fetch.md](e2e/beyond-fetch.md)) | ✅ |
+| Server-Sent Events | a mock's `respond = { sse = [...] }`, streamed to the page's `EventSource` | ✅ |
+| server-side fetches (SSR) | `mock serve` (not interceptable in Playwright) | ✅ |
 | `recordHar: { path }`, `routeFromHAR(file, { update: true })` | `har start`, then `har stop -o FILE` | ✅ |
 | `routeFromHAR(file)` (replay) | `route URL --body-file` per request | ❌ |
 | `context.request`, `APIRequestContext` | `eval 'await fetch("/api/x").then(r => r.json())'` (in the page, with its cookies) | 🟡 |

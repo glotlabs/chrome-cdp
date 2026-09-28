@@ -183,6 +183,18 @@ pub struct WebServer {
     pub env: BTreeMap<String, String>,
     /// The command's directory: the project root unless `cwd` is set.
     pub cwd: PathBuf,
+    /// `mock_server = { port = 4010 }`: a `mock serve` to start before
+    /// the command (plan 11.9), for the app's server-side fetches.
+    pub mock_server: Option<MockServer>,
+}
+
+/// A web server's `mock_server`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MockServer {
+    /// 0 picks a free port (the command gets it in `CHROME_CDP_MOCK_URL`).
+    pub port: u16,
+    /// `127.0.0.1` unless `host` says otherwise.
+    pub host: std::net::IpAddr,
 }
 
 /// `[e2e.determinism]` (plan 11.6). `None` means "not set here";
@@ -560,9 +572,17 @@ impl Check<'_> {
         if list.is_empty() {
             return Err((span, format!("{key}: an empty list; remove it instead")));
         }
-        list.into_iter()
+        let servers: Vec<WebServer> = list
+            .into_iter()
             .map(|raw| self.web_server(key, raw))
-            .collect()
+            .collect::<Result<_, _>>()?;
+        if servers.iter().filter(|s| s.mock_server.is_some()).count() > 1 {
+            return Err((
+                span,
+                format!("{key}: more than one mock_server; one serves every test"),
+            ));
+        }
+        Ok(servers)
     }
 
     fn web_server(&self, key: &str, raw: RawWebServer) -> Result<WebServer, Problem> {
@@ -583,6 +603,10 @@ impl Check<'_> {
                 .cwd
                 .as_deref()
                 .map_or_else(|| self.root.to_path_buf(), |c| self.path(c)),
+            mock_server: raw
+                .mock_server
+                .map(|m| mock_server(&format!("{key}.mock_server"), m))
+                .transpose()?,
         })
     }
 
@@ -590,6 +614,26 @@ impl Check<'_> {
     fn path(&self, path: &str) -> PathBuf {
         self.root.join(path)
     }
+}
+
+fn mock_server(key: &str, raw: Spanned<RawMockServer>) -> Result<MockServer, Problem> {
+    let raw = raw.into_inner();
+    let port = u16::try_from(*raw.port.get_ref()).map_err(|_| {
+        (
+            raw.port.span(),
+            format!("{key}.port: {} is not a port (0-65535)", raw.port.get_ref()),
+        )
+    })?;
+    let host = match raw.host {
+        None => std::net::IpAddr::from([127, 0, 0, 1]),
+        Some(host) => host.get_ref().parse().map_err(|_| {
+            (
+                host.span(),
+                format!("{key}.host: `{}` is not an IP address", host.get_ref()),
+            )
+        })?,
+    };
+    Ok(MockServer { port, host })
 }
 
 fn url(key: &str, raw: Spanned<String>) -> Result<String, Problem> {
@@ -693,6 +737,14 @@ struct RawWebServer {
     timeout: Option<Spanned<String>>,
     env: Option<BTreeMap<String, String>>,
     cwd: Option<String>,
+    mock_server: Option<Spanned<RawMockServer>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawMockServer {
+    port: Spanned<i64>,
+    host: Option<Spanned<String>>,
 }
 
 #[derive(Deserialize)]

@@ -47,6 +47,9 @@
 //! - `/e2e/api/…` is a small stateful REST API (see [`api`]), the real
 //!   backend of the test runner's shop page; each server has its own
 //!   state.
+//! - `/e2e/ssr?api=<origin>` stands for a server-rendered page (plan
+//!   11.9): the server GETs `<origin>/e2e/api/greeting` itself, with the
+//!   request's `x-chrome-cdp-test` header, and shows the answer.
 //!
 //! Add pages under `testdata/site` (and dynamic routes in [`respond`]) as
 //! milestones need them, rather than starting another server.
@@ -248,6 +251,9 @@ where
             if req.uri().path() == "/ws" {
                 return Ok::<_, Infallible>(websocket(&mut req));
             }
+            if req.uri().path() == "/e2e/ssr" {
+                return Ok::<_, Infallible>(ssr(&req).await);
+            }
             if req.uri().path().starts_with(api::PREFIX) {
                 let (parts, body) = req.into_parts();
                 let body = body
@@ -405,6 +411,74 @@ fn websocket(req: &mut Request<Incoming>) -> Response<Full<Bytes>> {
         headers.insert(SEC_WEBSOCKET_ACCEPT, accept);
     }
     response
+}
+
+/// `/e2e/ssr?api=http://127.0.0.1:<port>`: a page whose server fetched
+/// `/e2e/api/greeting` of `api` (forwarding `x-chrome-cdp-test`).
+async fn ssr(req: &Request<Incoming>) -> Response<Full<Bytes>> {
+    let query = req.uri().query().unwrap_or_default();
+    let api = param(query, "api").unwrap_or_default();
+    let test = req
+        .headers()
+        .get("x-chrome-cdp-test")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
+    let fetched = server_get(api, "/e2e/api/greeting", test.as_deref()).await;
+    let escape = |s: &str| {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+    };
+    let answer = match fetched {
+        Ok((status, body)) => format!("{status} {}", escape(body.trim())),
+        Err(e) => format!("failed: {}", escape(&e.to_string())),
+    };
+    let html = format!(
+        "<!doctype html>\n<meta charset=\"utf-8\">\n<title>SSR</title>\n\
+         <p id=\"answer\">The server got: {answer}</p>\n\
+         <p id=\"test\">Test header: {}</p>\n",
+        escape(test.as_deref().unwrap_or("none"))
+    );
+    response(
+        StatusCode::OK,
+        "text/html; charset=utf-8",
+        Bytes::from(html),
+    )
+}
+
+/// A GET the server itself sends (HTTP/1.1, no TLS): the status code
+/// and body.
+async fn server_get(
+    origin: &str,
+    path: &str,
+    test: Option<&str>,
+) -> std::io::Result<(u16, String)> {
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+    let host = origin.strip_prefix("http://").unwrap_or(origin);
+    let mut stream =
+        tokio::time::timeout(Duration::from_secs(5), tokio::net::TcpStream::connect(host))
+            .await
+            .map_err(|_| std::io::Error::other("connect timed out"))??;
+    let mut request = format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n");
+    if let Some(test) = test {
+        request = format!("{request}x-chrome-cdp-test: {test}\r\n");
+    }
+    request.push_str("\r\n");
+    stream.write_all(request.as_bytes()).await?;
+    let mut text = String::new();
+    tokio::time::timeout(Duration::from_secs(5), stream.read_to_string(&mut text))
+        .await
+        .map_err(|_| std::io::Error::other("read timed out"))??;
+    let status = text
+        .split(' ')
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let body = text
+        .split_once("\r\n\r\n")
+        .map(|(_, b)| b)
+        .unwrap_or_default();
+    Ok((status, body.to_owned()))
 }
 
 /// `/items?n=<count>`: a JSON array of `count` items.

@@ -191,6 +191,47 @@ fn several_web_servers_keep_their_order() {
 }
 
 #[test]
+fn a_web_server_may_have_a_mock_server() {
+    let c = parse(
+        "[e2e]\n[e2e.web_server]\ncommand = \"npm run dev\"\nurl = \"http://localhost:3000\"\n\
+         mock_server = { port = 4010 }\n",
+    );
+    let server = c.web_servers[0].mock_server.as_ref().unwrap();
+    assert_eq!(server.port, 4010);
+    assert_eq!(server.host.to_string(), "127.0.0.1");
+    let c = parse(
+        "[e2e]\n[e2e.web_server]\ncommand = \"x\"\nurl = \"http://localhost:3000\"\n\
+         mock_server = { port = 0, host = \"0.0.0.0\" }\n",
+    );
+    assert_eq!(
+        c.web_servers[0]
+            .mock_server
+            .as_ref()
+            .unwrap()
+            .host
+            .to_string(),
+        "0.0.0.0"
+    );
+    assert!(
+        error("[e2e]\n[e2e.web_server]\ncommand = \"x\"\nurl = \"http://l:1\"\nmock_server = { port = 70000 }\n")
+            .contains("e2e.web_server.mock_server.port: 70000 is not a port")
+    );
+    assert!(
+        error("[e2e]\n[e2e.web_server]\ncommand = \"x\"\nurl = \"http://l:1\"\nmock_server = { port = 1, host = \"me\" }\n")
+            .contains("mock_server.host: `me` is not an IP address")
+    );
+    assert!(
+        error("[e2e]\n[e2e.web_server]\ncommand = \"x\"\nurl = \"http://l:1\"\nmock_server = { prot = 1 }\n")
+            .contains("unknown field `prot`")
+    );
+    let two = error(
+        "[e2e]\n[[e2e.web_server]]\ncommand = \"a\"\nurl = \"http://l:1\"\nmock_server = { port = 1 }\n\
+         [[e2e.web_server]]\ncommand = \"b\"\nurl = \"http://l:2\"\nmock_server = { port = 2 }\n",
+    );
+    assert!(two.contains("more than one mock_server"), "{two}");
+}
+
+#[test]
 fn errors_point_at_the_line_and_column() {
     assert_eq!(
         error("[e2e]\ntimeout = \"30\"\n"),
