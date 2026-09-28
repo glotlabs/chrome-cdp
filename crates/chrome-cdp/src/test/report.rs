@@ -5,7 +5,7 @@
 use std::fmt::Write as _;
 use std::time::Duration;
 
-use protocol::schema::{TestFailure, TestResult, TestRunData};
+use protocol::schema::{TestDebug, TestFailure, TestResult, TestRunData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output, Style, format};
 use serde_json::json;
 
@@ -238,6 +238,43 @@ pub(super) fn finish(
     Err(info
         .hint(Hint::run(again).why("runs the first failed test again"))
         .details(json!(data)))
+}
+
+/// The run's error when `--debug` kept a failed test's context: the
+/// hint is the command that looks at its page.
+pub(super) fn debugging(info: ErrorInfo, debug: &TestDebug, servers_started: bool) -> ErrorInfo {
+    let look = Cmd::new("snapshot")
+        .session(&debug.session)
+        .flag("context", &debug.context);
+    let mut info = info
+        .note(
+            "debug",
+            format!(
+                "{} left its browser context {} open in session {}, with its mocks; it closes after 30 minutes idle",
+                debug.test, debug.context, debug.session
+            ),
+        )
+        .note(
+            "debug",
+            format!(
+                "export CHROME_CDP_SESSION={} CHROME_CDP_CONTEXT={} to leave out --session and --context",
+                debug.session, debug.context
+            ),
+        );
+    if servers_started {
+        info = info.note(
+            "debug",
+            "the web server this run started is stopped; start it yourself (reuse_existing uses it) so the page can load",
+        );
+    }
+    info.hint(
+        Hint::run(look)
+            .why("the page as the test left it")
+            .or(format!(
+                "after a fix, {}",
+                Cmd::new("test").arg(&debug.test).switch("debug")
+            )),
+    )
 }
 
 /// `--list`: the tests the run would have.

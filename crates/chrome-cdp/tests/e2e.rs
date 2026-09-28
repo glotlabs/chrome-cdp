@@ -790,3 +790,55 @@ fn every_test_leaves_artifacts_and_a_failure_a_report() {
         "{text}"
     );
 }
+
+#[test]
+fn debug_keeps_the_failed_tests_context_open() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let (out, value) = project.json(&["scenarios/fail", "--debug", "--jobs", "1"]);
+    assert_eq!(out.status.code(), Some(1), "{value}");
+    let error = &value["error"];
+    let debug = &error["details"]["debug"];
+    assert_eq!(debug["session"], "test-debug", "{value}");
+    assert_eq!(debug["test"], "scenarios/fail/fails.cdp:8");
+    let context = debug["context"].as_str().unwrap().to_owned();
+    assert_eq!(
+        error["hint"],
+        format!(
+            "chrome-cdp snapshot --session test-debug --context {context}   (the page as the test left it), or after a fix, chrome-cdp test scenarios/fail/fails.cdp:8 --debug"
+        )
+    );
+    // It stopped at the failure: the flaky test did not run, and the
+    // failed step's hint acts on the kept context.
+    assert_eq!(statuses(&value)[3].0, "not-run");
+    let step_hint = error["details"]["tests"][1]["error"]["error"]["hint"]
+        .as_str()
+        .unwrap();
+    assert!(
+        step_hint.starts_with(&format!(
+            "chrome-cdp snapshot --session test-debug --context {context}"
+        )),
+        "{step_hint}"
+    );
+    // The page is still there, with its mocks.
+    let cli = |args: &[&str]| {
+        common::run(
+            project
+                .sandbox
+                .cli()
+                .current_dir(&project.root)
+                .args(["--session", "test-debug", "--context", &context])
+                .args(args),
+        )
+    };
+    let out = cli(&["snapshot"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(stdout(&out).contains("\"Shop\""), "{}", stdout(&out));
+    assert!(stdout(&cli(&["mock", "list"])).starts_with("shop "));
+
+    // A second --debug run starts over; a passing one leaves nothing open.
+    let (out, value) = project.json(&["scenarios/fail/fails.cdp:5", "--debug"]);
+    assert_eq!(out.status.code(), Some(0), "{value}");
+    assert!(value["data"].get("debug").is_none(), "{value}");
+    assert!(project.sandbox.daemons().is_empty());
+}

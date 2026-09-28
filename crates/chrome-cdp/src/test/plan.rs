@@ -74,6 +74,8 @@ pub(super) struct Plan {
     pub(super) retries: u32,
     /// How many times each test runs (`--repeat`; 1 without).
     pub(super) repeat: u32,
+    /// `--debug`: a failure stops the run, so retries are off.
+    pub(super) debug: bool,
     /// `expect-snapshot` baselines' directory.
     pub(super) snapshots: PathBuf,
     /// What every test's context gets before its steps (11.6).
@@ -208,6 +210,7 @@ impl Plan {
             jobs,
             retries,
             repeat,
+            debug: args.debug,
             snapshots,
             determinism,
         })
@@ -219,9 +222,10 @@ impl Plan {
     }
 
     /// Test `test`'s retries: none with `--repeat`, whose point is to see
-    /// the failures retries would hide.
+    /// the failures retries would hide, nor with `--debug`, which keeps
+    /// the first failure.
     pub(super) fn retries(&self, test: &Planned) -> u32 {
-        if self.repeat > 1 {
+        if self.repeat > 1 || self.debug {
             return 0;
         }
         test.settings.retries.unwrap_or(self.retries)

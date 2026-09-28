@@ -28,7 +28,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode};
 
 use crate::cli::{GlobalArgs, JobsIsolation, TestArgs};
 use crate::{output, script};
-use exec::{Options, Outcome};
+use exec::{Kept, Options, Outcome};
 use plan::Plan;
 
 /// Runs `test` and returns the exit code; `explicit_session` says whether
@@ -52,21 +52,29 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
     }
     let base = if explicit_session {
         global.session.clone()
+    } else if args.debug {
+        DEBUG_SESSION.to_owned()
     } else {
         format!("test-{}", std::process::id())
     };
-    let sessions = match args.jobs_isolation {
+    let sessions: Vec<String> = match args.jobs_isolation {
         JobsIsolation::Context => vec![base],
         JobsIsolation::Browser => (1..=plan.jobs).map(|i| format!("{base}-{i}")).collect(),
     };
+    if args.debug && !explicit_session {
+        // What an earlier --debug run left open.
+        for session in &sessions {
+            close(global, session, true);
+        }
+    }
     let options = Options {
         global: global.clone(),
         sessions,
         update_snapshots: args.update_snapshots,
-        bail: args.bail,
+        bail: args.bail || args.debug,
         own_sessions: !explicit_session,
         trace: args.trace,
-        debug: None,
+        debug: args.debug.then(|| std::sync::Mutex::new(None)),
     };
     let started = Instant::now();
     if mode == Mode::Text {
@@ -91,15 +99,21 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
         ));
     }
     let stop = AtomicBool::new(false);
-    let outcomes = with_servers(&plan, &stop, mode, || {
+    let mut servers_started = false;
+    let outcomes = with_servers(&plan, &stop, mode, &mut servers_started, || {
         run_tests(&plan, &options, args.headed, &stop, mode)
     });
-    let outcomes = match outcomes.and_then(|r| r) {
-        Ok(outcomes) => outcomes,
+    let (outcomes, kept) = match outcomes.and_then(|r| r) {
+        Ok(ran) => ran,
         Err(info) => return output::print(mode, Err(info)),
     };
     let duration = started.elapsed();
     let mut data = report::data(&plan, &outcomes, duration, args.shard.as_deref());
+    data.debug = kept.map(|kept| protocol::schema::TestDebug {
+        session: kept.session,
+        context: kept.context,
+        test: kept.place,
+    });
     let written = reporters::write(&args.reporter, &data, &plan.config.artifacts);
     let mut unwritten = None;
     match written {
@@ -108,6 +122,9 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
     }
     let summary = report::summary(&data, duration);
     let mut result = report::finish(&plan, &data, duration, args.max_chars);
+    if let (Err(info), Some(debug)) = (&mut result, &data.debug) {
+        *info = report::debugging(info.clone(), debug, servers_started);
+    }
     if let Some(warning) = unwritten {
         result = match result {
             Ok(mut out) => {
@@ -123,14 +140,18 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
     output::print(mode, result)
 }
 
-/// Opens the sessions, runs the tests, and closes the sessions it opened.
+/// The session `--debug` leaves a failed test's context open in.
+const DEBUG_SESSION: &str = "test-debug";
+
+/// Opens the sessions, runs the tests, and closes the sessions it opened
+/// (but the one with the context `--debug` kept).
 fn run_tests(
     plan: &Plan,
     options: &Options,
     headed: bool,
     stop: &AtomicBool,
     mode: Mode,
-) -> Result<Vec<Outcome>, ErrorInfo> {
+) -> Result<(Vec<Outcome>, Option<Kept>), ErrorInfo> {
     let mut opened = Vec::new();
     let mut failed = None;
     for session in &options.sessions {
@@ -152,10 +173,18 @@ fn run_tests(
         }
     };
     let result = failed.map_or_else(|| Ok(exec::execute(plan, options, stop, &print)), Err);
+    let kept = options.debug.as_ref().and_then(|kept| {
+        kept.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+    });
     for session in &opened {
+        if kept.as_ref().is_some_and(|k| &k.session == session) {
+            continue;
+        }
         close(&options.global, session, options.own_sessions);
     }
-    result
+    result.map(|outcomes| (outcomes, kept))
 }
 
 /// `open` in `session`; whether it started the browser.
@@ -203,6 +232,7 @@ fn with_servers<T: Send>(
     plan: &Plan,
     stop: &AtomicBool,
     mode: Mode,
+    started: &mut bool,
     work: impl FnOnce() -> T + Send,
 ) -> Result<T, ErrorInfo> {
     let config = &plan.config;
@@ -226,6 +256,7 @@ fn with_servers<T: Send>(
     })?;
     let mut servers =
         runtime.block_on(WebServers::start(&config.web_servers, &config.artifacts))?;
+    *started = servers.servers().iter().any(|s| !s.reused);
     if mode == Mode::Text {
         for server in servers.servers() {
             let how = if server.reused {

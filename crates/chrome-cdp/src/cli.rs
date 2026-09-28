@@ -4932,6 +4932,12 @@ pub(crate) struct TestArgs {
     #[arg(long)]
     pub(crate) trace: bool,
 
+    /// On the first failure, stop and leave that test's browser context
+    /// open (session test-debug), with its mocks, to look at with the
+    /// usual commands. Retries are off.
+    #[arg(long)]
+    pub(crate) debug: bool,
+
     /// Also write reports to files, comma-separated: json, junit, html
     /// (in the artifacts directory, or NAME=FILE); text is stdout.
     #[arg(long, value_delimiter = ',', value_parser = crate::test::reporters::parse, value_name = "NAMES")]

@@ -95,6 +95,8 @@ pub(super) struct Options {
 pub(super) struct Kept {
     pub(super) session: String,
     pub(super) context: String,
+    /// The test's `file:line` (a hook's file's `file:1`).
+    pub(super) place: String,
 }
 
 /// Where a file's `@before-all` is.
@@ -443,7 +445,7 @@ impl Runner<'_> {
                 if result.is_err() {
                     capture = Some(self.capture(dir, &context));
                 }
-                kept = result.is_err() && self.keep(&context);
+                kept = result.is_err() && self.keep(&context, subject.place);
                 if !kept && let Some(after) = after {
                     let ran =
                         self.steps(after, &context, deadline + AFTER_GRACE, Part::Hook("after"));
@@ -463,7 +465,9 @@ impl Runner<'_> {
         };
         let recorder = self.recorder.borrow_mut().take();
         result.map_err(|mut failure| {
-            if !kept {
+            if kept {
+                self.name_context(&mut failure.error);
+            } else {
                 artifacts::point_hint_at_files(&mut failure.error, dir);
             }
             let steps = recorder.as_ref().map(Recorder::steps).unwrap_or_default();
@@ -480,8 +484,35 @@ impl Runner<'_> {
         artifacts::capture(dir, &|words| self.invoke(words, Some(context), None))
     }
 
+    /// Adds `--context` of the context `--debug` kept to the commands in
+    /// `error`'s hint and notes that name its session, so they act on the
+    /// test's page.
+    fn name_context(&self, error: &mut ErrorInfo) {
+        let Some(kept) = self
+            .options
+            .debug
+            .as_ref()
+            .and_then(|k| k.lock().unwrap_or_else(PoisonError::into_inner).clone())
+        else {
+            return;
+        };
+        let flag = format!(" --session {}", kept.session);
+        let with = format!("{flag} --context {}", kept.context);
+        let add = |text: &mut String| {
+            if !text.contains(" --context ") {
+                *text = text.replace(&flag, &with);
+            }
+        };
+        if let Some(hint) = &mut error.hint {
+            add(hint);
+        }
+        for note in &mut error.notes {
+            add(&mut note.text);
+        }
+    }
+
     /// With `--debug`, whether `context` is the first to fail, and stays.
-    fn keep(&self, context: &str) -> bool {
+    fn keep(&self, context: &str, place: &str) -> bool {
         let Some(debug) = &self.options.debug else {
             return false;
         };
@@ -492,6 +523,7 @@ impl Runner<'_> {
         *kept = Some(Kept {
             session: self.session.to_owned(),
             context: context.to_owned(),
+            place: place.to_owned(),
         });
         true
     }
