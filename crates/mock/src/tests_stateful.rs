@@ -336,6 +336,36 @@ fn collections_create_read_update_and_delete() {
 }
 
 #[test]
+fn a_created_item_can_take_the_real_apis_id() {
+    let d = todos();
+    let mut m = mocks(d.path(), &["base"]);
+    let Outcome::Answer(a) = m.decide(
+        &req(
+            "POST",
+            "http://app/api/todos",
+            Some(br#"{"title": "Ship it"}"#),
+        ),
+        0,
+    ) else {
+        panic!()
+    };
+    let Response::Fulfill { body, .. } = &a.response else {
+        panic!()
+    };
+    let created: Value = serde_json::from_slice(body).unwrap();
+    assert_eq!(created["id"], 3);
+    // The real API called it 41: the mock's item is 41 from now on.
+    assert!(m.adopt_id(&a.mock, &created, &json!({"id": 41, "title": "Ship it"})));
+    let (status, body, _) = answer(&mut m, "GET", "http://app/api/todos/41", None);
+    assert_eq!((status, body["title"].clone()), (200, json!("Ship it")));
+    let (status, _, _) = answer(&mut m, "GET", "http://app/api/todos/3", None);
+    assert_eq!(status, 404);
+    // Not onto an id another item has, and not without an id.
+    assert!(!m.adopt_id(&a.mock, &json!({"id": 41}), &json!({"id": 1})));
+    assert!(!m.adopt_id(&a.mock, &json!({"id": 41}), &json!({"ok": true})));
+}
+
+#[test]
 fn collections_page_wrap_and_make_uuids() {
     let d = todos();
     let mut m = mocks(d.path(), &["base"]);

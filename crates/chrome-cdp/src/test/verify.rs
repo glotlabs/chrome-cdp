@@ -6,9 +6,13 @@
 //! `http` steps), in the order they happened, and feeds them to a mock
 //! engine of its own with the sets the test would have in mock mode. So
 //! sequences and collections see the same history they would have seen,
-//! and each real answer meets the answer those mocks give. Statuses and
+//! and each real answer meets the answer those mocks give. An item a
+//! collection creates takes the id the real API gave it, so the requests
+//! that name it later find it. Statuses and
 //! the JSON *shape* are compared ([`mock::drift::shape`]), not values; a
-//! request in a set's scope that no mock answers is listed too.
+//! request in a set's scope that no mock answers is listed too; a
+//! WebSocket is matched against the `[[websocket]]` mocks (that one opens
+//! is all that is compared).
 //!
 //! `--update` rewrites a drifted mock's JSON data file from the first
 //! real answer it differed on ([`mock::drift::update`]), keeping the
@@ -21,8 +25,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
 use mock::record::Exchange;
-use mock::{MockSet, Mocks, Outcome, Response, Source};
-use protocol::schema::{MockDrift, UnmockedRequest, VerifyData};
+use mock::{MockSet, Mocks, Outcome, Response, Source, WsOutcome};
+use protocol::schema::{MockDrift, MockRef, UnmockedRequest, VerifyData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 use serde_json::Value;
 
@@ -91,6 +95,20 @@ impl Verifier {
             if e.status == 0 {
                 continue;
             }
+            if e.url.starts_with("ws:") || e.url.starts_with("wss:") {
+                match mocks.ws_open(&e.url, &[], *at_ms) {
+                    WsOutcome::Open { mock, .. } => {
+                        found.compared += 1;
+                        found.mocks.insert(mock.at);
+                    }
+                    WsOutcome::Unmatched { set, .. } => {
+                        found.compared += 1;
+                        unmocked(&mut found, e, set);
+                    }
+                    WsOutcome::Pass => {}
+                }
+                continue;
+            }
             let request = mock::Request {
                 method: &e.method,
                 url: &e.url,
@@ -104,6 +122,7 @@ impl Verifier {
                     };
                     found.compared += 1;
                     found.mocks.insert(answer.mock.at.clone());
+                    adopt_id(&mut mocks, &answer.mock, e, *status, body);
                     let (problems, real) = differences(e, *status, body);
                     if problems.is_empty() {
                         continue;
@@ -131,21 +150,7 @@ impl Verifier {
                 }
                 Outcome::Unmatched { set, .. } => {
                     found.compared += 1;
-                    let path = e.url.split('?').next().unwrap_or(&e.url);
-                    match found
-                        .unmocked
-                        .iter_mut()
-                        .find(|u| u.method == e.method && u.url.split('?').next() == Some(path))
-                    {
-                        Some(known) => known.count += 1,
-                        None => found.unmocked.push(UnmockedRequest {
-                            method: e.method.clone(),
-                            url: e.url.clone(),
-                            status: e.status,
-                            set,
-                            count: 1,
-                        }),
-                    }
+                    unmocked(&mut found, e, set);
                 }
                 Outcome::Pass | Outcome::Preflight { .. } => {}
             }
@@ -214,6 +219,42 @@ pub(super) fn scope_of_sets(config: &e2e::Config, sets: &[String]) -> Vec<String
 
 /// How the mock's answer (`status`, `body`) differs from the real one
 /// `e`; and the real JSON body, when only the shape differs.
+/// Counts a real request in `set`'s scope that no mock answers.
+fn unmocked(found: &mut Found, e: &Exchange, set: String) {
+    let path = e.url.split('?').next().unwrap_or(&e.url);
+    match found
+        .unmocked
+        .iter_mut()
+        .find(|u| u.method == e.method && u.url.split('?').next() == Some(path))
+    {
+        Some(known) => known.count += 1,
+        None => found.unmocked.push(UnmockedRequest {
+            method: e.method.clone(),
+            url: e.url.clone(),
+            status: e.status,
+            set,
+            count: 1,
+        }),
+    }
+}
+
+/// A POST that both a collection and the real API answered with a new
+/// item: the mock's item takes the real id, since the requests that
+/// follow name it (`DELETE /api/cart/<real id>`).
+fn adopt_id(mocks: &mut Mocks, mock: &MockRef, e: &Exchange, status: u16, body: &[u8]) {
+    if e.method != "POST" || !(200..300).contains(&status) || !(200..300).contains(&e.status) {
+        return;
+    }
+    let created = serde_json::from_slice::<Value>(body);
+    let real = e
+        .response_body
+        .as_deref()
+        .map(serde_json::from_slice::<Value>);
+    if let (Ok(created), Some(Ok(real))) = (created, real) {
+        mocks.adopt_id(mock, &created, &real);
+    }
+}
+
 fn differences(e: &Exchange, status: u16, body: &[u8]) -> (Vec<String>, Option<Value>) {
     if status != e.status {
         return (

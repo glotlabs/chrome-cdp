@@ -408,6 +408,19 @@ impl Mocks {
             .any(|s| s.state.iter().any(|(n, _)| n == name))
     }
 
+    /// `test --verify-mocks`: collection `mock` answered a POST with
+    /// `created`, and the real API with `real`. The mock's item takes the
+    /// real id, so later requests for `path/<real id>` find it as they
+    /// did on the real API. Whether it changed.
+    pub fn adopt_id(&mut self, mock: &MockRef, created: &Value, real: &Value) -> bool {
+        self.sets
+            .iter_mut()
+            .filter(|set| set.name() == mock.set)
+            .flat_map(|set| set.collections.iter_mut())
+            .find(|c| c.line == mock.line && c.name == mock.name)
+            .is_some_and(|c| c.adopt_id(created, real))
+    }
+
     fn find_collection(&self, name: &str) -> Option<(&MockSet, &Collection)> {
         self.sets
             .iter()

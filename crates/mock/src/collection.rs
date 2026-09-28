@@ -217,6 +217,27 @@ impl Collection {
         self.position(id).is_some()
     }
 
+    /// Gives the item `created` (as this collection answered a POST) the
+    /// id of `real` (the real API's answer to it), unless another item
+    /// has that id; whether it changed.
+    pub(crate) fn adopt_id(&mut self, created: &Value, real: &Value) -> bool {
+        let (Some(old), Some(new)) = (
+            created.get(&self.id),
+            real.get(&self.id).filter(|v| !v.is_null()),
+        ) else {
+            return false;
+        };
+        let (old, new_text) = (id_text(old), id_text(new));
+        if old == new_text || self.has(&new_text) {
+            return false;
+        }
+        let Some(i) = self.position(&old) else {
+            return false;
+        };
+        self.items[i][&self.id] = new.clone();
+        true
+    }
+
     /// Starts the items over from the seed.
     pub(crate) fn reset(&mut self) {
         self.items = self.seed.clone();
