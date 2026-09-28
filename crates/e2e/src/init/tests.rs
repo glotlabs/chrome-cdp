@@ -316,14 +316,14 @@ fn the_commented_collection_works() {
     let file = config.mocks.join("base.toml");
     let text = std::fs::read_to_string(&file).unwrap();
     let (settings, rest) = text.split_once("[[mock]]").unwrap();
-    let collection: String = rest
-        .lines()
-        .skip_while(|l| *l != "# [[collection]]")
-        .fold(String::new(), |mut out, l| {
-            out.push_str(l.trim_start_matches("# "));
-            out.push('\n');
-            out
-        });
+    let collection: String =
+        rest.lines()
+            .skip_while(|l| *l != "# [[collection]]")
+            .fold(String::new(), |mut out, l| {
+                out.push_str(l.trim_start_matches("# "));
+                out.push('\n');
+                out
+            });
     assert!(
         collection.contains("seed = \"data/items.json\""),
         "{collection}"

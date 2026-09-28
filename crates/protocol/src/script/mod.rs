@@ -221,6 +221,47 @@ pub trait Resolve {
     fn resolve(&self, var: &Var) -> Result<String, Unresolved>;
 }
 
+/// `${env:NAME}`'s value (`var` is the variable, for messages).
+pub fn env_value(var: &Var, name: &str) -> Result<String, Unresolved> {
+    std::env::var(name).map_err(|e| match e {
+        std::env::VarError::NotPresent => {
+            Unresolved::new(format!("{var}: the environment variable {name} is not set"))
+                .hint(format!("export {name}=… before running the script"))
+        }
+        std::env::VarError::NotUnicode(_) => Unresolved::new(format!(
+            "{var}: the environment variable {name} is not valid UTF-8"
+        )),
+    })
+}
+
+/// `${data:file#pointer}`'s value: `file` is read relative to `base` (a
+/// string as is, anything else as JSON). `hint` says what `base` is.
+pub fn data_value(
+    var: &Var,
+    base: &std::path::Path,
+    file: &str,
+    pointer: &str,
+    hint: &str,
+) -> Result<String, Unresolved> {
+    let path = base.join(file);
+    let text = std::fs::read_to_string(&path).map_err(|e| {
+        Unresolved::new(format!("{var}: cannot read {}: {e}", path.display())).hint(hint)
+    })?;
+    let value: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| Unresolved::new(format!("{var}: {} is not JSON: {e}", path.display())))?;
+    let found = value.pointer(pointer).ok_or_else(|| {
+        Unresolved::new(format!(
+            "{var}: {} has nothing at {pointer}",
+            path.display()
+        ))
+        .hint("a JSON pointer is /key/0/key; an empty one is the whole file")
+    })?;
+    Ok(match found {
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    })
+}
+
 /// Why a variable has no value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unresolved {

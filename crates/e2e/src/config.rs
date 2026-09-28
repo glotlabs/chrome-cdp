@@ -138,6 +138,16 @@ pub struct Viewport {
     pub height: u32,
 }
 
+impl Viewport {
+    /// `1280x800`; `None` unless both sizes are positive numbers.
+    pub fn parse(text: &str) -> Option<Self> {
+        text.split_once('x')
+            .and_then(|(w, h)| Some((w.trim().parse().ok()?, h.trim().parse().ok()?)))
+            .filter(|&(w, h): &(u32, u32)| w > 0 && h > 0)
+            .map(|(width, height)| Self { width, height })
+    }
+}
+
 impl fmt::Display for Viewport {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}x{}", self.width, self.height)
@@ -508,21 +518,15 @@ fn duration(key: &str, raw: &Spanned<String>) -> Result<Duration, Problem> {
 }
 
 fn viewport(raw: &Spanned<String>) -> Result<Viewport, Problem> {
-    let size = raw
-        .get_ref()
-        .split_once('x')
-        .and_then(|(w, h)| Some((w.trim().parse().ok()?, h.trim().parse().ok()?)))
-        .filter(|&(w, h): &(u32, u32)| w > 0 && h > 0);
-    size.map(|(width, height)| Viewport { width, height })
-        .ok_or_else(|| {
-            (
-                raw.span(),
-                format!(
-                    "e2e.viewport: `{}` is not WIDTHxHEIGHT, e.g. 1280x800",
-                    raw.get_ref()
-                ),
-            )
-        })
+    Viewport::parse(raw.get_ref()).ok_or_else(|| {
+        (
+            raw.span(),
+            format!(
+                "e2e.viewport: `{}` is not WIDTHxHEIGHT, e.g. 1280x800",
+                raw.get_ref()
+            ),
+        )
+    })
 }
 
 /// Mock set names: paths below `mocks` without `.toml`.

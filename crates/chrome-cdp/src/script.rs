@@ -18,7 +18,7 @@ use protocol::schema::StepInfo;
 use protocol::script::{Item, Line, Resolve, ScriptError, Span, Unresolved, Var};
 use protocol::{Cmd, Envelope, ErrorInfo, ErrorKind, Hint, Mode};
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::cli::{BatchArgs, Cli, Command, GlobalArgs, RunArgs, ScriptArgs};
 use crate::{input, output};
@@ -478,43 +478,18 @@ impl Resolve for Vars {
                     Hint::run(self.usage.clone().flag("var", format!("{name}=…"))).to_string(),
                 )
             }),
-            Var::Env(name) => std::env::var(name).map_err(|e| match e {
-                std::env::VarError::NotPresent => {
-                    Unresolved::new(format!("{var}: the environment variable {name} is not set"))
-                        .hint(format!("export {name}=… before running the script"))
-                }
-                std::env::VarError::NotUnicode(_) => Unresolved::new(format!(
-                    "{var}: the environment variable {name} is not valid UTF-8"
-                )),
-            }),
-            Var::Data { file, pointer } => self.data(var, file, pointer),
+            Var::Env(name) => protocol::script::env_value(var, name),
+            Var::Data { file, pointer } => protocol::script::data_value(
+                var,
+                &self.base,
+                file,
+                pointer,
+                "data: paths are relative to the script's folder",
+            ),
             Var::Var(_) | Var::Secret(_) | Var::Path(_) => Err(Unresolved::new(format!(
                 "{var} has no value in batch and run scripts"
             ))
             .hint("pass the value with --var name=value and write ${name}")),
         }
-    }
-}
-
-impl Vars {
-    fn data(&self, var: &Var, file: &str, pointer: &str) -> Result<String, Unresolved> {
-        let path = self.base.join(file);
-        let text = std::fs::read_to_string(&path).map_err(|e| {
-            Unresolved::new(format!("{var}: cannot read {}: {e}", path.display()))
-                .hint("data: paths are relative to the script's folder")
-        })?;
-        let value: Value = serde_json::from_str(&text)
-            .map_err(|e| Unresolved::new(format!("{var}: {} is not JSON: {e}", path.display())))?;
-        let found = value.pointer(pointer).ok_or_else(|| {
-            Unresolved::new(format!(
-                "{var}: {} has nothing at {pointer}",
-                path.display()
-            ))
-            .hint("a JSON pointer is /key/0/key; an empty one is the whole file")
-        })?;
-        Ok(match found {
-            Value::String(s) => s.clone(),
-            other => other.to_string(),
-        })
     }
 }
