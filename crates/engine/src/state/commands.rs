@@ -841,7 +841,15 @@ fn flags(cookie: &CookieInfo) -> Vec<String> {
     }
     match cookie.expires {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        Some(secs) => flags.push(format!("expires {}", iso8601((secs * 1000.0) as u64))),
+        Some(secs) => {
+            let iso = iso8601((secs * 1000.0) as u64);
+            // Whole seconds: `2026-10-28T10:00:00Z`.
+            let iso = match iso.split_once('.') {
+                Some((whole, _)) => format!("{whole}Z"),
+                None => iso,
+            };
+            flags.push(format!("expires {iso}"));
+        }
         None => flags.push("session".to_owned()),
     }
     flags
