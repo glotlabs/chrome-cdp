@@ -395,6 +395,23 @@ async fn exceptions_show_a_mapped_stack() {
         "{}",
         err.to_text()
     );
+    // The `--in` element does not stay behind when the script does not
+    // parse.
+    let err = failure(
+        &engine,
+        EvalRequest {
+            locator: Some("#name".into()),
+            ..request("el.value +")
+        },
+    )
+    .await;
+    assert_eq!(err.kind, ErrorKind::EvalError);
+    assert_eq!(
+        value(&engine, "Object.getOwnPropertySymbols(globalThis).length")
+            .await
+            .0,
+        "0"
+    );
     let err = failure(&engine, request("return 1")).await;
     assert!(
         err.hint

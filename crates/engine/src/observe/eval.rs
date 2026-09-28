@@ -322,6 +322,16 @@ impl Run<'_> {
                 if i + 1 < count && is_compile_error(details) {
                     continue;
                 }
+                if element.is_some() && is_compile_error(details) {
+                    // Nothing ran, so nothing took `el` from its slot.
+                    let delete = format!("delete globalThis[{ELEMENT_SLOT}]");
+                    let _ = session
+                        .call_raw(
+                            "Runtime.evaluate",
+                            json!({ "expression": delete, "contextId": context.context_id }),
+                        )
+                        .await;
+                }
                 return Err(self.thrown(details, wrapped.lines_before).await);
             }
             return self
