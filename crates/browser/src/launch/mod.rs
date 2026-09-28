@@ -31,12 +31,12 @@ use tokio::time::timeout;
 
 pub use profile::{ProfileChoice, check_name as check_profile_name, data_dir, named_profile_dir};
 pub use sandbox::{AppArmorProfile, UsernsCheck, apparmor_profile, running_as_root, userns_check};
+pub use process::Watchdog;
 pub use stderr::LOG_LIMIT;
 
 use crate::discover::Chrome;
 use crate::host::{Host, Os};
 use crate::installed::cache_dir;
-use process::Watchdog;
 use profile::Profile;
 use stderr::{RotatingLog, StderrTail};
 

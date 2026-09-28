@@ -19,7 +19,8 @@
 //! server that exits, or an interrupt (Ctrl-C), stops the work.
 //! [`WebServers::stop`] sends each group SIGTERM, then SIGKILL after
 //! [`STOP_GRACE`]. Dropping [`WebServers`] kills the groups at once, so an
-//! early return or a panic leaves nothing behind.
+//! early return or a panic leaves nothing behind, and a watchdog per group
+//! kills it if chrome-cdp itself is killed.
 
 use std::fs::File;
 use std::io::Write as _;
@@ -79,6 +80,8 @@ pub struct WebServers {
 #[derive(Debug)]
 struct Server {
     info: ServerInfo,
+    /// Kills the group if chrome-cdp dies before [`WebServers::stop`].
+    watchdog: Option<browser::launch::Watchdog>,
     /// `Some` once the started command has exited.
     exited: Option<watch::Receiver<Option<ExitStatus>>>,
     stopped: bool,
@@ -149,6 +152,7 @@ impl WebServers {
             info.ready_in = started.elapsed();
             self.servers.push(Server {
                 info,
+                watchdog: None,
                 exited: None,
                 stopped: false,
             });
@@ -158,8 +162,12 @@ impl WebServers {
         let (pgid, exited) = self.spawn(config, &log)?;
         info.log = Some(log.clone());
         info.pgid = Some(pgid);
+        let watchdog = browser::launch::Watchdog::start(pgid, None)
+            .inspect_err(|e| tracing::warn!(pgid, "no watchdog for the web server: {e}"))
+            .ok();
         self.servers.push(Server {
             info,
+            watchdog,
             exited: Some(exited.clone()),
             stopped: false,
         });
@@ -300,6 +308,9 @@ impl WebServers {
             if browser::launch::process_group_alive(pgid) {
                 tracing::warn!(pgid, "the web server ignored SIGTERM; killing it");
                 let _ = browser::launch::kill_process_group(pgid);
+            }
+            if let Some(mut watchdog) = server.watchdog.take() {
+                watchdog.disarm();
             }
         }
     }

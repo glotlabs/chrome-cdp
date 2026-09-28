@@ -292,3 +292,47 @@ async fn dropping_the_servers_kills_them() {
     drop(servers);
     assert!(gone(pgid).await);
 }
+
+/// Starts a web server on `E2E_HOLD_PORT`, prints its group, and waits
+/// to be killed: a chrome-cdp that dies without stopping it.
+#[test]
+#[ignore = "run by a_killed_chrome_cdp_leaves_no_server"]
+fn hold_helper() {
+    let Ok(port) = std::env::var("E2E_HOLD_PORT") else {
+        return;
+    };
+    let dir = std::env::var("E2E_HOLD_DIR").unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let config = helper(port.parse().unwrap(), "", &[]);
+        let servers = WebServers::start(&[config], Path::new(&dir)).await.unwrap();
+        println!("pgid {}", servers.servers()[0].pgid.unwrap());
+        std::future::pending::<()>().await;
+    });
+}
+
+#[tokio::test]
+async fn a_killed_chrome_cdp_leaves_no_server() {
+    let dir = tempfile::tempdir().unwrap();
+    let port = free_port();
+    let mut holder = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["hold_helper", "--exact", "--ignored", "--nocapture"])
+        .env("E2E_HOLD_PORT", port.to_string())
+        .env("E2E_HOLD_DIR", dir.path())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let out = BufReader::new(holder.stdout.take().unwrap());
+    let pgid: u32 = out
+        .lines()
+        .map_while(Result::ok)
+        .find_map(|line| line.strip_prefix("pgid ").map(|p| p.parse().unwrap()))
+        .expect("the holder printed the server's group");
+    assert_eq!(get(port), Some(200));
+    holder.kill().unwrap();
+    holder.wait().unwrap();
+    assert!(gone(pgid).await, "the server outlived chrome-cdp");
+}

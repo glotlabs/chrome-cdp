@@ -51,16 +51,18 @@ pub(crate) fn group_alive(pgid: u32) -> bool {
     sys::group_alive(pgid)
 }
 
-/// Kills Chrome's process group (and deletes `remove`) if chrome-cdp dies
-/// without calling [`Watchdog::disarm`].
+/// Kills a process group (Chrome's, or an E2E web server's) and deletes
+/// `remove` if chrome-cdp dies without calling [`Watchdog::disarm`]: a
+/// small `sh` in a group of its own waits on a pipe from us, whose end
+/// closes when we exit, however that happens.
 #[derive(Debug)]
-pub(crate) struct Watchdog {
+pub struct Watchdog {
     stdin: Option<ChildStdin>,
     child: Child,
 }
 
 impl Watchdog {
-    pub(crate) fn start(pgid: u32, remove: Option<&Path>) -> io::Result<Self> {
+    pub fn start(pgid: u32, remove: Option<&Path>) -> io::Result<Self> {
         let mut child = Command::new("/bin/sh")
             .arg("-c")
             .arg(WATCHDOG)
@@ -79,7 +81,7 @@ impl Watchdog {
     }
 
     /// Tells the watchdog that we cleaned up, and reaps it.
-    pub(crate) fn disarm(&mut self) {
+    pub fn disarm(&mut self) {
         if let Some(mut stdin) = self.stdin.take() {
             let _ = stdin.write_all(b"done\n");
         }
