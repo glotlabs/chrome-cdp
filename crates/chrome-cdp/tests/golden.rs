@@ -208,7 +208,10 @@ const CASES: &[Case] = &[
         args: &["init", "e2e", "--framework", "none"],
         modes: &["", "--json"],
         fixture: Fixture::Project(&[
-            (".chrome-cdp.toml", "[e2e]\nbase_url = \"http://localhost:8080\"\n"),
+            (
+                ".chrome-cdp.toml",
+                "[e2e]\nbase_url = \"http://localhost:8080\"\n",
+            ),
             (".gitignore", "node_modules/\n"),
             ("e2e/scenarios/example.cdp", "# mine\n"),
         ]),
