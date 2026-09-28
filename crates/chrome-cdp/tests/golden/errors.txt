@@ -1,0 +1,23 @@
+$ chrome-cdp errors --since 0
+exit: 0
+--- stdout
+#5 error failed to save Error: disk full
+    at /console/index.html:29:37
+#6 error Assertion failed: one is not two
+    at /console/index.html:30:13
+#7 error uncaught TypeError: Cannot read properties of null (reading 'items')
+    at failSync (/console/app.js:5:15)
+    at onclick (/console/index.html:12:42)
+
+$ chrome-cdp errors --since 0 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"cursor":7,"dropped":0,"entries":[{"column":37,"kind":"error","level":"error","line":29,"seq":5,"source":"console","stack":[{"column":37,"function":"","line":29,"url":"<site>/console/index.html"}],"text":"failed to save Error: disk full","time_ms":<ms>,"url":"<site>/console/index.html"},{"column":13,"kind":"assert","level":"error","line":30,"seq":6,"source":"console","stack":[{"column":13,"function":"","line":30,"url":"<site>/console/index.html"}],"text":"Assertion failed: one is not two","time_ms":<ms>,"url":"<site>/console/index.html"},{"column":15,"kind":"uncaught","level":"error","line":5,"seq":7,"source":"exception","stack":[{"column":15,"function":"failSync","line":5,"url":"<site>/console/app.js"},{"column":42,"function":"onclick","line":12,"url":"<site>/console/index.html"}],"text":"TypeError: Cannot read properties of null (reading 'items')","time_ms":<ms>,"url":"<site>/console/app.js"}],"skipped":0,"tab":"t1"}}
+
+$ chrome-cdp errors --since 0 -q
+exit: 0
+--- stdout
+failed to save Error: disk full
+Assertion failed: one is not two
+TypeError: Cannot read properties of null (reading 'items')
+

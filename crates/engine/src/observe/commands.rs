@@ -201,13 +201,14 @@ impl Engine {
 fn grep_regex(pattern: &str) -> Result<Regex, ErrorInfo> {
     Regex::new(pattern).map_err(|e| {
         let why = e.to_string();
-        let why = why.lines().last().unwrap_or_default().trim().to_owned();
+        let why = why.lines().last().unwrap_or_default().trim();
+        let why = why.strip_prefix("error: ").unwrap_or(why);
         ErrorInfo::new(
             ErrorKind::BadArgs,
             format!("--grep {pattern:?} is not a regular expression: {why}"),
         )
         .hint(Hint::text(
-            "escape special characters with \\, e.g. --grep 'fetch\\(' ",
+            "escape special characters with \\, e.g. --grep 'fetch\\('",
         ))
     })
 }

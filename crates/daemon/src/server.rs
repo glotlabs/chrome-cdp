@@ -352,6 +352,10 @@ impl Daemon {
                 Ok(p) => output(self.engine.clipboard(p).await),
                 Err(e) => Err(e),
             },
+            rpc::CONSOLE => match params(req.params) {
+                Ok(p) => output(self.engine.console(p).await),
+                Err(e) => Err(e),
+            },
             rpc::DOWNLOADS => match params(req.params) {
                 Ok(p) => output(self.engine.downloads(p)),
                 Err(e) => Err(e),
@@ -471,6 +475,9 @@ fn keep_settings(launch: &mut OpenRequest, newer: &OpenRequest) {
     }
     if newer.http_credentials.is_some() {
         launch.http_credentials.clone_from(&newer.http_credentials);
+    }
+    if newer.console_buffer.is_some() {
+        launch.console_buffer = newer.console_buffer;
     }
 }
 

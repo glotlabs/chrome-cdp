@@ -4,7 +4,8 @@
 //! navigation (milestone 3.3): `goto`, `back`, `forward` and `reload`;
 //! `wait` (milestone 3.4); `dialog` and `downloads` (milestone 3.5);
 //! `snapshot` (plan 04); and the read commands `find`, `text`, `html`,
-//! `attr`, `value`, `count`, `box` and `markdown` (milestone 4.5).
+//! `attr`, `value`, `count`, `box` and `markdown` (milestone 4.5); and
+//! `console` and `errors` (plan 06, milestone 6.1).
 //!
 //! Each one finds the session's daemon (starting it when the command needs
 //! a browser), sends one call, and returns the daemon's `Output` or
@@ -20,20 +21,20 @@ use daemon::paths::{Env, SessionPaths, check_name};
 use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
     Action, ActionRequest, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
-    DialogRequest, DownloadsRequest, ElementState, FindRequest, HttpCredentials, NavigateRequest,
-    Navigation, OpenRequest, Read, ReadRequest, SnapshotRequest, TabCloseRequest, TabNewRequest,
-    TabSelectRequest, TabsRequest, WaitFor, WaitRequest,
+    ConsoleRequest, DialogRequest, DownloadsRequest, ElementState, FindRequest, HttpCredentials,
+    NavigateRequest, Navigation, OpenRequest, Read, ReadRequest, SnapshotRequest, TabCloseRequest,
+    TabNewRequest, TabSelectRequest, TabsRequest, WaitFor, WaitRequest,
 };
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
-use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
 use serde_json::{Map, Value, json};
 use tokio::runtime::Runtime;
 
 use crate::cli::{
     AfterArgs, CdpArgs, CloseArgs, ConnectArgs, DEFAULT_TIMEOUT, DialogArgs, DialogCommand,
     DownloadsArgs, ElementStateArg, FindArgs, GlobalArgs, GotoArgs, HistoryArgs, IdleArgs,
-    OpenArgs, ReloadArgs, SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs, TabArgs,
-    TabCommand, TabsArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    LogReadArgs, OpenArgs, ReloadArgs, SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs,
+    TabArgs, TabCommand, TabsArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -193,6 +194,9 @@ fn open_in(
         ignore_https_errors: args.ignore_https_errors.then_some(true),
         dialogs: args.dialogs.map(crate::cli::Dialogs::to_engine),
         http_credentials,
+        console_buffer: args
+            .console_buffer
+            .map(|n| usize::try_from(n).unwrap_or(usize::MAX)),
         timeout_ms: millis(ctx.timeout),
     };
     if let Some(previous) = session.replaced.as_ref().and_then(|m| m.launch.as_ref()) {
@@ -241,6 +245,9 @@ fn keep_previous_options(request: &mut OpenRequest, previous: &OpenRequest) {
         request
             .http_credentials
             .clone_from(&previous.http_credentials);
+    }
+    if request.console_buffer.is_none() {
+        request.console_buffer = previous.console_buffer;
     }
 }
 
@@ -650,6 +657,86 @@ pub(crate) fn downloads(args: &DownloadsArgs, global: &GlobalArgs) -> Result<Out
     };
     ctx.runtime
         .block_on(client.call_output(rpc::DOWNLOADS, &request, ctx.timeout + QUICK))
+}
+
+/// How long one `--follow` call waits for new entries before asking
+/// again.
+const FOLLOW_POLL: Duration = Duration::from_secs(25);
+
+/// `console` and `errors` (`errors`): need a running session. With
+/// `--follow`, prints each batch of new entries as it comes and returns
+/// the last (empty) one.
+pub(crate) fn console(
+    read: &LogReadArgs,
+    errors: bool,
+    level: protocol::schema::Level,
+    global: &GlobalArgs,
+) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let mut request = ConsoleRequest {
+        errors,
+        tab: ctx.tab.clone(),
+        level: if errors {
+            protocol::schema::Level::Error
+        } else {
+            level
+        },
+        since: read.since,
+        grep: read.grep.clone(),
+        limit: read.limit,
+        wait_ms: 0,
+        sourcemaps: read.sourcemaps,
+        timeout_ms: millis(ctx.timeout),
+        max_chars: read.max_chars,
+    };
+    if !read.follow {
+        return ctx.runtime.block_on(client.call_output(
+            rpc::CONSOLE,
+            &request,
+            ctx.timeout + QUICK,
+        ));
+    }
+    // Until Ctrl-C, or `--timeout` if given.
+    let deadline = global.timeout.map(|t| std::time::Instant::now() + t);
+    let mode = global.mode();
+    let mut first = true;
+    loop {
+        let left = deadline.map(|d| d.saturating_duration_since(std::time::Instant::now()));
+        let wait = if first {
+            Duration::ZERO
+        } else {
+            left.unwrap_or(FOLLOW_POLL).min(FOLLOW_POLL)
+        };
+        request.wait_ms = millis(wait);
+        let mut output = ctx.runtime.block_on(client.call_output(
+            rpc::CONSOLE,
+            &request,
+            wait + ctx.timeout + QUICK,
+        ))?;
+        let shown = output.data["entries"]
+            .as_array()
+            .is_some_and(|e| !e.is_empty());
+        if first && mode == Mode::Text {
+            let tab = output.data["tab"].as_str().unwrap_or("the tab");
+            let what = if errors { "errors" } else { "console" };
+            crate::output::stderr(&format!("following {tab}'s {what}; Ctrl-C stops\n"));
+        }
+        first = false;
+        // From now on, what is new since the last batch.
+        request.since = engine::Since::Last;
+        if left.is_some_and(|l| l.is_zero()) {
+            if !shown {
+                output.text.clear();
+                output.quiet = Some(String::new());
+            }
+            return Ok(output);
+        }
+        if shown {
+            crate::output::print(mode, Ok(output));
+        }
+    }
 }
 
 /// The one condition `wait`'s arguments name (clap makes sure there is

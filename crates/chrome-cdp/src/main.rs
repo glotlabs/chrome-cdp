@@ -79,6 +79,15 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Wait(args)) => session::wait(&args, &cli.global),
         Some(Command::Dialog(args)) => session::dialog(&args, &cli.global),
         Some(Command::Downloads(args)) => session::downloads(&args, &cli.global),
+        Some(Command::Console(args)) => {
+            session::console(&args.read, false, args.level.to_level(), &cli.global)
+        }
+        Some(Command::Errors(args)) => session::console(
+            &args.read,
+            true,
+            protocol::schema::Level::Error,
+            &cli.global,
+        ),
         Some(Command::Clipboard(args)) => {
             let op = match &args.command {
                 ClipboardCommand::Read(_) => engine::ClipboardOp::Read,

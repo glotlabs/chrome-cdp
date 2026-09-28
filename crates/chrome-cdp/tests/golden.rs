@@ -667,6 +667,39 @@ const CASES: &[Case] = &[
         fixture: Fixture::Session,
     },
     Case {
+        name: "console",
+        args: &["console", "--since", "0"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/console/index.html"),
+    },
+    Case {
+        name: "console-none",
+        args: &["console"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "console-bad-since",
+        args: &["console", "--since", "yesterday"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "console-bad-grep",
+        args: &["console", "--grep", "fetch("],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "errors",
+        args: &["errors", "--since", "0"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/console/index.html"],
+            &["click", "#sync"],
+        ]),
+    },
+    Case {
         name: "goto-auth-required",
         args: &["goto", "{site}/auth/"],
         modes: ERR,
@@ -1056,6 +1089,7 @@ impl Normalizer {
             ("\"daemon_pid\":", &digits, "<pid>"),
             ("\"uptime_ms\":", &digits, "<ms>"),
             ("\"elapsed_ms\":", &digits, "<ms>"),
+            ("\"time_ms\":", &digits, "<ms>"),
             // A navigation's or wait's time: `"Title" (412ms)`.
             (
                 " (",

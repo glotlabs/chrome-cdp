@@ -1,0 +1,11 @@
+$ chrome-cdp console --grep 'fetch('
+exit: 2
+--- stderr
+error: --grep "fetch(" is not a regular expression: unclosed group
+  hint: escape special characters with \, e.g. --grep 'fetch\('
+
+$ chrome-cdp console --grep 'fetch(' --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"--grep \"fetch(\" is not a regular expression: unclosed group","hint":"escape special characters with \\, e.g. --grep 'fetch\\('"}}
+

@@ -1,0 +1,13 @@
+$ chrome-cdp console
+exit: 0
+--- stdout
+no new console entries in t1
+
+$ chrome-cdp console --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"cursor":0,"dropped":0,"entries":[],"skipped":0,"tab":"t1"}}
+
+$ chrome-cdp console -q
+exit: 0
+

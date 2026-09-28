@@ -727,6 +727,35 @@ Examples:
   chrome-cdp downloads -q         # one path per line")]
     Downloads(DownloadsArgs),
 
+    /// Show what the page logged: console calls, uncaught exceptions and
+    /// the browser's messages.
+    #[command(after_help = "\
+Every tab records its console from the moment it opens (the newest 1,000
+entries; see `open --console-buffer`). By default only entries this command
+has not shown before are printed, so running it again shows what is new.
+Stack frames of localhost pages are resolved with source maps.
+
+Examples:
+  chrome-cdp console
+  chrome-cdp console --level warn --since 0      # every warning and error so far
+  chrome-cdp console --since 30s --grep 'fetch|api'
+  chrome-cdp console --follow --timeout 1m       # keep printing new entries")]
+    Console(ConsoleArgs),
+
+    /// Show the page's errors: uncaught exceptions, console.error and
+    /// failed loads from its own origin.
+    #[command(after_help = "\
+The first thing to run when an action did not do what you expected. Like
+`console`, it shows only what it has not shown before; `--since 0` shows
+every error the tab kept. Stack frames of localhost pages are resolved with
+source maps, so they point at your original source files.
+
+Examples:
+  chrome-cdp errors
+  chrome-cdp errors --since 0 --limit 5
+  chrome-cdp errors --sourcemaps --tab t2")]
+    Errors(ErrorsArgs),
+
     /// Make one raw CDP call on the session's browser or current page.
     #[command(after_help = "\
 Starts the session's browser first if it has none.
@@ -852,6 +881,16 @@ pub(crate) struct OpenArgs {
         value_name = "USER:PASSWORD"
     )]
     pub(crate) http_credentials: Option<String>,
+
+    /// How many console entries each tab keeps (default 1,000). The
+    /// session keeps this setting.
+    #[arg(
+        long,
+        env = "CHROME_CDP_CONSOLE_BUFFER",
+        value_parser = clap::value_parser!(u64).range(1..=1_000_000),
+        value_name = "N"
+    )]
+    pub(crate) console_buffer: Option<u64>,
 
     #[command(flatten)]
     pub(crate) idle: IdleArgs,
@@ -1656,6 +1695,97 @@ pub(crate) struct DownloadsArgs {
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ConsoleArgs {
+    /// The least severe level shown.
+    #[arg(long, value_enum, default_value_t = LevelArg::Info, value_name = "LEVEL")]
+    pub(crate) level: LevelArg,
+
+    #[command(flatten)]
+    pub(crate) read: LogReadArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ErrorsArgs {
+    #[command(flatten)]
+    pub(crate) read: LogReadArgs,
+}
+
+/// What `console` and `errors` share.
+#[derive(Debug, Args)]
+pub(crate) struct LogReadArgs {
+    /// Where to start: `last` (what this command has not shown yet), an
+    /// entry number such as 12 (0 for all), or a duration such as 30s
+    /// (logged in the last 30 seconds).
+    #[arg(long, default_value = "last", value_parser = parse_since, value_name = "WHEN")]
+    pub(crate) since: engine::Since,
+
+    /// Only entries whose text or URL matches this regular expression.
+    #[arg(long, value_name = "REGEX")]
+    pub(crate) grep: Option<String>,
+
+    /// Show at most this many entries, the newest (0 = all).
+    #[arg(long, default_value_t = 50, value_name = "N")]
+    pub(crate) limit: usize,
+
+    /// Keep printing new entries as they come, until Ctrl-C (or
+    /// --timeout, if given).
+    #[arg(short, long)]
+    pub(crate) follow: bool,
+
+    /// Resolve stack frames with the scripts' source maps (always on for
+    /// localhost pages).
+    #[arg(long)]
+    pub(crate) sourcemaps: bool,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+/// `console --level`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum LevelArg {
+    /// Errors only.
+    Error,
+    /// Warnings and errors.
+    Warn,
+    /// Everything but debug messages.
+    Info,
+    /// Everything, `console.debug` and verbose browser messages too.
+    Debug,
+}
+
+impl LevelArg {
+    pub(crate) fn to_level(self) -> protocol::schema::Level {
+        match self {
+            Self::Error => protocol::schema::Level::Error,
+            Self::Warn => protocol::schema::Level::Warn,
+            Self::Info => protocol::schema::Level::Info,
+            Self::Debug => protocol::schema::Level::Debug,
+        }
+    }
+}
+
+/// Parses `--since`: `last`, an entry number (`12` or `#12`), or a
+/// duration (`30s`).
+pub(crate) fn parse_since(s: &str) -> Result<engine::Since, String> {
+    let s = s.trim();
+    if s == "last" {
+        return Ok(engine::Since::Last);
+    }
+    let number = s.strip_prefix('#').unwrap_or(s);
+    if let Ok(seq) = number.parse::<u64>() {
+        return Ok(engine::Since::Seq { seq });
+    }
+    let ago = parse_duration(s).map_err(|_| {
+        format!("`{s}` is not `last`, an entry number such as 12, or a duration such as 30s")
+    })?;
+    Ok(engine::Since::Ago {
+        ms: u64::try_from(ago.as_millis()).unwrap_or(u64::MAX),
+    })
 }
 
 #[derive(Debug, Args)]
