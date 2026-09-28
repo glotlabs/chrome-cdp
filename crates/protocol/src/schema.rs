@@ -738,9 +738,25 @@ pub struct BrowserInfo {
     /// Extra flags from `--chrome-arg`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub chrome_args: Vec<String>,
+    /// The unpacked extensions `--extension` loaded.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<ExtensionInfo>,
     /// The DevTools WebSocket URL (connected browsers).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
+}
+
+/// An unpacked extension `open --extension` loaded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExtensionInfo {
+    /// Its id, the host of its pages: `chrome-extension://<id>/…`.
+    pub id: String,
+    /// Its name, from its manifest.
+    pub name: String,
+    /// Its version, from its manifest.
+    pub version: String,
+    /// The directory it was loaded from.
+    pub path: String,
 }
 
 /// A launched browser's profile.

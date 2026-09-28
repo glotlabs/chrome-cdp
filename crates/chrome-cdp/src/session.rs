@@ -162,6 +162,7 @@ pub(crate) fn open(args: &OpenArgs, global: &GlobalArgs) -> Result<Output, Error
         .transpose()?;
     let launch = &args.launch;
     browser::launch::flags::check_extra(&launch.chrome_args)?;
+    let extensions = extension_dirs(&launch.extensions)?;
     if let Some(device) = &args.device {
         engine::find_device(device, &global.session)?;
     }
@@ -176,7 +177,15 @@ pub(crate) fn open(args: &OpenArgs, global: &GlobalArgs) -> Result<Output, Error
         .transpose()?;
     let ctx = Ctx::new(global)?;
     let mut session = ctx.start()?;
-    let result = open_in(&ctx, &mut session, args, url, credentials, state);
+    let result = open_in(
+        &ctx,
+        &mut session,
+        args,
+        url,
+        credentials,
+        state,
+        extensions,
+    );
     if result.is_err() {
         ctx.abandon(&mut session);
     }
@@ -190,6 +199,7 @@ fn open_in(
     url: Option<String>,
     http_credentials: Option<HttpCredentials>,
     state: Option<StateLoadRequest>,
+    extensions: Vec<PathBuf>,
 ) -> Result<Output, ErrorInfo> {
     let tab = ctx.tab.clone();
     let launch = &args.launch;
@@ -215,6 +225,7 @@ fn open_in(
         headed: launch.headed.then_some(true),
         profile: launch.profile(),
         chrome_args: launch.chrome_args(),
+        extensions,
         restart: args.restart,
         url,
         base_url: ctx.base_url.clone(),
@@ -270,6 +281,9 @@ fn keep_previous_options(request: &mut OpenRequest, previous: &OpenRequest) {
     if request.chrome_args.is_empty() {
         request.chrome_args.clone_from(&previous.chrome_args);
     }
+    if request.extensions.is_empty() {
+        request.extensions.clone_from(&previous.extensions);
+    }
     if request.follow_popups.is_none() {
         request.follow_popups = previous.follow_popups;
     }
@@ -296,6 +310,34 @@ fn keep_previous_options(request: &mut OpenRequest, previous: &OpenRequest) {
     if request.network_buffer.is_none() {
         request.network_buffer = previous.network_buffer;
     }
+}
+
+/// `--extension`s as absolute paths (the daemon has another working
+/// directory), each an unpacked extension's directory.
+fn extension_dirs(dirs: &[PathBuf]) -> Result<Vec<PathBuf>, ErrorInfo> {
+    let mut out: Vec<PathBuf> = Vec::with_capacity(dirs.len());
+    for dir in dirs {
+        let hint = || {
+            Hint::text(
+                "--extension takes an unpacked extension's directory, the one holding its manifest.json",
+            )
+        };
+        let abs = dir
+            .canonicalize()
+            .map_err(|e| bad_args(format!("--extension {}: {e}", dir.display())).hint(hint()))?;
+        if !abs.join("manifest.json").is_file() {
+            return Err(bad_args(format!(
+                "--extension {}: no manifest.json in {}",
+                dir.display(),
+                abs.display()
+            ))
+            .hint(hint()));
+        }
+        if !out.contains(&abs) {
+            out.push(abs);
+        }
+    }
+    Ok(out)
 }
 
 /// Parses `--http-credentials USER:PASSWORD` (`-` reads it from stdin).

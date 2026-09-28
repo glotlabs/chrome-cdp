@@ -36,6 +36,10 @@ pub struct OpenRequest {
     /// `--chrome-arg`s.
     #[serde(default)]
     pub chrome_args: Vec<String>,
+    /// `--extension`s: unpacked extensions' directories (absolute), loaded
+    /// at launch.
+    #[serde(default)]
+    pub extensions: Vec<PathBuf>,
     /// Close a running browser first, so the given options apply.
     #[serde(default)]
     pub restart: bool,

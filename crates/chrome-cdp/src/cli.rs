@@ -169,6 +169,8 @@ Each session (--session, default `default`) has its own background daemon
 and browser; later commands reuse them. Running open again is a no-op,
 unless it asks for other launch options: add --restart for those.
 The daemon closes the browser after --idle-timeout without commands.
+An --extension is loaded before the URL; open prints its id, so its pages
+(popup, options) open with goto chrome-extension://<id>/popup.html.
 
 Examples:
   chrome-cdp open https://example.com
@@ -179,7 +181,8 @@ Examples:
   chrome-cdp open --restart --chrome-arg=--window-size=1920,1080
   chrome-cdp open --follow-popups                   # popups become the active tab
   chrome-cdp open --dialogs dismiss                 # answer every dialog with Cancel
-  chrome-cdp open --http-credentials ada:s3cret http://localhost:8080/admin")]
+  chrome-cdp open --http-credentials ada:s3cret http://localhost:8080/admin
+  chrome-cdp open --extension ./my-extension         # prints its chrome-extension:// origin")]
     Open(OpenArgs),
 
     /// Attach the session to a browser that is already running.
@@ -3969,6 +3972,12 @@ pub(crate) struct LaunchArgs {
     /// --use-fake-ui-for-media-stream).
     #[arg(long)]
     pub(crate) fake_media: bool,
+
+    /// Load the unpacked extension in this directory (the one holding its
+    /// manifest.json); repeat it for more. Headless or headed, but not with
+    /// chrome-headless-shell.
+    #[arg(long = "extension", value_name = "DIR")]
+    pub(crate) extensions: Vec<PathBuf>,
 }
 
 impl LaunchArgs {

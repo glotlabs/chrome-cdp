@@ -23,6 +23,7 @@ pub fn opened(opened: &Opened) -> Output {
         (true, BrowserKind::Connected) => format!("connected session {session}: {browser}"),
         (false, _) => format!("session {session} is already open: {browser}"),
     };
+    extension_lines(&mut text, &data.browser);
     if let Some(device) = &data.device {
         let _ = write!(text, "\ndevice: {device}");
     }
@@ -51,6 +52,18 @@ pub fn opened(opened: &Opened) -> Output {
         .fold(Output::typed(data, text).quiet(quiet), Output::warning)
 }
 
+/// One line per `--extension`: its name, version, pages' origin and
+/// directory.
+fn extension_lines(text: &mut String, browser: &BrowserInfo) {
+    for e in &browser.extensions {
+        let _ = write!(
+            text,
+            "\nextension: {} {}, chrome-extension://{}/ ({})",
+            e.name, e.version, e.id, e.path
+        );
+    }
+}
+
 /// `status`.
 pub fn status(data: &StatusData) -> Output {
     let mut text = format!("session {}: {}", data.session, data.state.as_str());
@@ -60,6 +73,7 @@ pub fn status(data: &StatusData) -> Output {
     if let Some(browser) = &data.browser {
         let _ = write!(text, "\nbrowser: {}", describe(browser));
         chrome_line(&mut text, browser);
+        extension_lines(&mut text, browser);
     }
     if let Some(crash) = &data.crash {
         let _ = write!(text, "\ncrash: {crash}");

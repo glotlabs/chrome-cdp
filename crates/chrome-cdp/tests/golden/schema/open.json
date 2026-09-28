@@ -47,6 +47,13 @@
             "null"
           ]
         },
+        "extensions": {
+          "description": "The unpacked extensions `--extension` loaded.",
+          "items": {
+            "$ref": "#/$defs/ExtensionInfo"
+          },
+          "type": "array"
+        },
         "headless": {
           "description": "Whether it runs without a window (launched browsers).",
           "type": [
@@ -623,6 +630,34 @@
           "type": "object"
         }
       ]
+    },
+    "ExtensionInfo": {
+      "description": "An unpacked extension `open --extension` loaded.",
+      "properties": {
+        "id": {
+          "description": "Its id, the host of its pages: `chrome-extension://<id>/…`.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Its name, from its manifest.",
+          "type": "string"
+        },
+        "path": {
+          "description": "The directory it was loaded from.",
+          "type": "string"
+        },
+        "version": {
+          "description": "Its version, from its manifest.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "version",
+        "path"
+      ],
+      "type": "object"
     },
     "Note": {
       "description": "One labelled line of an error's text form.",

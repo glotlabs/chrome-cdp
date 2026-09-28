@@ -475,7 +475,11 @@ deleted when the session closes. `open --headed` opens a window,
 the directory, and `--chrome-arg=<flag>` adds a Chrome flag; `open --restart`
 applies new ones to a running session. Chrome never outlives its session
 daemon, even `kill -9`. [docs/chrome-flags.md](docs/chrome-flags.md) lists the flags and
-explains the sandbox and profile rules.
+explains the sandbox and profile rules. `open --extension <dir>` (repeatable)
+loads an unpacked extension, headless too, before the first page; `open`
+and `status` print its id, so `goto chrome-extension://<id>/popup.html`
+opens its pages. It works in Google Chrome as well as Chrome for Testing,
+but not in chrome-headless-shell.
 
 Every command prints its result on stdout and notes and errors on stderr,
 takes `--json` (one `{"ok":…}` object) and `-q`, and exits 0 ok, 1 action

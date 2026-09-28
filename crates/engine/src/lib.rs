@@ -34,6 +34,7 @@ mod downloads;
 mod emulate;
 mod endpoint;
 mod errors;
+mod extensions;
 mod frames;
 mod inject;
 mod injected;
@@ -173,6 +174,7 @@ enum Spec {
         headed: bool,
         profile: ProfileChoice,
         args: Vec<String>,
+        extensions: Vec<PathBuf>,
     },
     Connected {
         endpoint: String,
@@ -426,6 +428,7 @@ impl Engine {
             headed,
             profile: profile.clone(),
             args: req.chrome_args.clone(),
+            extensions: !req.extensions.is_empty(),
             log_file: self.chrome_log.clone(),
             timeout: millis(req.timeout_ms),
         };
@@ -445,14 +448,23 @@ impl Engine {
                 }
             })?;
         warnings.extend(launched.warnings.iter().cloned());
-        let info = launched_info(&chrome, &launched, &options);
+        let conn = launched.connection().clone();
+        let mut info = launched_info(&chrome, &launched, &options);
+        // Before any URL, so its content scripts run in the first page.
+        match extensions::load(&conn, &req.extensions, &self.session).await {
+            Ok(loaded) => info.extensions = loaded,
+            Err(e) => {
+                launched.close().await;
+                return Err(e);
+            }
+        }
         let spec = Spec::Launched {
             chrome: chrome.path.clone(),
             headed,
             profile,
             args: req.chrome_args.clone(),
+            extensions: req.extensions.clone(),
         };
-        let conn = launched.connection().clone();
         let running = self.install(conn, info, spec, Some(launched));
         self.init_tabs(running, millis(req.timeout_ms)).await
     }
@@ -555,6 +567,7 @@ impl Engine {
             headless: None,
             profile: None,
             chrome_args: Vec::new(),
+            extensions: Vec::new(),
             endpoint: Some(req.endpoint.clone()),
         };
         let spec = Spec::Connected {
@@ -666,6 +679,7 @@ impl Engine {
                 headed,
                 profile,
                 args,
+                extensions,
             } => {
                 let asked_chrome = req
                     .chrome
@@ -689,12 +703,16 @@ impl Engine {
                 if !req.chrome_args.is_empty() && req.chrome_args != *args {
                     differences.push("--chrome-arg");
                 }
+                if !req.extensions.is_empty() && req.extensions != *extensions {
+                    differences.push("--extension");
+                }
             }
             Spec::Connected { .. } => {
                 let launch_options = req.chrome_flag.is_some()
                     || req.headed.is_some()
                     || req.profile.is_some()
-                    || !req.chrome_args.is_empty();
+                    || !req.chrome_args.is_empty()
+                    || !req.extensions.is_empty();
                 if launch_options {
                     differences.push("launch options (it is connected to a browser)");
                 }
@@ -848,6 +866,7 @@ fn launched_info(chrome: &Chrome, launched: &Launched, options: &LaunchOptions) 
             dir: launched.profile_dir().display().to_string(),
         }),
         chrome_args: options.args.clone(),
+        extensions: Vec::new(),
         endpoint: None,
     }
 }
