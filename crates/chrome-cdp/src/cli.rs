@@ -813,7 +813,12 @@ Examples:
 
     /// Make one raw CDP call on the session's browser or current page.
     #[command(after_help = "\
-Starts the session's browser first if it has none.
+Starts the session's browser first if it has none. --tab and --frame send
+the call to a page. --listen also prints the events of the call's session
+that follow it, one per line, until --count of them came (1 by default; 0
+keeps them all until --timeout); with no method, it only listens. The page
+domains chrome-cdp uses (Page, Runtime, Network, Log, …) are on; send
+another's enable call to hear its events.
 Methods: https://chromedevtools.github.io/devtools-protocol/
 
 Examples:
@@ -821,8 +826,10 @@ Examples:
   chrome-cdp cdp --target page Runtime.evaluate '{\"expression\":\"1+1\"}'
   echo '{\"expression\":\"1+1\"}' | chrome-cdp cdp --target page Runtime.evaluate -
   chrome-cdp cdp Target.getTargets --session shop
-  chrome-cdp cdp --target page --tab t2 Page.reload
-  chrome-cdp cdp --frame checkout.example Runtime.evaluate '{\"expression\":\"location.href\"}'")]
+  chrome-cdp cdp --tab t2 Page.reload
+  chrome-cdp cdp --frame checkout.example Runtime.evaluate '{\"expression\":\"location.href\"}'
+  chrome-cdp cdp --target page --listen Page.loadEventFired Page.reload
+  chrome-cdp cdp --target page --listen 'Network.*' --count 0 --timeout 5s")]
     Cdp(CdpArgs),
 
     /// The session daemon; other commands start it.
@@ -2174,17 +2181,18 @@ pub(crate) struct SessionsArgs {}
 
 #[derive(Debug, Args)]
 pub(crate) struct CdpArgs {
-    /// The CDP method, e.g. Browser.getVersion.
-    #[arg(value_name = "Domain.method")]
-    pub(crate) method: String,
+    /// The CDP method, e.g. Browser.getVersion; optional with --listen.
+    #[arg(value_name = "Domain.method", required_unless_present = "listen")]
+    pub(crate) method: Option<String>,
 
     /// Params as a JSON object; `-` reads them from stdin.
     #[arg(value_name = "JSON")]
     pub(crate) params: Option<String>,
 
     /// Send the call to the browser, or to the active tab (or --tab).
-    #[arg(long, value_enum, default_value_t = Target::Browser)]
-    pub(crate) target: Target,
+    /// Default: page with --tab or --frame, else browser.
+    #[arg(long, value_enum)]
+    pub(crate) target: Option<Target>,
 
     /// Send the call to a frame of the tab: its name attribute, a part of
     /// its URL, or its id. Implies --target page. A cross-site frame has
@@ -2192,6 +2200,15 @@ pub(crate) struct CdpArgs {
     /// world unless the params name a context.
     #[arg(long, value_name = "FRAME")]
     pub(crate) frame: Option<String>,
+
+    /// Also print these events of the call's session (Domain.event or
+    /// Domain.*; repeat it or separate them with commas).
+    #[arg(long, value_name = "EVENT", value_delimiter = ',')]
+    pub(crate) listen: Vec<String>,
+
+    /// How many events to wait for (0: all of them until --timeout).
+    #[arg(long, value_name = "N", requires = "listen")]
+    pub(crate) count: Option<usize>,
 
     /// Bound the output to this many characters (0 = no limit). With --json,
     /// long strings and arrays in `data` are shortened instead.

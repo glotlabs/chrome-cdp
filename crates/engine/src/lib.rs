@@ -68,6 +68,7 @@ pub use input::{ActionPoint, Checks, check_action, parse_modifiers};
 pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, parse_locator};
 pub use navigate::normalize_url;
 pub use observe::{RESOURCE_TYPES, check_screenshot};
+pub use raw::check_cdp;
 pub use read::check_read;
 pub use request::{
     Action, ActionRequest, Button, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,

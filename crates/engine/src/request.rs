@@ -137,11 +137,12 @@ pub enum Target {
     Page,
 }
 
-/// `cdp`: one raw CDP call.
+/// `cdp`: one raw CDP call, and the events that follow it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CdpRequest {
-    /// `Domain.method`.
-    pub method: String,
+    /// `Domain.method`; `None` only listens (`--listen`).
+    #[serde(default)]
+    pub method: Option<String>,
     /// The params object.
     #[serde(default)]
     pub params: Map<String, Value>,
@@ -155,7 +156,15 @@ pub struct CdpRequest {
     /// world. Its id, `name` or a part of its URL.
     #[serde(default)]
     pub frame: Option<String>,
-    /// Bounds the call.
+    /// `--listen`: the events to capture from the call's session, each
+    /// `Domain.event` or `Domain.*`.
+    #[serde(default)]
+    pub listen: Vec<String>,
+    /// `--count`: how many events to wait for; 0 captures them until the
+    /// timeout.
+    #[serde(default)]
+    pub count: usize,
+    /// Bounds the call, and the wait for events.
     pub timeout_ms: u64,
     /// The output budget (0 = none).
     pub max_chars: usize,

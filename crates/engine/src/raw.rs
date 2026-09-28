@@ -1,15 +1,21 @@
 //! `cdp <Domain.method> [json]`: one raw CDP call on the session's
 //! browser or current page, the escape hatch (overview principle 6).
+//! `--listen` also captures the events of the call's session that follow
+//! it (or, with no method, just listens).
 //!
 //! A page call returns at once when the page opens a dialog or crashes
 //! meanwhile (see [`crate::interrupt`]). One sent to a tab that already
 //! has a dialog open (or crashed) goes out as is, since it may be what
 //! answers it (`Page.handleJavaScriptDialog`, `Page.reload`); if the tab
-//! is still blocked afterwards, the output says so.
+//! is still blocked afterwards, the output says so. Events are listened
+//! for after the call without the tab's lock, so other commands on the
+//! tab run meanwhile (and can be what makes them fire).
 
-use cdp::CdpError;
-use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
-use serde_json::Value;
+use cdp::{CdpError, RawEventStream, Session};
+use protocol::schema::{CdpEvent, CdpListenData};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
+use serde_json::{Map, Value, json};
+use tokio::time::Instant;
 
 use crate::Engine;
 use crate::errors::from_cdp;
@@ -17,18 +23,108 @@ use crate::frames::World;
 use crate::request::{CdpRequest, Target, millis};
 use crate::tabs::FrameContext;
 
+/// Checks a `cdp` request without a browser: it needs a method or
+/// events to listen for, and event names must be `Domain.event` or
+/// `Domain.*`.
+pub fn check_cdp(req: &CdpRequest) -> Result<(), ErrorInfo> {
+    if req.method.is_none() && req.listen.is_empty() {
+        return Err(
+            ErrorInfo::new(ErrorKind::BadArgs, "cdp needs a method, or --listen")
+                .hint(Hint::run(Cmd::new("cdp").arg("Browser.getVersion"))),
+        );
+    }
+    for name in &req.listen {
+        let valid = name.split_once('.').is_some_and(|(domain, event)| {
+            !domain.is_empty()
+                && domain.chars().all(|c| c.is_ascii_alphanumeric())
+                && (event == "*"
+                    || (!event.is_empty() && event.chars().all(|c| c.is_ascii_alphanumeric())))
+        });
+        if !valid {
+            return Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("`{name}` is not an event name; use Domain.event or Domain.*"),
+            )
+            .hint(Hint::run(
+                Cmd::new("cdp")
+                    .flag("target", "page")
+                    .flag("listen", "Page.loadEventFired")
+                    .arg("Page.reload"),
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Whether event `method` is one of `listen`'s.
+fn wanted(listen: &[String], method: &str) -> bool {
+    listen.iter().any(|name| match name.strip_suffix(".*") {
+        Some(domain) => method
+            .strip_prefix(domain)
+            .is_some_and(|rest| rest.starts_with('.')),
+        None => name == method,
+    })
+}
+
+/// Makes the call (if any) on `session`, subscribed to its events first
+/// when `listen` is set, so none that the call causes is missed.
+async fn call_listening(
+    session: &Session,
+    method: Option<&str>,
+    params: Value,
+    listen: bool,
+) -> cdp::Result<(Option<Value>, Option<RawEventStream>)> {
+    let events = listen.then(|| session.events());
+    let result = match method {
+        Some(method) => Some(session.call_raw(method, params).await?),
+        None => None,
+    };
+    Ok((result, events))
+}
+
+/// The most events one call captures (with `--count 0`).
+const MAX_EVENTS: usize = 10_000;
+
+/// The events of `stream` that `listen` names, until `count` of them came
+/// (0: until the deadline, at most [`MAX_EVENTS`]), the deadline passed,
+/// or the session went away.
+async fn collect(
+    mut stream: RawEventStream,
+    listen: &[String],
+    count: usize,
+    deadline: Instant,
+) -> Vec<CdpEvent> {
+    let want = if count == 0 { MAX_EVENTS } else { count };
+    let mut events = Vec::new();
+    while events.len() < want {
+        match tokio::time::timeout_at(deadline, stream.next()).await {
+            Ok(Some(event)) if wanted(listen, &event.method) => events.push(CdpEvent {
+                method: event.method.clone(),
+                params: event.params.clone(),
+            }),
+            Ok(Some(_)) => {}
+            Ok(None) | Err(_) => break,
+        }
+    }
+    events
+}
+
 impl Engine {
     /// Makes the call and returns Chrome's result object. A page call holds
-    /// the page's lock.
+    /// the page's lock. With `--listen`, then waits for the events.
     pub async fn cdp(&self, req: CdpRequest) -> Result<Output, ErrorInfo> {
+        check_cdp(&req)?;
         let running = self.running()?;
         let timeout = millis(req.timeout_ms);
+        let deadline = Instant::now() + timeout;
         let CdpRequest {
             method,
             params,
             target,
             tab,
             frame,
+            listen,
+            count,
             max_chars,
             ..
         } = req;
@@ -45,64 +141,146 @@ impl Engine {
             )));
         }
         let mark = running.tabs.mark();
+        let method = method.as_deref();
         let params = Value::Object(params);
+        let listening = !listen.is_empty();
         let mut blocked = None;
+        let mut page = None;
         let result = match target {
             Target::Browser => {
-                running
-                    .conn
-                    .browser()
-                    .with_timeout(timeout)
-                    .call_raw(&method, params)
-                    .await
+                let session = running.conn.browser().with_timeout(timeout);
+                call_listening(&session, method, params, listening).await
             }
             Target::Page => {
-                let page = self.page(&running, tab.as_deref(), timeout).await?;
-                let _tab = self.tabs.lock(&page.target_id).await;
+                let tab_page = self.page(&running, tab.as_deref(), timeout).await?;
+                let _tab = self.tabs.lock(&tab_page.target_id).await;
                 let call = async {
-                    Ok(match frame.as_deref() {
-                        Some(frame) => {
-                            let call = |context: &FrameContext| {
-                                let params =
-                                    in_context(&method, params.clone(), context.context_id);
-                                let session = context.session.with_timeout(timeout);
-                                session.call_raw(&method, params)
-                            };
-                            let frame = Some(frame);
-                            self.in_frame(&running, &page, frame, World::Main, timeout, call)
-                                .await?
-                        }
-                        None => {
-                            page.session
-                                .with_timeout(timeout)
-                                .call_raw(&method, params)
-                                .await
-                        }
-                    })
+                    let Some(frame) = frame.as_deref() else {
+                        let session = tab_page.session.with_timeout(timeout);
+                        return Ok(call_listening(&session, method, params, listening).await);
+                    };
+                    let call = |context: &FrameContext| {
+                        let params = match method {
+                            Some(m) => in_context(m, params.clone(), context.context_id),
+                            None => Value::Null,
+                        };
+                        let session = context.session.with_timeout(timeout);
+                        async move { call_listening(&session, method, params, listening).await }
+                    };
+                    self.in_frame(&running, &tab_page, Some(frame), World::Main, timeout, call)
+                        .await
                 };
-                let result = self.unless_blocked(&running, &page, mark, call).await?;
+                let result = self.unless_blocked(&running, &tab_page, mark, call).await?;
                 // Still blocked after the call (it did not answer the
                 // dialog or reload the page): say so.
-                blocked = self.blocked_warning(&running, &page);
+                blocked = self.blocked_warning(&running, &tab_page);
+                page = Some(tab_page);
                 result
             }
         };
-        let value = result.map_err(|e| {
-            let info = self.cdp_error(&e, &method, target);
+        let (value, events) = result.map_err(|e| {
+            let info = self.cdp_error(&e, method.unwrap_or_default(), target);
             match &blocked {
                 Some(blocked) => info.note("page", blocked.clone()),
                 None => info,
             }
         })?;
-        let pretty = serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string());
-        let compact = value.to_string();
-        let mut output = Output::new(value, pretty)
-            .quiet(compact)
-            .limit(max_chars, "--max-chars 0 for all of it");
+        let mut output = match events {
+            None => {
+                let value = value.unwrap_or_else(|| json!({}));
+                let pretty =
+                    serde_json::to_string_pretty(&value).unwrap_or_else(|_| value.to_string());
+                let compact = value.to_string();
+                Output::new(value, pretty)
+                    .quiet(compact)
+                    .limit(max_chars, "--max-chars 0 for all of it")
+            }
+            Some(stream) => {
+                let events = collect(stream, &listen, count, deadline).await;
+                // Blocked by now, maybe while listening.
+                if let Some(page) = &page {
+                    blocked = self.blocked_warning(&running, page);
+                }
+                self.listened(value, events, &listen, count, timeout, max_chars)?
+            }
+        };
         if let Some(blocked) = blocked {
             output = output.warning(blocked);
         }
         Ok(self.report_events(&running, mark, output, None).await)
+    }
+
+    /// The output of a call with `--listen`: the result, then one line per
+    /// event (`Page.loadEventFired {"timestamp":…}`). No event at all when
+    /// `--count` asked for some is a timeout.
+    fn listened(
+        &self,
+        value: Option<Value>,
+        events: Vec<CdpEvent>,
+        listen: &[String],
+        count: usize,
+        timeout: std::time::Duration,
+        max_chars: usize,
+    ) -> Result<Output, ErrorInfo> {
+        let names = listen.join(", ");
+        let waited = format::duration(timeout);
+        if count > 0 && events.is_empty() {
+            let mut info = ErrorInfo::new(
+                ErrorKind::Timeout,
+                format!("no {names} event within {waited}"),
+            )
+            .hint(
+                Hint::run(
+                    Cmd::new("cdp")
+                        .session(&self.session)
+                        .flag("target", "page")
+                        .flag("listen", "Animation.*")
+                        .arg("Animation.enable"),
+                )
+                .why("a domain that is off sends no events; its enable call turns them on")
+                .or(format!(
+                    "a longer --timeout, e.g. --timeout {}",
+                    format::duration(timeout * 2)
+                )),
+            );
+            if let Some(value) = &value {
+                info = info.details(json!({ "result": value }));
+            }
+            return Err(info);
+        }
+        let mut text = String::new();
+        let mut quiet = String::new();
+        if let Some(value) = &value {
+            text = serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string());
+            text.push('\n');
+            quiet = value.to_string();
+            quiet.push('\n');
+        }
+        for event in &events {
+            let line = format!("{} {}\n", event.method, event.params);
+            text.push_str(&line);
+            quiet.push_str(&line);
+        }
+        let shown = events.len();
+        let result = value.and_then(|v| match v {
+            Value::Object(map) => Some(map),
+            _ => None::<Map<String, Value>>,
+        });
+        let mut output = Output::typed(&CdpListenData { result, events }, text.trim_end())
+            .quiet(quiet.trim_end())
+            .limit(
+                max_chars,
+                "--max-chars 0 for all of it, or --count N for fewer events",
+            );
+        if count == 0 && shown == 0 {
+            output = output.warning(format!("no {names} event within {waited}"));
+        } else if count > 0 && shown < count {
+            output = output.warning(format!(
+                "only {shown} of {count} {names} events within {waited}; a longer --timeout \
+                 waits for more"
+            ));
+        }
+        Ok(output)
     }
 
     fn cdp_error(&self, e: &CdpError, method: &str, target: Target) -> ErrorInfo {

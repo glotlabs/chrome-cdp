@@ -1,0 +1,11 @@
+$ chrome-cdp cdp --target page --listen Animation.animationCreated --timeout 300ms Runtime.evaluate '{"expression":"1"}'
+exit: 3
+--- stderr
+error: no Animation.animationCreated event within 300ms
+  hint: chrome-cdp cdp --target page --listen 'Animation.*' Animation.enable   (a domain that is off sends no events; its enable call turns them on), or a longer --timeout, e.g. --timeout 600ms
+
+$ chrome-cdp cdp --target page --listen Animation.animationCreated --timeout 300ms Runtime.evaluate '{"expression":"1"}' --json
+exit: 3
+--- stdout
+{"ok":false,"error":{"kind":"Timeout","message":"no Animation.animationCreated event within 300ms","hint":"chrome-cdp cdp --target page --listen 'Animation.*' Animation.enable   (a domain that is off sends no events; its enable call turns them on), or a longer --timeout, e.g. --timeout 600ms","details":{"result":{"result":{"description":"1","type":"number","value":1}}}}}
+

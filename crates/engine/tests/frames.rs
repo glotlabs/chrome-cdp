@@ -330,11 +330,13 @@ async fn cdp_calls_reach_a_frame_and_its_main_world() {
     let cdp = async |method: &str, params: Value, frame: &str| {
         engine
             .cdp(CdpRequest {
-                method: method.into(),
+                method: Some(method.into()),
                 params: params.as_object().unwrap().clone(),
                 target: Target::Page,
                 tab: None,
                 frame: Some(frame.into()),
+                listen: Vec::new(),
+                count: 0,
                 timeout_ms: TIMEOUT_MS,
                 max_chars: 0,
             })

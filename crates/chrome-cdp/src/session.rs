@@ -24,8 +24,8 @@ use daemon::paths::{Env, SessionPaths, check_name};
 use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
     Action, ActionRequest, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
-    ConsoleRequest, DialogRequest, DownloadsRequest, ElementState, FindRequest, HttpCredentials,
-    ImageFormat, NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest,
+    ConsoleRequest, DialogRequest, DownloadsRequest, ElementState, FindRequest,
+    HttpCredentials, ImageFormat, NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest,
     NetworkShowRequest, OpenRequest, PdfRequest, Read, ReadRequest, ScreenshotRequest,
     SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, WaitFor,
     WaitRequest,
@@ -37,10 +37,10 @@ use tokio::runtime::Runtime;
 
 use crate::cli::{
     AfterArgs, CdpArgs, CloseArgs, ConnectArgs, DEFAULT_TIMEOUT, DialogArgs, DialogCommand,
-    DownloadsArgs, ElementStateArg, FindArgs, GlobalArgs, GotoArgs, HistoryArgs, IdleArgs,
-    ImageFormatArg, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, ReloadArgs,
-    ScreenshotArgs, SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs, TabArgs, TabCommand,
-    TabsArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    DownloadsArgs, ElementStateArg, FindArgs, GlobalArgs, GotoArgs, HistoryArgs,
+    IdleArgs, ImageFormatArg, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs,
+    ReloadArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs, TabArgs,
+    TabCommand, TabsArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -306,24 +306,34 @@ pub(crate) fn connect(args: &ConnectArgs, global: &GlobalArgs) -> Result<Output,
 /// `cdp <Domain.method> [json]`.
 pub(crate) fn cdp(args: &CdpArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     // Check everything that needs no browser before starting one.
-    check_method(&args.method)?;
+    if let Some(method) = &args.method {
+        check_method(method)?;
+    }
     let params = parse_params(args.params.as_deref())?;
     check_tab(global.tab.as_deref())?;
     let ctx = Ctx::new(global)?;
-    let (mut session, warnings) = with_browser(&ctx)?;
+    let target = match args.target {
+        Some(target) => target.to_engine(),
+        None if args.frame.is_some() || ctx.tab.is_some() => engine::Target::Page,
+        None => engine::Target::Browser,
+    };
     let request = CdpRequest {
         method: args.method.clone(),
         params,
         target: if args.frame.is_some() {
             engine::Target::Page
         } else {
-            args.target.to_engine()
+            target
         },
         tab: ctx.tab.clone(),
         frame: args.frame.clone(),
+        listen: args.listen.clone(),
+        count: args.count.unwrap_or(1),
         timeout_ms: millis(ctx.timeout),
         max_chars: args.max_chars,
     };
+    engine::check_cdp(&request)?;
+    let (mut session, warnings) = with_browser(&ctx)?;
     let wait = ctx.timeout * 2 + Duration::from_secs(10);
     let output = ctx
         .runtime

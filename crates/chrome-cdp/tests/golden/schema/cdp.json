@@ -30,6 +30,59 @@
       ],
       "type": "object"
     },
+    "CdpData": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CdpListenData",
+          "description": "With `--listen`: the call's result and the events."
+        },
+        {
+          "additionalProperties": true,
+          "description": "Chrome's result object, as it came.",
+          "type": "object"
+        }
+      ],
+      "description": "`data` of `chrome-cdp cdp --json`."
+    },
+    "CdpEvent": {
+      "description": "One raw CDP event.",
+      "properties": {
+        "method": {
+          "description": "`Domain.event`.",
+          "type": "string"
+        },
+        "params": true
+      },
+      "required": [
+        "method",
+        "params"
+      ],
+      "type": "object"
+    },
+    "CdpListenData": {
+      "description": "`data` of `chrome-cdp cdp --listen … --json`.",
+      "properties": {
+        "events": {
+          "description": "The events captured, in the order they came.",
+          "items": {
+            "$ref": "#/$defs/CdpEvent"
+          },
+          "type": "array"
+        },
+        "result": {
+          "additionalProperties": true,
+          "description": "The call's result object; absent when no method was given.",
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "events"
+      ],
+      "type": "object"
+    },
     "DownloadInfo": {
       "description": "A file the browser downloaded (or is downloading) into the session's\n`downloads` directory.",
       "properties": {
@@ -548,9 +601,8 @@
     "OkEnvelope": {
       "properties": {
         "data": {
-          "additionalProperties": true,
-          "description": "The command's result.",
-          "type": "object"
+          "$ref": "#/$defs/CdpData",
+          "description": "The command's result."
         },
         "events": {
           "default": [],

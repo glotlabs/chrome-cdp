@@ -119,11 +119,13 @@ async fn cdp(engine: &Engine, method: &str, params: Value) -> Value {
     };
     engine
         .cdp(CdpRequest {
-            method: method.to_owned(),
+            method: Some(method.to_owned()),
             params,
             target: Target::Page,
             tab: None,
             frame: None,
+            listen: Vec::new(),
+            count: 0,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })

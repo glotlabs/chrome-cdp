@@ -739,6 +739,28 @@ const CASES: &[Case] = &[
         fixture: Fixture::None,
     },
     Case {
+        name: "cdp-listen-none",
+        args: &[
+            "cdp",
+            "--target",
+            "page",
+            "--listen",
+            "Animation.animationCreated",
+            "--timeout",
+            "300ms",
+            "Runtime.evaluate",
+            r#"{"expression":"1"}"#,
+        ],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "cdp-listen-bad-event",
+        args: &["cdp", "--listen", "loadEventFired"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
         name: "pdf-bad-margin",
         args: &["pdf", "--margin", "1cm,2"],
         modes: ERR,

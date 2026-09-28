@@ -1,0 +1,11 @@
+$ chrome-cdp cdp --listen loadEventFired
+exit: 2
+--- stderr
+error: `loadEventFired` is not an event name; use Domain.event or Domain.*
+  hint: chrome-cdp cdp --target page --listen Page.loadEventFired Page.reload
+
+$ chrome-cdp cdp --listen loadEventFired --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"`loadEventFired` is not an event name; use Domain.event or Domain.*","hint":"chrome-cdp cdp --target page --listen Page.loadEventFired Page.reload"}}
+

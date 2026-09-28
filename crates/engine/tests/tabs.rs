@@ -51,11 +51,13 @@ async fn eval(engine: &Engine, tab: Option<&str>, expression: &str) -> Value {
     let params = json!({ "expression": expression, "returnByValue": true });
     let output = engine
         .cdp(CdpRequest {
-            method: "Runtime.evaluate".into(),
+            method: Some("Runtime.evaluate".into()),
             params: params.as_object().unwrap().clone(),
             target: Target::Page,
             tab: tab.map(str::to_owned),
             frame: None,
+            listen: Vec::new(),
+            count: 0,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })
@@ -154,11 +156,13 @@ async fn cross_site_frames_are_attached_set_up_and_resumed() {
     // auto-attach.
     let targets = engine
         .cdp(CdpRequest {
-            method: "Target.getTargets".into(),
+            method: Some("Target.getTargets".into()),
             params: serde_json::Map::new(),
             target: Target::Browser,
             tab: None,
             frame: None,
+            listen: Vec::new(),
+            count: 0,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })

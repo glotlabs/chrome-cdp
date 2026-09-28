@@ -88,8 +88,8 @@ pub const COMMANDS: &[CommandSchema] = &[
     },
     CommandSchema {
         name: "cdp",
-        summary: "the raw CDP result object",
-        schema: || schema_for!(Envelope<Map<String, Value>>),
+        summary: "the raw CDP result object; with --listen, the result and the events captured",
+        schema: || schema_for!(Envelope<CdpData>),
     },
     CommandSchema {
         name: "tabs",
@@ -1114,6 +1114,34 @@ pub struct PdfData {
     /// The paper size: `Letter`, `A4`, …
     pub paper: String,
     pub landscape: bool,
+}
+
+/// `data` of `chrome-cdp cdp --json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum CdpData {
+    /// With `--listen`: the call's result and the events.
+    Listened(CdpListenData),
+    /// Chrome's result object, as it came.
+    Result(Map<String, Value>),
+}
+
+/// `data` of `chrome-cdp cdp --listen … --json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CdpListenData {
+    /// The call's result object; absent when no method was given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<Map<String, Value>>,
+    /// The events captured, in the order they came.
+    pub events: Vec<CdpEvent>,
+}
+
+/// One raw CDP event.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CdpEvent {
+    /// `Domain.event`.
+    pub method: String,
+    pub params: Value,
 }
 
 /// `data` of `chrome-cdp snapshot --json`.
