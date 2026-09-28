@@ -1,0 +1,15 @@
+$ chrome-cdp expect request POST /mock/api/orders --json-body '{"qty":2}'
+exit: 0
+--- stdout
+passed: request POST /mock/api/orders --json-body '{"qty":2}': 1 request (<ms>)
+
+$ chrome-cdp expect request POST /mock/api/orders --json-body '{"qty":2}' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"actual":1,"assertion":"request POST /mock/api/orders --json-body '{\"qty\":2}'","count":1,"elapsed_ms":<ms>,"expected":"a request POST /mock/api/orders with json {\"qty\":2}","retries":<n>}}
+
+$ chrome-cdp expect request POST /mock/api/orders --json-body '{"qty":2}' -q
+exit: 0
+--- stdout
+1
+

@@ -1,0 +1,11 @@
+$ chrome-cdp mock log --unmatched
+exit: 0
+--- stdout
+#2 t1 GET <site>/mock/api/cart?user=7 xhr → unmatched, fulfill 501 (scope of base)
+  closest mock: cart.toml:3 "cart": path differs: expects /mock/api/carts, got /mock/api/cart
+
+$ chrome-cdp mock log --unmatched --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"log":[{"closest":[{"at":"cart.toml:3","file":"<mocks>/cart.toml","line":3,"matches":false,"name":"cart","reason":"path differs: expects /mock/api/carts, got /mock/api/cart","set":"cart"}],"method":"GET","outcome":"unmatched, fulfill 501","policy":"fail","resource_type":"xhr","seq":2,"tab":"t1","time_ms":<ms>,"unmatched":"base","url":"<site>/mock/api/cart?user=7"}]}}
+

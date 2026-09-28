@@ -1,0 +1,6 @@
+# Plan 11.5's unmatched diagnostics: a mock whose path is a letter off
+# from the app's /mock/api/cart. It has no scope; base's owns the cart.
+[[mock]]
+name = "cart"
+match = { method = "GET", path = "/mock/api/carts" }
+respond = { json = { items = [] } }

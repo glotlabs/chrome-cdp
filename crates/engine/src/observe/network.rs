@@ -407,7 +407,12 @@ impl Engine {
     }
 
     /// The request body: kept in the log if short, else asked of Chrome.
-    async fn request_body(&self, running: &Running, record: &Record, timeout: Duration) -> Body {
+    pub(crate) async fn request_body(
+        &self,
+        running: &Running,
+        record: &Record,
+        timeout: Duration,
+    ) -> Body {
         if let Some(data) = &record.post_data {
             return Body {
                 text: Some(data.clone()),

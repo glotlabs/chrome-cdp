@@ -1,6 +1,7 @@
 //! Mock sets (`mock use|off|list|log|reset|explain`; plan 11, milestone
 //! 11.2) and their state (`mock state|seed`, `expect mock-state`;
-//! milestone 11.3) against a real Chrome (`CHROME_PATH`; skipped without it unless
+//! milestone 11.3), `expect request` and unmatched diagnostics
+//! (milestone 11.5) against a real Chrome (`CHROME_PATH`; skipped without it unless
 //! `CHROME_CDP_REQUIRE_CHROME` is set), the fixture site's `mock/` page and
 //! its mock files in `mock/mocks/`.
 
@@ -14,7 +15,7 @@ use engine::{
     EmulateRequest, EmulationChange, Engine, EvalRequest, EvalWorld, ExpectRequest, Expectation,
     MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest, MockSeedRequest,
     MockStateCheck, MockStateRequest, MockUseRequest, NavigateRequest, Navigation, OpenRequest,
-    RouteAction, RouteBody, RouteRequest, RouteSpec, WaitUntil,
+    RequestCheck, RouteAction, RouteBody, RouteRequest, RouteSpec, WaitUntil,
 };
 use fixtures::Fixtures;
 use protocol::ErrorKind;
@@ -676,4 +677,270 @@ async fn stateful_mocks_follow_the_page() {
     .await
     .unwrap();
     assert_eq!(fetch(&engine, "/mock/api/save", post).await[0], json!(503));
+}
+
+/// `expect request` (or `no-request` with `none`) with `timeout_ms`.
+async fn expect_request(
+    engine: &Engine,
+    check: RequestCheck,
+    timeout_ms: u64,
+) -> Result<(String, ExpectData), protocol::ErrorInfo> {
+    let out = Box::pin(engine.expect(ExpectRequest {
+        expectation: Expectation::Request(check),
+        not: false,
+        tab: None,
+        strict_refs: false,
+        testid_attribute: None,
+        timeout_ms,
+        max_chars: 0,
+    }))
+    .await?;
+    Ok((out.text, serde_json::from_value(out.data).unwrap()))
+}
+
+fn sent(method: &str, target: &str) -> RequestCheck {
+    RequestCheck {
+        method: method.into(),
+        target: target.into(),
+        query: Vec::new(),
+        headers: Vec::new(),
+        json: None,
+        count: None,
+        min: None,
+        max: None,
+        since: None,
+        none: false,
+    }
+}
+
+#[tokio::test]
+async fn expect_request_and_unmatched_diagnostics() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "mock-requests").await;
+    goto(&engine, &site.url("/mock/index.html")).await;
+    let dir = mocks_dir();
+    use_sets(&engine, &dir, &["base", "cart"], false).await;
+    let post = |body: &str, headers: &str| {
+        format!(
+            "{{method: 'POST', headers: {{'content-type': 'application/json'{headers}}}, body: {body:?}}}"
+        )
+    };
+    fetch(&engine, "/mock/api/orders", &post(r#"{"qty":2}"#, "")).await;
+    fetch(
+        &engine,
+        "/mock/api/orders",
+        &post(r#"{"qty":3}"#, ", 'x-src': 'web'"),
+    )
+    .await;
+    fetch(&engine, "/mock/api/products?page=2", "{}").await;
+    // A body too large for the network log is read from Chrome.
+    let big = format!(r#"{{"qty":9,"note":"{}"}}"#, "x".repeat(20_000));
+    fetch(&engine, "/mock/api/orders", &post(&big, "")).await;
+
+    let (text, data) = expect_request(
+        &engine,
+        RequestCheck {
+            count: Some(3),
+            ..sent("POST", "/mock/api/orders")
+        },
+        2_000,
+    )
+    .await
+    .unwrap_or_else(|e| panic!("{}", e.to_text()));
+    assert!(
+        text.starts_with("passed: request POST /mock/api/orders --count 3: 3 requests ("),
+        "{text}"
+    );
+    assert_eq!(data.count, Some(3));
+    for check in [
+        RequestCheck {
+            json: Some(json!({"qty": 3})),
+            headers: vec![("X-Src".into(), "w*".into())],
+            count: Some(1),
+            ..sent("post", "**/orders")
+        },
+        RequestCheck {
+            json: Some(json!({"qty": 9})),
+            ..sent("POST", "/mock/api/orders")
+        },
+        RequestCheck {
+            query: vec![("page".into(), "2".into())],
+            ..sent("*", "/mock/api/products")
+        },
+        sent("GET", "/mock/api/products?page=*"),
+        RequestCheck {
+            none: true,
+            ..sent("DELETE", "/mock/api/**")
+        },
+    ] {
+        expect_request(&engine, check.clone(), 2_000)
+            .await
+            .unwrap_or_else(|e| panic!("{check:?}: {}", e.to_text()));
+    }
+
+    // Nothing matches: the closest requests, with the condition each
+    // fails.
+    let err = expect_request(
+        &engine,
+        RequestCheck {
+            json: Some(json!({"qty": 4})),
+            ..sent("POST", "/mock/api/orders")
+        },
+        300,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::ExpectFailed);
+    let text = err.to_text();
+    assert!(
+        text.contains("expected: a request POST /mock/api/orders with json {\"qty\":4}"),
+        "{text}"
+    );
+    assert!(text.contains("actual: 0 requests (after 300ms, "), "{text}");
+    assert!(
+        text.contains("similar: t1 #")
+            && text.contains(" POST ")
+            && text.contains("/mock/api/orders → 201: json $.qty: expects 4, got 2"),
+        "{text}"
+    );
+    assert!(text.contains("hint: chrome-cdp network show "), "{text}");
+    // A path a letter off is listed; an unrelated one is not.
+    let err = expect_request(&engine, sent("POST", "/mock/api/order"), 100)
+        .await
+        .unwrap_err();
+    let text = err.to_text();
+    assert!(
+        text.contains("path differs: expects /mock/api/order, got /mock/api/orders"),
+        "{text}"
+    );
+    let err = expect_request(&engine, sent("GET", "/mock/api/users"), 100)
+        .await
+        .unwrap_err();
+    let text = err.to_text();
+    assert!(
+        text.contains("similar: none: no request sent has a path like /mock/api/users ("),
+        "{text}"
+    );
+    assert!(text.contains("hint: chrome-cdp network "), "{text}");
+
+    // Too many fails at once, without waiting.
+    let started = std::time::Instant::now();
+    let err = expect_request(
+        &engine,
+        RequestCheck {
+            count: Some(1),
+            ..sent("POST", "/mock/api/orders")
+        },
+        10_000,
+    )
+    .await
+    .unwrap_err();
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    let text = err.to_text();
+    assert!(text.contains("actual: 3 requests\n"), "{text}");
+    assert_eq!(text.matches("matching: t1 #").count(), 3, "{text}");
+    let err = expect_request(
+        &engine,
+        RequestCheck {
+            none: true,
+            ..sent("GET", "/mock/api/products")
+        },
+        10_000,
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        err.to_text()
+            .contains("expected: no request GET /mock/api/products")
+    );
+
+    // --since a mark; a request sent later is waited for.
+    engine
+        .mark(engine::MarkRequest {
+            name: "later".into(),
+            tab: None,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap();
+    eval(
+        &engine,
+        "setTimeout(() => fetch('/mock/api/orders', {method: 'POST', body: '{\"qty\":1}'}), 300); 1",
+    )
+    .await;
+    let (_, data) = expect_request(
+        &engine,
+        RequestCheck {
+            since: Some("later".into()),
+            count: Some(1),
+            ..sent("POST", "/mock/api/orders")
+        },
+        5_000,
+    )
+    .await
+    .unwrap_or_else(|e| panic!("{}", e.to_text()));
+    assert!(data.retries > 0, "{data:?}");
+    let err = expect_request(
+        &engine,
+        RequestCheck {
+            since: Some("nope".into()),
+            ..sent("POST", "/mock/api/orders")
+        },
+        100,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::BadArgs);
+
+    // An unmatched request names the mock that comes closest.
+    let unmatched = fetch(&engine, "/mock/api/cart?user=7", "{}").await;
+    assert_eq!(unmatched[0], json!(501));
+    let (text, data) = log(&engine, true);
+    assert_eq!(data.log.len(), 1, "{text}");
+    let entry = &data.log[0];
+    assert_eq!(entry.policy.as_deref(), Some("fail"));
+    assert_eq!(entry.closest.len(), 1, "{entry:?}");
+    assert_eq!(entry.closest[0].mock.at, "cart.toml:3");
+    assert!(
+        text.ends_with(
+            "(scope of base)\n  closest mock: cart.toml:3 \"cart\": path differs: expects /mock/api/carts, got /mock/api/cart"
+        ),
+        "{text}"
+    );
+}
+
+#[tokio::test]
+async fn mocks_match_large_request_bodies() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "mock-large-bodies").await;
+    goto(&engine, &site.url("/mock/index.html")).await;
+    use_sets(&engine, &mocks_dir(), &["base"], false).await;
+    // Chrome leaves a body this large out of `Fetch.requestPaused`.
+    let answer = eval(
+        &engine,
+        "fetch('/mock/api/login', {method: 'POST', headers: {'content-type': 'application/json'}, \
+         body: JSON.stringify({email: 'ada@example.com', pad: 'x'.repeat(2000000)})}) \
+         .then(async (r) => [r.status, await r.json()])",
+    )
+    .await;
+    assert_eq!(
+        answer,
+        json!([200, {"ok": true, "user": "ada@example.com"}]),
+        "{answer}"
+    );
+    // A Blob body, which Chrome also leaves out.
+    let answer = eval(
+        &engine,
+        "fetch('/mock/api/login', {method: 'POST', headers: {'content-type': 'application/json'}, \
+         body: new Blob([JSON.stringify({email: 'bob@example.com'})])}) \
+         .then(async (r) => [r.status, await r.json()])",
+    )
+    .await;
+    assert_eq!(
+        answer,
+        json!([200, {"ok": true, "user": "bob@example.com"}]),
+        "{answer}"
+    );
 }

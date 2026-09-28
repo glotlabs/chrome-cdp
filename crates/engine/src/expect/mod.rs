@@ -15,6 +15,7 @@ mod baseline;
 mod mock_state;
 mod page;
 mod pixels;
+mod requests;
 
 pub use baseline::{check_expect_screenshot, check_expect_snapshot};
 
@@ -32,8 +33,8 @@ use crate::injected::{self, GUARD};
 use crate::locator::{FrameOnly, LocateOptions, Locator, read_listed};
 use crate::pattern::UrlPattern;
 use crate::request::{
-    A11yLevel, ExpectRequest, Expectation, MarkRequest, Matcher, MockStateCheck, SnapshotEngine,
-    millis,
+    A11yLevel, ExpectRequest, Expectation, MarkRequest, Matcher, MockStateCheck, RequestCheck,
+    SnapshotEngine, millis,
 };
 use crate::tabs::{Page, tab_name};
 use crate::wait::Condition;
@@ -288,6 +289,9 @@ enum Assertion {
     },
     /// Looked at in the session's mocks, not in a page.
     MockState,
+    /// Looked at in the network logs of the session's (or context's)
+    /// tabs.
+    Request,
 }
 
 impl Assertion {
@@ -328,8 +332,17 @@ impl Assertion {
                 },
                 matcher: None,
             },
-            Expectation::NoErrors { since } => {
+            Expectation::NoErrors { since, all_tabs } => {
                 no_not("--no-errors")?;
+                if *all_tabs && (since.is_some() || req.tab.is_some()) {
+                    return Err(ErrorInfo::new(
+                        ErrorKind::BadArgs,
+                        "--all-tabs looks at every tab since it opened; it takes no --since or --tab",
+                    )
+                    .hint(Hint::run(
+                        Cmd::new("expect").switch("no-errors").switch("all-tabs"),
+                    )));
+                }
                 Self::NoErrors {
                     since: since.clone(),
                 }
@@ -386,6 +399,26 @@ impl Assertion {
                     ));
                 }
                 Self::MockState
+            }
+            Expectation::Request(check) => {
+                if req.not {
+                    return Err(ErrorInfo::new(
+                        ErrorKind::BadArgs,
+                        "--not does not go with expect request",
+                    )
+                    .hint(Hint::run(requests::request_command(
+                        Cmd::new("expect"),
+                        &RequestCheck {
+                            none: !check.none,
+                            count: None,
+                            min: None,
+                            max: None,
+                            ..check.clone()
+                        },
+                    ))));
+                }
+                requests::filter(check)?;
+                Self::Request
             }
         })
     }
@@ -550,6 +583,7 @@ fn expected(req: &ExpectRequest, level_rules: Option<(usize, A11yLevel)>) -> Str
                 format!("{name} containing {}", mock::text::compact(value))
             }
         },
+        Expectation::Request(check) => requests::expected_requests(check),
     };
     format!("{not}{text}")
 }
@@ -599,8 +633,11 @@ fn command(req: &ExpectRequest) -> Cmd {
                 cmd = cmd.switch("exact");
             }
         }
-        Expectation::NoErrors { since } => {
+        Expectation::NoErrors { since, all_tabs } => {
             cmd = cmd.switch("no-errors");
+            if *all_tabs {
+                cmd = cmd.switch("all-tabs");
+            }
             if let Some(since) = since {
                 cmd = cmd.flag("since", since);
             }
@@ -643,6 +680,7 @@ fn command(req: &ExpectRequest) -> Cmd {
                 MockStateCheck::Contains { value } => cmd.raw("contains").arg(state_arg(value)),
             };
         }
+        Expectation::Request(check) => cmd = requests::request_command(cmd, check),
     }
     if req.not {
         cmd = cmd.switch("not");
@@ -743,11 +781,13 @@ impl Engine {
             .as_deref()
             .map(crate::tabs::parse_tab_id)
             .transpose()?;
-        let page = running
-            .tabs
-            .page(id, millis(req.timeout_ms))
-            .await
-            .map_err(|e| self.tab_error(&running, e))?;
+        // The context's tab with --context, as other commands take it.
+        let timeout = millis(req.timeout_ms);
+        let page = match self.current_context()? {
+            Some(scope) => running.tabs.page_in(&scope.browser_id, id, timeout).await,
+            None => running.tabs.page(id, timeout).await,
+        }
+        .map_err(|e| self.tab_error(&running, e))?;
         let replaced = running.tabs.set_mark(page.id, name).is_some();
         let (_, console) = running.tabs.log_marks(page.id);
         let tab = tab_name(page.id);
@@ -778,6 +818,12 @@ impl Engine {
         let assertion = Assertion::parse(&req, &options)?;
         if let Expectation::MockState { name, check } = &req.expectation {
             return self.expect_mock_state(&req, name, check).await;
+        }
+        if let Expectation::Request(check) = &req.expectation {
+            return self.expect_request(&req, check).await;
+        }
+        if let Expectation::NoErrors { all_tabs: true, .. } = &req.expectation {
+            return self.no_errors_in_all_tabs(&req);
         }
         let running = self.running()?;
         let timeout = millis(req.timeout_ms);
@@ -886,7 +932,9 @@ impl Engine {
                 self.a11y(running, page, req, scope.as_ref(), *level, options, timeout)
                     .await
             }
-            Assertion::MockState => unreachable!("expect answers mock-state before any page"),
+            Assertion::MockState | Assertion::Request => {
+                unreachable!("expect answers mock-state and request before any page")
+            }
         }
     }
 

@@ -281,17 +281,22 @@ its own. Every test gets a fresh browser context: its own cookies,
 storage, routes and mock sets (default_mocks, then the file's and the
 test's @mocks), so tests cannot leak into each other. `--jobs N` runs N
 tests at once in one Chrome; a test that fails, then passes on a retry,
-is reported as flaky. Exit code 0: every test passed; 1: a test failed.
+is reported as flaky. A request no mock answers, in a set's scope with
+unmatched = \"fail\", fails the test at the step after which it was
+sent, naming the closest mocks; so does a console error in any of its
+tabs (unless @allow-console-errors, or allow_console_errors = true in
+[e2e]). Exit code 0: every test passed; 1: a test failed.
 A scenario that does not check (bad syntax, unknown command, missing
 @include) fails before any test runs, with exit code 2.
 
 Scenario syntax (docs/e2e/scenarios.md):
   @mocks base checkout          # file settings: @mocks @tags @skip @only
   @before                       #   @timeout @viewport @device @retries
-    goto /
+    goto /                      #   @allow-console-errors
   @test \"adds an item\" @tags smoke
     click text=Add
     expect text=1 item visible
+    expect request POST /api/cart --json-body '{\"qty\":1}'
   @test \"logs in\"
     @include ../steps/login.cdp email=a@example.com
 
@@ -408,7 +413,8 @@ Element matchers (expect <LOCATOR> <MATCHER> [VALUE…]):
 Page checks:
   --url, --title       retried like the matchers
   --no-errors          no uncaught exception or console.error since the
-                       page loaded (or --since <mark>; see `mark`)
+                       page loaded (or --since <mark>; see `mark`; or
+                       --all-tabs: in any tab since it opened)
   --no-failed-requests no request failed or got a 4xx/5xx since then
                        (--origin self: only to the page's origin; the
                        browser's own /favicon.ico does not count)
@@ -421,6 +427,18 @@ Mock state (expect mock-state <NAME> <CHECK>), retried like the matchers:
   value <V>            the named value is V (JSON, else text)
   contains <V>         some item has V's fields (`{\"title\":\"Milk\"}`)
 
+Requests sent (expect request <METHOD> <PATH>), from the network logs of
+every tab of the session (or --context; or --tab), mocked or not:
+  PATH                 a path glob (/api/orders/*, **/orders), a full-URL
+                       glob, or *; METHOD may be * (any)
+  --query k=v, --header 'Name: value', --json-body '{\"qty\":2}'
+                       conditions, as a mock's match (values are globs)
+  --count N | --min N | --max N   how many (default: at least 1)
+  --since <mark>       only those sent after the mark
+Retried until enough were sent; too many fails at once. `expect
+no-request <METHOD> <PATH>` checks none was sent. A failure lists the
+matching requests and the closest others, with the condition each fails.
+
 Examples:
   chrome-cdp expect e6 visible
   chrome-cdp expect 'role=alert' text Saved
@@ -432,7 +450,9 @@ Examples:
   chrome-cdp expect --url '**/dashboard'
   chrome-cdp expect --no-errors --since before-save
   chrome-cdp expect --a11y --level A
-  chrome-cdp expect mock-state todos count 4")]
+  chrome-cdp expect mock-state todos count 4
+  chrome-cdp expect request POST /api/orders --json-body '{\"qty\":2}' --count 1
+  chrome-cdp expect no-request DELETE '/api/cart/**'")]
     Expect(ExpectArgs),
 
     /// Name this point in the tab's console and network logs, for expect --no-errors --since.
@@ -4642,15 +4662,38 @@ pub(crate) struct ExpectArgs {
     #[arg(long, conflicts_with_all = ["matcher", "no_failed_requests", "a11y"])]
     pub(crate) no_errors: bool,
 
+    /// --no-errors: in every tab of the session (or --context), each
+    /// since it opened, whatever it loaded since.
+    #[arg(long, requires = "no_errors", conflicts_with = "since")]
+    pub(crate) all_tabs: bool,
+
     /// No request failed or got a status of 400 or more since the page
     /// loaded (or --since).
     #[arg(long, conflicts_with_all = ["matcher", "a11y"])]
     pub(crate) no_failed_requests: bool,
 
-    /// --no-errors and --no-failed-requests: only after this mark (see
-    /// `mark`), not since the page loaded.
+    /// --no-errors, --no-failed-requests and `request`: only after this
+    /// mark (see `mark`), not since the page loaded.
     #[arg(long, value_name = "MARK")]
     pub(crate) since: Option<String>,
+
+    /// `request`: exactly this many such requests.
+    #[arg(long, value_name = "N", conflicts_with_all = ["min", "max"])]
+    pub(crate) count: Option<u64>,
+
+    /// `request`: the query has this parameter, `name=value` (a glob;
+    /// repeatable).
+    #[arg(long = "query", value_name = "NAME=VALUE")]
+    pub(crate) queries: Vec<String>,
+
+    /// `request`: it has this header, 'Name: value' (a glob; repeatable).
+    #[arg(long = "header", value_name = "HEADER")]
+    pub(crate) headers: Vec<String>,
+
+    /// `request`: its JSON body contains this, as a mock's match.json
+    /// ("*" any value, strings with * are globs); `-` reads stdin.
+    #[arg(long, value_name = "JSON")]
+    pub(crate) json_body: Option<String>,
 
     /// --no-failed-requests: only requests to this origin; `self` is the
     /// page's.

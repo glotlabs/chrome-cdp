@@ -100,11 +100,12 @@ pub use request::{
     MockListRequest, MockLogRequest, MockOffRequest, MockSeedRequest, MockStateCheck,
     MockStateRequest, MockUseRequest, Modifier, MouseOp, NavigateRequest, Navigation,
     NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest,
-    PerfRequest, PermissionsOp, PermissionsRequest, Read, ReadRequest, RouteAction, RouteBody,
-    RouteRequest, RouteSpec, RoutesRequest, ScreenshotRequest, ScrollTo, ShotScale, Since,
-    SnapshotEngine, SnapshotRequest, StateLoadRequest, StateSaveRequest, StatusRange, StorageArea,
-    StorageOp, StorageRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
-    Target, TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WaitUntil,
+    PerfRequest, PermissionsOp, PermissionsRequest, Read, ReadRequest, RequestCheck, RouteAction,
+    RouteBody, RouteRequest, RouteSpec, RoutesRequest, ScreenshotRequest, ScrollTo, ShotScale,
+    Since, SnapshotEngine, SnapshotRequest, StateLoadRequest, StateSaveRequest, StatusRange,
+    StorageArea, StorageOp, StorageRequest, TabCloseRequest, TabNewRequest, TabSelectRequest,
+    TabsRequest, Target, TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest,
+    WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use state::{OriginState, StateCookie, StorageState};

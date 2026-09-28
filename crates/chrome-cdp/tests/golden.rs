@@ -85,6 +85,23 @@ const MOCKED: &[&[&str]] = &[
     &["eval", "fetch('/items?n=1').then((r) => r.status)"],
 ];
 
+/// The mock fixture page with the `base` and `cart` sets in use, after
+/// it sent an order and asked for the cart, which no mock answers (plan
+/// 11.5).
+const REQUESTS: &[&[&str]] = &[
+    &["open", "{site}/mock/index.html"],
+    &["mock", "use", "--dir", "{mocks}", "base", "cart"],
+    &[
+        "eval",
+        "fetch('/mock/api/orders', {method: 'POST', body: JSON.stringify({qty: 2}), \
+         headers: {'content-type': 'application/json'}}).then((r) => r.status)",
+    ],
+    &[
+        "eval",
+        "fetch('/mock/api/cart?user=7').then((r) => r.status)",
+    ],
+];
+
 /// The todos page on the `stateful` mock set, after it added a todo and
 /// logged in.
 const STATEFUL: &[&[&str]] = &[
@@ -1426,6 +1443,46 @@ const CASES: &[Case] = &[
         ],
         modes: ERR,
         fixture: Fixture::SessionAfter(STATEFUL),
+    },
+    Case {
+        name: "expect-request",
+        args: &[
+            "expect",
+            "request",
+            "POST",
+            "/mock/api/orders",
+            "--json-body",
+            "{\"qty\":2}",
+        ],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(REQUESTS),
+    },
+    Case {
+        name: "expect-request-fails",
+        args: &[
+            "expect",
+            "request",
+            "POST",
+            "/mock/api/orders",
+            "--json-body",
+            "{\"qty\":3}",
+            "--timeout",
+            "300ms",
+        ],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(REQUESTS),
+    },
+    Case {
+        name: "expect-no-request-fails",
+        args: &["expect", "no-request", "GET", "/mock/api/cart"],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(REQUESTS),
+    },
+    Case {
+        name: "mock-log-closest",
+        args: &["mock", "log", "--unmatched"],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(REQUESTS),
     },
     // Each mode would turn off what the one before did: one mode a case.
     Case {

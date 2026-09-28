@@ -584,10 +584,13 @@ pub enum Expectation {
         exact: bool,
     },
     /// `--no-errors`: no uncaught exception or console error since
-    /// `since` (a mark; the current document if `None`).
+    /// `since` (a mark; the current document if `None`); with `all_tabs`,
+    /// in every tab of the session (or context) since it opened.
     NoErrors {
         #[serde(default)]
         since: Option<String>,
+        #[serde(default)]
+        all_tabs: bool,
     },
     /// `--no-failed-requests`: no request failed or got a status of 400
     /// or more since `since`; only those to `origin` (`self`: the page's)
@@ -609,6 +612,45 @@ pub enum Expectation {
     /// `expect mock-state <name> <check>`: a named value or collection of
     /// the mock sets in use (plan 11, milestone 11.3).
     MockState { name: String, check: MockStateCheck },
+    /// `expect request <METHOD> <path-glob>` and `expect no-request`: the
+    /// requests the pages of the session (or context) sent (plan 11,
+    /// milestone 11.5).
+    Request(RequestCheck),
+}
+
+/// `expect request` and `expect no-request`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RequestCheck {
+    /// An HTTP method, or `*` for any.
+    pub method: String,
+    /// A path glob (`/api/orders/*`), `**/…`, a full-URL glob, or `*`;
+    /// `?k=v` after it adds query conditions.
+    pub target: String,
+    /// `--query k=v`: query parameters it has (values are globs).
+    #[serde(default)]
+    pub query: Vec<(String, String)>,
+    /// `--header 'Name: value'`: headers it has (values are globs).
+    #[serde(default)]
+    pub headers: Vec<(String, String)>,
+    /// `--json-body`: its JSON body contains this (as a mock's
+    /// `match.json`).
+    #[serde(default)]
+    pub json: Option<serde_json::Value>,
+    /// `--count N`: exactly N such requests.
+    #[serde(default)]
+    pub count: Option<u64>,
+    /// `--min N` (1 unless `count` or `max` is given).
+    #[serde(default)]
+    pub min: Option<u64>,
+    /// `--max N`.
+    #[serde(default)]
+    pub max: Option<u64>,
+    /// `--since <mark>`: only requests sent after the mark.
+    #[serde(default)]
+    pub since: Option<String>,
+    /// `expect no-request`: none was sent.
+    #[serde(default)]
+    pub none: bool,
 }
 
 /// What `expect mock-state <name>` checks.

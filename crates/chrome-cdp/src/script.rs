@@ -314,8 +314,10 @@ fn check_locators(matches: &ArgMatches) -> Result<(), ErrorInfo> {
             }
             if let Ok(Some(values)) = matches.try_get_raw(arg.get_id().as_str()) {
                 for value in values.filter_map(|v| v.to_str()) {
-                    // `expect mock-state <name> …` checks no element.
-                    if name == "expect" && value == "mock-state" {
+                    // `expect mock-state <name> …` and `expect request …`
+                    // check no element.
+                    if name == "expect" && matches!(value, "mock-state" | "request" | "no-request")
+                    {
                         continue;
                     }
                     engine::parse_locator(value)?;

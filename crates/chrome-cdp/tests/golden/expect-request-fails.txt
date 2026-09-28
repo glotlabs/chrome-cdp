@@ -1,0 +1,14 @@
+$ chrome-cdp expect request POST /mock/api/orders --json-body '{"qty":3}' --timeout 300ms
+exit: 1
+--- stderr
+error: expect failed: request POST /mock/api/orders --json-body '{"qty":3}'
+  expected: a request POST /mock/api/orders with json {"qty":3}
+  actual: 0 requests (after 300ms, <n> retries)
+  similar: t1 #3 POST <site>/mock/api/orders → 201: json $.qty: expects 3, got 2
+  hint: chrome-cdp network show 3   (shows the closest request in full, body and headers)
+
+$ chrome-cdp expect request POST /mock/api/orders --json-body '{"qty":3}' --timeout 300ms --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect failed: request POST /mock/api/orders --json-body '{\"qty\":3}'","hint":"chrome-cdp network show 3   (shows the closest request in full, body and headers)","notes":[{"label":"expected","text":"a request POST /mock/api/orders with json {\"qty\":3}"},{"label":"actual","text":"0 requests (after 300ms, <n> retries)"},{"label":"similar","text":"t1 #3 POST <site>/mock/api/orders → 201: json $.qty: expects 3, got 2"}],"details":{"actual":0,"assertion":"request POST /mock/api/orders --json-body '{\"qty\":3}'","expected":"a request POST /mock/api/orders with json {\"qty\":3}","matching":[],"retries":<n>,"similar":[{"id":3,"method":"POST","reason":"json $.qty: expects 3, got 2","status":201,"tab":"t1","url":"<site>/mock/api/orders"}],"timeout_ms":300}}}
+

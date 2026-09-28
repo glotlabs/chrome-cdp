@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use engine::{A11yLevel, Expectation, MockStateCheck};
+use engine::{A11yLevel, Expectation, MockStateCheck, RequestCheck};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 
 use crate::cli::{A11yLevelArg, ExpectArgs};
@@ -38,6 +38,29 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
             Hint::run(Cmd::new("expect").arg(target).raw("visible"))
                 .why("to check the element")
                 .or(format!("drop {target:?} to check the page")),
+        ));
+    }
+    if matches!(args.target.as_deref(), Some("request" | "no-request")) {
+        return request(args);
+    }
+    let request_flag = [
+        (args.count.is_some(), "--count"),
+        (!args.queries.is_empty(), "--query"),
+        (!args.headers.is_empty(), "--header"),
+        (args.json_body.is_some(), "--json-body"),
+    ]
+    .into_iter()
+    .find_map(|(given, flag)| given.then_some(flag));
+    if let Some(flag) = request_flag {
+        return Err(bad_args(
+            format!("{flag} is for expect request"),
+            Hint::run(
+                Cmd::new("expect")
+                    .raw("request")
+                    .arg("POST")
+                    .arg("/api/orders")
+                    .flag("count", "1"),
+            ),
         ));
     }
     if args.since.is_some() && !(args.no_errors || args.no_failed_requests) {
@@ -80,6 +103,7 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
     if args.no_errors {
         return Ok(Expectation::NoErrors {
             since: args.since.clone(),
+            all_tabs: args.all_tabs,
         });
     }
     if args.no_failed_requests {
@@ -124,6 +148,65 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
         locator: locator.clone(),
         matcher,
     })
+}
+
+/// `expect request <METHOD> <PATH>` and `expect no-request <METHOD>
+/// <PATH>`.
+fn request(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
+    let none = args.target.as_deref() == Some("no-request");
+    let word = if none { "no-request" } else { "request" };
+    let example = Cmd::new("expect").raw(word).arg("POST").arg("/api/orders");
+    let (Some(method), [target]) = (&args.matcher, args.values.as_slice()) else {
+        return Err(bad_args(
+            format!("expect {word} needs a METHOD and a PATH (a glob), and nothing more"),
+            Hint::run(example),
+        ));
+    };
+    if args.exact {
+        return Err(bad_args(
+            format!("--exact is not for expect {word}"),
+            Hint::run(example),
+        ));
+    }
+    let queries = args
+        .queries
+        .iter()
+        .map(|q| match q.split_once('=') {
+            Some((name, value)) if !name.is_empty() => Ok((name.to_owned(), value.to_owned())),
+            _ => Err(bad_args(
+                format!("--query `{q}` is not name=value"),
+                Hint::run(
+                    Cmd::new("expect")
+                        .raw(word)
+                        .arg("GET")
+                        .arg("/api/search")
+                        .flag("query", "q=keyboard"),
+                ),
+            )),
+        })
+        .collect::<Result<_, _>>()?;
+    let headers = args
+        .headers
+        .iter()
+        .map(|h| crate::route::header(h, "--header"))
+        .collect::<Result<_, _>>()?;
+    let json = args
+        .json_body
+        .as_deref()
+        .map(|text| crate::route::json(text, "--json-body"))
+        .transpose()?;
+    Ok(Expectation::Request(RequestCheck {
+        method: method.clone(),
+        target: target.clone(),
+        query: queries,
+        headers,
+        json,
+        count: args.count,
+        min: args.min,
+        max: args.max,
+        since: args.since.clone(),
+        none,
+    }))
 }
 
 /// `expect mock-state <name> count|value|contains [value]`.
@@ -444,6 +527,92 @@ mod tests {
             assert_eq!(err.kind, ErrorKind::BadArgs, "{args:?}");
             assert_eq!(err.hint.as_deref(), Some(*hint), "{args:?}");
         }
+    }
+
+    #[test]
+    fn request_checks() {
+        use engine::RequestCheck;
+        use serde_json::json;
+        let Expectation::Request(check) = parse(&[
+            "request",
+            "post",
+            "/api/orders",
+            "--json-body",
+            r#"{"qty":2}"#,
+            "--query",
+            "source=web",
+            "--header",
+            "X-Src: w*",
+            "--count",
+            "2",
+            "--since",
+            "before",
+        ])
+        .unwrap() else {
+            panic!("not a request check");
+        };
+        assert_eq!(
+            check,
+            RequestCheck {
+                method: "post".into(),
+                target: "/api/orders".into(),
+                query: vec![("source".into(), "web".into())],
+                headers: vec![("X-Src".into(), "w*".into())],
+                json: Some(json!({"qty": 2})),
+                count: Some(2),
+                min: None,
+                max: None,
+                since: Some("before".into()),
+                none: false,
+            }
+        );
+        let Expectation::Request(check) = parse(&["no-request", "DELETE", "/api/cart/**"]).unwrap()
+        else {
+            panic!("not a request check");
+        };
+        assert!(check.none);
+        let cases: &[(&[&str], &str)] = &[
+            (
+                &["request", "POST"],
+                "chrome-cdp expect request POST /api/orders",
+            ),
+            (
+                &["no-request", "GET", "/a", "/b"],
+                "chrome-cdp expect no-request POST /api/orders",
+            ),
+            (
+                &["request", "GET", "/a", "--query", "q"],
+                "chrome-cdp expect request GET /api/search --query q=keyboard",
+            ),
+            (
+                &["e1", "visible", "--count", "2"],
+                "chrome-cdp expect request POST /api/orders --count 1",
+            ),
+            (
+                &["request", "GET", "/a", "--exact"],
+                "chrome-cdp expect request POST /api/orders",
+            ),
+        ];
+        for (args, hint) in cases {
+            let err = parse(args).unwrap_err();
+            assert_eq!(err.kind, ErrorKind::BadArgs, "{args:?}");
+            assert_eq!(err.hint.as_deref(), Some(*hint), "{args:?}");
+        }
+        assert!(parse(&["request", "GET", "/a", "--json-body", "{nope"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "chrome-cdp",
+                "expect",
+                "request",
+                "GET",
+                "/a",
+                "--count",
+                "1",
+                "--min",
+                "1"
+            ])
+            .is_err()
+        );
     }
 
     #[test]

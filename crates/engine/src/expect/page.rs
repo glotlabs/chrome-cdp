@@ -5,18 +5,19 @@
 use std::time::Duration;
 
 use cdp::domains::runtime;
-use protocol::schema::Event;
-use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
+use protocol::schema::{Event, ExpectData};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tokio::time::Instant;
 
-use super::{Failed, GROUP, Named, Passed, expected};
+use super::{Failed, GROUP, Named, Passed, assertion_text, expected};
 use crate::frames::World;
 use crate::injected::{self, GUARD};
 use crate::input::origin;
 use crate::locator::{LocateOptions, Locator, read_listed};
 use crate::request::{A11yLevel, ExpectRequest, SnapshotEngine};
-use crate::tabs::{Page, tab_name};
+use crate::tabs::{Page, parse_tab_id, tab_name};
 use crate::{Engine, Running};
 
 /// How many errors, failed requests or violations a failure lists.
@@ -148,6 +149,86 @@ impl Engine {
         failed.hint =
             Some(Hint::run(cmd.session(&self.session)).why("shows them with their stacks"));
         Err(self.one_shot_failure(page, req, failed))
+    }
+
+    /// `--no-errors --all-tabs`: no uncaught exception or console error in
+    /// any tab of the session (or context) since it opened, whatever it
+    /// loaded since. The test runner checks it at the end of each test.
+    pub(super) fn no_errors_in_all_tabs(&self, req: &ExpectRequest) -> Result<Output, ErrorInfo> {
+        let start = Instant::now();
+        let running = self.running()?;
+        let scope = self.context_key()?;
+        let mut tabs = running.tabs.tab_ids_in(scope.as_deref());
+        tabs.sort_unstable();
+        let events: Vec<Event> = tabs
+            .iter()
+            .flat_map(|&id| {
+                let tab = tab_name(id);
+                running
+                    .tabs
+                    .console_errors_since(id, 0)
+                    .into_iter()
+                    .map(move |e| Event::ConsoleError {
+                        tab: tab.clone(),
+                        message: e.message,
+                        url: e.url,
+                        line: e.line,
+                        column: e.column,
+                        uncaught: e.uncaught,
+                    })
+            })
+            .collect();
+        let assertion = assertion_text(req);
+        let expected = format!("{} in any tab", expected(req, None));
+        if events.is_empty() {
+            let elapsed = start.elapsed();
+            let data = ExpectData {
+                tab: String::new(),
+                assertion: assertion.clone(),
+                expected,
+                actual: json!(0),
+                count: Some(0),
+                elapsed_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
+                retries: 0,
+            };
+            let text = format!("passed: {assertion} ({})", format::duration(elapsed));
+            return Ok(Output::typed(&data, text)
+                .quiet("0")
+                .limit(req.max_chars, "--max-chars 0 for all of it"));
+        }
+        let mut info = ErrorInfo::new(
+            ErrorKind::ExpectFailed,
+            format!("expect failed: {assertion}"),
+        )
+        .note("expected", &expected)
+        .note("actual", plural(events.len(), "error", "errors"));
+        for event in events.iter().take(LISTED) {
+            let line = self.event_line(event);
+            let line = line.strip_prefix("console error: ").unwrap_or(&line);
+            let tab = match event {
+                Event::ConsoleError { tab, .. } => tab.as_str(),
+                _ => "",
+            };
+            info = info.note("error", format!("{tab}: {line}"));
+        }
+        if events.len() > LISTED {
+            info = info.note("error", format!("… and {} more", events.len() - LISTED));
+        }
+        let first = match &events[0] {
+            Event::ConsoleError { tab, .. } => tab.clone(),
+            _ => String::new(),
+        };
+        let mut cmd = Cmd::new("errors");
+        if running.tabs.active() != parse_tab_id(&first).ok() {
+            cmd = cmd.flag("tab", &first);
+        }
+        Err(info
+            .hint(Hint::run(cmd.session(&self.session)).why("shows them with their stacks"))
+            .details(json!({
+                "assertion": assertion,
+                "expected": expected,
+                "errors": events,
+            })))
     }
 
     /// `--no-failed-requests`: no request failed or got a status of 400

@@ -536,6 +536,53 @@
         }
       ]
     },
+    "MockCheck": {
+      "description": "One mock's verdict in `mock explain`.",
+      "properties": {
+        "at": {
+          "description": "`base.toml:14`: the file relative to the mocks directory, and the\nline.",
+          "type": "string"
+        },
+        "file": {
+          "description": "The mock file (absolute).",
+          "type": "string"
+        },
+        "line": {
+          "description": "The line of its `[[mock]]`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "matches": {
+          "description": "Whether it matches the request.",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "Its `name`, or `METHOD path` when it has none.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why it does not match (the first condition that fails), or why a\nmatch does not answer (an earlier mock does).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "set": {
+          "description": "Its mock set, e.g. `base` or `errors/api-down`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "set",
+        "name",
+        "file",
+        "line",
+        "at",
+        "matches"
+      ],
+      "type": "object"
+    },
     "MockRef": {
       "description": "A mock of a mock file (plan 11): where it is and what it is called.",
       "properties": {
@@ -715,6 +762,13 @@
     "RoutedRequest": {
       "description": "A request that routing saw (`routes --log`).",
       "properties": {
+        "closest": {
+          "description": "With `unmatched`: the mocks that come closest to answering it,\nbest first, each with the condition it fails.",
+          "items": {
+            "$ref": "#/$defs/MockCheck"
+          },
+          "type": "array"
+        },
         "method": {
           "type": "string"
         },
@@ -732,6 +786,13 @@
         "outcome": {
           "description": "What happened: `fulfill 200`, `abort failed`, `continue`, …",
           "type": "string"
+        },
+        "policy": {
+          "description": "With `unmatched`: that set's policy, `fail`, `passthrough` or\n`abort`. A `fail` fails the test that sent it.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "resource_type": {
           "description": "Its resource type, as `network --type` names them.",

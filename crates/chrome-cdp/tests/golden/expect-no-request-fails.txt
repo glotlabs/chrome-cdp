@@ -1,0 +1,14 @@
+$ chrome-cdp expect no-request GET /mock/api/cart
+exit: 1
+--- stderr
+error: expect failed: no-request GET /mock/api/cart
+  expected: no request GET /mock/api/cart
+  actual: 1 request
+  matching: t1 #4 GET <site>/mock/api/cart?user=7 → 501
+  hint: chrome-cdp network show 4   (shows the request in full)
+
+$ chrome-cdp expect no-request GET /mock/api/cart --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect failed: no-request GET /mock/api/cart","hint":"chrome-cdp network show 4   (shows the request in full)","notes":[{"label":"expected","text":"no request GET /mock/api/cart"},{"label":"actual","text":"1 request"},{"label":"matching","text":"t1 #4 GET <site>/mock/api/cart?user=7 → 501"}],"details":{"actual":1,"assertion":"no-request GET /mock/api/cart","expected":"no request GET /mock/api/cart","matching":[{"id":4,"method":"GET","reason":null,"status":501,"tab":"t1","url":"<site>/mock/api/cart?user=7"}],"similar":[]}}}
+

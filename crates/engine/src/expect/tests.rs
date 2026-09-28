@@ -204,7 +204,13 @@ fn bad_arguments_fail_before_the_browser() {
             },
             false,
         ),
-        request(Expectation::NoErrors { since: None }, true),
+        request(
+            Expectation::NoErrors {
+                since: None,
+                all_tabs: false,
+            },
+            true,
+        ),
         request(
             Expectation::NoFailedRequests {
                 since: None,

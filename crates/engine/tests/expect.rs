@@ -449,6 +449,7 @@ async fn errors_and_failed_requests_since_the_page_or_a_mark() {
     let engine = start(&path).await;
     let no_errors = |since: Option<&str>| Expectation::NoErrors {
         since: since.map(str::to_owned),
+        all_tabs: false,
     };
     let no_failed = |origin: Option<&str>| Expectation::NoFailedRequests {
         since: None,
@@ -551,6 +552,23 @@ async fn errors_and_failed_requests_since_the_page_or_a_mark() {
     // A new page starts over.
     goto(&engine, &site.url("/expect/index.html")).await;
     passes(&engine, &no_errors(None), false).await;
+    // --all-tabs does not: every error since each tab opened.
+    let all_tabs = Expectation::NoErrors {
+        since: None,
+        all_tabs: true,
+    };
+    let err = fails(&engine, &all_tabs, false).await;
+    let text = err.to_text();
+    assert!(
+        text.contains("  expected: no uncaught exceptions or console errors in any tab\n"),
+        "{text}"
+    );
+    assert!(text.contains("  actual: 2 errors\n"), "{text}");
+    assert!(
+        text.contains("  error: t1: boom: the save failed (index.html:"),
+        "{text}"
+    );
+    assert!(text.contains("hint: chrome-cdp errors"), "{text}");
 
     // Errors while loading count, since the page loaded.
     goto(&engine, &site.url("/expect/errors.html")).await;

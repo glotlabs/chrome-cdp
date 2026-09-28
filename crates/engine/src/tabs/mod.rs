@@ -313,6 +313,9 @@ pub(crate) struct Marks {
     pub(crate) network: u64,
     pub(crate) console: u64,
     pub(crate) netlog: u64,
+    /// When it was set (ms since the Unix epoch), for the other tabs'
+    /// requests (`expect request --since`).
+    pub(crate) time_ms: u64,
 }
 
 /// A page or iframe session.
@@ -1110,6 +1113,9 @@ impl Tabs {
             network: tab.network.seq(),
             console: tab.console.seq(),
             netlog: tab.netlog.seq(),
+            time_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX)),
         };
         tab.marks.insert(name.to_owned(), now)
     }

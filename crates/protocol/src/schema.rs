@@ -3559,7 +3559,9 @@ pub struct TestFailure {
     /// The step as written.
     pub step: String,
     /// `before`, `after`, `before-all` or `after-all` for a hook's step;
-    /// absent for the test's own and the runner's (`setup`).
+    /// `setup` for what the runner does before the steps, `check` for its
+    /// checks after them (`expect --no-errors --all-tabs`); absent for
+    /// the test's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hook: Option<String>,
     /// The `@include` lines the step came through, outermost first.

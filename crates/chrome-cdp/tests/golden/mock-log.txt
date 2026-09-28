@@ -8,7 +8,7 @@ exit: 0
 $ chrome-cdp mock log --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"log":[{"method":"GET","mock":{"at":"sale.toml:2","file":"<mocks>/sale.toml","line":2,"name":"on sale","set":"sale"},"outcome":"fulfill 200","resource_type":"xhr","seq":1,"tab":"t1","time_ms":<ms>,"url":"<site>/mock/api/products"},{"method":"GET","mock":{"at":"base.toml:10","file":"<mocks>/base.toml","line":10,"name":"product by id","set":"base"},"outcome":"fulfill 404 (no data/products/9.json)","resource_type":"xhr","seq":2,"tab":"t1","time_ms":<ms>,"url":"<site>/mock/api/products/9"},{"method":"GET","outcome":"unmatched, fulfill 501","resource_type":"xhr","seq":3,"tab":"t1","time_ms":<ms>,"unmatched":"base","url":"<site>/mock/api/cart"}]}}
+{"ok":true,"data":{"log":[{"method":"GET","mock":{"at":"sale.toml:2","file":"<mocks>/sale.toml","line":2,"name":"on sale","set":"sale"},"outcome":"fulfill 200","resource_type":"xhr","seq":1,"tab":"t1","time_ms":<ms>,"url":"<site>/mock/api/products"},{"method":"GET","mock":{"at":"base.toml:10","file":"<mocks>/base.toml","line":10,"name":"product by id","set":"base"},"outcome":"fulfill 404 (no data/products/9.json)","resource_type":"xhr","seq":2,"tab":"t1","time_ms":<ms>,"url":"<site>/mock/api/products/9"},{"method":"GET","outcome":"unmatched, fulfill 501","policy":"fail","resource_type":"xhr","seq":3,"tab":"t1","time_ms":<ms>,"unmatched":"base","url":"<site>/mock/api/cart"}]}}
 
 $ chrome-cdp mock log -q
 exit: 0
