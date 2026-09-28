@@ -14,10 +14,24 @@
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     dark: matchMedia("(prefers-color-scheme: dark)").matches,
     reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches,
+    forcedColors: matchMedia("(forced-colors: active)").matches,
     onLine: navigator.onLine,
     now: Date.now(),
     userAgent: navigator.userAgent,
   };
+  // What the first script's requests get: the position and how long a
+  // fetch took (network throttling).
+  window.later = {};
+  navigator.geolocation.getCurrentPosition(
+    (p) => { window.later.position = [p.coords.latitude, p.coords.longitude]; },
+    (e) => { window.later.position = e.message; },
+    { timeout: 5000 },
+  );
+  const started = performance.now();
+  fetch("/echo/slow?" + Math.random()).then(
+    () => { window.later.fetchMs = performance.now() - started; },
+    (e) => { window.later.fetchMs = e.message; },
+  );
 </script>
 </head>
 <body><p>The first script records what it sees in <code>window.first</code>.</p></body>

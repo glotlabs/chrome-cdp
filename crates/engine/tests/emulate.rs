@@ -496,11 +496,27 @@ async fn settings_apply_to_first_scripts_popups_and_frames() {
             media: Some(Media {
                 color_scheme: Some("dark".into()),
                 reduced_motion: Some("reduce".into()),
+                forced_colors: Some("active".into()),
                 ..Media::default()
             }),
         },
         EmulationChange::TimeFreeze {
             epoch_ms: 1_700_000_000_000,
+        },
+        EmulationChange::Geolocation {
+            geolocation: Some(Geolocation {
+                latitude: 48.8566,
+                longitude: 2.3522,
+                accuracy: 10.0,
+            }),
+        },
+        EmulationChange::Throttle {
+            throttle: Some(Throttle {
+                preset: None,
+                latency_ms: 300.0,
+                download_kbps: None,
+                upload_kbps: None,
+            }),
         },
     ] {
         emulate(&engine, change).await;
@@ -515,6 +531,7 @@ async fn settings_apply_to_first_scripts_popups_and_frames() {
             "timeZone": "America/New_York",
             "dark": true,
             "reducedMotion": true,
+            "forcedColors": true,
             "onLine": true,
             "now": 1_700_000_000_000_i64,
         })
@@ -536,9 +553,49 @@ async fn settings_apply_to_first_scripts_popups_and_frames() {
         }
         assert_eq!(Value::Object(seen.clone()), want, "{what}");
     };
+    // The position and the throttled fetch the first script asked for.
+    let later = |tab: Option<String>, frame: Option<&'static str>, what: &'static str| {
+        let engine = engine.clone();
+        async move {
+            let mut req = eval_request("window.later");
+            req.tab = tab;
+            req.frame = frame.map(str::to_owned);
+            let start = Instant::now();
+            let later = loop {
+                let value = eval_with(&engine, req.clone()).await;
+                if !value["fetchMs"].is_null() && !value["position"].is_null() {
+                    break value;
+                }
+                assert!(start.elapsed() < Duration::from_secs(10), "{what}: {value}");
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            };
+            assert_eq!(later["position"], json!([48.8566, 2.3522]), "{what}");
+            // A correctness check with a wide margin, not a measurement.
+            let took = later["fetchMs"].as_f64();
+            assert!(took.is_some_and(|ms| ms >= 250.0), "{what}: {later}");
+        }
+    };
 
     goto(&engine, &site.url("/emulate/first.html")).await;
     check(first(&engine, None, None).await, Some(412), "the first tab");
+    later(None, None, "the first tab").await;
+
+    // An iframe of the other origin (its own process and session) gets
+    // the session's settings too. Chrome sets device metrics only on
+    // top-level targets: the frame keeps a pixel ratio of 1, and its
+    // first script runs before it has a size. (Checked before the popup,
+    // which hides this tab: Chrome holds back a hidden page's geolocation
+    // requests.)
+    goto(&engine, &site.url("/emulate/frame.html")).await;
+    check(
+        first(&engine, None, Some("child")).await,
+        None,
+        "the cross-origin iframe",
+    );
+    later(None, Some("child"), "the cross-origin iframe").await;
+    let mut size = eval_request("innerWidth");
+    size.frame = Some("child".into());
+    assert_eq!(eval_with(&engine, size).await, json!(400));
 
     // A popup's first script.
     eval(&engine, "window.open('/emulate/first.html'); true").await;
@@ -571,20 +628,7 @@ async fn settings_apply_to_first_scripts_popups_and_frames() {
         Some(412),
         "the popup",
     );
-
-    // An iframe of the other origin (its own process and session) gets
-    // the session's settings too. Chrome sets device metrics only on
-    // top-level targets: the frame keeps a pixel ratio of 1, and its
-    // first script runs before it has a size.
-    goto(&engine, &site.url("/emulate/frame.html")).await;
-    check(
-        first(&engine, None, Some("child")).await,
-        None,
-        "the cross-origin iframe",
-    );
-    let mut size = eval_request("innerWidth");
-    size.frame = Some("child".into());
-    assert_eq!(eval_with(&engine, size).await, json!(400));
+    later(Some(popup), None, "the popup").await;
     engine.close().await;
 }
 
