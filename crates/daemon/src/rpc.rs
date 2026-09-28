@@ -42,6 +42,8 @@ pub const TRACE_STOP: &str = "trace_stop";
 pub const PERF: &str = "perf";
 pub const COVERAGE_START: &str = "coverage_start";
 pub const COVERAGE_STOP: &str = "coverage_stop";
+pub const HIGHLIGHT: &str = "highlight";
+pub const INSPECT: &str = "inspect";
 
 /// `hello`: the first call on every connection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

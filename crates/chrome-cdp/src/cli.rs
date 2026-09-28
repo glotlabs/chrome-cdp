@@ -904,6 +904,31 @@ Examples:
     )]
     Coverage(CoverageArgs),
 
+    /// Point out an element in the browser window, for a human watching.
+    #[command(after_help = "\
+Scrolls the element into view and paints DevTools' element highlight over
+it (content, padding, border and margin boxes, with a tooltip) for
+--duration. Meant for a headed browser (open --headed); headless, only
+screenshots show it. Needs a running session.
+
+Examples:
+  chrome-cdp highlight e12
+  chrome-cdp highlight 'role=button[name=\"Save\"]' --duration 5s
+  chrome-cdp highlight '#cart' --duration 0      # until the next highlight")]
+    Highlight(HighlightArgs),
+
+    /// Open DevTools for the tab, in its own window (headed browsers).
+    #[command(after_help = "\
+For a human pairing with the agent: DevTools opens next to the browser
+window, on --panel if given. A headless browser has no window to open it
+in: start one with open --headed --restart. Needs a running session.
+
+Examples:
+  chrome-cdp inspect
+  chrome-cdp inspect --panel console
+  chrome-cdp inspect --tab t2 --panel network")]
+    Inspect(InspectArgs),
+
     /// Make one raw CDP call on the session's browser or current page.
     #[command(after_help = "\
 Starts the session's browser first if it has none. --tab and --frame send
@@ -2242,6 +2267,61 @@ pub(crate) struct TraceStopArgs {
 pub(crate) struct PerfArgs {}
 
 #[derive(Debug, Args)]
+pub(crate) struct HighlightArgs {
+    /// The element: a ref (e12) or a locator that matches one.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: String,
+
+    /// How long the highlight stays (0: until the next highlight).
+    #[arg(long, default_value = "2s", value_parser = parse_duration, value_name = "DURATION")]
+    pub(crate) duration: Duration,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct InspectArgs {
+    /// The panel to open on.
+    #[arg(long, value_enum, value_name = "PANEL")]
+    pub(crate) panel: Option<PanelArg>,
+}
+
+/// `inspect --panel`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum PanelArg {
+    Elements,
+    Console,
+    Network,
+    Sources,
+    /// Storage, cookies, service workers.
+    Application,
+    Performance,
+    Memory,
+    Lighthouse,
+    Security,
+    Recorder,
+}
+
+impl PanelArg {
+    /// DevTools' id of the panel.
+    pub(crate) fn id(self) -> &'static str {
+        match self {
+            Self::Elements => "elements",
+            Self::Console => "console",
+            Self::Network => "network",
+            Self::Sources => "sources",
+            Self::Application => "resources",
+            Self::Performance => "timeline",
+            Self::Memory => "heap-profiler",
+            Self::Lighthouse => "lighthouse",
+            Self::Security => "security",
+            Self::Recorder => "chrome-recorder",
+        }
+    }
+}
+
+#[derive(Debug, Args)]
 pub(crate) struct CoverageArgs {
     #[command(subcommand)]
     pub(crate) command: CoverageCommand,
@@ -2956,6 +3036,8 @@ mod tests {
         "trace stop",
         "perf",
         "coverage start",
+        "highlight",
+        "inspect",
         "network clear",
         "count",
         "box",

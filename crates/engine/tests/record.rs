@@ -246,7 +246,9 @@ async fn har_records_every_tab_from_the_start() {
     assert_eq!(post["request"]["queryString"][0]["name"], "n");
     let cookies = post["request"]["cookies"].as_array().unwrap();
     assert!(
-        cookies.iter().any(|c| c["name"] == "sid" && c["value"] == "abc"),
+        cookies
+            .iter()
+            .any(|c| c["name"] == "sid" && c["value"] == "abc"),
         "{cookies:?}"
     );
     assert_eq!(post["response"]["status"], 200);

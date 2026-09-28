@@ -1,0 +1,11 @@
+$ chrome-cdp inspect --panel console
+exit: 4
+--- stderr
+error: DevTools needs a window, and session default is headless
+  hint: chrome-cdp open --headed --restart   (restarts the browser with a window; tabs and their state are lost)
+
+$ chrome-cdp inspect --panel console --json
+exit: 4
+--- stdout
+{"ok":false,"error":{"kind":"ProtocolError","message":"DevTools needs a window, and session default is headless","hint":"chrome-cdp open --headed --restart   (restarts the browser with a window; tabs and their state are lost)"}}
+

@@ -74,12 +74,12 @@ pub use request::{
     Action, ActionRequest, Button, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
     ConsoleRequest, CoverageStartRequest, CoverageStopRequest, DialogPolicy, DialogRequest,
     DownloadsRequest, ElementState, EvalRequest, EvalWorld, FindRequest, HarContent,
-    HarStartRequest, HarStopRequest, HttpCredentials, ImageFormat, Margins, Modifier, MouseOp,
-    NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest, NetworkShowRequest,
-    OpenRequest, PaperFormat, PdfRequest, PerfRequest, Read, ReadRequest, ScreenshotRequest,
-    ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest, StatusRange, TabCloseRequest,
-    TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest, TraceStopRequest,
-    WaitFor, WaitRequest, WaitUntil,
+    HarStartRequest, HarStopRequest, HighlightRequest, HttpCredentials, ImageFormat,
+    InspectRequest, Margins, Modifier, MouseOp, NavigateRequest, Navigation, NetworkClearRequest,
+    NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest, PerfRequest, Read,
+    ReadRequest, ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest,
+    StatusRange, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target,
+    TraceStartRequest, TraceStopRequest, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use tabs::commands::TabClosed;
@@ -144,6 +144,8 @@ struct Running {
     trace: Mutex<Option<observe::TraceRecording>>,
     /// The `coverage start` measurement, if one runs.
     coverage: Mutex<Option<observe::CoverageRecording>>,
+    /// Counts `highlight`s, so only the latest one's timer hides it.
+    highlights: AtomicU64,
 }
 
 /// What the running browser was started with, to compare with a later
@@ -549,6 +551,7 @@ impl Engine {
             har: Mutex::new(None),
             trace: Mutex::new(None),
             coverage: Mutex::new(None),
+            highlights: AtomicU64::new(0),
         });
         *self.lock_state() = State::Running(running.clone());
         let engine = Arc::downgrade(self);

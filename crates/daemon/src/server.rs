@@ -411,6 +411,14 @@ impl Daemon {
                 Ok(p) => output(Box::pin(self.engine.coverage_stop(p)).await),
                 Err(e) => Err(e),
             },
+            rpc::HIGHLIGHT => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.highlight(p)).await),
+                Err(e) => Err(e),
+            },
+            rpc::INSPECT => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.inspect(p)).await),
+                Err(e) => Err(e),
+            },
             rpc::DOWNLOADS => match params(req.params) {
                 Ok(p) => output(self.engine.downloads(p)),
                 Err(e) => Err(e),

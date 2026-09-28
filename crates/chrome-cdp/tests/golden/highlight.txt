@@ -1,0 +1,19 @@
+$ chrome-cdp highlight '#red' --duration 500ms
+exit: 0
+--- stdout
+highlighted e1 div for 500ms
+--- stderr
+warning: session default is headless: only screenshots show the highlight (open --headed --restart for a window)
+
+$ chrome-cdp highlight '#red' --duration 500ms --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"duration_ms":500,"element":{"name":"","ref":"e1","role":"generic","tag":"div"},"tab":"t1"},"warnings":["session default is headless: only screenshots show the highlight (open --headed --restart for a window)"]}
+
+$ chrome-cdp highlight '#red' --duration 500ms -q
+exit: 0
+--- stdout
+e1
+--- stderr
+warning: session default is headless: only screenshots show the highlight (open --headed --restart for a window)
+

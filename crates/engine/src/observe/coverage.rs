@@ -48,6 +48,15 @@ struct Sheet {
     length: u64,
 }
 
+impl crate::Running {
+    /// Whether `coverage` measures on `session` now (it needs `DOM` on).
+    pub(crate) fn coverage_uses(&self, session: &Session) -> bool {
+        lock(&self.coverage)
+            .as_ref()
+            .is_some_and(|c| c.session.id() == session.id())
+    }
+}
+
 impl Drop for CoverageRecording {
     fn drop(&mut self) {
         self.watcher.abort();

@@ -693,6 +693,35 @@ pub struct CoverageStopRequest {
     pub max_chars: usize,
 }
 
+/// `highlight`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HighlightRequest {
+    /// `--tab`: the tab to highlight in; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    pub locator: String,
+    /// How long the highlight stays; 0 keeps it until the next one.
+    pub duration_ms: u64,
+    #[serde(default)]
+    pub strict_refs: bool,
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    pub timeout_ms: u64,
+}
+
+/// `inspect`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InspectRequest {
+    /// `--tab`: the tab to open DevTools for; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// `--panel`: DevTools' id of the panel to open (`elements`,
+    /// `console`, `timeline`, …); DevTools' choice if `None`.
+    #[serde(default)]
+    pub panel: Option<String>,
+    pub timeout_ms: u64,
+}
+
 /// An image format (`screenshot --format`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

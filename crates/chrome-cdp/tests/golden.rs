@@ -830,6 +830,18 @@ const CASES: &[Case] = &[
         fixture: Fixture::Session,
     },
     Case {
+        name: "highlight",
+        args: &["highlight", "#red", "--duration", "500ms"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/shots/index.html"),
+    },
+    Case {
+        name: "inspect-headless",
+        args: &["inspect", "--panel", "console"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
         name: "goto-auth-required",
         args: &["goto", "{site}/auth/"],
         modes: ERR,

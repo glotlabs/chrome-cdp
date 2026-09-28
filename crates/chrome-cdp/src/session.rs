@@ -25,11 +25,11 @@ use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
     Action, ActionRequest, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
     ConsoleRequest, CoverageStartRequest, CoverageStopRequest, DialogRequest, DownloadsRequest,
-    ElementState, EvalRequest, FindRequest, HarStartRequest, HarStopRequest, HttpCredentials,
-    ImageFormat, NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest,
-    NetworkShowRequest, OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest, ScreenshotRequest,
-    SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
-    TraceStartRequest, TraceStopRequest, WaitFor, WaitRequest,
+    ElementState, EvalRequest, FindRequest, HarStartRequest, HarStopRequest, HighlightRequest,
+    HttpCredentials, ImageFormat, InspectRequest, NavigateRequest, Navigation, NetworkClearRequest,
+    NetworkRequest, NetworkShowRequest, OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest,
+    ScreenshotRequest, SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest,
+    TabsRequest, TraceStartRequest, TraceStopRequest, WaitFor, WaitRequest,
 };
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
@@ -39,10 +39,10 @@ use tokio::runtime::Runtime;
 use crate::cli::{
     AfterArgs, CdpArgs, CloseArgs, ConnectArgs, CoverageArgs, CoverageCommand, DEFAULT_TIMEOUT,
     DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, FindArgs, GlobalArgs,
-    GotoArgs, HarArgs, HarCommand, HistoryArgs, IdleArgs, ImageFormatArg, LogReadArgs, NetworkArgs,
-    NetworkCommand, OpenArgs, PdfArgs, ReloadArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs,
-    StatusArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs, TraceCommand,
-    WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs, ImageFormatArg,
+    InspectArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, ReloadArgs,
+    ScreenshotArgs, SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs, TabArgs, TabCommand,
+    TabsArgs, TraceArgs, TraceCommand, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -928,6 +928,37 @@ pub(crate) fn coverage(args: &CoverageArgs, global: &GlobalArgs) -> Result<Outpu
             ))
         }
     }
+}
+
+/// `highlight`: needs a running session.
+pub(crate) fn highlight(args: &HighlightArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let request = HighlightRequest {
+        tab: ctx.tab.clone(),
+        locator: args.locator.clone(),
+        duration_ms: millis(args.duration),
+        strict_refs: args.refs.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(ctx.timeout),
+    };
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::HIGHLIGHT, &request, ctx.timeout + QUICK))
+}
+
+/// `inspect`: needs a running session.
+pub(crate) fn inspect(args: &InspectArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let request = InspectRequest {
+        tab: ctx.tab.clone(),
+        panel: args.panel.map(|p| p.id().to_owned()),
+        timeout_ms: millis(ctx.timeout),
+    };
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::INSPECT, &request, ctx.timeout + QUICK))
 }
 
 /// `-o` as an absolute path, and whether it is `-` (stdout; then the

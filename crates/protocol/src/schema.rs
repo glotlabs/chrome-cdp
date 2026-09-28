@@ -227,6 +227,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<CoverageStopData>),
     },
     CommandSchema {
+        name: "highlight",
+        summary: "the element highlighted in the page, and for how long",
+        schema: || schema_for!(Envelope<HighlightData>),
+    },
+    CommandSchema {
+        name: "inspect",
+        summary: "the tab DevTools opened for (headed browsers)",
+        schema: || schema_for!(Envelope<InspectData>),
+    },
+    CommandSchema {
         name: "snapshot",
         summary: "the page's accessibility tree, with refs on what can be acted on",
         schema: || schema_for!(Envelope<SnapshotData>),
@@ -1357,6 +1367,29 @@ pub struct CoverageFile {
     pub inline: bool,
     pub total: u64,
     pub unused: u64,
+}
+
+/// `data` of `chrome-cdp highlight --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HighlightData {
+    /// The tab, e.g. `t1`.
+    pub tab: String,
+    /// The element highlighted.
+    pub element: ActedElement,
+    /// How long it stays highlighted, in ms (0: until the next highlight).
+    pub duration_ms: u64,
+}
+
+/// `data` of `chrome-cdp inspect --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct InspectData {
+    /// The tab DevTools opened for, e.g. `t1`.
+    pub tab: String,
+    /// The panel asked for, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub panel: Option<String>,
+    /// The DevTools window's target id.
+    pub devtools_target: String,
 }
 
 /// `data` of `chrome-cdp cdp --json`.

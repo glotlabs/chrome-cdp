@@ -96,6 +96,8 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Trace(args)) => session::trace(&args, &cli.global),
         Some(Command::Perf(_)) => session::perf(&cli.global),
         Some(Command::Coverage(args)) => session::coverage(&args, &cli.global),
+        Some(Command::Highlight(args)) => session::highlight(&args, &cli.global),
+        Some(Command::Inspect(args)) => session::inspect(&args, &cli.global),
         Some(Command::Clipboard(args)) => {
             let op = match &args.command {
                 ClipboardCommand::Read(_) => engine::ClipboardOp::Read,
