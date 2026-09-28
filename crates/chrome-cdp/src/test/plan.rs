@@ -50,6 +50,8 @@ pub(super) struct Planned {
     /// The file's settings with the test's on top.
     pub(super) settings: Settings,
     pub(super) steps: Vec<Prepared>,
+    /// Its artifacts' directory: `<artifacts>/<file>/<name as a slug>`.
+    pub(super) dir: PathBuf,
 }
 
 impl Planned {
@@ -177,12 +179,14 @@ impl Plan {
                 };
             }
             let t = &scenario.tests[test];
+            let dir = test_dir(&config, scenario, test);
             tests.push(Planned {
                 file,
                 name: t.name.clone(),
                 line: t.span.line,
                 settings,
                 steps,
+                dir,
             });
         }
         if !problems.is_empty() {
@@ -222,6 +226,56 @@ impl Plan {
         }
         test.settings.retries.unwrap_or(self.retries)
     }
+}
+
+/// A scenario's artifacts directory: `<artifacts>/<file>`, the file
+/// relative to the folder its `tests` glob starts in (`checkout.cdp` for
+/// `e2e/scenarios/checkout.cdp` and the default glob), else to the
+/// project root.
+pub(super) fn file_dir(config: &Config, scenario: &Scenario) -> PathBuf {
+    let path = scenario
+        .path
+        .strip_prefix(&config.root)
+        .unwrap_or(&scenario.path);
+    for glob in &config.tests {
+        let base: PathBuf = Path::new(glob)
+            .components()
+            .take_while(|c| {
+                !c.as_os_str()
+                    .to_string_lossy()
+                    .contains(['*', '?', '[', '{'])
+            })
+            .collect();
+        if base != Path::new(glob)
+            && let Ok(rest) = path.strip_prefix(&base)
+        {
+            return config.artifacts.join(rest);
+        }
+    }
+    config.artifacts.join(path)
+}
+
+/// Test `index`'s artifacts directory: its name as a slug, with its line
+/// when another test of the file has the same slug.
+fn test_dir(config: &Config, scenario: &Scenario, index: usize) -> PathBuf {
+    let test = &scenario.tests[index];
+    let slug = super::artifacts::slug(&test.name);
+    let shared = scenario
+        .tests
+        .iter()
+        .enumerate()
+        .any(|(i, t)| i != index && super::artifacts::slug(&t.name) == slug);
+    let name = if slug.is_empty() || shared {
+        format!(
+            "{}{}{}",
+            slug,
+            if slug.is_empty() { "test-" } else { "-" },
+            test.span.line
+        )
+    } else {
+        slug
+    };
+    file_dir(config, scenario).join(name)
 }
 
 /// The project's `[e2e]` config; without one, the defaults, rooted at

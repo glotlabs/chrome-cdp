@@ -3557,6 +3557,12 @@ pub struct TestResult {
     /// Why it was skipped (`@skip`) or not run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// Its artifacts' directory (absolute): `steps.jsonl`,
+    /// `requests.txt`, `console.txt`, and for a failure `report.md`,
+    /// `failure.png` and `snapshot.txt`. With retries, its last try's;
+    /// with `--repeat`, its first failed (else first) run's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifacts: Option<String>,
     /// Why it failed (its last try; a flaky test's first failure; with
     /// `--repeat`, its first failed run's).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3582,4 +3588,8 @@ pub struct TestFailure {
     pub via: Vec<String>,
     /// The step's error.
     pub error: ErrorInfo,
+    /// The failure's `report.md` (absolute): the step, the error, the page
+    /// around it, console errors and failed requests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<String>,
 }

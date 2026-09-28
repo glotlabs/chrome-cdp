@@ -24,6 +24,7 @@
 //! (config) or `@allow-console-errors` (test) allows them.
 
 use std::cell::{Cell, RefCell};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -33,8 +34,10 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 
 use e2e::scenario::Settings;
 
+use super::artifacts::{self, Capture, Logs, Recorder, StepRecord};
 use super::determinism;
 use super::plan::{Plan, Planned, Prepared};
+use super::report_md::{self, Subject};
 use crate::cli::{Command, GlobalArgs, WAIT_TIMEOUT};
 use crate::script;
 
@@ -65,6 +68,9 @@ pub(super) struct Outcome {
     /// What its steps warned about that the report shows (a screenshot
     /// baseline of another OS only).
     pub(super) warnings: Vec<String>,
+    /// Its artifacts (its last try's; with `--repeat`, the first failed
+    /// run's, else the first run's).
+    pub(super) artifacts: Option<PathBuf>,
 }
 
 /// How a run's steps are made.
@@ -78,6 +84,17 @@ pub(super) struct Options {
     pub(super) bail: bool,
     /// Whether the run named the sessions itself (and removes them).
     pub(super) own_sessions: bool,
+    /// `--trace`: a screenshot after every step.
+    pub(super) trace: bool,
+    /// `--debug`: the first failed test's context is left open, here.
+    pub(super) debug: Option<Mutex<Option<Kept>>>,
+}
+
+/// The browser context `--debug` kept.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Kept {
+    pub(super) session: String,
+    pub(super) context: String,
 }
 
 /// Where a file's `@before-all` is.
@@ -124,6 +141,15 @@ pub(super) fn execute(
             AtomicUsize::new(tests * repeat)
         })
         .collect();
+    // What an earlier run left is gone, also for the tests that do not
+    // run now.
+    for test in &plan.tests {
+        if let Err(e) = std::fs::remove_dir_all(&test.dir)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!("cannot remove {}: {e}", test.dir.display());
+        }
+    }
     let workers = usize::try_from(plan.jobs).unwrap_or(1).min(items.max(1));
     std::thread::scope(|scope| {
         for worker in 0..workers {
@@ -147,6 +173,7 @@ pub(super) fn execute(
                             reason: Some(reason.to_owned()),
                             failed_runs: None,
                             warnings: Vec::new(),
+                            artifacts: None,
                         }
                     } else {
                         let runner = Runner {
@@ -155,6 +182,7 @@ pub(super) fn execute(
                             session,
                             seen: Cell::new(0),
                             warnings: RefCell::new(Vec::new()),
+                            recorder: RefCell::new(None),
                         };
                         let outcome = match runner.before_all(test, &before_all[test.file]) {
                             Err(failure) => Outcome {
@@ -165,8 +193,9 @@ pub(super) fn execute(
                                 reason: None,
                                 failed_runs: None,
                                 warnings: Vec::new(),
+                                artifacts: None,
                             },
-                            Ok(()) => runner.test(test),
+                            Ok(()) => runner.test(test, (repeat > 1).then_some(item % repeat + 1)),
                         };
                         let last = left[test.file].fetch_sub(1, Ordering::SeqCst) == 1;
                         let mut outcome = if last {
@@ -231,8 +260,14 @@ fn merge(mut runs: Vec<Outcome>, repeat: usize) -> Outcome {
     } else {
         Status::Passed
     };
+    let artifacts = runs
+        .iter()
+        .find(|o| o.status == Status::Failed)
+        .or(runs.first())
+        .and_then(|o| o.artifacts.clone());
     Outcome {
         status,
+        artifacts,
         duration: runs.iter().map(|o| o.duration).max().unwrap_or_default(),
         tries: runs.iter().map(|o| o.tries).sum(),
         failure: runs.iter().find_map(|o| o.failure.clone()),
@@ -266,6 +301,7 @@ fn not_run(options: &Options) -> Outcome {
         }),
         failed_runs: None,
         warnings: Vec::new(),
+        artifacts: None,
     }
 }
 
@@ -278,6 +314,8 @@ struct Runner<'a> {
     seen: Cell<u64>,
     /// The warnings of steps the report shows.
     warnings: RefCell<Vec<String>>,
+    /// The steps of the test (or hook) running now, and its artifacts.
+    recorder: RefCell<Option<Recorder>>,
 }
 
 /// A step's place in a test, for its failure.
@@ -288,13 +326,25 @@ enum Part {
 }
 
 impl Runner<'_> {
-    /// `test`'s tries until it passes or its retries are used up.
-    fn test(&self, test: &Planned) -> Outcome {
+    /// `test`'s tries until it passes or its retries are used up; `run`
+    /// is its run's number with `--repeat`.
+    fn test(&self, test: &Planned, run: Option<usize>) -> Outcome {
         let tries = self.plan.retries(test) + 1;
         let mut first_failure = None;
         for attempt in 1..=tries {
             let started = Instant::now();
-            let result = self.attempt(test);
+            // The first try's artifacts are the test's; a retry's go below.
+            let dir = match run {
+                Some(run) => test.dir.join(format!("run-{run}")),
+                None if attempt == 1 => test.dir.clone(),
+                None => test.dir.join(format!("try-{attempt}")),
+            };
+            let label = match run {
+                Some(run) => Some(format!("run {run} of {}", self.plan.repeat)),
+                None if tries > 1 => Some(format!("try {attempt} of {tries}")),
+                None => None,
+            };
+            let result = self.attempt(test, &dir, label);
             let duration = started.elapsed();
             match result {
                 Ok(()) => {
@@ -311,6 +361,7 @@ impl Runner<'_> {
                         reason: None,
                         failed_runs: None,
                         warnings: Vec::new(),
+                        artifacts: Some(dir),
                     };
                 }
                 Err(failure) if attempt == tries => {
@@ -322,6 +373,7 @@ impl Runner<'_> {
                         reason: None,
                         failed_runs: None,
                         warnings: Vec::new(),
+                        artifacts: Some(dir),
                     };
                 }
                 Err(failure) => {
@@ -332,27 +384,146 @@ impl Runner<'_> {
         unreachable!("a test runs at least once")
     }
 
-    /// One try of `test` in a fresh context.
-    fn attempt(&self, test: &Planned) -> Result<(), Box<TestFailure>> {
+    /// One try of `test` in a fresh context, its artifacts in `dir`;
+    /// `label` says which try or run it is, when there are several.
+    fn attempt(
+        &self,
+        test: &Planned,
+        dir: &Path,
+        label: Option<String>,
+    ) -> Result<(), Box<TestFailure>> {
         let deadline = Instant::now() + self.plan.timeout(&test.settings);
         let hooks = &self.plan.hooks[test.file];
         let span = self.test_span(test);
-        let context = self.new_context(&span)?;
-        let result = (|| {
-            self.settle(&context, &test.settings, &span, deadline)?;
-            self.steps(&hooks.before, &context, deadline, Part::Hook("before"))?;
-            self.steps(&test.steps, &context, deadline, Part::Test)?;
-            self.no_errors(test, &context, &span)
-        })();
-        // `@after` runs whatever happened, while there is time.
-        let after = self.steps(
-            &hooks.after,
-            &context,
-            deadline + AFTER_GRACE,
-            Part::Hook("after"),
-        );
-        self.close_context(&context);
-        result.and(after)
+        let subject = Subject {
+            title: &test.name,
+            place: &span,
+            attempt: label,
+            rerun: Cmd::new("test").arg(&span).to_string(),
+        };
+        self.in_context(
+            dir,
+            &subject,
+            &test.settings,
+            deadline,
+            Some(&hooks.after),
+            |context| {
+                self.steps(&hooks.before, context, deadline, Part::Hook("before"))?;
+                self.steps(&test.steps, context, deadline, Part::Test)?;
+                self.no_errors(test, context, &span)
+            },
+        )
+    }
+
+    /// Runs `body` in a fresh context set up with `settings`, then
+    /// `after` (`@after`, which runs whatever happened, while there is
+    /// time), recording the steps and artifacts in `dir`. A failure gets
+    /// the page as it was (before `@after`) and a `report.md`. With
+    /// `--debug`, the first failure's context stays open, without its
+    /// `@after`.
+    fn in_context(
+        &self,
+        dir: &Path,
+        subject: &Subject<'_>,
+        settings: &Settings,
+        deadline: Instant,
+        after: Option<&[Prepared]>,
+        body: impl FnOnce(&str) -> Result<(), Box<TestFailure>>,
+    ) -> Result<(), Box<TestFailure>> {
+        *self.recorder.borrow_mut() = Some(Recorder::new(dir.to_owned(), self.options.trace));
+        let mut capture = None;
+        let mut logs = Logs::default();
+        let mut kept = false;
+        let result = match self.new_context(subject.place) {
+            Err(failure) => Err(failure),
+            Ok(context) => {
+                let mut result = self
+                    .settle(&context, settings, subject.place, deadline)
+                    .and_then(|()| body(&context));
+                if result.is_err() {
+                    capture = Some(self.capture(dir, &context));
+                }
+                kept = result.is_err() && self.keep(&context);
+                if !kept && let Some(after) = after {
+                    let ran =
+                        self.steps(after, &context, deadline + AFTER_GRACE, Part::Hook("after"));
+                    if result.is_ok() && ran.is_err() {
+                        capture = Some(self.capture(dir, &context));
+                    }
+                    result = result.and(ran);
+                }
+                logs = artifacts::logs(dir, &context, &|words| {
+                    self.invoke(words, Some(&context), None)
+                });
+                if !kept {
+                    self.close_context(&context);
+                }
+                result
+            }
+        };
+        let recorder = self.recorder.borrow_mut().take();
+        result.map_err(|mut failure| {
+            if !kept {
+                artifacts::point_hint_at_files(&mut failure.error, dir);
+            }
+            let steps = recorder.as_ref().map(Recorder::steps).unwrap_or_default();
+            let text = report_md::render(subject, &failure, steps, capture.as_ref(), &logs, dir);
+            let path = dir.join(artifacts::REPORT);
+            artifacts::write(&path, &text);
+            failure.report = Some(path.display().to_string());
+            failure
+        })
+    }
+
+    /// `failure.png` and `snapshot.txt` of `context`'s page.
+    fn capture(&self, dir: &Path, context: &str) -> Capture {
+        artifacts::capture(dir, &|words| self.invoke(words, Some(context), None))
+    }
+
+    /// With `--debug`, whether `context` is the first to fail, and stays.
+    fn keep(&self, context: &str) -> bool {
+        let Some(debug) = &self.options.debug else {
+            return false;
+        };
+        let mut kept = debug.lock().unwrap_or_else(PoisonError::into_inner);
+        if kept.is_some() {
+            return false;
+        }
+        *kept = Some(Kept {
+            session: self.session.to_owned(),
+            context: context.to_owned(),
+        });
+        true
+    }
+
+    /// Adds a step that started at `started` to the recording; with
+    /// `--trace`, a screenshot of `context`'s page after it too.
+    fn record(&self, mut step: StepRecord, started: Instant, context: Option<&str>) {
+        let shot = {
+            let recorder = self.recorder.borrow();
+            match (recorder.as_ref(), context) {
+                (Some(r), Some(context)) if r.trace() => Some((r.next_screenshot(), context)),
+                _ => None,
+            }
+        };
+        let elapsed = started.elapsed();
+        if let Some(((path, name), context)) = shot {
+            let _ = std::fs::create_dir_all(path.parent().unwrap_or(&path));
+            let file = path.display().to_string();
+            if self
+                .invoke(
+                    &["screenshot", "-o", &file, "--timeout", "5s"],
+                    Some(context),
+                    None,
+                )
+                .is_ok()
+            {
+                step.screenshot = Some(name);
+            }
+        }
+        if let Some(recorder) = self.recorder.borrow_mut().as_mut() {
+            recorder.record(step, started, elapsed);
+        }
     }
 
     /// The span of `test`'s `@test` line.
@@ -363,7 +534,7 @@ impl Runner<'_> {
     /// Makes the context a test (or hook) runs in.
     fn new_context(&self, span: &str) -> Result<String, Box<TestFailure>> {
         let out = self
-            .invoke(&["context", "new"], None, None)
+            .setup(&["context", "new"], None, None, span)
             .map_err(|e| setup_failure(span, "context new", e))?;
         out.data["context"]["id"]
             .as_str()
@@ -396,7 +567,7 @@ impl Runner<'_> {
             let mut words = vec!["mock", "use"];
             words.extend(settings.mocks.iter().map(String::as_str));
             let text = words.join(" ");
-            self.invoke(&words, Some(context), Some(deadline))
+            self.setup(&words, Some(context), Some(deadline), span)
                 .map_err(|e| setup_failure(span, &text, e))?;
         }
         let size = settings
@@ -407,14 +578,37 @@ impl Runner<'_> {
             Some(device) => &["emulate", device],
             None => &["viewport", size.as_str(), "--dpr", "1"],
         };
-        self.invoke(words, Some(context), Some(deadline))
+        self.setup(words, Some(context), Some(deadline), span)
             .map_err(|e| setup_failure(span, &words.join(" "), e))?;
         for words in determinism::commands(&self.plan.determinism) {
             let words: Vec<&str> = words.iter().map(String::as_str).collect();
-            self.invoke(&words, Some(context), Some(deadline))
+            self.setup(&words, Some(context), Some(deadline), span)
                 .map_err(|e| setup_failure(span, &setup_text(&words), e))?;
         }
         Ok(())
+    }
+
+    /// Runs a command of the runner's setup, and records it.
+    fn setup(
+        &self,
+        words: &[&str],
+        context: Option<&str>,
+        deadline: Option<Instant>,
+        span: &str,
+    ) -> Result<Output, ErrorInfo> {
+        let started = Instant::now();
+        let result = self.invoke(words, context, deadline);
+        let mut record = StepRecord::new(
+            span.to_owned(),
+            setup_text(words),
+            Some("setup".to_owned()),
+            Vec::new(),
+            result.as_ref(),
+        );
+        // Ids and session names that change from run to run.
+        record.output.clear();
+        self.record(record, started, None);
+        result
     }
 
     /// Runs `steps` in `context` until one fails.
@@ -426,16 +620,31 @@ impl Runner<'_> {
         part: Part,
     ) -> Result<(), Box<TestFailure>> {
         for step in steps {
+            let started = Instant::now();
             let result = self.step(step, context, deadline);
             let unmatched = self.unmatched(context);
-            let error = match result {
-                Err(error) => with_unmatched(error, &unmatched),
-                Ok(()) if !unmatched.is_empty() => {
-                    unmatched_error(&unmatched, &self.mock_sets(context))
+            let result = match result {
+                Err(error) => Err(self.forget_session(with_unmatched(error, &unmatched))),
+                Ok(_) if !unmatched.is_empty() => {
+                    Err(self.forget_session(unmatched_error(&unmatched, &self.mock_sets(context))))
                 }
-                Ok(()) => continue,
+                Ok(out) => Ok(out),
             };
-            return Err(failure(step, part, self.forget_session(error)));
+            let mut record = StepRecord::new(
+                step.at.to_string(),
+                step.text.clone(),
+                match part {
+                    Part::Hook(name) => Some(name.to_owned()),
+                    Part::Test => None,
+                },
+                step.via.iter().map(ToString::to_string).collect(),
+                result.as_ref(),
+            );
+            record.output = self.forget_session_in(&record.output);
+            self.record(record, started, Some(context));
+            if let Err(error) = result {
+                return Err(failure(step, part, error));
+            }
         }
         Ok(())
     }
@@ -490,7 +699,17 @@ impl Runner<'_> {
             return Ok(());
         }
         let words = ["expect", "--no-errors", "--all-tabs"];
-        self.invoke(&words, Some(context), None).map(drop).map_err(|error| {
+        let started = Instant::now();
+        let result = self.invoke(&words, Some(context), None);
+        let record = StepRecord::new(
+            span.to_owned(),
+            words.join(" "),
+            Some("check".to_owned()),
+            Vec::new(),
+            result.as_ref(),
+        );
+        self.record(record, started, None);
+        result.map(drop).map_err(|error| {
             let error = self.forget_session(error).hint(Hint::text(
                 "fix the error; if the test expects it, add @allow-console-errors to the test (or allow_console_errors = true to [e2e])",
             ));
@@ -500,12 +719,13 @@ impl Runner<'_> {
                 hook: Some("check".to_owned()),
                 via: Vec::new(),
                 error,
+                report: None,
             })
         })
     }
 
     /// Runs one step, within the test's time.
-    fn step(&self, step: &Prepared, context: &str, deadline: Instant) -> Result<(), ErrorInfo> {
+    fn step(&self, step: &Prepared, context: &str, deadline: Instant) -> Result<Output, ErrorInfo> {
         let over = || {
             ErrorInfo::new(
                 ErrorKind::Timeout,
@@ -536,23 +756,23 @@ impl Runner<'_> {
         let out = crate::run(cli)?;
         if screenshot {
             let mut warnings = self.warnings.borrow_mut();
-            for warning in out.warnings {
-                if !warnings.contains(&warning) {
-                    warnings.push(warning);
+            for warning in &out.warnings {
+                if !warnings.contains(warning) {
+                    warnings.push(warning.clone());
                 }
             }
         }
         if Instant::now() > deadline {
             return Err(over());
         }
-        Ok(())
+        Ok(out)
     }
 
     /// `error` without the `--session` of the run's own session in its
     /// hint and notes: that session is closed when anyone reads them.
     fn forget_session(&self, mut error: ErrorInfo) -> ErrorInfo {
         let flag = format!(" --session {}", self.session);
-        if self.session == self.options.global.session {
+        if self.session == self.options.global.session || self.options.debug.is_some() {
             return error;
         }
         if let Some(hint) = &mut error.hint {
@@ -562,6 +782,14 @@ impl Runner<'_> {
             note.text = note.text.replace(&flag, "");
         }
         error
+    }
+
+    /// `text` without the `--session` of the run's own session.
+    fn forget_session_in(&self, text: &str) -> String {
+        if self.session == self.options.global.session || self.options.debug.is_some() {
+            return text.to_owned();
+        }
+        text.replace(&format!(" --session {}", self.session), "")
     }
 
     /// Runs a runner command (`context new`, `mock use`, …).
@@ -644,12 +872,17 @@ impl Runner<'_> {
         let file = &self.plan.scenarios[test.file];
         let deadline = Instant::now() + self.plan.timeout(&file.settings);
         let span = format!("{}:1", file.name);
-        let context = self.new_context(&span)?;
-        let result = self
-            .settle(&context, &file.settings, &span, deadline)
-            .and_then(|()| self.steps(steps, &context, deadline, Part::Hook(name)));
-        self.close_context(&context);
-        result
+        let title = format!("@{name} of {}", file.name);
+        let subject = Subject {
+            title: &title,
+            place: &span,
+            attempt: None,
+            rerun: Cmd::new("test").arg(&file.name).to_string(),
+        };
+        let dir = super::plan::file_dir(&self.plan.config, file).join(format!("@{name}"));
+        self.in_context(&dir, &subject, &file.settings, deadline, None, |context| {
+            self.steps(steps, context, deadline, Part::Hook(name))
+        })
     }
 }
 
@@ -667,6 +900,7 @@ fn failure(step: &Prepared, part: Part, error: ErrorInfo) -> Box<TestFailure> {
         },
         via: step.via.iter().map(ToString::to_string).collect(),
         error,
+        report: None,
     })
 }
 
@@ -750,5 +984,6 @@ fn setup_failure(at: &str, step: &str, error: ErrorInfo) -> Box<TestFailure> {
         hook: Some("setup".to_owned()),
         via: Vec::new(),
         error,
+        report: None,
     })
 }

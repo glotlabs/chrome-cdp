@@ -614,6 +614,13 @@
             "null"
           ]
         },
+        "report": {
+          "description": "The failure's `report.md` (absolute): the step, the error, the page\naround it, console errors and failed requests.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "step": {
           "description": "The step as written.",
           "type": "string"
@@ -636,6 +643,13 @@
     "TestResult": {
       "description": "One test of `chrome-cdp test`.",
       "properties": {
+        "artifacts": {
+          "description": "Its artifacts' directory (absolute): `steps.jsonl`,\n`requests.txt`, `console.txt`, and for a failure `report.md`,\n`failure.png` and `snapshot.txt`. With retries, its last try's;\nwith `--repeat`, its first failed (else first) run's.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "duration_ms": {
           "default": 0,
           "description": "How long its last try took (with `--repeat`, its slowest run).",

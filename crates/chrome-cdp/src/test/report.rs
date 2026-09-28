@@ -86,6 +86,9 @@ fn failure_text(failure: &TestFailure, label: &str) -> String {
     for line in rendered.stderr.lines() {
         let _ = writeln!(text, "    {line}");
     }
+    if let Some(report) = &failure.report {
+        let _ = writeln!(text, "    report: {report}");
+    }
     text
 }
 
@@ -135,6 +138,7 @@ fn result(plan: &Plan, test: &Planned, outcome: &Outcome) -> TestResult {
         reason: outcome.reason.clone(),
         failed_runs: outcome.failed_runs,
         warnings: outcome.warnings.clone(),
+        artifacts: outcome.artifacts.as_ref().map(|d| d.display().to_string()),
         error: outcome.failure.as_deref().cloned(),
     }
 }
@@ -161,6 +165,27 @@ pub(super) fn summary(data: &TestRunData, duration: Duration) -> String {
     )
 }
 
+/// The closing list of the failed (and flaky) tests' `report.md` files,
+/// one per line after a heading; empty when there is none.
+pub(super) fn reports(data: &TestRunData) -> String {
+    let mut seen: Vec<&str> = Vec::new();
+    let mut text = String::new();
+    for test in &data.tests {
+        let Some(report) = test.error.as_ref().and_then(|e| e.report.as_deref()) else {
+            continue;
+        };
+        if seen.contains(&report) {
+            continue;
+        }
+        seen.push(report);
+        let _ = writeln!(text, "  {report}");
+    }
+    if text.is_empty() {
+        return text;
+    }
+    format!("failure reports:\n{text}")
+}
+
 /// The run's result: an [`Output`] when no test failed, else an error
 /// naming the failed tests, with the data in its details.
 pub(super) fn finish(
@@ -178,7 +203,10 @@ pub(super) fn finish(
         .collect();
     if failed.is_empty() {
         let quiet = format!("{} passed", data.passed + data.flaky);
-        return Ok(Output::typed(data, summary)
+        let text = format!("{summary}\n{}", reports(data))
+            .trim_end()
+            .to_owned();
+        return Ok(Output::typed(data, text)
             .quiet(quiet)
             .limit(max_chars, "--max-chars 0 for all of it"));
     }
@@ -238,6 +266,7 @@ pub(super) fn listed(plan: &Plan, shard: Option<&str>, max_chars: usize) -> Outp
             reason: test.skipped().map(str::to_owned),
             failed_runs: None,
             warnings: Vec::new(),
+            artifacts: None,
             error: None,
         });
     }

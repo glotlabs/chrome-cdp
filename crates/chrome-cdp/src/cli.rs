@@ -290,6 +290,11 @@ unmatched = \"fail\", fails the test at the step after which it was
 sent, naming the closest mocks; so does a console error in any of its
 tabs (unless @allow-console-errors, or allow_console_errors = true in
 [e2e]). Exit code 0: every test passed; 1: a test failed.
+Each test leaves steps.jsonl, requests.txt and console.txt in
+e2e/.results/<file>/<test>/; a failed one also failure.png, snapshot.txt
+and report.md (the step, the error, the page around it, console errors,
+failed requests), whose path is printed under its line. --trace adds a
+screenshot after every step.
 A scenario that does not check (bad syntax, unknown command, missing
 @include) fails before any test runs, with exit code 2.
 
@@ -4921,6 +4926,11 @@ pub(crate) struct TestArgs {
     /// List the tests the run would have, without running them.
     #[arg(long)]
     pub(crate) list: bool,
+
+    /// Take a screenshot after every step, into the test's trace/ folder
+    /// (and the html report).
+    #[arg(long)]
+    pub(crate) trace: bool,
 
     /// Bound the JSON output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 200_000, value_name = "N")]

@@ -579,3 +579,167 @@ fn repeat_runs_each_test_and_fails_a_flaky_one() {
     ]);
     assert_eq!(out.status.code(), Some(2), "{}", stderr(&out));
 }
+
+#[test]
+fn every_test_leaves_artifacts_and_a_failure_a_report() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let results = project.root.join("e2e/.results/scenarios");
+    // A leftover of an earlier run is removed.
+    let stale = results.join("fail/fails.cdp/passes/report.md");
+    std::fs::create_dir_all(stale.parent().unwrap()).unwrap();
+    std::fs::write(&stale, "old").unwrap();
+    let out = project.test(&[
+        "scenarios/fail",
+        "scenarios/checks/checks.cdp:18",
+        "--jobs",
+        "1",
+    ]);
+    assert_eq!(out.status.code(), Some(1));
+    let text = stdout(&out);
+
+    // A passing test: the journals, no failure files.
+    let passes = results.join("fail/fails.cdp/passes");
+    for file in ["steps.jsonl", "requests.txt", "console.txt"] {
+        assert!(passes.join(file).is_file(), "{file}");
+    }
+    assert!(!stale.exists());
+    assert!(!passes.join("failure.png").exists());
+    let steps: Vec<Value> = std::fs::read_to_string(passes.join("steps.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let own: Vec<&Value> = steps.iter().filter(|s| s.get("hook").is_none()).collect();
+    assert_eq!(own.len(), 1, "{steps:?}");
+    assert_eq!(own[0]["command"], "expect text='Price: 49' visible");
+    assert_eq!(own[0]["at"], "scenarios/fail/fails.cdp:6:3");
+    assert_eq!(own[0]["ok"], true);
+    assert!(
+        steps
+            .iter()
+            .any(|s| s["hook"] == "before" && s["command"] == "goto /e2e/shop.html")
+    );
+    assert!(
+        steps
+            .iter()
+            .any(|s| s["hook"] == "setup" && s["command"] == "mock use")
+    );
+    assert!(steps.iter().any(|s| s["hook"] == "check"));
+    // No run's own session name in the outputs.
+    assert!(
+        !steps
+            .iter()
+            .any(|s| s.to_string().contains("--session test-"))
+    );
+    let requests = std::fs::read_to_string(passes.join("requests.txt")).unwrap();
+    assert!(
+        requests.contains(" GET 200 ") && requests.contains("/e2e/api/price fetch "),
+        "{requests}"
+    );
+    assert!(
+        requests.contains(" ← mock \"price\" (shop.toml:6)\n"),
+        "{requests}"
+    );
+
+    // A failed test: its report, screenshot and snapshot, named under
+    // its line and at the end.
+    let failed = results.join("fail/fails.cdp/fails-on-a-missing-element");
+    let report = failed.join("report.md");
+    assert!(
+        text.contains(&format!("    report: {}\n", report.display())),
+        "{text}"
+    );
+    let list = text
+        .split("\nfailure reports:\n")
+        .nth(1)
+        .unwrap_or_default();
+    assert!(
+        list.contains(&format!("  {}\n", report.display())),
+        "{text}"
+    );
+    assert!(failed.join("failure.png").is_file());
+    assert!(
+        std::fs::read_to_string(failed.join("snapshot.txt"))
+            .unwrap()
+            .starts_with("page t")
+    );
+    let md = std::fs::read_to_string(&report).unwrap();
+    assert!(
+        md.starts_with("# Failed: fails on a missing element\n\n`scenarios/fail/fails.cdp:8`\n"),
+        "{md}"
+    );
+    assert!(
+        md.contains(
+            "`scenarios/fail/fails.cdp:9:3`:\n\n    expect text=Nowhere visible --timeout 500ms\n"
+        ),
+        "{md}"
+    );
+    assert!(md.contains("  actual: no element matches"), "{md}");
+    // The hint to look at the page points at the snapshot: the page is gone.
+    assert!(
+        md.contains(&format!(
+            "  hint: see {}   (the page when the test failed",
+            failed.join("snapshot.txt").display()
+        )),
+        "{md}"
+    );
+    assert!(
+        md.contains("✓ scenarios/fail/fails.cdp:3:3 goto /e2e/shop.html ("),
+        "{md}"
+    );
+    assert!(md.contains("`snapshot -i` when it failed"), "{md}");
+    assert!(
+        md.contains(&format!(
+            "- {}: the page when it failed",
+            failed.join("failure.png").display()
+        )),
+        "{md}"
+    );
+    assert!(
+        md.ends_with("Run it again: `chrome-cdp test scenarios/fail/fails.cdp:8`\n"),
+        "{md}"
+    );
+
+    // A flaky test: the failed first try's report, the second try below.
+    let flaky = results.join("fail/flaky.cdp/passes-on-the-second-try");
+    assert!(flaky.join("report.md").is_file());
+    assert!(flaky.join("try-2/steps.jsonl").is_file());
+    assert!(!flaky.join("try-2/report.md").exists());
+
+    // The request no mock answered, and its console error.
+    let unmatched = results.join("checks/checks.cdp/names-the-unmatched-request-a-failed-step-saw");
+    let md = std::fs::read_to_string(unmatched.join("report.md")).unwrap();
+    assert!(
+        md.contains("## Failed and unmatched requests\n\n- t"),
+        "{md}"
+    );
+    assert!(md.contains("/e2e/api/prices fetch "), "{md}");
+    assert!(
+        md.contains(" ← unmatched in mock set shop (fail); closest mock: shop.toml:6 \"price\""),
+        "{md}"
+    );
+    assert!(md.contains("## Console errors\n\n- t"), "{md}");
+    assert!(md.contains("status of 501"), "{md}");
+
+    // The same in JSON.
+    let (_, value) = project.json(&["scenarios/fail/fails.cdp", "--jobs", "1"]);
+    let tests = &value["error"]["details"]["tests"];
+    assert_eq!(tests[0]["artifacts"], passes.display().to_string());
+    assert_eq!(tests[1]["error"]["report"], report.display().to_string());
+    assert!(tests[2].get("artifacts").is_none(), "{}", tests[2]);
+
+    // --trace: a screenshot after every step.
+    let out = project.test(&["scenarios/fail/fails.cdp:5", "--trace"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    let steps: Vec<Value> = std::fs::read_to_string(passes.join("steps.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let shots: Vec<&Value> = steps.iter().filter_map(|s| s.get("screenshot")).collect();
+    assert_eq!(shots.len(), 2, "{steps:?}");
+    for shot in shots {
+        assert!(passes.join(shot.as_str().unwrap()).is_file(), "{shot}");
+    }
+}

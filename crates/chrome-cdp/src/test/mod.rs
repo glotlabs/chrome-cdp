@@ -12,10 +12,12 @@
 //! the end, and the web servers stopped, also when one exits early or on
 //! Ctrl-C.
 
+mod artifacts;
 mod determinism;
 mod exec;
 mod plan;
 mod report;
+mod report_md;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -62,6 +64,8 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
         update_snapshots: args.update_snapshots,
         bail: args.bail,
         own_sessions: !explicit_session,
+        trace: args.trace,
+        debug: None,
     };
     let started = Instant::now();
     if mode == Mode::Text {
@@ -98,7 +102,7 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
     let summary = report::summary(&data, duration);
     let result = report::finish(&plan, &data, duration, args.max_chars);
     if mode == Mode::Text && result.is_err() {
-        output::stdout(&format!("{summary}\n"));
+        output::stdout(&format!("{summary}\n{}", report::reports(&data)));
     }
     output::print(mode, result)
 }
