@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Log in</title>
+</head>
+<body>
+<h1>Log in</h1>
+<button id="login" onclick="logIn()">Log in as Ada</button>
+<script>
+// Logging in leaves state in every place a real app keeps it: a cookie
+// scripts can read, localStorage, sessionStorage, IndexedDB (with values
+// JSON cannot hold) and, from the server, an HttpOnly session cookie.
+function saveDrafts() {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open('app', 2);
+    open.onupgradeneeded = () => {
+      const drafts = open.result.createObjectStore('drafts', { keyPath: 'id' });
+      drafts.createIndex('by_title', 'title', { unique: false });
+      open.result.createObjectStore('kv');
+    };
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      const tx = db.transaction(['drafts', 'kv'], 'readwrite');
+      tx.objectStore('drafts').put({ id: 1, title: 'Hello', words: 2 });
+      tx.objectStore('kv').put(new Date('2026-01-31T09:30:00Z'), 'saved');
+      tx.objectStore('kv').put(new Map([['theme', 'dark']]), 'settings');
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => reject(tx.error);
+    };
+  });
+}
+
+async function logIn() {
+  localStorage.setItem('token', 'tok-ada-42');
+  sessionStorage.setItem('draft', 'draft-7');
+  document.cookie = 'theme=dark; path=/; max-age=86400';
+  await saveDrafts();
+  location.href = '/state/app.html?set-cookie=' +
+    encodeURIComponent('session=ada-42; Path=/; HttpOnly; SameSite=Lax');
+}
+</script>
+</body>
+</html>

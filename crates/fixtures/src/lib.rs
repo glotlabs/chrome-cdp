@@ -29,6 +29,8 @@
 //!   and then to `to`.
 //! - `?download=<name>` sends the response as an attachment named `name`
 //!   (`Content-Disposition`), so Chrome downloads it.
+//! - `?set-cookie=<cookie>` (percent-encoded) sends it as a `Set-Cookie`
+//!   header, for a cookie scripts cannot set (`HttpOnly`).
 //! - Paths under `/auth/` need HTTP basic auth as [`AUTH_USER`] with
 //!   [`AUTH_PASSWORD`]; without it they answer 401 with a
 //!   `WWW-Authenticate` challenge.
@@ -57,7 +59,7 @@ use http_body_util::Full;
 use hyper::body::Incoming;
 use hyper::header::{
     AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_DISPOSITION, CONTENT_TYPE, HeaderValue,
-    LOCATION, SEC_WEBSOCKET_ACCEPT, SEC_WEBSOCKET_KEY, UPGRADE, WWW_AUTHENTICATE,
+    LOCATION, SEC_WEBSOCKET_ACCEPT, SEC_WEBSOCKET_KEY, SET_COOKIE, UPGRADE, WWW_AUTHENTICATE,
 };
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -327,6 +329,11 @@ async fn respond(site: &Site, origin: &str, req: &Request<Incoming>) -> Response
     if let Some(status) = status {
         *response.status_mut() = status;
     }
+    if let Some(cookie) = param(query, "set-cookie")
+        && let Ok(value) = HeaderValue::from_str(&percent_decode(cookie))
+    {
+        response.headers_mut().append(SET_COOKIE, value);
+    }
     if let Some(name) = param(query, "download")
         && let Ok(value) = HeaderValue::from_str(&format!("attachment; filename=\"{name}\""))
     {
@@ -505,6 +512,32 @@ fn response(status: StatusCode, kind: &'static str, body: Bytes) -> Response<Ful
 
 /// The value of `name` in a query string (no percent-decoding; fixture
 /// params are plain).
+/// `%XX` escapes (and `+` for a space) decoded; bad escapes stay.
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' => match text
+                .get(i + 1..i + 3)
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+            {
+                Some(b) => {
+                    out.push(b);
+                    i += 3;
+                    continue;
+                }
+                None => out.push(b'%'),
+            },
+            b'+' => out.push(b' '),
+            b => out.push(b),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 fn param<'a>(query: &'a str, name: &str) -> Option<&'a str> {
     query
         .split('&')
@@ -685,6 +718,19 @@ mod tests {
         );
         let (status, _) = get(&f.url("/items?n=1&status=503"));
         assert_eq!(status, "HTTP/1.1 503 Service Unavailable");
+    }
+
+    #[test]
+    fn set_cookie_sends_the_header() {
+        let f = Fixtures::shared();
+        let text = get_raw(
+            &f.url("/?set-cookie=session%3Dada-42%3B%20HttpOnly%3B%20Path%3D%2F"),
+            "",
+        );
+        assert!(
+            text.contains("set-cookie: session=ada-42; HttpOnly; Path=/"),
+            "{text}"
+        );
     }
 
     #[test]

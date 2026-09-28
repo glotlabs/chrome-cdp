@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>App</title>
+<script>
+// What the page's first script sees: storage a state load gives must be
+// there before it runs.
+window.first = {
+  token: localStorage.getItem('token'),
+  draft: sessionStorage.getItem('draft'),
+};
+</script>
+</head>
+<body>
+<h1 id="status">Checking…</h1>
+<script>
+// Logged in means the server got the HttpOnly session cookie and the page
+// has its token.
+window.checked = fetch('/echo')
+  .then((r) => r.json())
+  .then((echo) => {
+    const cookie = echo.headers.cookie || '';
+    const ok = cookie.includes('session=ada-42') &&
+      localStorage.getItem('token') === 'tok-ada-42';
+    document.getElementById('status').textContent = ok ? 'Logged in as Ada' : 'Logged out';
+    return ok;
+  });
+
+// The drafts database, as the page reads it back.
+window.drafts = () => new Promise((resolve, reject) => {
+  const open = indexedDB.open('app');
+  open.onerror = () => reject(open.error);
+  open.onsuccess = () => {
+    const db = open.result;
+    if (!db.objectStoreNames.contains('drafts')) {
+      db.close();
+      resolve(null);
+      return;
+    }
+    const tx = db.transaction(['drafts', 'kv'], 'readonly');
+    const out = { version: db.version };
+    tx.objectStore('drafts').index('by_title').get('Hello').onsuccess = (e) => {
+      out.draft = e.target.result;
+    };
+    tx.objectStore('kv').get('saved').onsuccess = (e) => {
+      const saved = e.target.result;
+      out.saved = saved instanceof Date ? saved.toISOString() : String(saved);
+    };
+    tx.objectStore('kv').get('settings').onsuccess = (e) => {
+      const settings = e.target.result;
+      out.settings = settings instanceof Map ? Object.fromEntries(settings) : String(settings);
+    };
+    tx.oncomplete = () => {
+      db.close();
+      resolve(out);
+    };
+  };
+});
+</script>
+</body>
+</html>
