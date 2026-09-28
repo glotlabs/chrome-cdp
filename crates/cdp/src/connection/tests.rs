@@ -181,6 +181,44 @@ async fn detaching_ends_the_session_streams() {
 }
 
 #[tokio::test]
+async fn lossless_listeners_miss_nothing() {
+    let (transport, peer) = MemoryTransport::pair();
+    let conn = Connection::with_options(
+        transport,
+        ConnectionOptions {
+            event_buffer: 4,
+            ..ConnectionOptions::default()
+        },
+    );
+    let session = conn.session("S1");
+    let mut fetch = session.events_lossless("Fetch.");
+    let mut all = session.events();
+    for n in 0..20 {
+        peer.send_json(
+            &json!({"method": "Fetch.requestPaused", "params": {"n": n}, "sessionId": "S1"}),
+        );
+        peer.send_json(&json!({"method": "Page.frameResized", "params": {}, "sessionId": "S1"}));
+    }
+    peer.send_json(&json!({"method": "Target.detachedFromTarget", "params": {"sessionId": "S1", "targetId": "T1"}}));
+    // Every Fetch event, in order, and nothing else.
+    for n in 0..20 {
+        let event = fetch.next().await.unwrap();
+        assert_eq!(event.method, "Fetch.requestPaused");
+        assert_eq!(event.params["n"], n);
+    }
+    // The detach ends it, as it does the other streams.
+    assert!(fetch.next().await.is_none());
+    // The broadcast stream fell behind and skipped some.
+    let mut seen = 0;
+    while all.next().await.is_some() {
+        seen += 1;
+    }
+    assert!(seen < 40, "{seen}");
+    // Listening after the detach gets a stream that has already ended.
+    assert!(session.events_lossless("Fetch.").next().await.is_none());
+}
+
+#[tokio::test]
 async fn calls_are_sent_when_made_not_when_polled() {
     let (conn, mut peer) = connect();
     let session = conn.session("S1");

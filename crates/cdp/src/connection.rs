@@ -5,7 +5,9 @@
 //! its receiving half. Calls allocate an id from an atomic counter, register a
 //! oneshot in the pending map, and hand the serialised request to the writer.
 //! The reader completes pending calls by id and routes events by `sessionId`
-//! to per-session broadcast channels.
+//! to per-session broadcast channels, and to lossless listeners: events a
+//! listener must never miss (a paused request's `Fetch.requestPaused`) go
+//! through an unbounded channel instead, see [`Session::events_lossless`].
 //!
 //! When the transport closes or fails, every pending call fails with
 //! [`CdpError::Disconnected`], every event stream ends, and later calls fail
@@ -96,6 +98,9 @@ struct Shared {
     /// Event channels by session id (`""` for the browser session). Created
     /// when someone listens; removed when the session detaches.
     sessions: DashMap<String, broadcast::Sender<Arc<RawEvent>>>,
+    /// Lossless listeners by session id, each with the method prefix of
+    /// the events it gets. Removed with the session, like `sessions`.
+    lossless: DashMap<String, Vec<Lossless>>,
     /// Sessions that detached lately, oldest first, so a listener that
     /// comes too late gets a stream that has already ended instead of one
     /// no event will ever reach.
@@ -103,6 +108,12 @@ struct Shared {
     /// `Some(reason)` once the connection has closed.
     closed: watch::Sender<Option<Arc<str>>>,
     event_buffer: usize,
+}
+
+/// A listener that gets every event whose method starts with `prefix`.
+struct Lossless {
+    prefix: String,
+    tx: mpsc::UnboundedSender<Arc<RawEvent>>,
 }
 
 /// How many detached session ids [`Shared::detached`] remembers.
@@ -135,6 +146,7 @@ impl Connection {
         let shared = Arc::new(Shared {
             pending: DashMap::new(),
             sessions: DashMap::new(),
+            lossless: DashMap::new(),
             detached: Mutex::default(),
             closed: watch::Sender::new(None),
             event_buffer: options.event_buffer.max(1),
@@ -198,6 +210,19 @@ impl Connection {
     /// Subscribes to the events of one session (`None` = browser).
     pub(crate) fn subscribe(&self, session_id: Option<&str>) -> broadcast::Receiver<Arc<RawEvent>> {
         self.inner.shared.subscribe(session_id.unwrap_or_default())
+    }
+
+    /// Subscribes to the events of one session (`None` = browser) whose
+    /// method starts with `prefix`, none dropped however far behind the
+    /// listener falls.
+    pub(crate) fn subscribe_lossless(
+        &self,
+        session_id: Option<&str>,
+        prefix: &str,
+    ) -> mpsc::UnboundedReceiver<Arc<RawEvent>> {
+        self.inner
+            .shared
+            .subscribe_lossless(session_id.unwrap_or_default(), prefix)
     }
 
     /// Sends one request now and returns a future for its response.
@@ -369,6 +394,7 @@ impl Shared {
         }
         // Dropping the senders ends every listener's stream.
         self.sessions.clear();
+        self.lossless.clear();
     }
 
     fn subscribe(&self, key: &str) -> broadcast::Receiver<Arc<RawEvent>> {
@@ -385,6 +411,41 @@ impl Shared {
             self.sessions.remove(key);
         }
         rx
+    }
+
+    fn subscribe_lossless(
+        &self,
+        key: &str,
+        prefix: &str,
+    ) -> mpsc::UnboundedReceiver<Arc<RawEvent>> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.lossless
+            .entry(key.to_owned())
+            .or_default()
+            .push(Lossless {
+                prefix: prefix.to_owned(),
+                tx,
+            });
+        // As in `subscribe`.
+        if self.closed_reason().is_some() || (!key.is_empty() && self.was_detached(key)) {
+            self.lossless.remove(key);
+        }
+        rx
+    }
+
+    /// Hands `event` to `key`'s lossless listeners for its method, and
+    /// forgets listeners that are gone.
+    fn send_lossless(&self, key: &str, event: &Arc<RawEvent>) {
+        let Some(mut listeners) = self.lossless.get_mut(key) else {
+            return;
+        };
+        listeners.retain(|l| {
+            if event.method.starts_with(&l.prefix) {
+                l.tx.send(event.clone()).is_ok()
+            } else {
+                !l.tx.is_closed()
+            }
+        });
     }
 
     fn was_detached(&self, session_id: &str) -> bool {
@@ -439,19 +500,27 @@ impl Shared {
                         .map(str::to_owned)
                 })
                 .flatten();
-            if let Some(tx) = self.sessions.get(key)
-                && tx.receiver_count() > 0
-            {
-                let _ = tx.send(Arc::new(RawEvent {
+            let broadcast = self
+                .sessions
+                .get(key)
+                .filter(|tx| tx.receiver_count() > 0)
+                .map(|tx| tx.clone());
+            if broadcast.is_some() || self.lossless.contains_key(key) {
+                let event = Arc::new(RawEvent {
                     method,
                     params: msg.params.unwrap_or_else(|| Value::Object(Map::default())),
-                    session_id: msg.session_id,
-                }));
+                    session_id: msg.session_id.clone(),
+                });
+                self.send_lossless(key, &event);
+                if let Some(tx) = broadcast {
+                    let _ = tx.send(event);
+                }
             }
             // The session is gone: end its listeners' streams.
             if let Some(session_id) = detached {
                 self.remember_detached(&session_id);
                 self.sessions.remove(&session_id);
+                self.lossless.remove(&session_id);
             }
         } else {
             tracing::warn!(target: "cdp::connection", frame = %Truncated(frame), "ignoring message with neither id nor method");

@@ -107,6 +107,17 @@ impl Session {
         }
     }
 
+    /// Streams this session's events whose method starts with `prefix`
+    /// (e.g. `"Fetch."`), untyped. Unlike [`Session::events`], none is ever
+    /// skipped, however far behind the listener falls: for events that
+    /// each need an answer, such as a paused request's. The stream ends
+    /// when the session detaches or the connection closes.
+    pub fn events_lossless(&self, prefix: &str) -> LosslessEventStream {
+        LosslessEventStream {
+            inner: self.conn.subscribe_lossless(self.id(), prefix),
+        }
+    }
+
     /// Streams all of this session's events, untyped.
     pub fn events(&self) -> RawEventStream {
         RawEventStream {
@@ -150,6 +161,26 @@ impl Stream for RawEventStream {
 impl std::fmt::Debug for RawEventStream {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RawEventStream").finish_non_exhaustive()
+    }
+}
+
+/// A stream of one session's events that never skips any. See
+/// [`Session::events_lossless`].
+pub struct LosslessEventStream {
+    inner: tokio::sync::mpsc::UnboundedReceiver<Arc<RawEvent>>,
+}
+
+impl LosslessEventStream {
+    /// The next event, or `None` once the session or connection is gone.
+    pub async fn next(&mut self) -> Option<Arc<RawEvent>> {
+        self.inner.recv().await
+    }
+}
+
+impl std::fmt::Debug for LosslessEventStream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LosslessEventStream")
+            .finish_non_exhaustive()
     }
 }
 

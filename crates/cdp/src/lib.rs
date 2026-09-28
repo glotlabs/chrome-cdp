@@ -54,7 +54,7 @@ pub mod transport;
 
 pub use connection::{Connection, ConnectionOptions, RawEvent};
 pub use error::{CdpError, Result, TransportError};
-pub use session::{EventStream, RawEventStream, Session};
+pub use session::{EventStream, LosslessEventStream, RawEventStream, Session};
 
 /// A CDP command: its params struct, method name and result type.
 ///
