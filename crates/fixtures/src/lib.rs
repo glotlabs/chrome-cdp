@@ -51,10 +51,16 @@
 //!   11.9): the server GETs `<origin>/e2e/api/greeting` itself, with the
 //!   request's `x-chrome-cdp-test` header, and shows the answer.
 //!
+//! [`Shop`] is another server: the real backend of `examples/e2e-shop`
+//! (its built app and its API on one origin).
+//!
 //! Add pages under `testdata/site` (and dynamic routes in [`respond`]) as
 //! milestones need them, rather than starting another server.
 
 mod api;
+mod shop;
+
+pub use shop::Shop;
 
 use std::convert::Infallible;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};
@@ -611,8 +617,6 @@ fn response(status: StatusCode, kind: &'static str, body: Bytes) -> Response<Ful
     response
 }
 
-/// The value of `name` in a query string (no percent-decoding; fixture
-/// params are plain).
 /// `%XX` escapes (and `+` for a space) decoded; bad escapes stay.
 fn percent_decode(text: &str) -> String {
     let bytes = text.as_bytes();
@@ -639,6 +643,8 @@ fn percent_decode(text: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// The value of `name` in a query string (no percent-decoding; fixture
+/// params are plain).
 fn param<'a>(query: &'a str, name: &str) -> Option<&'a str> {
     query
         .split('&')
