@@ -18,6 +18,7 @@ mod install;
 mod log;
 mod output;
 mod progress;
+mod route;
 mod schema;
 mod session;
 mod version;
@@ -89,6 +90,10 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             &cli.global,
         ),
         Some(Command::Network(args)) => session::network(&args, &cli.global),
+        Some(Command::Route(args)) => session::route(&args, &cli.global),
+        Some(Command::Block(args)) => session::block(&args, &cli.global),
+        Some(Command::Routes(args)) => session::routes(&args, &cli.global),
+        Some(Command::Unroute(args)) => session::unroute(&args, &cli.global),
         Some(Command::Screenshot(args)) => session::screenshot(&args, &cli.global),
         Some(Command::Pdf(args)) => session::pdf(&args, &cli.global),
         Some(Command::Eval(args)) => session::eval(&args, &cli.global),

@@ -1,0 +1,19 @@
+$ chrome-cdp block --images --ads '**/*.mp4'
+exit: 0
+--- stdout
+r1 **/*.mp4 → abort blockedbyclient
+r2 images → abort blockedbyclient
+r3 ads → abort blockedbyclient
+
+$ chrome-cdp block --images --ads '**/*.mp4' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"active":3,"added":[{"action":"abort","hits":0,"id":"r1","pattern":"**/*.mp4","summary":"abort blockedbyclient"},{"action":"abort","hits":0,"id":"r2","label":"images","pattern":"**","resource_types":["image"],"summary":"abort blockedbyclient"},{"action":"abort","hits":0,"id":"r3","label":"ads","pattern":"/^https?://([^/?#]*\\.)?(doubleclick\\.net|googlesyndication\\.com|googleadservices\\.com|google-analytics\\.com|googletagmanager\\.com|googletagservices\\.com|adservice\\.google\\.com|amazon-adsystem\\.com|adnxs\\.com|adsrvr\\.org|criteo\\.com|criteo\\.net|taboola\\.com|outbrain\\.com|pubmatic\\.com|rubiconproject\\.com|openx\\.net|moatads\\.com|scorecardresearch\\.com|quantserve\\.com|hotjar\\.com|clarity\\.ms|connect\\.facebook\\.net|ads-twitter\\.com|bat\\.bing\\.com)(:[0-9]+)?([/?#]|$)/","summary":"abort blockedbyclient"}]}}
+
+$ chrome-cdp block --images --ads '**/*.mp4' -q
+exit: 0
+--- stdout
+r1
+r2
+r3
+

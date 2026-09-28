@@ -1,0 +1,5 @@
+$ chrome-cdp unroute --all --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"active":0,"removed":["r1","r2","r3","r4"]}}
+

@@ -1,0 +1,13 @@
+$ chrome-cdp routes
+exit: 0
+--- stdout
+no routes; chrome-cdp route <url-pattern> --json-body '…' adds one
+
+$ chrome-cdp routes --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"routes":[]}}
+
+$ chrome-cdp routes -q
+exit: 0
+

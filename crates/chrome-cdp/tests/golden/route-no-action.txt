@@ -1,0 +1,11 @@
+$ chrome-cdp route /api/
+exit: 2
+--- stderr
+error: no action for `/api/`
+  hint: chrome-cdp route /api/ --json-body '{}'   (answers with JSON), or --body, --status, --abort, --delay, --set-header or --patch-json (see chrome-cdp route --help)
+
+$ chrome-cdp route /api/ --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"no action for `/api/`","hint":"chrome-cdp route /api/ --json-body '{}'   (answers with JSON), or --body, --status, --abort, --delay, --set-header or --patch-json (see chrome-cdp route --help)"}}
+

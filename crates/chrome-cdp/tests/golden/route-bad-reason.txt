@@ -1,0 +1,11 @@
+$ chrome-cdp route /api/ --abort nope
+exit: 2
+--- stderr
+error: `nope` is not a network error; they are failed, aborted, timedout, accessdenied, connectionclosed, connectionreset, connectionrefused, connectionaborted, connectionfailed, namenotresolved, internetdisconnected, addressunreachable, blockedbyclient, blockedbyresponse
+  hint: e.g. --abort blockedbyclient, or --abort alone for `failed`
+
+$ chrome-cdp route /api/ --abort nope --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"`nope` is not a network error; they are failed, aborted, timedout, accessdenied, connectionclosed, connectionreset, connectionrefused, connectionaborted, connectionfailed, namenotresolved, internetdisconnected, addressunreachable, blockedbyclient, blockedbyresponse","hint":"e.g. --abort blockedbyclient, or --abort alone for `failed`"}}
+

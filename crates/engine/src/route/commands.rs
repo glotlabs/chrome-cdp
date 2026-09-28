@@ -21,8 +21,11 @@ impl Engine {
     /// interception on in the running browser.
     pub async fn route(&self, req: RouteRequest) -> Result<Output, ErrorInfo> {
         if req.rules.is_empty() {
-            return Err(ErrorInfo::new(ErrorKind::BadArgs, "no rule to add")
-                .hint(Hint::run(Cmd::new("route").raw("'**/api/*' --json '{}'"))));
+            return Err(
+                ErrorInfo::new(ErrorKind::BadArgs, "no rule to add").hint(Hint::run(
+                    Cmd::new("route").raw("'**/api/*' --json-body '{}'"),
+                )),
+            );
         }
         let added = self.settings.routes.add(&req.rules)?;
         self.apply_routes(millis(req.timeout_ms)).await;
@@ -50,7 +53,7 @@ impl Engine {
                     text,
                     "no routes; {} adds one",
                     Cmd::new("route")
-                        .raw("<url-pattern> --json '…'")
+                        .raw("<url-pattern> --json-body '…'")
                         .session(&self.session)
                 );
             }
@@ -181,15 +184,16 @@ fn matched(rule: &RouteInfo) -> String {
     parts.join(" ")
 }
 
-/// `r1 GET **/api/items → fulfill 200 application/json 17B, 2 times`.
+/// `r1 GET **/api/items → fulfill 200 application/json 17B, for the next
+/// 2 requests`.
 fn rule_line(rule: &RouteInfo) -> String {
     let mut line = format!("{} {} → {}", rule.id, matched(rule), rule.summary);
-    if let Some(left) = rule.left {
-        let _ = write!(
-            line,
-            ", {left} {}",
-            if left == 1 { "time" } else { "times" }
-        );
+    match rule.left {
+        Some(1) => line.push_str(", for the next request"),
+        Some(left) => {
+            let _ = write!(line, ", for the next {left} requests");
+        }
+        None => {}
     }
     line
 }

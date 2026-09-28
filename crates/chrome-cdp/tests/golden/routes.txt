@@ -1,0 +1,17 @@
+$ chrome-cdp routes
+exit: 0
+--- stdout
+r1 /route/api/ → delay 10ms, then fulfill 200 text/plain 6B (1 hit)
+r2 fonts → abort blockedbyclient (0 hits)
+
+$ chrome-cdp routes --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"routes":[{"action":"fulfill","delay_ms":10,"hits":1,"id":"r1","pattern":"/route/api/","status":200,"summary":"delay 10ms, then fulfill 200 text/plain 6B"},{"action":"abort","hits":0,"id":"r2","label":"fonts","pattern":"**","resource_types":["font"],"summary":"abort blockedbyclient"}]}}
+
+$ chrome-cdp routes -q
+exit: 0
+--- stdout
+r1
+r2
+

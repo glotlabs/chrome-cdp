@@ -1,0 +1,11 @@
+$ chrome-cdp route /api/ --abort --json-body '{}'
+exit: 2
+--- stderr
+error: a rule has one action, not answer (--json-body, --body, --body-file, --status, --header) and --abort
+  hint: add one rule per action; the first rule that matches a request handles it
+
+$ chrome-cdp route /api/ --abort --json-body '{}' --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"a rule has one action, not answer (--json-body, --body, --body-file, --status, --header) and --abort","hint":"add one rule per action; the first rule that matches a request handles it"}}
+

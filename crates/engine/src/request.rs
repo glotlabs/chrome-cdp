@@ -740,8 +740,8 @@ pub struct RouteSpec {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RouteAction {
-    /// Answer it without the network (`--status`, `--body`, `--json`,
-    /// `--body-file`, `--header`).
+    /// Answer it without the network (`--status`, `--body`,
+    /// `--json-body`, `--body-file`, `--header`).
     Fulfill {
         status: u16,
         #[serde(default)]
@@ -776,7 +776,7 @@ pub enum RouteBody {
     Empty,
     /// `--body`: text, `text/plain` unless a header says otherwise.
     Text { text: String },
-    /// `--json`: `application/json`.
+    /// `--json-body`: `application/json`.
     Json { value: Value },
     /// `--body-file`: read when the rule is added; its type follows the
     /// extension. An absolute path.

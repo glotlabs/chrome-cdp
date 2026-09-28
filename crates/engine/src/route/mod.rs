@@ -700,6 +700,9 @@ fn parse_reason(text: &str) -> Result<ErrorReason, ErrorInfo> {
                 "`{text}` is not a network error; they are {}",
                 names.join(", ")
             ))
+            .hint(Hint::text(
+                "e.g. --abort blockedbyclient, or --abort alone for `failed`",
+            ))
         })?;
     serde_json::from_value(Value::String((*name).to_owned()))
         .map_err(|e| bad(format!("`{text}`: {e}")))

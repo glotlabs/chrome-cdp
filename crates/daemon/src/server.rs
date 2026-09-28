@@ -371,6 +371,18 @@ impl Daemon {
                 Ok(p) => output(self.engine.network_clear(p).await),
                 Err(e) => Err(e),
             },
+            rpc::ROUTE => match params(req.params) {
+                Ok(p) => output(self.engine.route(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::ROUTES => match params(req.params) {
+                Ok(p) => output(Ok(self.engine.routes(&p))),
+                Err(e) => Err(e),
+            },
+            rpc::UNROUTE => match params(req.params) {
+                Ok(p) => output(self.engine.unroute(p).await),
+                Err(e) => Err(e),
+            },
             rpc::SCREENSHOT => match params(req.params) {
                 Ok(p) => output(Box::pin(self.engine.screenshot(p)).await),
                 Err(e) => Err(e),

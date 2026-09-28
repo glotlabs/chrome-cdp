@@ -775,6 +775,74 @@ Examples:
     )]
     Network(NetworkArgs),
 
+    /// Mock, block or change the page's requests.
+    #[command(after_help = "\
+Adds a rule for requests whose URL matches PATTERN: a glob (`**/api/*`,
+where * stops at / and ** does not), a /regex/, or a part of the URL. Rules
+belong to the session: they apply to every tab, popup and frame, the ones
+opened later too, before the page's first script runs. The first matching
+rule, in the order they were added, handles a request; the rest go on
+untouched. `routes` lists them, `unroute` removes them.
+
+One action per rule:
+  answer it:      --json-body, --body, --body-file, --status, --header
+  fail it:        --abort [REASON]  (failed, blockedbyclient, timedout, …)
+  change it:      --set-header, --remove-header, --rewrite-url
+  patch it:       --patch-json (the real response, with the patch merged in)
+--delay holds a matched request first (alone: then sends it on).
+
+While routes exist, requests skip service workers and the HTTP cache.
+Mocked responses to another origin allow the page's origin (CORS).
+
+Examples:
+  chrome-cdp route '**/api/items' --json-body '[]'
+  chrome-cdp route /api/login --method POST --status 401 --json-body '{\"error\":\"bad password\"}'
+  chrome-cdp route '**/api/cart' --patch-json '{\"items\": [], \"total\": 0}'
+  chrome-cdp route /api/ --status 500 --body 'down' --times 1
+  chrome-cdp route '**/*.js' --delay 2s
+  chrome-cdp route analytics.example.com --abort
+  chrome-cdp route /api/ --set-header 'Authorization: Bearer test' --remove-header cookie
+  chrome-cdp route 'https://prod.example.com/api/**' --rewrite-url http://localhost:3000/api
+  chrome-cdp route /report.pdf --body-file ./fixtures/report.pdf")]
+    Route(RouteArgs),
+
+    /// Block requests: by URL, or ads, images, fonts or media.
+    #[command(after_help = "\
+Each PATTERN (as for `route`) and each preset becomes a rule that fails its
+requests as blocked by the client. Presets: --images, --fonts, --media
+(by resource type) and --ads (well-known ad and tracking hosts). Blocking
+images, fonts and media makes heavy pages load faster. `routes` lists the
+rules, `unroute` removes them.
+
+Examples:
+  chrome-cdp block --images --fonts
+  chrome-cdp block --ads
+  chrome-cdp block '**/*.mp4' cdn.example.com/tracker.js")]
+    Block(BlockArgs),
+
+    /// List the routing rules and their hits, or the requests they saw.
+    #[command(after_help = "\
+Each line reads: id, what it matches, what it does, and how many requests
+it handled. --log lists the requests routing saw instead (while routes
+exist, every request is seen), newest last, with the rule that handled
+each.
+
+Examples:
+  chrome-cdp routes
+  chrome-cdp routes --log
+  chrome-cdp routes --log --limit 100")]
+    Routes(RoutesArgs),
+
+    /// Remove routing rules.
+    #[command(after_help = "\
+Without routes, requests are no longer intercepted at all.
+
+Examples:
+  chrome-cdp unroute r2
+  chrome-cdp unroute r1 r3
+  chrome-cdp unroute --all")]
+    Unroute(UnrouteArgs),
+
     /// Save an image of the page, the whole page or one element.
     #[command(after_help = "\
 Prints the file's path (-q: only the path); the image goes to the
@@ -2164,6 +2232,128 @@ impl ShotScaleArg {
 }
 
 #[derive(Debug, Args)]
+pub(crate) struct RouteArgs {
+    /// Which URLs: a glob (`**/api/*`), a `/regex/`, or a part of the URL.
+    #[arg(value_name = "PATTERN")]
+    pub(crate) pattern: String,
+
+    /// Only these HTTP methods (GET, POST, …), comma-separated.
+    #[arg(long, value_delimiter = ',', value_name = "METHODS")]
+    pub(crate) method: Vec<String>,
+
+    /// Only these resource types, comma-separated: document, script,
+    /// stylesheet, image, font, media, xhr (or fetch: Chrome does not tell
+    /// them apart here), websocket, other, …
+    #[arg(long, value_delimiter = ',', value_parser = parse_type, value_name = "TYPES")]
+    pub(crate) resource_type: Vec<String>,
+
+    /// Remove the rule after it handled this many requests.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..), value_name = "N")]
+    pub(crate) times: Option<u32>,
+
+    /// Hold each matched request this long first (e.g. 2s, 500ms).
+    #[arg(long, value_parser = parse_duration, value_name = "DURATION")]
+    pub(crate) delay: Option<Duration>,
+
+    /// Answer with this status (200 unless given).
+    #[arg(long, value_parser = clap::value_parser!(u16).range(100..=599), value_name = "CODE")]
+    pub(crate) status: Option<u16>,
+
+    /// Answer with this text (`-` reads stdin); text/plain unless a
+    /// --header sets Content-Type.
+    #[arg(long, value_name = "TEXT", conflicts_with_all = ["json_body", "body_file"])]
+    pub(crate) body: Option<String>,
+
+    /// Answer with this JSON (`-` reads stdin), as application/json.
+    #[arg(long, value_name = "JSON", conflicts_with = "body_file")]
+    pub(crate) json_body: Option<String>,
+
+    /// Answer with this file, read now; its extension sets Content-Type.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) body_file: Option<PathBuf>,
+
+    /// A response header, as 'Name: value'. Repeat for more.
+    #[arg(long = "header", value_name = "NAME:VALUE")]
+    pub(crate) headers: Vec<String>,
+
+    /// Fail the request with this network error (default `failed`):
+    /// failed, aborted, timedout, accessdenied, connectionrefused,
+    /// connectionreset, namenotresolved, internetdisconnected,
+    /// blockedbyclient, …
+    #[arg(long, num_args = 0..=1, default_missing_value = "failed", value_name = "REASON")]
+    pub(crate) abort: Option<String>,
+
+    /// Send the request on with this header set, as 'Name: value'.
+    /// Repeat for more.
+    #[arg(long = "set-header", value_name = "NAME:VALUE")]
+    pub(crate) set_headers: Vec<String>,
+
+    /// Send the request on without this header. Repeat for more.
+    #[arg(long = "remove-header", value_name = "NAME")]
+    pub(crate) remove_headers: Vec<String>,
+
+    /// Send the request to this URL instead (the page does not see it).
+    #[arg(long, value_name = "URL")]
+    pub(crate) rewrite_url: Option<String>,
+
+    /// Send the request on and merge this JSON into the response's JSON
+    /// (`-` reads stdin): objects merge key by key, null removes a key,
+    /// anything else replaces.
+    #[arg(long, value_name = "JSON")]
+    pub(crate) patch_json: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct BlockArgs {
+    /// URLs to block: globs (`**/*.mp4`), /regexes/, or parts of URLs.
+    #[arg(value_name = "PATTERN")]
+    pub(crate) patterns: Vec<String>,
+
+    /// Block images.
+    #[arg(long)]
+    pub(crate) images: bool,
+
+    /// Block web fonts.
+    #[arg(long)]
+    pub(crate) fonts: bool,
+
+    /// Block audio and video.
+    #[arg(long)]
+    pub(crate) media: bool,
+
+    /// Block well-known ad and tracking hosts.
+    #[arg(long)]
+    pub(crate) ads: bool,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct RoutesArgs {
+    /// List the requests routing saw instead of the rules.
+    #[arg(long)]
+    pub(crate) log: bool,
+
+    /// With --log: show at most this many requests, the newest (0 = all).
+    #[arg(long, default_value_t = 20, value_name = "N")]
+    pub(crate) limit: usize,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+#[command(group = ArgGroup::new("which").required(true).args(["ids", "all"]))]
+pub(crate) struct UnrouteArgs {
+    /// The rules' ids, as `routes` lists them (r1, r2, …).
+    #[arg(value_name = "ID")]
+    pub(crate) ids: Vec<String>,
+
+    /// Remove every rule.
+    #[arg(long, conflicts_with = "ids")]
+    pub(crate) all: bool,
+}
+
+#[derive(Debug, Args)]
 pub(crate) struct HarArgs {
     #[command(subcommand)]
     pub(crate) command: HarCommand,
@@ -3058,6 +3248,9 @@ mod tests {
     /// of `--annotate`'s refs are listed).
     const FIXED_SIZE: &[&str] = &[
         "schema",
+        "route",
+        "block",
+        "unroute",
         "screenshot",
         "pdf",
         "har start",

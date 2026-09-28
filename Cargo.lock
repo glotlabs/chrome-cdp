@@ -241,6 +241,7 @@ dependencies = [
  "engine",
  "fixtures",
  "protocol",
+ "regex",
  "serde",
  "serde_json",
  "tempfile",

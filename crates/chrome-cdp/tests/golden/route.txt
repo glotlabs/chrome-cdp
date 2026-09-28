@@ -1,0 +1,15 @@
+$ chrome-cdp route '**/api/items' --method GET --json-body '{"items":[]}' --times 2
+exit: 0
+--- stdout
+r1 GET **/api/items → fulfill 200 application/json 12B, for the next 2 requests
+
+$ chrome-cdp route '**/api/items' --method GET --json-body '{"items":[]}' --times 2 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"active":1,"added":[{"action":"fulfill","hits":0,"id":"r1","left":2,"methods":["GET"],"pattern":"**/api/items","status":200,"summary":"fulfill 200 application/json 12B"}]}}
+
+$ chrome-cdp route '**/api/items' --method GET --json-body '{"items":[]}' --times 2 -q
+exit: 0
+--- stdout
+r1
+

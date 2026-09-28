@@ -6,7 +6,8 @@
 //! `snapshot` (plan 04); and the read commands `find`, `text`, `html`,
 //! `attr`, `value`, `count`, `box` and `markdown` (milestone 4.5);
 //! `console` and `errors` (plan 06, milestone 6.1), `network` (6.2), and
-//! `screenshot` and `pdf` (6.3).
+//! `screenshot` and `pdf` (6.3); `route`, `block`, `routes` and `unroute`
+//! (plan 07, milestone 7.1).
 //!
 //! Each one finds the session's daemon (starting it when the command needs
 //! a browser), sends one call, and returns the daemon's `Output` or
@@ -28,8 +29,9 @@ use engine::{
     ElementState, EvalRequest, FindRequest, HarStartRequest, HarStopRequest, HighlightRequest,
     HttpCredentials, ImageFormat, InspectRequest, NavigateRequest, Navigation, NetworkClearRequest,
     NetworkRequest, NetworkShowRequest, OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest,
-    ScreenshotRequest, SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest,
-    TabsRequest, TraceStartRequest, TraceStopRequest, WaitFor, WaitRequest,
+    RouteRequest, RoutesRequest, ScreenshotRequest, SnapshotRequest, TabCloseRequest,
+    TabNewRequest, TabSelectRequest, TabsRequest, TraceStartRequest, TraceStopRequest,
+    UnrouteRequest, WaitFor, WaitRequest,
 };
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
@@ -37,12 +39,13 @@ use serde_json::{Map, Value, json};
 use tokio::runtime::Runtime;
 
 use crate::cli::{
-    AfterArgs, CdpArgs, CloseArgs, ConnectArgs, CoverageArgs, CoverageCommand, DEFAULT_TIMEOUT,
-    DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, FindArgs, GlobalArgs,
-    GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs, ImageFormatArg,
-    InspectArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, ReloadArgs,
-    ScreenshotArgs, SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs, TabArgs, TabCommand,
-    TabsArgs, TraceArgs, TraceCommand, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    AfterArgs, BlockArgs, CdpArgs, CloseArgs, ConnectArgs, CoverageArgs, CoverageCommand,
+    DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, FindArgs,
+    GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs,
+    ImageFormatArg, InspectArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs,
+    ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs, StatusArgs,
+    StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs, TraceCommand, UnrouteArgs,
+    WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -852,6 +855,73 @@ pub(crate) fn pdf(args: &PdfArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
         to_stdout(output)
     } else {
         Ok(output)
+    }
+}
+
+/// `route`: needs a running session.
+pub(crate) fn route(args: &RouteArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let rule = crate::route::spec(args)?;
+    add_routes(vec![rule], global)
+}
+
+/// `block`: needs a running session.
+pub(crate) fn block(args: &BlockArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let rules = crate::route::block_specs(args)?;
+    add_routes(rules, global)
+}
+
+fn add_routes(rules: Vec<engine::RouteSpec>, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let request = RouteRequest {
+        rules,
+        timeout_ms: millis(ctx.timeout),
+    };
+    let output =
+        ctx.runtime
+            .block_on(client.call_output(rpc::ROUTE, &request, ctx.timeout + QUICK))?;
+    Ok(every_tab(output, &ctx))
+}
+
+/// `routes`: needs a running session.
+pub(crate) fn routes(args: &RoutesArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let request = RoutesRequest {
+        log: args.log,
+        limit: args.limit,
+        max_chars: args.max_chars,
+    };
+    let output =
+        ctx.runtime
+            .block_on(client.call_output(rpc::ROUTES, &request, ctx.timeout + QUICK))?;
+    Ok(every_tab(output, &ctx))
+}
+
+/// `unroute`: needs a running session.
+pub(crate) fn unroute(args: &UnrouteArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let request = UnrouteRequest {
+        ids: args.ids.clone(),
+        all: args.all,
+        timeout_ms: millis(ctx.timeout),
+    };
+    let output =
+        ctx.runtime
+            .block_on(client.call_output(rpc::UNROUTE, &request, ctx.timeout + QUICK))?;
+    Ok(every_tab(output, &ctx))
+}
+
+/// Routes belong to the session: a `--tab` is no scope for them.
+fn every_tab(output: Output, ctx: &Ctx) -> Output {
+    if ctx.tab.is_some() {
+        output.warning("routes apply to every tab of the session; --tab is ignored")
+    } else {
+        output
     }
 }
 

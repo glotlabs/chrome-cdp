@@ -1,0 +1,5 @@
+$ chrome-cdp unroute r1 r3
+exit: 0
+--- stdout
+removed r1, r3; 2 routes left
+

@@ -1,0 +1,11 @@
+$ chrome-cdp unroute r7
+exit: 1
+--- stderr
+error: there is no route r7
+  hint: chrome-cdp routes   (lists the routes)
+
+$ chrome-cdp unroute r7 --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"there is no route r7","hint":"chrome-cdp routes   (lists the routes)"}}
+

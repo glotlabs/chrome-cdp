@@ -82,6 +82,15 @@ const REMOUNTED: &[&[&str]] = &[
     ],
 ];
 
+/// A session with four routes, r1 to r4.
+const FOUR_ROUTES: &[&[&str]] = &[
+    &["open"],
+    &["route", "/a", "--abort"],
+    &["route", "/b", "--abort"],
+    &["route", "/c", "--abort"],
+    &["route", "/d", "--abort"],
+];
+
 const CASES: &[Case] = &[
     Case {
         name: "version",
@@ -723,6 +732,88 @@ const CASES: &[Case] = &[
     Case {
         name: "network-show-missing",
         args: &["network", "show", "#999"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "route",
+        args: &[
+            "route",
+            "**/api/items",
+            "--method",
+            "GET",
+            "--json-body",
+            r#"{"items":[]}"#,
+            "--times",
+            "2",
+        ],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "route-no-action",
+        args: &["route", "/api/"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "route-two-actions",
+        args: &["route", "/api/", "--abort", "--json-body", "{}"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "route-bad-reason",
+        args: &["route", "/api/", "--abort", "nope"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "block",
+        args: &["block", "--images", "--ads", "**/*.mp4"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "routes",
+        args: &["routes"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/route/index.html"],
+            &[
+                "route",
+                "/route/api/",
+                "--body",
+                "mocked",
+                "--delay",
+                "10ms",
+            ],
+            &["block", "--fonts"],
+            &["eval", "fetch('/route/api/items').then((r) => r.text())"],
+        ]),
+    },
+    Case {
+        name: "routes-none",
+        args: &["routes"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    // Each mode would remove what the one before did: one mode a case.
+    Case {
+        name: "unroute",
+        args: &["unroute", "r1", "r3"],
+        modes: &[""],
+        fixture: Fixture::SessionAfter(FOUR_ROUTES),
+    },
+    Case {
+        name: "unroute-all",
+        args: &["unroute", "--all"],
+        modes: &["--json"],
+        fixture: Fixture::SessionAfter(FOUR_ROUTES),
+    },
+    Case {
+        name: "unroute-missing",
+        args: &["unroute", "r7"],
         modes: ERR,
         fixture: Fixture::Session,
     },
