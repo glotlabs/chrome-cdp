@@ -1,0 +1,4 @@
+# A mock-only command in a test not marked @backend mock.
+@test "looks at mock state"
+  goto /e2e/shop.html
+  expect mock-state todos count 2

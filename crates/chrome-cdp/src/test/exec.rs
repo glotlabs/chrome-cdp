@@ -22,8 +22,17 @@
 //! since a 501 is the likely cause. After a test's own steps pass,
 //! `expect --no-errors --all-tabs` runs unless `allow_console_errors`
 //! (config) or `@allow-console-errors` (test) allows them.
+//!
+//! Against a real backend (milestone 11.11) a test's context gets only
+//! the backend's own mock sets (hybrid mode), if any. Each step's
+//! variables are filled in as it runs ([`super::vars`]): `${test.id}` is
+//! the try's, and `${saved.NAME…}` reads what an earlier `http … --save
+//! NAME` of the test (or of the file's `@before-all`) got. Mock-only
+//! commands fail in real mode, and on a protected backend `http` writes
+//! fail outside hooks unless the run has `--allow-writes`.
 
 use std::cell::{Cell, RefCell};
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -32,6 +41,7 @@ use std::time::{Duration, Instant};
 
 use protocol::schema::{MockLogData, RoutedRequest, TestFailure};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
+use serde_json::Value;
 
 use e2e::scenario::Settings;
 
@@ -39,7 +49,9 @@ use super::artifacts::{self, Capture, Logs, Recorder, StepRecord};
 use super::determinism;
 use super::plan::{Plan, Planned, Prepared};
 use super::report_md::{self, Subject};
-use crate::cli::{Command, GlobalArgs, WAIT_TIMEOUT};
+use super::vars::{self, Resolver};
+use super::verify::Seen;
+use crate::cli::{Command, GlobalArgs, MockCommand, WAIT_TIMEOUT};
 use crate::script;
 
 /// How a test ended.
@@ -89,6 +101,11 @@ pub(super) struct Options {
     pub(super) trace: bool,
     /// `--debug`: the first failed test's context is left open, here.
     pub(super) debug: Option<Mutex<Option<Kept>>>,
+    /// `--verify-mocks`: what each test's real exchanges showed.
+    pub(super) verify: Option<super::verify::Verifier>,
+    /// `--record-mocks`: each passed test's (by index) exchanges, and the
+    /// scope they were recorded in.
+    pub(super) record: Option<Mutex<super::record::Recorded>>,
 }
 
 /// The browser context `--debug` kept.
@@ -104,7 +121,8 @@ pub(super) struct Kept {
 #[derive(Debug, Clone)]
 enum Once {
     NotRun,
-    Passed,
+    /// With what its `http --save` steps saved.
+    Passed(BTreeMap<String, Value>),
     Failed(Box<TestFailure>),
 }
 
@@ -186,7 +204,12 @@ pub(super) fn execute(
                             seen: Cell::new(0),
                             warnings: RefCell::new(Vec::new()),
                             recorder: RefCell::new(None),
+                            test_id: RefCell::new(String::new()),
+                            saved: RefCell::new(BTreeMap::new()),
+                            file_saved: RefCell::new(BTreeMap::new()),
+                            http_log: RefCell::new(Vec::new()),
                         };
+                        let index = item / repeat;
                         let outcome = match runner.before_all(test, &before_all[test.file]) {
                             Err(failure) => Outcome {
                                 status: Status::Failed,
@@ -198,7 +221,9 @@ pub(super) fn execute(
                                 warnings: Vec::new(),
                                 artifacts: None,
                             },
-                            Ok(()) => runner.test(test, (repeat > 1).then_some(item % repeat + 1)),
+                            Ok(()) => {
+                                runner.test(test, index, (repeat > 1).then_some(item % repeat + 1))
+                            }
                         };
                         let last = left[test.file].fetch_sub(1, Ordering::SeqCst) == 1;
                         let mut outcome = if last {
@@ -319,6 +344,14 @@ struct Runner<'a> {
     warnings: RefCell<Vec<String>>,
     /// The steps of the test (or hook) running now, and its artifacts.
     recorder: RefCell<Option<Recorder>>,
+    /// `${test.id}` of the try running now.
+    test_id: RefCell<String>,
+    /// What the try's `http --save` steps saved.
+    saved: RefCell<BTreeMap<String, Value>>,
+    /// What the file's `@before-all` saved: every test starts with it.
+    file_saved: RefCell<BTreeMap<String, Value>>,
+    /// `--verify-mocks`: the try's `http` exchanges.
+    http_log: RefCell<Vec<Seen>>,
 }
 
 /// A step's place in a test, for its failure.
@@ -329,13 +362,15 @@ enum Part {
 }
 
 impl Runner<'_> {
-    /// `test`'s tries until it passes or its retries are used up; `run`
-    /// is its run's number with `--repeat`.
-    fn test(&self, test: &Planned, run: Option<usize>) -> Outcome {
+    /// `test` (the plan's test `index`)'s tries until it passes or its
+    /// retries are used up; `run` is its run's number with `--repeat`.
+    fn test(&self, test: &Planned, index: usize, run: Option<usize>) -> Outcome {
         let tries = self.plan.retries(test) + 1;
         let mut first_failure = None;
         for attempt in 1..=tries {
             let started = Instant::now();
+            *self.test_id.borrow_mut() = vars::test_id(&self.plan.run, index, attempt, run);
+            *self.saved.borrow_mut() = self.file_saved.borrow().clone();
             // The first try's artifacts are the test's; a retry's go below.
             let dir = match run {
                 Some(run) => test.dir.join(format!("run-{run}")),
@@ -347,7 +382,7 @@ impl Runner<'_> {
                 None if tries > 1 => Some(format!("try {attempt} of {tries}")),
                 None => None,
             };
-            let result = self.attempt(test, &dir, label);
+            let result = self.attempt(test, index, &dir, label);
             let duration = started.elapsed();
             match result {
                 Ok(()) => {
@@ -392,6 +427,7 @@ impl Runner<'_> {
     fn attempt(
         &self,
         test: &Planned,
+        index: usize,
         dir: &Path,
         label: Option<String>,
     ) -> Result<(), Box<TestFailure>> {
@@ -404,16 +440,25 @@ impl Runner<'_> {
             attempt: label,
             rerun: Cmd::new("test").arg(&span).to_string(),
         };
+        self.http_log.borrow_mut().clear();
+        let verify = self
+            .options
+            .verify
+            .is_some()
+            .then(|| self.plan.mock_mode_sets(&test.settings));
         self.in_context(
             dir,
             &subject,
             &test.settings,
             deadline,
             Some(&hooks.after),
+            verify.as_deref(),
             |context| {
                 self.steps(&hooks.before, context, deadline, Part::Hook("before"))?;
                 self.steps(&test.steps, context, deadline, Part::Test)?;
-                self.no_errors(test, context, &span)
+                self.no_errors(test, context, &span)?;
+                self.record_mocks(test, index, context);
+                Ok(())
             },
         )
     }
@@ -424,6 +469,7 @@ impl Runner<'_> {
     /// the page as it was (before `@after`) and a `report.md`. With
     /// `--debug`, the first failure's context stays open, without its
     /// `@after`.
+    #[allow(clippy::too_many_arguments)]
     fn in_context(
         &self,
         dir: &Path,
@@ -431,6 +477,7 @@ impl Runner<'_> {
         settings: &Settings,
         deadline: Instant,
         after: Option<&[Prepared]>,
+        verify: Option<&[String]>,
         body: impl FnOnce(&str) -> Result<(), Box<TestFailure>>,
     ) -> Result<(), Box<TestFailure>> {
         *self.recorder.borrow_mut() = Some(Recorder::new(dir.to_owned(), self.options.trace));
@@ -454,6 +501,9 @@ impl Runner<'_> {
                         capture = Some(self.capture(dir, &context));
                     }
                     result = result.and(ran);
+                }
+                if let Some(sets) = verify {
+                    self.verify(&context, sets);
                 }
                 logs = artifacts::logs(dir, &context, &|words| {
                     self.invoke(words, Some(&context), None)
@@ -609,9 +659,24 @@ impl Runner<'_> {
         span: &str,
         deadline: Instant,
     ) -> Result<(), Box<TestFailure>> {
-        if !settings.mocks.is_empty() || !self.plan.config.default_mocks.is_empty() {
-            let mut words = vec!["mock", "use"];
-            words.extend(settings.mocks.iter().map(String::as_str));
+        // Real mode: only the backend's own sets (hybrid mode), without
+        // the defaults or the tests' @mocks.
+        let words: Option<Vec<&str>> = if self.plan.real() {
+            (!self.plan.backend.mocks.is_empty()).then(|| {
+                ["mock", "use", "--no-defaults"]
+                    .into_iter()
+                    .chain(self.plan.backend.mocks.iter().map(String::as_str))
+                    .collect()
+            })
+        } else {
+            (!settings.mocks.is_empty() || !self.plan.config.default_mocks.is_empty()).then(|| {
+                ["mock", "use"]
+                    .into_iter()
+                    .chain(settings.mocks.iter().map(String::as_str))
+                    .collect()
+            })
+        };
+        if let Some(words) = words {
             let text = words.join(" ");
             self.setup(&words, Some(context), Some(deadline), span)
                 .map_err(|e| setup_failure(span, &text, e))?;
@@ -667,7 +732,7 @@ impl Runner<'_> {
     ) -> Result<(), Box<TestFailure>> {
         for step in steps {
             let started = Instant::now();
-            let result = self.step(step, context, deadline);
+            let result = self.step(step, context, deadline, part);
             let unmatched = self.unmatched(context);
             let result = match result {
                 Err(error) => Err(self.forget_session(with_unmatched(error, &unmatched))),
@@ -771,7 +836,13 @@ impl Runner<'_> {
     }
 
     /// Runs one step, within the test's time.
-    fn step(&self, step: &Prepared, context: &str, deadline: Instant) -> Result<Output, ErrorInfo> {
+    fn step(
+        &self,
+        step: &Prepared,
+        context: &str,
+        deadline: Instant,
+        part: Part,
+    ) -> Result<Output, ErrorInfo> {
         let over = || {
             ErrorInfo::new(
                 ErrorKind::Timeout,
@@ -786,7 +857,37 @@ impl Runner<'_> {
         }
         let mut global = self.global(Some(context), Some(deadline));
         global.tab = None;
-        let mut cli = script::command(&step.words, &global)?;
+        let words = {
+            let test_id = self.test_id.borrow();
+            let saved = self.saved.borrow();
+            let resolver = Resolver::running(&step.vars, &self.plan.run, &test_id, &saved);
+            step.line
+                .words
+                .iter()
+                .map(|w| w.expand(&resolver))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| {
+                    let info = ErrorInfo::new(ErrorKind::BadArgs, e.message);
+                    match e.hint {
+                        Some(hint) => info.hint(hint),
+                        None => info,
+                    }
+                })?
+        };
+        let mut cli = script::command(&words, &global)?;
+        self.allowed(&cli, part)?;
+        let save = match &cli.command {
+            Some(Command::Http(args)) => args.save.clone(),
+            _ => None,
+        };
+        let sent = match &cli.command {
+            Some(Command::Http(args)) if self.options.verify.is_some() => Some((
+                now_ms(),
+                args.json_body.clone().or_else(|| args.body.clone()),
+                args.headers.clone(),
+            )),
+            _ => None,
+        };
         match &mut cli.command {
             Some(Command::ExpectSnapshot(args)) => {
                 args.update |= self.options.update_snapshots;
@@ -800,6 +901,17 @@ impl Runner<'_> {
         }
         let screenshot = matches!(cli.command, Some(Command::ExpectScreenshot(_)));
         let out = crate::run(cli)?;
+        if let Some(name) = save {
+            self.saved
+                .borrow_mut()
+                .insert(name, out.data["body"].clone());
+        }
+        if let Some((at_ms, body, headers)) = sent {
+            self.http_log.borrow_mut().push(Seen {
+                at_ms,
+                exchange: http_exchange(&out.data, body, &headers),
+            });
+        }
         if screenshot {
             let mut warnings = self.warnings.borrow_mut();
             for warning in &out.warnings {
@@ -812,6 +924,140 @@ impl Runner<'_> {
             return Err(over());
         }
         Ok(out)
+    }
+
+    /// `--verify-mocks`: gives the verifier the real exchanges of the
+    /// test's context: its pages' (from the HAR export) and its `http`
+    /// steps'. A failure to read them is a warning of the test.
+    fn verify(&self, context: &str, sets: &[String]) {
+        let Some(verifier) = &self.options.verify else {
+            return;
+        };
+        let mut seen: Vec<Seen> = self.http_log.take();
+        let exported = self.exchanges(context, verifier.scope(sets));
+        let result = exported.and_then(|pages| {
+            seen.extend(pages);
+            verifier.compare(sets, seen)
+        });
+        if let Err(e) = result {
+            self.warnings
+                .borrow_mut()
+                .push(format!("--verify-mocks could not compare this test: {e}"));
+        }
+    }
+
+    /// The requests of `context`'s pages in `scope` (their fetch and XHR
+    /// ones when empty), with their answers, from the HAR export.
+    fn exchanges(&self, context: &str, scope: Vec<String>) -> Result<Vec<Seen>, String> {
+        let request = engine::HarExportRequest {
+            tab: None,
+            scope,
+            timeout_ms: 10_000,
+        };
+        let global = self.global(Some(context), None);
+        let out = crate::session::call_running(&global, daemon::rpc::HAR_EXPORT, &request)
+            .map_err(|e| e.message)?;
+        let exchanges = mock::record::har_exchanges(&out.data["har"])?;
+        let times: Vec<i64> = out.data["har"]["log"]["entries"]
+            .as_array()
+            .map(|entries| {
+                entries
+                    .iter()
+                    .map(|e| {
+                        e["startedDateTime"]
+                            .as_str()
+                            .and_then(|t| protocol::format::parse_time(t).ok())
+                            .unwrap_or(0)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(exchanges
+            .into_iter()
+            .enumerate()
+            .map(|(i, exchange)| Seen {
+                at_ms: times.get(i).copied().unwrap_or(0),
+                exchange,
+            })
+            .collect())
+    }
+
+    /// `--record-mocks`: keeps test `index`'s exchanges (its last try's,
+    /// which passed), in the scope of the sets it has in mock mode (else
+    /// its fetch and XHR requests). A failure to read them is a warning
+    /// of the test.
+    fn record_mocks(&self, test: &Planned, index: usize, context: &str) {
+        let Some(record) = &self.options.record else {
+            return;
+        };
+        let sets = self.plan.mock_mode_sets(&test.settings);
+        let scope = super::verify::scope_of_sets(&self.plan.config, &sets);
+        match self.exchanges(context, scope.clone()) {
+            Ok(seen) => {
+                let exchanges = seen.into_iter().map(|s| s.exchange).collect();
+                record
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .insert(index, (scope, exchanges));
+            }
+            Err(e) => self.warnings.borrow_mut().push(format!(
+                "--record-mocks could not read this test's requests: {e}"
+            )),
+        }
+    }
+
+    /// Whether the run lets step `cli` run: mock-only commands need mock
+    /// mode, and `http` writes to a protected backend need a hook or
+    /// `--allow-writes`.
+    fn allowed(&self, cli: &crate::cli::Cli, part: Part) -> Result<(), ErrorInfo> {
+        let plan = self.plan;
+        let mock_only = match &cli.command {
+            Some(Command::Mock(args)) => match &args.command {
+                MockCommand::State(_) => Some("mock state"),
+                MockCommand::Seed(_) => Some("mock seed"),
+                _ => None,
+            },
+            Some(Command::Expect(args)) if args.target.as_deref() == Some("mock-state") => {
+                Some("expect mock-state")
+            }
+            _ => None,
+        };
+        if let Some(command) = mock_only
+            && plan.real()
+        {
+            return Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!(
+                    "{command} needs the mocks, and backend {} is real",
+                    plan.backend.name
+                ),
+            )
+            .hint(Hint::text(
+                "mark the test @backend mock, so real backends skip it",
+            )));
+        }
+        if let Some(Command::Http(args)) = &cli.command
+            && plan.backend.protected
+            && !plan.allow_writes
+            && matches!(part, Part::Test)
+            && !matches!(
+                args.method.to_ascii_uppercase().as_str(),
+                "GET" | "HEAD" | "OPTIONS"
+            )
+        {
+            return Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!(
+                    "http {} on protected backend {}: a @safe test only reads",
+                    args.method.to_ascii_uppercase(),
+                    plan.backend.name
+                ),
+            )
+            .hint(Hint::text(
+                "arrange and clean up in @before/@after, or run with --allow-writes",
+            )));
+        }
+        Ok(())
     }
 
     /// `error` without the `--session` of the run's own session in its
@@ -878,14 +1124,19 @@ impl Runner<'_> {
         }
         let mut state = once.lock().unwrap_or_else(PoisonError::into_inner);
         if matches!(*state, Once::NotRun) {
+            self.saved.borrow_mut().clear();
             *state = match self.hook(test, &hooks.before_all, "before-all") {
-                Ok(()) => Once::Passed,
+                Ok(()) => Once::Passed(self.saved.take()),
                 Err(failure) => Once::Failed(failure),
             };
         }
         match &*state {
             Once::Failed(failure) => Err(failure.clone()),
-            Once::NotRun | Once::Passed => Ok(()),
+            Once::Passed(saved) => {
+                self.file_saved.borrow_mut().clone_from(saved);
+                Ok(())
+            }
+            Once::NotRun => Ok(()),
         }
     }
 
@@ -896,6 +1147,7 @@ impl Runner<'_> {
         if hooks.after_all.is_empty() {
             return outcome;
         }
+        *self.saved.borrow_mut() = self.file_saved.borrow().clone();
         match self.hook(test, &hooks.after_all, "after-all") {
             Err(failure) if outcome.failure.is_none() || outcome.status != Status::Failed => {
                 Outcome {
@@ -926,9 +1178,62 @@ impl Runner<'_> {
             rerun: Cmd::new("test").arg(&file.name).to_string(),
         };
         let dir = super::plan::file_dir(&self.plan.config, file).join(format!("@{name}"));
-        self.in_context(&dir, &subject, &file.settings, deadline, None, |context| {
-            self.steps(steps, context, deadline, Part::Hook(name))
+        *self.test_id.borrow_mut() = format!("{}-f{}", self.plan.run.run_id, test.file + 1);
+        self.in_context(
+            &dir,
+            &subject,
+            &file.settings,
+            deadline,
+            None,
+            None,
+            |context| self.steps(steps, context, deadline, Part::Hook(name)),
+        )
+    }
+}
+
+/// Now, in ms since 1970.
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX))
+}
+
+/// An `http` step's exchange, from its output's data and the body and
+/// headers it sent.
+fn http_exchange(data: &Value, body: Option<String>, headers: &[String]) -> mock::record::Exchange {
+    let text = |key: &str| data[key].as_str().unwrap_or_default().to_owned();
+    let mut request_headers: Vec<(String, String)> = headers
+        .iter()
+        .filter_map(|h| {
+            let (n, v) = h.split_once(':')?;
+            Some((n.trim().to_owned(), v.trim().to_owned()))
         })
+        .collect();
+    let body = body.map(|b| match serde_json::from_str::<Value>(&b) {
+        Ok(json) => {
+            request_headers.push(("Content-Type".into(), "application/json".into()));
+            json.to_string()
+        }
+        Err(_) => b,
+    });
+    let response_body = match &data["body"] {
+        Value::Null => Vec::new(),
+        Value::String(s) if data["json"] != Value::Bool(true) => s.clone().into_bytes(),
+        other => other.to_string().into_bytes(),
+    };
+    mock::record::Exchange {
+        method: text("method"),
+        url: text("url"),
+        request_headers,
+        request_body: body,
+        status: u16::try_from(data["status"].as_u64().unwrap_or(0)).unwrap_or(0),
+        response_headers: Vec::new(),
+        response_body: Some(response_body),
+        mime: data["headers"]["content-type"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned(),
+        resource_type: "other".into(),
     }
 }
 

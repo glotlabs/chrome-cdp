@@ -561,6 +561,10 @@ jobs:
   # verify-mocks:
   #   if: github.event_name == 'schedule'
   #   runs-on: ubuntu-latest
+  #   env:
+  #     CHROME_CDP_AUTO_INSTALL: \"1\"
+  #     # ${{secret:ADMIN_PASSWORD}} in a scenario; masked in all output.
+  #     ADMIN_PASSWORD: ${{{{ secrets.STAGING_ADMIN_PASSWORD }}}}
   #   steps:
   #     - uses: actions/checkout@v4
   #     - run: cargo install --locked chrome-cdp

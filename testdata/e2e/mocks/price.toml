@@ -1,0 +1,9 @@
+# The hybrid backend's mock: the price, as if from a third party, while
+# the todos come from the real API.
+[settings]
+scope = ["/e2e/api/price"]
+
+[[mock]]
+name = "price"
+match = { method = "GET", path = "/e2e/api/price" }
+respond = { json = { price = 99 } }

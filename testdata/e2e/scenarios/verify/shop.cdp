@@ -1,0 +1,7 @@
+# For --verify-mocks against the real API: the page's requests, and one
+# the mocks do not have.
+@test "loads the shop"
+  goto /e2e/shop.html
+  expect 'text=Buy milk' visible
+  expect "text=Price: 49" visible
+  eval "fetch('/e2e/api/me').then((r) => r.status)"

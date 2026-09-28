@@ -536,6 +536,133 @@
         }
       ]
     },
+    "MockDrift": {
+      "description": "A mock whose answer differs from the real one.",
+      "properties": {
+        "data_file": {
+          "description": "Its JSON data file (absolute), if its body is one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mock": {
+          "$ref": "#/$defs/MockRef"
+        },
+        "problems": {
+          "description": "What differs: `status: …`, or a JSON path and how.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "request": {
+          "description": "The first request it differed on: `GET http://…/api/products`.",
+          "type": "string"
+        },
+        "updated": {
+          "description": "`--update` rewrote its data file.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mock",
+        "request",
+        "problems"
+      ],
+      "type": "object"
+    },
+    "MockRecordData": {
+      "description": "`data` of `chrome-cdp mock record|import --json`.",
+      "properties": {
+        "files": {
+          "description": "The data files written (absolute).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mocks": {
+          "description": "The `[[mock]]`s written (one per distinct request).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "path": {
+          "description": "The mock file written (absolute).",
+          "type": "string"
+        },
+        "requests": {
+          "description": "The requests in scope that were recorded.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "scope": {
+          "description": "The set's `scope` (as given, or guessed; empty if neither).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "set": {
+          "description": "What `mock use` takes: its name in the mocks directory, else its\npath.",
+          "type": "string"
+        },
+        "skipped": {
+          "description": "Requests in scope left out, and why.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "path",
+        "set",
+        "requests",
+        "mocks",
+        "files",
+        "scope",
+        "skipped"
+      ],
+      "type": "object"
+    },
+    "MockRef": {
+      "description": "A mock of a mock file (plan 11): where it is and what it is called.",
+      "properties": {
+        "at": {
+          "description": "`base.toml:14`: the file relative to the mocks directory, and the\nline.",
+          "type": "string"
+        },
+        "file": {
+          "description": "The mock file (absolute).",
+          "type": "string"
+        },
+        "line": {
+          "description": "The line of its `[[mock]]`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "description": "Its `name`, or `METHOD path` when it has none.",
+          "type": "string"
+        },
+        "set": {
+          "description": "Its mock set, e.g. `base` or `errors/api-down`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "set",
+        "name",
+        "file",
+        "line",
+        "at"
+      ],
+      "type": "object"
+    },
     "Note": {
       "description": "One labelled line of an error's text form.",
       "properties": {
@@ -593,6 +720,59 @@
       "required": [
         "ok",
         "data"
+      ],
+      "type": "object"
+    },
+    "TestBackendRun": {
+      "description": "One backend's results in `chrome-cdp test --backend all`.",
+      "properties": {
+        "duration_ms": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "failed": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "flaky": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mode": {
+          "description": "`mock` or `real`.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "not_run": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "passed": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "skipped": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "mode",
+        "passed",
+        "failed",
+        "flaky",
+        "skipped",
+        "not_run",
+        "duration_ms"
       ],
       "type": "object"
     },
@@ -668,6 +848,13 @@
       "properties": {
         "artifacts": {
           "description": "Its artifacts' directory (absolute): `steps.jsonl`,\n`requests.txt`, `console.txt`, and for a failure `report.md`,\n`failure.png` and `snapshot.txt`. With retries, its last try's;\nwith `--repeat`, its first failed (else first) run's.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "backend": {
+          "description": "`--backend all`: the backend of this run of the test.",
           "type": [
             "string",
             "null"
@@ -756,6 +943,20 @@
     "TestRunData": {
       "description": "`data` of `chrome-cdp test --json` (and `details` of its error when a\ntest failed).",
       "properties": {
+        "backend": {
+          "description": "The backend the tests ran against, unless it was the mock one:\na real backend's name, or `all` (plan 11.11).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "backends": {
+          "description": "`--backend all`: each backend's results, in the order they ran.",
+          "items": {
+            "$ref": "#/$defs/TestBackendRun"
+          },
+          "type": "array"
+        },
         "debug": {
           "anyOf": [
             {
@@ -799,6 +1000,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "recorded": {
+          "description": "`--record-mocks`: the mock set written for each passed test.",
+          "items": {
+            "$ref": "#/$defs/MockRecordData"
+          },
+          "type": "array"
+        },
         "repeat": {
           "description": "`--repeat`: how many times each test ran.",
           "format": "uint32",
@@ -833,6 +1041,17 @@
             "$ref": "#/$defs/TestResult"
           },
           "type": "array"
+        },
+        "verify": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VerifyData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`--verify-mocks`: how the mocks' answers differ from the real\nbackend's."
         }
       },
       "required": [
@@ -890,6 +1109,92 @@
         "kind",
         "len",
         "kept"
+      ],
+      "type": "object"
+    },
+    "UnmockedRequest": {
+      "description": "A real request in a mock set's scope that no mock answers.",
+      "properties": {
+        "count": {
+          "description": "How many times it was seen.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "method": {
+          "type": "string"
+        },
+        "set": {
+          "description": "The mock set whose scope has it.",
+          "type": "string"
+        },
+        "status": {
+          "description": "The real answer's status.",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "url",
+        "status",
+        "set",
+        "count"
+      ],
+      "type": "object"
+    },
+    "VerifyData": {
+      "description": "What `chrome-cdp test --verify-mocks` found: every real answer to a\nrequest in a mock set's scope, compared with the answer the mocks\nwould have given (status and JSON shape, not values).",
+      "properties": {
+        "backend": {
+          "description": "The real backend.",
+          "type": "string"
+        },
+        "compared": {
+          "description": "How many real answers were compared.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "drifted": {
+          "description": "The mocks whose answers differ, in the order first seen.",
+          "items": {
+            "$ref": "#/$defs/MockDrift"
+          },
+          "type": "array"
+        },
+        "mocks": {
+          "description": "How many mocks answered at least one of them.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unmocked": {
+          "description": "Real requests in a mock set's scope that no mock answers.",
+          "items": {
+            "$ref": "#/$defs/UnmockedRequest"
+          },
+          "type": "array"
+        },
+        "updated": {
+          "description": "`--update`: the data files rewritten (absolute).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "backend",
+        "compared",
+        "mocks",
+        "drifted",
+        "unmocked"
       ],
       "type": "object"
     }

@@ -118,6 +118,10 @@ pub(super) fn data(
         repeat: (plan.repeat > 1).then_some(plan.repeat),
         reporters: std::collections::BTreeMap::new(),
         debug: None,
+        backend: plan.real().then(|| plan.backend.name.clone()),
+        backends: Vec::new(),
+        verify: None,
+        recorded: Vec::new(),
     }
 }
 
@@ -142,6 +146,7 @@ fn result(plan: &Plan, test: &Planned, outcome: &Outcome) -> TestResult {
         warnings: outcome.warnings.clone(),
         artifacts: outcome.artifacts.as_ref().map(|d| d.display().to_string()),
         error: outcome.failure.as_deref().cloned(),
+        backend: None,
     }
 }
 
@@ -312,6 +317,7 @@ pub(super) fn listed(plan: &Plan, shard: Option<&str>, max_chars: usize) -> Outp
             warnings: Vec::new(),
             artifacts: None,
             error: None,
+            backend: None,
         });
     }
     let skipped = tests.iter().filter(|t| t.status == "skipped").count();
@@ -340,6 +346,10 @@ pub(super) fn listed(plan: &Plan, shard: Option<&str>, max_chars: usize) -> Outp
         repeat: None,
         reporters: std::collections::BTreeMap::new(),
         debug: None,
+        backend: plan.real().then(|| plan.backend.name.clone()),
+        backends: Vec::new(),
+        verify: None,
+        recorded: Vec::new(),
     };
     Output::typed(&data, text)
         .quiet(quiet.join("\n"))

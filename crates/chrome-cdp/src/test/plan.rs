@@ -1,17 +1,22 @@
 //! What a `chrome-cdp test` run does, worked out before a browser starts:
-//! the project config, the scenario files, the tests selected, and every
-//! step checked against the CLI's commands (plan 11, milestone 11.4).
+//! the project config, the backend (plan 11.11), the scenario files, the
+//! tests selected, and every step checked against the CLI's commands
+//! (plan 11, milestone 11.4).
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use e2e::Config;
+use e2e::backend::{Mode, Selected as Backend};
 use e2e::config::Fixed;
 use e2e::scenario::select::{self, Filter, Selected};
-use e2e::scenario::{self, Scenario, Settings, Step};
-use protocol::script::{ScriptError, Span};
+use e2e::scenario::{self, Scenario, Settings, Step, Vars};
+use protocol::script::{Line, ScriptError, Span};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 
+use super::vars::{Resolver, RunVars};
 use crate::cli::{GlobalArgs, TestArgs};
 use crate::script::{self as lines, Problem};
 
@@ -22,8 +27,10 @@ pub(super) const SNAPSHOTS: &str = "e2e/snapshots";
 /// A checked step.
 #[derive(Debug, Clone)]
 pub(super) struct Prepared {
-    /// The words, variables filled in.
-    pub(super) words: Vec<String>,
+    /// The line; the runner fills its variables in as it runs
+    /// ([`super::vars`]), since `${test.id}` and `${saved.…}` change.
+    pub(super) line: Line,
+    pub(super) vars: Arc<Vars>,
     pub(super) at: Span,
     /// The line as written.
     pub(super) text: String,
@@ -80,19 +87,50 @@ pub(super) struct Plan {
     pub(super) snapshots: PathBuf,
     /// What every test's context gets before its steps (11.6).
     pub(super) determinism: Fixed,
+    /// The backend the run uses (11.11).
+    pub(super) backend: Backend,
+    /// `${var:…}`, `${run.id}` and the backend's name.
+    pub(super) run: RunVars,
+    /// `--allow-writes`: `http` writes on a protected backend.
+    pub(super) allow_writes: bool,
 }
 
 impl Plan {
-    /// Reads the config and the scenarios, selects the tests, and checks
-    /// them. Every problem of the scenarios comes back at once.
-    pub(super) fn make(args: &TestArgs, global: &GlobalArgs) -> Result<Self, ErrorInfo> {
+    /// Reads the config and the scenarios, selects the tests for backend
+    /// `backend` (`None`: `--backend`, else the config's default), and
+    /// checks them. Every problem of the scenarios comes back at once.
+    pub(super) fn make(
+        args: &TestArgs,
+        global: &GlobalArgs,
+        backend: Option<&str>,
+    ) -> Result<Self, ErrorInfo> {
         let cwd = std::env::current_dir().map_err(|e| {
             ErrorInfo::new(
                 ErrorKind::BadArgs,
                 format!("cannot read the current directory: {e}"),
             )
         })?;
-        let config = project(&cwd)?;
+        let mut config = project(&cwd)?;
+        let name = backend
+            .or(args.backend.as_deref())
+            .unwrap_or(&config.default_backend)
+            .to_owned();
+        let backend = config.backend(&name)?;
+        if backend.mode == Mode::Real && args.update_snapshots {
+            return Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("--update-snapshots with backend {name}: baselines come from mock runs"),
+            )
+            .hint(Hint::text(
+                "update them against the mocks (--backend mock), whose data does not change",
+            )));
+        }
+        if backend.name != e2e::config::MOCK_BACKEND
+            && args.backend.as_deref() == Some(e2e::backend::ALL)
+        {
+            config.artifacts = config.artifacts.join(&backend.name);
+        }
+        let run = RunVars::new(&name, e2e::backend::Vars::load(&backend.vars)?);
         let files = if args.paths.is_empty() {
             let found = select::files_matching(&config.root, &config.tests);
             if found.is_empty() {
@@ -148,15 +186,40 @@ impl Plan {
         }
         let mut hooks: Vec<Hooks> = scenarios.iter().map(|_| Hooks::default()).collect();
         let mut hooked = vec![false; scenarios.len()];
+        let saved: Vec<BTreeSet<String>> = scenarios.iter().map(super::vars::saved_names).collect();
+        let known = config.backend_names();
         let mut tests = Vec::new();
         for Selected {
             file,
             test,
-            settings,
+            mut settings,
             ..
         } in selected
         {
             let scenario = &scenarios[file];
+            if let Some(word) = settings
+                .backend
+                .iter()
+                .find(|b| !matches!(b.as_str(), "mock" | "real") && !known.contains(b))
+            {
+                problems.push(Problem {
+                    span: scenario.tests[test].span.clone(),
+                    info: ErrorInfo::new(
+                        ErrorKind::BadArgs,
+                        format!(
+                            "@backend {word}: no such backend; the backends are {}",
+                            known.join(", ")
+                        ),
+                    )
+                    .hint("write @backend mock, @backend real, or a backend's name"),
+                });
+            }
+            if settings.skip.is_none() {
+                settings.skip = settings.skipped_on(&backend.name, backend.mode.as_str());
+            }
+            let check = |steps: &[Step], problems: &mut Vec<Problem>| {
+                prepare(steps, global, problems, &run, &saved[file])
+            };
             if let Some(device) = &settings.device
                 && let Err(info) = engine::find_device(device, &global.session)
             {
@@ -169,15 +232,15 @@ impl Plan {
             let steps = if skipped {
                 Vec::new()
             } else {
-                prepare(&scenario.tests[test].steps, global, &mut problems)
+                check(&scenario.tests[test].steps, &mut problems)
             };
             if !skipped && !hooked[file] {
                 hooked[file] = true;
                 hooks[file] = Hooks {
-                    before_all: prepare(&scenario.before_all, global, &mut problems),
-                    after_all: prepare(&scenario.after_all, global, &mut problems),
-                    before: prepare(&scenario.before, global, &mut problems),
-                    after: prepare(&scenario.after, global, &mut problems),
+                    before_all: check(&scenario.before_all, &mut problems),
+                    after_all: check(&scenario.after_all, &mut problems),
+                    before: check(&scenario.before, &mut problems),
+                    after: check(&scenario.after, &mut problems),
                 };
             }
             let t = &scenario.tests[test];
@@ -197,11 +260,14 @@ impl Plan {
             });
             return Err(lines::invalid(problems));
         }
-        let jobs = args.jobs.unwrap_or_else(|| config.jobs.count()).max(1);
-        let retries = args.retries.unwrap_or(config.retries);
+        if backend.protected && !args.allow_writes {
+            protect(&backend.name, &scenarios, &tests)?;
+        }
+        let jobs = args.jobs.unwrap_or_else(|| backend.jobs.count()).max(1);
+        let retries = args.retries.unwrap_or(backend.retries);
         let repeat = args.repeat.unwrap_or(1);
         let snapshots = config.root.join(SNAPSHOTS);
-        let determinism = config.determinism.resolve();
+        let determinism = backend.determinism.resolve();
         Ok(Self {
             config,
             scenarios,
@@ -213,12 +279,31 @@ impl Plan {
             debug: args.debug,
             snapshots,
             determinism,
+            backend,
+            run,
+            allow_writes: args.allow_writes,
         })
     }
 
     /// The time limit of a test (or hook) with `settings`.
     pub(super) fn timeout(&self, settings: &Settings) -> Duration {
-        settings.timeout.unwrap_or(self.config.timeout)
+        settings.timeout.unwrap_or(self.backend.timeout)
+    }
+
+    /// Whether the run is against a real backend.
+    pub(super) fn real(&self) -> bool {
+        self.backend.mode == Mode::Real
+    }
+
+    /// The mock sets a test with `settings` gets in mock mode: the
+    /// defaults, then its `@mocks` (a set named again moves last).
+    pub(super) fn mock_mode_sets(&self, settings: &Settings) -> Vec<String> {
+        let mut sets = self.config.default_mocks.clone();
+        for name in &settings.mocks {
+            sets.retain(|s| s != name);
+            sets.push(name.clone());
+        }
+        sets
     }
 
     /// Test `test`'s retries: none with `--repeat`, whose point is to see
@@ -237,6 +322,12 @@ impl Plan {
 /// `e2e/scenarios/checkout.cdp` and the default glob), else to the
 /// project root.
 pub(super) fn file_dir(config: &Config, scenario: &Scenario) -> PathBuf {
+    config.artifacts.join(file_rel(config, scenario))
+}
+
+/// A scenario's path relative to the folder its `tests` glob starts in,
+/// else to the project root.
+pub(super) fn file_rel(config: &Config, scenario: &Scenario) -> PathBuf {
     let path = scenario
         .path
         .strip_prefix(&config.root)
@@ -253,10 +344,10 @@ pub(super) fn file_dir(config: &Config, scenario: &Scenario) -> PathBuf {
         if base != Path::new(glob)
             && let Ok(rest) = path.strip_prefix(&base)
         {
-            return config.artifacts.join(rest);
+            return rest.to_path_buf();
         }
     }
-    config.artifacts.join(path)
+    path.to_path_buf()
 }
 
 /// Test `index`'s artifacts directory: its name as a slug, with its line
@@ -317,14 +408,22 @@ fn problem(e: ScriptError) -> Problem {
     }
 }
 
-/// Checks `steps` as `run` checks a script's lines; problems go into
-/// `problems`.
-fn prepare(steps: &[Step], global: &GlobalArgs, problems: &mut Vec<Problem>) -> Vec<Prepared> {
+/// Checks `steps` as `run` checks a script's lines, with the run's
+/// variables and the names the file saves; problems go into `problems`.
+fn prepare(
+    steps: &[Step],
+    global: &GlobalArgs,
+    problems: &mut Vec<Problem>,
+    run: &RunVars,
+    saved: &BTreeSet<String>,
+) -> Vec<Prepared> {
     let mut prepared = Vec::new();
     for step in steps {
-        match lines::step(&step.line, step.vars.as_ref(), global) {
+        let resolver = Resolver::checking(&step.vars, run, saved);
+        match lines::step(&step.line, &resolver, global) {
             Ok(checked) => prepared.push(Prepared {
-                words: checked.words,
+                line: step.line.clone(),
+                vars: step.vars.clone(),
                 at: checked.span,
                 text: checked.text,
                 via: step.via.clone(),
@@ -333,4 +432,37 @@ fn prepare(steps: &[Step], global: &GlobalArgs, problems: &mut Vec<Problem>) -> 
         }
     }
     prepared
+}
+
+/// A protected backend runs only `@safe` tests, unless `--allow-writes`.
+fn protect(name: &str, scenarios: &[Scenario], tests: &[Planned]) -> Result<(), ErrorInfo> {
+    let unsafe_tests: Vec<String> = tests
+        .iter()
+        .filter(|t| t.skipped().is_none() && !t.settings.safe)
+        .map(|t| format!("{}:{} {}", scenarios[t.file].name, t.line, t.name))
+        .collect();
+    let Some(first) = unsafe_tests.first() else {
+        return Ok(());
+    };
+    let mut info = ErrorInfo::new(
+        ErrorKind::BadArgs,
+        format!(
+            "backend {name} is protected, and {} of the run {} not marked @safe",
+            unsafe_tests.len(),
+            if unsafe_tests.len() == 1 {
+                "test is"
+            } else {
+                "tests are"
+            }
+        ),
+    )
+    .note("first", first.clone());
+    if unsafe_tests.len() > 1 {
+        info = info.note("and", format!("{} more", unsafe_tests.len() - 1));
+    }
+    Err(info
+        .hint(Hint::text(
+            "mark read-only tests @safe (or pick them with --tags); --allow-writes runs the rest too",
+        ))
+        .details(serde_json::json!({ "unsafe": unsafe_tests })))
 }

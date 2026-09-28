@@ -299,6 +299,20 @@ files too (docs/e2e/debugging.md).
 A scenario that does not check (bad syntax, unknown command, missing
 @include) fails before any test runs, with exit code 2.
 
+Backends (docs/e2e/backends.md): --backend NAME runs the same scenarios
+against a real backend of [e2e.backends.NAME] (its base_url, web_server,
+setup commands and vars); the mock sets are off but for the backend's
+own `mocks`, and time is not frozen. `--backend all` runs every backend
+in turn. @backend mock (or real, or a name) limits a test or file to
+those backends; the others skip it, with the reason. ${var:name} comes
+from the backend's vars file, ${secret:NAME} from the environment
+(masked in all output), ${test.id} is unique per test, and `http POST
+/api/items --save item` arranges data (${saved.item.id}). --verify-mocks
+compares every real answer with the mock that would have given it, and
+reports mocks whose JSON shape drifted (--update fixes their data
+files); --record-mocks writes each passed test's requests as a mock set.
+A protected backend runs only @safe tests unless --allow-writes.
+
 Scenario syntax (docs/e2e/scenarios.md):
   @mocks base checkout          # file settings: @mocks @tags @skip @only
   @before                       #   @timeout @viewport @device @retries
@@ -319,6 +333,8 @@ Examples:
   chrome-cdp test --debug      # keep the first failed test's page open
   chrome-cdp test --watch      # run the affected tests again on each change
   chrome-cdp test --reporter text,junit,html --trace
+  chrome-cdp test --backend local              # against the real API
+  chrome-cdp test --backend staging --verify-mocks
   chrome-cdp test --list")]
     Test(TestArgs),
 
@@ -5185,6 +5201,33 @@ pub(crate) struct TestArgs {
     /// (in the artifacts directory, or NAME=FILE); text is stdout.
     #[arg(long, value_delimiter = ',', value_parser = crate::test::reporters::parse, value_name = "NAMES")]
     pub(crate) reporter: Vec<crate::test::reporters::Reporter>,
+
+    /// The backend: mock (the mock sets), a real one of
+    /// [e2e.backends.NAME], or all of them in turn. Default: the
+    /// config's default_backend, else mock.
+    #[arg(long, value_name = "NAME", env = "CHROME_CDP_BACKEND")]
+    pub(crate) backend: Option<String>,
+
+    /// With a real backend: compare each answer with the mock that would
+    /// have given it, and report the mocks whose JSON shape drifted.
+    #[arg(long)]
+    pub(crate) verify_mocks: bool,
+
+    /// With --verify-mocks: rewrite drifted JSON data files from the real
+    /// answers, keeping the values whose shape still fits.
+    #[arg(long, requires = "verify_mocks")]
+    pub(crate) update: bool,
+
+    /// Run the tests not marked @safe on a protected backend too; `http`
+    /// writes are then allowed in their steps.
+    #[arg(long)]
+    pub(crate) allow_writes: bool,
+
+    /// With a real backend: write each passed test's fetch and XHR
+    /// requests as a mock set, recorded/<file>/<test> in the mocks
+    /// directory (replacing an older one).
+    #[arg(long)]
+    pub(crate) record_mocks: bool,
 
     /// Bound the JSON output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 200_000, value_name = "N")]

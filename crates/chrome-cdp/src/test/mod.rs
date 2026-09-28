@@ -12,13 +12,18 @@
 //! the end, and the web servers stopped, also when one exits early or on
 //! Ctrl-C.
 
+mod all;
 mod artifacts;
+mod backend;
 mod determinism;
 mod exec;
 mod plan;
+mod record;
 mod report;
 mod report_md;
 pub(crate) mod reporters;
+mod vars;
+mod verify;
 mod watch;
 
 use std::fmt::Write as _;
@@ -37,7 +42,10 @@ use plan::Plan;
 /// `--session` (or its env var) named the session to use.
 pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) -> u8 {
     let mode = global.mode();
-    let plan = match Plan::make(args, global) {
+    if args.backend.as_deref() == Some(e2e::backend::ALL) {
+        return all::run(args, global, explicit_session);
+    }
+    let plan = match Plan::make(args, global, None) {
         Ok(plan) => plan,
         Err(info) => return output::print(mode, Err(info)),
     };
@@ -45,41 +53,136 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
         let listed = report::listed(&plan, args.shard.as_deref(), args.max_chars);
         return output::print(mode, Ok(listed));
     }
-    if plan.tests.is_empty() {
-        let info = ErrorInfo::new(ErrorKind::NotFound, "no test matches").hint(
-            Hint::run(Cmd::new("test").switch("list"))
-                .why("lists the tests without --grep, --tags or --shard"),
-        );
+    if let Err(info) = ready(&plan, args, mode) {
         return output::print(mode, Err(info));
     }
-    // The mocks are checked before a browser starts (plan 11.8).
-    let mut sets: Vec<String> = plan.config.default_mocks.clone();
-    for test in &plan.tests {
-        for name in &test.settings.mocks {
+    let options = options(&plan, args, global, explicit_session);
+    let stop = AtomicBool::new(false);
+    let servers_started = AtomicBool::new(false);
+    let ran = with_servers(&plan, &stop, mode, &servers_started, args.watch, || {
+        with_backend(&plan, mode, || {
+            run_tests(&options, args.headed, || {
+                let started = Instant::now();
+                starting(&plan, mode);
+                let outcomes = execute(&plan, &options, &stop, mode);
+                if !args.watch {
+                    return Ran::Once(outcomes, started.elapsed());
+                }
+                let kept = None;
+                let servers = servers_started.load(Ordering::SeqCst);
+                let code = conclude(
+                    &plan,
+                    args,
+                    &outcomes,
+                    started.elapsed(),
+                    kept,
+                    servers,
+                    &options,
+                    mode,
+                );
+                let rerun = |plan: &Plan| {
+                    let started = Instant::now();
+                    starting(plan, mode);
+                    let outcomes = execute(plan, &options, &stop, mode);
+                    conclude(
+                        plan,
+                        args,
+                        &outcomes,
+                        started.elapsed(),
+                        None,
+                        servers,
+                        &options,
+                        mode,
+                    )
+                };
+                let make = || Plan::make(args, global, None);
+                let explicit = !args.paths.is_empty();
+                Ran::Watched(watch::run(&plan, code, &stop, mode, rerun, make, explicit))
+            })
+        })
+    });
+    match ran.and_then(|r| r) {
+        Ok((Ran::Once(outcomes, duration), kept)) => conclude(
+            &plan,
+            args,
+            &outcomes,
+            duration,
+            kept,
+            servers_started.load(Ordering::SeqCst),
+            &options,
+            mode,
+        ),
+        Ok((Ran::Watched(code), _)) => code,
+        Err(info) => output::print(mode, Err(info)),
+    }
+}
+
+/// Before a browser starts: a plan with tests, and mocks that check
+/// (plan 11.8): the sets the run applies, and with `--verify-mocks` the
+/// sets the tests would have in mock mode.
+fn ready(plan: &Plan, args: &TestArgs, mode: Mode) -> Result<(), ErrorInfo> {
+    if plan.tests.is_empty() {
+        return Err(ErrorInfo::new(ErrorKind::NotFound, "no test matches").hint(
+            Hint::run(Cmd::new("test").switch("list"))
+                .why("lists the tests without --grep, --tags or --shard"),
+        ));
+    }
+    if (args.verify_mocks || args.record_mocks) && !plan.real() {
+        let flag = if args.verify_mocks {
+            "--verify-mocks compares mocks with"
+        } else {
+            "--record-mocks records"
+        };
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!(
+                "{flag} a real backend, and {} is the mock one",
+                plan.backend.name
+            ),
+        )
+        .hint(Hint::text(
+            "add --backend <name> of a real backend in [e2e.backends]",
+        )));
+    }
+    let mut sets: Vec<String> = Vec::new();
+    let mut add = |names: &[String]| {
+        for name in names {
             if !sets.contains(name) {
                 sets.push(name.clone());
             }
         }
+    };
+    if plan.real() {
+        add(&plan.backend.mocks);
     }
-    match crate::mock::check_for_run(&plan.config, &sets) {
-        Ok(warnings) if mode == Mode::Text => {
-            const SHOWN: usize = 5;
-            let mut text = String::new();
-            for w in warnings.iter().take(SHOWN) {
-                let _ = writeln!(text, "warning: {w}");
-            }
-            if warnings.len() > SHOWN {
-                let _ = writeln!(
-                    text,
-                    "warning: {} more from the mock check; `chrome-cdp mock check` lists them",
-                    warnings.len() - SHOWN
-                );
-            }
-            output::stderr(&text);
+    if !plan.real() || args.verify_mocks {
+        add(&plan.config.default_mocks);
+        for test in &plan.tests {
+            add(&test.settings.mocks);
         }
-        Ok(_) => {}
-        Err(info) => return output::print(mode, Err(info)),
     }
+    let warnings = crate::mock::check_for_run(&plan.config, &sets)?;
+    if mode == Mode::Text {
+        const SHOWN: usize = 5;
+        let mut text = String::new();
+        for w in warnings.iter().take(SHOWN) {
+            let _ = writeln!(text, "warning: {w}");
+        }
+        if warnings.len() > SHOWN {
+            let _ = writeln!(
+                text,
+                "warning: {} more from the mock check; `chrome-cdp mock check` lists them",
+                warnings.len() - SHOWN
+            );
+        }
+        output::stderr(&text);
+    }
+    Ok(())
+}
+
+/// How the run's steps are made: the sessions, and the flags steps
+/// inherit, with the backend's base_url.
+fn options(plan: &Plan, args: &TestArgs, global: &GlobalArgs, explicit_session: bool) -> Options {
     let base = if explicit_session {
         global.session.clone()
     } else if args.debug {
@@ -97,68 +200,44 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
             close(global, session, true);
         }
     }
-    let options = Options {
-        global: global.clone(),
+    let mut global = global.clone();
+    if plan.real()
+        && let Some(url) = &plan.backend.base_url
+    {
+        global.base_url = Some(url.clone());
+    }
+    Options {
+        global,
         sessions,
         update_snapshots: args.update_snapshots,
         bail: args.bail || args.debug,
         own_sessions: !explicit_session,
         trace: args.trace,
         debug: args.debug.then(|| std::sync::Mutex::new(None)),
-    };
-    let stop = AtomicBool::new(false);
-    let servers_started = AtomicBool::new(false);
-    let ran = with_servers(&plan, &stop, mode, &servers_started, args.watch, || {
-        run_tests(&options, args.headed, || {
-            let started = Instant::now();
-            starting(&plan, mode);
-            let outcomes = execute(&plan, &options, &stop, mode);
-            if !args.watch {
-                return Ran::Once(outcomes, started.elapsed());
-            }
-            let kept = None;
-            let servers = servers_started.load(Ordering::SeqCst);
-            let code = conclude(
-                &plan,
-                args,
-                &outcomes,
-                started.elapsed(),
-                kept,
-                servers,
-                mode,
-            );
-            let rerun = |plan: &Plan| {
-                let started = Instant::now();
-                starting(plan, mode);
-                let outcomes = execute(plan, &options, &stop, mode);
-                conclude(
-                    plan,
-                    args,
-                    &outcomes,
-                    started.elapsed(),
-                    None,
-                    servers,
-                    mode,
-                )
-            };
-            let make = || Plan::make(args, global);
-            let explicit = !args.paths.is_empty();
-            Ran::Watched(watch::run(&plan, code, &stop, mode, rerun, make, explicit))
-        })
-    });
-    match ran.and_then(|r| r) {
-        Ok((Ran::Once(outcomes, duration), kept)) => conclude(
-            &plan,
-            args,
-            &outcomes,
-            duration,
-            kept,
-            servers_started.load(Ordering::SeqCst),
-            mode,
-        ),
-        Ok((Ran::Watched(code), _)) => code,
-        Err(info) => output::print(mode, Err(info)),
+        verify: args
+            .verify_mocks
+            .then(|| verify::Verifier::new(&plan.config)),
+        record: args
+            .record_mocks
+            .then(|| std::sync::Mutex::new(std::collections::BTreeMap::new())),
     }
+}
+
+/// Runs `work` between the backend's setup and teardown commands; a
+/// failed teardown is a warning on stderr.
+fn with_backend<T>(
+    plan: &Plan,
+    mode: Mode,
+    work: impl FnOnce() -> Result<T, ErrorInfo>,
+) -> Result<T, ErrorInfo> {
+    backend::setup(plan, mode)?;
+    let result = work();
+    for warning in backend::teardown(plan, mode) {
+        if mode != Mode::Json {
+            output::stderr(&format!("warning: {warning}\n"));
+        }
+    }
+    result
 }
 
 /// What the tests did: one run's results, or `--watch`'s last exit code
@@ -168,10 +247,29 @@ enum Ran {
     Watched(u8),
 }
 
-/// `running N tests from M files, J at once`.
+/// `running N tests from M files, J at once`, after what a real
+/// backend changes.
 fn starting(plan: &Plan, mode: Mode) {
     if mode != Mode::Text {
         return;
+    }
+    if plan.real() {
+        let backend = &plan.backend;
+        let mut line = format!("backend {} (real", backend.name);
+        if let Some(url) = &backend.base_url {
+            let _ = write!(line, ", {url}");
+        }
+        line.push(')');
+        if !backend.mocks.is_empty() {
+            let _ = write!(line, " with mocks {}", backend.mocks.join(", "));
+        }
+        let time = if plan.determinism.freeze_time.is_some() {
+            "time frozen"
+        } else {
+            "time runs"
+        };
+        let _ = writeln!(line, ": {time}, so determinism is best-effort");
+        output::stdout(&line);
     }
     let files = plan
         .tests
@@ -208,6 +306,7 @@ fn execute(plan: &Plan, options: &Options, stop: &AtomicBool, mode: Mode) -> Vec
 
 /// Writes the reporters' files and prints the run's result; returns the
 /// exit code.
+#[allow(clippy::too_many_arguments)]
 fn conclude(
     plan: &Plan,
     args: &TestArgs,
@@ -215,9 +314,23 @@ fn conclude(
     duration: std::time::Duration,
     kept: Option<Kept>,
     servers_started: bool,
+    options: &Options,
     mode: Mode,
 ) -> u8 {
     let mut data = report::data(plan, outcomes, duration, args.shard.as_deref());
+    data.verify = options
+        .verify
+        .as_ref()
+        .map(|v| v.finish(&plan.backend.name, args.update));
+    let mut record_warnings = Vec::new();
+    if let Some(record) = &options.record {
+        let (recorded, warnings) = record::write(plan, record);
+        data.recorded = recorded;
+        record_warnings = warnings;
+        if mode == Mode::Text {
+            output::stdout(&record::text(&data.recorded));
+        }
+    }
     data.debug = kept.map(|kept| protocol::schema::TestDebug {
         session: kept.session,
         context: kept.context,
@@ -234,6 +347,12 @@ fn conclude(
     if let (Err(info), Some(debug)) = (&mut result, &data.debug) {
         *info = report::debugging(info.clone(), debug, servers_started);
     }
+    for warning in record_warnings {
+        result = match result {
+            Ok(out) => Ok(out.warning(warning)),
+            Err(info) => Err(info.note("warning", warning)),
+        };
+    }
     if let Some(warning) = unwritten {
         result = match result {
             Ok(mut out) => {
@@ -242,6 +361,17 @@ fn conclude(
             }
             Err(info) => Err(info.note("warning", warning)),
         };
+    }
+    if let Some(verify) = &data.verify {
+        if mode == Mode::Text {
+            output::stdout(&verify::text(verify));
+        }
+        if let Some(drift) = verify::error(verify) {
+            result = match result {
+                Ok(_) => Err(drift.details(serde_json::json!(data))),
+                Err(info) => Err(info.note("mock drift", drift.message)),
+            };
+        }
     }
     if mode == Mode::Text && result.is_err() {
         output::stdout(&format!("{summary}\n{}", report::reports(&data)));
@@ -339,8 +469,9 @@ fn with_servers<T: Send>(
     work: impl FnOnce() -> T + Send,
 ) -> Result<T, ErrorInfo> {
     let config = &plan.config;
+    let web_servers = &plan.backend.web_servers;
     // --watch runs until Ctrl-C, which stops it cleanly.
-    if config.web_servers.is_empty() && !watch {
+    if web_servers.is_empty() && !watch {
         return Ok(work());
     }
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -358,8 +489,7 @@ fn with_servers<T: Send>(
             format!("cannot create {}: {e}", config.artifacts.display()),
         )
     })?;
-    let mut servers =
-        runtime.block_on(WebServers::start(&config.web_servers, &config.artifacts))?;
+    let mut servers = runtime.block_on(WebServers::start(web_servers, &config.artifacts))?;
     started.store(
         servers.servers().iter().any(|s| !s.reused),
         Ordering::SeqCst,

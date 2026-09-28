@@ -6,3 +6,24 @@ tests = ["scenarios/pass/**/*.cdp"]
 mocks = "mocks"
 default_mocks = ["shop"]
 jobs = 2
+vars = "vars/mock.toml"
+
+# Real backends (plan 11.11): the tests replace http://real.invalid with the origin of
+# a fixture server of their own, whose /e2e/api/ is a real, stateful API.
+[e2e.backends.local]
+mode = "real"
+base_url = "http://real.invalid"
+setup = ["echo up > setup-ran.txt"]
+teardown = ["echo down > teardown-ran.txt"]
+
+# Hybrid: the real API, with the price from a mock (a "third party").
+[e2e.backends.hybrid]
+mode = "real"
+base_url = "http://real.invalid"
+vars = "vars/hybrid.toml"
+mocks = ["price"]
+
+[e2e.backends.prod]
+mode = "real"
+base_url = "http://real.invalid"
+protected = true

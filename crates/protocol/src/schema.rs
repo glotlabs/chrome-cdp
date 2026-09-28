@@ -3702,6 +3702,83 @@ pub struct TestRunData {
     /// `--debug`: the failed test's browser context, left open.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub debug: Option<TestDebug>,
+    /// The backend the tests ran against, unless it was the mock one:
+    /// a real backend's name, or `all` (plan 11.11).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend: Option<String>,
+    /// `--backend all`: each backend's results, in the order they ran.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub backends: Vec<TestBackendRun>,
+    /// `--verify-mocks`: how the mocks' answers differ from the real
+    /// backend's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verify: Option<VerifyData>,
+    /// `--record-mocks`: the mock set written for each passed test.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recorded: Vec<MockRecordData>,
+}
+
+/// What `chrome-cdp test --verify-mocks` found: every real answer to a
+/// request in a mock set's scope, compared with the answer the mocks
+/// would have given (status and JSON shape, not values).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct VerifyData {
+    /// The real backend.
+    pub backend: String,
+    /// How many real answers were compared.
+    pub compared: usize,
+    /// How many mocks answered at least one of them.
+    pub mocks: usize,
+    /// The mocks whose answers differ, in the order first seen.
+    pub drifted: Vec<MockDrift>,
+    /// Real requests in a mock set's scope that no mock answers.
+    pub unmocked: Vec<UnmockedRequest>,
+    /// `--update`: the data files rewritten (absolute).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub updated: Vec<String>,
+}
+
+/// A mock whose answer differs from the real one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockDrift {
+    pub mock: MockRef,
+    /// Its JSON data file (absolute), if its body is one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_file: Option<String>,
+    /// The first request it differed on: `GET http://…/api/products`.
+    pub request: String,
+    /// What differs: `status: …`, or a JSON path and how.
+    pub problems: Vec<String>,
+    /// `--update` rewrote its data file.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub updated: bool,
+}
+
+/// A real request in a mock set's scope that no mock answers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct UnmockedRequest {
+    pub method: String,
+    pub url: String,
+    /// The real answer's status.
+    pub status: u16,
+    /// The mock set whose scope has it.
+    pub set: String,
+    /// How many times it was seen.
+    pub count: usize,
+}
+
+/// One backend's results in `chrome-cdp test --backend all`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TestBackendRun {
+    pub name: String,
+    /// `mock` or `real`.
+    pub mode: String,
+    pub passed: usize,
+    pub failed: usize,
+    pub flaky: usize,
+    pub skipped: usize,
+    pub not_run: usize,
+    pub duration_ms: u64,
 }
 
 /// The browser context `chrome-cdp test --debug` left open after the
@@ -3757,6 +3834,9 @@ pub struct TestResult {
     /// `--repeat`, its first failed run's).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<TestFailure>,
+    /// `--backend all`: the backend of this run of the test.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend: Option<String>,
 }
 
 /// The step a test failed at, and its error.

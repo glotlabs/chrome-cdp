@@ -101,7 +101,8 @@ pub(super) fn write(
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| cannot_write(&path, &e))?;
         }
-        std::fs::write(&path, text).map_err(|e| cannot_write(&path, &e))?;
+        std::fs::write(&path, crate::output::mask(&text).as_bytes())
+            .map_err(|e| cannot_write(&path, &e))?;
         written.push((reporter.kind.name().to_owned(), path.display().to_string()));
     }
     Ok(written)
@@ -158,10 +159,12 @@ fn failure_text(test: &TestResult) -> String {
 /// its first failure as a `<flakyFailure>` (as Maven Surefire writes
 /// reruns); skipped and not-run tests are `<skipped>`.
 pub(super) fn junit(data: &TestRunData) -> String {
-    let mut files: Vec<&str> = Vec::new();
+    // A suite per file, and per backend with `--backend all`.
+    let mut files: Vec<(Option<&str>, &str)> = Vec::new();
     for test in &data.tests {
-        if !files.contains(&test.file.as_str()) {
-            files.push(&test.file);
+        let key = (test.backend.as_deref(), test.file.as_str());
+        if !files.contains(&key) {
+            files.push(key);
         }
     }
     let count =
@@ -176,12 +179,20 @@ pub(super) fn junit(data: &TestRunData) -> String {
         count(&all, "skipped") + count(&all, "not-run"),
         seconds(data.duration_ms)
     );
-    for file in files {
-        let tests: Vec<&TestResult> = data.tests.iter().filter(|t| t.file == file).collect();
+    for (backend, file) in files {
+        let tests: Vec<&TestResult> = data
+            .tests
+            .iter()
+            .filter(|t| t.file == file && t.backend.as_deref() == backend)
+            .collect();
+        let suite = match backend {
+            Some(backend) => format!("{backend}: {file}"),
+            None => file.to_owned(),
+        };
         let _ = writeln!(
             xml,
             "  <testsuite name=\"{}\" tests=\"{}\" failures=\"{}\" skipped=\"{}\" time=\"{}\">",
-            escape(file),
+            escape(&suite),
             tests.len(),
             count(&tests, "failed"),
             count(&tests, "skipped") + count(&tests, "not-run"),
@@ -192,7 +203,7 @@ pub(super) fn junit(data: &TestRunData) -> String {
                 xml,
                 "    <testcase name=\"{}\" classname=\"{}\" file=\"{}\" line=\"{}\" time=\"{}\"",
                 escape(&test.name),
-                escape(file),
+                escape(&suite),
                 escape(file),
                 test.line,
                 seconds(test.duration_ms)
@@ -433,6 +444,7 @@ mod tests {
                 error: ErrorInfo::new(ErrorKind::NotFound, "no element matches text=Buy & more"),
                 report: Some("/r/report.md".into()),
             }),
+            backend: None,
         }
     }
 
@@ -449,6 +461,10 @@ mod tests {
             repeat: None,
             reporters: std::collections::BTreeMap::new(),
             debug: None,
+            backend: None,
+            backends: Vec::new(),
+            verify: None,
+            recorded: Vec::new(),
             tests,
         }
     }

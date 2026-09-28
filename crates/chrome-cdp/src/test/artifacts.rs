@@ -152,6 +152,7 @@ impl Recorder {
         step.duration_ms = millis(took);
         if let Some(file) = &mut self.file {
             let line = serde_json::to_string(&step).unwrap_or_default();
+            let line = crate::output::mask(&line);
             if let Err(e) = writeln!(file, "{line}").and_then(|()| file.flush()) {
                 tracing::warn!("cannot write {}: {e}", self.dir.join(STEPS).display());
                 self.file = None;
@@ -422,7 +423,7 @@ pub(super) fn write(path: &Path, text: &str) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    if let Err(e) = std::fs::write(path, text) {
+    if let Err(e) = std::fs::write(path, crate::output::mask(text).as_bytes()) {
         tracing::warn!("cannot write {}: {e}", path.display());
     }
 }

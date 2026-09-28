@@ -1,0 +1,6 @@
+# For the protected backend: a read-only test, and one that writes.
+@test "reads the todos" @safe
+  http GET /e2e/api/todos
+
+@test "writes in its steps" @safe
+  http POST /e2e/api/todos --json-body '{"title":"no"}'

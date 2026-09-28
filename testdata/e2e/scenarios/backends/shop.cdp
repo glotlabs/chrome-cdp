@@ -1,0 +1,33 @@
+# The same tests against the mocks and against the real API (plan 11.11):
+# data that differs comes from vars, and tests that write use their own
+# ${test.id}, so they do not see each other's todos.
+@before
+  goto /e2e/shop.html
+
+@test "shows the first todo and the price"
+  expect text=${var:first_todo} visible
+  expect "text=Price: ${var:price}" visible
+
+@test "adds a todo of its own"
+  fill 'label=New todo' "Todo ${test.id}"
+  press Enter
+  expect "text=Todo ${test.id}" visible
+  expect request POST /e2e/api/todos --json-body "{\"title\":\"Todo ${test.id}\"}"
+
+@test "arranges a todo through the API"
+  http POST /e2e/api/todos --json-body "{\"title\":\"From the API ${test.id}\"}" --expect-status 201 --save todo
+  reload
+  expect "text=From the API ${test.id}" visible
+  http DELETE /e2e/api/todos/${saved.todo.id}
+  reload
+  expect "text=From the API ${test.id}" hidden
+
+@test "starts from the seed" @backend mock
+  expect 'role=listitem' count 2
+  expect mock-state todos count 2
+
+@test "logs in through the real API" @backend real
+  http POST /e2e/api/login --json-body "{\"email\":\"ada-${backend}@example.com\"}"
+  http GET /e2e/api/me
+  goto /e2e/api/me
+  expect text=ada-${backend}@example.com visible

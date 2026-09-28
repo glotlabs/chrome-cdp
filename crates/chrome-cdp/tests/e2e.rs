@@ -17,9 +17,12 @@ use fixtures::Fixtures;
 use serde_json::Value;
 
 /// A copy of `testdata/e2e` with `base_url` set, in a sandbox with Chrome.
+/// Its real backends (plan 11.11) are a fixture server of its own, so
+/// their API starts from its seed.
 struct Project {
     sandbox: Sandbox,
     root: PathBuf,
+    real: Fixtures,
 }
 
 impl Project {
@@ -27,13 +30,21 @@ impl Project {
         let sandbox = Sandbox::with_chrome(chrome);
         let root = sandbox.dir.path().join("app");
         copy_dir(&testdata(), &root);
+        let real = Fixtures::start(0, 0).unwrap();
         let config = root.join("chrome-cdp.toml");
-        let text = std::fs::read_to_string(&config).unwrap().replace(
-            "[e2e]\n",
-            &format!("[e2e]\nbase_url = \"{}\"\n", Fixtures::shared().a()),
-        );
+        let text = std::fs::read_to_string(&config)
+            .unwrap()
+            .replace(
+                "[e2e]\n",
+                &format!("[e2e]\nbase_url = \"{}\"\n", Fixtures::shared().a()),
+            )
+            .replace("http://real.invalid", real.a());
         std::fs::write(&config, text).unwrap();
-        Self { sandbox, root }
+        Self {
+            sandbox,
+            root,
+            real,
+        }
     }
 
     fn test(&self, args: &[&str]) -> Output {
@@ -970,4 +981,440 @@ fn mock_check_errors_stop_the_run_before_the_browser_starts() {
     assert!(err.contains("hint: fix the errors in the mock files (or the spec), then run chrome-cdp mock check shop sale again"), "{err}");
     assert!(stdout(&out).is_empty(), "{}", stdout(&out));
     assert!(project.sandbox.daemons().is_empty());
+}
+
+/// Every file below `dir` whose text contains `needle`.
+fn files_containing(dir: &Path, needle: &str) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return found;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(files_containing(&path, needle));
+        } else if std::fs::read(&path)
+            .is_ok_and(|bytes| String::from_utf8_lossy(&bytes).contains(needle))
+        {
+            found.push(path);
+        }
+    }
+    found
+}
+
+#[test]
+fn the_same_scenarios_pass_against_the_mocks_and_a_real_backend() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let shop = "scenarios/backends/shop.cdp";
+
+    // The mocks: the real-only test is skipped, and says why.
+    let (out, value) = project.json(&[shop, "--jobs", "2"]);
+    assert_eq!(out.status.code(), Some(0), "{value}");
+    let data = &value["data"];
+    assert_eq!(
+        (data["passed"].as_u64(), data["skipped"].as_u64()),
+        (Some(4), Some(1))
+    );
+    assert_eq!(data["tests"][4]["status"], "skipped");
+    assert_eq!(
+        data["tests"][4]["reason"],
+        "@backend real; this run's backend is mock"
+    );
+    assert!(data.get("backend").is_none(), "{data}");
+
+    // The real API: the mock-only test is skipped; setup and teardown ran.
+    let out = project.test(&[shop, "--backend", "local", "--jobs", "2"]);
+    assert_eq!(out.status.code(), Some(0));
+    let text = stdout(&out);
+    assert!(
+        text.starts_with("setup: echo up > setup-ran.txt ("),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!(
+            "backend local (real, {}): time runs, so determinism is best-effort\n",
+            project.real.a()
+        )),
+        "{text}"
+    );
+    assert!(
+        text.contains("- scenarios/backends/shop.cdp:25 starts from the seed (skipped: @backend mock; this run's backend is local)"),
+        "{text}"
+    );
+    assert!(text.contains("5 tests: 4 passed, 1 skipped ("), "{text}");
+    assert!(
+        text.contains("teardown: echo down > teardown-ran.txt ("),
+        "{text}"
+    );
+    assert!(project.root.join("setup-ran.txt").is_file());
+    assert!(project.root.join("teardown-ran.txt").is_file());
+    // The todos the tests added through the page went to the real API;
+    // the one arranged with http was deleted again.
+    let todos = reqwest_get(&project.real.url("/e2e/api/todos"));
+    assert!(todos.contains("\"title\":\"Todo "), "{todos}");
+    assert!(!todos.contains("From the API"), "{todos}");
+    // requests.txt has the page's real requests.
+    let requests = std::fs::read_to_string(
+        project
+            .root
+            .join("e2e/.results/scenarios/backends/shop.cdp/adds-a-todo-of-its-own/requests.txt"),
+    )
+    .unwrap();
+    assert!(requests.contains("POST "), "{requests}");
+
+    // Hybrid: the real API, with the price mocked.
+    let (out, value) = project.json(&[shop, "--backend", "hybrid"]);
+    assert_eq!(out.status.code(), Some(0), "{value}");
+    assert_eq!(value["data"]["backend"], "hybrid");
+    assert_eq!(value["data"]["passed"], 4);
+}
+
+/// A GET's body, with no client library: curl is on every CI runner.
+fn reqwest_get(url: &str) -> String {
+    let out = std::process::Command::new("curl")
+        .args(["-s", url])
+        .output()
+        .unwrap();
+    String::from_utf8(out.stdout).unwrap()
+}
+
+#[test]
+fn backend_all_runs_every_backend_and_groups_the_results() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let (out, value) = project.json(&[
+        "scenarios/backends/shop.cdp",
+        "--backend",
+        "all",
+        "--allow-writes",
+        "--jobs",
+        "3",
+    ]);
+    assert_eq!(out.status.code(), Some(0), "{value}");
+    let data = &value["data"];
+    assert_eq!(data["backend"], "all");
+    let backends: Vec<(&str, &str, u64, u64)> = data["backends"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|b| {
+            (
+                b["name"].as_str().unwrap(),
+                b["mode"].as_str().unwrap(),
+                b["passed"].as_u64().unwrap(),
+                b["skipped"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        backends,
+        [
+            ("mock", "mock", 4, 1),
+            ("hybrid", "real", 4, 1),
+            ("local", "real", 4, 1),
+            ("prod", "real", 4, 1)
+        ]
+    );
+    assert_eq!(data["tests"].as_array().unwrap().len(), 20);
+    assert_eq!(data["tests"][5]["backend"], "hybrid");
+    // Each real backend's artifacts are its own.
+    assert!(
+        project
+            .root
+            .join(
+                "e2e/.results/local/scenarios/backends/shop.cdp/adds-a-todo-of-its-own/steps.jsonl"
+            )
+            .is_file()
+    );
+    assert!(
+        project
+            .root
+            .join("e2e/.results/scenarios/backends/shop.cdp/adds-a-todo-of-its-own/steps.jsonl")
+            .is_file()
+    );
+
+    // An unknown backend is a usage error with a suggestion.
+    let out = project.test(&["--backend", "locl"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        stderr(&out).contains("hint: did you mean --backend local?"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn mock_only_commands_fail_against_a_real_backend() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let (out, value) = project.json(&["scenarios/backends-bad", "--backend", "local"]);
+    assert_eq!(out.status.code(), Some(1), "{value}");
+    let error = &value["error"]["details"]["tests"][0]["error"];
+    assert_eq!(error["at"], "scenarios/backends-bad/unmarked.cdp:4:3");
+    assert_eq!(
+        error["error"]["message"],
+        "expect mock-state needs the mocks, and backend local is real"
+    );
+    assert_eq!(
+        error["error"]["hint"],
+        "mark the test @backend mock, so real backends skip it"
+    );
+}
+
+#[test]
+fn protected_backends_run_only_safe_tests_and_refuse_writes() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    // Tests not marked @safe: the run does not start.
+    let out = project.test(&["scenarios/backends/shop.cdp", "--backend", "prod"]);
+    assert_eq!(out.status.code(), Some(2));
+    let err = stderr(&out);
+    assert!(
+        err.starts_with(
+            "error: backend prod is protected, and 4 of the run tests are not marked @safe"
+        ),
+        "{err}"
+    );
+    assert!(err.contains("--allow-writes runs the rest too"), "{err}");
+    assert!(project.sandbox.daemons().is_empty());
+
+    // @safe tests run; an http write in one fails.
+    let (out, value) = project.json(&["scenarios/backends/safe.cdp", "--backend", "prod"]);
+    assert_eq!(out.status.code(), Some(1), "{value}");
+    assert_eq!(
+        statuses(&value),
+        [
+            ("passed".into(), "reads the todos".into()),
+            ("failed".into(), "writes in its steps".into()),
+        ]
+    );
+    assert_eq!(
+        value["error"]["details"]["tests"][1]["error"]["error"]["message"],
+        "http POST on protected backend prod: a @safe test only reads"
+    );
+    let todos = reqwest_get(&project.real.url("/e2e/api/todos"));
+    assert!(!todos.contains("\"no\""), "{todos}");
+
+    // --allow-writes lets it write.
+    let (out, value) = project.json(&[
+        "scenarios/backends/safe.cdp",
+        "--backend",
+        "prod",
+        "--allow-writes",
+    ]);
+    assert_eq!(out.status.code(), Some(0), "{value}");
+}
+
+#[test]
+fn secrets_never_reach_the_output_or_the_artifacts() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let secret = "hunter-2-correct-horse";
+    for json in [false, true] {
+        let mut cmd = project.sandbox.cli();
+        cmd.current_dir(&project.root)
+            .env("E2E_TODO_SECRET", secret)
+            .args(["test", "scenarios/backends/secret.cdp"]);
+        if json {
+            cmd.arg("--json");
+        }
+        let out = common::run(&mut cmd);
+        assert_eq!(out.status.code(), Some(1));
+        let (text, err) = (stdout(&out), stderr(&out));
+        assert!(
+            !text.contains(secret) && !err.contains(secret),
+            "{text}{err}"
+        );
+        assert!(
+            text.contains("<secret:E2E_TODO_SECRET>") || err.contains("<secret:E2E_TODO_SECRET>"),
+            "{text}{err}"
+        );
+    }
+    let results = project.root.join("e2e/.results");
+    assert!(
+        results
+            .join("scenarios/backends/secret.cdp/types-a-secret/report.md")
+            .is_file()
+    );
+    assert_eq!(files_containing(&results, secret), Vec::<PathBuf>::new());
+
+    // Without the variable, the run does not start.
+    let out = project.test(&["scenarios/backends/secret.cdp"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        stderr(&out).contains("environment variable E2E_TODO_SECRET is not set"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
+fn verify_mocks_reports_drift_and_update_fixes_data_files() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let scenario = "scenarios/verify/shop.cdp";
+    let args = [scenario, "--backend", "local", "--verify-mocks"];
+
+    // Honest mocks: nothing to report but the request no mock has.
+    let out = project.test(&args);
+    assert_eq!(out.status.code(), Some(1));
+    let text = stdout(&out);
+    assert!(
+        text.contains("mocks against backend local: 3 real answers compared with 2 mocks\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!(
+            "  no mock: GET {}/e2e/api/me (real answer 401; in the scope of mock set shop)\n",
+            project.real.a()
+        )),
+        "{text}"
+    );
+    assert!(
+        stderr(&out).starts_with(
+            "error: the mocks do not match backend local: 1 real request has no mock\n"
+        ),
+        "{}",
+        stderr(&out)
+    );
+
+    // Drift: the price's data file has a field the API lacks (and the
+    // right one with an old value), the todos' ids became strings.
+    let shop = project.root.join("mocks/shop.toml");
+    let text = std::fs::read_to_string(&shop).unwrap();
+    std::fs::write(
+        &shop,
+        text.replace(
+            "respond = { json = { price = 49 } }",
+            "respond = { json_file = \"data/price.json\" }",
+        ),
+    )
+    .unwrap();
+    let price = project.root.join("mocks/data/price.json");
+    std::fs::write(&price, "{\n  \"cost\": 49,\n  \"price\": 39\n}\n").unwrap();
+    let todos = project.root.join("mocks/data/todos.json");
+    let text = std::fs::read_to_string(&todos).unwrap();
+    std::fs::write(
+        &todos,
+        text.replace("\"id\": 1", "\"id\": \"1\"")
+            .replace("\"id\": 2", "\"id\": \"2\""),
+    )
+    .unwrap();
+
+    let (out, value) = project.json(&args);
+    assert_eq!(out.status.code(), Some(1), "{value}");
+    let verify = &value["error"]["details"]["verify"];
+    assert_eq!(verify["backend"], "local");
+    let drifted: Vec<(&str, Vec<&str>)> = verify["drifted"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| {
+            (
+                d["mock"]["at"].as_str().unwrap(),
+                d["problems"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|p| p.as_str().unwrap())
+                    .collect(),
+            )
+        })
+        .collect();
+    assert!(
+        drifted.contains(&(
+            "shop.toml:6",
+            vec![r#"$: the mock has field "cost" (number); the real answer has none"#]
+        )),
+        "{drifted:?}"
+    );
+    assert!(
+        drifted.contains(&(
+            "shop.toml:11",
+            vec!["$[].id: the real answer has a number; the mock has a string"]
+        )),
+        "{drifted:?}"
+    );
+    assert_eq!(verify["unmocked"][0]["status"], 401);
+    assert!(
+        value["error"]["hint"]
+            .as_str()
+            .unwrap()
+            .ends_with("chrome-cdp test --backend local --verify-mocks --update   (rewrites the drifted data files from the real answers; review the diff)"),
+        "{value}"
+    );
+
+    // --update rewrites the price's data file, keeping the value that
+    // still fits; the collection's seed is left for a person.
+    let (out, value) = project.json(&[&args[..], &["--update"]].concat());
+    assert_eq!(out.status.code(), Some(1), "{value}");
+    assert_eq!(
+        std::fs::read_to_string(&price).unwrap(),
+        "{\n  \"price\": 39\n}\n"
+    );
+    let verify = &value["error"]["details"]["verify"];
+    assert_eq!(
+        verify["updated"][0].as_str().unwrap(),
+        price.display().to_string()
+    );
+    assert!(
+        std::fs::read_to_string(&todos)
+            .unwrap()
+            .contains("\"id\": \"1\"")
+    );
+}
+
+#[test]
+fn record_mocks_writes_a_set_per_passed_test() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let (out, value) = project.json(&[
+        "scenarios/backends/shop.cdp:7",
+        "--backend",
+        "local",
+        "--record-mocks",
+    ]);
+    assert_eq!(out.status.code(), Some(0), "{value}");
+    let recorded = &value["data"]["recorded"][0];
+    let set = "recorded/scenarios/backends/shop/shows-the-first-todo-and-the-price";
+    assert_eq!(recorded["set"], set);
+    assert_eq!(recorded["requests"], 2, "{recorded}");
+    let file = project.root.join(format!("mocks/{set}.toml"));
+    let toml = std::fs::read_to_string(&file).unwrap();
+    assert!(toml.contains("path = \"/e2e/api/price\""), "{toml}");
+    assert!(
+        toml.contains("from backend local, test \"shows the first todo and the price\""),
+        "{toml}"
+    );
+
+    // The recording answers the test in mock mode, without the project's
+    // own mocks.
+    let config = project.root.join("chrome-cdp.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(
+        &config,
+        text.replace("default_mocks = [\"shop\"]", "default_mocks = []"),
+    )
+    .unwrap();
+    let scenario = project.root.join("scenarios/backends/replay.cdp");
+    std::fs::write(
+        &scenario,
+        format!(
+            "@mocks {set}\n\n@test \"replays\"\n  goto /e2e/shop.html\n  expect 'text=Buy milk' visible\n  expect 'text=Price: 49' visible\n"
+        ),
+    )
+    .unwrap();
+    let (out, value) = project.json(&["scenarios/backends/replay.cdp"]);
+    assert_eq!(out.status.code(), Some(0), "{value}");
+
+    // Recording needs a real backend.
+    let out = project.test(&["scenarios/backends/shop.cdp", "--record-mocks"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        stderr(&out)
+            .starts_with("error: --record-mocks records a real backend, and mock is the mock one"),
+        "{}",
+        stderr(&out)
+    );
 }

@@ -367,6 +367,29 @@ fn record(args: &MockRecordArgs, global: &GlobalArgs) -> Result<Output, ErrorInf
     Ok(output)
 }
 
+/// `test --record-mocks`: a test's exchanges as mock set `name` of the
+/// project's mocks directory, replacing an older one. `None` when the
+/// test sent no request to record.
+pub(crate) fn record_for_test(
+    config: &e2e::Config,
+    name: &str,
+    scope: &[String],
+    exchanges: &[mock::record::Exchange],
+    origin: String,
+) -> Result<Option<MockRecordData>, ErrorInfo> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| config.root.clone());
+    let project = Project::of(config, cwd);
+    let file = project.dir.join(format!("{name}.toml"));
+    let out = Target::new(&project, Some(&file), name, true)?;
+    match write_recording(&out, exchanges, scope, origin, 0, || {
+        Hint::text("the test sent no fetch or XHR request")
+    }) {
+        Ok(output) => Ok(serde_json::from_value(output.data).ok()),
+        Err(info) if info.kind == ErrorKind::NotFound => Ok(None),
+        Err(info) => Err(info),
+    }
+}
+
 /// `mock import <file.har>`.
 fn import(args: &MockImportArgs) -> Result<Output, ErrorInfo> {
     let project = Project::find(args.dir.as_deref())?;

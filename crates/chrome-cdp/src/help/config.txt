@@ -26,6 +26,7 @@ writes one). Paths are relative to the file; its base_url is also the
   default_mocks = ["base"]             sets every test gets
   openapi = "api/openapi.yaml"         `mock check` checks mocks against it
   default_backend = "mock"             or a name from [e2e.backends]
+  vars = "e2e/vars/mock.toml"          ${var:…} of every backend
   jobs = 4                             tests at once; "auto" = CPUs / 2
   retries = 0
   timeout = "30s"                      per test
@@ -52,9 +53,9 @@ writes one). Paths are relative to the file; its base_url is also the
   base_url = "http://localhost:8080"
   web_server = { command = "docker compose up", url = "http://localhost:8080" }
   setup = ["./scripts/reset-db.sh"]    teardown = [...] runs after
-  vars = "e2e/vars/local.toml"
+  vars = "e2e/vars/local.toml"         on top of [e2e]'s vars
   mocks = ["third-party/stripe"]       sets kept on (hybrid mode)
-  protected = false
+  protected = false                    true: only @safe tests (--allow-writes)
   jobs, timeout, retries, determinism  override [e2e]'s
 
 A web server runs in its own process group with its output in
@@ -67,6 +68,7 @@ Environment variables:
   CHROME_CDP_LOG                        log filter, e.g. cdp=trace
   CHROME_CDP_SNAP, CHROME_CDP_NO_WAIT_AFTER, CHROME_CDP_STRICT_REFS
   CHROME_CDP_TESTID_ATTRIBUTE           as testid_attribute
+  CHROME_CDP_BACKEND                    the backend of test (--backend)
   CHROME_CDP_CHROME                     the Chrome to launch (open --chrome)
   CHROME_CDP_CACHE                      where install puts browsers
   CHROME_CDP_CFT_URL                    a Chrome for Testing index mirror
