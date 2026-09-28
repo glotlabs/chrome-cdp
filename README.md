@@ -14,7 +14,9 @@ forms (`press`, `type`, `fill`, `select`, `check`, `uncheck`, `focus`,
 `blur`), files and the clipboard (`upload`, `clipboard`), dialogs (`dialog`),
 `downloads`, what the page logged (`console`, `errors`) and requested
 (`network`), what it looks like (`screenshot`, `pdf`), JavaScript (`eval`),
-raw CDP calls, `install`/`uninstall` and `schema` work so far:
+recordings and measurements (`har`, `trace`, `perf`, `coverage`), helpers
+for a human watching (`highlight`, `inspect`), raw CDP calls,
+`install`/`uninstall` and `schema` work so far:
 
 ```sh
 chrome-cdp install                    # Chrome for Testing, if there is no Chrome
@@ -31,6 +33,7 @@ chrome-cdp errors                     # exceptions and error logs not seen yet
 chrome-cdp network --failed           # #42 POST 500 /api/login xhr 12KB 340ms
 chrome-cdp screenshot --annotate      # …/shots/1.png: 1280x720 png, 48KB; refs labelled
 chrome-cdp eval --in e9 'el.value'   # ada@example.com
+chrome-cdp perf                       # load timing, LCP/CLS/INP rated, blocking time, heap
 chrome-cdp back
 chrome-cdp cdp --target page Runtime.evaluate '{"expression":"document.title"}'
 chrome-cdp tabs                       # * t1  https://example.com/  "Example Domain"
@@ -298,6 +301,30 @@ error: the script threw TypeError: Cannot read properties of null (reading 'sum'
   at: explode (/src/app.ts:8:1)
   at: eval:1:1
 ```
+
+`har start` and `har stop -o run.har` save the requests in between (of every
+tab, or of `--tab`) as a HAR 1.2 file, response bodies included unless
+`--content omit`; it is built from the network log, so nothing has to be
+turned on in advance. `trace start [--screenshots]` and `trace stop -o
+trace.json` record a Chrome performance trace (gzipped if the name ends in
+`.gz`) that DevTools' Performance panel and Perfetto open. `perf` sums up
+how fast the page is in a few lines:
+
+```
+t1 http://localhost:3000/ (loaded 4.2s ago)
+load: TTFB 12ms · FCP 180ms · DOMContentLoaded 150ms · load 420ms · 14 requests, 230KB
+LCP 610ms good (img#hero)
+CLS 0.138 needs improvement (1 shift)
+INP 256ms needs improvement (1 interaction; slowest: click on button#save)
+TBT 200ms (1 long task)
+page: 1,203 elements · 45 listeners · JS heap 4.1MB of 6MB
+```
+
+`coverage start` and `coverage stop` list the scripts and stylesheets by the
+bytes that never ran or matched, as DevTools' Coverage panel does. For a
+human watching a headed browser (`open --headed`), `highlight e12` points out
+an element for two seconds (`--duration`), and `inspect [--panel console]`
+opens DevTools for the tab.
 
 `cdp` is the escape hatch to everything else: `cdp <Domain.method> [json]`
 calls the browser (or a page, with `--target page`, `--tab` or `--frame`), and
