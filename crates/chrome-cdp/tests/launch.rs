@@ -203,6 +203,29 @@ fn chrome_args_reach_chrome() {
 }
 
 #[test]
+fn fake_media_gives_pages_a_camera_and_microphone() {
+    let Some(chrome) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let url = site.url("/emulate/permissions.html");
+    let out = sandbox.run(&["open", "--fake-media", &url, "--json"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert_eq!(
+        json_out(&out)["data"]["browser"]["chrome_args"],
+        json!([
+            "--use-fake-device-for-media-stream",
+            "--use-fake-ui-for-media-stream"
+        ])
+    );
+    // getUserMedia answers at once, with no prompt to wait for.
+    let out = sandbox.run(&[
+        "eval",
+        "navigator.mediaDevices.getUserMedia({ audio: true, video: true }).then((s) => s.getTracks().map((t) => t.kind).sort().join(','))",
+    ]);
+    assert_eq!(stdout(&out), "audio,video\n", "{}", stderr(&out));
+}
+
+#[test]
 fn launch_options_are_checked_before_launching() {
     let dir = tempfile::tempdir().unwrap();
     // It would hang if launched.
