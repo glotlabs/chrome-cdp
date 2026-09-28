@@ -414,6 +414,36 @@ mod tests {
         }
     }
 
+    /// The topic's `[e2e]` example is a valid config once the notes to the
+    /// right of each line are cut.
+    #[test]
+    fn the_config_topics_e2e_example_parses() {
+        let text = super::topic("config").map(|t| t.text).unwrap_or_default();
+        let block = text
+            .split("\n  [e2e]\n")
+            .nth(1)
+            .and_then(|rest| rest.split("\n\nA web server").next())
+            .unwrap_or_default();
+        let mut toml = String::from("[e2e]\n");
+        for line in block.lines().map(str::trim_start) {
+            let line = line.split_once("  ").map_or(line, |(value, _)| value);
+            if line.contains('=') || line.starts_with('[') {
+                toml.push_str(line);
+                toml.push('\n');
+            }
+        }
+        let file = std::path::Path::new("/p/chrome-cdp.toml");
+        let config = e2e::Config::parse(&toml, file)
+            .unwrap_or_else(|e| panic!("{}\n{toml}", e.message))
+            .unwrap();
+        assert_eq!(config.web_servers.len(), 1);
+        assert!(config.backends["local"].web_servers.is_some());
+        assert_eq!(
+            config.determinism.random_seed,
+            Some(e2e::config::RandomSeed::Seed(42))
+        );
+    }
+
     #[test]
     fn help_shows_topics_commands_and_subcommands() {
         assert_eq!(help(&[]).unwrap(), SHORT.trim_end());

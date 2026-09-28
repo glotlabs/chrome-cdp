@@ -124,13 +124,16 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
 }
 
 /// The baselines' directory in a project: `.chrome-cdp/<kind>` of the
-/// nearest directory up from `cwd` with `.chrome-cdp.toml`, `.chrome-cdp/`
-/// or `.git`, else of `cwd`.
+/// nearest directory up from `cwd` with a project config
+/// (`chrome-cdp.toml` or `.chrome-cdp.toml`), `.chrome-cdp/` or `.git`,
+/// else of `cwd`.
 fn project_baselines(cwd: &Path, kind: &str) -> PathBuf {
     let root = cwd
         .ancestors()
         .find(|dir| {
-            dir.join(crate::config::PROJECT_FILE).is_file()
+            e2e::config::PROJECT_FILES
+                .iter()
+                .any(|name| dir.join(name).is_file())
                 || dir.join(".chrome-cdp").is_dir()
                 || dir.join(".git").exists()
         })

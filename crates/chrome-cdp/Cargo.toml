@@ -16,6 +16,7 @@ cdp.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
 daemon.workspace = true
+e2e.workspace = true
 engine.workspace = true
 protocol.workspace = true
 serde.workspace = true

@@ -47,6 +47,31 @@ pub fn table<S: AsRef<str>>(rows: &[Vec<S>]) -> String {
     out
 }
 
+/// Parses `500ms`, `30s`, `1.5s`, `2m`. A unit is required so `5000` is
+/// never misread as seconds or milliseconds.
+pub fn parse_duration(s: &str) -> Result<Duration, String> {
+    let s = s.trim();
+    let split = s
+        .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .unwrap_or(s.len());
+    let (num, unit) = s.split_at(split);
+    let value: f64 = num
+        .parse()
+        .map_err(|_| format!("`{s}` is not a duration; use e.g. 500ms, 30s or 2m"))?;
+    let secs = match unit.trim() {
+        "ms" => value / 1000.0,
+        "s" => value,
+        "m" => value * 60.0,
+        "" => return Err(format!("`{s}` needs a unit; use e.g. {s}s or {s}ms")),
+        other => return Err(format!("unknown unit `{other}`; use ms, s or m")),
+    };
+    let duration = Duration::try_from_secs_f64(secs).map_err(|e| format!("`{s}`: {e}"))?;
+    if duration.is_zero() {
+        return Err("the duration must be greater than zero".into());
+    }
+    Ok(duration)
+}
+
 /// Human units: `340ms`, `1.2s`, `30s`, `2m`, `2m30s`.
 pub fn duration(d: Duration) -> String {
     let ms = d.as_millis();

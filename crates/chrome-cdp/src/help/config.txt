@@ -1,8 +1,9 @@
 Configuration: flags, environment variables and config files
 
 A setting comes from, first hit wins: the flag, its CHROME_CDP_* env var,
-the project's .chrome-cdp.toml (the nearest one walking up from the current
-directory), the user's config.toml, then the built-in default.
+the project's chrome-cdp.toml or .chrome-cdp.toml (the nearest one walking
+up from the current directory), the user's config.toml, then the built-in
+default.
 
 User config: $XDG_CONFIG_HOME/chrome-cdp/config.toml, else
 ~/.config/chrome-cdp/config.toml (macOS: ~/Library/Application
@@ -13,6 +14,48 @@ Support/chrome-cdp/config.toml). Keys (unknown keys are errors):
   base_url = "http://localhost:3000"   so `goto /login` works
   testid_attribute = "data-test" what testid= reads (data-testid)
   snap_after_action = "diff"     every action adds --snap ("off")
+
+The project config's [e2e] section sets up testing (`chrome-cdp init e2e`
+writes one). Paths are relative to the file; its base_url is also the
+`goto /path` base when the file has no top-level base_url:
+
+  [e2e]
+  base_url = "http://localhost:5173"
+  tests = ["e2e/scenarios/**/*.cdp"]   scenario files (globs)
+  mocks = "e2e/mocks"                  mock sets: <name>.toml
+  default_mocks = ["base"]             sets every test gets
+  default_backend = "mock"             or a name from [e2e.backends]
+  jobs = 4                             tests at once; "auto" = CPUs / 2
+  retries = 0
+  timeout = "30s"                      per test
+  artifacts = "e2e/.results"           reports, screenshots, logs
+  viewport = "1280x800"
+
+  [e2e.web_server]                     [[e2e.web_server]] for several
+  command = "npm run dev -- --port 5173"
+  url = "http://localhost:5173"        ready when it answers below 500
+  reuse_existing = true                use a server already on url
+  timeout = "60s"
+  env = { VITE_API_URL = "/api" }
+  cwd = "."
+
+  [e2e.determinism]
+  freeze_time = "2026-01-01T10:00:00Z"  or false
+  random_seed = 42                     or false
+  disable_animations = true
+
+  [e2e.backends.local]                 a real backend: test --backend local
+  mode = "real"
+  base_url = "http://localhost:8080"
+  web_server = { command = "docker compose up", url = "http://localhost:8080" }
+  setup = ["./scripts/reset-db.sh"]    teardown = [...] runs after
+  vars = "e2e/vars/local.toml"
+  mocks = ["third-party/stripe"]       sets kept on (hybrid mode)
+  protected = false
+  jobs, timeout, retries, determinism  override [e2e]'s
+
+A web server runs in its own process group with its output in
+<artifacts>/web-server.log, and is stopped when the tests end.
 
 Environment variables:
   CHROME_CDP_JSON, CHROME_CDP_QUIET, CHROME_CDP_SESSION,
@@ -28,6 +71,6 @@ Environment variables:
   CHROME_CDP_NETWORK_BUFFER             open's flags of those names
 
 Examples:
-  printf 'base_url = "http://localhost:3000"\n' > .chrome-cdp.toml
+  printf 'base_url = "http://localhost:3000"\n' > chrome-cdp.toml
   CHROME_CDP_SESSION=shop chrome-cdp goto /cart
   chrome-cdp open --help                # the launch options

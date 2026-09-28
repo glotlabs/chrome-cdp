@@ -17,6 +17,7 @@ engine = { path = "crates/engine" }
 daemon = { path = "crates/daemon" }
 protocol = { path = "crates/protocol" }
 fixtures = { path = "crates/fixtures" }
+e2e = { path = "crates/e2e" }
 
 # External crates.
 base64 = "0.22"
