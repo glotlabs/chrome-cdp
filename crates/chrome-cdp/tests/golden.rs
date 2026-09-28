@@ -700,6 +700,33 @@ const CASES: &[Case] = &[
         ]),
     },
     Case {
+        name: "network-failed",
+        args: &["network", "--failed", "--status", "4xx", "--since", "0"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/network/index.html"],
+            &["click", "#missing"],
+        ]),
+    },
+    Case {
+        name: "network-none",
+        args: &["network"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "network-bad-status",
+        args: &["network", "--status", "4x"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "network-show-missing",
+        args: &["network", "show", "#999"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
         name: "goto-auth-required",
         args: &["goto", "{site}/auth/"],
         modes: ERR,

@@ -756,6 +756,24 @@ Examples:
   chrome-cdp errors --sourcemaps --tab t2")]
     Errors(ErrorsArgs),
 
+    /// Show the page's requests, or one in full, or clear the log.
+    #[command(
+        args_conflicts_with_subcommands = true,
+        after_help = "\
+Every tab records its requests from the moment it opens (the newest 2,000;
+see `open --network-buffer`). By default only requests this command has not
+shown before are printed; one shown while pending is shown again when it
+ends. Each line reads: #id METHOD STATUS URL TYPE SIZE TIME.
+
+Examples:
+  chrome-cdp network
+  chrome-cdp network --failed --since 0            # every failed request so far
+  chrome-cdp network --type xhr,fetch --url '**/api/**'
+  chrome-cdp network --status 4xx --method POST
+  chrome-cdp network show 42 --body                # the response body of #42"
+    )]
+    Network(NetworkArgs),
+
     /// Make one raw CDP call on the session's browser or current page.
     #[command(after_help = "\
 Starts the session's browser first if it has none.
@@ -891,6 +909,16 @@ pub(crate) struct OpenArgs {
         value_name = "N"
     )]
     pub(crate) console_buffer: Option<u64>,
+
+    /// How many requests each tab's network log keeps (default 2,000).
+    /// The session keeps this setting.
+    #[arg(
+        long,
+        env = "CHROME_CDP_NETWORK_BUFFER",
+        value_parser = clap::value_parser!(u64).range(1..=1_000_000),
+        value_name = "N"
+    )]
+    pub(crate) network_buffer: Option<u64>,
 
     #[command(flatten)]
     pub(crate) idle: IdleArgs,
@@ -1769,6 +1797,135 @@ impl LevelArg {
     }
 }
 
+#[derive(Debug, Args)]
+pub(crate) struct NetworkArgs {
+    #[command(subcommand)]
+    pub(crate) command: Option<NetworkCommand>,
+
+    #[command(flatten)]
+    pub(crate) list: NetworkListArgs,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum NetworkCommand {
+    /// Show one request in full: status, sizes, timing, initiator, and
+    /// its headers and bodies on request.
+    #[command(after_help = "\
+Bodies are fetched from Chrome only when asked for. Chrome keeps them while
+its buffer has room and the page that loaded them is open; if it no longer
+has one, the output says so. JSON bodies are pretty-printed.
+
+Examples:
+  chrome-cdp network show 42
+  chrome-cdp network show 42 --body
+  chrome-cdp network show 42 --headers --request-body
+  chrome-cdp network show 42 --body -q > body.json   # just the body")]
+    Show(NetworkShowArgs),
+
+    /// Forget the tab's requests so far (ids go on from where they were).
+    #[command(after_help = "\
+Examples:
+  chrome-cdp network clear
+  chrome-cdp network clear --tab t2")]
+    Clear(NetworkClearArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct NetworkListArgs {
+    /// Only requests that failed, or got a status of 400 or more.
+    #[arg(long)]
+    pub(crate) failed: bool,
+
+    /// Only these resource types, comma-separated: document, script,
+    /// stylesheet, image, font, media, xhr, fetch, websocket, other, …
+    #[arg(long = "type", value_delimiter = ',', value_parser = parse_type, value_name = "TYPES")]
+    pub(crate) types: Vec<String>,
+
+    /// Only URLs that match: a glob (`**/api/*`), a `/regex/`, or a part
+    /// of the URL.
+    #[arg(long, value_name = "PATTERN")]
+    pub(crate) url: Option<String>,
+
+    /// Only this HTTP method (GET, POST, …).
+    #[arg(long, value_name = "METHOD")]
+    pub(crate) method: Option<String>,
+
+    /// Only these statuses, comma-separated: 404, 4xx or 500-599.
+    #[arg(long, value_delimiter = ',', value_parser = parse_status, value_name = "STATUS")]
+    pub(crate) status: Vec<engine::StatusRange>,
+
+    /// Where to start: `last` (what this command has not shown yet), a
+    /// request id such as 12 (0 for all), or a duration such as 30s
+    /// (started in the last 30 seconds).
+    #[arg(long, default_value = "last", value_parser = parse_since, value_name = "WHEN")]
+    pub(crate) since: engine::Since,
+
+    /// Show at most this many requests, the newest (0 = all).
+    #[arg(long, default_value_t = 50, value_name = "N")]
+    pub(crate) limit: usize,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct NetworkShowArgs {
+    /// The request's id, as `network` lists it: 42 or #42.
+    #[arg(value_parser = parse_request_id, value_name = "ID")]
+    pub(crate) id: u64,
+
+    /// List its request and response headers.
+    #[arg(long)]
+    pub(crate) headers: bool,
+
+    /// Fetch and show the response body.
+    #[arg(long)]
+    pub(crate) body: bool,
+
+    /// Show the request body.
+    #[arg(long)]
+    pub(crate) request_body: bool,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct NetworkClearArgs {}
+
+/// Parses one of `network --type`'s resource types.
+fn parse_type(s: &str) -> Result<String, String> {
+    let kind = s.trim().to_ascii_lowercase();
+    if engine::RESOURCE_TYPES.contains(&kind.as_str()) {
+        Ok(kind)
+    } else {
+        Err(format!(
+            "`{s}` is not a resource type; they are {}",
+            engine::RESOURCE_TYPES.join(", ")
+        ))
+    }
+}
+
+/// Parses `network --status`: `404`, `4xx` or `500-599`.
+fn parse_status(s: &str) -> Result<engine::StatusRange, String> {
+    engine::StatusRange::parse(s).ok_or_else(|| {
+        format!(
+            "`{s}` is not a status such as 404, a class such as 4xx, or a range such as 500-599"
+        )
+    })
+}
+
+/// Parses a request id: `42` or `#42`.
+fn parse_request_id(s: &str) -> Result<u64, String> {
+    let s = s.trim();
+    s.strip_prefix('#')
+        .unwrap_or(s)
+        .parse()
+        .map_err(|_| format!("`{s}` is not a request id such as 42 (see `chrome-cdp network`)"))
+}
+
 /// Parses `--since`: `last`, an entry number (`12` or `#12`), or a
 /// duration (`30s`).
 pub(crate) fn parse_since(s: &str) -> Result<engine::Since, String> {
@@ -2279,6 +2436,7 @@ mod tests {
     /// at 60 characters) or a point.
     const FIXED_SIZE: &[&str] = &[
         "schema",
+        "network clear",
         "count",
         "box",
         "install",

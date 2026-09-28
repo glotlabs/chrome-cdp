@@ -162,6 +162,21 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<ConsoleData>),
     },
     CommandSchema {
+        name: "network",
+        summary: "the tab's requests the agent has not seen yet (or --since), oldest first",
+        schema: || schema_for!(Envelope<NetworkData>),
+    },
+    CommandSchema {
+        name: "network show",
+        summary: "one request in full: timing, headers and bodies on request",
+        schema: || schema_for!(Envelope<NetworkShowData>),
+    },
+    CommandSchema {
+        name: "network clear",
+        summary: "how many requests were cleared from the tab's network log",
+        schema: || schema_for!(Envelope<NetworkClearData>),
+    },
+    CommandSchema {
         name: "snapshot",
         summary: "the page's accessibility tree, with refs on what can be acted on",
         schema: || schema_for!(Envelope<SnapshotData>),

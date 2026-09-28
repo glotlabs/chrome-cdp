@@ -1,0 +1,11 @@
+$ chrome-cdp network show '#999'
+exit: 1
+--- stderr
+error: t1's network log has no request #999
+  hint: chrome-cdp network --since 0   (lists the requests it has)
+
+$ chrome-cdp network show '#999' --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"t1's network log has no request #999","hint":"chrome-cdp network --since 0   (lists the requests it has)","details":{"id":999,"latest":0,"oldest":null}}}
+

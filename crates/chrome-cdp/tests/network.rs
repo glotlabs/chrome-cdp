@@ -1,0 +1,78 @@
+//! `network` end to end (plan 06, milestone 6.2): the read cursor across
+//! CLI calls, `network show`, `network clear` and `open
+//! --network-buffer`.
+//!
+//! The real-Chrome tests need `CHROME_PATH` (see `cli.rs`).
+
+#![allow(clippy::unwrap_used, clippy::print_stderr)]
+
+mod common;
+
+use common::{Sandbox, chrome_path, code, json_out, stderr, stdout};
+use fixtures::Fixtures;
+
+#[test]
+fn list_show_and_clear() {
+    let Some(chrome) = chrome_path() else { return };
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let page = Fixtures::shared().url("/network/index.html");
+    let out = sandbox.run(&["open", &page, "--network-buffer", "500"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+
+    let out = sandbox.run(&["network"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(
+        text.starts_with("#1 GET 200 /network/index.html document "),
+        "{text}"
+    );
+    assert!(
+        text.ends_with("chrome-cdp network show 3 shows one in full\n"),
+        "{text}"
+    );
+    let out = sandbox.run(&["network"]);
+    assert_eq!(
+        stdout(&out),
+        "no new requests in t1; chrome-cdp network --since 0 shows the earlier ones\n"
+    );
+
+    let out = sandbox.run(&["click", "#items"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["network", "-q", "--type", "fetch"]);
+    assert_eq!(stdout(&out), "#4\n");
+    // `-q` with `--body` is the body alone, for `> file`.
+    let out = sandbox.run(&["network", "show", "#4", "--body", "-q"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let body: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
+    assert_eq!(body.as_array().unwrap().len(), 300);
+    let out = sandbox.run(&["network", "show", "4", "--body", "--max-chars", "300"]);
+    let text = stdout(&out);
+    assert!(text.starts_with("#4 GET 200 OK "), "{text}");
+    assert!(
+        text.contains("\ninitiator: script /network/app.js:6 (loadItems)\n"),
+        "{text}"
+    );
+    assert!(text.contains("\nresponse body ("), "{text}");
+    assert!(text.contains("--max-chars 0 for all of it"), "{text}");
+
+    let out = sandbox.run(&["network", "--type", "nope"]);
+    assert_eq!(code(&out), 2, "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("`nope` is not a resource type; they are document, stylesheet,"),
+        "{}",
+        stderr(&out)
+    );
+
+    let out = sandbox.run(&["network", "clear", "--json"]);
+    let json = json_out(&out);
+    assert_eq!(json["data"]["cleared"], 4, "{json}");
+    let out = sandbox.run(&["network", "--since", "0"]);
+    assert_eq!(stdout(&out), "no requests in t1\n");
+    let out = sandbox.run(&["network", "show", "4"]);
+    assert_eq!(code(&out), 1);
+    assert!(
+        stderr(&out).contains("error: request #4 is no longer in t1's network log"),
+        "{}",
+        stderr(&out)
+    );
+}

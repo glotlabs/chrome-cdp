@@ -1,0 +1,11 @@
+$ chrome-cdp network --status 4x
+exit: 2
+--- stderr
+error: invalid value '4x' for '--status <STATUS>': `4x` is not a status such as 404, a class such as 4xx, or a range such as 500-599
+  hint: chrome-cdp network --help
+
+$ chrome-cdp network --status 4x --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"invalid value '4x' for '--status <STATUS>': `4x` is not a status such as 404, a class such as 4xx, or a range such as 500-599","hint":"chrome-cdp network --help"}}
+

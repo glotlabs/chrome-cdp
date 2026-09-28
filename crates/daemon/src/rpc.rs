@@ -29,6 +29,9 @@ pub const READ: &str = "read";
 pub const ACT: &str = "act";
 pub const CLIPBOARD: &str = "clipboard";
 pub const CONSOLE: &str = "console";
+pub const NETWORK: &str = "network";
+pub const NETWORK_SHOW: &str = "network_show";
+pub const NETWORK_CLEAR: &str = "network_clear";
 
 /// `hello`: the first call on every connection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

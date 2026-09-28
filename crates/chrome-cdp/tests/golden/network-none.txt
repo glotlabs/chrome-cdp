@@ -1,0 +1,13 @@
+$ chrome-cdp network
+exit: 0
+--- stdout
+no new requests in t1
+
+$ chrome-cdp network --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"cursor":0,"dropped":0,"requests":[],"skipped":0,"tab":"t1"}}
+
+$ chrome-cdp network -q
+exit: 0
+

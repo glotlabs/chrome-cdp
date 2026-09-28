@@ -356,6 +356,18 @@ impl Daemon {
                 Ok(p) => output(self.engine.console(p).await),
                 Err(e) => Err(e),
             },
+            rpc::NETWORK => match params(req.params) {
+                Ok(p) => output(self.engine.network(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::NETWORK_SHOW => match params(req.params) {
+                Ok(p) => output(self.engine.network_show(p).await),
+                Err(e) => Err(e),
+            },
+            rpc::NETWORK_CLEAR => match params(req.params) {
+                Ok(p) => output(self.engine.network_clear(p).await),
+                Err(e) => Err(e),
+            },
             rpc::DOWNLOADS => match params(req.params) {
                 Ok(p) => output(self.engine.downloads(p)),
                 Err(e) => Err(e),
@@ -478,6 +490,9 @@ fn keep_settings(launch: &mut OpenRequest, newer: &OpenRequest) {
     }
     if newer.console_buffer.is_some() {
         launch.console_buffer = newer.console_buffer;
+    }
+    if newer.network_buffer.is_some() {
+        launch.network_buffer = newer.network_buffer;
     }
 }
 

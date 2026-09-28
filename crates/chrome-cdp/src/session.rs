@@ -22,8 +22,9 @@ use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
     Action, ActionRequest, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
     ConsoleRequest, DialogRequest, DownloadsRequest, ElementState, FindRequest, HttpCredentials,
-    NavigateRequest, Navigation, OpenRequest, Read, ReadRequest, SnapshotRequest, TabCloseRequest,
-    TabNewRequest, TabSelectRequest, TabsRequest, WaitFor, WaitRequest,
+    NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest, NetworkShowRequest,
+    OpenRequest, Read, ReadRequest, SnapshotRequest, TabCloseRequest, TabNewRequest,
+    TabSelectRequest, TabsRequest, WaitFor, WaitRequest,
 };
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
@@ -33,8 +34,9 @@ use tokio::runtime::Runtime;
 use crate::cli::{
     AfterArgs, CdpArgs, CloseArgs, ConnectArgs, DEFAULT_TIMEOUT, DialogArgs, DialogCommand,
     DownloadsArgs, ElementStateArg, FindArgs, GlobalArgs, GotoArgs, HistoryArgs, IdleArgs,
-    LogReadArgs, OpenArgs, ReloadArgs, SessionsArgs, SnapshotArgs, StatusArgs, StrictRefsArgs,
-    TabArgs, TabCommand, TabsArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, ReloadArgs, SessionsArgs, SnapshotArgs,
+    StatusArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, WAIT_TIMEOUT, WaitCmdArgs,
+    parse_duration,
 };
 use crate::{input, version};
 
@@ -197,7 +199,9 @@ fn open_in(
         console_buffer: args
             .console_buffer
             .map(|n| usize::try_from(n).unwrap_or(usize::MAX)),
-        network_buffer: None,
+        network_buffer: args
+            .network_buffer
+            .map(|n| usize::try_from(n).unwrap_or(usize::MAX)),
         timeout_ms: millis(ctx.timeout),
     };
     if let Some(previous) = session.replaced.as_ref().and_then(|m| m.launch.as_ref()) {
@@ -249,6 +253,9 @@ fn keep_previous_options(request: &mut OpenRequest, previous: &OpenRequest) {
     }
     if request.console_buffer.is_none() {
         request.console_buffer = previous.console_buffer;
+    }
+    if request.network_buffer.is_none() {
+        request.network_buffer = previous.network_buffer;
     }
 }
 
@@ -658,6 +665,56 @@ pub(crate) fn downloads(args: &DownloadsArgs, global: &GlobalArgs) -> Result<Out
     };
     ctx.runtime
         .block_on(client.call_output(rpc::DOWNLOADS, &request, ctx.timeout + QUICK))
+}
+
+/// `network`, `network show` and `network clear`: need a running
+/// session.
+pub(crate) fn network(args: &NetworkArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let timeout_ms = millis(ctx.timeout);
+    let wait = ctx.timeout + QUICK;
+    match &args.command {
+        None => {
+            let list = &args.list;
+            let request = NetworkRequest {
+                tab: ctx.tab.clone(),
+                failed: list.failed,
+                types: list.types.clone(),
+                url: list.url.clone(),
+                method: list.method.clone(),
+                status: list.status.clone(),
+                since: list.since,
+                limit: list.limit,
+                timeout_ms,
+                max_chars: list.max_chars,
+            };
+            ctx.runtime
+                .block_on(client.call_output(rpc::NETWORK, &request, wait))
+        }
+        Some(NetworkCommand::Show(show)) => {
+            let request = NetworkShowRequest {
+                tab: ctx.tab.clone(),
+                id: show.id,
+                headers: show.headers,
+                body: show.body,
+                request_body: show.request_body,
+                timeout_ms,
+                max_chars: show.max_chars,
+            };
+            ctx.runtime
+                .block_on(client.call_output(rpc::NETWORK_SHOW, &request, wait))
+        }
+        Some(NetworkCommand::Clear(_)) => {
+            let request = NetworkClearRequest {
+                tab: ctx.tab.clone(),
+                timeout_ms,
+            };
+            ctx.runtime
+                .block_on(client.call_output(rpc::NETWORK_CLEAR, &request, wait))
+        }
+    }
 }
 
 /// How long one `--follow` call waits for new entries before asking
