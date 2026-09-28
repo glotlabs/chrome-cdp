@@ -15,5 +15,7 @@ real Chrome, one shell command per step.
   `count 3`, `--no-errors`): it retries, and a failure says what it saw.
 - When stuck, run the command in the error's `hint:` line, and check
   `chrome-cdp errors`, `chrome-cdp console` and `chrome-cdp screenshot`.
+- E2E tests: `chrome-cdp test` runs `e2e/scenarios/*.cdp` against the
+  mocks in `e2e/mocks`; a failure prints a `report.md` to read.
 - `chrome-cdp close` when done. Full guide: `chrome-cdp skill`; reference:
   `chrome-cdp help`.

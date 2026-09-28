@@ -1,6 +1,6 @@
 ---
 name: chrome-cdp
-description: Drive a real Chrome browser from the shell with chrome-cdp. Open pages, read them as an accessibility tree with refs, click, fill and type, check console errors and network requests, assert what the page shows, take screenshots, mock requests. Use it to look at, operate, test or debug a web page or web app.
+description: Drive a real Chrome browser from the shell with chrome-cdp. Open pages, read them as an accessibility tree with refs, click, fill and type, check console errors and network requests, assert what the page shows, take screenshots, mock requests, and write and run E2E tests against a mocked or real backend. Use it to look at, operate, test or debug a web page or web app.
 ---
 
 # chrome-cdp
@@ -71,6 +71,41 @@ locators in single quotes.
   `snapshot -i`, `--scope e12`, `find`, or `text <loc>`.
 - Exit codes: 0 ok, 1 action failed, 2 usage, 3 timeout, 4 browser, 5 dialog.
 
+## E2E tests with mocks
+
+A project with `chrome-cdp.toml` (`chrome-cdp init e2e` writes one) keeps
+tests in `e2e/scenarios/*.cdp` and fake API answers in
+`e2e/mocks/*.toml`. To add a test:
+
+1. Explore with the mocks on: `chrome-cdp mock use`, then the usual
+   commands. `mock explain GET /api/items` says which mock answers.
+2. Save what worked: `chrome-cdp history --as-scenario "adds an item"
+   >> e2e/scenarios/items.cdp` (refs become stable locators).
+3. Mock what the app fetches, in `e2e/mocks/base.toml`: a `[[mock]]` with
+   `match = { method = "GET", path = "/api/items/:id" }` and
+   `respond = { json_file = "data/items/{{params.id}}.json" }`, or a
+   `[[collection]]` for data the app changes. `chrome-cdp schema mocks`
+   has every key.
+4. `chrome-cdp lint`, then `chrome-cdp test` (`file.cdp:12` runs one
+   test). Each test gets a fresh context, frozen time and seeded random.
+5. A failure prints a `report.md` path: the step, the error, the page,
+   console errors, requests. Read it, fix the app or the test, rerun.
+
+```
+@mocks base checkout
+
+@test "places an order"
+  goto /checkout
+  click 'role=button[name="Place order"]'
+  expect request POST /api/orders --json-body '{"qty":1}'
+  expect 'role=heading[name="Thank you!"]' visible
+```
+
+A request in the mocks' scope that no mock answers fails the test and
+names the closest mock. `@backend mock` marks tests that only work
+against mocks; `chrome-cdp test --backend NAME` runs the same files
+against a real API.
+
 ## Cheat sheet
 
 ```
@@ -99,6 +134,7 @@ route '<url glob>' --json-body '{...}'   mock a request
 viewport 390x844 | emulate 'iPhone 15'   devices
 state save f.json | state load f.json    keep a login
 batch                          many commands from stdin, one per line
+test [file.cdp:12]             run the E2E scenarios (see above)
 ```
 
 More: `chrome-cdp help <command>` (every command's help has examples),

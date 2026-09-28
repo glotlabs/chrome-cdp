@@ -18,13 +18,15 @@ real Chrome, one shell command per step.
   `count 3`, `--no-errors`): it retries, and a failure says what it saw.
 - When stuck, run the command in the error's `hint:` line, and check
   `chrome-cdp errors`, `chrome-cdp console` and `chrome-cdp screenshot`.
+- E2E tests: `chrome-cdp test` runs `e2e/scenarios/*.cdp` against the
+  mocks in `e2e/mocks`; a failure prints a `report.md` to read.
 - `chrome-cdp close` when done. Full guide: `chrome-cdp skill`; reference:
   `chrome-cdp help`.
 
 $ chrome-cdp skill --format agents-md --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"format":"agents-md","text":"## Browser: chrome-cdp\n\nUse `chrome-cdp` to open, read, operate and check web pages. It drives a\nreal Chrome, one shell command per step.\n\n- `chrome-cdp open <url>`, then `chrome-cdp snapshot -i` lists what can be\n  acted on, with refs (`e12`).\n- Act by ref: `chrome-cdp click e12`, `chrome-cdp fill e7 'text'`,\n  `chrome-cdp press Enter`. Actions wait for their element and print what\n  happened (navigation, dialog, console error, failed request).\n- After a navigation, run `snapshot -i` again: the old refs are stale.\n- Never `sleep`: use `chrome-cdp wait --text 'Saved'`, `wait <locator>` or\n  `wait --url /path`.\n- Verify with `chrome-cdp expect <locator> text 'Saved'` (or `visible`,\n  `count 3`, `--no-errors`): it retries, and a failure says what it saw.\n- When stuck, run the command in the error's `hint:` line, and check\n  `chrome-cdp errors`, `chrome-cdp console` and `chrome-cdp screenshot`.\n- `chrome-cdp close` when done. Full guide: `chrome-cdp skill`; reference:\n  `chrome-cdp help`.\n"}}
+{"ok":true,"data":{"format":"agents-md","text":"## Browser: chrome-cdp\n\nUse `chrome-cdp` to open, read, operate and check web pages. It drives a\nreal Chrome, one shell command per step.\n\n- `chrome-cdp open <url>`, then `chrome-cdp snapshot -i` lists what can be\n  acted on, with refs (`e12`).\n- Act by ref: `chrome-cdp click e12`, `chrome-cdp fill e7 'text'`,\n  `chrome-cdp press Enter`. Actions wait for their element and print what\n  happened (navigation, dialog, console error, failed request).\n- After a navigation, run `snapshot -i` again: the old refs are stale.\n- Never `sleep`: use `chrome-cdp wait --text 'Saved'`, `wait <locator>` or\n  `wait --url /path`.\n- Verify with `chrome-cdp expect <locator> text 'Saved'` (or `visible`,\n  `count 3`, `--no-errors`): it retries, and a failure says what it saw.\n- When stuck, run the command in the error's `hint:` line, and check\n  `chrome-cdp errors`, `chrome-cdp console` and `chrome-cdp screenshot`.\n- E2E tests: `chrome-cdp test` runs `e2e/scenarios/*.cdp` against the\n  mocks in `e2e/mocks`; a failure prints a `report.md` to read.\n- `chrome-cdp close` when done. Full guide: `chrome-cdp skill`; reference:\n  `chrome-cdp help`.\n"}}
 
 $ chrome-cdp skill --format agents-md -q
 exit: 0
@@ -46,6 +48,8 @@ real Chrome, one shell command per step.
   `count 3`, `--no-errors`): it retries, and a failure says what it saw.
 - When stuck, run the command in the error's `hint:` line, and check
   `chrome-cdp errors`, `chrome-cdp console` and `chrome-cdp screenshot`.
+- E2E tests: `chrome-cdp test` runs `e2e/scenarios/*.cdp` against the
+  mocks in `e2e/mocks`; a failure prints a `report.md` to read.
 - `chrome-cdp close` when done. Full guide: `chrome-cdp skill`; reference:
   `chrome-cdp help`.
 
