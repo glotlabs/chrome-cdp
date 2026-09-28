@@ -57,6 +57,39 @@ jobs:
             exit 1
           fi
 
+  # Plan 11.10: a Next.js app whose server-side fetches the mocks answer
+  # through `mock serve`. Its build is not committed, so this job needs
+  # Node; examples/e2e-shop (no Node) runs in every `ci` job's tests.
+  e2e-ssr:
+    name: e2e-ssr (Next.js, mock serve)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: examples/e2e-ssr/package-lock.json
+      - run: cargo build --locked -p chrome-cdp
+      - name: Build the app
+        working-directory: examples/e2e-ssr
+        run: npm ci && npm run build
+      - name: Run its scenarios
+        working-directory: examples/e2e-ssr
+        env:
+          CHROME_PATH: /opt/google/chrome/chrome
+        run: |
+          ../../target/debug/chrome-cdp fmt --check
+          ../../target/debug/chrome-cdp lint --format github
+          ../../target/debug/chrome-cdp test --reporter text,junit
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-ssr-results
+          path: examples/e2e-ssr/e2e/.results/
+
   dist:
     name: dist size budget
     runs-on: ubuntu-latest

@@ -1,0 +1,19 @@
+# A server-rendered app (Next.js) whose API calls run on its server: the
+# mocks answer them through `mock serve` (plan 11.9). CI builds it first
+# (`npm ci && npm run build`); see README.md.
+
+[e2e]
+base_url = "http://localhost:3100"
+tests = ["e2e/scenarios/**/*.cdp"]
+mocks = "e2e/mocks"
+default_mocks = ["base"]
+jobs = 2
+artifacts = "e2e/.results"
+
+# The mock server starts first; the app's server fetches from it.
+[e2e.web_server]
+command = "npm run start"
+url = "http://localhost:3100"
+timeout = "60s"
+mock_server = { port = 4010 }
+env = { API_URL = "http://127.0.0.1:4010" }

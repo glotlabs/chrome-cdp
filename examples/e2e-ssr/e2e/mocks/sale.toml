@@ -1,0 +1,7 @@
+#:schema https://raw.githubusercontent.com/glotlabs/chrome-cdp/main/docs/e2e/mocks.schema.json
+# Mock set "sale": layered onto base by @mocks sale.
+
+[[mock]]
+name = "products on sale"
+match = { method = "GET", path = "/api/products" }
+respond = { json = [{ id = 1, name = "Mechanical keyboard", price = 59 }] }

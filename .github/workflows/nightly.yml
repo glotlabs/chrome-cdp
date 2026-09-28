@@ -52,3 +52,31 @@ jobs:
             --chrome "$(target/release/chrome-cdp install --headless-shell -q)"
           target/release/chrome-cdp cdp Browser.getVersion --session shell
           target/release/chrome-cdp close --session shell
+
+  # Plan 11.10: the E2E acceptance suite, 20 times over (no flaky test may
+  # pass), and against its real API with the mocks compared to it.
+  e2e-shop:
+    name: e2e-shop (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: examples/e2e-shop
+    env:
+      CHROME_CDP_AUTO_INSTALL: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --locked -p chrome-cdp -p fixtures
+      - run: ../../target/debug/chrome-cdp test --repeat 20 --reporter text,junit
+      - run: ../../target/debug/chrome-cdp test --backend local --verify-mocks
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-shop-results-${{ matrix.os }}
+          path: examples/e2e-shop/e2e/.results/

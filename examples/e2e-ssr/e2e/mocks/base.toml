@@ -1,0 +1,17 @@
+#:schema https://raw.githubusercontent.com/glotlabs/chrome-cdp/main/docs/e2e/mocks.schema.json
+# Mock set "base": the API the Next.js server calls.
+
+[settings]
+scope = ["/api/**"]
+
+[[mock]]
+name = "list products"
+match = { method = "GET", path = "/api/products" }
+respond = { json_file = "data/products.json" }
+
+# A count per test: each test's state starts over, because the page
+# forwards x-chrome-cdp-test to the mock server.
+[[mock]]
+name = "visits"
+match = { method = "GET", path = "/api/visits" }
+respond = { json = { count = "{{seq}}" } }

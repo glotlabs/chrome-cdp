@@ -1,0 +1,18 @@
+# The page is rendered on the server, from the mock server's answers.
+
+@before
+  goto /
+
+@test "renders the products the API gave"
+  expect 'role=list[name="Products"] >> role=listitem' count 2
+  expect 'text=Mechanical keyboard $89.00' visible
+
+@test "a layered set changes what the server fetched"
+  @mocks sale
+  expect 'role=list[name="Products"] >> role=listitem' count 1
+  expect 'text=Mechanical keyboard $59.00' visible
+
+@test "each test counts its own visits"
+  expect 'text=Visit 1' visible
+  reload
+  expect 'text=Visit 2' visible
