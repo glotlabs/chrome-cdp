@@ -20,9 +20,11 @@
 //! engines, one output format, refs), the locator engine (`locator`, 4.4)
 //! and the read commands (`read` and `find`, 4.5). Plan 05 adds `input`,
 //! starting with the actionability pipeline every action runs (5.1)
-//! and the mouse and pointer actions (5.2).
+//! and the mouse and pointer actions (5.2). Plan 06 adds `observe`,
+//! starting with each tab's console and the `console` and `errors`
+//! commands (6.1).
 //! Later plans add modules next to `tabs` and `navigate`: `page`,
-//! `observe`, `emulate`, `route`.
+//! `emulate`, `route`.
 
 mod clipboard;
 mod dialog;
