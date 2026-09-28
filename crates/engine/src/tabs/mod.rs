@@ -1557,12 +1557,26 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
 /// request bodies up to 64KB in the request events.
 fn network_enable() -> network::EnableParams {
     network::EnableParams {
-        max_total_buffer_size: Some(64 * 1024 * 1024),
-        max_resource_buffer_size: Some(10 * 1024 * 1024),
+        max_total_buffer_size: Some(BODIES),
+        max_resource_buffer_size: Some(BODY),
         max_post_data_size: Some(64 * 1024),
         ..network::EnableParams::default()
     }
 }
+
+/// Keeps response bodies (up to [`BODIES`] a session, [`BODY`] each)
+/// outside the renderer, where a navigation does not drop them.
+fn durable_messages() -> network::ConfigureDurableMessagesParams {
+    network::ConfigureDurableMessagesParams {
+        max_total_buffer_size: Some(BODIES),
+        max_resource_buffer_size: Some(BODY),
+    }
+}
+
+/// How many bytes of response bodies Chrome keeps for a page or iframe
+/// session, and for one response.
+const BODIES: i64 = 64 * 1024 * 1024;
+const BODY: i64 = 10 * 1024 * 1024;
 
 /// What a target is to [`setup`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1628,6 +1642,12 @@ async fn setup(
         steps.push((
             "Log.enable",
             step(session.call(cdp::domains::log::EnableParams::default())),
+        ));
+        // Response bodies kept in the browser process, so `network show
+        // --body` still has them after the page navigates.
+        steps.push((
+            "Network.configureDurableMessages",
+            step(session.call(durable_messages())),
         ));
         // Requests, for network idle, `wait --request/--response` and
         // the network log.

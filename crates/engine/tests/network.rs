@@ -305,6 +305,20 @@ async fn requests_and_their_bodies() {
     .await;
     let body = shown.request_body.unwrap();
     assert_eq!(body.size, Some(20_000), "{body:?}");
+
+    // Chrome keeps bodies after the page navigates away, even to another
+    // site.
+    goto(&engine, &site.url_b("/console/index.html")).await;
+    let (_, shown) = show(
+        &engine,
+        NetworkShowRequest {
+            body: true,
+            ..show_request(items.id)
+        },
+    )
+    .await;
+    let body = shown.response_body.unwrap();
+    assert!(body.text.is_some(), "{body:?}");
     engine.close().await;
 }
 
