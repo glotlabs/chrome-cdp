@@ -128,16 +128,40 @@ fn explore_record_save_and_run_the_test_on_the_recorded_mocks() {
     std::fs::write(project.root.join("scenarios/order.cdp"), &scenario).unwrap();
     project.ok(&["close"]);
 
-    // The test passes on the recorded mocks: they answer the API.
+    // The test passes on the recorded mocks with the backend off: the
+    // page comes from a static server of the run's own, which has no API.
+    let page = project.root.join("site/record/shop.html");
+    std::fs::create_dir_all(page.parent().unwrap()).unwrap();
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/site/record/shop.html"),
+        &page,
+    )
+    .unwrap();
+    std::fs::write(project.root.join("site/index.html"), "").unwrap();
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
     let config = project.root.join("chrome-cdp.toml");
     let text = std::fs::read_to_string(&config).unwrap();
     std::fs::write(
         &config,
-        text.replace("[e2e]\n", "[e2e]\ndefault_mocks = [\"recorded\"]\n"),
+        format!(
+            "{}\n[e2e.web_server]\nstatic = \"site\"\nurl = \"http://127.0.0.1:{port}\"\n",
+            text.replace(site, &format!("http://127.0.0.1:{port}"))
+                .replace("[e2e]\n", "[e2e]\ndefault_mocks = [\"recorded\"]\n")
+        ),
     )
     .unwrap();
     let out = project.run(&["test"]);
-    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}{}",
+        stdout(&out),
+        common::stderr(&out)
+    );
     let requests = std::fs::read_to_string(
         project
             .root
