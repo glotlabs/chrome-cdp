@@ -157,6 +157,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<ExpectData>),
     },
     CommandSchema {
+        name: "expect-snapshot",
+        summary: "the snapshot that matched (or was stored as) the baseline",
+        schema: || schema_for!(Envelope<ExpectSnapshotData>),
+    },
+    CommandSchema {
+        name: "expect-screenshot",
+        summary: "the screenshot that matched (or was stored as) the baseline",
+        schema: || schema_for!(Envelope<ExpectScreenshotData>),
+    },
+    CommandSchema {
         name: "mark",
         summary: "the mark set in the tab's console and network logs",
         schema: || schema_for!(Envelope<MarkData>),
@@ -2735,6 +2745,67 @@ pub struct MarkData {
     pub console: u64,
     /// Whether it replaced a mark of the same name.
     pub replaced: bool,
+}
+
+/// What `expect-snapshot` and `expect-screenshot` did with the baseline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum BaselineResult {
+    /// The page matched the baseline.
+    Passed,
+    /// There was no baseline; the page was stored as one.
+    Created,
+    /// `--update` replaced a baseline the page no longer matched.
+    Updated,
+    /// `--update` found the page matching the baseline already.
+    Unchanged,
+}
+
+/// `data` of `chrome-cdp expect-snapshot --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExpectSnapshotData {
+    /// The tab checked, e.g. `t1`.
+    pub tab: String,
+    /// The baseline's name, as typed.
+    pub name: String,
+    /// The baseline file.
+    pub baseline: String,
+    pub result: BaselineResult,
+    /// The snapshot compared (or stored): `snapshot -i` lines without
+    /// refs.
+    pub snapshot: String,
+    /// How many lines it has.
+    pub lines: u64,
+    /// `updated`: the unified diff from the old baseline to the new one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff: Option<String>,
+    /// Milliseconds until it matched (or was stored).
+    pub elapsed_ms: u64,
+    /// How many times the page was read again before that.
+    pub retries: u64,
+}
+
+/// `data` of `chrome-cdp expect-screenshot --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExpectScreenshotData {
+    /// The tab checked, e.g. `t1`.
+    pub tab: String,
+    /// The baseline's name, as typed.
+    pub name: String,
+    /// The baseline file (a PNG; one per platform).
+    pub baseline: String,
+    pub result: BaselineResult,
+    /// The image's size in pixels (CSS pixels).
+    pub width: u32,
+    pub height: u32,
+    /// Pixels that differ from the baseline by more than `--threshold`
+    /// (allowed up to `--max-diff-pixels`); `updated`: how many had
+    /// changed.
+    pub diff_pixels: u64,
+    /// Milliseconds until it matched (or was stored).
+    pub elapsed_ms: u64,
+    /// How many screenshots were taken before that, less one.
+    pub retries: u64,
 }
 
 /// A request or response a wait matched.

@@ -149,7 +149,8 @@ pub struct ErrorInfo {
 pub struct Note {
     /// A short lowercase label, e.g. `covering`.
     pub label: String,
-    /// One line of text.
+    /// One line of text, or several for a block such as a diff (the
+    /// text form prints them indented under the label).
     pub text: String,
 }
 
@@ -186,6 +187,17 @@ impl ErrorInfo {
         self
     }
 
+    /// Adds a labelled block of lines (a diff) to the text form: the
+    /// label on a line of its own, then each line indented under it.
+    #[must_use]
+    pub fn block(mut self, label: impl Into<String>, text: impl Into<String>) -> Self {
+        self.notes.push(Note {
+            label: label.into(),
+            text: text.into().trim_end_matches('\n').to_owned(),
+        });
+        self
+    }
+
     /// Sets the details.
     #[must_use]
     pub fn details(mut self, details: Value) -> Self {
@@ -217,7 +229,14 @@ impl ErrorInfo {
         let mut out = format!("{} {}\n", style.error("error:"), self.message);
         for note in &self.notes {
             let label = style.label(&format!("{}:", note.label));
-            let _ = writeln!(out, "  {label} {}", note.text);
+            if note.text.contains('\n') {
+                let _ = writeln!(out, "  {label}");
+                for line in note.text.lines() {
+                    let _ = writeln!(out, "    {line}");
+                }
+            } else {
+                let _ = writeln!(out, "  {label} {}", note.text);
+            }
         }
         if let Some(hint) = &self.hint {
             let _ = writeln!(out, "  {} {hint}", style.hint("hint:"));
@@ -295,6 +314,26 @@ mod tests {
             "error: element e6 is covered by another element\n  \
              covering: div \"We use cookies\" [e88]\n  \
              hint: chrome-cdp click e89   (button \"Accept\" inside the banner)\n"
+        );
+    }
+
+    #[test]
+    fn blocks_are_indented_under_their_label() {
+        let err = ErrorInfo::new(ErrorKind::ExpectFailed, "expect-snapshot login failed")
+            .note("baseline", "/p/login.txt")
+            .block("diff", "@@ -1 +1 @@\n-- button \"A\"\n+- button \"B\"\n")
+            .block("one", "line")
+            .hint("chrome-cdp expect-snapshot login --update");
+        assert_eq!(
+            err.to_text(),
+            "error: expect-snapshot login failed\n  \
+             baseline: /p/login.txt\n  \
+             diff:\n    \
+             @@ -1 +1 @@\n    \
+             -- button \"A\"\n    \
+             +- button \"B\"\n  \
+             one: line\n  \
+             hint: chrome-cdp expect-snapshot login --update\n"
         );
     }
 
