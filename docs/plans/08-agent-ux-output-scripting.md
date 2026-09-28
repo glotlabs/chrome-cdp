@@ -1,6 +1,6 @@
 # Plan 08 — Agent UX, output contract & scripting
 
-Status: IN PROGRESS (8.1-8.3 done; 8.4 is out of scope for v1; the skill and batch benchmark criteria wait for plan 10)
+Status: DONE (8.1-8.3, checked at close-out; 8.4 is out of scope for v1; the skill-validation and batch-speed criteria wait for plan 10's benchmarks, which run after all plans)
 Depends on: 01. Cross-cutting: every plan follows §2–§4.
 
 ## Goal
@@ -222,3 +222,9 @@ _(append here)_
 - 8.3: `skill --install` (default `--project`) writes `.claude/skills/chrome-cdp/SKILL.md` under the nearest directory up with `.git` or `.claude`, else the current one, so running it from a subdirectory does not create a stray `.claude`. `--user` writes under `$CLAUDE_CONFIG_DIR`, else `~/.claude`. Running it again replaces an older copy and says `updated`, or `is up to date`.
 - 8.3: `completions <shell>` uses `clap_complete` 4.6 on a copy of the root command without hidden commands (it offers them otherwise). Its bash output names a subcommand's case two ways when the program name has a `-`, so completion after the first word broke; the CLI rewrites the one form into the other, and a test sources the script in bash.
 - 8.3: The criterion "a fresh Claude Code session given only `chrome-cdp skill` completes the plan 10 agent benchmark tasks" is left unticked. It needs plan 10's benchmark (deferred: benchmarks run after all plans).
+- Close-out: every section was checked against the code and the tests (the whole workspace passes with `CHROME_PATH` set). The two open criteria are benchmarks (deferred: benchmarks run after all plans).
+- Close-out: 12 commands had no golden case (`locale`, `ua`, `time reset`, `permissions deny`/`reset`, `coverage start`, `mouse down`/`up`, `network clear`, `perf`, `completions`, `batch`). Each has one now, and `every_command_has_a_golden_case` fails for a command added without one. `perf` and `completions` use error cases, since `perf`'s numbers vary and `completions`' script is 150-280 KB.
+- Close-out: an `Output` with no `limit` is cut at a backstop of 1,000,000 characters (`protocol::output::BACKSTOP_CHARS`), so a command that forgets to pass its `--max-chars` cannot print a whole page. It is far above fixed-size output (the largest, `completions powershell`, is about 280k); `--max-chars 0` still turns bounding off.
+- Close-out: script lines' locators (`LOCATOR`, `FROM`, `TO` arguments) are parsed while the script is checked, so a bad locator fails with its `file:line:col` before the first step. An unknown directive close to a known one hints it (`did you mean @syntax?`).
+- Close-out: the fuzz target ran for 2 minutes (`cargo +nightly fuzz run parse_script`, cargo-fuzz 0.13.2, about 2 million inputs) with no panic or span out of range.
+- Close-out: `-v` has no count env var; `CHROME_CDP_LOG` (a log filter such as `info` or `cdp=trace`) is its env form, and it says more than a count could.
