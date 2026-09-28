@@ -35,7 +35,8 @@ pub struct Output {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub events: Vec<Event>,
     /// The output budget. Every command whose output can grow with the page
-    /// (snapshot, text, eval, raw CDP, logs, …) must set one.
+    /// (snapshot, text, eval, raw CDP, logs, …) must set one; without it,
+    /// [`BACKSTOP_CHARS`] applies.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit: Option<Limit>,
 }
@@ -88,6 +89,21 @@ impl Output {
         self.limit = Some(Limit::new(max_chars, more));
         self
     }
+}
+
+/// The budget of an [`Output`] with no `limit`: a backstop for a command
+/// that forgot to bound page-sized output, well above what fixed-size
+/// output (the largest is `completions powershell`, about 280k) prints.
+pub(crate) const BACKSTOP_CHARS: usize = 1_000_000;
+
+/// The output's own budget, or the backstop.
+fn budget(limit: Option<Limit>) -> Limit {
+    limit.unwrap_or_else(|| {
+        Limit::new(
+            BACKSTOP_CHARS,
+            "a narrower command; this one has no --max-chars",
+        )
+    })
 }
 
 /// The one JSON object a command prints on stdout with `--json`:
@@ -156,12 +172,11 @@ impl Envelope {
         let mut env = Self::ok(Value::Null);
         env.warnings = warnings;
         env.events = events;
-        if let Some(limit) = &limit {
-            env.truncated = bound::bound_json(&mut data, limit.max_chars);
-            if !env.truncated.is_empty() {
-                env.warnings
-                    .push(bound::truncated_warning(&env.truncated, limit));
-            }
+        let limit = budget(limit);
+        env.truncated = bound::bound_json(&mut data, limit.max_chars);
+        if !env.truncated.is_empty() {
+            env.warnings
+                .push(bound::truncated_warning(&env.truncated, &limit));
         }
         env.data = Some(data);
         env
@@ -230,7 +245,7 @@ pub fn render(mode: Mode, result: Result<Output, ErrorInfo>, stderr: Style) -> R
                 limit,
                 ..
             } = output;
-            let (max_chars, more) = limit.map_or((0, String::new()), |l| (l.max_chars, l.more));
+            let Limit { max_chars, more } = budget(limit);
             let stdout = if mode == Mode::Quiet {
                 let value = quiet.unwrap_or(text);
                 match bound::cut(&value, max_chars) {
@@ -275,7 +290,7 @@ fn line(text: &str) -> String {
 mod tests {
     use serde_json::json;
 
-    use super::{Envelope, Mode, Output, Rendered, render};
+    use super::{BACKSTOP_CHARS, Envelope, Mode, Output, Rendered, render};
     use crate::style::Style;
     use crate::{ErrorInfo, ErrorKind};
 
@@ -361,6 +376,28 @@ mod tests {
             render(Mode::Quiet, Ok(out), Style::PLAIN).stdout,
             "only text\n"
         );
+    }
+
+    #[test]
+    fn output_without_a_limit_has_a_backstop() {
+        let long = "x".repeat(BACKSTOP_CHARS + 5);
+        let out = || Output::new(json!({"value": long}), long.clone());
+        let r = text(Ok(out()));
+        assert!(
+            r.stdout.ends_with(
+                "\n… truncated 5 chars; use a narrower command; this one has no --max-chars\n"
+            ),
+            "{}",
+            &r.stdout[BACKSTOP_CHARS - 10..]
+        );
+        let r = render(Mode::Json, Ok(out()), Style::PLAIN);
+        let v: serde_json::Value = serde_json::from_str(&r.stdout).unwrap();
+        assert!(v["data"].to_string().chars().count() <= BACKSTOP_CHARS);
+        assert_eq!(v["truncated"][0]["path"], json!("/value"));
+
+        // An explicit 0 still means no limit.
+        let r = text(Ok(out().limit(0, "")));
+        assert_eq!(r.stdout.len(), BACKSTOP_CHARS + 6);
     }
 
     #[test]
