@@ -238,6 +238,35 @@ impl Engine {
     }
 }
 
+impl Engine {
+    /// A screenshot as `req` asks, as bytes instead of a file (`req.path`
+    /// is not looked at), and the warnings `screenshot` would print. The
+    /// caller holds the tab's lock and handles a dialog that blocks it.
+    pub(crate) async fn screenshot_bytes(
+        &self,
+        running: &Running,
+        page: &Page,
+        req: &ScreenshotRequest,
+        mark: u64,
+        deadline: Instant,
+    ) -> Result<(Vec<u8>, Vec<String>), ErrorInfo> {
+        let (locator, masks) = locators(req)?;
+        let shot = Shot {
+            engine: self,
+            running,
+            page,
+            req,
+            options: locate_options(req),
+            timeout: deadline.saturating_duration_since(Instant::now()),
+            deadline,
+        };
+        let (capture, drawn, bytes) = shot.take(locator.as_ref(), &masks, mark).await?;
+        let mut warnings: Vec<String> = capture.note.into_iter().collect();
+        warnings.extend(drawn.warnings);
+        Ok((bytes, warnings))
+    }
+}
+
 impl Shot<'_> {
     fn left(&self) -> Duration {
         self.deadline
@@ -255,6 +284,18 @@ impl Shot<'_> {
         masks: &[Locator],
         mark: u64,
     ) -> Result<Output, ErrorInfo> {
+        let (capture, drawn, bytes) = self.take(locator, masks, mark).await?;
+        self.output(locator, &capture, drawn, &bytes)
+    }
+
+    /// Finds the area, draws the masks and labels, takes the image and
+    /// clears what was drawn.
+    async fn take(
+        &self,
+        locator: Option<&Locator>,
+        masks: &[Locator],
+        mark: u64,
+    ) -> Result<(Capture, Drawn, Vec<u8>), ErrorInfo> {
         let capture = match locator {
             Some(locator) => self.element(locator).await?,
             None => self.page_area().await?,
@@ -267,7 +308,7 @@ impl Shot<'_> {
         .await;
         self.clear(&drawn.frames).await;
         let bytes = result?;
-        self.output(locator, &capture, drawn, &bytes)
+        Ok((capture, drawn, bytes))
     }
 
     /// The viewport, or the whole page with `--full`.

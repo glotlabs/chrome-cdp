@@ -20,7 +20,7 @@ pub(crate) mod netlog;
 mod network;
 mod pdf;
 mod perf;
-mod save;
+pub(crate) mod save;
 mod screenshot;
 mod sourcemaps;
 mod trace;

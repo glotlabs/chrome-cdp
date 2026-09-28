@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Baseline fixture</title>
+<style>
+  body { font: 16px sans-serif; margin: 0; }
+  #box { width: 120px; height: 60px; background: #3366cc; }
+  #clock { width: 120px; height: 20px; overflow: hidden; white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sign in</h1>
+  <form id="login">
+    <label>Email <input id="email" type="email"></label>
+    <label>Password <input id="password" type="password"></label>
+    <button type="submit" id="go">Sign in</button>
+  </form>
+  <div id="box"></div>
+  <p id="clock">00:00</p>
+  <nav aria-label="Footer"><a href="/help">Help</a></nav>
+</main>
+<script>
+  const params = new URLSearchParams(location.search);
+  // ?late=<ms>: the button reads "Continue" and the box turns red after that long.
+  if (params.has('late')) {
+    setTimeout(() => {
+      document.getElementById('go').textContent = 'Continue';
+      document.getElementById('box').style.background = '#cc3333';
+    }, Number(params.get('late')));
+  }
+  // ?tick: the clock changes all the time.
+  if (params.has('tick')) {
+    setInterval(() => {
+      document.getElementById('clock').textContent = String(performance.now());
+    }, 30);
+  }
+</script>
+</body>
+</html>

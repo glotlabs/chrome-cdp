@@ -409,6 +409,58 @@ impl Engine {
         Ok(refs)
     }
 
+    /// `page` as `expect-snapshot` compares it: the lines `snapshot -i`
+    /// (with `full`, `snapshot --all`) prints after its header, without
+    /// refs, so a baseline holds from one session to the next. Long lists
+    /// are not collapsed: a change past the cut would not show. Reading it
+    /// counts as the tab's last snapshot (for `--diff`). `retry` is the
+    /// command an `Ambiguous` scope's hint runs with a candidate's ref.
+    /// The caller holds the tab's lock.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn baseline_text(
+        &self,
+        running: &Running,
+        page: &Page,
+        scope: Option<&Locator>,
+        options: &LocateOptions,
+        full: bool,
+        retry: &(dyn Fn(&str) -> Cmd + Sync),
+        mark: u64,
+        timeout: Duration,
+    ) -> Result<String, ErrorInfo> {
+        let view = View {
+            interactive: !full,
+            collapse: false,
+            ..View::default()
+        };
+        let req = SnapshotRequest {
+            tab: None,
+            interactive: view.interactive,
+            scope: scope.map(ToString::to_string),
+            depth: None,
+            diff: false,
+            all_refs: false,
+            all: true,
+            text_limit: view.text_limit,
+            no_text: false,
+            engine: None,
+            strict_refs: options.strict_refs,
+            testid_attribute: options.testid_attribute.clone(),
+            timeout_ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+            max_chars: 0,
+        };
+        let (scope_key, _) = self
+            .scope_key(running, page, scope, options, retry, timeout)
+            .await?;
+        let mut tree = self
+            .read_tree(running, page, &req, &view, scope_key.as_ref(), mark)
+            .await?;
+        forget_refs(&mut tree.shown);
+        let mut text = String::new();
+        render::text(&tree.shown, &mut text);
+        Ok(text.trim_start_matches('\n').to_owned())
+    }
+
     /// The node a `--scope` locator names, and the note if its ref was
     /// re-resolved. `retry` is the command an `Ambiguous` hint runs with
     /// a candidate's ref.
@@ -446,6 +498,14 @@ impl Engine {
             Hint::run(Cmd::new("snapshot").session(&self.session))
                 .why("shows what the page has now"),
         )
+    }
+}
+
+/// Takes the refs off `nodes` and their descendants.
+fn forget_refs(nodes: &mut [Node]) {
+    for node in nodes {
+        node.reference = None;
+        forget_refs(&mut node.children);
     }
 }
 

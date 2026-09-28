@@ -11,9 +11,11 @@ base64.workspace = true
 browser.workspace = true
 cdp.workspace = true
 flate2.workspace = true
+png.workspace = true
 protocol.workspace = true
 regex.workspace = true
 serde.workspace = true
+similar.workspace = true
 sourcemap.workspace = true
 serde_json.workspace = true
 futures-util.workspace = true
@@ -23,7 +25,6 @@ url.workspace = true
 
 [dev-dependencies]
 fixtures.workspace = true
-png.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "net", "io-util", "time", "test-util"] }
 

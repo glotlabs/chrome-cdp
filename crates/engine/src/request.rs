@@ -610,6 +610,88 @@ pub struct MarkRequest {
     pub timeout_ms: u64,
 }
 
+/// `expect-snapshot <name>`: the page's `snapshot -i` text (refs left
+/// out) against a baseline file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExpectSnapshotRequest {
+    /// The baseline's name, for messages.
+    pub name: String,
+    /// The baseline file, absolute.
+    pub path: PathBuf,
+    /// `--scope`: only this element's subtree.
+    #[serde(default)]
+    pub scope: Option<String>,
+    /// `--full`: every node, not only what `snapshot -i` shows.
+    #[serde(default)]
+    pub full: bool,
+    /// `--update`: store the page as the baseline instead of comparing.
+    #[serde(default)]
+    pub update: bool,
+    /// Store the page when there is no baseline yet (else that fails).
+    #[serde(default)]
+    pub create: bool,
+    /// `--dir` as typed, for hints that repeat the command.
+    #[serde(default)]
+    pub dir: Option<String>,
+    /// `--tab`: the tab to check; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// `--strict-refs`, for a ref in `--scope`.
+    #[serde(default)]
+    pub strict_refs: bool,
+    /// The attribute `testid=` locators read; `data-testid` if `None`.
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    /// How long it reads the page again until it matches.
+    pub timeout_ms: u64,
+    /// The output budget (0 = none); also bounds a failure's diff.
+    pub max_chars: usize,
+}
+
+/// `expect-screenshot <name>`: a screenshot against a baseline PNG.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExpectScreenshotRequest {
+    /// The baseline's name, for messages.
+    pub name: String,
+    /// The baseline file, absolute.
+    pub path: PathBuf,
+    /// Capture only this element.
+    #[serde(default)]
+    pub locator: Option<String>,
+    /// `--full`: the whole page, not only the viewport.
+    #[serde(default)]
+    pub full: bool,
+    /// `--mask`: locators whose matches are painted over.
+    #[serde(default)]
+    pub mask: Vec<String>,
+    /// `--threshold`: how different (0 to 1, in YIQ colour distance) a
+    /// pixel may be before it counts as changed.
+    pub threshold: f64,
+    /// `--max-diff-pixels`: how many changed pixels still pass.
+    #[serde(default)]
+    pub max_diff_pixels: u64,
+    /// `--update`: store the page as the baseline instead of comparing.
+    #[serde(default)]
+    pub update: bool,
+    /// Store the page when there is no baseline yet (else that fails).
+    #[serde(default)]
+    pub create: bool,
+    /// `--dir` as typed, for hints that repeat the command.
+    #[serde(default)]
+    pub dir: Option<String>,
+    /// `--tab`: the tab to capture; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// `--strict-refs`, for refs in the locators.
+    #[serde(default)]
+    pub strict_refs: bool,
+    /// The attribute `testid=` locators read; `data-testid` if `None`.
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    /// How long it takes screenshots again until one matches.
+    pub timeout_ms: u64,
+}
+
 /// `dialog accept [text]` and `dialog dismiss`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DialogRequest {

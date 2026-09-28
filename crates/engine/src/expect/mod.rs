@@ -11,7 +11,11 @@
 //! A failure is `ExpectFailed` (exit 1) with what was expected, what was
 //! seen (after how long and how many tries), the element, and a hint.
 
+mod baseline;
 mod page;
+mod pixels;
+
+pub use baseline::{check_expect_screenshot, check_expect_snapshot};
 
 use std::fmt::Write as _;
 use std::time::Duration;
