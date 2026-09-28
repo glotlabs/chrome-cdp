@@ -17,7 +17,8 @@
 //!
 //! [`load`] reads one file into a [`Scenario`]: its settings (file-level
 //! `@mocks`, `@tags`, `@skip`, `@only`, `@timeout`, `@viewport`,
-//! `@device`, `@retries`, `@allow-console-errors`), its hooks (`@before`, `@after`, `@before-all`,
+//! `@device`, `@retries`, `@allow-console-errors`, `@backend`,
+//! `@safe`), its hooks (`@before`, `@after`, `@before-all`,
 //! `@after-all`) and its tests, each with its own settings (written in its
 //! body or after its name) and steps. `@include file k=v` inlines a step
 //! file (commands and further `@include`s only), relative to the file that
@@ -61,6 +62,8 @@ pub const DIRECTIVES: &[&str] = &[
     "device",
     "retries",
     "allow-console-errors",
+    "backend",
+    "safe",
     "syntax",
 ];
 
@@ -78,6 +81,8 @@ const SETTINGS: &[&str] = &[
     "device",
     "retries",
     "allow-console-errors",
+    "backend",
+    "safe",
 ];
 
 /// A file's or a test's settings.
@@ -97,6 +102,12 @@ pub struct Settings {
     /// `@allow-console-errors`: the runner does not check `expect
     /// --no-errors` at the end of the test.
     pub allow_console_errors: bool,
+    /// `@backend mock|real|<name>…`: the backends the test applies to;
+    /// empty for all (plan 11.11).
+    pub backend: Vec<String>,
+    /// `@safe`: the test only reads, so it may run against a protected
+    /// backend.
+    pub safe: bool,
 }
 
 impl Settings {
@@ -130,7 +141,25 @@ impl Settings {
             device,
             retries: inner.retries.or(self.retries),
             allow_console_errors: self.allow_console_errors || inner.allow_console_errors,
+            backend: if inner.backend.is_empty() {
+                self.backend.clone()
+            } else {
+                inner.backend.clone()
+            },
+            safe: self.safe || inner.safe,
         }
+    }
+
+    /// Whether a run against backend `name` (in `mode`, `mock` or `real`)
+    /// has the test; `None` when it does, else why not.
+    pub fn skipped_on(&self, name: &str, mode: &str) -> Option<String> {
+        if self.backend.is_empty() || self.backend.iter().any(|b| b == name || b == mode) {
+            return None;
+        }
+        Some(format!(
+            "@backend {}; this run's backend is {name}",
+            self.backend.join(" ")
+        ))
     }
 }
 
@@ -213,9 +242,9 @@ impl Resolve for Vars {
                 "data: paths are relative to the scenario or step file",
             ),
             Var::Var(_) | Var::Secret(_) | Var::Path(_) => Err(Unresolved::new(format!(
-                "{var} needs the test backends of plan 11.11, which chrome-cdp does not have yet"
+                "{var} has a value only while `chrome-cdp test` runs the scenario"
             ))
-            .hint("use ${env:X}, ${data:file.json#/key} or an @include parameter")),
+            .hint("run the scenario with chrome-cdp test")),
         }
     }
 }
@@ -470,6 +499,21 @@ impl Loader {
             )),
             "allow-console-errors" => {
                 settings.allow_console_errors = true;
+                None
+            }
+            "safe" if !words.is_empty() => {
+                Some(err("@safe takes no arguments".into(), "write @safe alone"))
+            }
+            "safe" => {
+                settings.safe = true;
+                None
+            }
+            "backend" if words.is_empty() => Some(err(
+                "@backend needs a backend".into(),
+                "e.g. @backend mock (mock-only), @backend real, or a backend's name",
+            )),
+            "backend" => {
+                settings.backend = words;
                 None
             }
             "timeout" => match one(&words).map(|w| parse_duration(&w)) {

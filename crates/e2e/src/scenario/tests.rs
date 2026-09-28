@@ -104,6 +104,30 @@ fn console_errors_are_allowed_per_test_or_file() {
 }
 
 #[test]
+fn backend_markers_pick_the_runs_a_test_is_in() {
+    let s = load_text(
+        "@backend real\n\n@test \"a\"\n  reload\n\n@test \"b\" @backend mock\n  reload\n\n@test \"c\" @backend local staging @safe\n  reload\n",
+    )
+    .unwrap();
+    let a = s.settings_of(0);
+    assert_eq!(a.backend, ["real"]);
+    assert_eq!(
+        a.skipped_on("mock", "mock").as_deref(),
+        Some("@backend real; this run's backend is mock")
+    );
+    assert_eq!(a.skipped_on("local", "real"), None);
+    // A test's marker replaces the file's.
+    let b = s.settings_of(1);
+    assert_eq!(b.skipped_on("mock", "mock"), None);
+    assert!(b.skipped_on("local", "real").is_some());
+    let c = s.settings_of(2);
+    assert!(c.safe && !a.safe);
+    assert_eq!(c.skipped_on("staging", "real"), None);
+    assert!(c.skipped_on("prod", "real").is_some());
+    assert_eq!(Settings::default().skipped_on("x", "real"), None);
+}
+
+#[test]
 fn settings_layer_a_test_on_its_file() {
     let file = Settings {
         mocks: vec!["base".into(), "a".into()],
@@ -153,6 +177,14 @@ fn directives_are_checked() {
         (
             "@test \"x\" @allow-console-errors yes\n  reload\n",
             "s.cdp:1:11: @allow-console-errors takes no arguments",
+        ),
+        (
+            "@backend\n@test \"x\"\n  reload\n",
+            "s.cdp:1:1: @backend needs a backend",
+        ),
+        (
+            "@test \"x\" @safe yes\n  reload\n",
+            "s.cdp:1:11: @safe takes no arguments",
         ),
         (
             "@timeout soon\n@test \"x\"\n  reload\n",

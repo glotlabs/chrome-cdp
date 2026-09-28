@@ -11,7 +11,8 @@
 //! Globs in `tests` are kept as written, relative to the same root.
 //!
 //! Later milestones read the keys they own (`determinism` in 11.6,
-//! `backends` in 11.11) and add new ones here.
+//! `backends` and `vars` in 11.11, see [`crate::backend`]) and add new
+//! ones here.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -119,6 +120,9 @@ pub struct Config {
     pub determinism: Determinism,
     /// `[e2e.backends.<name>]`, the real backends (plan 11.11).
     pub backends: BTreeMap<String, Backend>,
+    /// The `${var:…}` file of every backend (the mock backend's); a real
+    /// backend's `vars` go on top (plan 11.11).
+    pub vars: Option<PathBuf>,
 }
 
 /// How many tests run at once.
@@ -465,6 +469,7 @@ impl Check<'_> {
                 .unwrap_or_default(),
             determinism: raw.determinism.map(Determinism::from).unwrap_or_default(),
             backends,
+            vars: raw.vars.as_deref().map(|v| self.path(v)),
         })
     }
 
@@ -676,6 +681,7 @@ struct RawE2e {
     web_server: Option<Spanned<OneOrMany<RawWebServer>>>,
     determinism: Option<RawDeterminism>,
     backends: Option<BTreeMap<Spanned<String>, Spanned<RawBackend>>>,
+    vars: Option<String>,
 }
 
 #[derive(Deserialize)]
