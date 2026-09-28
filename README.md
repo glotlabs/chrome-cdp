@@ -13,8 +13,8 @@ and errors that say what to run next.
 forms (`press`, `type`, `fill`, `select`, `check`, `uncheck`, `focus`,
 `blur`), files and the clipboard (`upload`, `clipboard`), dialogs (`dialog`),
 `downloads`, what the page logged (`console`, `errors`) and requested
-(`network`), what it looks like (`screenshot`, `pdf`), raw CDP calls,
-`install`/`uninstall` and `schema` work so far:
+(`network`), what it looks like (`screenshot`, `pdf`), JavaScript (`eval`),
+raw CDP calls, `install`/`uninstall` and `schema` work so far:
 
 ```sh
 chrome-cdp install                    # Chrome for Testing, if there is no Chrome
@@ -30,6 +30,7 @@ chrome-cdp wait --text 'Welcome back'  # instead of sleep
 chrome-cdp errors                     # exceptions and error logs not seen yet
 chrome-cdp network --failed           # #42 POST 500 /api/login xhr 12KB 340ms
 chrome-cdp screenshot --annotate      # …/shots/1.png: 1280x720 png, 48KB; refs labelled
+chrome-cdp eval --in e9 'el.value'   # ada@example.com
 chrome-cdp back
 chrome-cdp cdp --target page Runtime.evaluate '{"expression":"document.title"}'
 chrome-cdp tabs                       # * t1  https://example.com/  "Example Domain"
@@ -282,6 +283,26 @@ those refs, so a model can map what it sees to what it can click; `--mask
 do what they say. `pdf` prints the page to the session's `pdfs` directory
 (or `-o`) with `--format A4|Letter|…`, `--landscape`, `--background` and
 `--margin 1cm`; Chrome prints only when headless.
+
+`eval <js>` runs a script in the page like a line typed into DevTools'
+console (statements, top-level `await`, a user gesture) and prints its value:
+a string as it is, anything else as JSON, a DOM node as `button#save.primary`.
+A promise is awaited and a function (`el => el.value`) called. `--in
+<locator>` binds one element as `el`, `--frame` runs in a frame, `--world
+isolated` away from the page's own scripts, and `eval -` reads the script from
+stdin. An exception exits 1 with its message and stack, page frames resolved
+with source maps on localhost:
+
+```
+error: the script threw TypeError: Cannot read properties of null (reading 'sum')
+  at: explode (/src/app.ts:8:1)
+  at: eval:1:1
+```
+
+`cdp` is the escape hatch to everything else: `cdp <Domain.method> [json]`
+calls the browser (or a page, with `--target page`, `--tab` or `--frame`), and
+`--listen <Domain.event|Domain.*>` also prints the events that follow, one per
+line, until `--count` of them came (`--count 0`: all until `--timeout`).
 
 Downloads go to the session's `downloads` directory, named as the server
 suggests (`report (1).pdf` if the name is taken). `goto` to a file waits for
