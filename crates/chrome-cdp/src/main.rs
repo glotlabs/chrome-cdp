@@ -12,6 +12,7 @@ use clap::{CommandFactory as _, FromArgMatches as _};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Mode, Output};
 
 mod cli;
+mod completions;
 mod config;
 mod emulate;
 mod help;
@@ -73,6 +74,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Schema(args)) => schema::run(&args),
         Some(Command::Help(args)) => help::run(&args),
         Some(Command::Skill(args)) => skill::run(&args),
+        Some(Command::Completions(args)) => Ok(completions::run(&args)),
         Some(Command::Install(args)) => {
             install::install(&args, cli.global.timeout_or(cli::DEFAULT_TIMEOUT))
         }

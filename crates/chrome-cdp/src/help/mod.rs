@@ -158,7 +158,10 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
     ),
     ("Cookies and storage", &["cookies", "storage", "state"]),
     ("Scripts and raw CDP", &["batch", "run", "cdp"]),
-    ("Help and tooling", &["help", "skill", "schema"]),
+    (
+        "Help and tooling",
+        &["help", "skill", "completions", "schema"],
+    ),
 ];
 
 pub(crate) fn run(args: &HelpArgs) -> Result<Output, ErrorInfo> {

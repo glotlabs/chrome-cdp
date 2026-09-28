@@ -1330,6 +1330,14 @@ Examples:
   chrome-cdp skill --format llms-txt > llms.txt")]
     Skill(SkillArgs),
 
+    /// Print a shell completion script: bash, zsh, fish, elvish or powershell.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp completions bash > ~/.local/share/bash-completion/completions/chrome-cdp
+  chrome-cdp completions zsh > ~/.zfunc/_chrome-cdp       # with fpath+=~/.zfunc
+  chrome-cdp completions fish > ~/.config/fish/completions/chrome-cdp.fish")]
+    Completions(CompletionsArgs),
+
     /// The session daemon; other commands start it.
     #[command(name = "__daemon", hide = true)]
     Daemon(DaemonArgs),
@@ -1383,6 +1391,13 @@ impl SkillFormat {
             Self::LlmsTxt => "llms-txt",
         }
     }
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct CompletionsArgs {
+    /// The shell to complete in.
+    #[arg(value_enum, value_name = "SHELL")]
+    pub(crate) shell: clap_complete::Shell,
 }
 
 #[derive(Debug, Args)]
@@ -4349,6 +4364,7 @@ mod tests {
         // Fixed texts: the help, the skill file, completion scripts.
         "help",
         "skill",
+        "completions",
         // Each step is bounded by its own command's flags.
         "batch",
         "run",

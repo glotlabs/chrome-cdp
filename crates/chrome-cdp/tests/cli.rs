@@ -160,6 +160,38 @@ fn skill_installs_into_the_project_or_the_user_dir() {
 }
 
 #[test]
+fn bash_completes_commands_flags_and_values() {
+    let out = run(cli().args(["completions", "bash"]));
+    assert_eq!(code(&out), 0);
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("chrome-cdp.bash");
+    std::fs::write(&script, stdout(&out)).unwrap();
+    // COMPREPLY for the words typed so far, the last one being completed.
+    let complete = |words: &[&str]| {
+        let quoted: Vec<String> = words.iter().map(|w| format!("'{w}'")).collect();
+        let current = words.last().unwrap();
+        let previous = words[words.len() - 2];
+        let program = format!(
+            "source '{}'; COMP_WORDS=({}); COMP_CWORD={}; \
+             _chrome__cdp chrome-cdp '{current}' '{previous}'; \
+             printf '%s\n' \"${{COMPREPLY[@]}}\"",
+            script.display(),
+            quoted.join(" "),
+            words.len() - 1
+        );
+        let out = Command::new("bash")
+            .args(["-c", &program])
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap()
+    };
+    assert_eq!(complete(&["chrome-cdp", "scre"]), "screenshot\n");
+    assert_eq!(complete(&["chrome-cdp", "click", "--js"]), "--json\n");
+    assert_eq!(complete(&["chrome-cdp", "tab", "cl"]), "close\n");
+    assert_eq!(complete(&["chrome-cdp", "__d"]).trim(), "");
+}
+
+#[test]
 fn global_flags_have_env_vars() {
     let out = run(cli().arg("-V").env("CHROME_CDP_JSON", "1"));
     assert_eq!(json_out(&out)["ok"], json!(true));

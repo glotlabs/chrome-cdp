@@ -62,6 +62,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<SkillData>),
     },
     CommandSchema {
+        name: "completions",
+        summary: "the shell completion script",
+        schema: || schema_for!(Envelope<CompletionsData>),
+    },
+    CommandSchema {
         name: "install",
         summary: "the browser installed, or with --list the installed and available ones",
         schema: || schema_for!(Envelope<InstallData>),
@@ -642,6 +647,15 @@ pub enum SkillWrite {
     Updated,
     /// It was the same already.
     Unchanged,
+}
+
+/// `data` of `chrome-cdp completions --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CompletionsData {
+    /// The shell: `bash`, `zsh`, `fish`, `elvish` or `powershell`.
+    pub shell: String,
+    /// The script.
+    pub script: String,
 }
 
 /// `data` of `chrome-cdp install --json`.
