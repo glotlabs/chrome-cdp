@@ -1552,6 +1552,76 @@ const CASES: &[Case] = &[
             ),
         ]),
     },
+    Case {
+        name: "mock-record",
+        args: &[
+            "mock",
+            "record",
+            "--scope",
+            "/items",
+            "-o",
+            "{sandbox}/app/recorded.toml",
+            "--force",
+        ],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/mock/index.html"],
+            &["eval", "fetch('/items?n=2').then((r) => r.json())"],
+            &["eval", "fetch('/items?n=30').then((r) => r.json())"],
+            &["eval", "fetch('/mock/index.html').then((r) => r.status)"],
+        ]),
+    },
+    Case {
+        name: "mock-record-nothing",
+        args: &[
+            "mock",
+            "record",
+            "--scope",
+            "/api/**",
+            "-o",
+            "{sandbox}/x.toml",
+        ],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/mock/index.html"),
+    },
+    Case {
+        name: "mock-import",
+        args: &["mock", "import", "requests.har", "--scope", "/api/**"],
+        modes: ALL,
+        fixture: Fixture::Project(&[
+            (
+                "chrome-cdp.toml",
+                "[e2e]\nbase_url = \"http://localhost:5173\"\n",
+            ),
+            (
+                "requests.har",
+                r#"{"log": {"version": "1.2", "entries": [
+  {"_resourceType": "document",
+   "request": {"method": "GET", "url": "http://localhost:5173/", "headers": []},
+   "response": {"status": 200, "headers": [], "content": {"size": 13, "mimeType": "text/html", "text": "<html></html>"}}},
+  {"_resourceType": "fetch",
+   "request": {"method": "GET", "url": "http://localhost:5173/api/products/7", "headers": []},
+   "response": {"status": 200, "headers": [{"name": "Date", "value": "Mon, 01 Jan 2026 10:00:00 GMT"}],
+                "content": {"size": 62, "mimeType": "application/json", "text": "{\"id\": 7, \"name\": \"Mechanical keyboard\", \"updated_at\": \"2026-01-01T10:00:00Z\"}"}}},
+  {"_resourceType": "fetch",
+   "request": {"method": "OPTIONS", "url": "http://localhost:5173/api/orders", "headers": []},
+   "response": {"status": 204, "headers": [], "content": {"size": 0, "mimeType": ""}}},
+  {"_resourceType": "fetch",
+   "request": {"method": "POST", "url": "http://localhost:5173/api/orders", "headers": [], "postData": {"mimeType": "application/json", "text": "{\"qty\": 1}"}},
+   "response": {"status": 503, "headers": [], "content": {"size": 16, "mimeType": "application/json", "text": "{\"error\":\"busy\"}"}}},
+  {"_resourceType": "fetch",
+   "request": {"method": "POST", "url": "http://localhost:5173/api/orders", "headers": [], "postData": {"mimeType": "application/json", "text": "{\"qty\": 1}"}},
+   "response": {"status": 201, "headers": [{"name": "Location", "value": "/api/orders/1"}], "content": {"size": 8, "mimeType": "application/json", "text": "{\"id\":1}"}}}
+]}}"#,
+            ),
+        ]),
+    },
+    Case {
+        name: "mock-import-bad",
+        args: &["mock", "import", "requests.har"],
+        modes: ERR,
+        fixture: Fixture::Project(&[("requests.har", "{\"entries\": []}")]),
+    },
     // Each mode would remove what the one before did: one mode a case.
     Case {
         name: "unroute",

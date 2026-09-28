@@ -1,0 +1,11 @@
+$ chrome-cdp mock record --scope '/api/**' -o <sandbox>/x.toml
+exit: 1
+--- stderr
+error: no request in scope /api/** to record
+  hint: chrome-cdp network --limit 50   (lists what the session sent; browse the app first, then record)
+
+$ chrome-cdp mock record --scope '/api/**' -o <sandbox>/x.toml --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"no request in scope /api/** to record","hint":"chrome-cdp network --limit 50   (lists what the session sent; browse the app first, then record)"}}
+

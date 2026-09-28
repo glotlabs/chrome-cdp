@@ -1,0 +1,11 @@
+$ chrome-cdp mock import requests.har
+exit: 2
+--- stderr
+error: requests.har: it has no log.entries; is it a HAR file?
+  hint: give a HAR file, e.g. one `chrome-cdp har stop` wrote
+
+$ chrome-cdp mock import requests.har --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"requests.har: it has no log.entries; is it a HAR file?","hint":"give a HAR file, e.g. one `chrome-cdp har stop` wrote"}}
+

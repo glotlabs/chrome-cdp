@@ -17,6 +17,8 @@
 //!   closest mocks, and [`RequestFilter`] of `expect request`);
 //! - `respond`: answers, data files, content types;
 //! - `template`: `{{params.id}}` and friends (`minijinja`);
+//! - [`record`]: mock files from recorded traffic (`mock record`, `mock
+//!   import`);
 //! - `engine`: [`Mocks`];
 //! - [`text`]: the text form of the `mock` commands' output.
 
@@ -27,6 +29,7 @@ pub mod file;
 mod glob;
 mod load;
 mod matcher;
+pub mod record;
 mod respond;
 mod template;
 pub mod text;
@@ -42,5 +45,7 @@ pub use respond::{
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_record;
 #[cfg(test)]
 mod tests_stateful;

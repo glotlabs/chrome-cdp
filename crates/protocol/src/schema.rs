@@ -319,6 +319,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<MockExplainData>),
     },
     CommandSchema {
+        name: "mock record",
+        summary: "the mock file written from the session's requests, and its data files",
+        schema: || schema_for!(Envelope<MockRecordData>),
+    },
+    CommandSchema {
+        name: "mock import",
+        summary: "the mock file written from a HAR file, and its data files",
+        schema: || schema_for!(Envelope<MockRecordData>),
+    },
+    CommandSchema {
         name: "init-script add",
         summary: "the init script added, and how many the session has",
         schema: || schema_for!(Envelope<InitScriptAddData>),
@@ -3395,6 +3405,26 @@ pub struct MockSetsData {
     /// The mocks directory the sets were looked for in (absolute).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dir: Option<String>,
+}
+
+/// `data` of `chrome-cdp mock record|import --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockRecordData {
+    /// The mock file written (absolute).
+    pub path: String,
+    /// What `mock use` takes: its name in the mocks directory, else its
+    /// path.
+    pub set: String,
+    /// The requests in scope that were recorded.
+    pub requests: usize,
+    /// The `[[mock]]`s written (one per distinct request).
+    pub mocks: usize,
+    /// The data files written (absolute).
+    pub files: Vec<String>,
+    /// The set's `scope` (as given, or guessed; empty if neither).
+    pub scope: Vec<String>,
+    /// Requests in scope left out, and why.
+    pub skipped: Vec<String>,
 }
 
 /// `data` of `chrome-cdp mock off --json`.

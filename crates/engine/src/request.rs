@@ -1004,6 +1004,20 @@ pub struct HarStopRequest {
     pub timeout_ms: u64,
 }
 
+/// `mock record`: the HAR of the requests in `scope`, returned instead
+/// of written.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HarExportRequest {
+    /// `--tab`: only this tab's requests; else every tab of the context.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// `--scope` globs (`/api/**`, `https://api.example.com/**`); the
+    /// `fetch` and XHR requests if empty.
+    #[serde(default)]
+    pub scope: Vec<String>,
+    pub timeout_ms: u64,
+}
+
 /// `trace start`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TraceStartRequest {

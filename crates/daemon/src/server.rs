@@ -513,6 +513,10 @@ impl Daemon {
                 Ok(p) => output(Box::pin(self.engine.har_stop(p)).await),
                 Err(e) => Err(e),
             },
+            rpc::HAR_EXPORT => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.har_export(p)).await),
+                Err(e) => Err(e),
+            },
             rpc::TRACE_START => match params(req.params) {
                 Ok(p) => output(self.engine.trace_start(p).await),
                 Err(e) => Err(e),

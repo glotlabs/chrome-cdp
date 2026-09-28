@@ -1183,6 +1183,20 @@ pub(crate) fn call_session<T: serde::Serialize>(
     Ok(every_tab(output, &ctx, what))
 }
 
+/// A call that needs a running session, with the request as given
+/// (`--tab`, if any, is in it).
+pub(crate) fn call_running<T: serde::Serialize>(
+    global: &GlobalArgs,
+    method: &str,
+    request: &T,
+) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(method, request, ctx.timeout + QUICK))
+}
+
 /// As [`call_session`], but `None` when the session is not running.
 pub(crate) fn call_if_running<T: serde::Serialize>(
     global: &GlobalArgs,

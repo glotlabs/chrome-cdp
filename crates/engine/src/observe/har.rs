@@ -23,10 +23,11 @@ use cdp::domains::network as cdp_network;
 use protocol::schema::{HarStartData, HarStopData, Header, RequestState};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde::Serialize;
+use serde_json::json;
 
 use super::netlog::Record;
 use super::save::save;
-use crate::request::{HarContent, HarStartRequest, HarStopRequest, millis};
+use crate::request::{HarContent, HarExportRequest, HarStartRequest, HarStopRequest, millis};
 use crate::tabs::{parse_tab_id, tab_name};
 use crate::{Engine, Running};
 
@@ -134,95 +135,29 @@ impl Engine {
             ));
         };
         let timeout = millis(req.timeout_ms);
-        let mut pages = Vec::new();
-        let mut records = Vec::new();
-        let mut dropped = 0;
         let ids = match recording.tab {
             Some(tab) => vec![tab],
             None => running.tabs.tab_ids(),
         };
-        for id in ids {
-            let mark = recording.marks.get(&id).copied().unwrap_or(0);
-            let Some((mut taken, lost)) = running.tabs.netlog(id, |log| {
-                let taken: Vec<Record> = log
-                    .records()
-                    .filter(|r| r.entry.id > mark)
-                    .cloned()
-                    .collect();
-                (taken, log.evicted().max(log.cleared()).saturating_sub(mark))
-            }) else {
-                continue;
-            };
-            dropped += lost;
-            if taken.is_empty() {
-                continue;
-            }
-            let title = running
-                .tabs
-                .info(id)
-                .map(|info| {
-                    if info.title.is_empty() {
-                        info.url
-                    } else {
-                        info.title
-                    }
-                })
-                .unwrap_or_default();
-            let first = taken.iter().map(|r| r.entry.time_ms).min().unwrap_or(0);
-            pages.push(HarPage {
-                started_date_time: iso8601(first),
-                id: tab_name(id),
-                title,
-                page_timings: PageTimings {},
-            });
-            records.extend(taken.drain(..).map(|r| (id, r)));
-        }
-        records.sort_by_key(|(_, r)| (r.entry.time_ms, r.entry.id));
-        let embed = recording.content == HarContent::Embed;
-        let mut fetched: Vec<Fetched> = Vec::with_capacity(records.len());
-        for chunk in records.chunks(BODY_CALLS) {
-            let mut calls = Vec::with_capacity(chunk.len());
-            for (_, record) in chunk {
-                calls.push(self.har_bodies(&running, record, embed, timeout));
-            }
-            fetched.extend(futures_util::future::join_all(calls).await);
-        }
-        let mut bodies = 0;
-        let mut missing = 0;
-        let mut pending = 0;
-        let entries: Vec<HarEntry> = records
-            .iter()
-            .zip(fetched)
-            .map(|((id, record), fetched)| {
-                match &fetched.response {
-                    Some(Ok(_)) => bodies += 1,
-                    Some(Err(())) => missing += 1,
-                    None => {}
-                }
-                if record.entry.state == RequestState::Pending {
-                    pending += 1;
-                }
-                entry(*id, record, fetched)
-            })
+        let tabs: Vec<(u32, u64)> = ids
+            .into_iter()
+            .map(|id| (id, recording.marks.get(&id).copied().unwrap_or(0)))
             .collect();
+        let embed = recording.content == HarContent::Embed;
+        let Collected {
+            pages,
+            entries,
+            bodies,
+            missing,
+            pending,
+            dropped,
+        } = self
+            .collect(&running, &tabs, &|_| true, embed, timeout)
+            .await;
         let entry_count = entries.len();
         let product = &running.info.product;
         let (browser, version) = product.split_once('/').unwrap_or((product, ""));
-        let har = Har {
-            log: HarLog {
-                version: "1.2",
-                creator: Creator {
-                    name: "chrome-cdp".to_owned(),
-                    version: env!("CARGO_PKG_VERSION").to_owned(),
-                },
-                browser: Creator {
-                    name: browser.to_owned(),
-                    version: version.to_owned(),
-                },
-                pages,
-                entries,
-            },
-        };
+        let har = har_document(browser, version, pages, entries);
         let json = serde_json::to_vec_pretty(&har).map_err(|e| {
             ErrorInfo::new(
                 ErrorKind::ProtocolError,
@@ -311,6 +246,120 @@ impl Engine {
         Ok(output)
     }
 
+    /// `har export` (`mock record`'s source): the HAR of the requests
+    /// of the context's tabs (or `--tab`'s) that `scope` has, with their
+    /// bodies, in the output's data (`{"har": …}`). Nothing is written.
+    pub async fn har_export(&self, req: HarExportRequest) -> Result<Output, ErrorInfo> {
+        let running = self.running()?;
+        let timeout = millis(req.timeout_ms);
+        let scope = mock::record::Scope::new(&req.scope)
+            .map_err(|e| ErrorInfo::new(ErrorKind::BadArgs, e))?;
+        let context = self.context_key()?;
+        let ids = match req.tab.as_deref() {
+            Some(tab) => vec![self.page(&running, Some(tab), timeout).await?.id],
+            None => running.tabs.tab_ids_in(context.as_deref()),
+        };
+        let tabs: Vec<(u32, u64)> = ids.into_iter().map(|id| (id, 0)).collect();
+        let keep = |r: &Record| scope.matches(&r.entry.url, &r.entry.kind);
+        let collected = self.collect(&running, &tabs, &keep, true, timeout).await;
+        let product = &running.info.product;
+        let (browser, version) = product.split_once('/').unwrap_or((product, ""));
+        let har = har_document(browser, version, collected.pages, collected.entries);
+        let data = json!({
+            "har": har,
+            "missing_bodies": collected.missing,
+            "pending": collected.pending,
+            "dropped": collected.dropped,
+        });
+        Ok(Output::new(data, String::new()))
+    }
+
+    /// The records of `tabs` (each after its mark) that `keep` keeps, as
+    /// HAR pages and entries in time order, with their bodies (response
+    /// bodies only with `embed`).
+    async fn collect(
+        &self,
+        running: &Running,
+        tabs: &[(u32, u64)],
+        keep: &(dyn Fn(&Record) -> bool + Sync),
+        embed: bool,
+        timeout: Duration,
+    ) -> Collected {
+        let mut pages = Vec::new();
+        let mut records = Vec::new();
+        let mut dropped = 0;
+        for &(id, mark) in tabs {
+            let Some((mut taken, lost)) = running.tabs.netlog(id, |log| {
+                let taken: Vec<Record> = log
+                    .records()
+                    .filter(|r| r.entry.id > mark && keep(r))
+                    .cloned()
+                    .collect();
+                (taken, log.evicted().max(log.cleared()).saturating_sub(mark))
+            }) else {
+                continue;
+            };
+            dropped += lost;
+            if taken.is_empty() {
+                continue;
+            }
+            let title = running
+                .tabs
+                .info(id)
+                .map(|info| {
+                    if info.title.is_empty() {
+                        info.url
+                    } else {
+                        info.title
+                    }
+                })
+                .unwrap_or_default();
+            let first = taken.iter().map(|r| r.entry.time_ms).min().unwrap_or(0);
+            pages.push(HarPage {
+                started_date_time: iso8601(first),
+                id: tab_name(id),
+                title,
+                page_timings: PageTimings {},
+            });
+            records.extend(taken.drain(..).map(|r| (id, r)));
+        }
+        records.sort_by_key(|(_, r)| (r.entry.time_ms, r.entry.id));
+        let mut fetched: Vec<Fetched> = Vec::with_capacity(records.len());
+        for chunk in records.chunks(BODY_CALLS) {
+            let mut calls = Vec::with_capacity(chunk.len());
+            for (_, record) in chunk {
+                calls.push(self.har_bodies(running, record, embed, timeout));
+            }
+            fetched.extend(futures_util::future::join_all(calls).await);
+        }
+        let mut bodies = 0;
+        let mut missing = 0;
+        let mut pending = 0;
+        let entries: Vec<HarEntry> = records
+            .iter()
+            .zip(fetched)
+            .map(|((id, record), fetched)| {
+                match &fetched.response {
+                    Some(Ok(_)) => bodies += 1,
+                    Some(Err(())) => missing += 1,
+                    None => {}
+                }
+                if record.entry.state == RequestState::Pending {
+                    pending += 1;
+                }
+                entry(*id, record, fetched)
+            })
+            .collect();
+        Collected {
+            pages,
+            entries,
+            bodies,
+            missing,
+            pending,
+            dropped,
+        }
+    }
+
     /// The bodies of `record` the HAR gets: the request body if it has
     /// one, and with `embed` the response body.
     async fn har_bodies(
@@ -352,6 +401,38 @@ impl Engine {
             None
         };
         Fetched { request, response }
+    }
+}
+
+/// What [`Engine::collect`] found.
+struct Collected {
+    pages: Vec<HarPage>,
+    entries: Vec<HarEntry>,
+    /// Response bodies embedded.
+    bodies: usize,
+    /// Response bodies Chrome no longer had.
+    missing: usize,
+    /// Requests still loading.
+    pending: usize,
+    /// Requests the logs dropped (or were cleared of) after the marks.
+    dropped: u64,
+}
+
+fn har_document(browser: &str, version: &str, pages: Vec<HarPage>, entries: Vec<HarEntry>) -> Har {
+    Har {
+        log: HarLog {
+            version: "1.2",
+            creator: Creator {
+                name: "chrome-cdp".to_owned(),
+                version: env!("CARGO_PKG_VERSION").to_owned(),
+            },
+            browser: Creator {
+                name: browser.to_owned(),
+                version: version.to_owned(),
+            },
+            pages,
+            entries,
+        },
     }
 }
 

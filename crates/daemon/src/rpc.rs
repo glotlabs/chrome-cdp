@@ -65,6 +65,7 @@ pub const PDF: &str = "pdf";
 pub const EVAL: &str = "eval";
 pub const HAR_START: &str = "har_start";
 pub const HAR_STOP: &str = "har_stop";
+pub const HAR_EXPORT: &str = "har_export";
 pub const TRACE_START: &str = "trace_start";
 pub const TRACE_STOP: &str = "trace_stop";
 pub const PERF: &str = "perf";

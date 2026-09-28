@@ -1,25 +1,28 @@
-//! `mock use|off|list|log|reset|explain` (plan 11, milestone 11.2) and
-//! `mock state|seed` (milestone 11.3).
+//! `mock use|off|list|log|reset|explain` (plan 11, milestone 11.2),
+//! `mock state|seed` (milestone 11.3) and `mock record|import`
+//! (milestone 11.8).
 //!
 //! The CLI finds the project (the mocks directory, `default_mocks`, the
 //! random seed) and the sets' files; the daemon reads and applies them.
 //! `mock explain` and `mock list --available` also work without a session:
 //! they read the files here.
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use daemon::rpc;
 use engine::{
-    MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest, MockSeedRequest,
-    MockStateRequest, MockUseRequest,
+    HarExportRequest, MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest,
+    MockSeedRequest, MockStateRequest, MockUseRequest,
 };
 use mock::{MockSet, Mocks, Source};
-use protocol::schema::{MockExplainData, MockSetsData};
+use protocol::schema::{MockExplainData, MockRecordData, MockSetsData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use serde_json::{Value, json};
 
 use crate::cli::{
-    GlobalArgs, MockArgs, MockCommand, MockExplainArgs, MockSeedArgs, MockStateArgs, MockUseArgs,
+    GlobalArgs, MockArgs, MockCommand, MockExplainArgs, MockImportArgs, MockRecordArgs,
+    MockSeedArgs, MockStateArgs, MockUseArgs,
 };
 use crate::{input, route, session};
 
@@ -134,7 +137,289 @@ pub(crate) fn run(args: &MockArgs, global: &GlobalArgs) -> Result<Output, ErrorI
         MockCommand::Explain(args) => explain(args, global),
         MockCommand::State(args) => state(args, global),
         MockCommand::Seed(args) => seed(args, global),
+        MockCommand::Record(args) => record(args, global),
+        MockCommand::Import(args) => import(args),
     }
+}
+
+/// `mock record`: the session's requests in scope, as a mock set.
+fn record(args: &MockRecordArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let project = Project::find(args.dir.as_deref())?;
+    let out = Target::new(&project, args.output.as_deref(), "recorded", args.force)?;
+    let request = HarExportRequest {
+        tab: global.tab.clone(),
+        scope: args.scope.clone(),
+        timeout_ms: session::timeout_ms(global),
+    };
+    mock::record::Scope::new(&args.scope).map_err(|e| ErrorInfo::new(ErrorKind::BadArgs, e))?;
+    let exported = session::call_running(global, rpc::HAR_EXPORT, &request)?;
+    let exchanges = mock::record::har_exchanges(&exported.data["har"])
+        .map_err(|e| ErrorInfo::new(ErrorKind::ProtocolError, format!("bad export: {e}")))?;
+    let origin = match args.scope.as_slice() {
+        [] => "Recorded by `chrome-cdp mock record` from the session's fetch and XHR requests."
+            .to_owned(),
+        scope => format!(
+            "Recorded by `chrome-cdp mock record --scope {}`.",
+            scope.join(",")
+        ),
+    };
+    let mut output = write_recording(
+        &out,
+        &exchanges,
+        &args.scope,
+        origin,
+        args.max_chars,
+        || {
+            Hint::run(Cmd::new("network").raw("--limit").arg("50"))
+                .why("lists what the session sent; browse the app first, then record")
+        },
+    )?;
+    let count = |key: &str| exported.data[key].as_u64().unwrap_or(0);
+    if count("missing_bodies") > 0 {
+        output = output.warning(format!(
+            "{} response {} not recorded: Chrome keeps bodies only while the page that loaded              them is open; the mocks say where",
+            count("missing_bodies"),
+            if count("missing_bodies") == 1 { "body was" } else { "bodies were" }
+        ));
+    }
+    if count("dropped") > 0 {
+        output = output.warning(format!(
+            "{} older requests had left the network log (open --network-buffer N keeps more)",
+            count("dropped")
+        ));
+    }
+    Ok(output)
+}
+
+/// `mock import <file.har>`.
+fn import(args: &MockImportArgs) -> Result<Output, ErrorInfo> {
+    let project = Project::find(args.dir.as_deref())?;
+    let (text, stem) = if args.file == "-" {
+        (input::text_arg("-", "the HAR file")?, "imported".to_owned())
+    } else {
+        let path = project.cwd.join(&args.file);
+        let text = std::fs::read_to_string(&path).map_err(|e| {
+            ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("cannot read {}: {e}", path.display()),
+            )
+        })?;
+        let stem = path.file_stem().map_or_else(
+            || "imported".to_owned(),
+            |s| s.to_string_lossy().into_owned(),
+        );
+        (text, stem)
+    };
+    let har: Value = serde_json::from_str(&text).map_err(|e| {
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("{} is not JSON: {e}", args.file),
+        )
+        .hint(Hint::text(
+            "give a HAR file, e.g. one `chrome-cdp har stop` wrote",
+        ))
+    })?;
+    let exchanges = mock::record::har_exchanges(&har).map_err(|e| {
+        ErrorInfo::new(ErrorKind::BadArgs, format!("{}: {e}", args.file)).hint(Hint::text(
+            "give a HAR file, e.g. one `chrome-cdp har stop` wrote",
+        ))
+    })?;
+    let out = Target::new(&project, args.output.as_deref(), &stem, args.force)?;
+    let origin = format!("Imported by `chrome-cdp mock import` from {}.", args.file);
+    write_recording(
+        &out,
+        &exchanges,
+        &args.scope,
+        origin,
+        args.max_chars,
+        || {
+            Hint::text(
+                "check --scope: the HAR has no request it matches (without it, fetch and XHR ones)",
+            )
+        },
+    )
+}
+
+/// Where a recorded set goes.
+struct Target {
+    /// The mock file (absolute).
+    file: PathBuf,
+    /// What its data files are relative to.
+    base: PathBuf,
+    /// Its name for `mock use`.
+    set: String,
+    /// `data/<set>`.
+    data_dir: String,
+}
+
+impl Target {
+    /// `output` (relative to the current directory), else `<default>.toml`
+    /// in the mocks directory. A file in the mocks directory keeps its
+    /// data files under the directory's `data/`, as a named set's are.
+    fn new(
+        project: &Project,
+        output: Option<&Path>,
+        default: &str,
+        force: bool,
+    ) -> Result<Self, ErrorInfo> {
+        let file = match output {
+            Some(path) => project.cwd.join(path),
+            None => project.dir.join(format!("{default}.toml")),
+        };
+        if file.extension().is_none_or(|e| e != "toml") {
+            return Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("{} is not a .toml file", file.display()),
+            )
+            .hint(Hint::text(
+                "name the mock file *.toml, e.g. -o e2e/mocks/recorded.toml",
+            )));
+        }
+        if file.exists() && !force {
+            return Err(
+                ErrorInfo::new(ErrorKind::BadArgs, format!("{} exists", file.display())).hint(
+                    Hint::text("--force overwrites it; or -o names another file"),
+                ),
+            );
+        }
+        let (base, set) = match file.strip_prefix(&project.dir) {
+            Ok(rel) => (
+                project.dir.clone(),
+                rel.with_extension("").to_string_lossy().into_owned(),
+            ),
+            Err(_) => (
+                file.parent()
+                    .map_or_else(|| project.cwd.clone(), Path::to_path_buf),
+                file.display().to_string(),
+            ),
+        };
+        let stem = match file.strip_prefix(&project.dir) {
+            Ok(_) => set.clone(),
+            Err(_) => file.file_stem().map_or_else(
+                || "recorded".to_owned(),
+                |s| s.to_string_lossy().into_owned(),
+            ),
+        };
+        Ok(Self {
+            file,
+            base,
+            set,
+            data_dir: format!("data/{stem}"),
+        })
+    }
+}
+
+/// Converts, writes and checks a recording.
+fn write_recording(
+    out: &Target,
+    exchanges: &[mock::record::Exchange],
+    scope: &[String],
+    origin: String,
+    max_chars: usize,
+    none_hint: impl FnOnce() -> Hint,
+) -> Result<Output, ErrorInfo> {
+    let options = mock::record::RecordOptions {
+        scope: scope.to_vec(),
+        data_dir: out.data_dir.clone(),
+        origin,
+    };
+    let recorded = mock::record::record(exchanges, &options)
+        .map_err(|e| ErrorInfo::new(ErrorKind::BadArgs, e))?;
+    if recorded.mocks == 0 {
+        let what = if scope.is_empty() {
+            "no fetch or XHR request".to_owned()
+        } else {
+            format!("no request in scope {}", scope.join(", "))
+        };
+        let mut info =
+            ErrorInfo::new(ErrorKind::NotFound, format!("{what} to record")).hint(none_hint());
+        for skipped in recorded.skipped.iter().take(3) {
+            info = info.note("left out", skipped);
+        }
+        return Err(info);
+    }
+    let io = |path: &Path, e: std::io::Error| {
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("cannot write {}: {e}", path.display()),
+        )
+    };
+    let mut files = Vec::new();
+    for (rel, bytes) in &recorded.files {
+        let path = out.base.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| io(parent, e))?;
+        }
+        std::fs::write(&path, bytes).map_err(|e| io(&path, e))?;
+        files.push(path.display().to_string());
+    }
+    if let Some(parent) = out.file.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| io(parent, e))?;
+    }
+    std::fs::write(&out.file, &recorded.toml).map_err(|e| io(&out.file, e))?;
+    let source = Source {
+        name: out.set.clone(),
+        file: out.file.clone(),
+        base: out.base.clone(),
+    };
+    MockSet::load(&source).map_err(|e| {
+        ErrorInfo::new(
+            ErrorKind::ProtocolError,
+            format!(
+                "the recorded file does not load (a chrome-cdp bug): {}",
+                e.message
+            ),
+        )
+    })?;
+    let path = out.file.display().to_string();
+    let mut text = format!(
+        "{path}: {} {} from {} {}",
+        recorded.mocks,
+        if recorded.mocks == 1 { "mock" } else { "mocks" },
+        recorded.requests,
+        if recorded.requests == 1 {
+            "request"
+        } else {
+            "requests"
+        },
+    );
+    if !files.is_empty() {
+        let _ = write!(
+            text,
+            ", {} data {} in {}",
+            files.len(),
+            if files.len() == 1 { "file" } else { "files" },
+            out.base.join(&out.data_dir).display()
+        );
+    }
+    let _ = write!(
+        text,
+        "\nnext: {}",
+        Cmd::new("mock").arg("use").arg(&out.set)
+    );
+    let data = MockRecordData {
+        path: path.clone(),
+        set: out.set.clone(),
+        requests: recorded.requests,
+        mocks: recorded.mocks,
+        files,
+        scope: recorded.scope.clone(),
+        skipped: recorded.skipped.clone(),
+    };
+    let mut output = Output::typed(&data, text)
+        .quiet(path)
+        .limit(max_chars, "--max-chars 0 for all of it");
+    let listed = 5;
+    for skipped in recorded.skipped.iter().take(listed) {
+        output = output.warning(format!("left out {skipped}"));
+    }
+    if recorded.skipped.len() > listed {
+        output = output.warning(format!(
+            "left out {} more requests (see --json)",
+            recorded.skipped.len() - listed
+        ));
+    }
+    Ok(output)
 }
 
 /// A value as `mock state --set` and `expect mock-state` take it: JSON

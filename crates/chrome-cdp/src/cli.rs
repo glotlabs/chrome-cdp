@@ -3247,6 +3247,94 @@ Examples:
   chrome-cdp mock seed todos
   echo '[{\"id\":1,\"title\":\"Only one\"}]' | chrome-cdp mock seed todos -")]
     Seed(MockSeedArgs),
+
+    /// Write a mock set from the requests the session sent (to a real backend).
+    #[command(after_help = "\
+Reads the session's network log (every tab of the context, or --tab's),
+keeps the requests in --scope (globs as a set's scope takes them; without
+it, the page's fetch and XHR requests), and writes one [[mock]] per
+distinct request: method, path, query (and a GraphQL operation). A request
+sent more than once with other answers becomes a `sequence`. Bodies go to
+data files in data/<set>/ (small ones inline); volatile headers (date,
+etag, set-cookie unless a later request sent the cookie, …) are left out;
+ids and timestamps get a comment where a template would do. The file is
+checked as `mock use` would read it.
+
+Browse first, then record: bodies are asked of Chrome, which keeps them
+while the page that loaded them is open.
+
+Examples:
+  chrome-cdp mock record --scope '/api/**'
+  chrome-cdp mock record --scope '/api/**' -o e2e/mocks/checkout.toml --force
+  chrome-cdp mock record --scope 'https://api.example.com/**' --tab t2")]
+    Record(MockRecordArgs),
+
+    /// Write a mock set from a HAR file, as `mock record` does.
+    #[command(after_help = "\
+The same conversion as `mock record`, from a HAR file (`har stop`, the
+DevTools Network panel's \"Save all as HAR\", or Playwright's). The output is
+<mocks dir>/<file's name>.toml unless -o says otherwise.
+
+Examples:
+  chrome-cdp mock import requests.har --scope '/api/**'
+  chrome-cdp mock import requests.har -o e2e/mocks/recorded.toml --force")]
+    Import(MockImportArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MockRecordArgs {
+    /// Record the requests these globs match (repeatable, or
+    /// comma-separated): paths (`/api/**`) or full URLs. Default: the
+    /// page's fetch and XHR requests.
+    #[arg(long, value_name = "GLOB", value_delimiter = ',')]
+    pub(crate) scope: Vec<String>,
+
+    /// The mock file to write (default: recorded.toml in the mocks
+    /// directory).
+    #[arg(short = 'o', long = "output", value_name = "FILE")]
+    pub(crate) output: Option<PathBuf>,
+
+    /// Overwrite the mock file (and its data files) if it exists.
+    #[arg(long)]
+    pub(crate) force: bool,
+
+    /// The mocks directory (default: `mocks` of [e2e], else ./e2e/mocks).
+    #[arg(long, value_name = "DIR")]
+    pub(crate) dir: Option<PathBuf>,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MockImportArgs {
+    /// The HAR file; `-` reads it from stdin.
+    #[arg(value_name = "FILE")]
+    pub(crate) file: String,
+
+    /// Import the requests these globs match (repeatable, or
+    /// comma-separated): paths (`/api/**`) or full URLs. Default: the
+    /// page's fetch and XHR requests.
+    #[arg(long, value_name = "GLOB", value_delimiter = ',')]
+    pub(crate) scope: Vec<String>,
+
+    /// The mock file to write (default: <FILE's name>.toml in the mocks
+    /// directory).
+    #[arg(short = 'o', long = "output", value_name = "FILE")]
+    pub(crate) output: Option<PathBuf>,
+
+    /// Overwrite the mock file (and its data files) if it exists.
+    #[arg(long)]
+    pub(crate) force: bool,
+
+    /// The mocks directory (default: `mocks` of [e2e], else ./e2e/mocks).
+    #[arg(long, value_name = "DIR")]
+    pub(crate) dir: Option<PathBuf>,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
 }
 
 #[derive(Debug, Args)]
