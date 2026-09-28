@@ -65,6 +65,8 @@ body, or after its name on the `@test` line, to that test only.
 | `@device "iPhone 15"` | a device of `chrome-cdp emulate list` |
 | `@retries N` | runs of a failed test before it counts as failed |
 | `@allow-console-errors` | console errors do not fail the test (see [Checks](#checks-the-runner-adds)) |
+| `@backend mock\|real\|NAME…` | the backends the test runs on; others skip it, with the reason ([backends](backends.md)). A test's replaces its file's |
+| `@safe` | the test only reads, so a `protected` backend may run it |
 
 ## Requests the app sent
 
@@ -128,6 +130,10 @@ step file in place of the `@include` line. Paths are relative to the file
 that includes. A step file holds commands and `@include` lines only; its
 lines see the parameters as `${email}`, and `${data:…}` paths are
 relative to it. `${env:X}` reads an environment variable.
+
+Against more than one backend, `${var:name}`, `${secret:NAME}`,
+`${test.id}` and `http … --save NAME` with `${saved.NAME.field}` keep the
+same scenario working everywhere; see [backends](backends.md).
 
 ## Running
 

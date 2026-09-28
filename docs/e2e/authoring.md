@@ -88,6 +88,9 @@ Chrome keeps response bodies only while the page that loaded them is open,
 so record before navigating away. The file is checked as `mock use` would
 read it. `-o` refuses to overwrite a file without `--force`.
 
+`chrome-cdp test --backend <real> --record-mocks` records a whole suite
+the same way, a set per passed test ([backends](backends.md#recording-mocks-from-a-real-run---record-mocks)).
+
 ## Mocks from a HAR file: `mock import`
 
 ```

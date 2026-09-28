@@ -140,10 +140,11 @@ inside it are not interpreted.
 | `${name}` | `--var name=value` of `batch` and `run`; plan 11's `@include` parameters | `batch`, `run`, `test` |
 | `${env:NAME}` | the environment variable `NAME`; unset is an error, set-but-empty is `""` | `batch`, `run`, `test` |
 | `${data:file.json#/a/0}` | the value at a JSON pointer in a JSON file (relative to the script's folder, or in `test` to the folder of the scenario or step file the line is in; the whole file without `#`). Strings are used as is, other values as compact JSON | `batch`, `run`, `test` |
-| `${var:name}` | the backend's vars file (plan 11) | `test` |
-| `${secret:name}` | like `env`, but masked in all output (plan 11) | `test` |
-| `${saved.x.y}` | a value a step saved with `--save x` (plan 11) | `test` |
-| `${test.id}`, `${run.id}` | unique ids for the test and the run (plan 11) | `test` |
+| `${var:name}` | the run's backend's vars file ([docs/e2e/backends.md](e2e/backends.md)) | `test` |
+| `${secret:NAME}` | the environment variable `NAME`, masked in all output and artifacts | `test` |
+| `${saved.x.y}` | field `y` of the JSON answer an earlier `http … --save x` of the test (or of its file's `@before-all`) got; objects only, no list indexes | `test` |
+| `${test.id}`, `${run.id}` | unique ids for the test's try and for the run (`k3j9x0qa-4`, `k3j9x0qa`) | `test` |
+| `${backend}` | the run's backend (`mock`, `local`, …), unless an `@include` parameter has the name | `test` |
 
 - `$${` is a literal `${`: `$${x}` is the text `${x}`.
 - A `$` not followed by `{` is text (`a$b`, `$HOME`).
