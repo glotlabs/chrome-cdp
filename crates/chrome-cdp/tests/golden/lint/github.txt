@@ -1,4 +1,5 @@
 ::warning file=e2e/mocks/base.toml,line=9,col=1,title=chrome-cdp lint%3A unreachable::mock "never answers" never answers: "products" (line 4) comes first and matches every request it does%0Ahint: move "never answers" above "products", or narrow "products"'s match
+::error file=e2e/scenarios/args.cdp,line=4,col=3,title=chrome-cdp lint%3A bad-args::the following required arguments were not provided: <TEXT>%0Ahint: chrome-cdp fill --help
 ::error file=e2e/scenarios/includes.cdp,line=2,col=12,title=chrome-cdp lint%3A include-missing::cannot read <fixture>/e2e/scenarios/../steps/missing.cdp: No such file or directory (os error 2)%0Ahint: @include paths are relative to the file that includes them
 ::error file=e2e/scenarios/load.cdp,line=1,col=1,title=chrome-cdp lint%3A unknown-directive::unknown directive @tag%0Ahint: did you mean @tags?
 ::error file=e2e/scenarios/load.cdp,line=2,col=1,title=chrome-cdp lint%3A syntax::@timeout takes one duration%0Ahint: e.g. @timeout 60s

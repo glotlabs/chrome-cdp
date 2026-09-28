@@ -82,6 +82,14 @@ fn lint_reports_each_rule_where_it_is() {
             "@timeout 60s",
         ),
         (
+            "e2e/scenarios/args.cdp",
+            4,
+            3,
+            "bad-args",
+            "error",
+            "chrome-cdp fill --help",
+        ),
+        (
             "e2e/scenarios/includes.cdp",
             2,
             12,
@@ -250,7 +258,7 @@ fn lint_prints_github_annotations() {
     let root = fixture().canonicalize().unwrap().display().to_string();
     golden("lint/github.txt", &stdout(&out).replace(&root, "<fixture>"));
     assert!(
-        stderr(&out).contains("9 files: 15 errors, 5 warnings"),
+        stderr(&out).contains("10 files: 16 errors, 5 warnings"),
         "{}",
         stderr(&out)
     );
@@ -262,7 +270,7 @@ fn lint_text_lists_errors_first() {
     assert_eq!(code(&out), 1);
     let err = stderr(&out);
     assert!(
-        err.starts_with("error: e2e/scenarios/includes.cdp:2:12: error [include-missing]"),
+        err.starts_with("error: e2e/scenarios/args.cdp:4:3: error [bad-args]"),
         "{err}"
     );
     assert!(stdout(&out).is_empty());

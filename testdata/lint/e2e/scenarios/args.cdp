@@ -1,0 +1,5 @@
+# bad-args: a known command with arguments it refuses.
+@test "arguments"
+  goto /
+  fill label=Email
+  expect text=Saved visible
