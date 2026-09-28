@@ -100,6 +100,55 @@ pub fn files_matching(root: &Path, patterns: &[String]) -> Vec<PathBuf> {
     found
 }
 
+/// The files below `root` that match `patterns`, walking from each
+/// glob's literal folder and, unlike [`files_matching`], into build output
+/// (`dist/**`) too; hidden folders and `node_modules` are left out unless
+/// the glob names them.
+pub fn files_under_globs(root: &Path, patterns: &[String]) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for pattern in patterns {
+        let base: PathBuf = Path::new(pattern)
+            .components()
+            .take_while(|c| {
+                !c.as_os_str()
+                    .to_string_lossy()
+                    .contains(['*', '?', '[', '{'])
+            })
+            .collect();
+        let start = root.join(&base);
+        if start.is_file() {
+            found.push(start);
+            continue;
+        }
+        let mut files = Vec::new();
+        walk_all(&start, &mut files);
+        files.retain(|file| {
+            let relative = file.strip_prefix(root).unwrap_or(file);
+            glob_matches(pattern, &relative.to_string_lossy().replace('\\', "/"))
+        });
+        found.extend(files);
+    }
+    found.sort();
+    found.dedup();
+    found
+}
+
+fn walk_all(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for path in entries.filter_map(|e| e.ok().map(|e| e.path())) {
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        if path.is_dir() {
+            if !name.starts_with('.') && name != "node_modules" {
+                walk_all(&path, out);
+            }
+        } else {
+            out.push(path);
+        }
+    }
+}
+
 fn has_ext(path: &Path) -> bool {
     path.extension().is_some_and(|e| e == "cdp")
 }

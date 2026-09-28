@@ -842,3 +842,85 @@ fn debug_keeps_the_failed_tests_context_open() {
     assert!(value["data"].get("debug").is_none(), "{value}");
     assert!(project.sandbox.daemons().is_empty());
 }
+
+#[test]
+fn watch_runs_the_affected_tests_again_until_ctrl_c() {
+    use std::io::{BufRead as _, BufReader};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let mut child = project
+        .sandbox
+        .cli()
+        .current_dir(&project.root)
+        .args(["test", "--watch", "--jobs", "1"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let (tx, rx) = mpsc::channel();
+    let stdout = child.stdout.take().unwrap();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            if tx.send(line.unwrap()).is_err() {
+                break;
+            }
+        }
+    });
+    let mut seen = String::new();
+    let mut until = |text: &str| {
+        while !seen.contains(text) {
+            let line = rx
+                .recv_timeout(Duration::from_secs(60))
+                .unwrap_or_else(|_| panic!("no {text:?} in:\n{seen}"));
+            seen.push_str(&line);
+            seen.push('\n');
+        }
+        std::mem::take(&mut seen)
+    };
+    let first = until("watching ");
+    assert!(first.contains("\n7 tests: 7 passed ("), "{first}");
+
+    // A mock file: only the tests of its set run again.
+    let sale = project.root.join("mocks/sale.toml");
+    let text = std::fs::read_to_string(&sale).unwrap();
+    std::fs::write(&sale, format!("{text}\n# changed\n")).unwrap();
+    let run = until("watching ");
+    assert!(
+        run.contains("mocks/sale.toml changed\nrunning 1 test from 1 file"),
+        "{run}"
+    );
+    assert!(run.contains("a sale price from a layered set"), "{run}");
+
+    // A step file: the tests of the scenarios that include it.
+    let step = project.root.join("steps/add.cdp");
+    let text = std::fs::read_to_string(&step).unwrap();
+    std::fs::write(&step, format!("{text}# changed\n")).unwrap();
+    let run = until("watching ");
+    assert!(
+        run.contains("steps/add.cdp changed\nrunning 3 tests from 1 file"),
+        "{run}"
+    );
+
+    // A scenario that no longer checks: its error, then watching on.
+    let todos = project.root.join("scenarios/pass/todos.cdp");
+    let good = std::fs::read_to_string(&todos).unwrap();
+    std::fs::write(&todos, format!("{good}\n@test \"bad\"\n  clickk e1\n")).unwrap();
+    let run = until("watching ");
+    assert!(!run.contains("running "), "{run}");
+    std::fs::write(&todos, &good).unwrap();
+    let run = until("watching ");
+    assert!(run.contains("running 3 tests from 1 file"), "{run}");
+
+    // Ctrl-C ends it; the run's session is closed.
+    let status = std::process::Command::new("kill")
+        .args(["-INT", &child.id().to_string()])
+        .status()
+        .unwrap();
+    assert!(status.success());
+    let status = child.wait().unwrap();
+    assert_eq!(status.code(), Some(0));
+    assert!(project.sandbox.daemons().is_empty());
+}

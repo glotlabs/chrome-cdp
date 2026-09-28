@@ -19,6 +19,7 @@ mod plan;
 mod report;
 mod report_md;
 pub(crate) mod reporters;
+mod watch;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
@@ -76,39 +77,118 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
         trace: args.trace,
         debug: args.debug.then(|| std::sync::Mutex::new(None)),
     };
-    let started = Instant::now();
-    if mode == Mode::Text {
-        let files = plan
-            .tests
-            .iter()
-            .map(|t| t.file)
-            .collect::<std::collections::BTreeSet<_>>()
-            .len();
-        let runs = plan.tests.len() * usize::try_from(plan.repeat).unwrap_or(1);
-        output::stdout(&format!(
-            "running {} test{}{} from {files} file{}, {} at once\n",
-            plan.tests.len(),
-            if plan.tests.len() == 1 { "" } else { "s" },
-            if plan.repeat > 1 {
-                format!(" {} times each", plan.repeat)
-            } else {
-                String::new()
-            },
-            if files == 1 { "" } else { "s" },
-            plan.jobs.min(u32::try_from(runs).unwrap_or(u32::MAX))
-        ));
-    }
     let stop = AtomicBool::new(false);
-    let mut servers_started = false;
-    let outcomes = with_servers(&plan, &stop, mode, &mut servers_started, || {
-        run_tests(&plan, &options, args.headed, &stop, mode)
+    let servers_started = AtomicBool::new(false);
+    let ran = with_servers(&plan, &stop, mode, &servers_started, args.watch, || {
+        run_tests(&options, args.headed, || {
+            let started = Instant::now();
+            starting(&plan, mode);
+            let outcomes = execute(&plan, &options, &stop, mode);
+            if !args.watch {
+                return Ran::Once(outcomes, started.elapsed());
+            }
+            let kept = None;
+            let servers = servers_started.load(Ordering::SeqCst);
+            let code = conclude(
+                &plan,
+                args,
+                &outcomes,
+                started.elapsed(),
+                kept,
+                servers,
+                mode,
+            );
+            let rerun = |plan: &Plan| {
+                let started = Instant::now();
+                starting(plan, mode);
+                let outcomes = execute(plan, &options, &stop, mode);
+                conclude(
+                    plan,
+                    args,
+                    &outcomes,
+                    started.elapsed(),
+                    None,
+                    servers,
+                    mode,
+                )
+            };
+            let make = || Plan::make(args, global);
+            let explicit = !args.paths.is_empty();
+            Ran::Watched(watch::run(&plan, code, &stop, mode, rerun, make, explicit))
+        })
     });
-    let (outcomes, kept) = match outcomes.and_then(|r| r) {
-        Ok(ran) => ran,
-        Err(info) => return output::print(mode, Err(info)),
+    match ran.and_then(|r| r) {
+        Ok((Ran::Once(outcomes, duration), kept)) => conclude(
+            &plan,
+            args,
+            &outcomes,
+            duration,
+            kept,
+            servers_started.load(Ordering::SeqCst),
+            mode,
+        ),
+        Ok((Ran::Watched(code), _)) => code,
+        Err(info) => output::print(mode, Err(info)),
+    }
+}
+
+/// What the tests did: one run's results, or `--watch`'s last exit code
+/// (its runs print their own results).
+enum Ran {
+    Once(Vec<Outcome>, std::time::Duration),
+    Watched(u8),
+}
+
+/// `running N tests from M files, J at once`.
+fn starting(plan: &Plan, mode: Mode) {
+    if mode != Mode::Text {
+        return;
+    }
+    let files = plan
+        .tests
+        .iter()
+        .map(|t| t.file)
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    let runs = plan.tests.len() * usize::try_from(plan.repeat).unwrap_or(1);
+    output::stdout(&format!(
+        "running {} test{}{} from {files} file{}, {} at once\n",
+        plan.tests.len(),
+        if plan.tests.len() == 1 { "" } else { "s" },
+        if plan.repeat > 1 {
+            format!(" {} times each", plan.repeat)
+        } else {
+            String::new()
+        },
+        if files == 1 { "" } else { "s" },
+        plan.jobs
+            .min(u32::try_from(runs).unwrap_or(u32::MAX))
+            .max(1)
+    ));
+}
+
+/// Runs `plan`'s tests, printing each line as it ends.
+fn execute(plan: &Plan, options: &Options, stop: &AtomicBool, mode: Mode) -> Vec<Outcome> {
+    let print = |index: usize, outcome: &Outcome| {
+        if mode == Mode::Text {
+            output::stdout(&report::line(plan, &plan.tests[index], outcome));
+        }
     };
-    let duration = started.elapsed();
-    let mut data = report::data(&plan, &outcomes, duration, args.shard.as_deref());
+    exec::execute(plan, options, stop, &print)
+}
+
+/// Writes the reporters' files and prints the run's result; returns the
+/// exit code.
+fn conclude(
+    plan: &Plan,
+    args: &TestArgs,
+    outcomes: &[Outcome],
+    duration: std::time::Duration,
+    kept: Option<Kept>,
+    servers_started: bool,
+    mode: Mode,
+) -> u8 {
+    let mut data = report::data(plan, outcomes, duration, args.shard.as_deref());
     data.debug = kept.map(|kept| protocol::schema::TestDebug {
         session: kept.session,
         context: kept.context,
@@ -121,7 +201,7 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
         Err(info) => unwritten = Some(info.message),
     }
     let summary = report::summary(&data, duration);
-    let mut result = report::finish(&plan, &data, duration, args.max_chars);
+    let mut result = report::finish(plan, &data, duration, args.max_chars);
     if let (Err(info), Some(debug)) = (&mut result, &data.debug) {
         *info = report::debugging(info.clone(), debug, servers_started);
     }
@@ -143,15 +223,13 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
 /// The session `--debug` leaves a failed test's context open in.
 const DEBUG_SESSION: &str = "test-debug";
 
-/// Opens the sessions, runs the tests, and closes the sessions it opened
+/// Opens the sessions, runs `work`, and closes the sessions it opened
 /// (but the one with the context `--debug` kept).
-fn run_tests(
-    plan: &Plan,
+fn run_tests<T>(
     options: &Options,
     headed: bool,
-    stop: &AtomicBool,
-    mode: Mode,
-) -> Result<(Vec<Outcome>, Option<Kept>), ErrorInfo> {
+    work: impl FnOnce() -> T,
+) -> Result<(T, Option<Kept>), ErrorInfo> {
     let mut opened = Vec::new();
     let mut failed = None;
     for session in &options.sessions {
@@ -167,12 +245,7 @@ fn run_tests(
             }
         }
     }
-    let print = |index: usize, outcome: &Outcome| {
-        if mode == Mode::Text {
-            output::stdout(&report::line(plan, &plan.tests[index], outcome));
-        }
-    };
-    let result = failed.map_or_else(|| Ok(exec::execute(plan, options, stop, &print)), Err);
+    let result = failed.map_or_else(|| Ok(work()), Err);
     let kept = options.debug.as_ref().and_then(|kept| {
         kept.lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -184,7 +257,7 @@ fn run_tests(
         }
         close(&options.global, session, options.own_sessions);
     }
-    result.map(|outcomes| (outcomes, kept))
+    result.map(|done| (done, kept))
 }
 
 /// `open` in `session`; whether it started the browser.
@@ -232,11 +305,13 @@ fn with_servers<T: Send>(
     plan: &Plan,
     stop: &AtomicBool,
     mode: Mode,
-    started: &mut bool,
+    started: &AtomicBool,
+    watch: bool,
     work: impl FnOnce() -> T + Send,
 ) -> Result<T, ErrorInfo> {
     let config = &plan.config;
-    if config.web_servers.is_empty() {
+    // --watch runs until Ctrl-C, which stops it cleanly.
+    if config.web_servers.is_empty() && !watch {
         return Ok(work());
     }
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -256,7 +331,10 @@ fn with_servers<T: Send>(
     })?;
     let mut servers =
         runtime.block_on(WebServers::start(&config.web_servers, &config.artifacts))?;
-    *started = servers.servers().iter().any(|s| !s.reused);
+    started.store(
+        servers.servers().iter().any(|s| !s.reused),
+        Ordering::SeqCst,
+    );
     if mode == Mode::Text {
         for server in servers.servers() {
             let how = if server.reused {
@@ -268,14 +346,14 @@ fn with_servers<T: Send>(
         }
     }
     std::thread::scope(|scope| {
-        let (tx, rx) = tokio::sync::oneshot::channel();
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
         scope.spawn(move || {
             let _ = tx.send(work());
         });
         let interrupt = async {
             let _ = tokio::signal::ctrl_c().await;
         };
-        let ran = runtime.block_on(servers.run(rx, interrupt));
+        let ran = runtime.block_on(servers.run(&mut rx, interrupt));
         let result = match ran {
             Ok(Ok(done)) => Ok(done),
             Ok(Err(_)) => Err(ErrorInfo::new(
@@ -285,6 +363,13 @@ fn with_servers<T: Send>(
             Err(Stopped::Exited(info)) => {
                 stop.store(true, Ordering::SeqCst);
                 Err(info)
+            }
+            Err(Stopped::Interrupted) if watch => {
+                // The end of watching: the run in progress finishes.
+                stop.store(true, Ordering::SeqCst);
+                runtime.block_on(rx).map_err(|_| {
+                    ErrorInfo::new(ErrorKind::BadArgs, "the test run stopped unexpectedly")
+                })
             }
             Err(Stopped::Interrupted) => {
                 stop.store(true, Ordering::SeqCst);

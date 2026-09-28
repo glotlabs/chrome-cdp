@@ -120,6 +120,8 @@ fn defaults_fill_an_empty_section() {
     assert_eq!(c.retries, 0);
     assert!(!c.allow_console_errors);
     assert!(parse("[e2e]\nallow_console_errors = true\n").allow_console_errors);
+    assert!(c.watch.is_empty());
+    assert_eq!(parse("[e2e]\nwatch = [\"dist/**\"]\n").watch, ["dist/**"]);
     assert_eq!(c.timeout, DEFAULT_TIMEOUT);
     assert_eq!(c.viewport, DEFAULT_VIEWPORT);
     assert!(c.web_servers.is_empty() && c.default_mocks.is_empty());

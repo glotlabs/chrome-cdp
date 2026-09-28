@@ -105,6 +105,9 @@ pub struct Config {
     pub timeout: Duration,
     /// Where test artifacts go (`.results`).
     pub artifacts: PathBuf,
+    /// Globs of more files whose change makes `test --watch` run every
+    /// test again (a build's output, say), relative to [`Self::root`].
+    pub watch: Vec<String>,
     pub viewport: Viewport,
     /// `[e2e.web_server]` or `[[e2e.web_server]]`, in the order written.
     pub web_servers: Vec<WebServer>,
@@ -445,6 +448,7 @@ impl Check<'_> {
                 .transpose()?
                 .unwrap_or(DEFAULT_TIMEOUT),
             artifacts: self.path(raw.artifacts.as_deref().unwrap_or(DEFAULT_ARTIFACTS)),
+            watch: raw.watch.unwrap_or_default(),
             viewport: raw
                 .viewport
                 .map(|v| viewport(&v))
@@ -662,6 +666,7 @@ struct RawE2e {
     allow_console_errors: Option<bool>,
     timeout: Option<Spanned<String>>,
     artifacts: Option<String>,
+    watch: Option<Vec<String>>,
     viewport: Option<Spanned<String>>,
     web_server: Option<Spanned<OneOrMany<RawWebServer>>>,
     determinism: Option<RawDeterminism>,

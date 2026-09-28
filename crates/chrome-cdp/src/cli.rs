@@ -4938,6 +4938,11 @@ pub(crate) struct TestArgs {
     #[arg(long)]
     pub(crate) debug: bool,
 
+    /// After the run, run the affected tests again whenever a scenario,
+    /// mock, data file or a file of [e2e] watch changes, until Ctrl-C.
+    #[arg(long, conflicts_with_all = ["debug", "list"])]
+    pub(crate) watch: bool,
+
     /// Also write reports to files, comma-separated: json, junit, html
     /// (in the artifacts directory, or NAME=FILE); text is stdout.
     #[arg(long, value_delimiter = ',', value_parser = crate::test::reporters::parse, value_name = "NAMES")]
