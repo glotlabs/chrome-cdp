@@ -1,6 +1,6 @@
 //! `mock use`, `mock off`, `mock list`, `mock log`, `mock reset` and
 //! `mock explain` (plan 11, milestone 11.2); `mock state` and `mock seed`
-//! (milestone 11.3).
+//! (milestone 11.3); `mock ws send` (milestone 11.9).
 //!
 //! Mock sets belong to the session, as routing rules do: they apply to
 //! every tab, popup and frame, and stay when the browser is restarted.
@@ -11,20 +11,24 @@
 
 use std::fmt::Write as _;
 
-use mock::{MockSet, Mocks, Seed, StateItem};
+use mock::{MockSet, Mocks, Seed, SocketGlob, StateItem};
 use protocol::schema::{
     MockCollectionInfo, MockExplainData, MockLogData, MockOffData, MockSeedData, MockSetInfo,
-    MockSetsData, MockStateData,
+    MockSetsData, MockSocketInfo, MockStateData, MockWsSendData,
 };
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, suggest};
 use serde_json::Value;
 
-use super::{Request, Router, lock, route_name};
-use crate::Engine;
+use super::{Request, Router, Socket, Tag, lock, route_name};
 use crate::request::{
     MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest, MockSeedRequest,
-    MockStateRequest, MockUseRequest, millis,
+    MockStateRequest, MockUseRequest, MockWsSendRequest, millis,
 };
+use crate::{Engine, State};
+
+/// The header of a test run's requests (the `e2e` crate's
+/// `mock_server::TEST_HEADER`, which the engine does not depend on).
+const TEST_HEADER: &str = "x-chrome-cdp-test";
 
 impl Router {
     /// Uses `sets`, instead of the sets in use or (`add`) on top of them;
@@ -124,7 +128,21 @@ impl Engine {
             self.settings
                 .routes
                 .use_mocks(scope.as_deref(), sets, req.add, req.seed);
+        if req.test.is_some() || !req.add {
+            let tag = req.test.as_ref().map(|t| Tag {
+                name: TEST_HEADER.to_owned(),
+                value: t.id.clone(),
+                origins: t
+                    .origins
+                    .iter()
+                    .filter_map(|o| super::sockets::origin_of(o))
+                    .collect(),
+            });
+            self.settings.routes.set_tag(scope.as_deref(), tag);
+        }
         self.apply_routes(millis(req.timeout_ms)).await;
+        self.apply_shim(scope.as_deref(), millis(req.timeout_ms))
+            .await;
         let quiet: Vec<&str> = sets.iter().map(|s| s.name.as_str()).collect();
         let quiet = quiet.join("\n");
         let text = mock::text::sets(&sets);
@@ -158,7 +176,12 @@ impl Engine {
                         .why("lists the sets in use"),
                 )
             })?;
+        if sets.is_empty() {
+            self.settings.routes.set_tag(scope.as_deref(), None);
+        }
         self.apply_routes(millis(req.timeout_ms)).await;
+        self.apply_shim(scope.as_deref(), millis(req.timeout_ms))
+            .await;
         let mut text = if removed.is_empty() {
             "no mock sets were in use".to_owned()
         } else {
@@ -173,6 +196,136 @@ impl Engine {
         let quiet = removed.join("\n");
         let data = MockOffData { removed, sets };
         Ok(Output::typed(&data, text).quiet(quiet))
+    }
+
+    /// Gives `scope`'s documents the WebSocket and EventSource shim while
+    /// it has mock sets, and takes it away when it has none.
+    async fn apply_shim(&self, scope: Option<&str>, timeout: std::time::Duration) {
+        let on = self.settings.routes.wants_shim(scope);
+        if self.settings.injections.mock_shim(scope, on) {
+            self.apply_injections(false, timeout).await;
+        }
+    }
+
+    /// `mock ws send`: hands a message to the page's sockets that a
+    /// `[[websocket]]` answers, once there is one.
+    pub async fn mock_ws_send(&self, req: MockWsSendRequest) -> Result<Output, ErrorInfo> {
+        let glob = SocketGlob::parse(&req.url).map_err(|e| {
+            ErrorInfo::new(ErrorKind::BadArgs, format!("mock ws send: {e}")).hint(Hint::text(
+                "e.g. mock ws send '/ws/**' '{\"type\":\"ping\"}'",
+            ))
+        })?;
+        let scope = self.context_key()?;
+        let running = match &*self.lock_state() {
+            State::Running(running) => Some(running.clone()),
+            State::Crashed(_) | State::Empty => None,
+        };
+        let Some(running) = running else {
+            return Err(ErrorInfo::new(
+                ErrorKind::NotFound,
+                "no browser is running, so there are no sockets",
+            )
+            .hint(Hint::run(Cmd::new("open").session(&self.session))));
+        };
+        let deadline = tokio::time::Instant::now() + millis(req.timeout_ms);
+        let mut sent = Vec::new();
+        loop {
+            let sockets: Vec<Socket> = self
+                .settings
+                .routes
+                .sockets(scope.as_deref())
+                .into_iter()
+                .filter(|s| glob.matches(&s.url))
+                .collect();
+            for socket in sockets {
+                if running.tabs.ws_deliver(&socket, &req.message).await {
+                    sent.push(MockSocketInfo {
+                        tab: socket.tab.map(crate::tabs::tab_name),
+                        url: socket.url.clone(),
+                        mock: socket.mock.clone(),
+                    });
+                }
+            }
+            if !sent.is_empty() || tokio::time::Instant::now() >= deadline {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        if sent.is_empty() {
+            return Err(self.no_socket(scope.as_deref(), &req));
+        }
+        let size = req.message.len();
+        let mut text = format!(
+            "sent {} to {} {}:",
+            protocol::format::size(size as u64),
+            sent.len(),
+            if sent.len() == 1 { "socket" } else { "sockets" }
+        );
+        for s in &sent {
+            let tab = s
+                .tab
+                .as_deref()
+                .map(|t| format!("{t} "))
+                .unwrap_or_default();
+            let _ = write!(
+                text,
+                "\n  {tab}{} ({} \"{}\")",
+                s.url, s.mock.at, s.mock.name
+            );
+        }
+        let quiet = sent.len().to_string();
+        let data = MockWsSendData {
+            url: req.url.clone(),
+            size,
+            sockets: sent,
+        };
+        Ok(Output::typed(&data, text)
+            .quiet(quiet)
+            .limit(req.max_chars, "--max-chars 0 for all of it"))
+    }
+
+    /// No socket of the scope matched `mock ws send`'s glob in time.
+    fn no_socket(&self, scope: Option<&str>, req: &MockWsSendRequest) -> ErrorInfo {
+        let open: Vec<String> = self
+            .settings
+            .routes
+            .sockets(scope)
+            .into_iter()
+            .map(|s| s.url)
+            .collect();
+        let waited = protocol::format::duration(millis(req.timeout_ms));
+        let mut info = ErrorInfo::new(
+            ErrorKind::Timeout,
+            format!(
+                "no mocked WebSocket matching {} opened within {waited}",
+                req.url
+            ),
+        );
+        if open.is_empty() {
+            let wants = if self.settings.routes.has_mocks(scope) {
+                "the page has no socket a [[websocket]] mock answers; sockets opened before `mock use` (or in a page not loaded since) are real"
+            } else {
+                "no mock sets are in use, so no socket is mocked"
+            };
+            info = info.note("sockets", wants);
+            info.hint(
+                Hint::run(Cmd::new("mock").arg("list").session(&self.session))
+                    .why("shows the [[websocket]] mocks in use"),
+            )
+        } else {
+            info = info.note("open", open.join(", "));
+            info.hint(
+                Hint::run(
+                    Cmd::new("mock")
+                        .arg("ws")
+                        .arg("send")
+                        .arg("*")
+                        .arg(&req.message)
+                        .session(&self.session),
+                )
+                .why("sends to every mocked socket"),
+            )
+        }
     }
 
     /// `mock list`: the sets in use with their mocks and hits.

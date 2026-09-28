@@ -23,7 +23,9 @@ use futures_util::future::join_all;
 
 use super::{Shared, Step};
 use crate::frames::WORLD_NAME;
-use crate::inject::{BINDING_PREFIX, Key, SEED_BINDING, Wanted, unwrapper, wrapper};
+use crate::inject::{
+    BINDING_PREFIX, Key, MOCK_BINDING, SEED_BINDING, Wanted, mock_shim, unwrapper, wrapper,
+};
 use crate::request::EvalWorld;
 
 /// The setup steps of a new page or iframe session.
@@ -116,6 +118,14 @@ fn add(
             params.run_immediately = now.then_some(true);
             (None, params)
         }
+        Wanted::MockShim => {
+            let binding = runtime::AddBindingParams::new(MOCK_BINDING.to_owned());
+            // Documents there are get it too: their later sockets are
+            // mocked.
+            let mut params = page::AddScriptToEvaluateOnNewDocumentParams::new(mock_shim());
+            params.run_immediately = Some(true);
+            (Some(session.call(binding)), params)
+        }
         Wanted::Binding(name) => {
             let binding = runtime::AddBindingParams::new(format!("{BINDING_PREFIX}{name}"));
             // The function goes into the documents there are at once: the
@@ -201,13 +211,17 @@ fn remove(session: &Session, key: &Key, identifier: String) -> Step {
     let script = session.call(page::RemoveScriptToEvaluateOnNewDocumentParams::new(
         identifier,
     ));
-    let Key::Binding { name, .. } = key else {
-        return Box::pin(async move { script.await.map(drop) });
+    let (binding, undo) = match key {
+        Key::Binding { name, .. } => (format!("{BINDING_PREFIX}{name}"), unwrapper(name)),
+        // Sockets opened later in the documents there are are real again.
+        Key::MockShim(_) => (
+            MOCK_BINDING.to_owned(),
+            "globalThis[Symbol.for('chrome-cdp.mock')]?.({ off: true });".to_owned(),
+        ),
+        _ => return Box::pin(async move { script.await.map(drop) }),
     };
-    let binding = session.call(runtime::RemoveBindingParams::new(format!(
-        "{BINDING_PREFIX}{name}"
-    )));
-    let mut params = page::AddScriptToEvaluateOnNewDocumentParams::new(unwrapper(name));
+    let binding = session.call(runtime::RemoveBindingParams::new(binding));
+    let mut params = page::AddScriptToEvaluateOnNewDocumentParams::new(undo);
     params.run_immediately = Some(true);
     let unwrap = session.call(params);
     let session = session.clone();

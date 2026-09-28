@@ -44,6 +44,10 @@ pub(crate) const BINDING_PREFIX: &str = "__chromeCdpExpose_";
 /// only; its payload is the origin that got its storage.
 pub(crate) const SEED_BINDING: &str = "__chromeCdpStateSeeded";
 
+/// The binding the mock shim (plan 11.9: mocked WebSockets and
+/// EventSources) asks the daemon on, in the page's own world.
+pub(crate) const MOCK_BINDING: &str = "__chromeCdpMock";
+
 /// How much of a script's first line `init-script list` shows.
 const PREVIEW: usize = 60;
 
@@ -76,6 +80,9 @@ struct Table {
     seeds: Vec<(String, Arc<Script>)>,
     /// The last seed id given.
     last_seed: u32,
+    /// The scopes whose documents get the mock shim, each with its
+    /// serial number (a shim turned on again is new to sessions).
+    shims: Vec<(Option<String>, u32)>,
 }
 
 /// An init script.
@@ -105,6 +112,8 @@ pub(crate) enum Key {
     Seed(u32),
     /// [`SEED_BINDING`], while there are seeds.
     SeedBinding,
+    /// The mock shim and [`MOCK_BINDING`], by serial number.
+    MockShim(u32),
 }
 
 /// What a [`Key`] stands for.
@@ -115,6 +124,8 @@ pub(crate) enum Wanted {
     Binding(String),
     /// [`SEED_BINDING`].
     SeedBinding,
+    /// The mock shim, behind [`MOCK_BINDING`].
+    MockShim,
 }
 
 fn lock(m: &Mutex<Table>) -> MutexGuard<'_, Table> {
@@ -341,10 +352,29 @@ impl Injector {
         table.seeds.len() != before
     }
 
+    /// Gives `scope`'s documents the mock shim, or takes it away; returns
+    /// whether that changed anything.
+    pub(crate) fn mock_shim(&self, scope: Option<&str>, on: bool) -> bool {
+        let mut table = lock(&self.table);
+        let has = table.shims.iter().any(|(s, _)| s.as_deref() == scope);
+        if has == on {
+            return false;
+        }
+        if on {
+            table.last_serial += 1;
+            let serial = table.last_serial;
+            table.shims.push((scope.map(str::to_owned), serial));
+        } else {
+            table.shims.retain(|(s, _)| s.as_deref() != scope);
+        }
+        true
+    }
+
     /// Drops everything of `scope`, a context that closed.
     pub(crate) fn drop_scope(&self, scope: &str) {
         let mut table = lock(&self.table);
         let theirs = |s: &Option<String>| s.as_deref() == Some(scope);
+        table.shims.retain(|(s, _)| !theirs(s));
         table.scripts.retain(|s| !theirs(&s.scope));
         table.bindings.retain(|(_, _, s)| !theirs(s));
         table.seeds.retain(|(_, s)| !theirs(&s.scope));
@@ -353,7 +383,8 @@ impl Injector {
     /// What every page and iframe session of `scope` should have, in the
     /// order it is added: the exposed functions first (so init scripts can
     /// call them), then the storage seeds (after their binding), so init
-    /// scripts see the storage they give, then the scripts.
+    /// scripts see the storage they give, then the mock shim, then the
+    /// scripts.
     pub(crate) fn wanted(&self, scope: Option<&str>) -> Vec<(Key, Wanted)> {
         let table = lock(&self.table);
         let bindings = table
@@ -381,9 +412,15 @@ impl Injector {
             .map(|(_, s)| (Key::Seed(s.id), Wanted::Script(s.clone())))
             .collect();
         let seed_binding = (!seeds.is_empty()).then_some((Key::SeedBinding, Wanted::SeedBinding));
+        let shim = table
+            .shims
+            .iter()
+            .find(|(s, _)| s.as_deref() == scope)
+            .map(|(_, serial)| (Key::MockShim(*serial), Wanted::MockShim));
         bindings
             .chain(seed_binding)
             .chain(seeds)
+            .chain(shim)
             .chain(scripts)
             .collect()
     }
@@ -426,6 +463,15 @@ pub(crate) fn wrapper(name: &str) -> String {
             "__BINDING__",
             &serde_json::to_string(&binding).unwrap_or_default(),
         )
+}
+
+/// The mock shim: `WebSocket` and `EventSource` stand-ins that ask the
+/// daemon on [`MOCK_BINDING`].
+pub(crate) fn mock_shim() -> String {
+    format!(
+        "{}\n//# sourceURL=chrome-cdp-mock-shim.js",
+        include_str!("../route/shim.js").replace("__BINDING__", MOCK_BINDING)
+    )
 }
 
 /// The script that takes exposed function `name` out of the documents

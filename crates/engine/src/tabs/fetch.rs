@@ -238,7 +238,7 @@ fn post_data(request: &serde_json::Value) -> Option<Vec<u8>> {
 
 /// Now for mock templates: the session's frozen time (`time freeze`), or
 /// the real one.
-fn now_ms(shared: &Shared, scope: Option<&str>) -> i64 {
+pub(super) fn now_ms(shared: &Shared, scope: Option<&str>) -> i64 {
     shared.settings.emulation.get_in(scope).time.map_or_else(
         || {
             std::time::SystemTime::now()

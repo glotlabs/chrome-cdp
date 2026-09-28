@@ -33,8 +33,10 @@
 mod act;
 mod commands;
 mod mocking;
+mod sockets;
 
 pub(crate) use mocking::unknown_state;
+pub(crate) use sockets::{Socket, SseReply, Tag, WsReply, frame_message};
 
 use std::collections::VecDeque;
 use std::fmt::Write as _;
@@ -81,6 +83,8 @@ impl Default for Router {
                 scoped: std::collections::HashMap::new(),
                 journal: VecDeque::new(),
                 seq: 0,
+                sockets: Vec::new(),
+                tags: std::collections::HashMap::new(),
             }),
         }
     }
@@ -100,6 +104,11 @@ struct Table {
     journal: VecDeque<(Option<String>, RoutedRequest)>,
     /// The last journal sequence number given.
     seq: u64,
+    /// The page's sockets mocks answer (plan 11.9), oldest first.
+    sockets: Vec<sockets::Socket>,
+    /// The header a test run tags requests with, by scope (`""` for the
+    /// default one).
+    tags: std::collections::HashMap<String, sockets::Tag>,
 }
 
 /// A rule, checked and compiled.
@@ -233,6 +242,7 @@ impl Router {
         !table.rules.is_empty()
             || !table.mocks.is_empty()
             || table.scoped.values().any(|m| !m.is_empty())
+            || !table.tags.is_empty()
     }
 
     /// Whether mock sets are in use in `scope` (and its paused requests
@@ -266,6 +276,8 @@ impl Router {
         table.rules.retain(|r| r.context.as_deref() != Some(scope));
         table.scoped.remove(scope);
         table.journal.retain(|(s, _)| s.as_deref() != Some(scope));
+        table.sockets.retain(|s| s.scope.as_deref() != Some(scope));
+        table.tags.remove(scope);
     }
 
     /// Adds `specs` after the existing rules, all or none: the first bad
@@ -361,7 +373,8 @@ impl Router {
             }
         }
         let Some(index) = table.rules.iter().position(|r| r.matches(req, req.method)) else {
-            return (table.mock(req), false);
+            let decision = table.mock(req);
+            return (table.tagged(req, decision), false);
         };
         let rule = &mut table.rules[index];
         rule.hits += 1;

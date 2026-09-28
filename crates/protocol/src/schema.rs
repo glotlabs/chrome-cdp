@@ -319,6 +319,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<MockExplainData>),
     },
     CommandSchema {
+        name: "mock serve",
+        summary: "the mock server's address, its sets and how many requests it answered (a JSON line per request before it)",
+        schema: || schema_for!(Envelope<MockServeData>),
+    },
+    CommandSchema {
+        name: "mock ws send",
+        summary: "the page's mocked WebSockets that got a message",
+        schema: || schema_for!(Envelope<MockWsSendData>),
+    },
+    CommandSchema {
         name: "mock check",
         summary: "the problems found in the mock files: file:line:col, severity, rule and message",
         schema: || schema_for!(Envelope<MockCheckData>),
@@ -3409,6 +3419,9 @@ pub struct MockSetInfo {
     /// How many collections it has.
     #[serde(default, skip_serializing_if = "is_zero_usize")]
     pub collections: usize,
+    /// How many `[[websocket]]` mocks it has.
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
+    pub websockets: usize,
     /// The requests it owns (`[settings] scope`), as written.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scope: Vec<String>,
@@ -3546,6 +3559,44 @@ pub struct MockProblem {
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
+}
+
+/// `data` of `chrome-cdp mock serve --json` (plan 11, milestone 11.9),
+/// the last line, once the server stopped; each request it answered is a
+/// line before it, as `mock log --json` has them (plus `test`, the
+/// request's `x-chrome-cdp-test` header).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockServeData {
+    /// Where it listened, e.g. `http://127.0.0.1:4010`.
+    pub url: String,
+    /// The mock sets it served, in the order they are tried.
+    pub sets: Vec<String>,
+    /// How many requests it answered.
+    pub requests: u64,
+}
+
+/// A page's WebSocket that a `[[websocket]]` mock answers (plan 11,
+/// milestone 11.9).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockSocketInfo {
+    /// Its tab, e.g. `t1`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab: Option<String>,
+    /// Its URL.
+    pub url: String,
+    /// The mock that answers it.
+    pub mock: MockRef,
+}
+
+/// `data` of `chrome-cdp mock ws send --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockWsSendData {
+    /// The URL glob given.
+    pub url: String,
+    /// The message's size in bytes.
+    pub size: usize,
+    /// The sockets that got it.
+    pub sockets: Vec<MockSocketInfo>,
 }
 
 /// `data` of `chrome-cdp mock record|import --json`.

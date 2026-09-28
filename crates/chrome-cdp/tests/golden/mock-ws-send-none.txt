@@ -1,0 +1,12 @@
+$ chrome-cdp mock ws send '/nope/**' hi --timeout 200ms
+exit: 3
+--- stderr
+error: no mocked WebSocket matching /nope/** opened within 200ms
+  open: <ws-site>/mock/ws/prices/ACME
+  hint: chrome-cdp mock ws send '*' hi   (sends to every mocked socket)
+
+$ chrome-cdp mock ws send '/nope/**' hi --timeout 200ms --json
+exit: 3
+--- stdout
+{"ok":false,"error":{"kind":"Timeout","message":"no mocked WebSocket matching /nope/** opened within 200ms","hint":"chrome-cdp mock ws send '*' hi   (sends to every mocked socket)","notes":[{"label":"open","text":"<ws-site>/mock/ws/prices/ACME"}]}}
+

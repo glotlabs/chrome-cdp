@@ -1,0 +1,12 @@
+$ chrome-cdp mock serve --dir <mocks> bsae
+exit: 2
+--- stderr
+error: no mock set `bsae` in <mocks>
+  did you mean: base
+  hint: chrome-cdp mock use base
+
+$ chrome-cdp mock serve --dir <mocks> bsae --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"no mock set `bsae` in <mocks>","hint":"chrome-cdp mock use base","notes":[{"label":"did you mean","text":"base"}]}}
+

@@ -321,3 +321,38 @@ impl Mocks {
         steps(&[&ws.on_message[rule].action], &ctx, &mock)
     }
 }
+
+/// Which sockets `mock ws send` means: `*` (all), a path glob (`/ws/**`)
+/// or a full-URL glob, as a `[[websocket]]`'s `url`.
+#[derive(Debug, Clone)]
+pub struct SocketGlob(Option<PathGlob>);
+
+impl SocketGlob {
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let text = text.trim();
+        if text == "*" {
+            return Ok(Self(None));
+        }
+        let glob = if text.starts_with('/') {
+            PathGlob::path(text)?
+        } else {
+            PathGlob::url(text).map_err(|_| {
+                format!("`{text}` is neither a path glob (/ws/**), a full-URL glob (wss://push.example.com/**) nor *")
+            })?
+        };
+        Ok(Self(Some(glob)))
+    }
+
+    /// Whether socket URL `url` is one of them.
+    pub fn matches(&self, url: &str) -> bool {
+        let Some(glob) = &self.0 else {
+            return true;
+        };
+        let parsed = parsed(url, None);
+        if glob.is_path() {
+            glob.matches(&parsed.path)
+        } else {
+            glob.matches(&parsed.base)
+        }
+    }
+}

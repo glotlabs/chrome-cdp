@@ -120,6 +120,7 @@ async fn use_sets(engine: &Engine, dir: &Path, names: &[&str], add: bool) -> Moc
             sets: names.iter().map(|n| source(dir, n)).collect(),
             add,
             seed: 0,
+            test: None,
             timeout_ms: TIMEOUT_MS,
         })
         .await
@@ -436,6 +437,7 @@ async fn frozen_time_and_changed_files() {
             sets: vec![source(dir.path(), "bad")],
             add: true,
             seed: 0,
+            test: None,
             timeout_ms: TIMEOUT_MS,
         })
         .await

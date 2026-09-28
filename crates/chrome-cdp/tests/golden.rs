@@ -85,6 +85,15 @@ const MOCKED: &[&[&str]] = &[
     &["eval", "fetch('/items?n=1').then((r) => r.status)"],
 ];
 
+/// The live fixture page on the `live` mock set (plan 11.9): its
+/// WebSocket and EventSource got their mocks' messages.
+const LIVE: &[&[&str]] = &[
+    &["open"],
+    &["mock", "use", "--dir", "{mocks}", "live"],
+    &["goto", "{site}/mock/live.html"],
+    &["wait", "--fn", "window.seen && seen.length >= 4"],
+];
+
 /// A session that shopped on the record fixture page with refs (plan
 /// 11.8), and made one mistake.
 const HISTORY: &[&[&str]] = &[
@@ -1372,6 +1381,36 @@ const CASES: &[Case] = &[
         fixture: Fixture::None,
     },
     Case {
+        name: "mock-list-live",
+        args: &["mock", "list"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(LIVE),
+    },
+    Case {
+        name: "mock-ws-send",
+        args: &[
+            "mock",
+            "ws",
+            "send",
+            "/mock/ws/**",
+            "{\"type\":\"price\",\"value\":42}",
+        ],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(LIVE),
+    },
+    Case {
+        name: "mock-ws-send-none",
+        args: &["mock", "ws", "send", "/nope/**", "hi", "--timeout", "200ms"],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(LIVE),
+    },
+    Case {
+        name: "mock-serve-unknown",
+        args: &["mock", "serve", "--dir", "{mocks}", "bsae"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
         name: "mock-use-nothing",
         args: &["mock", "use"],
         modes: ERR,
@@ -2636,6 +2675,8 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
 
     let site = Fixtures::shared();
     norm = norm.with(Path::new(site.a()), "<site>");
+    // Sockets' URLs (plan 11.9).
+    norm = norm.with(Path::new(&site.a().replacen("http", "ws", 1)), "<ws-site>");
     let files = upload_files();
     norm = norm.with(&files, "<files>");
     let scripts = testdata("scripts");

@@ -1,0 +1,16 @@
+$ chrome-cdp mock ws send '/mock/ws/**' '{"type":"price","value":42}'
+exit: 0
+--- stdout
+sent 27B to 1 socket:
+  t1 <ws-site>/mock/ws/prices/ACME (live.toml:6 "prices")
+
+$ chrome-cdp mock ws send '/mock/ws/**' '{"type":"price","value":42}' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"size":27,"sockets":[{"mock":{"at":"live.toml:6","file":"<mocks>/live.toml","line":6,"name":"prices","set":"live"},"tab":"t1","url":"<ws-site>/mock/ws/prices/ACME"}],"url":"/mock/ws/**"}}
+
+$ chrome-cdp mock ws send '/mock/ws/**' '{"type":"price","value":42}' -q
+exit: 0
+--- stdout
+1
+

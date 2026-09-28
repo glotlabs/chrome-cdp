@@ -1191,6 +1191,29 @@ pub struct MockUseRequest {
     /// Seeds `{{uuid}}`, `{{faker.*}}` and latency ranges.
     #[serde(default)]
     pub seed: u64,
+    /// A test run's tag for the context's requests (`--test-id`).
+    #[serde(default)]
+    pub test: Option<MockTestTag>,
+    pub timeout_ms: u64,
+}
+
+/// `mock use --test-id ID --test-origin URL…` (plan 11.9): requests to
+/// these origins that go on to the network get `x-chrome-cdp-test: ID`,
+/// so `mock serve` gives the test state of its own.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MockTestTag {
+    pub id: String,
+    /// `http://localhost:5173`.
+    pub origins: Vec<String>,
+}
+
+/// `mock ws send`: hand a message to the page's mocked sockets.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MockWsSendRequest {
+    /// `*`, a path glob or a full-URL glob.
+    pub url: String,
+    pub message: String,
+    pub max_chars: usize,
     pub timeout_ms: u64,
 }
 

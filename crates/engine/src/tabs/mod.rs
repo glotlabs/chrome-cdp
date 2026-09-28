@@ -38,6 +38,7 @@ pub(crate) mod emulation;
 mod fetch;
 mod inject;
 mod locks;
+mod mock_shim;
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -54,7 +55,7 @@ use self::dialogs::OpenDialog;
 use self::downloads::Download;
 use crate::emulate::{Aspects, Emulator};
 use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
-use crate::inject::{Injector, Key, SEED_BINDING};
+use crate::inject::{Injector, Key, MOCK_BINDING, SEED_BINDING};
 use crate::injected;
 use crate::input::Pointer;
 use crate::network::{Exchange, Failure, Idle, InFlight, Network};
@@ -1543,6 +1544,9 @@ async fn watch_host(
             }
             "Runtime.bindingCalled" if event.params["name"] == SEED_BINDING => {
                 seeded(&shared, &session_id, &event);
+            }
+            "Runtime.bindingCalled" if event.params["name"] == MOCK_BINDING => {
+                mock_shim::called(&shared, &session_id, tab, &event);
             }
             "Runtime.consoleAPICalled"
             | "Runtime.exceptionThrown"

@@ -505,6 +505,10 @@ impl Daemon {
                 Ok(p) => output(self.engine.mock_explain(&p)),
                 Err(e) => Err(e),
             },
+            rpc::MOCK_WS_SEND => match params(req.params) {
+                Ok(p) => output(self.engine.mock_ws_send(p).await),
+                Err(e) => Err(e),
+            },
             rpc::HTTP => match params(req.params) {
                 Ok(p) => output(self.engine.http(p).await),
                 Err(e) => Err(e),

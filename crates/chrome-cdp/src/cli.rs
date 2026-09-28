@@ -1125,6 +1125,11 @@ mocks require (`when = { logged_in = true }`) and change (`set_state`,
 seed = \"data/todos.json\"): GET lists, POST adds, GET/PUT/PATCH/DELETE
 path/:id. `mock state` shows it all, `mock reset` starts it over.
 
+Beyond fetches: a [[websocket]] (url, on_open, on_message) answers the
+page's WebSockets (`mock ws send` pushes more), `respond = { sse = [...] }`
+streams Server-Sent Events to its EventSources, and `mock serve` answers
+server-side requests as a real HTTP server.
+
 Sets applied later are tried first, and `route` rules come before any
 mock. Mock files are read again when they change. The commands need a
 running session, except `mock explain` and `mock list --available`.
@@ -1135,6 +1140,7 @@ Examples:
   chrome-cdp mock log --unmatched
   chrome-cdp mock explain GET /api/products/7
   chrome-cdp mock state todos
+  chrome-cdp mock serve --port 4010
   chrome-cdp mock off"
     )]
     Mock(MockArgs),
@@ -3385,6 +3391,93 @@ Examples:
   chrome-cdp mock check base checkout --openapi api/openapi.yaml
   chrome-cdp mock check --json")]
     Check(MockCheckArgs),
+
+    /// Serve mock sets as a real HTTP server, for server-side fetches (SSR).
+    #[command(after_help = "\
+Answers HTTP requests with the same mocks as `mock use` (the default_mocks
+followed by the SETs named), for requests that never pass through the
+browser: the fetches of an SSR framework's server (Next.js, Remix,
+SvelteKit load functions). Point the app at it (API_URL=http://localhost:4010).
+It runs until Ctrl-C and prints each request it answered; mock files are
+read again when they change.
+
+State (counters, sequences, named values, collections) is shared by all
+requests, except that a request with an `x-chrome-cdp-test: <id>` header
+gets state of its own for that id. `chrome-cdp test` sends the header with
+its browser requests; an app that forwards it to its API calls gets state
+per test. `abort` closes the connection, `passthrough` answers 502 (there
+is no real server behind), a request no set owns answers 404, and an `sse`
+answer streams its events.
+
+In a test run, `mock_server = { port = 4010 }` in [e2e.web_server] starts
+one before the web server, with each test's own mock sets.
+
+Examples:
+  chrome-cdp mock serve --port 4010
+  chrome-cdp mock serve checkout --no-defaults --port 0
+  chrome-cdp mock serve base --host 0.0.0.0 --port 4010")]
+    Serve(MockServeArgs),
+
+    /// Talk to the page's mocked WebSockets.
+    #[command(subcommand)]
+    Ws(MockWsCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum MockWsCommand {
+    /// Send a message to the page's sockets that a [[websocket]] mock answers.
+    #[command(after_help = "\
+Hands MESSAGE, as it is, to every open socket of the context whose URL the
+glob matches (a path glob such as /ws/**, a full-URL glob, or * for all),
+as if the fake server sent it. Waits (up to --timeout) for such a socket
+to open. Only sockets a [[websocket]] mock answers can be sent to: the
+page's `WebSocket` talks to the mocks after `mock use`, in documents
+loaded since.
+
+Examples:
+  chrome-cdp mock ws send '/ws/**' '{\"type\":\"price\",\"value\":42}'
+  chrome-cdp mock ws send '*' hello
+  echo '{\"type\":\"bye\"}' | chrome-cdp mock ws send /ws/prices -")]
+    Send(MockWsSendArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MockServeArgs {
+    /// Mock sets to serve after the defaults: names in the mocks
+    /// directory, or paths to .toml files.
+    #[arg(value_name = "SET")]
+    pub(crate) sets: Vec<String>,
+
+    /// The port to listen on (0 picks a free one).
+    #[arg(long, default_value_t = 4010, value_name = "PORT")]
+    pub(crate) port: u16,
+
+    /// The address to listen on.
+    #[arg(long, default_value = "127.0.0.1", value_name = "ADDR")]
+    pub(crate) host: String,
+
+    /// Leave out the project's default_mocks.
+    #[arg(long)]
+    pub(crate) no_defaults: bool,
+
+    /// The mocks directory (default: `mocks` of [e2e], else ./e2e/mocks).
+    #[arg(long, value_name = "DIR")]
+    pub(crate) dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MockWsSendArgs {
+    /// Which sockets: a path glob (/ws/**), a full-URL glob, or * for all.
+    #[arg(value_name = "URL")]
+    pub(crate) url: String,
+
+    /// The message, sent as it is; `-` reads stdin.
+    #[arg(value_name = "MESSAGE")]
+    pub(crate) message: String,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
 }
 
 #[derive(Debug, Args)]
@@ -3482,6 +3575,22 @@ pub(crate) struct MockUseArgs {
     /// The mocks directory (default: `mocks` of [e2e], else ./e2e/mocks).
     #[arg(long, value_name = "DIR")]
     pub(crate) dir: Option<PathBuf>,
+
+    /// Tag the requests to --test-origin with `x-chrome-cdp-test: ID`, so
+    /// `mock serve` gives them state of their own (`chrome-cdp test` does
+    /// this for each test).
+    #[arg(long, value_name = "ID", requires = "test_origins", hide = true)]
+    pub(crate) test_id: Option<String>,
+
+    /// With --test-id: an origin whose requests get the header
+    /// (repeatable), e.g. http://localhost:5173.
+    #[arg(
+        long = "test-origin",
+        value_name = "URL",
+        requires = "test_id",
+        hide = true
+    )]
+    pub(crate) test_origins: Vec<String>,
 }
 
 #[derive(Debug, Args)]
@@ -5623,6 +5732,8 @@ mod tests {
         "help",
         "skill",
         "completions",
+        // A line per request answered, each bounded, until Ctrl-C.
+        "mock serve",
         // Each step is bounded by its own command's flags.
         "batch",
         "run",

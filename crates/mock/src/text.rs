@@ -32,6 +32,18 @@ pub fn set_line(set: &MockSetInfo) -> String {
             }
         );
     }
+    if set.websockets > 0 {
+        let _ = write!(
+            line,
+            ", {} {}",
+            set.websockets,
+            if set.websockets == 1 {
+                "websocket"
+            } else {
+                "websockets"
+            }
+        );
+    }
     if !set.scope.is_empty() {
         let _ = write!(
             line,

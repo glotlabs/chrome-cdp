@@ -1,0 +1,21 @@
+# WebSocket and Server-Sent Event mocks for the live fixture page (plan 11,
+# milestone 11.9).
+[settings]
+scope = ["/mock/api/**", "/mock/ws/**"]
+
+[[websocket]]
+name = "prices"
+url = "/mock/ws/prices/:symbol"
+on_open = [{ send = { type = "hello", symbol = "{{params.symbol}}" } }]
+on_message = [
+  { match = { type = "ping" }, send = { type = "pong", id = "{{json.id}}" } },
+  { match = "bye", close = 4000, reason = "bye" },
+]
+
+[[mock]]
+name = "news"
+match = { method = "GET", path = "/mock/api/news" }
+respond = { sse = [
+  { data = "first" },
+  { delay = "100ms", event = "headline", id = "2", data = { title = "Second" } },
+] }

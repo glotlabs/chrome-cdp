@@ -643,6 +643,12 @@
         "unmatched": {
           "description": "What an in-scope request no mock answers gets: `fail`,\n`passthrough` or `abort`.",
           "type": "string"
+        },
+        "websockets": {
+          "description": "How many `[[websocket]]` mocks it has.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [

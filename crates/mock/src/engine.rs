@@ -314,6 +314,7 @@ impl Mocks {
                 file: set.source.file.display().to_string(),
                 count: set.mocks.len(),
                 collections: set.collections.len(),
+                websockets: set.websockets.len(),
                 scope: set.scope_text.clone(),
                 unmatched: set.unmatched.as_str().into(),
                 cors: match set.cors {

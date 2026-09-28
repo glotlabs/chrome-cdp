@@ -1,6 +1,6 @@
 //! `mock use|off|list|log|reset|explain` (plan 11, milestone 11.2),
 //! `mock state|seed` (milestone 11.3) and `mock record|import|check`
-//! (milestone 11.8).
+//! (milestone 11.8); `mock serve` and `mock ws send` (milestone 11.9).
 //!
 //! The CLI finds the project (the mocks directory, `default_mocks`, the
 //! random seed) and the sets' files; the daemon reads and applies them.
@@ -9,22 +9,28 @@
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use daemon::rpc;
+use e2e::mock_server::{MockServer, Served};
 use engine::{
     HarExportRequest, MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest,
-    MockSeedRequest, MockStateRequest, MockUseRequest,
+    MockSeedRequest, MockStateRequest, MockTestTag, MockUseRequest, MockWsSendRequest,
 };
 use mock::{MockSet, Mocks, Source};
-use protocol::schema::{MockCheckData, MockExplainData, MockProblem, MockRecordData, MockSetsData};
-use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
+use protocol::schema::{
+    MockCheckData, MockExplainData, MockProblem, MockRecordData, MockServeData, MockSetsData,
+};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
 use serde_json::{Value, json};
 
 use crate::cli::{
     GlobalArgs, MockArgs, MockCheckArgs, MockCommand, MockExplainArgs, MockImportArgs,
-    MockRecordArgs, MockSeedArgs, MockStateArgs, MockUseArgs,
+    MockRecordArgs, MockSeedArgs, MockServeArgs, MockStateArgs, MockUseArgs, MockWsCommand,
+    MockWsSendArgs,
 };
-use crate::{input, route, session};
+use crate::{input, output, route, session};
 
 /// What the project says about mocks.
 struct Project {
@@ -158,7 +164,117 @@ pub(crate) fn run(args: &MockArgs, global: &GlobalArgs) -> Result<Output, ErrorI
         MockCommand::Record(args) => record(args, global),
         MockCommand::Import(args) => import(args),
         MockCommand::Check(args) => check(args),
+        MockCommand::Serve(args) => serve(args, global),
+        MockCommand::Ws(MockWsCommand::Send(args)) => ws_send(args, global),
     }
+}
+
+/// `mock serve`: the sets as an HTTP server, until Ctrl-C.
+fn serve(args: &MockServeArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let project = Project::find(args.dir.as_deref())?;
+    let mut names: Vec<String> = Vec::new();
+    if !args.no_defaults {
+        names.extend(project.defaults.iter().cloned());
+    }
+    for name in &args.sets {
+        names.retain(|n| n != name);
+        names.push(name.clone());
+    }
+    if names.is_empty() {
+        return Err(project.nothing(Cmd::new("mock").arg("serve")));
+    }
+    let sets = project
+        .sources(&names)
+        .and_then(|sources| {
+            sources
+                .iter()
+                .map(MockSet::load)
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .map_err(|mut info| {
+            // The did-you-mean hints name `mock use`.
+            info.hint = info
+                .hint
+                .map(|h| h.replacen("chrome-cdp mock use", "chrome-cdp mock serve", 1));
+            info
+        })?;
+    let ip: std::net::IpAddr = args.host.parse().map_err(|_| {
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("--host: `{}` is not an IP address", args.host),
+        )
+        .hint(Hint::text(
+            "--host 127.0.0.1 (this machine only) or --host 0.0.0.0 (every interface)",
+        ))
+    })?;
+    let addr = std::net::SocketAddr::new(ip, args.port);
+    let mode = global.mode();
+    let answered = Arc::new(AtomicU64::new(0));
+    let count = answered.clone();
+    let on_request = move |served: &Served| {
+        count.fetch_add(1, Ordering::SeqCst);
+        match mode {
+            Mode::Json => {
+                let line = serde_json::to_string(served).unwrap_or_default();
+                output::stdout(&format!("{line}\n"));
+            }
+            Mode::Text => {
+                let mut text = mock::text::log_line(&served.request);
+                if let Some(test) = &served.test {
+                    let _ = write!(text, " [test {test}]");
+                }
+                for check in &served.request.closest {
+                    let _ = write!(
+                        text,
+                        "\n  closest mock: {}",
+                        mock::text::closest_line(check)
+                    );
+                }
+                output::stdout(&format!("{text}\n"));
+            }
+            Mode::Quiet => {}
+        }
+    };
+    let server =
+        MockServer::start(addr, sets, project.seed, Some(Box::new(on_request))).map_err(|e| {
+            ErrorInfo::new(
+                ErrorKind::LaunchFailed,
+                format!("mock serve cannot listen on {addr}: {e}"),
+            )
+            .hint(
+                Hint::run(Cmd::new("mock").arg("serve").flag("port", "0")).why("picks a free port"),
+            )
+        })?;
+    let url = server.url();
+    // The sets in the order they are tried.
+    let tried: Vec<String> = names.iter().rev().cloned().collect();
+    match mode {
+        Mode::Json => output::stdout(&format!("{}\n", json!({ "listening": url, "sets": tried }))),
+        Mode::Text => output::stdout(&format!(
+            "mock server on {url}: {} (Ctrl-C stops it)\n",
+            tried.join(", ")
+        )),
+        Mode::Quiet => output::stdout(&format!("{url}\n")),
+    }
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| ErrorInfo::new(ErrorKind::LaunchFailed, format!("no runtime: {e}")))?;
+    runtime.block_on(async {
+        let _ = tokio::signal::ctrl_c().await;
+    });
+    server.stop();
+    let requests = answered.load(Ordering::SeqCst);
+    let text = format!(
+        "mock server stopped after {requests} {}",
+        if requests == 1 { "request" } else { "requests" }
+    );
+    let data = MockServeData {
+        url,
+        sets: tried,
+        requests,
+    };
+    Ok(Output::typed(&data, text).quiet(String::new()))
 }
 
 /// `mock check`.
@@ -679,6 +795,18 @@ fn seed(args: &MockSeedArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     session::call_session(global, rpc::MOCK_SEED, &request, "mock sets")
 }
 
+/// `mock ws send`.
+fn ws_send(args: &MockWsSendArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let message = input::text_arg(&args.message, "the message")?;
+    let request = MockWsSendRequest {
+        url: args.url.clone(),
+        message,
+        max_chars: args.max_chars,
+        timeout_ms: session::timeout_ms(global),
+    };
+    session::call_session(global, rpc::MOCK_WS_SEND, &request, "mocked sockets")
+}
+
 fn mock_use(args: &MockUseArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     let project = Project::find(args.dir.as_deref())?;
     let mut names: Vec<String> = Vec::new();
@@ -693,10 +821,15 @@ fn mock_use(args: &MockUseArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo
     if names.is_empty() {
         return Err(project.nothing(Cmd::new("mock").arg("use")));
     }
+    let test = args.test_id.as_ref().map(|id| MockTestTag {
+        id: id.clone(),
+        origins: args.test_origins.clone(),
+    });
     let request = MockUseRequest {
         sets: project.sources(&names)?,
         add: args.add,
         seed: project.seed,
+        test,
         timeout_ms: session::timeout_ms(global),
     };
     session::call_session(global, rpc::MOCK_USE, &request, "mock sets")

@@ -127,6 +127,7 @@ async fn use_sets(engine: &Engine, names: &[&str]) {
                 .collect(),
             add: false,
             seed: 0,
+            test: None,
             timeout_ms: TIMEOUT_MS,
         })
         .await

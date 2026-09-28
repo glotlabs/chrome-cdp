@@ -1,0 +1,17 @@
+$ chrome-cdp mock list
+exit: 0
+--- stdout
+live  1 mock, 1 websocket  scope /mock/api/**, /mock/ws/** (unmatched: fail)  <mocks>/live.toml
+  live.toml:15 "news" GET /mock/api/news → fulfill 200 sse 2 events (1 hit)
+  live.toml:6 "prices" WS /mock/ws/prices/:symbol → websocket: on_open 1, on_message 2 (1 hit)
+
+$ chrome-cdp mock list --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"sets":[{"cors":"auto","count":1,"file":"<mocks>/live.toml","latency":"0ms","mocks":[{"at":"live.toml:15","file":"<mocks>/live.toml","hits":1,"line":15,"matches":"GET /mock/api/news","name":"news","responds":"fulfill 200 sse 2 events","set":"live"},{"at":"live.toml:6","file":"<mocks>/live.toml","hits":1,"line":6,"matches":"WS /mock/ws/prices/:symbol","name":"prices","responds":"websocket: on_open 1, on_message 2","set":"live"}],"name":"live","scope":["/mock/api/**","/mock/ws/**"],"unmatched":"fail","websockets":1}]}}
+
+$ chrome-cdp mock list -q
+exit: 0
+--- stdout
+live
+

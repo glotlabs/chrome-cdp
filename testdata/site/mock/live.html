@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Live prices</title>
+<h1>Live prices</h1>
+<p>A WebSocket to <code>/mock/ws/prices/ACME</code> and an EventSource on
+<code>/mock/api/news</code>, both answered by the <code>live</code> mock set
+(plan 11, milestone 11.9). Every message the page gets is a list item.</p>
+<p>Price: <output id="price">none</output></p>
+<button id="ping" onclick="socket.send(JSON.stringify({ type: 'ping', id: 7 }))">Ping</button>
+<ol id="log" aria-label="log"></ol>
+<script>
+  const log = (text) => {
+    const li = document.createElement('li');
+    li.textContent = text;
+    document.getElementById('log').append(li);
+  };
+  window.seen = [];
+  const note = (text) => {
+    window.seen.push(text);
+    log(text);
+  };
+  window.socket = new WebSocket(`ws://${location.host}/mock/ws/prices/ACME`, ['v1']);
+  socket.onopen = () => note(`open ${socket.protocol}`);
+  socket.onmessage = (event) => {
+    note(`ws ${event.data}`);
+    try {
+      const message = JSON.parse(event.data);
+      if (message.type === 'price') document.getElementById('price').value = message.value;
+    } catch {}
+  };
+  socket.onclose = (event) => note(`close ${event.code} ${event.reason}`);
+  window.news = new EventSource('/mock/api/news');
+  news.onmessage = (event) => note(`sse ${event.data}`);
+  news.addEventListener('headline', (event) => note(`headline ${event.data} #${event.lastEventId}`));
+</script>
