@@ -178,9 +178,13 @@ running 4 tests from 2 files, 2 at once
     failed at e2e/scenarios/checkout.cdp:15:3: expect role=alert text "Please try again"
     error: expect failed: role=alert
       …
+    report: /home/me/shop/e2e/.results/checkout.cdp/retries-when-the-api-is-busy/report.md
 ~ e2e/scenarios/cart.cdp:6 adds an item (2.3s; flaky: passed on try 2)
 - e2e/scenarios/checkout.cdp:24 empty cart (skipped: flaky upstream component, see #12)
 4 tests: 1 passed, 1 failed, 1 flaky, 1 skipped (4.2s)
+failure reports:
+  /home/me/shop/e2e/.results/checkout.cdp/retries-when-the-api-is-busy/report.md
+  /home/me/shop/e2e/.results/cart.cdp/adds-an-item/report.md
 error: 1 of 4 tests failed
   failed: e2e/scenarios/checkout.cdp:12 retries when the API is busy
   hint: chrome-cdp test e2e/scenarios/checkout.cdp:12   (runs the first failed test again)
@@ -189,6 +193,14 @@ error: 1 of 4 tests failed
 `--json` prints one envelope with every test's status, tries, duration
 and failure (the step's `file:line:col`, its text, and its error);
 `chrome-cdp schema test` has its schema.
+
+Every test leaves `steps.jsonl`, `requests.txt` and `console.txt` in
+`e2e/.results/<file>/<test>/`, and a failed one a `report.md` (its path is
+printed under the test's line) with the step, the error, the page around
+it, console errors and failed requests. `--debug` keeps the first failed
+test's page open, `--watch` reruns tests as files change, and `--reporter
+junit,html` writes files for CI and humans: see
+[debugging.md](debugging.md).
 
 ## Browser contexts outside tests
 

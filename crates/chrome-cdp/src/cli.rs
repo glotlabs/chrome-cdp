@@ -294,7 +294,8 @@ Each test leaves steps.jsonl, requests.txt and console.txt in
 e2e/.results/<file>/<test>/; a failed one also failure.png, snapshot.txt
 and report.md (the step, the error, the page around it, console errors,
 failed requests), whose path is printed under its line. --trace adds a
-screenshot after every step.
+screenshot after every step; --reporter json,junit,html writes those
+files too (docs/e2e/debugging.md).
 A scenario that does not check (bad syntax, unknown command, missing
 @include) fails before any test runs, with exit code 2.
 
@@ -315,6 +316,9 @@ Examples:
   chrome-cdp test --grep cart --tags smoke,!slow
   chrome-cdp test --jobs 4 --shard 2/4 --retries 1
   chrome-cdp test e2e/scenarios/cart.cdp --repeat 20   # flaky before a commit?
+  chrome-cdp test --debug      # keep the first failed test's page open
+  chrome-cdp test --watch      # run the affected tests again on each change
+  chrome-cdp test --reporter text,junit,html --trace
   chrome-cdp test --list")]
     Test(TestArgs),
 
