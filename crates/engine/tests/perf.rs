@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use browser::Host;
 use engine::{
@@ -128,7 +128,7 @@ async fn perf_reports_load_timing_and_web_vitals() {
 
     // The banner shifts the page; the slow click is a long task and a
     // slow interaction.
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    tokio::time::sleep(Duration::from_millis(1000)).await;
     click(&engine, "#slow").await;
     let (out, data) = perf(&engine).await;
     eprintln!("{}", out.text);
@@ -152,5 +152,94 @@ async fn perf_reports_load_timing_and_web_vitals() {
         out.text
     );
     assert!(out.text.contains(" listeners · JS heap "), "{}", out.text);
+    engine.close().await;
+}
+
+struct DebugChrome {
+    child: std::process::Child,
+    profile: PathBuf,
+}
+
+impl Drop for DebugChrome {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        let _ = std::fs::remove_dir_all(&self.profile);
+    }
+}
+
+/// A Chrome started with a DevTools port on `url`, and that port.
+fn debug_chrome(path: &Path, url: &str) -> (DebugChrome, String) {
+    let profile = std::env::temp_dir().join(format!("engine-perf-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&profile);
+    std::fs::create_dir_all(&profile).unwrap();
+    let child = std::process::Command::new(path)
+        .args([
+            "--headless",
+            "--remote-debugging-port=0",
+            "--no-first-run",
+            "--no-default-browser-check",
+        ])
+        .arg(format!("--user-data-dir={}", profile.display()))
+        .arg(url)
+        .env("TMPDIR", &profile)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let chrome = DebugChrome {
+        child,
+        profile: profile.clone(),
+    };
+    let active = profile.join("DevToolsActivePort");
+    let start = Instant::now();
+    let port = loop {
+        if let Ok(text) = std::fs::read_to_string(&active)
+            && text.lines().count() >= 2
+        {
+            break text.lines().next().unwrap().to_owned();
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(30),
+            "no DevTools port"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    };
+    (chrome, port)
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn perf_of_a_page_loaded_before_attaching() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let (_chrome, port) = debug_chrome(&path, &site.url("/perf/index.html"));
+    // The page loads, paints and shifts while nobody watches.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    let engine = Engine::new("perf-connect", None, None);
+    engine
+        .connect(engine::ConnectRequest {
+            endpoint: port.clone(),
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap();
+    let (out, data) = perf(&engine).await;
+    assert!(!data.from_start);
+    assert!(
+        out.warnings.iter().any(|w| w.contains("104ms")),
+        "{:?}",
+        out.warnings
+    );
+    // What the browser buffered: the paints and the shift.
+    assert_eq!(
+        data.lcp.as_ref().unwrap().element.as_deref(),
+        Some("p#hero")
+    );
+    assert!(data.cls.shifts >= 1, "{:?}", data.cls);
+    assert!(data.navigation.is_some());
+    // A slow interaction is still seen.
+    click(&engine, "#slow").await;
+    let (_, data) = perf(&engine).await;
+    assert!(data.inp.as_ref().unwrap().ms >= 250, "{:?}", data.inp);
     engine.close().await;
 }

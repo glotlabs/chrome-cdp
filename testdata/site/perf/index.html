@@ -21,12 +21,14 @@
       while (performance.now() - start < ms) {}
       document.getElementById('slow').textContent = 'Done';
     }
-    // A banner that pushes the page down once it has painted: a layout shift.
+    // A banner that pushes the page down once it has painted: a layout shift
+    // (after 500ms: a shift that soon after a navigation counts as caused by
+    // input, and not for CLS).
     setTimeout(() => {
       const banner = document.createElement('div');
       banner.id = 'banner';
       document.body.prepend(banner);
-    }, 300);
+    }, 700);
   </script>
 </body>
 </html>
