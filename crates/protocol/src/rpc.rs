@@ -36,6 +36,11 @@ pub struct Request {
     /// travels beside the params rather than in each method's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context: Option<String>,
+    /// The words of the command this call is for, as typed (plan 11.8):
+    /// the daemon keeps them in the session's history. Only a command's
+    /// first call carries them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<Vec<String>>,
 }
 
 impl Request {
@@ -47,6 +52,7 @@ impl Request {
             method: method.into(),
             params,
             context: None,
+            line: None,
         }
     }
 

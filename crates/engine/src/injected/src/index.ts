@@ -5,7 +5,8 @@
 // the DOM walker, what the read commands (4.5) take from elements, the
 // actionability checks (5.1), what mouse actions ask the page (5.2), and
 // what keyboard and form actions ask it (5.3), where focus went for
-// the post-action report (5.5), and what `expect` checks (plan 09).
+// the post-action report (5.5), what `expect` checks (plan 09), and the
+// stable locators `history --as-scenario` writes for refs (plan 11).
 // Built into `ccdp.js` by `cargo xtask build-js`; the engine embeds that
 // file.
 
@@ -19,6 +20,7 @@ import { caretToEnd, checkState, fieldValue, fillPrepare, focused, hasFocus, rea
 import { acted, focusMark, focusMoved } from './report';
 import { expectElements, expectNamed, expectPage } from './expect';
 import { a11y } from './a11y';
+import { stable } from './stable';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -58,6 +60,7 @@ const api = {
   expectPage,
   expectNamed,
   a11y,
+  stable,
 };
 
 if (!globalThis.__ccdp) globalThis.__ccdp = api;

@@ -15,7 +15,9 @@
 
 mod parse;
 mod resolve;
+mod stable;
 
 pub use parse::{DEFAULT_TESTID_ATTRIBUTE, Locator, parse_locator};
 pub use resolve::LocateOptions;
 pub(crate) use resolve::{Called, FrameOnly, Place, Want, bad_locator, read_listed, release};
+pub use stable::is_ref;

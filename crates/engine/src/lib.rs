@@ -83,7 +83,7 @@ pub use expect::{
 pub use frames::{FrameInfo, WORLD_NAME, World};
 pub use inject::{MAX_SCRIPT, check_binding_name};
 pub use input::{ActionPoint, Checks, check_action, parse_modifiers};
-pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, parse_locator};
+pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, is_ref, parse_locator};
 pub use navigate::normalize_url;
 pub use observe::{RESOURCE_TYPES, check_eval, check_screenshot};
 pub use raw::check_cdp;

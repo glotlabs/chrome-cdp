@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Record</title>
+<!-- A shop against a "real" backend (the static files in record/api/),
+     for `mock record` and `history --as-scenario` (plan 11.8). Every
+     product has an "Add" button, so a ref's stable locator needs its
+     list item. -->
+<h1>Shop</h1>
+<ul id="products"></ul>
+<p>Cart: <span id="count">0</span></p>
+<label>Quantity <input id="qty" value="1"></label>
+<button id="buy">Buy</button>
+<p role="status" id="status"></p>
+<script>
+  const cart = [];
+  fetch('/record/api/products.json')
+    .then((r) => r.json())
+    .then((products) => {
+      for (const p of products) {
+        const li = document.createElement('li');
+        li.innerHTML = `<span>${p.name}</span> <b>${p.price} kr</b> <button>Add</button>`;
+        li.querySelector('button').onclick = () => {
+          cart.push(p.id);
+          document.getElementById('count').textContent = String(cart.length);
+        };
+        document.getElementById('products').append(li);
+      }
+    });
+  document.getElementById('buy').onclick = async () => {
+    const qty = Number(document.getElementById('qty').value);
+    const r = await fetch('/record/api/order.json', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ items: cart, qty }),
+    });
+    const order = await r.json();
+    document.getElementById('status').textContent = `Order ${order.id}: ${order.status}, ${qty * cart.length} items`;
+  };
+</script>

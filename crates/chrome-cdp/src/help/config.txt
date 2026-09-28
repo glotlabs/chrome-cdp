@@ -24,6 +24,7 @@ writes one). Paths are relative to the file; its base_url is also the
   tests = ["e2e/scenarios/**/*.cdp"]   scenario files (globs)
   mocks = "e2e/mocks"                  mock sets: <name>.toml
   default_mocks = ["base"]             sets every test gets
+  openapi = "api/openapi.yaml"         `mock check` checks mocks against it
   default_backend = "mock"             or a name from [e2e.backends]
   jobs = 4                             tests at once; "auto" = CPUs / 2
   retries = 0

@@ -674,6 +674,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<TestRunData>),
     },
     CommandSchema {
+        name: "history",
+        summary: "the commands the session ran, or with --as-scenario the test they make",
+        schema: || schema_for!(Envelope<HistoryData>),
+    },
+    CommandSchema {
         name: "convert",
         summary: "the .cdp script translated from a Playwright test file, and its TODO lines",
         schema: || schema_for!(Envelope<ConvertData>),
@@ -3410,6 +3415,58 @@ pub struct MockSetsData {
     /// The mocks directory the sets were looked for in (absolute).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dir: Option<String>,
+}
+
+/// `data` of `chrome-cdp history --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HistoryData {
+    /// The commands, oldest first.
+    pub entries: Vec<HistoryEntry>,
+    /// How many older commands the history no longer has.
+    pub dropped: u64,
+    /// With `--as-scenario`: the test, as `.cdp` text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scenario: Option<String>,
+    /// With `--as-scenario`: the commands left out of it, and why.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub left_out: Vec<String>,
+}
+
+/// One command a session ran.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HistoryEntry {
+    /// Its number in the session's history, from 1.
+    pub n: u64,
+    /// Its words, as typed (without the program name).
+    pub words: Vec<String>,
+    /// `--context`, if given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<String>,
+    /// Whether it succeeded.
+    pub ok: bool,
+    /// The error's kind, if it failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// The refs it named, with their stable locators when it ran.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refs: Vec<RefLocator>,
+}
+
+/// A ref and the most robust locator that found its element alone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RefLocator {
+    /// `e12`.
+    #[serde(rename = "ref")]
+    pub reference: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locator: Option<String>,
+    /// How: `role`, `label`, `testid`, `placeholder`, `text`, `scoped` (inside a
+    /// unique container) or `nth` (by position; the least robust).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub how: Option<String>,
+    /// Why there is no locator.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 /// `data` of `chrome-cdp mock check --json` (and `details` of its

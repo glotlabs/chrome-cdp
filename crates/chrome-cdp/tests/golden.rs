@@ -85,6 +85,23 @@ const MOCKED: &[&[&str]] = &[
     &["eval", "fetch('/items?n=1').then((r) => r.status)"],
 ];
 
+/// A session that shopped on the record fixture page with refs (plan
+/// 11.8), and made one mistake.
+const HISTORY: &[&[&str]] = &[
+    &["open", "{site}/record/shop.html"],
+    &["wait", "text=Monitor"],
+    &["snapshot", "-i"],
+    &["click", "e2"],
+    &["fill", "e4", "2"],
+    &["click", "e5"],
+    &[
+        "expect",
+        "role=status",
+        "text",
+        "Order o-17: ordered, 2 items",
+    ],
+];
+
 /// The mock fixture page with the `base` and `cart` sets in use, after
 /// it sent an order and asked for the cart, which no mock answers (plan
 /// 11.5).
@@ -1551,6 +1568,18 @@ const CASES: &[Case] = &[
                 "[[mock]]\nname = \"items\"\nmatch = { path = \"/api/items\" }\nrespond = { json_file = \"data/items.json\" }\n",
             ),
         ]),
+    },
+    Case {
+        name: "history",
+        args: &["history"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(HISTORY),
+    },
+    Case {
+        name: "history-as-scenario",
+        args: &["history", "--as-scenario", "orders a mouse", "--from", "2"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(HISTORY),
     },
     Case {
         name: "mock-check",

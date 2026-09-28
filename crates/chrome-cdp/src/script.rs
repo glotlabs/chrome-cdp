@@ -399,17 +399,22 @@ fn run_steps(steps: Vec<Step>, keep_going: bool, mode: Mode) -> u8 {
     for (index, step) in steps.into_iter().enumerate() {
         let n = index + 1;
         let Step {
-            cli, span, text, ..
+            cli,
+            span,
+            text,
+            words,
         } = step;
         let step_mode = if mode == Mode::Json {
             Mode::Json
         } else {
             cli.global.mode()
         };
+        daemon::client::set_history_line(Some(words));
         let result = crate::run(cli).map_err(|mut info| {
             info.message = format!("{span}: {}", info.message);
             info
         });
+        daemon::client::set_history_line(None);
         let code = result.as_ref().map_or_else(ErrorInfo::exit_code, |_| 0);
         if code != 0 {
             failed.push(n);

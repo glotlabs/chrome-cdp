@@ -39,6 +39,19 @@ const EXIT_WAIT: Duration = Duration::from_secs(15);
 /// `daemon.log` is rotated (one `.1` kept) past this size.
 const DAEMON_LOG_LIMIT: u64 = 1024 * 1024;
 
+thread_local! {
+    /// The words of the command this thread runs, for the session's
+    /// history: the next call (other than `hello`) takes them.
+    static LINE: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Sets the words of the command about to run on this thread (`None`
+/// for one that is not to be kept in the history). Its first call to a
+/// daemon carries them.
+pub fn set_history_line(words: Option<Vec<String>>) {
+    LINE.with(|line| *line.borrow_mut() = words);
+}
+
 /// A connection to a session's daemon.
 #[derive(Debug)]
 pub struct Client {
@@ -93,7 +106,10 @@ impl Client {
         let id = self.next_id;
         self.next_id += 1;
         let params = serde_json::to_value(params).unwrap_or(Value::Null);
-        let request = Request::new(id, method, params).in_context(self.context.clone());
+        let mut request = Request::new(id, method, params).in_context(self.context.clone());
+        if method != rpc::HELLO {
+            request.line = LINE.with(|line| line.borrow_mut().take());
+        }
         let mut line = serde_json::to_vec(&request).unwrap_or_default();
         line.push(b'\n');
         let lost = |why: String| {

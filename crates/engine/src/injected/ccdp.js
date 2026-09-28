@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: b353e087224690ca
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 72f2f91dcadda2a3
 "use strict";
 (() => {
   // src/dom.ts
@@ -1125,8 +1125,8 @@
         case "blockquote": {
           const inner = [];
           this.blocks(el, inner);
-          const quoted = inner.join("\n\n").split("\n").map((l) => l ? `> ${l}` : ">").join("\n");
-          if (inner.length) out.push(quoted);
+          const quoted2 = inner.join("\n\n").split("\n").map((l) => l ? `> ${l}` : ">").join("\n");
+          if (inner.length) out.push(quoted2);
           return;
         }
         case "table":
@@ -2071,6 +2071,111 @@ ${inner}
     return { json: JSON.stringify({ rules: rules.length, violations }), els };
   }
 
+  // src/stable.ts
+  var LONGEST = 80;
+  var quoted = (s) => '"' + s.replace(/[\\"]/g, (m) => "\\" + m) + '"';
+  var bare = (s) => !!s && !/^["'/]|>>|[\[\]]/.test(s);
+  function candidates(el, testid, texts) {
+    const out = [];
+    const role = roleOf(el);
+    if (role) {
+      const name = nameOf(el, role);
+      if (name && name.length <= LONGEST) {
+        out.push({
+          steps: [{ kind: "role", role, name: { mode: "exact", value: name } }],
+          locator: `role=${role}[name=${quoted(name)}]`
+        });
+      }
+    }
+    for (const label of labelsOf(el)) {
+      if (label.length <= LONGEST) {
+        out.push({
+          steps: [{ kind: "label", text: { mode: "exact", value: label } }],
+          locator: `label=${quoted(label)}`
+        });
+      }
+    }
+    const id = el.getAttribute(testid);
+    if (id && !/\s|>>|"|'/.test(id)) {
+      const locator = testid === "data-testid" ? `testid=${id}` : `css=[${testid}=${quoted(id)}]`;
+      out.push({ steps: [{ kind: "testid", value: id, attribute: testid }], locator });
+    }
+    const placeholder = norm(el.getAttribute("placeholder"));
+    if (placeholder && placeholder.length <= LONGEST) {
+      out.push({
+        steps: [{ kind: "placeholder", text: { mode: "exact", value: placeholder } }],
+        locator: `placeholder=${quoted(placeholder)}`
+      });
+    }
+    const text2 = norm(texts.of(el));
+    if (text2 && text2.length <= LONGEST) {
+      out.push({
+        steps: [{ kind: "text", text: { mode: "exact", value: text2 } }],
+        locator: `text=${quoted(text2)}`
+      });
+    }
+    return out;
+  }
+  function only(steps, el) {
+    const found = query(steps, null);
+    return found.length === 1 && found[0] === el;
+  }
+  function firstText(el) {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text2 = norm(node.data);
+      if (text2) return text2.length > 40 ? text2.slice(0, 40).replace(/\s+\S*$/, "") : text2;
+    }
+    return "";
+  }
+  function containers(a, role) {
+    const out = [];
+    const name = nameOf(a, role);
+    if (name && name.length <= LONGEST) {
+      out.push({
+        steps: [{ kind: "role", role, name: { mode: "exact", value: name } }],
+        locator: `role=${role}[name=${quoted(name)}]`
+      });
+    }
+    const text2 = firstText(a);
+    if (bare(text2)) {
+      out.push({
+        steps: [{ kind: "role", role }, { kind: "has-text", text: { mode: "substring", value: text2 } }],
+        locator: `role=${role} >> has-text=${text2}`
+      });
+    }
+    return out.filter((c) => only(c.steps, a));
+  }
+  function stable(el, testid) {
+    if (window !== window.top) {
+      return JSON.stringify({ reason: "it is in a frame, and frame locators are not written yet" });
+    }
+    const texts = new Texts();
+    const own = candidates(el, testid || "data-testid", texts);
+    for (const c of own) {
+      if (only(c.steps, el)) return JSON.stringify({ locator: c.locator, how: c.steps[0].kind });
+    }
+    if (own.length === 0) {
+      return JSON.stringify({ reason: "it has no role and name, label, test id, placeholder or text" });
+    }
+    for (let a = parentOf(el); a; a = parentOf(a)) {
+      const role = roleOf(a);
+      if (!role || !CONTEXT_ROLES.has(role)) continue;
+      for (const outer of containers(a, role)) {
+        for (const c of own) {
+          const steps = [...outer.steps, ...c.steps];
+          if (only(steps, el)) {
+            return JSON.stringify({ locator: `${outer.locator} >> ${c.locator}`, how: "scoped" });
+          }
+        }
+      }
+    }
+    const first = own[0];
+    const index = query(first.steps, null).indexOf(el);
+    if (index < 0) return JSON.stringify({ reason: "no locator finds it (is it hidden?)" });
+    return JSON.stringify({ locator: `${first.locator} >> nth=${index}`, how: "nth" });
+  }
+
   // src/index.ts
   var api = {
     version: 1,
@@ -2104,7 +2209,8 @@ ${inner}
     expectElements,
     expectPage,
     expectNamed,
-    a11y
+    a11y,
+    stable
   };
   if (!globalThis.__ccdp) globalThis.__ccdp = api;
 })();

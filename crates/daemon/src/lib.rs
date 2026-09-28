@@ -13,6 +13,7 @@
 //! portable (overview §8).
 
 pub mod client;
+mod history;
 pub mod meta;
 pub mod output;
 pub mod paths;

@@ -18,6 +18,7 @@ mod convert;
 mod emulate;
 mod expect;
 mod help;
+mod history;
 mod init;
 mod input;
 mod install;
@@ -75,6 +76,13 @@ fn main() -> ExitCode {
         }
         _ => {}
     }
+    // The session keeps the command's words in its history (plan 11.8).
+    daemon::client::set_history_line(Some(
+        std::env::args_os()
+            .skip(1)
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect(),
+    ));
     ExitCode::from(output::print(mode, run(cli)))
 }
 
@@ -113,6 +121,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Wait(args)) => session::wait(&args, &cli.global),
         Some(Command::Expect(args)) => session::expect(&args, &cli.global),
         Some(Command::Mark(args)) => session::mark(&args, &cli.global),
+        Some(Command::History(args)) => history::run(&args, &cli.global),
         Some(Command::ExpectSnapshot(args)) => session::expect_snapshot(&args, &cli.global),
         Some(Command::ExpectScreenshot(args)) => session::expect_screenshot(&args, &cli.global),
         Some(Command::Dialog(args)) => session::dialog(&args, &cli.global),

@@ -1,0 +1,29 @@
+$ chrome-cdp history --as-scenario 'orders a mouse' --from 2
+exit: 0
+--- stdout
+@test "orders a mouse"
+  wait text=Monitor
+  click 'role=listitem >> has-text=Mouse >> role=button[name="Add"]'
+  fill 'role=textbox[name="Quantity"]' 2
+  click 'role=button[name="Buy"]'
+  expect role=status text 'Order o-17: ordered, 2 items'
+--- stderr
+warning: left out 1 command: 3: snapshot -i (only reads)
+
+$ chrome-cdp history --as-scenario 'orders a mouse' --from 2 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"dropped":0,"entries":[{"n":2,"ok":true,"words":["wait","text=Monitor"]},{"n":3,"ok":true,"words":["snapshot","-i"]},{"n":4,"ok":true,"refs":[{"how":"scoped","locator":"role=listitem >> has-text=Mouse >> role=button[name=\"Add\"]","ref":"e2"}],"words":["click","e2"]},{"n":5,"ok":true,"refs":[{"how":"role","locator":"role=textbox[name=\"Quantity\"]","ref":"e4"}],"words":["fill","e4","2"]},{"n":6,"ok":true,"refs":[{"how":"role","locator":"role=button[name=\"Buy\"]","ref":"e5"}],"words":["click","e5"]},{"n":7,"ok":true,"words":["expect","role=status","text","Order o-17: ordered, 2 items"]}],"left_out":["3: snapshot -i (only reads)"],"scenario":"@test \"orders a mouse\"\n  wait text=Monitor\n  click 'role=listitem >> has-text=Mouse >> role=button[name=\"Add\"]'\n  fill 'role=textbox[name=\"Quantity\"]' 2\n  click 'role=button[name=\"Buy\"]'\n  expect role=status text 'Order o-17: ordered, 2 items'\n"},"warnings":["left out 1 command: 3: snapshot -i (only reads)"]}
+
+$ chrome-cdp history --as-scenario 'orders a mouse' --from 2 -q
+exit: 0
+--- stdout
+@test "orders a mouse"
+  wait text=Monitor
+  click 'role=listitem >> has-text=Mouse >> role=button[name="Add"]'
+  fill 'role=textbox[name="Quantity"]' 2
+  click 'role=button[name="Buy"]'
+  expect role=status text 'Order o-17: ordered, 2 items'
+--- stderr
+warning: left out 1 command: 3: snapshot -i (only reads)
+

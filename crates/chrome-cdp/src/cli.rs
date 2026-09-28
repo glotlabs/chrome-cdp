@@ -322,6 +322,30 @@ Examples:
   chrome-cdp test --list")]
     Test(TestArgs),
 
+    /// The commands the session ran; --as-scenario writes them as a test.
+    #[command(after_help = "\
+The session keeps its last 1,000 commands (from any shell, `batch` and
+`run`), each with whether it succeeded. --as-scenario NAME prints them as
+a test for a scenario file, the core authoring workflow: explore with the
+usual commands, then save what worked.
+
+In the test, refs (e12) become the most robust locator that found their
+element alone when the command ran: role and name, then label, test id,
+placeholder or text, then one of those inside a named container (a list
+item, a row, a dialog), and `>> nth=` only as a last resort. Commands that
+only read (snapshot, console, text, network, …) and failed ones are left
+out; `expect` commands stay; `open URL` becomes `goto`; URLs under
+base_url become paths; `mock use SETS` becomes `@mocks SETS`. --from N
+starts at command N (see `history`), and --clear starts the history over
+(after printing it).
+
+Examples:
+  chrome-cdp history
+  chrome-cdp history --as-scenario \"adds item to cart\" >> e2e/scenarios/cart.cdp
+  chrome-cdp history --as-scenario checkout --from 12
+  chrome-cdp history --clear -q")]
+    History(HistoryCmdArgs),
+
     /// Load a URL in the current tab and wait for it.
     #[command(after_help = "\
 Starts the session's browser first if it has none. Without a scheme,
@@ -3134,6 +3158,30 @@ pub(crate) struct UnrouteArgs {
     /// Remove every rule.
     #[arg(long, conflicts_with = "ids")]
     pub(crate) all: bool,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct HistoryCmdArgs {
+    /// Print the commands as a test with this name (`@test "NAME"`).
+    #[arg(long, value_name = "NAME")]
+    pub(crate) as_scenario: Option<String>,
+
+    /// Start at command N (as `history` numbers them).
+    #[arg(long, value_name = "N")]
+    pub(crate) from: Option<u64>,
+
+    /// Forget the commands so far (after printing them).
+    #[arg(long)]
+    pub(crate) clear: bool,
+
+    /// Without --as-scenario: show at most this many commands, the newest
+    /// (0 = all).
+    #[arg(long, default_value_t = 50, value_name = "N")]
+    pub(crate) limit: usize,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
 }
 
 #[derive(Debug, Args)]

@@ -146,7 +146,7 @@ export function query(steps: Step[], root: Element | null): Element[] {
   return current.filter((s): s is Element => s instanceof Element);
 }
 
-const CONTEXT_ROLES = new Set(['row', 'listitem', 'article', 'dialog', 'alertdialog', 'form',
+export const CONTEXT_ROLES = new Set(['row', 'listitem', 'article', 'dialog', 'alertdialog', 'form',
   'region', 'navigation', 'group', 'tabpanel', 'menu', 'listbox', 'radiogroup', 'tablist',
   'toolbar', 'banner', 'contentinfo', 'complementary', 'main', 'search', 'table', 'list']);
 

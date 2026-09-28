@@ -24,6 +24,7 @@ use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::Notify;
 
+use crate::history::{self, History};
 use crate::meta::Meta;
 use crate::output;
 use crate::paths::{Env, SessionPaths};
@@ -40,6 +41,9 @@ pub const NO_BROWSER_GRACE: Duration = Duration::from_secs(10);
 /// How long a starting daemon waits for another one to let go of the lock
 /// (a client probing it holds it for an instant).
 const LOCK_WAIT: Duration = Duration::from_secs(2);
+
+/// How long working out a ref's stable locator for the history may take.
+const STABLE_WAIT: Duration = Duration::from_secs(2);
 
 /// The exit code of a daemon that found another one running.
 pub const EXIT_ALREADY_RUNNING: u8 = 3;
@@ -111,6 +115,7 @@ async fn serve(opts: &ServeOptions) -> Result<u8, String> {
         connections: AtomicUsize::new(0),
         shutdown: Notify::new(),
         opened_with: Mutex::new(Opened::default()),
+        history: Mutex::new(History::default()),
         paths,
     });
     daemon.write_meta();
@@ -196,6 +201,8 @@ struct Daemon {
     connections: AtomicUsize,
     shutdown: Notify,
     opened_with: Mutex<Opened>,
+    /// The commands the session ran (plan 11.8).
+    history: Mutex<History>,
 }
 
 /// How the current browser was opened, for `meta.json`.
@@ -292,12 +299,57 @@ impl Daemon {
         let mut exit = false;
         // `--context`: the engine picks the context's tab and settings.
         let context = req.context.clone();
-        let result = engine::in_context(context, Box::pin(self.call(req, &mut exit))).await;
+        let line = req.line.clone().filter(|_| req.method != rpc::HISTORY);
+        let (refs, result) = engine::in_context(
+            context.clone(),
+            Box::pin(async {
+                // A ref's element may be gone once the command ran.
+                let refs = match &line {
+                    Some(words) => self.stable_locators(words).await,
+                    None => Vec::new(),
+                };
+                (refs, self.call(req, &mut exit).await)
+            }),
+        )
+        .await;
+        if let Some(words) = line {
+            let error = result.as_ref().err().map(|e| {
+                e.data.as_ref().map_or_else(
+                    || "ProtocolError".to_owned(),
+                    |info| {
+                        serde_json::to_value(info.kind)
+                            .ok()
+                            .and_then(|v| v.as_str().map(str::to_owned))
+                            .unwrap_or_default()
+                    },
+                )
+            });
+            lock_ignoring_poison(&self.history).push(words, context, error, refs);
+        }
         let response = match result {
             Ok(value) => Response::ok(id, value),
             Err(error) => Response::err(Some(id), error),
         };
         (response, exit)
+    }
+
+    /// The stable locators of the refs `words` name, in the tab its
+    /// `--tab` names.
+    async fn stable_locators(&self, words: &[String]) -> Vec<protocol::schema::RefLocator> {
+        let mut refs: Vec<String> = Vec::new();
+        for w in words {
+            if engine::is_ref(w) && !refs.contains(w) {
+                refs.push(w.clone());
+            }
+        }
+        if refs.is_empty() || self.engine.state() == SessionState::Idle {
+            return Vec::new();
+        }
+        let tab = history::flag(words, "tab");
+        let testid = history::flag(words, "testid-attribute");
+        self.engine
+            .stable_locators(tab, &refs, testid, STABLE_WAIT)
+            .await
     }
 
     /// Runs one call; sets `exit` when the daemon should exit after
@@ -513,6 +565,15 @@ impl Daemon {
                 Ok(p) => output(Box::pin(self.engine.har_stop(p)).await),
                 Err(e) => Err(e),
             },
+            rpc::HISTORY => {
+                let clear = req.params.get("clear").and_then(Value::as_bool) == Some(true);
+                let mut history = lock_ignoring_poison(&self.history);
+                let data = history.data();
+                if clear {
+                    history.clear();
+                }
+                Ok(json!(Output::typed(&data, String::new())))
+            }
             rpc::HAR_EXPORT => match params(req.params) {
                 Ok(p) => output(Box::pin(self.engine.har_export(p)).await),
                 Err(e) => Err(e),
