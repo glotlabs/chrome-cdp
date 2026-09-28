@@ -359,6 +359,11 @@ Page checks:
                        the page or the element LOCATOR names
 The last three look once: what they find does not go away by waiting.
 
+Mock state (expect mock-state <NAME> <CHECK>), retried like the matchers:
+  count <N> (or --min/--max)   items of a collection (or a list value)
+  value <V>            the named value is V (JSON, else text)
+  contains <V>         some item has V's fields (`{\"title\":\"Milk\"}`)
+
 Examples:
   chrome-cdp expect e6 visible
   chrome-cdp expect 'role=alert' text Saved
@@ -369,7 +374,8 @@ Examples:
   chrome-cdp expect h1 text '/^Welcome, \\w+$/'
   chrome-cdp expect --url '**/dashboard'
   chrome-cdp expect --no-errors --since before-save
-  chrome-cdp expect --a11y --level A")]
+  chrome-cdp expect --a11y --level A
+  chrome-cdp expect mock-state todos count 4")]
     Expect(ExpectArgs),
 
     /// Name this point in the tab's console and network logs, for expect --no-errors --since.
@@ -977,8 +983,16 @@ Match on: method, path (:param, *, **), url, regex, query, headers, json
 status, headers and one of json, json_file, body, body_file or file; or
 with abort, or passthrough (plus patch); delay holds the answer. Templates:
 {{params.x}} {{query.x}} {{headers.x}} {{json.x}} {{uuid}} {{now}}
-{{seq}} {{faker.name}}. A json_file that does not exist answers 404.
-`chrome-cdp schema mocks` prints the file format's JSON Schema.
+{{seq}} {{faker.name}} {{state.x}}. A json_file that does not exist
+answers 404. `chrome-cdp schema mocks` prints the file format's JSON
+Schema.
+
+State: `sequence = [{…}, {…}]` answers in turn (after_sequence =
+repeat-last, cycle or unmatched). [state] declares named values that
+mocks require (`when = { logged_in = true }`) and change (`set_state`,
+`unset_state`). A [[collection]] is a fake REST resource (name, path,
+seed = \"data/todos.json\"): GET lists, POST adds, GET/PUT/PATCH/DELETE
+path/:id. `mock state` shows it all, `mock reset` starts it over.
 
 Sets applied later are tried first, and `route` rules come before any
 mock. Mock files are read again when they change. The commands need a
@@ -989,6 +1003,7 @@ Examples:
   chrome-cdp mock list
   chrome-cdp mock log --unmatched
   chrome-cdp mock explain GET /api/products/7
+  chrome-cdp mock state todos
   chrome-cdp mock off"
     )]
     Mock(MockArgs),
@@ -3085,10 +3100,12 @@ Examples:
   chrome-cdp mock log --all --limit 100")]
     Log(MockLogArgs),
 
-    /// Start the mocks' state over: hit counters and random values.
+    /// Start the mocks' state over: counters, sequences, named values, collections.
     #[command(after_help = "\
-`{{seq}}` counts from 1 again, and `{{uuid}}` and `{{faker.*}}` give the
-same values as after `mock use`.
+`{{seq}}` counts from 1 again, sequences start at their first answer,
+named values are as [state] declares them, collections hold their seed
+items again (seed files are read again), and `{{uuid}}` and
+`{{faker.*}}` give the same values as after `mock use`.
 
 Examples:
   chrome-cdp mock reset")]
@@ -3107,6 +3124,35 @@ Examples:
   chrome-cdp mock explain POST /api/login --json-body '{\"email\":\"ada@example.com\"}'
   chrome-cdp mock explain GET 'https://api.example.com/v1/cart?user=7' --mocks base")]
     Explain(MockExplainArgs),
+
+    /// Show the mocks' named values and collections, or one of them.
+    #[command(after_help = "\
+Without a NAME: every named value (name = value) and every collection
+with its item count. With a NAME: that value, or the collection's items,
+as JSON (-q prints it on one line). --set changes named values first;
+the VALUE is JSON (true, 3, [\"a\"], null to remove it), else text. Only
+names a [state] declares, or a mock has set, can be set.
+
+Examples:
+  chrome-cdp mock state
+  chrome-cdp mock state todos
+  chrome-cdp mock state --set logged_in=true
+  chrome-cdp mock state user --set user=ada@example.com")]
+    State(MockStateArgs),
+
+    /// Fill a collection with other items, or its seed items again.
+    #[command(after_help = "\
+FILE is a JSON array of objects, each with the collection's id field: a
+path in the mocks directory (like a mock file's data files), else
+relative to the current directory; `-` reads the JSON from stdin. Without
+a FILE the collection starts over with its own seed items. Other
+collections and named values are left as they are.
+
+Examples:
+  chrome-cdp mock seed todos data/many-todos.json
+  chrome-cdp mock seed todos
+  echo '[{\"id\":1,\"title\":\"Only one\"}]' | chrome-cdp mock seed todos -")]
+    Seed(MockSeedArgs),
 }
 
 #[derive(Debug, Args)]
@@ -3172,6 +3218,34 @@ pub(crate) struct MockLogArgs {
 
 #[derive(Debug, Args)]
 pub(crate) struct MockResetArgs {}
+
+#[derive(Debug, Args)]
+pub(crate) struct MockStateArgs {
+    /// A named value or collection to show; all of them when not given.
+    #[arg(value_name = "NAME")]
+    pub(crate) name: Option<String>,
+
+    /// Change a named value first, NAME=VALUE (repeatable); VALUE is JSON,
+    /// else text.
+    #[arg(long = "set", value_name = "NAME=VALUE")]
+    pub(crate) set: Vec<String>,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MockSeedArgs {
+    /// The collection.
+    #[arg(value_name = "COLLECTION")]
+    pub(crate) name: String,
+
+    /// A JSON data file with the items; `-` reads them from stdin. Without
+    /// it, the collection's own seed items.
+    #[arg(value_name = "FILE")]
+    pub(crate) file: Option<String>,
+}
 
 #[derive(Debug, Args)]
 pub(crate) struct MockExplainArgs {
@@ -4949,6 +5023,7 @@ mod tests {
         "mock use",
         "mock off",
         "mock reset",
+        "mock seed",
         "init-script add",
         "init-script remove",
         "expose",

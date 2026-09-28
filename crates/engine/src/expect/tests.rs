@@ -231,3 +231,69 @@ fn bad_arguments_fail_before_the_browser() {
     let ok = request(element("#main", Matcher::Visible), false);
     assert!(Assertion::parse(&ok, &LocateOptions::default()).is_ok());
 }
+
+#[test]
+fn mock_state_assertions_read_back() {
+    use crate::request::MockStateCheck;
+    use serde_json::json;
+    let state = |name: &str, check| Expectation::MockState {
+        name: name.into(),
+        check,
+    };
+    let count = request(
+        state(
+            "todos",
+            MockStateCheck::Count {
+                count: Some(4),
+                min: None,
+                max: Some(9),
+            },
+        ),
+        false,
+    );
+    assert_eq!(assertion_text(&count), "mock-state todos count 4 --max 9");
+    assert_eq!(
+        expected(&count, None),
+        "todos with 4 items, at most 9 items"
+    );
+    let value = request(
+        state(
+            "user",
+            MockStateCheck::Value {
+                value: json!("ada@example.com"),
+            },
+        ),
+        true,
+    );
+    assert_eq!(
+        assertion_text(&value),
+        "mock-state user value ada@example.com --not"
+    );
+    assert_eq!(expected(&value, None), "not user = \"ada@example.com\"");
+    let contains = request(
+        state(
+            "todos",
+            MockStateCheck::Contains {
+                value: json!({"title": "Milk"}),
+            },
+        ),
+        false,
+    );
+    assert_eq!(
+        assertion_text(&contains),
+        r#"mock-state todos contains '{"title":"Milk"}'"#
+    );
+    check_expect(&contains).unwrap();
+    let bad = request(
+        state(
+            "todos",
+            MockStateCheck::Count {
+                count: None,
+                min: Some(3),
+                max: Some(1),
+            },
+        ),
+        false,
+    );
+    assert_eq!(check_expect(&bad).unwrap_err().kind, ErrorKind::BadArgs);
+}

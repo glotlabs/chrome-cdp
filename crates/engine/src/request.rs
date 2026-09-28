@@ -574,6 +574,30 @@ pub enum Expectation {
         #[serde(default)]
         level: A11yLevel,
     },
+    /// `expect mock-state <name> <check>`: a named value or collection of
+    /// the mock sets in use (plan 11, milestone 11.3).
+    MockState { name: String, check: MockStateCheck },
+}
+
+/// What `expect mock-state <name>` checks.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "check", rename_all = "snake_case")]
+pub enum MockStateCheck {
+    /// `count N` (or `--min`/`--max`): how many items a collection (or a
+    /// list value) has.
+    Count {
+        #[serde(default)]
+        count: Option<u64>,
+        #[serde(default)]
+        min: Option<u64>,
+        #[serde(default)]
+        max: Option<u64>,
+    },
+    /// `value V`: the value (a collection's items) is V.
+    Value { value: serde_json::Value },
+    /// `contains V`: some item of a collection (or a list value) has V,
+    /// as a mock's `match.json` does; an object value has V's keys.
+    Contains { value: serde_json::Value },
 }
 
 /// `expect`.
@@ -1127,6 +1151,38 @@ pub struct MockExplainRequest {
     pub limit: usize,
     /// The output budget (0 = none).
     pub max_chars: usize,
+}
+
+/// `mock state`: the mocks' named values and collections (plan 11,
+/// milestone 11.3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MockStateRequest {
+    /// One named value or collection to show; all of them if `None`.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// `--set name=value`: named values to change first (`null` removes
+    /// one).
+    #[serde(default)]
+    pub set: Vec<(String, serde_json::Value)>,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
+/// `mock seed`: fill a collection with other items.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MockSeedRequest {
+    /// The collection's name.
+    pub name: String,
+    /// A data file: absolute, or relative to the mocks directory, else to
+    /// `cwd`.
+    #[serde(default)]
+    pub file: Option<String>,
+    /// The items themselves (read from stdin).
+    #[serde(default)]
+    pub items: Option<serde_json::Value>,
+    /// The CLI's directory.
+    #[serde(default)]
+    pub cwd: Option<PathBuf>,
 }
 
 /// `init-script add`: a script for every new document (plan 07,

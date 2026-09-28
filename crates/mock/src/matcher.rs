@@ -466,6 +466,12 @@ pub(crate) fn json_subset(
     }
 }
 
+/// Whether `actual` holds `expected` as a mock's `match.json` checks it
+/// (objects a subset of keys, `"*"` any value, strings with `*` globs).
+pub fn json_contains(expected: &Value, actual: &Value) -> bool {
+    json_subset(expected, actual, false, &mut String::new()).is_ok()
+}
+
 fn is_plain_key(key: &str) -> bool {
     !key.is_empty()
         && key

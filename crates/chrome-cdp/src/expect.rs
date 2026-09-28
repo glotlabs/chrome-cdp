@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use engine::{A11yLevel, Expectation};
+use engine::{A11yLevel, Expectation, MockStateCheck};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 
 use crate::cli::{A11yLevelArg, ExpectArgs};
@@ -97,6 +97,9 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
             },
         });
     }
+    if args.target.as_deref() == Some("mock-state") {
+        return mock_state(args);
+    }
     let Some(locator) = &args.target else {
         return Err(bad_args(
             "expect needs a LOCATOR and a MATCHER, or a page check",
@@ -121,6 +124,89 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
         locator: locator.clone(),
         matcher,
     })
+}
+
+/// `expect mock-state <name> count|value|contains [value]`.
+fn mock_state(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
+    let example = |rest: &str| Cmd::new("expect").arg("mock-state").raw(rest);
+    let Some(name) = args.matcher.clone() else {
+        return Err(bad_args(
+            "expect mock-state needs a NAME (a named value or collection) and a check",
+            Hint::run(example("todos count 3")),
+        ));
+    };
+    let Some((check, rest)) = args.values.split_first() else {
+        return Err(bad_args(
+            format!("expect mock-state {name} needs a check: count, value or contains"),
+            Hint::run(example(&format!("{name} count 3"))),
+        ));
+    };
+    if args.exact {
+        return Err(bad_args(
+            "--exact is not for expect mock-state",
+            Hint::run(example(&format!("{name} value 'the value'"))),
+        ));
+    }
+    if (args.min.is_some() || args.max.is_some()) && check != "count" {
+        return Err(bad_args(
+            format!("--min and --max are for count, not {check}"),
+            Hint::run(example(&format!("{name} count --min 1"))),
+        ));
+    }
+    let one = |shape: &str, sample: &str| -> Result<serde_json::Value, ErrorInfo> {
+        match rest {
+            [value] => Ok(crate::mock::state_value(&input::text_arg(value, "VALUE")?)),
+            _ => Err(bad_args(
+                format!("expect mock-state … {check} takes {shape}"),
+                Hint::run(example(&format!("{name} {check} {sample}"))),
+            )),
+        }
+    };
+    let check = match check.as_str() {
+        "count" => {
+            let count = match rest {
+                [] => None,
+                [n] => Some(n.parse::<u64>().map_err(|_| {
+                    bad_args(
+                        format!("expect mock-state … count takes a number, got {n:?}"),
+                        Hint::run(example(&format!("{name} count 3"))),
+                    )
+                })?),
+                _ => {
+                    return Err(bad_args(
+                        "expect mock-state … count takes one number",
+                        Hint::run(example(&format!("{name} count 3"))),
+                    ));
+                }
+            };
+            if count.is_none() && args.min.is_none() && args.max.is_none() {
+                return Err(bad_args(
+                    "expect mock-state … count takes a number, or --min/--max",
+                    Hint::run(example(&format!("{name} count 3"))),
+                ));
+            }
+            MockStateCheck::Count {
+                count,
+                min: args.min,
+                max: args.max,
+            }
+        }
+        "value" => MockStateCheck::Value {
+            value: one("one value (JSON, else text)", "true")?,
+        },
+        "contains" => MockStateCheck::Contains {
+            value: one("one JSON value", "'{\"title\":\"Milk\"}'")?,
+        },
+        other => {
+            return Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("{other:?} is not a check of expect mock-state"),
+            )
+            .note("checks", "count, value, contains")
+            .hint(Hint::run(example(&format!("{name} count 3")))));
+        }
+    };
+    Ok(Expectation::MockState { name, check })
 }
 
 /// The baselines' directory in a project: `.chrome-cdp/<kind>` of the
@@ -266,6 +352,91 @@ mod tests {
             (
                 &["e1", "--url", "/x"],
                 "chrome-cdp expect e1 visible   (to check the element), or drop \"e1\" to check the page",
+            ),
+        ];
+        for (args, hint) in cases {
+            let err = parse(args).unwrap_err();
+            assert_eq!(err.kind, ErrorKind::BadArgs, "{args:?}");
+            assert_eq!(err.hint.as_deref(), Some(*hint), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn mock_state_checks() {
+        use engine::MockStateCheck;
+        use serde_json::json;
+        let state = |name: &str, check| Expectation::MockState {
+            name: name.into(),
+            check,
+        };
+        assert_eq!(
+            parse(&["mock-state", "todos", "count", "4"]).unwrap(),
+            state(
+                "todos",
+                MockStateCheck::Count {
+                    count: Some(4),
+                    min: None,
+                    max: None
+                }
+            )
+        );
+        assert_eq!(
+            parse(&["mock-state", "todos", "count", "--min", "1"]).unwrap(),
+            state(
+                "todos",
+                MockStateCheck::Count {
+                    count: None,
+                    min: Some(1),
+                    max: None
+                }
+            )
+        );
+        assert_eq!(
+            parse(&["mock-state", "logged_in", "value", "true"]).unwrap(),
+            state("logged_in", MockStateCheck::Value { value: json!(true) })
+        );
+        assert_eq!(
+            parse(&["mock-state", "user", "value", "ada@example.com"]).unwrap(),
+            state(
+                "user",
+                MockStateCheck::Value {
+                    value: json!("ada@example.com")
+                }
+            )
+        );
+        assert_eq!(
+            parse(&["mock-state", "todos", "contains", r#"{"title":"Milk"}"#]).unwrap(),
+            state(
+                "todos",
+                MockStateCheck::Contains {
+                    value: json!({"title": "Milk"})
+                }
+            )
+        );
+        let cases: &[(&[&str], &str)] = &[
+            (
+                &["mock-state"],
+                "chrome-cdp expect mock-state todos count 3",
+            ),
+            (
+                &["mock-state", "todos"],
+                "chrome-cdp expect mock-state todos count 3",
+            ),
+            (
+                &["mock-state", "todos", "size", "3"],
+                "chrome-cdp expect mock-state todos count 3",
+            ),
+            (
+                &["mock-state", "todos", "count", "many"],
+                "chrome-cdp expect mock-state todos count 3",
+            ),
+            (
+                &["mock-state", "flag", "value"],
+                "chrome-cdp expect mock-state flag value true",
+            ),
+            (
+                &["mock-state", "flag", "value", "1", "--min", "1"],
+                "chrome-cdp expect mock-state flag count --min 1",
             ),
         ];
         for (args, hint) in cases {

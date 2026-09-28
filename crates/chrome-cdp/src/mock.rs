@@ -1,4 +1,5 @@
-//! `mock use|off|list|log|reset|explain` (plan 11, milestone 11.2).
+//! `mock use|off|list|log|reset|explain` (plan 11, milestone 11.2) and
+//! `mock state|seed` (milestone 11.3).
 //!
 //! The CLI finds the project (the mocks directory, `default_mocks`, the
 //! random seed) and the sets' files; the daemon reads and applies them.
@@ -8,13 +9,18 @@
 use std::path::{Path, PathBuf};
 
 use daemon::rpc;
-use engine::{MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest, MockUseRequest};
+use engine::{
+    MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest, MockSeedRequest,
+    MockStateRequest, MockUseRequest,
+};
 use mock::{MockSet, Mocks, Source};
 use protocol::schema::{MockExplainData, MockSetsData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
-use serde_json::json;
+use serde_json::{Value, json};
 
-use crate::cli::{GlobalArgs, MockArgs, MockCommand, MockExplainArgs, MockUseArgs};
+use crate::cli::{
+    GlobalArgs, MockArgs, MockCommand, MockExplainArgs, MockSeedArgs, MockStateArgs, MockUseArgs,
+};
 use crate::{input, route, session};
 
 /// What the project says about mocks.
@@ -126,7 +132,67 @@ pub(crate) fn run(args: &MockArgs, global: &GlobalArgs) -> Result<Output, ErrorI
             session::call_session(global, rpc::MOCK_RESET, &json!({}), "mock sets")
         }
         MockCommand::Explain(args) => explain(args, global),
+        MockCommand::State(args) => state(args, global),
+        MockCommand::Seed(args) => seed(args, global),
     }
+}
+
+/// A value as `mock state --set` and `expect mock-state` take it: JSON
+/// (`true`, `3`, `["a"]`, `null`), else the text itself.
+pub(crate) fn state_value(text: &str) -> Value {
+    serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.to_owned()))
+}
+
+fn state(args: &MockStateArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let set = args
+        .set
+        .iter()
+        .map(|pair| {
+            let (name, value) = pair.split_once('=').ok_or_else(|| {
+                ErrorInfo::new(
+                    ErrorKind::BadArgs,
+                    format!("--set takes NAME=VALUE, got {pair:?}"),
+                )
+                .hint(Hint::run(
+                    Cmd::new("mock").arg("state").flag("set", "logged_in=true"),
+                ))
+            })?;
+            Ok((name.trim().to_owned(), state_value(value)))
+        })
+        .collect::<Result<Vec<_>, ErrorInfo>>()?;
+    let request = MockStateRequest {
+        name: args.name.clone(),
+        set,
+        max_chars: args.max_chars,
+    };
+    session::call_session(global, rpc::MOCK_STATE, &request, "mock sets")
+}
+
+fn seed(args: &MockSeedArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let (file, items) = match args.file.as_deref() {
+        Some("-") => {
+            let text = input::text_arg("-", "the items")?;
+            let items = serde_json::from_str::<Value>(&text).map_err(|e| {
+                ErrorInfo::new(
+                    ErrorKind::BadArgs,
+                    format!("the items on stdin are not JSON: {e}"),
+                )
+                .hint(Hint::text(
+                    "give a JSON array of objects, e.g. [{\"id\": 1, \"title\": \"Milk\"}]",
+                ))
+            })?;
+            (None, Some(items))
+        }
+        Some(file) => (Some(file.to_owned()), None),
+        None => (None, None),
+    };
+    let request = MockSeedRequest {
+        name: args.name.clone(),
+        file,
+        items,
+        cwd: std::env::current_dir().ok(),
+    };
+    session::call_session(global, rpc::MOCK_SEED, &request, "mock sets")
 }
 
 fn mock_use(args: &MockUseArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {

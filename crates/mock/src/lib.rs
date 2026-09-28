@@ -31,7 +31,7 @@ pub mod text;
 pub use engine::{Answer, Mocks, Outcome, Seed, StateItem};
 pub use file::{AfterSequence, Cors, Unmatched, schema};
 pub use load::{MockSet, Source, available};
-pub use matcher::Request;
+pub use matcher::{Request, json_contains};
 pub use respond::{
     MAX_FILE, NETWORK_ERRORS, Response, content_type, is_header_name, network_error,
 };

@@ -367,7 +367,7 @@ impl Check<'_> {
                 ));
             }
             (None, None) => {
-                return Err((span, "the mock has no `respond` (or `sequence`)".into()));
+                return Err((span, "the mock has no `respond` or `sequence`".into()));
             }
             (Some(respond), None) => {
                 if raw.after_sequence.is_some() {

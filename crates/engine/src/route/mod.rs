@@ -28,6 +28,8 @@ mod act;
 mod commands;
 mod mocking;
 
+pub(crate) use mocking::unknown_state;
+
 use std::collections::VecDeque;
 use std::fmt::Write as _;
 use std::path::Path;

@@ -95,13 +95,14 @@ pub use request::{
     HarContent, HarStartRequest, HarStopRequest, HighlightRequest, HttpCredentials, ImageFormat,
     InitScriptAddRequest, InitScriptListRequest, InitScriptRemoveRequest, InspectRequest, Margins,
     MarkRequest, Matcher, MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest,
-    MockUseRequest, Modifier, MouseOp, NavigateRequest, Navigation, NetworkClearRequest,
-    NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest, PerfRequest,
-    PermissionsOp, PermissionsRequest, Read, ReadRequest, RouteAction, RouteBody, RouteRequest,
-    RouteSpec, RoutesRequest, ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine,
-    SnapshotRequest, StateLoadRequest, StateSaveRequest, StatusRange, StorageArea, StorageOp,
-    StorageRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target,
-    TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WaitUntil,
+    MockSeedRequest, MockStateCheck, MockStateRequest, MockUseRequest, Modifier, MouseOp,
+    NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest, NetworkShowRequest,
+    OpenRequest, PaperFormat, PdfRequest, PerfRequest, PermissionsOp, PermissionsRequest, Read,
+    ReadRequest, RouteAction, RouteBody, RouteRequest, RouteSpec, RoutesRequest, ScreenshotRequest,
+    ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest, StateLoadRequest,
+    StateSaveRequest, StatusRange, StorageArea, StorageOp, StorageRequest, TabCloseRequest,
+    TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest, TraceStopRequest,
+    UnrouteRequest, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use state::{OriginState, StateCookie, StorageState};

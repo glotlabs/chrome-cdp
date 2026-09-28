@@ -502,6 +502,10 @@ fn stateful_problems_point_at_the_line() {
             "base.toml:4:13: set_state.x: template",
         ),
         (
+            "[[mock]]\nmatch = { path = \"/a\" }\nrespond = {}\nset_state = { x = 1 }\nunset_state = [\"x\"]\n",
+            "base.toml:5:15: unset_state: `x` is in set_state too",
+        ),
+        (
             "[[collection]]\nname = \"t\"\npath = \"/t\"\nitems = [{ title = \"x\" }]\n",
             "base.toml:4:9: collection.items: item 0 has no `id` field",
         ),

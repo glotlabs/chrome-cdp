@@ -1,5 +1,6 @@
 //! `mock use`, `mock off`, `mock list`, `mock log`, `mock reset` and
-//! `mock explain` (plan 11, milestone 11.2).
+//! `mock explain` (plan 11, milestone 11.2); `mock state` and `mock seed`
+//! (milestone 11.3).
 //!
 //! Mock sets belong to the session, as routing rules do: they apply to
 //! every tab, popup and frame, and stay when the browser is restarted. The
@@ -8,25 +9,43 @@
 
 use std::fmt::Write as _;
 
-use mock::{MockSet, Mocks};
-use protocol::schema::{MockExplainData, MockLogData, MockOffData, MockSetInfo, MockSetsData};
-use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
+use mock::{MockSet, Mocks, Seed, StateItem};
+use protocol::schema::{
+    MockCollectionInfo, MockExplainData, MockLogData, MockOffData, MockSeedData, MockSetInfo,
+    MockSetsData, MockStateData,
+};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, suggest};
+use serde_json::Value;
 
 use super::{Request, Router, lock, route_name};
 use crate::Engine;
 use crate::request::{
-    MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest, MockUseRequest, millis,
+    MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest, MockSeedRequest,
+    MockStateRequest, MockUseRequest, millis,
 };
 
 impl Router {
-    /// Uses `sets`, instead of the sets in use or (`add`) on top of them.
-    fn use_mocks(&self, sets: Vec<MockSet>, add: bool, seed: u64) -> Vec<MockSetInfo> {
+    /// Uses `sets`, instead of the sets in use or (`add`) on top of them;
+    /// also returns warnings about them.
+    fn use_mocks(
+        &self,
+        sets: Vec<MockSet>,
+        add: bool,
+        seed: u64,
+    ) -> (Vec<MockSetInfo>, Vec<String>) {
         let mut table = lock(&self.table);
         if !add {
             table.mocks = Mocks::new(seed);
         }
         table.mocks.apply(sets, add);
-        table.mocks.info(false)
+        (table.mocks.info(false), table.mocks.undeclared())
+    }
+
+    /// Runs `f` on the mocks in use, after looking for changed files.
+    pub(crate) fn with_mocks<T>(&self, f: impl FnOnce(&mut Mocks) -> T) -> T {
+        let mut table = lock(&self.table);
+        table.mocks.refresh();
+        f(&mut table.mocks)
     }
 
     /// Turns sets `names` off (all without names); a name not in use is
@@ -86,7 +105,7 @@ impl Engine {
             .iter()
             .map(MockSet::load)
             .collect::<Result<Vec<_>, _>>()?;
-        let sets = self.settings.routes.use_mocks(sets, req.add, req.seed);
+        let (sets, warnings) = self.settings.routes.use_mocks(sets, req.add, req.seed);
         self.apply_routes(millis(req.timeout_ms)).await;
         let quiet: Vec<&str> = sets.iter().map(|s| s.name.as_str()).collect();
         let quiet = quiet.join("\n");
@@ -96,7 +115,11 @@ impl Engine {
             available: None,
             dir: None,
         };
-        Ok(Output::typed(&data, text).quiet(quiet))
+        let mut output = Output::typed(&data, text).quiet(quiet);
+        for warning in warnings {
+            output = output.warning(warning);
+        }
+        Ok(output)
     }
 
     /// `mock off`: turns sets off; without any left (and no rules),
@@ -222,7 +245,8 @@ impl Engine {
             )
     }
 
-    /// `mock reset`: hit counters (`{{seq}}`) and random values start over.
+    /// `mock reset`: hit counters (`{{seq}}`), sequences, named values,
+    /// collections and random values start over.
     pub fn mock_reset(&self) -> Output {
         let sets = self.settings.routes.reset_mocks();
         let names: Vec<&str> = sets.iter().map(|s| s.name.as_str()).collect();
@@ -230,7 +254,7 @@ impl Engine {
             "no mock sets in use; nothing to reset".to_owned()
         } else {
             format!(
-                "reset {}: hit counters and random values start over",
+                "reset {}: hit counters, sequences, named values, collections and random values start over",
                 names.join(", ")
             )
         };
@@ -241,6 +265,113 @@ impl Engine {
             dir: None,
         };
         Output::typed(&data, text).quiet(quiet)
+    }
+
+    /// `mock state [name] [--set name=value…]`: the named values and
+    /// collections, or one of them; `--set` changes values first.
+    pub fn mock_state(&self, req: &MockStateRequest) -> Result<Output, ErrorInfo> {
+        let session = self.session.clone();
+        let result = self.settings.routes.with_mocks(|mocks| {
+            if mocks.is_empty() {
+                return Err(no_sets(&session, "state"));
+            }
+            if !req.set.is_empty() {
+                mocks
+                    .set_values(&req.set)
+                    .map_err(|name| unknown_state(&session, &name, &mocks.state_names()))?;
+            }
+            let changed: Vec<String> = req.set.iter().map(|(n, _)| n.clone()).collect();
+            let Some(name) = &req.name else {
+                let (values, collections) = mocks.state();
+                return Ok(MockStateData {
+                    name: None,
+                    value: None,
+                    collection: None,
+                    values,
+                    collections,
+                    changed,
+                });
+            };
+            let item = mocks
+                .lookup(name)
+                .ok_or_else(|| unknown_state(&session, name, &mocks.state_names()))?;
+            let (value, collection) = match item {
+                StateItem::Value(value) => (value, None),
+                StateItem::Collection { info, items } => (Value::Array(items), Some(info)),
+            };
+            Ok(MockStateData {
+                name: Some(name.clone()),
+                value: Some(value),
+                collection,
+                values: std::collections::BTreeMap::new(),
+                collections: Vec::new(),
+                changed,
+            })
+        });
+        let data = result?;
+        let mut text = mock::text::state(&data);
+        if text.is_empty() {
+            text = "no named values or collections in the mock sets in use".into();
+        }
+        if !data.changed.is_empty() && data.name.is_none() {
+            text = format!("set {}\n{text}", data.changed.join(", "));
+        }
+        let quiet = if let Some(value) = &data.value {
+            value.to_string()
+        } else {
+            let names: Vec<&str> = data
+                .values
+                .keys()
+                .map(String::as_str)
+                .chain(data.collections.iter().map(|c| c.mock.name.as_str()))
+                .collect();
+            names.join("\n")
+        };
+        Ok(Output::typed(&data, text)
+            .quiet(quiet)
+            .limit(req.max_chars, "--max-chars 0 for all of it"))
+    }
+
+    /// `mock seed <collection> [file|-]`: the collection's items from a
+    /// data file, from stdin, or its starting items again.
+    pub fn mock_seed(&self, req: &MockSeedRequest) -> Result<Output, ErrorInfo> {
+        let session = self.session.clone();
+        let seed = match (&req.items, &req.file) {
+            (Some(items), _) => Seed::Items(items.clone()),
+            (None, Some(file)) => Seed::File {
+                path: file.clone(),
+                cwd: req.cwd.clone().unwrap_or_default(),
+            },
+            (None, None) => Seed::Start,
+        };
+        let (info, from) = self.settings.routes.with_mocks(|mocks| {
+            if mocks.is_empty() {
+                return Err(no_sets(&session, "seed"));
+            }
+            if !matches!(mocks.lookup(&req.name), Some(StateItem::Collection { .. })) {
+                let collections: Vec<String> = mocks
+                    .state()
+                    .1
+                    .into_iter()
+                    .map(|c| c.mock.name)
+                    .collect();
+                return Err(unknown_collection(&session, &req.name, &collections));
+            }
+            mocks
+                .seed(&req.name, &seed)
+                .map_err(|e| {
+                    ErrorInfo::new(ErrorKind::BadArgs, format!("mock seed {}: {e}", req.name)).hint(
+                        "FILE is in the mocks directory or relative to the current one, and holds a JSON array of objects, each with the collection's id field",
+                    )
+                })
+        })?;
+        let text = seeded_text(&info, &from);
+        let quiet = info.count.to_string();
+        let data = MockSeedData {
+            collection: info,
+            from,
+        };
+        Ok(Output::typed(&data, text).quiet(quiet))
     }
 
     /// `mock explain`: which rule or mock of the session would answer a
@@ -273,5 +404,73 @@ impl Engine {
         Output::typed(&data, text)
             .quiet(quiet)
             .limit(req.max_chars, "--max-chars 0 for all of it, or --limit N")
+    }
+}
+
+/// `seeded todos with 3 items from /abs/data/other.json`.
+fn seeded_text(info: &MockCollectionInfo, from: &str) -> String {
+    let items = if info.count == 1 { "item" } else { "items" };
+    match from {
+        "seed" => format!(
+            "{} starts over with its {} seed {items}",
+            info.mock.name, info.count
+        ),
+        "stdin" => format!(
+            "seeded {} with {} {items} from stdin",
+            info.mock.name, info.count
+        ),
+        file => format!(
+            "seeded {} with {} {items} from {file}",
+            info.mock.name, info.count
+        ),
+    }
+}
+
+/// `mock state|seed` without mock sets in use.
+fn no_sets(session: &str, command: &str) -> ErrorInfo {
+    ErrorInfo::new(
+        ErrorKind::NotFound,
+        format!("no mock sets in use, so there is no mock {command}"),
+    )
+    .hint(Hint::run(
+        Cmd::new("mock").arg("use").raw("<set>").session(session),
+    ))
+}
+
+/// A name `mock state` does not know.
+pub(crate) fn unknown_state(session: &str, name: &str, names: &[String]) -> ErrorInfo {
+    let mut info = ErrorInfo::new(
+        ErrorKind::NotFound,
+        format!("the mocks have no named value or collection {name}"),
+    );
+    if !names.is_empty() {
+        info = info.note("names", names.join(", "));
+    }
+    match suggest::similar(name, names.iter().map(String::as_str), 1).first() {
+        Some(close) => info.hint(
+            Hint::run(Cmd::new("mock").arg("state").arg(*close).session(session))
+                .why("did you mean this?"),
+        ),
+        None => info.hint(format!(
+            "declare it in a mock file's [state], or run {}",
+            Cmd::new("mock").arg("state").session(session)
+        )),
+    }
+}
+
+fn unknown_collection(session: &str, name: &str, names: &[String]) -> ErrorInfo {
+    let mut info = ErrorInfo::new(
+        ErrorKind::NotFound,
+        format!("no collection {name} in the mock sets in use"),
+    );
+    if !names.is_empty() {
+        info = info.note("collections", names.join(", "));
+    }
+    match suggest::similar(name, names.iter().map(String::as_str), 1).first() {
+        Some(close) => info.hint(
+            Hint::run(Cmd::new("mock").arg("seed").arg(*close).session(session))
+                .why("did you mean this?"),
+        ),
+        None => info.hint("add a [[collection]] to a mock file (see `chrome-cdp mock --help`)"),
     }
 }

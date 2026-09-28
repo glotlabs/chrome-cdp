@@ -12,6 +12,7 @@
 //! seen (after how long and how many tries), the element, and a hint.
 
 mod baseline;
+mod mock_state;
 mod page;
 mod pixels;
 
@@ -31,7 +32,8 @@ use crate::injected::{self, GUARD};
 use crate::locator::{FrameOnly, LocateOptions, Locator, read_listed};
 use crate::pattern::UrlPattern;
 use crate::request::{
-    A11yLevel, ExpectRequest, Expectation, MarkRequest, Matcher, SnapshotEngine, millis,
+    A11yLevel, ExpectRequest, Expectation, MarkRequest, Matcher, MockStateCheck, SnapshotEngine,
+    millis,
 };
 use crate::tabs::{Page, tab_name};
 use crate::wait::Condition;
@@ -284,6 +286,8 @@ enum Assertion {
         scope: Option<Locator>,
         level: A11yLevel,
     },
+    /// Looked at in the session's mocks, not in a page.
+    MockState,
 }
 
 impl Assertion {
@@ -355,6 +359,33 @@ impl Assertion {
                     scope: scope.as_deref().map(|s| options.parse(s)).transpose()?,
                     level: *level,
                 }
+            }
+            Expectation::MockState { name, check } => {
+                if name.trim().is_empty() {
+                    return Err(ErrorInfo::new(
+                        ErrorKind::BadArgs,
+                        "expect mock-state needs the name of a named value or collection",
+                    )
+                    .hint(Hint::run(
+                        Cmd::new("expect")
+                            .arg("mock-state")
+                            .arg("todos")
+                            .raw("count 3"),
+                    )));
+                }
+                if let MockStateCheck::Count {
+                    min: Some(min),
+                    max: Some(max),
+                    ..
+                } = check
+                    && min > max
+                {
+                    return Err(ErrorInfo::new(
+                        ErrorKind::BadArgs,
+                        format!("--min {min} is more than --max {max}"),
+                    ));
+                }
+                Self::MockState
             }
         })
     }
@@ -493,6 +524,32 @@ fn expected(req: &ExpectRequest, level_rules: Option<(usize, A11yLevel)>) -> Str
             ),
             None => "no accessibility violations".into(),
         },
+        Expectation::MockState { name, check } => match check {
+            MockStateCheck::Count { count, min, max } => {
+                let n = |n: u64| {
+                    if n == 1 {
+                        "1 item".to_owned()
+                    } else {
+                        format!("{n} items")
+                    }
+                };
+                let parts = [
+                    count.map(n),
+                    min.map(|m| format!("at least {}", n(m))),
+                    max.map(|m| format!("at most {}", n(m))),
+                ];
+                format!(
+                    "{name} with {}",
+                    parts.into_iter().flatten().collect::<Vec<_>>().join(", ")
+                )
+            }
+            MockStateCheck::Value { value } => {
+                format!("{name} = {}", mock::text::compact(value))
+            }
+            MockStateCheck::Contains { value } => {
+                format!("{name} containing {}", mock::text::compact(value))
+            }
+        },
     };
     format!("{not}{text}")
 }
@@ -566,6 +623,26 @@ fn command(req: &ExpectRequest) -> Cmd {
                 cmd = cmd.flag("level", level.as_str());
             }
         }
+        Expectation::MockState { name, check } => {
+            cmd = cmd.arg("mock-state").arg(name);
+            cmd = match check {
+                MockStateCheck::Count { count, min, max } => {
+                    let mut cmd = cmd.raw("count");
+                    if let Some(count) = count {
+                        cmd = cmd.arg(count.to_string());
+                    }
+                    if let Some(min) = min {
+                        cmd = cmd.flag("min", min.to_string());
+                    }
+                    if let Some(max) = max {
+                        cmd = cmd.flag("max", max.to_string());
+                    }
+                    cmd
+                }
+                MockStateCheck::Value { value } => cmd.raw("value").arg(state_arg(value)),
+                MockStateCheck::Contains { value } => cmd.raw("contains").arg(state_arg(value)),
+            };
+        }
     }
     if req.not {
         cmd = cmd.switch("not");
@@ -577,6 +654,15 @@ fn command(req: &ExpectRequest) -> Cmd {
 }
 
 /// The assertion as typed after `chrome-cdp expect`.
+/// A value as `expect mock-state` takes it: text as it is, anything else
+/// as JSON.
+fn state_arg(value: &Value) -> String {
+    match value {
+        Value::String(s) if serde_json::from_str::<Value>(s).is_err() => s.clone(),
+        other => other.to_string(),
+    }
+}
+
 fn assertion_text(req: &ExpectRequest) -> String {
     let full = command(req).to_string();
     full.strip_prefix(&format!("{} expect ", protocol::PROGRAM))
@@ -690,6 +776,9 @@ impl Engine {
             testid_attribute: req.testid_attribute.clone(),
         };
         let assertion = Assertion::parse(&req, &options)?;
+        if let Expectation::MockState { name, check } = &req.expectation {
+            return self.expect_mock_state(&req, name, check).await;
+        }
         let running = self.running()?;
         let timeout = millis(req.timeout_ms);
         let page = self.page(&running, req.tab.as_deref(), timeout).await?;
@@ -797,6 +886,7 @@ impl Engine {
                 self.a11y(running, page, req, scope.as_ref(), *level, options, timeout)
                     .await
             }
+            Assertion::MockState => unreachable!("expect answers mock-state before any page"),
         }
     }
 

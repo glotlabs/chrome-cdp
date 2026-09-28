@@ -2861,7 +2861,9 @@ pub struct WaitData {
 /// `data` of `chrome-cdp expect --json`: the assertion held.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ExpectData {
-    /// The tab checked, e.g. `t1`.
+    /// The tab checked, e.g. `t1`; left out for `expect mock-state`,
+    /// which checks the session's mocks.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub tab: String,
     /// The assertion as typed after `expect`: `'role=alert' text Saved`.
     pub assertion: String,

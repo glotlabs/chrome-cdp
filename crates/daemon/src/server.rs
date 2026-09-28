@@ -416,6 +416,14 @@ impl Daemon {
                 Err(e) => Err(e),
             },
             rpc::MOCK_RESET => output(Ok(self.engine.mock_reset())),
+            rpc::MOCK_STATE => match params(req.params) {
+                Ok(p) => output(self.engine.mock_state(&p)),
+                Err(e) => Err(e),
+            },
+            rpc::MOCK_SEED => match params(req.params) {
+                Ok(p) => output(self.engine.mock_seed(&p)),
+                Err(e) => Err(e),
+            },
             rpc::MOCK_EXPLAIN => match params(req.params) {
                 Ok(p) => output(Ok(self.engine.mock_explain(&p))),
                 Err(e) => Err(e),
