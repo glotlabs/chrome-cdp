@@ -48,6 +48,7 @@ use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
 use crate::injected;
 use crate::input::Pointer;
 use crate::network::{Exchange, Failure, Idle, InFlight, Network};
+use crate::observe;
 use crate::observe::console::{self, Console, ConsoleError};
 use crate::observe::netlog::{self, NetLog};
 use crate::request::{DialogPolicy, HttpCredentials};
@@ -1689,6 +1690,12 @@ async fn setup(
         world.world_name = Some(frames::WORLD_NAME.to_owned());
         world.run_immediately = Some(true);
         steps.push(("the isolated world", step(session.call(world))));
+        // `perf`'s observer of LCP, layout shifts, interactions and long
+        // tasks, in the same world, from each document's start.
+        let mut perf =
+            page::AddScriptToEvaluateOnNewDocumentParams::new(observe::PERF_OBSERVER.to_owned());
+        perf.world_name = Some(frames::WORLD_NAME.to_owned());
+        steps.push(("the perf observer", step(session.call(perf))));
         for source in shared.settings.init_scripts() {
             let add = page::AddScriptToEvaluateOnNewDocumentParams::new(source);
             steps.push(("an init script", step(session.call(add))));

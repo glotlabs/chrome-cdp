@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Perf</title>
+  <link rel="icon" href="data:,">
+  <style>
+    body { font: 16px sans-serif; margin: 0; }
+    #hero { font-size: 40px; padding: 40px; }
+    #banner { height: 120px; background: #fc0; }
+  </style>
+</head>
+<body>
+  <!-- The largest paint: a big block of text. -->
+  <p id="hero">A large block of text that is the largest contentful paint of this page.</p>
+  <!-- Takes 250ms of the main thread: a long task, and a slow interaction. -->
+  <button id="slow" onclick="busy(250)">Slow</button>
+  <script>
+    function busy(ms) {
+      const start = performance.now();
+      while (performance.now() - start < ms) {}
+      document.getElementById('slow').textContent = 'Done';
+    }
+    // A banner that pushes the page down once it has painted: a layout shift.
+    setTimeout(() => {
+      const banner = document.createElement('div');
+      banner.id = 'banner';
+      document.body.prepend(banner);
+    }, 300);
+  </script>
+</body>
+</html>

@@ -869,6 +869,23 @@ Examples:
     )]
     Trace(TraceArgs),
 
+    /// Show how fast the page is: load timing, Web Vitals, blocking time,
+    /// memory.
+    #[command(after_help = "\
+One compact block: TTFB, FCP, DOMContentLoaded and load (ms after the
+navigation started), the requests and bytes, LCP (and its element), CLS,
+INP (once the page had an interaction, and which one was slowest), total
+blocking time from long tasks, and the element count, listeners and JS
+heap. LCP, CLS and INP are rated good, needs improvement or poor by the
+Web Vitals thresholds. Interact first to measure INP. -q prints the LCP.
+Needs a running session.
+
+Examples:
+  chrome-cdp perf
+  chrome-cdp click e5 && chrome-cdp perf       # INP of that click
+  chrome-cdp perf --json | jq .lcp")]
+    Perf(PerfArgs),
+
     /// Make one raw CDP call on the session's browser or current page.
     #[command(after_help = "\
 Starts the session's browser first if it has none. --tab and --frame send
@@ -2204,6 +2221,9 @@ pub(crate) struct TraceStopArgs {
 }
 
 #[derive(Debug, Args)]
+pub(crate) struct PerfArgs {}
+
+#[derive(Debug, Args)]
 pub(crate) struct PdfArgs {
     /// Where to save it (`-` for stdout); a numbered file in the session's
     /// pdfs/ directory if not given.
@@ -2874,6 +2894,7 @@ mod tests {
         "har stop",
         "trace start",
         "trace stop",
+        "perf",
         "network clear",
         "count",
         "box",

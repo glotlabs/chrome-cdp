@@ -399,6 +399,10 @@ impl Daemon {
                 Ok(p) => output(Box::pin(self.engine.trace_stop(p)).await),
                 Err(e) => Err(e),
             },
+            rpc::PERF => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.perf(p)).await),
+                Err(e) => Err(e),
+            },
             rpc::DOWNLOADS => match params(req.params) {
                 Ok(p) => output(self.engine.downloads(p)),
                 Err(e) => Err(e),

@@ -665,6 +665,15 @@ pub struct TraceStopRequest {
     pub timeout_ms: u64,
 }
 
+/// `perf`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PerfRequest {
+    /// `--tab`: the tab to measure; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    pub timeout_ms: u64,
+}
+
 /// An image format (`screenshot --format`).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

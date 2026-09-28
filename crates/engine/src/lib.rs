@@ -75,10 +75,10 @@ pub use request::{
     ConsoleRequest, DialogPolicy, DialogRequest, DownloadsRequest, ElementState, EvalRequest,
     EvalWorld, FindRequest, HarContent, HarStartRequest, HarStopRequest, HttpCredentials,
     ImageFormat, Margins, Modifier, MouseOp, NavigateRequest, Navigation, NetworkClearRequest,
-    NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest, Read, ReadRequest,
-    ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest, StatusRange,
-    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest,
-    TraceStopRequest, WaitFor, WaitRequest, WaitUntil,
+    NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest, PerfRequest, Read,
+    ReadRequest, ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest,
+    StatusRange, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target,
+    TraceStartRequest, TraceStopRequest, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use tabs::commands::TabClosed;

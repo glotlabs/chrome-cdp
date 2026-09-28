@@ -26,8 +26,8 @@ use engine::{
     Action, ActionRequest, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
     ConsoleRequest, DialogRequest, DownloadsRequest, ElementState, EvalRequest, FindRequest,
     HarStartRequest, HarStopRequest, HttpCredentials, ImageFormat, NavigateRequest, Navigation,
-    NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PdfRequest, Read,
-    ReadRequest, ScreenshotRequest, SnapshotRequest, TabCloseRequest, TabNewRequest,
+    NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PdfRequest, PerfRequest,
+    Read, ReadRequest, ScreenshotRequest, SnapshotRequest, TabCloseRequest, TabNewRequest,
     TabSelectRequest, TabsRequest, TraceStartRequest, TraceStopRequest, WaitFor, WaitRequest,
 };
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
@@ -881,6 +881,19 @@ pub(crate) fn trace(args: &TraceArgs, global: &GlobalArgs) -> Result<Output, Err
                 .block_on(client.call_output(rpc::TRACE_STOP, &request, ctx.timeout + QUICK))
         }
     }
+}
+
+/// `perf`: needs a running session.
+pub(crate) fn perf(global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let request = PerfRequest {
+        tab: ctx.tab.clone(),
+        timeout_ms: millis(ctx.timeout),
+    };
+    ctx.runtime
+        .block_on(client.call_output(rpc::PERF, &request, ctx.timeout + QUICK))
 }
 
 /// `-o` as an absolute path, and whether it is `-` (stdout; then the

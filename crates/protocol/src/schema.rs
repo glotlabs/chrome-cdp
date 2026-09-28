@@ -212,6 +212,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<TraceStopData>),
     },
     CommandSchema {
+        name: "perf",
+        summary: "the page's load timing, Web Vitals (LCP, CLS, INP), blocking time and memory",
+        schema: || schema_for!(Envelope<PerfData>),
+    },
+    CommandSchema {
         name: "snapshot",
         summary: "the page's accessibility tree, with refs on what can be acted on",
         schema: || schema_for!(Envelope<SnapshotData>),
@@ -1205,6 +1210,94 @@ pub struct TraceStopData {
     pub duration_ms: u64,
     /// Chrome's trace buffer filled up and events were lost.
     pub data_loss: bool,
+}
+
+/// `data` of `chrome-cdp perf --json`. Times are ms since the navigation
+/// started.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PerfData {
+    /// The tab measured, e.g. `t1`.
+    pub tab: String,
+    /// The page's URL.
+    pub url: String,
+    /// The page's load, from Navigation Timing (absent for a page with no
+    /// navigation entry, such as `about:blank`).
+    pub navigation: Option<PerfNavigation>,
+    /// First Contentful Paint.
+    pub fcp_ms: Option<u64>,
+    /// Largest Contentful Paint, if the page painted one.
+    pub lcp: Option<PerfLcp>,
+    /// Cumulative Layout Shift: the worst session window's shifts.
+    pub cls: PerfCls,
+    /// Interaction to Next Paint, once the page had an interaction.
+    pub inp: Option<PerfInp>,
+    /// Interactions so far (clicks, taps, key presses).
+    pub interactions: u64,
+    /// Total Blocking Time: long tasks' time over 50ms each, after FCP.
+    pub tbt_ms: u64,
+    /// Long tasks (50ms or more) after FCP.
+    pub long_tasks: u64,
+    /// Requests the page made (its document included).
+    pub requests: u64,
+    /// Bytes they transferred (0 for cached and cross-origin ones without
+    /// `Timing-Allow-Origin`).
+    pub transfer_bytes: u64,
+    /// Elements in the document.
+    pub elements: u64,
+    /// How long ago the navigation started.
+    pub since_load_ms: u64,
+    /// Whether chrome-cdp watched the page from its start. If not, INP
+    /// counts only interactions of 104ms or more (what the browser keeps).
+    pub from_start: bool,
+    /// `Performance.getMetrics` of the tab's renderer: `JSHeapUsedSize`,
+    /// `JSEventListeners`, `Nodes`, …
+    pub metrics: std::collections::BTreeMap<String, f64>,
+}
+
+/// Navigation Timing of `perf`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PerfNavigation {
+    /// `navigate`, `reload`, `back_forward` or `prerender`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Time to First Byte.
+    pub ttfb_ms: Option<u64>,
+    /// When `DOMContentLoaded` handlers finished (absent until then).
+    pub dom_content_loaded_ms: Option<u64>,
+    /// When `load` handlers finished (absent until then).
+    pub load_ms: Option<u64>,
+}
+
+/// Largest Contentful Paint of `perf`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PerfLcp {
+    pub ms: u64,
+    /// `good`, `needs improvement` or `poor` (Web Vitals thresholds).
+    pub rating: String,
+    /// The element, e.g. `img#hero`, if it is still in the document.
+    pub element: Option<String>,
+    /// The image's URL, for an image.
+    pub url: Option<String>,
+}
+
+/// Cumulative Layout Shift of `perf`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PerfCls {
+    pub value: f64,
+    pub rating: String,
+    /// Layout shifts not caused by input.
+    pub shifts: u64,
+}
+
+/// Interaction to Next Paint of `perf`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PerfInp {
+    pub ms: u64,
+    pub rating: String,
+    /// The event of that interaction, e.g. `click` or `keydown`.
+    pub event: String,
+    /// Its target, e.g. `button#save`.
+    pub target: Option<String>,
 }
 
 /// `data` of `chrome-cdp cdp --json`.
