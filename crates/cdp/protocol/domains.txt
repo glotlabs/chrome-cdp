@@ -4,7 +4,7 @@
 # domains not listed here.
 Accessibility
 Browser
-CSS: enable, disable, getComputedStyleForNode, startRuleUsageTracking, stopRuleUsageTracking, takeCoverageDelta
+CSS: enable, disable, getComputedStyleForNode, startRuleUsageTracking, stopRuleUsageTracking, takeCoverageDelta, styleSheetAdded
 DOM
 DOMSnapshot
 Emulation
@@ -16,6 +16,7 @@ Network
 Overlay: enable, disable, highlightNode, hideHighlight
 Page
 Performance
+Profiler: enable, disable, startPreciseCoverage, stopPreciseCoverage, takePreciseCoverage
 Runtime
 Security
 Storage

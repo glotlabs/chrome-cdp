@@ -27,6 +27,7 @@ pub mod network;
 pub mod overlay;
 pub mod page;
 pub mod performance;
+pub mod profiler;
 pub mod runtime;
 pub mod security;
 pub mod storage;
