@@ -13,8 +13,10 @@ text output is for reading and may change in any release.
 To release: move the Unreleased entries under a `## [X.Y.Z] - date`
 heading, set that version in `Cargo.toml` (`[workspace.package]` and the
 internal dependencies), then push the tag `vX.Y.Z`. The release workflow
-checks both with `cargo xtask release check --tag vX.Y.Z`, and puts the
-section at the top of the GitHub release notes.
+checks both with `cargo xtask release check --tag vX.Y.Z` (which also
+fails on a breaking change to the schemas or the command line since the
+previous tag, unless the major version went up), and puts the section at
+the top of the GitHub release notes.
 
 ## [Unreleased]
 
