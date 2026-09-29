@@ -108,6 +108,16 @@ todo = "warn"
 print_stdout = "warn"
 print_stderr = "warn"
 
+# No debug info in dev and test builds (`test` inherits from `dev`): smaller
+# target dir and faster links. Backtraces keep function names, not lines.
+[profile.dev]
+debug = false
+
+# Third-party crates optimized in dev and test builds: built once and cached,
+# while png, zlib-rs, ring, regex and serde_json are many times slower without.
+[profile.dev.package."*"]
+opt-level = 1
+
 [profile.release]
 lto = "fat"
 codegen-units = 1

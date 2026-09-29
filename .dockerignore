@@ -1,0 +1,6 @@
+# docker build context (docs/e2e/Dockerfile builds from the checkout).
+/target/
+/dist/
+/.git/
+/.looper/
+**/e2e/.results/
