@@ -19,7 +19,8 @@ use std::time::{Duration, Instant};
 use browser::Host;
 use engine::{
     CdpRequest, ConsoleRequest, EmulateRequest, EmulationChange, Engine, EvalRequest, EvalWorld,
-    NavigateRequest, Navigation, NetworkRequest, OpenRequest, Since, Target, WaitUntil,
+    InitScriptAddRequest, NavigateRequest, Navigation, NetworkRequest, OpenRequest, Since, Target,
+    WaitUntil,
 };
 use fixtures::Fixtures;
 use protocol::schema::{ConsoleData, EvalData, Level, NetworkData};
@@ -64,6 +65,8 @@ enum Probe {
     Errors,
     /// Its `fetch` is in the tab's network log.
     Network,
+    /// An `init-script --now` ran in it.
+    InitScript,
     /// `ua` reaches its `navigator.userAgent`.
     UserAgent,
 }
@@ -115,6 +118,18 @@ const ROWS: &[Row] = &[
             Todo("13.2"),
             Todo("13.2"),
             Todo("13.2"),
+        ],
+    },
+    Row {
+        feature: "init-script",
+        probe: Probe::InitScript,
+        cells: [
+            Check,
+            Check,
+            Check,
+            Todo("13.3"),
+            Todo("13.3"),
+            Todo("13.3"),
         ],
     },
     Row {
@@ -332,6 +347,22 @@ async fn probe(engine: &Engine, probe: Probe, who: &str) -> Result<(), String> {
             .await;
             seen.then_some(())
                 .ok_or_else(|| format!("no {url} in the network log"))
+        }
+        Probe::InitScript => {
+            engine
+                .init_script_add(InitScriptAddRequest {
+                    source: "self.matrixInit = 'ran';".to_owned(),
+                    file: None,
+                    world: EvalWorld::Main,
+                    now: true,
+                    timeout_ms: TIMEOUT_MS,
+                })
+                .await
+                .unwrap_or_else(|e| panic!("init-script: {}", e.to_text()));
+            let answer = ask(engine, who, "init").await;
+            (answer == json!("ran"))
+                .then_some(())
+                .ok_or_else(|| format!("init answered {answer}"))
         }
         Probe::UserAgent => {
             const AGENT: &str = "chrome-cdp-matrix/1.0";

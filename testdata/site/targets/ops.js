@@ -14,6 +14,9 @@ self.targetOps = async (who, op) => {
       const response = await fetch('/targets/api?from=' + encodeURIComponent(who));
       return (await response.json()).from;
     }
+    case 'init':
+      // What the matrix's init script set, if it ran here.
+      return self.matrixInit ?? null;
     case 'report':
       return {
         userAgent: navigator.userAgent,
