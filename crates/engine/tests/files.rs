@@ -4,7 +4,8 @@
 //!
 //! The files fixture logs every input and change event of its file
 //! inputs (the files by name and size, and whether the event is
-//! trusted); the clipboard fixture copies with the page's own button and
+//! trusted); the drop fixture logs the drag events of its drop zone
+//! the same way (the files of `dataTransfer.files`); the clipboard fixture copies with the page's own button and
 //! logs what a paste into its field carries.
 
 #![allow(clippy::unwrap_used, clippy::print_stderr)]
@@ -161,7 +162,27 @@ fn upload(locator: &str, files: &[&str]) -> Action {
         files: files.iter().map(|f| file(f)).collect(),
         clear: false,
         force: false,
+        drop: false,
     }
+}
+
+fn drop(locator: &str, files: &[&str]) -> Action {
+    Action::Upload {
+        locator: locator.to_owned(),
+        files: files.iter().map(|f| file(f)).collect(),
+        clear: false,
+        force: false,
+        drop: true,
+    }
+}
+
+/// The lines of `#drops` (the drop zone's event log).
+async fn drops(engine: &Engine, frame: &str) -> Vec<String> {
+    text(engine, &format!("{frame}#drops"))
+        .await
+        .lines()
+        .map(str::to_owned)
+        .collect()
 }
 
 fn clear(locator: &str) -> Action {
@@ -170,6 +191,7 @@ fn clear(locator: &str) -> Action {
         files: Vec::new(),
         clear: true,
         force: false,
+        drop: false,
     }
 }
 
@@ -257,6 +279,7 @@ async fn uploads_into_file_inputs() {
         files: vec![file("hello.txt")],
         clear: false,
         force: true,
+        drop: false,
     };
     act(&engine, forced).await;
     assert_eq!(held(&engine, "#locked").await, ["hello.txt"]);
@@ -354,6 +377,83 @@ async fn uploads_in_frames() {
             ],
             "{frame}"
         );
+    }
+}
+
+#[tokio::test]
+async fn drops_files_on_drop_zones() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "files-drop").await;
+    goto(&engine, &site.url("/actions/drop.html")).await;
+
+    let out = act(&engine, drop("#zone", &["hello.txt", "notes.md"])).await;
+    assert_eq!(
+        out.text,
+        "dropped 2 files on e1 region \"Drop files here\": hello.txt (6B), notes.md (31B)"
+    );
+    assert_eq!(out.data["drop"], json!(true));
+    assert_eq!(out.data["chooser"], json!(false));
+    assert_eq!(out.data["files"][1]["name"], json!("notes.md"));
+    // The page read the files from the drop's dataTransfer, and the
+    // events were trusted, as a user's drag from the desktop.
+    assert_eq!(
+        drops(&engine, "").await,
+        [
+            "dragenter zone - trusted",
+            "drop zone hello.txt(6) notes.md(31) trusted",
+        ]
+    );
+
+    // A zone that does not cancel dragover takes no drop: no drop event,
+    // and upload says so.
+    let err = fails(&engine, drop("#inert", &["hello.txt"])).await;
+    assert_eq!(err.kind, ErrorKind::NotEnabled);
+    assert_eq!(
+        err.message,
+        "e2 region \"Not a drop zone\" took no drop: the page did not accept files dropped there"
+    );
+    assert_eq!(err.details.as_ref().unwrap()["check"], json!("drop"));
+    assert_eq!(drops(&engine, "").await.len(), 2);
+
+    // The refused drag ended: the next drop works, and so does a click.
+    act(&engine, drop("#zone", &["notes.md"])).await;
+    assert_eq!(
+        drops(&engine, "").await[3],
+        "drop zone notes.md(31) trusted"
+    );
+    act(
+        &engine,
+        Action::Click {
+            locator: "#zone".to_owned(),
+            button: engine::Button::Left,
+            count: 1,
+            modifiers: Vec::new(),
+            position: None,
+            force: false,
+            dblclick: false,
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn drops_files_in_frames() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "files-drop-frames").await;
+    goto(&engine, &site.url("/actions/drop-frames.html")).await;
+
+    for frame in ["frame=same >> ", "frame=other >> "] {
+        let out = act(&engine, drop(&format!("{frame}#zone"), &["hello.txt"])).await;
+        assert_eq!(out.data["drop"], json!(true), "{frame}");
+        assert_eq!(
+            drops(&engine, frame).await,
+            ["dragenter zone - trusted", "drop zone hello.txt(6) trusted",],
+            "{frame}"
+        );
+        let err = fails(&engine, drop(&format!("{frame}#inert"), &["hello.txt"])).await;
+        assert_eq!(err.kind, ErrorKind::NotEnabled, "{frame}");
     }
 }
 

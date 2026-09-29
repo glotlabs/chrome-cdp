@@ -2903,6 +2903,10 @@ pub struct UploadData {
     /// Whether the files went through a file chooser that clicking
     /// `element` opened (else straight into the input).
     pub chooser: bool,
+    /// Whether the files were dropped on `element` (`--drop`), as a user
+    /// drags them from the desktop, instead of going into a file input.
+    #[serde(default)]
+    pub drop: bool,
 }
 
 /// `data` of `chrome-cdp clipboard read --json`.

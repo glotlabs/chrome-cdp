@@ -12,8 +12,8 @@
 //! `Input.dispatchKeyEvent`, `Input.insertText`) sent to the tab, so the
 //! page sees trusted events in the order a user makes them; only values
 //! that take no typing (a date, a `<select>`) are set in the page.
-//! Milestone 5.4 adds `upload` (files into a file input, or the file
-//! chooser a click opens); `clipboard` lives in [`crate::clipboard`].
+//! Milestone 5.4 adds `upload` (files into a file input, the file
+//! chooser a click opens, or dropped on a drop zone); `clipboard` lives in [`crate::clipboard`].
 //! Milestone 5.5 adds the post-action report ([`report`]): after the
 //! input, each action waits for what it caused and says what happened.
 
@@ -142,10 +142,17 @@ pub fn check_action(req: &ActionRequest) -> Result<(), ErrorInfo> {
             locator,
             files,
             clear,
+            drop,
             ..
         } => {
             options.parse(locator)?;
             match (clear, files.is_empty()) {
+                (true, _) if *drop => {
+                    return bad(
+                        "--drop drops files; it cannot clear".to_owned(),
+                        Cmd::new("upload").arg(locator).switch("clear"),
+                    );
+                }
                 (true, false) => {
                     return bad(
                         "--clear takes no files".to_owned(),
@@ -357,9 +364,15 @@ impl Actor<'_> {
             Action::Fill { text, .. } => cmd.arg(locator).arg(text),
             Action::Select { values, .. } => values.iter().fold(cmd.arg(locator), Cmd::arg),
             Action::Check { .. } | Action::Focus { .. } | Action::Blur { .. } => cmd.arg(locator),
-            Action::Upload { files, clear, .. } => {
+            Action::Upload {
+                files, clear, drop, ..
+            } => {
                 let cmd = files.iter().fold(cmd.arg(locator), Cmd::arg);
-                if *clear { cmd.switch("clear") } else { cmd }
+                match (clear, drop) {
+                    (true, _) => cmd.switch("clear"),
+                    (_, true) => cmd.switch("drop"),
+                    _ => cmd,
+                }
             }
         }
         .scoped(self.session())
@@ -651,5 +664,15 @@ mod tests {
             force: false,
         };
         assert_eq!(check_action(&request(drag)).unwrap_err().exit_code(), 2);
+        let drop_clear = Action::Upload {
+            locator: "#zone".to_owned(),
+            files: Vec::new(),
+            clear: true,
+            force: false,
+            drop: true,
+        };
+        let err = check_action(&request(drop_clear)).unwrap_err();
+        assert_eq!(err.message, "--drop drops files; it cannot clear");
+        assert_eq!(err.exit_code(), 2);
     }
 }

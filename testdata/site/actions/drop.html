@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Drop</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  .zone { width: 240px; height: 80px; margin: 8px; border: 2px dashed #888; }
+  .zone.over { border-color: #06c; }
+</style>
+<!-- Drop zones with no file input, as many upload widgets are. #zone takes
+     dropped files (it cancels dragover and drop) and logs each drag event
+     it gets into #drops, one per line: type, zone id, each file of
+     dataTransfer.files as name(size), trusted. #inert takes no drop (it
+     leaves dragover alone). -->
+<div id="zone" class="zone" role="region" aria-label="Drop files here">Drop files here</div>
+<div id="inert" class="zone" role="region" aria-label="Not a drop zone">Not a drop zone</div>
+<pre id="drops"></pre>
+<script>
+  const out = document.getElementById('drops');
+  const log = (e) => {
+    const files = [...e.dataTransfer.files].map((f) => `${f.name}(${f.size})`).join(' ') || '-';
+    out.textContent += `${e.type} ${e.currentTarget.id} ${files} ${e.isTrusted ? 'trusted' : 'synthetic'}\n`;
+  };
+  const zone = document.getElementById('zone');
+  zone.addEventListener('dragenter', (e) => { e.preventDefault(); zone.classList.add('over'); log(e); });
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+  zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('over'); log(e); });
+  const inert = document.getElementById('inert');
+  inert.addEventListener('drop', log);
+</script>

@@ -2286,7 +2286,8 @@ pub enum Action {
     /// `blur <loc>`.
     Blur { locator: String },
     /// `upload <loc> <file>...` (or `--clear`): files into a file input,
-    /// or into the file chooser that clicking `locator` opens.
+    /// or into the file chooser that clicking `locator` opens; with
+    /// `drop`, dropped on `locator` with drag events.
     Upload {
         locator: String,
         /// Absolute paths; empty with `clear`.
@@ -2296,6 +2297,8 @@ pub enum Action {
         clear: bool,
         #[serde(default)]
         force: bool,
+        #[serde(default)]
+        drop: bool,
     },
 }
 

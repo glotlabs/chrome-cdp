@@ -7,11 +7,19 @@
 //! the chooser is intercepted (`Page.setInterceptFileChooserDialog`), the
 //! element clicked like `click` does, and the files go to the input the
 //! chooser is for. `--clear` gives the input no files.
+//!
+//! `--drop` is for drop zones with no file input: the element goes
+//! through the pipeline like `click`, and the files are dropped on it
+//! with drag events (`Input.dispatchDragEvent`: enter, over, drop, their
+//! `dataTransfer.files` holding them), as a user drags them in from the
+//! desktop. The page must take the drop (cancel `dragover`), or no `drop`
+//! fires and `upload` fails.
 
 use std::fmt::Write as _;
 use std::time::Duration;
 
 use cdp::domains::dom::{ResolveNodeParams, SetFileInputFilesParams};
+use cdp::domains::input::{DispatchDragEventParams, DispatchDragEventType, DragData};
 use cdp::domains::page::{
     FileChooserOpened, FileChooserOpenedMode, SetInterceptFileChooserDialogParams,
 };
@@ -82,6 +90,31 @@ const CLEAR: &str = "function () {\n\
     return true;\n\
 }";
 
+/// Watches the drop events of `this`'s window until [`DROPPED`] asks:
+/// the capture listeners see every `drop`, even one the page stops.
+const WATCH_DROP: &str = "function () {\n\
+    const view = this.ownerDocument.defaultView;\n\
+    const watch = { drops: [] };\n\
+    watch.listener = (e) => watch.drops.push(e);\n\
+    watch.stop = () => view.removeEventListener('drop', watch.listener, true);\n\
+    view.addEventListener('drop', watch.listener, true);\n\
+    this[Symbol.for('chrome-cdp.drop')] = watch;\n\
+}";
+
+/// Whether a `drop` reached `this` (or something in it) since
+/// [`WATCH_DROP`], which stops watching.
+const DROPPED: &str = "function () {\n\
+    const key = Symbol.for('chrome-cdp.drop');\n\
+    const watch = this[key];\n\
+    if (!watch) return false;\n\
+    watch.stop();\n\
+    delete this[key];\n\
+    return watch.drops.some((e) => e.target instanceof Node && this.contains(e.target));\n\
+}";
+
+/// `dragOperationsMask`: copy, as files dragged from the desktop offer.
+const DRAG_COPY: i64 = 1;
+
 /// Checks the files of `upload` without a browser: they are there and are
 /// files. Paths must be absolute (the CLI makes them so).
 pub(super) fn check_files(files: &[String]) -> Result<Vec<UploadedFile>, ErrorInfo> {
@@ -128,6 +161,7 @@ impl Actor<'_> {
             files,
             clear,
             force,
+            drop,
         } = &self.req.action
         else {
             unreachable!("not upload")
@@ -137,6 +171,9 @@ impl Actor<'_> {
         } else {
             check_files(files)?
         };
+        if *drop {
+            return self.drop_files(locator, files, *force).await;
+        }
         let parsed = self.parse(locator)?;
         loop {
             let target = self.locate_waiting(&parsed).await?;
@@ -188,7 +225,7 @@ impl Actor<'_> {
             let note = target.note.clone();
             target.release();
             let filled = set?;
-            let mut output = self.uploaded(locator, element, files, false, &filled);
+            let mut output = self.uploaded(locator, element, files, Via::Input, &filled);
             if let Some(note) = note {
                 output = output.warning(note);
             }
@@ -340,7 +377,64 @@ impl Actor<'_> {
             .call(SetInterceptFileChooserDialogParams::new(false))
             .await;
         let filled = result?;
-        let mut output = self.uploaded(locator, element, files, true, &filled);
+        let mut output = self.uploaded(locator, element, files, Via::Chooser, &filled);
+        if let Some(note) = note {
+            output = output.warning(note);
+        }
+        Ok(output)
+    }
+
+    /// Drops the files on the element `locator` names, with drag events.
+    async fn drop_files(
+        &self,
+        locator: &str,
+        files: Vec<UploadedFile>,
+        force: bool,
+    ) -> Result<Output, ErrorInfo> {
+        let parsed = self.parse(locator)?;
+        let checks = Checks {
+            force,
+            ..Checks::default()
+        };
+        let retry = |l: &str| self.retry(l);
+        let ready = self.ready(&parsed, checks, &retry).await?;
+        let (x, y) = (ready.ready.x, ready.ready.y);
+        let result = async {
+            self.call(&ready.ready.target, WATCH_DROP, Vec::new())
+                .await?;
+            // Drag events go to the tab's session at a point in its
+            // viewport, as the mouse's do, whatever the element's frame.
+            let session = self.page.session.with_timeout(self.timeout);
+            let data = DragData {
+                items: Vec::new(),
+                files: Some(paths(&files)),
+                drag_operations_mask: DRAG_COPY,
+            };
+            for kind in [
+                DispatchDragEventType::DragEnter,
+                DispatchDragEventType::DragOver,
+                DispatchDragEventType::Drop,
+            ] {
+                session
+                    .call(DispatchDragEventParams::new(kind, x, y, data.clone()))
+                    .await
+                    .map_err(|e| from_cdp(&e, self.session()))?;
+            }
+            let dropped = self.call(&ready.ready.target, DROPPED, Vec::new()).await?;
+            Ok::<_, ErrorInfo>(dropped == serde_json::Value::Bool(true))
+        }
+        .await;
+        let element = ready.element.clone();
+        let note = ready.ready.target.note.clone();
+        ready.release();
+        if !result? {
+            return Err(self.no_drop(locator, &element));
+        }
+        let filled = Filled {
+            changed: true,
+            accept: String::new(),
+        };
+        let mut output = self.uploaded(locator, element, files, Via::Drop, &filled);
         if let Some(note) = note {
             output = output.warning(note);
         }
@@ -353,7 +447,7 @@ impl Actor<'_> {
         locator: &str,
         element: ActedElement,
         files: Vec<UploadedFile>,
-        chooser: bool,
+        via: Via,
         filled: &Filled,
     ) -> Output {
         let described = describe(&element);
@@ -375,15 +469,15 @@ impl Actor<'_> {
             format!("cleared the files of {described}")
         } else {
             let listed = file_list(&files);
-            let how = if chooser {
-                "through the file chooser of"
-            } else {
-                "to"
+            let (verb, how) = match via {
+                Via::Input => ("uploaded", "to"),
+                Via::Chooser => ("uploaded", "through the file chooser of"),
+                Via::Drop => ("dropped", "on"),
             };
             if files.len() == 1 {
-                format!("uploaded {listed} {how} {described}")
+                format!("{verb} {listed} {how} {described}")
             } else {
-                format!("uploaded {} files {how} {described}: {listed}", files.len())
+                format!("{verb} {} files {how} {described}: {listed}", files.len())
             }
         };
         let quiet = element
@@ -395,7 +489,8 @@ impl Actor<'_> {
             locator: locator.to_owned(),
             element,
             files,
-            chooser,
+            chooser: via == Via::Chooser,
+            drop: via == Via::Drop,
         };
         let output = Output::typed(&data, text).quiet(quiet);
         match warning {
@@ -417,6 +512,27 @@ impl Actor<'_> {
                 .scoped(self.session()),
         ))
         .details(json!({ "locator": locator, "files": count }))
+    }
+
+    /// A drop the page did not take.
+    fn no_drop(&self, locator: &str, element: &ActedElement) -> ErrorInfo {
+        ErrorInfo::new(
+            ErrorKind::NotEnabled,
+            format!(
+                "{} took no drop: the page did not accept files dropped there",
+                describe(element)
+            ),
+        )
+        .hint(
+            Hint::run(
+                Cmd::new("upload")
+                    .arg("css=input[type=file]")
+                    .raw("<file>")
+                    .scoped(self.session()),
+            )
+            .why("the page's file input, even a hidden one"),
+        )
+        .details(json!({ "locator": locator, "check": "drop" }))
     }
 
     /// A click that opened no file chooser.
@@ -443,6 +559,17 @@ impl Actor<'_> {
         )
         .details(json!({ "locator": locator, "check": "chooser" }))
     }
+}
+
+/// How the files reached the page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Via {
+    /// Straight into a file input.
+    Input,
+    /// Through the file chooser a click opened.
+    Chooser,
+    /// Dropped on the element (`--drop`).
+    Drop,
 }
 
 /// Whether an input with this `accept` attribute surely does not take a
