@@ -50,6 +50,10 @@
 //! - `/e2e/ssr?api=<origin>` stands for a server-rendered page (plan
 //!   11.9): the server GETs `<origin>/e2e/api/greeting` itself, with the
 //!   request's `x-chrome-cdp-test` header, and shows the answer.
+//! - `POST /bench/record` keeps its JSON body (both origins share the
+//!   list), and `GET /bench/records` answers the list: what the agent
+//!   benchmark's pages submitted (plan 10.4), which its verifier reads with
+//!   [`Fixtures::records`].
 //!
 //! [`Shop`] is another server: the real backend of `examples/e2e-shop`
 //! (its built app and its API on one origin).
@@ -111,7 +115,11 @@ pub struct Fixtures {
     a: String,
     b: String,
     https: String,
+    records: Records,
 }
+
+/// The bodies `POST /bench/record` kept, in order.
+type Records = Arc<std::sync::Mutex<Vec<serde_json::Value>>>;
 
 impl Fixtures {
     /// The process's server, started on first use on free ports.
@@ -138,12 +146,14 @@ impl Fixtures {
             a: format!("http://127.0.0.1:{}", listener_a.local_addr()?.port()),
             b: format!("http://localhost:{}", listener_b.local_addr()?.port()),
             https: format!("https://127.0.0.1:{}", listener_https.local_addr()?.port()),
+            records: Records::default(),
         };
         let site = Arc::new(Site {
             root,
             a: fixtures.a.clone(),
             b: fixtures.b.clone(),
             api: std::sync::Mutex::default(),
+            records: fixtures.records.clone(),
         });
         let https = fixtures.https.clone();
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -178,6 +188,14 @@ impl Fixtures {
         &self.https
     }
 
+    /// The JSON bodies pages sent to `POST /bench/record`, in order.
+    pub fn records(&self) -> Vec<serde_json::Value> {
+        self.records
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
     /// `path` (starting with `/`) on origin A.
     pub fn url(&self, path: &str) -> String {
         format!("{}{path}", self.a)
@@ -202,6 +220,7 @@ struct Site {
     a: String,
     b: String,
     api: std::sync::Mutex<api::Api>,
+    records: Records,
 }
 
 async fn serve(listener: TcpListener, site: Arc<Site>, origin: String) {
@@ -260,6 +279,9 @@ where
             if req.uri().path() == "/e2e/ssr" {
                 return Ok::<_, Infallible>(ssr(&req).await);
             }
+            if matches!(req.uri().path(), "/bench/record" | "/bench/records") {
+                return Ok::<_, Infallible>(record(&site, req).await);
+            }
             if req.uri().path().starts_with(api::PREFIX) {
                 let (parts, body) = req.into_parts();
                 let body = body
@@ -287,6 +309,54 @@ where
         .serve_connection(TokioIo::new(stream), service)
         .with_upgrades()
         .await;
+}
+
+/// `POST /bench/record`: keeps the JSON body; `GET /bench/records`: the
+/// bodies kept. Pages of either origin may post (CORS).
+async fn record(site: &Site, req: Request<Incoming>) -> Response<Full<Bytes>> {
+    let records = || {
+        site.records
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    };
+    let post = req.method() == hyper::Method::POST && req.uri().path() == "/bench/record";
+    let get = req.method() == hyper::Method::GET && req.uri().path() == "/bench/records";
+    let mut answer = if post {
+        let body = req
+            .into_body()
+            .collect()
+            .await
+            .map(http_body_util::Collected::to_bytes)
+            .unwrap_or_default();
+        match serde_json::from_slice::<serde_json::Value>(&body) {
+            Ok(value) => {
+                records().push(value);
+                response(StatusCode::NO_CONTENT, "text/plain", Bytes::new())
+            }
+            Err(e) => response(
+                StatusCode::BAD_REQUEST,
+                "text/plain; charset=utf-8",
+                Bytes::from(format!("not JSON: {e}\n")),
+            ),
+        }
+    } else if get {
+        let list = serde_json::Value::from(records().clone());
+        response(
+            StatusCode::OK,
+            "application/json",
+            Bytes::from(list.to_string()),
+        )
+    } else {
+        response(
+            StatusCode::METHOD_NOT_ALLOWED,
+            "text/plain; charset=utf-8",
+            Bytes::from_static(b"POST /bench/record or GET /bench/records\n"),
+        )
+    };
+    answer
+        .headers_mut()
+        .insert("access-control-allow-origin", HeaderValue::from_static("*"));
+    answer
 }
 
 /// The self-signed certificate for `127.0.0.1` in `crates/fixtures/tls`
@@ -838,6 +908,40 @@ mod tests {
             text.contains("set-cookie: session=ada-42; HttpOnly; Path=/"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn bench_records_keep_posted_json() {
+        // Its own server: the records list belongs to one.
+        let f = Fixtures::start(0, 0).unwrap();
+        let post = |url: &str, body: &str| {
+            let rest = url.strip_prefix("http://").unwrap();
+            let (authority, path) = rest.split_at(rest.find('/').unwrap());
+            let mut stream = TcpStream::connect(authority).unwrap();
+            write!(
+                stream,
+                "POST {path} HTTP/1.1\r\nHost: {authority}\r\nContent-Length: {}\r\n\
+                 Connection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+            let mut text = String::new();
+            stream.read_to_string(&mut text).unwrap();
+            text
+        };
+        let text = post(&f.url("/bench/record"), r#"{"form":"login","email":"a@b"}"#);
+        assert!(text.starts_with("HTTP/1.1 204"), "{text}");
+        // Origin B shares the list.
+        post(&f.url_b("/bench/record"), r#"{"form":"frame"}"#);
+        let text = post(&f.url("/bench/record"), "not json");
+        assert!(text.starts_with("HTTP/1.1 400"), "{text}");
+        assert_eq!(
+            serde_json::Value::from(f.records()),
+            serde_json::json!([{"form": "login", "email": "a@b"}, {"form": "frame"}])
+        );
+        let (status, body) = get(&f.url("/bench/records"));
+        assert_eq!(status, "HTTP/1.1 200 OK");
+        assert_eq!(body, r#"[{"email":"a@b","form":"login"},{"form":"frame"}]"#);
     }
 
     #[test]
