@@ -15,6 +15,7 @@ mod cli;
 mod completions;
 mod config;
 mod convert;
+mod doctor;
 mod e2e_files;
 mod emulate;
 mod expect;
@@ -36,6 +37,7 @@ mod script;
 mod session;
 mod skill;
 mod test;
+mod upgrade;
 mod version;
 
 use cli::{Cli, ClipboardCommand, Command};
@@ -109,6 +111,12 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             install::install(&args, cli.global.timeout_or(cli::DEFAULT_TIMEOUT))
         }
         Some(Command::Uninstall(args)) => install::uninstall(&args),
+        Some(Command::Doctor(args)) => {
+            doctor::run(&args, cli.global.timeout_or(cli::DEFAULT_TIMEOUT))
+        }
+        Some(Command::Upgrade(args)) => {
+            upgrade::run(&args, cli.global.timeout_or(cli::DEFAULT_TIMEOUT))
+        }
         Some(Command::Open(args)) => session::open(&args, &cli.global),
         Some(Command::Connect(args)) => session::connect(&args, &cli.global),
         Some(Command::Close(args)) => session::close(&args, &cli.global),

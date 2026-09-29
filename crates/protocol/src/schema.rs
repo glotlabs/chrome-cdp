@@ -84,6 +84,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<UninstallData>),
     },
     CommandSchema {
+        name: "doctor",
+        summary: "each check of the setup (Chrome, libraries, sandbox, session dir, quarantine, versions) with its fix",
+        schema: || schema_for!(Envelope<DoctorData>),
+    },
+    CommandSchema {
+        name: "upgrade",
+        summary: "the release looked at, whether it is newer, and whether this binary was replaced",
+        schema: || schema_for!(Envelope<UpgradeData>),
+    },
+    CommandSchema {
         name: "open",
         summary: "the session and its browser, and the page opened",
         schema: || schema_for!(Envelope<OpenData>),
@@ -968,6 +978,75 @@ pub struct UninstallData {
     pub id: String,
     /// The directory removed.
     pub dir: String,
+}
+
+/// `data` of `chrome-cdp doctor --json`; with a failed check it is the
+/// error's `details`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DoctorData {
+    /// Every check, in the order they ran.
+    pub checks: Vec<DoctorCheck>,
+    /// How many checks passed, warned, failed and were skipped.
+    pub ok: usize,
+    pub warnings: usize,
+    pub failed: usize,
+    pub skipped: usize,
+}
+
+/// One check of `chrome-cdp doctor`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DoctorCheck {
+    /// `chrome-cdp`, `chrome`, `libraries`, `sandbox`, `launch`,
+    /// `session-dir`, `quarantine` or `sessions`.
+    pub name: String,
+    pub status: DoctorStatus,
+    /// What was found, in one line.
+    pub message: String,
+    /// The command or step that fixes it, when it is not `ok`.
+    pub fix: Option<String>,
+}
+
+/// How a `doctor` check came out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DoctorStatus {
+    Ok,
+    /// Works, but something is off (an old Chrome, a session on an older
+    /// build).
+    Warn,
+    /// Stops chrome-cdp from working.
+    Fail,
+    /// Not checked here (another OS, or an earlier check failed).
+    Skip,
+}
+
+impl DoctorStatus {
+    /// `ok`, `warn`, `FAIL` or `skip`, as the text output shows it.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Warn => "warn",
+            Self::Fail => "FAIL",
+            Self::Skip => "skip",
+        }
+    }
+}
+
+/// `data` of `chrome-cdp upgrade --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct UpgradeData {
+    /// The version running the command.
+    pub from: String,
+    /// The version of the release looked at: the newest, or `--version`'s.
+    pub to: String,
+    /// Whether `to` is newer than `from`.
+    pub newer: bool,
+    /// Whether the binary was replaced (never with `--check`).
+    pub upgraded: bool,
+    /// The binary that was, or would be, replaced.
+    pub path: String,
+    /// The release archive for this machine.
+    pub archive: String,
 }
 
 /// The state of a session.

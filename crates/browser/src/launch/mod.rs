@@ -290,6 +290,13 @@ fn spawn_failed(path: &Path, e: &io::Error) -> ErrorInfo {
 /// The error for a Chrome whose sandbox the kernel blocks: before launch
 /// when the userns check predicts it, or after Chrome said "No usable
 /// sandbox".
+/// The error of a Chrome whose sandbox Ubuntu's AppArmor rule blocks
+/// ([`UsernsCheck::Blocked`]), with its fix; `doctor` shows it before any
+/// launch.
+pub fn sandbox_blocked_error(host: &Host, chrome: &Chrome) -> ErrorInfo {
+    sandbox_blocked(host, chrome, None)
+}
+
 fn sandbox_blocked(host: &Host, chrome: &Chrome, exited: Option<ErrorInfo>) -> ErrorInfo {
     let path = chrome.path.display().to_string();
     let info = exited.unwrap_or_else(|| {

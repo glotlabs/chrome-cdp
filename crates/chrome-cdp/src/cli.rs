@@ -172,6 +172,38 @@ Examples:
   chrome-cdp uninstall stable-154.0.8037.57-linux64")]
     Uninstall(UninstallArgs),
 
+    /// Check the setup: Chrome, its libraries and sandbox, the session dir,
+    /// macOS quarantine and version skew; prints a fix for each problem.
+    #[command(after_help = "\
+Each check prints ok, warn, FAIL or skip, and a fix for anything not ok.
+Unless --no-launch is given, doctor starts the Chrome it finds (headless,
+a temporary profile) and closes it again: the one sure test of its
+libraries and sandbox. It exits 4 when a check fails, 0 otherwise.
+
+Examples:
+  chrome-cdp doctor
+  chrome-cdp doctor --no-launch                 # only look, start nothing
+  chrome-cdp doctor --chrome /usr/bin/chromium
+  chrome-cdp doctor --json                      # every check, with its fix")]
+    Doctor(DoctorArgs),
+
+    /// Replace this binary with the newest release (or --version's).
+    #[command(after_help = "\
+upgrade downloads the release archive for this OS and CPU from GitHub,
+checks its SHA-256 against the release's manifest.json, checks that the new
+binary runs, then renames it over this one. Sessions still running the old
+build restart with the new one on their next command.
+
+A binary installed by Homebrew, npm or cargo is left alone: upgrade names
+the command of that package manager instead. CHROME_CDP_RELEASES_URL
+points at a mirror of https://github.com/glotlabs/chrome-cdp/releases.
+
+Examples:
+  chrome-cdp upgrade
+  chrome-cdp upgrade --check          # is there a newer release?
+  chrome-cdp upgrade --version 1.2.0  # that release, even an older one")]
+    Upgrade(UpgradeArgs),
+
     /// Start the session's browser (or check the running one) and
     /// optionally open a URL.
     #[command(after_help = "\
@@ -2034,6 +2066,34 @@ pub(crate) struct UninstallArgs {
     /// The install id, as `chrome-cdp install --list` shows it.
     #[arg(value_name = "ID")]
     pub(crate) id: String,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct DoctorArgs {
+    /// The Chrome or Chromium binary to check. Default: the one `open`
+    /// would launch.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) chrome: Option<PathBuf>,
+
+    /// Do not start Chrome; only look at the files and the system.
+    #[arg(long)]
+    pub(crate) no_launch: bool,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct UpgradeArgs {
+    /// Only report whether a newer release exists.
+    #[arg(long)]
+    pub(crate) check: bool,
+
+    /// Install this release (e.g. 1.2.0) instead of the newest, even an
+    /// older one.
+    #[arg(long, value_name = "VERSION")]
+    pub(crate) version: Option<String>,
+
+    /// Install even when this version is already running.
+    #[arg(long, conflicts_with = "check")]
+    pub(crate) force: bool,
 }
 
 #[derive(Debug, Args)]
@@ -5809,6 +5869,9 @@ mod tests {
         "box",
         "install",
         "uninstall",
+        // A line per check; a few lines.
+        "doctor",
+        "upgrade",
         "open",
         "connect",
         "close",

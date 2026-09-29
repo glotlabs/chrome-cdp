@@ -178,7 +178,14 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
     ("Scripts and raw CDP", &["batch", "run", "convert", "cdp"]),
     (
         "Help and tooling",
-        &["help", "skill", "completions", "schema"],
+        &[
+            "help",
+            "skill",
+            "completions",
+            "schema",
+            "doctor",
+            "upgrade",
+        ],
     ),
 ];
 

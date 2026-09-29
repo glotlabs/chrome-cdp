@@ -1,0 +1,20 @@
+$ chrome-cdp doctor --no-launch
+exit: 4
+--- stderr
+error: 1 of 8 checks failed: chrome
+  chrome-cdp: ok chrome-cdp <version> (git <sha>, CDP protocol r1687809) at <bin>
+  chrome: FAIL no Chrome at /nonexistent/chrome (from CHROME_CDP_CHROME)
+  libraries: skip no Chrome to check
+  sandbox: skip no Chrome to check
+  launch: skip --no-launch: Chrome was not started
+  session-dir: ok <sandbox>/run/chrome-cdp will be made on the first open
+  quarantine: skip only macOS quarantines downloads
+  sessions: ok no sessions running
+  checked: 3 ok, 0 warnings, 1 failed, 4 skipped
+  hint: point CHROME_CDP_CHROME at a Chrome or Chromium binary, or unset it
+
+$ chrome-cdp doctor --no-launch --json
+exit: 4
+--- stdout
+{"ok":false,"error":{"kind":"ChromeNotFound","message":"1 of 8 checks failed: chrome","hint":"point CHROME_CDP_CHROME at a Chrome or Chromium binary, or unset it","notes":[{"label":"chrome-cdp","text":"ok chrome-cdp <version> (git <sha>, CDP protocol r1687809) at <bin>"},{"label":"chrome","text":"FAIL no Chrome at /nonexistent/chrome (from CHROME_CDP_CHROME)"},{"label":"libraries","text":"skip no Chrome to check"},{"label":"sandbox","text":"skip no Chrome to check"},{"label":"launch","text":"skip --no-launch: Chrome was not started"},{"label":"session-dir","text":"ok <sandbox>/run/chrome-cdp will be made on the first open"},{"label":"quarantine","text":"skip only macOS quarantines downloads"},{"label":"sessions","text":"ok no sessions running"},{"label":"checked","text":"3 ok, 0 warnings, 1 failed, 4 skipped"}],"details":{"checks":[{"fix":null,"message":"chrome-cdp <version> (git <sha>, CDP protocol r1687809) at <bin>","name":"chrome-cdp","status":"ok"},{"fix":"point CHROME_CDP_CHROME at a Chrome or Chromium binary, or unset it","message":"no Chrome at /nonexistent/chrome (from CHROME_CDP_CHROME)","name":"chrome","status":"fail"},{"fix":null,"message":"no Chrome to check","name":"libraries","status":"skip"},{"fix":null,"message":"no Chrome to check","name":"sandbox","status":"skip"},{"fix":null,"message":"--no-launch: Chrome was not started","name":"launch","status":"skip"},{"fix":null,"message":"<sandbox>/run/chrome-cdp will be made on the first open","name":"session-dir","status":"ok"},{"fix":null,"message":"only macOS quarantines downloads","name":"quarantine","status":"skip"},{"fix":null,"message":"no sessions running","name":"sessions","status":"ok"}],"failed":1,"ok":3,"skipped":4,"warnings":0}}}
+

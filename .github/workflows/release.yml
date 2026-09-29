@@ -235,4 +235,9 @@ jobs:
       # Publishes chrome-cdp and the chrome-cdp-* crates it depends on, in
       # dependency order; the unpublished ones are publish = false.
       - if: env.CARGO_REGISTRY_TOKEN != ''
-        run: cargo publish --workspace --locked --exclude bench --exclude fixtures --exclude cdp-gen --exclude xtask
+        run: |
+          if cargo xtask release check 2>&1 | grep -q 'publish = false'; then
+            echo "::warning::publishing is off in Cargo.toml (no license yet); the crates are not published"
+            exit 0
+          fi
+          cargo publish --workspace --locked --exclude bench --exclude fixtures --exclude cdp-gen --exclude xtask

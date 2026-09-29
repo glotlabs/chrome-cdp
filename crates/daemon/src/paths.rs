@@ -186,6 +186,12 @@ impl SessionPaths {
 /// cannot plant a socket or read our logs.
 fn create_private(dir: &Path, uid: u32) -> io::Result<()> {
     DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+    check_private(dir, uid)
+}
+
+/// Checks an existing `dir` as [`SessionPaths::create`] would, without
+/// creating anything: a real directory owned by `uid`, closed to others.
+pub fn check_private(dir: &Path, uid: u32) -> io::Result<()> {
     let meta = dir.symlink_metadata()?;
     if !meta.is_dir() {
         return Err(io::Error::other("not a directory"));

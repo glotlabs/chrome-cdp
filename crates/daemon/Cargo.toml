@@ -4,6 +4,7 @@ description = "Per-session daemon: socket server, lifecycle, idle shutdown, RPC 
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+publish.workspace = true
 repository.workspace = true
 homepage.workspace = true
 # The integration tests need the repo's fixture site and a Chrome.

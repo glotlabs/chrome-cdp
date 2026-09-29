@@ -638,12 +638,30 @@ fn check(root: &Path, tag: Option<&String>) -> Result {
     if !manifest.contains("\nlicense") {
         warn("no `license` in [workspace.package]: crates.io and npm need one before publishing");
     }
+    if crates_publish_off(&manifest) {
+        warn("`publish = false` in [workspace.package]: the crates.io job will skip publishing");
+    }
     if problems.is_empty() {
         eprintln!("release check: {version} ok");
         Ok(())
     } else {
         Err(problems.join("\n"))
     }
+}
+
+/// Whether `[workspace.package]` turns publishing off (until a license is
+/// chosen).
+fn crates_publish_off(manifest: &str) -> bool {
+    manifest
+        .find("[workspace.package]")
+        .map(|at| &manifest[at..])
+        .is_some_and(|section| {
+            section
+                .lines()
+                .skip(1)
+                .take_while(|l| !l.starts_with('['))
+                .any(|l| l.replace(' ', "") == "publish=false")
+        })
 }
 
 /// Internal dependencies (`package = "chrome-cdp-…"`) whose `version` is
@@ -777,6 +795,16 @@ mod tests {
             internal_version_problems(&real, &version(&root).unwrap()),
             Vec::<String>::new()
         );
+    }
+
+    #[test]
+    fn sees_whether_publishing_is_off() {
+        assert!(crates_publish_off(
+            "[workspace.package]\npublish = false\n[x]\n"
+        ));
+        assert!(!crates_publish_off(
+            "[workspace.package]\nversion = \"1\"\n[x]\npublish = false\n"
+        ));
     }
 
     #[test]

@@ -1,0 +1,11 @@
+$ chrome-cdp upgrade --version latest
+exit: 2
+--- stderr
+error: `latest` is not a version: use X.Y.Z, e.g. 1.2.0
+  hint: chrome-cdp upgrade
+
+$ chrome-cdp upgrade --version latest --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"`latest` is not a version: use X.Y.Z, e.g. 1.2.0","hint":"chrome-cdp upgrade"}}
+

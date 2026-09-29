@@ -58,6 +58,8 @@ enum Fixture {
     /// A fake Chrome for Testing index (`<cft>`) and an empty cache in the
     /// temp dir. Linux x86_64 only: it serves `linux64` builds.
     FakeCft,
+    /// `MissingChromeEnv` on Linux only: `doctor`'s checks differ by OS.
+    LinuxMissingChromeEnv,
 }
 
 struct Case {
@@ -373,6 +375,18 @@ const CASES: &[Case] = &[
     Case {
         name: "install-list-conflicts",
         args: &["install", "--list", "--force"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "doctor-no-chrome",
+        args: &["doctor", "--no-launch"],
+        modes: ERR,
+        fixture: Fixture::LinuxMissingChromeEnv,
+    },
+    Case {
+        name: "upgrade-bad-version",
+        args: &["upgrade", "--version", "latest"],
         modes: ERR,
         fixture: Fixture::None,
     },
@@ -2550,6 +2564,8 @@ impl Normalizer {
         Self(vec![
             (sha, "<sha>"),
             (env!("CARGO_PKG_VERSION").to_owned(), "<version>"),
+            // `doctor` says where the binary is.
+            (env!("CARGO_BIN_EXE_chrome-cdp").to_owned(), "<bin>"),
             // `expect-screenshot` keeps a baseline per platform.
             (format!("-{}.png", std::env::consts::OS), "-<os>.png"),
         ])
@@ -2700,7 +2716,8 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
             .unwrap();
             Some(chrome)
         }
-        Fixture::MissingChromeEnv => {
+        Fixture::LinuxMissingChromeEnv if !cfg!(target_os = "linux") => return None,
+        Fixture::MissingChromeEnv | Fixture::LinuxMissingChromeEnv => {
             env.push(("CHROME_CDP_CHROME", "/nonexistent/chrome".into()));
             let sb = Sandbox::new();
             norm = norm.with(sb.dir.path(), "<sandbox>");

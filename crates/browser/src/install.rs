@@ -506,6 +506,18 @@ fn remove_quarantine(dir: &Path) {
     }
 }
 
+/// Whether macOS's `com.apple.quarantine` attribute is on `path`, which
+/// makes Gatekeeper check (and maybe block) it on first run.
+#[cfg(unix)]
+pub fn quarantined(path: &Path) -> bool {
+    xattr::get(path, "com.apple.quarantine").is_ok_and(|v| v.is_some())
+}
+
+#[cfg(not(unix))]
+pub fn quarantined(_path: &Path) -> bool {
+    false
+}
+
 /// Removes the extended attribute `name` from `dir` and everything under
 /// it, without following symlinks (their targets are inside `dir`).
 #[cfg(unix)]

@@ -7,6 +7,10 @@ default-members = ["crates/*"]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
+# Off until a license is chosen: crates.io refuses crates without one, and
+# cargo-deny fails on publishable unlicensed crates. Set `license` here and
+# `publish = true` together (docs/releasing.md).
+publish = false
 repository = "https://github.com/glotlabs/chrome-cdp"
 homepage = "https://github.com/glotlabs/chrome-cdp"
 
@@ -45,6 +49,8 @@ proptest = "1"
 regex = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+# SHA-256 of release archives (`chrome-cdp upgrade`); already rustls's crypto.
+ring = { version = "0.17", default-features = false }
 # Resolves console stack frames to original sources (plan 06).
 sourcemap = { version = "9", default-features = false }
 # Gzipped traces (`trace stop -o x.json.gz`); already in the tree through `zip`.
@@ -60,6 +66,8 @@ toml = { version = "1", default-features = false, features = ["parse", "serde", 
 # `chrome-cdp fmt` of mock files (plan 11.12): keeps comments and layout.
 toml_edit = { version = "0.25", default-features = false, features = ["parse", "display"] }
 thiserror = "2"
+# Unpacks release archives (`chrome-cdp upgrade`).
+tar = { version = "0.4", default-features = false }
 tokio = "1"
 tokio-rustls = { version = "0.26", default-features = false }
 tokio-stream = { version = "0.1", default-features = false }
