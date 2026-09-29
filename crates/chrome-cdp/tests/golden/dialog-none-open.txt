@@ -1,11 +1,12 @@
-$ chrome-cdp dialog accept
+$ chrome-cdp dialog accept --timeout 300ms
 exit: 1
 --- stderr
 error: no dialog is open in tab t1
+  waited: 300ms
   hint: chrome-cdp tabs   (shows each tab's open dialog, if any)
 
-$ chrome-cdp dialog accept --json
+$ chrome-cdp dialog accept --timeout 300ms --json
 exit: 1
 --- stdout
-{"ok":false,"error":{"kind":"NotFound","message":"no dialog is open in tab t1","hint":"chrome-cdp tabs   (shows each tab's open dialog, if any)","details":{"open_in":[],"tab":"t1"}}}
+{"ok":false,"error":{"kind":"NotFound","message":"no dialog is open in tab t1","hint":"chrome-cdp tabs   (shows each tab's open dialog, if any)","notes":[{"label":"waited","text":"300ms"}],"details":{"open_in":[],"tab":"t1"}}}
 

@@ -1083,7 +1083,7 @@ const CASES: &[Case] = &[
     },
     Case {
         name: "dialog-none-open",
-        args: &["dialog", "accept"],
+        args: &["dialog", "accept", "--timeout", "300ms"],
         modes: ERR,
         fixture: Fixture::Session,
     },

@@ -14,8 +14,7 @@ batch = """
 open {site}/bench/delete.html
 click 'role=button[name="Delete account"]'
 dialog accept
-# The prompt opens just after the confirm closes.
-wait 500
+# The prompt opens just after the confirm closes; `dialog` waits for it.
 dialog accept DELETE
 expect 'text=scheduled for deletion' visible
 """

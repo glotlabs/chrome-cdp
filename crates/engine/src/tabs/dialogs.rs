@@ -144,6 +144,24 @@ impl Tabs {
             .and_then(|t| t.dialog.clone())
     }
 
+    /// Waits until tab `id` has an open dialog, or `deadline` passes (or
+    /// the tab closes): `None` then. A dialog already open counts.
+    pub(crate) async fn next_dialog(
+        &self,
+        id: u32,
+        deadline: tokio::time::Instant,
+    ) -> Option<OpenDialog> {
+        self.watch(deadline, |state, _| match state.tabs.get(&id) {
+            Some(tab) => match &tab.dialog {
+                Some(dialog) => Check::Done(Some(dialog.clone())),
+                None => Check::Later(None),
+            },
+            None => Check::Done(None),
+        })
+        .await
+        .flatten()
+    }
+
     /// Takes tab `id`'s open dialog to answer it: it is no longer open for
     /// commands, and its closing is not logged.
     pub(crate) fn take_dialog(&self, id: u32) -> Option<OpenDialog> {

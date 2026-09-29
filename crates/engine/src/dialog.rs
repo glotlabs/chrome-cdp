@@ -4,7 +4,9 @@
 //!
 //! It takes no tab lock: the command that ran into the dialog has
 //! returned, but a raw `cdp` call may still wait on the page, and the
-//! answer is what lets it go on. It does not wait for what the answer
+//! answer is what lets it go on. With no dialog open yet it waits for one
+//! (up to `--timeout`), so a prompt the page opens right after a confirm
+//! closes needs no fixed `wait`. It does not wait for what the answer
 //! causes (a navigation, a request); `wait` does that.
 
 use std::fmt::Write as _;
@@ -27,9 +29,23 @@ impl Engine {
     pub async fn dialog(&self, req: DialogRequest) -> Result<Output, ErrorInfo> {
         let running = self.running()?;
         let timeout = millis(req.timeout_ms);
+        let deadline = tokio::time::Instant::now() + timeout;
         let page = self.page(&running, req.tab.as_deref(), timeout).await?;
-        let Some(open) = running.tabs.dialog(page.id) else {
-            return Err(self.no_dialog(&running, page.id));
+        let open = match running.tabs.dialog(page.id) {
+            Some(open) => open,
+            // A dialog open in another tab is most likely the one meant:
+            // say so at once rather than wait for one here.
+            None if !running.tabs.dialogs().is_empty() => {
+                return Err(self.no_dialog(&running, page.id));
+            }
+            None => match running.tabs.next_dialog(page.id, deadline).await {
+                Some(open) => open,
+                None => {
+                    return Err(self
+                        .no_dialog(&running, page.id)
+                        .note("waited", protocol::format::duration(timeout)));
+                }
+            },
         };
         if req.text.is_some() && !(req.accept && open.info.kind == "prompt") {
             let which = if req.accept {

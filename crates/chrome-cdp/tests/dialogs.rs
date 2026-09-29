@@ -8,6 +8,8 @@
 
 mod common;
 
+use std::io::Write as _;
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use common::{Sandbox, chrome_path, code, json_out, stderr, stdout};
@@ -74,9 +76,14 @@ fn a_confirm_interrupts_the_command_until_answered() {
     assert_eq!(data["dialog"]["kind"], "confirm");
     let out = sandbox.run(&["wait", "--text", "confirm: true"]);
     assert_eq!(code(&out), 0, "{}", stderr(&out));
-    let out = sandbox.run(&["dialog", "dismiss"]);
+    // With none open, it waits for one up to --timeout, then says so.
+    let out = sandbox.run(&["dialog", "dismiss", "--timeout", "300ms"]);
     assert_eq!(code(&out), 1, "{}", stderr(&out));
-    assert!(stderr(&out).starts_with("error: no dialog is open in tab t1\n"));
+    assert!(
+        stderr(&out).starts_with("error: no dialog is open in tab t1\n  waited: 300ms\n"),
+        "{}",
+        stderr(&out)
+    );
 
     // A prompt takes the text (or keeps its default).
     let prompt = format!("{}&default=Bob", on_load("prompt", "Name%3F"));
@@ -126,6 +133,59 @@ fn a_confirm_interrupts_the_command_until_answered() {
     let out = sandbox.run(&["dialog", "dismiss", "--json"]);
     assert_eq!(code(&out), 0, "{}", stderr(&out));
     assert_eq!(json_out(&out)["data"]["accepted"], false);
+}
+
+#[test]
+fn dialog_waits_for_the_next_dialog() {
+    let Some(chrome) = chrome_path() else { return };
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let url = Fixtures::shared().url("/bench/delete.html");
+    let out = sandbox.run(&["goto", &url]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+
+    // The page opens a prompt as soon as its confirm closes: the second
+    // `dialog accept` waits for it, with no `wait` between them.
+    let mut cmd = sandbox.cli();
+    cmd.args(["batch", "--continue"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(
+            b"click 'role=button[name=\"Delete account\"]'\n\
+              dialog accept\n\
+              dialog accept DELETE\n\
+              expect 'text=scheduled for deletion' visible\n",
+        )
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    eprintln!("stdout: {}\nstderr: {}", stdout(&out), stderr(&out));
+    // The click ran into the confirm (exit 5); every other step passed.
+    assert_eq!(code(&out), 5, "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(
+        text.contains("accepted confirm \"Delete your account? This cannot be undone.\""),
+        "{text}"
+    );
+    assert!(
+        text.contains("accepted prompt \"Type DELETE to confirm.\" with \"DELETE\""),
+        "{text}"
+    );
+    assert!(
+        text.contains("[4/4] expect 'text=scheduled for deletion' visible ✓"),
+        "{text}"
+    );
+
+    // A dialog that opens a while after the command starts is answered.
+    let out = sandbox.run(&["eval", "setTimeout(() => confirm('Later'), 500), 1"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["dialog", "dismiss"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert_eq!(stdout(&out), "dismissed confirm \"Later\"\n");
 }
 
 #[test]
@@ -238,9 +298,12 @@ fn a_dialog_in_another_tab() {
         "{}",
         stderr(&out)
     );
-    // The active tab (t2) has none; the error points at t1.
+    // The active tab (t2) has none; the error points at t1 at once,
+    // without waiting for a dialog in t2.
+    let start = Instant::now();
     let out = sandbox.run(&["dialog", "accept"]);
     assert_eq!(code(&out), 1, "{}", stderr(&out));
+    assert!(start.elapsed() < Duration::from_secs(10));
     assert!(
         stderr(&out).contains("dialog open: tab t1: confirm \"Other\""),
         "{}",
