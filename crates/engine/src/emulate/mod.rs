@@ -2,8 +2,9 @@
 //! time zone, locale, user agent, CSS media, network and CPU throttling,
 //! permissions, and a frozen clock.
 //!
-//! Like routes, every setting belongs to the session ([`Emulator`], in the
-//! tab manager's settings, so it outlives a browser) and is sticky: a
+//! Like routes, every setting belongs to the session's default browser
+//! context, or with `--context` to that one ([`Emulator`], in the tab
+//! manager's settings, so it outlives a browser), and is sticky: a
 //! change applies to every page and iframe session now, and each new one
 //! (a tab, a popup, an out-of-process iframe) gets the settings while it
 //! is paused, before its first script runs (see `tabs::emulation`).

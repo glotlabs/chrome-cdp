@@ -302,7 +302,7 @@ longer has one. Each tab keeps its newest 2,000 requests (`open
 
 `route <pattern>` mocks, blocks or changes requests whose URL matches (a glob
 such as `**/api/*`, a `/regex/`, or a part of the URL), in every tab, popup
-and frame of the session, the ones opened later too, before the page's first
+and frame of the browser context (the session's own unless `--context`), the ones opened later too, before the page's first
 script runs. A rule has one action: answer (`--json-body`, `--body`,
 `--body-file`, `--status`, `--header`), `--abort [reason]`, change
 (`--set-header`, `--remove-header`, `--rewrite-url`), or `--patch-json`,
@@ -330,7 +330,8 @@ it are answered, so mocking a cross-origin API just works.
 ## Emulation
 
 Emulation shapes the environment pages run in. Like routes, every setting
-belongs to the session: it applies to every tab, popup and frame, the ones
+belongs to the browser context (the session's own unless `--context`):
+it applies to every tab, popup and frame in it, the ones
 opened later too, before the page's first script runs, and stays until it
 is reset. In headless mode pages get a fixed 1280x800 viewport until one is
 set (a `--chrome-arg=--window-size=…` of yours wins; headed, the window
@@ -366,7 +367,7 @@ which Chrome sets only on the page.
 
 Init scripts run in every new document of the session, before the page's
 own scripts: stub an API, set a feature flag, or record what the page does.
-Like routes and emulation they belong to the session and reach every tab,
+Like routes and emulation they belong to the browser context and reach every tab,
 popup and frame. `expose` gives pages a function whose calls land in the
 tab's console, so a page (or an init script) can report back:
 

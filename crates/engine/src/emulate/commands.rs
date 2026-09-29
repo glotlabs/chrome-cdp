@@ -2,8 +2,9 @@
 //! `throttle`, `cpu-throttle`, `time` and `permissions` (plan 07,
 //! milestone 7.2).
 //!
-//! The settings belong to the session, not to a tab: none of these
-//! commands takes a tab lock. Without a browser they are only recorded,
+//! The settings belong to the session's default browser context (or with
+//! `--context` to that one), not to a tab: none of these commands takes a
+//! tab lock. Without a browser they are only recorded,
 //! and a browser started later gets them.
 
 use cdp::domains::browser::{PermissionSetting, ResetPermissionsParams};

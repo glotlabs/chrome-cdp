@@ -1,8 +1,9 @@
 //! Init scripts and exposed functions (plan 07, milestone 7.3):
 //! `init-script add|list|remove`, `expose` and `unexpose`.
 //!
-//! Like routes and emulation, both belong to the session ([`Injector`], in
-//! the tab manager's settings, so they outlive a browser): every page and
+//! Like routes and emulation, both belong to the session's default browser
+//! context, or with `--context` to that one ([`Injector`], in the tab
+//! manager's settings, so they outlive a browser): every page and
 //! iframe session gets them while it is paused, before its first script,
 //! and a change goes to every session there is (see `tabs::inject`, which
 //! keeps each session's script ids to take them out again).

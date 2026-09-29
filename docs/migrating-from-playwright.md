@@ -327,7 +327,8 @@ them. By default each read shows what the previous one did not.
 
 ## Mocking and HAR
 
-`route` rules belong to the session: they apply to every tab, popup and frame,
+`route` rules belong to the browser context (the session's own unless
+`--context`): they apply to every tab, popup and frame in it,
 including the ones opened later, before the page's first request. The first
 rule that matches handles a request.
 

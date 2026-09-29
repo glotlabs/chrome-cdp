@@ -1062,8 +1062,9 @@ Examples:
     #[command(after_help = "\
 Adds a rule for requests whose URL matches PATTERN: a glob (`**/api/*`,
 where * stops at / and ** does not), a /regex/, or a part of the URL. Rules
-belong to the session: they apply to every tab, popup and frame, the ones
-opened later too, before the page's first script runs. The first matching
+belong to the browser context (the session's own, unless --context): they
+apply to every tab, popup and frame in it, the ones opened later too,
+before the page's first script runs. The first matching
 rule, in the order they were added, handles a request; the rest go on
 untouched. `routes` lists them, `unroute` removes them.
 
@@ -1206,11 +1207,11 @@ Examples:
         subcommand_required = true,
         arg_required_else_help = true,
         after_help = "\
-An init script runs in every new document of the session (tabs, popups
-and frames, those opened later too) before the page's own scripts, in the
+An init script runs in every new document of the browser context (tabs,
+popups and frames, those opened later too) before the page's own scripts, in the
 order they were added. Stub APIs, set feature flags, or record what the
-page does. Init scripts belong to the session and stay when the browser
-is restarted.
+page does. Init scripts belong to the browser context (the session's own,
+unless --context); the session's own stay when the browser is restarted.
 
 Examples:
   chrome-cdp init-script add ./stubs.js
@@ -1248,9 +1249,9 @@ A device sets the viewport, pixel ratio, mobile mode, touch and user agent
 (the table comes from Playwright's device descriptors). Without DEVICE,
 prints everything the session emulates; `emulate reset` turns all of it
 off (viewport, user agent, locale, time zone, geolocation, media,
-network, CPU and time). Emulation belongs to the session: it applies to
-every tab, popup and frame, those opened later too, before the page's
-first script runs.
+network, CPU and time). Emulation belongs to the browser context (the session's own,
+unless --context): it applies to every tab, popup and frame in it, those
+opened later too, before the page's first script runs.
 
 Examples:
   chrome-cdp emulate 'iPhone 15'

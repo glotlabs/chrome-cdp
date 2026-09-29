@@ -31,8 +31,9 @@ Options:
 ```text
 Adds a rule for requests whose URL matches PATTERN: a glob (`**/api/*`,
 where * stops at / and ** does not), a /regex/, or a part of the URL. Rules
-belong to the session: they apply to every tab, popup and frame, the ones
-opened later too, before the page's first script runs. The first matching
+belong to the browser context (the session's own, unless --context): they
+apply to every tab, popup and frame in it, the ones opened later too,
+before the page's first script runs. The first matching
 rule, in the order they were added, handles a request; the rest go on
 untouched. `routes` lists them, `unroute` removes them.
 

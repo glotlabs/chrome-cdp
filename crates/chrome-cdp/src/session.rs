@@ -1568,7 +1568,7 @@ fn read_state(path: &Path, session: &str) -> Result<StateLoadRequest, ErrorInfo>
     })
 }
 
-/// Routes belong to the session: a `--tab` is no scope for them.
+/// Routes belong to a browser context: a `--tab` is no scope for them.
 fn every_tab(output: Output, ctx: &Ctx, what: &str) -> Output {
     if ctx.tab.is_some() {
         let whose = ctx.context.as_ref().map_or_else(
