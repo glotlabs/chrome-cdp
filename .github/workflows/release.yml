@@ -1,0 +1,238 @@
+name: Release
+
+# Plan 10.5: a tag `vX.Y.Z` builds the four release targets, publishes a
+# GitHub release with their archives, SHA-256 sums, manifest.json (read by
+# `chrome-cdp upgrade`) and install.sh, then updates the other channels.
+#
+# Optional secrets; each step without its secret is skipped with a warning:
+# - APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD,
+#   APPLE_SIGNING_IDENTITY: sign the macOS binaries (Developer ID);
+#   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD: also notarize them
+#   (.github/scripts/macos-sign.sh);
+# - HOMEBREW_TAP_TOKEN: push Formula/chrome-cdp.rb to glotlabs/homebrew-tap;
+# - NPM_TOKEN: publish the npm packages (npm/README.md);
+# - CARGO_REGISTRY_TOKEN: publish the crates to crates.io.
+#
+# Rerun a release with workflow_dispatch and the tag; the GitHub release
+# step then replaces the assets of the existing release.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The tag to release, e.g. v1.0.0"
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  check:
+    name: release check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - run: rustup toolchain install
+      # The tag matches the workspace version, the internal dependencies
+      # agree, and CHANGELOG.md has the version's section.
+      - run: cargo xtask release check --tag "$TAG"
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: check
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    env:
+      HAS_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - run: rustup toolchain install && rustup target add ${{ matrix.target }}
+      - if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo xtask dist --target ${{ matrix.target }}
+      - name: The binary runs
+        run: |
+          dist/chrome-cdp-${{ matrix.target }} --version
+          dist/chrome-cdp-${{ matrix.target }} install --list
+      - name: Sign and notarize
+        if: runner.os == 'macOS' && env.HAS_APPLE_CERTIFICATE == 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: .github/scripts/macos-sign.sh dist/chrome-cdp-${{ matrix.target }}
+      - if: runner.os == 'macOS' && env.HAS_APPLE_CERTIFICATE != 'true'
+        run: echo "::warning::APPLE_CERTIFICATE is not set; the ${{ matrix.target }} binary is not signed or notarized"
+      - run: cargo xtask release archive --target ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            dist/chrome-cdp-${{ matrix.target }}.tar.gz
+            dist/chrome-cdp-${{ matrix.target }}.tar.gz.sha256
+
+  github:
+    name: GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0 # the notes list the commits since the previous tag
+      - run: rustup toolchain install
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - run: cargo xtask release manifest
+      - run: cargo xtask release notes --tag "$TAG" > "$RUNNER_TEMP/notes.md"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets="dist/*.tar.gz dist/*.sha256 dist/SHA256SUMS dist/manifest.json install.sh"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            # shellcheck disable=SC2086
+            gh release upload "$TAG" $assets --clobber
+            gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            prerelease=""
+            case "$TAG" in *-*) prerelease="--prerelease" ;; esac
+            # shellcheck disable=SC2086
+            gh release create "$TAG" $assets --verify-tag $prerelease \
+              --title "chrome-cdp ${TAG#v}" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: |
+            dist/SHA256SUMS
+            dist/manifest.json
+
+  homebrew:
+    name: Homebrew tap
+    needs: github
+    if: ${{ !contains(inputs.tag || github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    env:
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    steps:
+      - if: env.HOMEBREW_TAP_TOKEN == ''
+        run: echo "::warning::HOMEBREW_TAP_TOKEN is not set; the Homebrew tap is not updated"
+      - if: env.HOMEBREW_TAP_TOKEN != ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - if: env.HOMEBREW_TAP_TOKEN != ''
+        uses: actions/checkout@v4
+        with:
+          repository: glotlabs/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - if: env.HOMEBREW_TAP_TOKEN != ''
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - if: env.HOMEBREW_TAP_TOKEN != ''
+        run: rustup toolchain install
+      - if: env.HOMEBREW_TAP_TOKEN != ''
+        name: Update the formula
+        run: |
+          mkdir -p tap/Formula
+          cargo xtask release formula > tap/Formula/chrome-cdp.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/chrome-cdp.rb
+          git commit -m "chrome-cdp ${TAG#v}" || echo "the formula is unchanged"
+          git push
+
+  npm:
+    name: npm
+    needs: github
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - if: env.NODE_AUTH_TOKEN == ''
+        run: echo "::warning::NPM_TOKEN is not set; the npm packages are not published"
+      - if: env.NODE_AUTH_TOKEN != ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - if: env.NODE_AUTH_TOKEN != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - if: env.NODE_AUTH_TOKEN != ''
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - if: env.NODE_AUTH_TOKEN != ''
+        run: rustup toolchain install
+      - if: env.NODE_AUTH_TOKEN != ''
+        name: Publish
+        run: |
+          cargo xtask release npm
+          tag=latest
+          case "$TAG" in *-*) tag=next ;; esac
+          # The platform packages first: the launcher depends on them.
+          for dir in target/npm/chrome-cdp-*/ target/npm/chrome-cdp/; do
+            (cd "$dir" && npm publish --access public --provenance --tag "$tag")
+          done
+
+  crates:
+    name: crates.io
+    needs: github
+    runs-on: ubuntu-latest
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - if: env.CARGO_REGISTRY_TOKEN == ''
+        run: echo "::warning::CARGO_REGISTRY_TOKEN is not set; the crates are not published"
+      - if: env.CARGO_REGISTRY_TOKEN != ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - if: env.CARGO_REGISTRY_TOKEN != ''
+        run: rustup toolchain install
+      # Publishes chrome-cdp and the chrome-cdp-* crates it depends on, in
+      # dependency order; the unpublished ones are publish = false.
+      - if: env.CARGO_REGISTRY_TOKEN != ''
+        run: cargo publish --workspace --locked --exclude bench --exclude fixtures --exclude cdp-gen --exclude xtask

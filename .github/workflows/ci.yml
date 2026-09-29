@@ -127,7 +127,7 @@ jobs:
           path: examples/e2e-ssr/e2e/.results/
 
   # Plan 10.2: the release targets build, the binary starts, and it stays
-  # under 15MB and within 20% of its baseline in xtask/binary-sizes.txt.
+  # within 20% of its baseline in xtask/binary-sizes.txt.
   # Each builds on its own architecture, so the smoke test runs it.
   build:
     name: build (${{ matrix.target }})
@@ -158,10 +158,42 @@ jobs:
         run: |
           dist/chrome-cdp-${{ matrix.target }} --version
           dist/chrome-cdp-${{ matrix.target }} install --list
+      # Plan 10.5: the release archive, as release.yml makes it.
+      - run: cargo xtask release archive --target ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
           name: chrome-cdp-${{ matrix.target }}
-          path: dist/chrome-cdp-${{ matrix.target }}
+          path: |
+            dist/chrome-cdp-${{ matrix.target }}
+            dist/chrome-cdp-${{ matrix.target }}.tar.gz
+            dist/chrome-cdp-${{ matrix.target }}.tar.gz.sha256
+
+  # Plan 10.5: everything release.yml does after the builds, short of
+  # publishing: the version check, the sums and manifest, the notes, the
+  # Homebrew formula and the npm packages (packed, not published).
+  package:
+    name: release packaging
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: rustup toolchain install
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: chrome-cdp-*
+          path: dist
+          merge-multiple: true
+      - run: cargo xtask release check
+      - run: cargo xtask release manifest
+      - run: cargo xtask release notes
+      - run: cargo xtask release formula
+      - name: npm packages
+        run: |
+          cargo xtask release npm
+          for dir in target/npm/*/; do (cd "$dir" && npm pack --dry-run); done
+      - run: shellcheck install.sh .github/scripts/*.sh
 
   deny:
     name: cargo-deny
