@@ -26,7 +26,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use super::netlog::Record;
-use super::save::save;
+use super::save::save_private;
 use crate::request::{HarContent, HarExportRequest, HarStartRequest, HarStopRequest, millis};
 use crate::tabs::{parse_tab_id, tab_name};
 use crate::{Engine, Running};
@@ -164,7 +164,7 @@ impl Engine {
                 format!("cannot write the HAR: {e}"),
             )
         })?;
-        let path = save(
+        let path = save_private(
             &json,
             req.path.as_deref(),
             &self.output_dir().join("hars"),

@@ -59,8 +59,9 @@ says whether the sandbox is on.
   cookies and tokens, readable by you only (`0600`). Keep state files out
   of version control and out of CI logs and artifacts.
 - **HAR files, traces and network bodies** can hold tokens and personal
-  data from the requests they recorded. So can screenshots, PDFs and
-  `report.md` of a failed test. Review them before sharing.
+  data from the requests they recorded, so chrome-cdp writes them
+  readable by you only (`0600`). Screenshots, PDFs and `report.md` of a
+  failed test can show secrets too. Review them before sharing.
 - **Passwords stay out of snapshots.** A password field shows as
   `(password)` and never with its value, in `snapshot`, `find` and the
   action reports.

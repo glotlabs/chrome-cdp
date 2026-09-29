@@ -19,7 +19,7 @@ use cdp::domains::{io as cdp_io, tracing as cdp_tracing};
 use protocol::schema::{TraceStartData, TraceStopData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 
-use super::save::{create, failed};
+use super::save::{create_private, failed};
 use crate::errors::from_cdp;
 use crate::request::{TraceStartRequest, TraceStopRequest, millis};
 use crate::tabs::tab_name;
@@ -225,7 +225,7 @@ impl Engine {
             ));
         };
         // Chrome gzips only when asked at the start, so compress here.
-        let (file, path) = create(
+        let (file, path) = create_private(
             req.path.as_deref(),
             &self.output_dir().join("traces"),
             "json",

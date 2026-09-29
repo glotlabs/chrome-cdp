@@ -477,7 +477,7 @@ impl Engine {
             data.into_bytes()
         };
         let dir = path.parent().unwrap_or(path);
-        let saved = save::save(&bytes, Some(path), dir, "")?;
+        let saved = save::save_private(&bytes, Some(path), dir, "")?;
         let binary = std::str::from_utf8(&bytes).is_err()
             || !record.entry.mime.as_deref().is_none_or(textual);
         Ok(Body {
