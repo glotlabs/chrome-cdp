@@ -303,7 +303,7 @@
         },
         {
           "const": "InstallFailed",
-          "description": "Downloading or unpacking a browser (`chrome-cdp install`) failed.",
+          "description": "Downloading or unpacking a browser (`chrome-cdp install`) or a\nrelease (`chrome-cdp upgrade`) failed.",
           "type": "string"
         },
         {

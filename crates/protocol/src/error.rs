@@ -59,7 +59,8 @@ pub enum ErrorKind {
     DaemonUnavailable,
     /// Chrome rejected a CDP call.
     ProtocolError,
-    /// Downloading or unpacking a browser (`chrome-cdp install`) failed.
+    /// Downloading or unpacking a browser (`chrome-cdp install`) or a
+    /// release (`chrome-cdp upgrade`) failed.
     InstallFailed,
 
     // Exit 5.

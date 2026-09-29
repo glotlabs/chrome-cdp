@@ -28,7 +28,9 @@ Exit 4, the browser, daemon or machine:
   PageCrashed       the tab's page crashed; run chrome-cdp reload
   DaemonUnavailable the session's daemon could not be reached or started
   ProtocolError     Chrome rejected a CDP call
-  InstallFailed     chrome-cdp install could not download or unpack
+  InstallFailed     install or upgrade could not download or unpack
+chrome-cdp doctor checks Chrome, its libraries and sandbox, and the session
+dir, with a fix for each problem.
 Exit 5:
   DialogOpen        an alert/confirm/prompt blocks the page; answer it
                     with chrome-cdp dialog accept|dismiss
