@@ -25,12 +25,16 @@ pub(crate) fn render(mode: Mode, result: Result<Output, ErrorInfo>) -> Rendered 
     protocol::render(mode, result, stderr_style())
 }
 
-/// Writes `text` to stdout (secrets masked), and flushes it.
+/// Writes `text` to stdout (secrets masked, control characters shown as
+/// symbols), and flushes it. Every stdout line goes through here, so what
+/// a page says (a `--follow` stream too) never reaches the terminal as an
+/// escape sequence; chrome-cdp's own colours are on stderr only.
 pub(crate) fn stdout(text: &str) {
     // A closed stdout (`| head`) is not an error worth reporting.
     let mut out = std::io::stdout().lock();
+    let text = mask(text);
     let _ = out
-        .write_all(mask(text).as_bytes())
+        .write_all(protocol::format::printable(&text).as_bytes())
         .and_then(|()| out.flush());
 }
 

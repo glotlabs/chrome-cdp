@@ -7,6 +7,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::format;
 use crate::style::Style;
 
 /// What went wrong, as a stable machine-readable name.
@@ -226,21 +227,28 @@ impl ErrorInfo {
     }
 
     /// [`to_text`](Self::to_text) with the labels styled.
+    /// Page text in it shows as text, never as terminal escapes
+    /// ([`format::printable`]).
     pub fn render_text(&self, style: Style) -> String {
-        let mut out = format!("{} {}\n", style.error("error:"), self.message);
+        let mut out = format!(
+            "{} {}\n",
+            style.error("error:"),
+            format::printable(&self.message)
+        );
         for note in &self.notes {
-            let label = style.label(&format!("{}:", note.label));
-            if note.text.contains('\n') {
+            let label = style.label(&format!("{}:", format::printable(&note.label)));
+            let text = format::printable(&note.text);
+            if text.contains('\n') {
                 let _ = writeln!(out, "  {label}");
-                for line in note.text.lines() {
+                for line in text.lines() {
                     let _ = writeln!(out, "    {line}");
                 }
             } else {
-                let _ = writeln!(out, "  {label} {}", note.text);
+                let _ = writeln!(out, "  {label} {text}");
             }
         }
         if let Some(hint) = &self.hint {
-            let _ = writeln!(out, "  {} {hint}", style.hint("hint:"));
+            let _ = writeln!(out, "  {} {}", style.hint("hint:"), format::printable(hint));
         }
         out
     }

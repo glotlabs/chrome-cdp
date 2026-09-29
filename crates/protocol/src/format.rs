@@ -1,7 +1,7 @@
 //! Units, tables and quoting shared by every text renderer (plan 08 §2):
 //! durations in human units (`340ms`, `1.2s`), sizes as `12KB`, counts with
-//! thousands separators, tables no wider than [`MAX_WIDTH`], and shell-safe
-//! arguments for hints.
+//! thousands separators, tables no wider than [`MAX_WIDTH`], shell-safe
+//! arguments for hints, and text safe for a terminal ([`printable`]).
 
 use std::borrow::Cow;
 use std::time::Duration;
@@ -244,11 +244,36 @@ fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
     era * 146_097 + doe - 719_468
 }
 
+/// `text` safe to print on a terminal: control characters but newline and
+/// tab become their visible symbols (`ESC` is `␛`, a lone `CR` is `␍`,
+/// `DEL` is `␡`, a C1 control `�`), and `CR LF` is `LF`. Text renders
+/// hold what pages say (console messages, dialogs, titles), and an escape
+/// sequence there could rewrite the terminal's screen, title or clipboard.
+pub fn printable(text: &str) -> Cow<'_, str> {
+    let unsafe_char = |c: char| c.is_control() && c != '\n' && c != '\t';
+    if !text.contains(unsafe_char) {
+        return Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len() + 8);
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        out.push(match c {
+            '\r' if chars.peek() == Some(&'\n') => continue,
+            '\n' | '\t' => c,
+            '\u{0}'..='\u{1f}' => char::from_u32(0x2400 + c as u32).unwrap_or('\u{fffd}'),
+            '\u{7f}' => '\u{2421}',
+            c if c.is_control() => '\u{fffd}',
+            c => c,
+        });
+    }
+    Cow::Owned(out)
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
-    use super::{MAX_WIDTH, duration, parse_time, shell_quote, size, table, thousands};
+    use super::{MAX_WIDTH, duration, parse_time, printable, shell_quote, size, table, thousands};
 
     #[test]
     fn tables_align_and_stay_narrow() {
@@ -335,5 +360,22 @@ mod tests {
         ] {
             assert!(parse_time(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn printable_text_has_no_escapes() {
+        assert!(matches!(
+            printable("plain\ttext\n"),
+            std::borrow::Cow::Borrowed(_)
+        ));
+        assert_eq!(
+            printable("\x1b]52;c;aGk=\x07red\x1b[31m"),
+            "\u{241b}]52;c;aGk=\u{2407}red\u{241b}[31m"
+        );
+        assert_eq!(printable("a\r\nb\rc"), "a\nb\u{240d}c");
+        assert_eq!(
+            printable("\u{7f}\u{9b}31m\0"),
+            "\u{2421}\u{fffd}31m\u{2400}"
+        );
     }
 }

@@ -259,6 +259,12 @@ mod tests {
 
     #[test]
     fn decoding_tells_bad_json_from_bad_requests() {
+        #[derive(serde::Deserialize, Debug)]
+        struct P {
+            #[serde(default)]
+            n: u32,
+        }
+
         let req = decode_request(r#"{"jsonrpc":"2.0","id":2,"method":"hello"}"#).unwrap();
         assert_eq!((req.id, req.method.as_str()), (2, "hello"));
         for (line, code) in [
@@ -297,11 +303,6 @@ mod tests {
         assert!(decode_response("{}").is_err());
         assert!(decode_response(r#"{"jsonrpc":"2.0","id":null,"result":1}"#).is_ok());
 
-        #[derive(serde::Deserialize, Debug)]
-        struct P {
-            #[serde(default)]
-            n: u32,
-        }
         assert_eq!(decode_params::<P>(serde_json::Value::Null).unwrap().n, 0);
         let err = decode_params::<P>(json!({"n": "x"})).unwrap_err();
         assert_eq!(err.code, RpcError::INVALID_PARAMS);

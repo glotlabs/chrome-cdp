@@ -10,10 +10,10 @@ use std::fmt::Write as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::ErrorInfo;
 use crate::bound::{self, Limit, Truncation};
 use crate::schema::Event;
 use crate::style::Style;
+use crate::{ErrorInfo, format};
 
 /// A command's successful result in every output form. The daemon returns
 /// this over RPC, so it is serialisable.
@@ -246,8 +246,10 @@ pub fn render(mode: Mode, result: Result<Output, ErrorInfo>, stderr: Style) -> R
                 ..
             } = output;
             let Limit { max_chars, more } = budget(limit);
+            // What pages say reaches the terminal as text, never as escapes.
+            let text = format::printable(&text).into_owned();
             let stdout = if mode == Mode::Quiet {
-                let value = quiet.unwrap_or(text);
+                let value = quiet.map_or(text, |q| format::printable(&q).into_owned());
                 match bound::cut(&value, max_chars) {
                     None => line(&value),
                     Some((kept, dropped)) => {
@@ -260,7 +262,7 @@ pub fn render(mode: Mode, result: Result<Output, ErrorInfo>, stderr: Style) -> R
             };
             let prefix = stderr.warning("warning:");
             let stderr = warnings.iter().fold(String::new(), |mut out, w| {
-                let _ = writeln!(out, "{prefix} {w}");
+                let _ = writeln!(out, "{prefix} {}", format::printable(w));
                 out
             });
             Rendered {
@@ -450,5 +452,29 @@ mod tests {
             .limit(5, "--max-chars 0");
         let back: Output = serde_json::from_value(serde_json::to_value(&out).unwrap()).unwrap();
         assert_eq!(back, out);
+    }
+
+    #[test]
+    fn page_text_cannot_send_terminal_escapes() {
+        let mut out = Output::new(json!({"text": "\x1b[2J"}), "\x1b[2Jhi");
+        out.warnings.push("dialog: \x1b]0;owned\x07".into());
+        let r = text(Ok(out.clone()));
+        assert_eq!(r.stdout, "\u{241b}[2Jhi\n");
+        assert_eq!(r.stderr, "warning: dialog: \u{241b}]0;owned\u{2407}\n");
+        let r = render(Mode::Quiet, Ok(out.clone().quiet("\x1b[2J")), Style::PLAIN);
+        assert_eq!(r.stdout, "\u{241b}[2J\n");
+        // JSON keeps the text as it was: the escape is quoted there.
+        let r = render(Mode::Json, Ok(out), Style::PLAIN);
+        assert!(r.stdout.contains(r#""text":"\u001b[2J""#), "{}", r.stdout);
+
+        let err = ErrorInfo::new(ErrorKind::Timeout, "title \x1b[8m")
+            .note("page", "\x1b[1Ax")
+            .hint("\x07");
+        let r = text(Err(err));
+        assert!(
+            !r.stderr.contains('\x1b') && !r.stderr.contains('\x07'),
+            "{}",
+            r.stderr
+        );
     }
 }
