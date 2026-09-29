@@ -269,6 +269,10 @@ struct State {
     seq: u64,
     /// Until `init` ends: tabs that attach are the browser's own, not new.
     starting: bool,
+    /// The origins each scope's frames loaded a document of (Chrome's id
+    /// of a context of ours, `None` for the others), first visit first,
+    /// for `state save`.
+    visited: HashMap<Option<String>, Vec<String>>,
 }
 
 #[derive(Debug)]
@@ -383,6 +387,7 @@ impl Tabs {
                 downloads: Vec::new(),
                 seq: 0,
                 starting: true,
+                visited: HashMap::new(),
             }),
             changed: watch::Sender::new(0),
             security_applied: AtomicBool::new(false),
@@ -715,8 +720,21 @@ impl Tabs {
             state.remove(id);
         }
         state.context_active.remove(browser_id);
+        state.visited.remove(&Some(browser_id.to_owned()));
         drop(state);
         self.shared.bump();
+    }
+
+    /// The origins frames of `scope` (Chrome's id of a context of ours,
+    /// or `None` for the others) loaded a document of, in tabs open or
+    /// closed, first visit first.
+    pub(crate) fn visited_in(&self, scope: Option<&str>) -> Vec<String> {
+        self.shared
+            .lock()
+            .visited
+            .get(&scope.map(str::to_owned))
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Makes `id` the active tab and brings it to the front.
@@ -1722,15 +1740,18 @@ fn recovered(shared: &Shared, session_id: &str, tab: u32) {
 /// Applies a frame or execution context event of `session_id` to tab
 /// `tab`'s frame tree.
 fn frame_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event: &RawEvent) {
-    let mut state = shared.lock();
+    let mut guard = shared.lock();
+    let state = &mut *guard;
     let Some(tab) = state.tabs.get_mut(&tab) else {
         return;
     };
+    let visited = &mut state.visited;
     let frames = &mut tab.frames;
     let decoded = match method {
         page::FrameAttached::NAME => decode::<page::FrameAttached>(event)
             .map(|e| frames.attached(session_id, &e.frame_id, &e.parent_frame_id)),
         page::FrameNavigated::NAME => decode::<page::FrameNavigated>(event).map(|e| {
+            visit(visited, tab.context.as_ref(), &e.frame.url);
             let main = e.frame.parent_id.is_none();
             tab.network
                 .navigated(session_id, &e.frame.id, &e.frame.loader_id, main);
@@ -1771,7 +1792,7 @@ fn frame_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event:
         }
         _ => return,
     };
-    drop(state);
+    drop(guard);
     match decoded {
         Ok(()) => shared.bump(),
         Err(e) => tracing::warn!("cannot decode {method}: {e}"),
@@ -2105,10 +2126,36 @@ async fn setup(
 /// Adds the frames `Page.getFrameTree` reported on `session_id` to tab
 /// `tab`.
 fn seed(shared: &Shared, tab: u32, session_id: &str, tree: &page::FrameTree) {
-    if let Some(tab) = shared.lock().tabs.get_mut(&tab) {
+    let mut guard = shared.lock();
+    let state = &mut *guard;
+    if let Some(tab) = state.tabs.get_mut(&tab) {
         tab.frames.seed(session_id, tree);
+        let mut trees = vec![tree];
+        while let Some(tree) = trees.pop() {
+            visit(&mut state.visited, tab.context.as_ref(), &tree.frame.url);
+            trees.extend(tree.child_frames.iter().flatten());
+        }
     }
+    drop(guard);
     shared.bump();
+}
+
+/// Adds `url`'s origin (http and https only) to what the scope of a tab in
+/// `context` visited.
+fn visit(
+    visited: &mut HashMap<Option<String>, Vec<String>>,
+    context: Option<&(String, String)>,
+    url: &str,
+) {
+    let Some(origin) = crate::state::origin_of(url) else {
+        return;
+    };
+    let origins = visited
+        .entry(context.map(|(browser_id, _)| browser_id.clone()))
+        .or_default();
+    if !origins.contains(&origin) {
+        origins.push(origin);
+    }
 }
 
 /// One setup call already sent, its result discarded.
