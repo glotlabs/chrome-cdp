@@ -59,6 +59,16 @@ a long word is forgiven) and prints the best matches as snapshot lines,
 each with the named container it is in. It is the cheapest way to get a
 ref when you know what you are looking for.
 
+`eval` gives refs too: elements in a script's value print with theirs,
+so a query leads straight to an action (the first 50 elements of a value
+get one; a warning says how many more did not):
+
+```sh
+chrome-cdp eval '[...document.querySelectorAll(".row button.delete")]'
+# ["button.delete [e41]", "button.delete [e44]", …]
+chrome-cdp click e44
+```
+
 After acting, you rarely need a whole new snapshot: each action reports
 what it caused (a navigation, a dialog, errors), and `--snap` adds what
 changed on the page (`snapshot --diff -i`) to the report:

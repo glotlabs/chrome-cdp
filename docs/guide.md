@@ -439,7 +439,9 @@ size wins); Chrome prints only when headless.
 
 `eval <js>` runs a script in the page like a line typed into DevTools'
 console (statements, top-level `await`, a user gesture) and prints its value:
-a string as it is, anything else as JSON, a DOM node as `button#save.primary`.
+a string as it is, anything else as JSON, a DOM node as `button#save.primary`
+and an element of the page with a ref to act on, `button#save.primary [e14]`
+(the first 50 elements of a value; a warning says how many more got none).
 A promise is awaited and a function (`el => el.value`) called. `--in
 <locator>` binds one element as `el`, `--frame` runs in a frame, `--world
 isolated` away from the page's own scripts, and `eval -` reads the script from
