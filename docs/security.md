@@ -27,7 +27,8 @@ The exception is `chrome-cdp connect`, which attaches to a Chrome you
 started with `--remote-debugging-port`. That port has no authentication:
 anyone who can reach it controls that browser. Keep it on `127.0.0.1` and
 close the browser when done; never expose it on a network you do not
-trust.
+trust. `connect` warns when the endpoint, or the WebSocket URL its
+`/json/version` names, is not a loopback address.
 
 ## Chrome's sandbox stays on
 

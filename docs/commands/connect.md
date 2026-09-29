@@ -17,7 +17,9 @@ Options:
 
 ```text
 The browser must run with --remote-debugging-port. `close` then only
-detaches; the browser keeps running.
+detaches; the browser keeps running. The port has no authentication or
+encryption: keep it on 127.0.0.1. connect warns when the browser is on
+another host.
 
 Examples:
   chrome-cdp connect 9222

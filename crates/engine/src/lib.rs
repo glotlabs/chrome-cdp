@@ -544,6 +544,11 @@ impl Engine {
         }
 
         let url = endpoint::websocket_url(&endpoint, timeout).await?;
+        // `/json/version` may name another host than the one asked.
+        if let Endpoint::Http(authority) = &endpoint {
+            warnings.extend(endpoint::remote_warning(authority));
+        }
+        warnings.extend(endpoint::remote_warning(&url).filter(|w| !warnings.contains(w)));
         let failed = |why: String| {
             ErrorInfo::new(
                 ErrorKind::LaunchFailed,

@@ -63,6 +63,43 @@ pub fn parse_endpoint(input: &str) -> Result<Endpoint, ErrorInfo> {
     }
 }
 
+/// The warning for a browser that is not on this machine, or `None` when
+/// `url` (a `ws://` URL or `host:port`) is on a loopback address. The
+/// DevTools protocol has neither authentication nor encryption, so whoever
+/// can see or reach that address can read and control the browser.
+pub(crate) fn remote_warning(url: &str) -> Option<String> {
+    let host = host(url);
+    if is_loopback(host) {
+        return None;
+    }
+    Some(format!(
+        "{host} is not this machine: the DevTools protocol is unencrypted and \
+         unauthenticated, so anyone on the network between can read and control \
+         the browser"
+    ))
+}
+
+/// The host of a `ws://` or `http://` URL or a `host:port`, without
+/// brackets around an IPv6 address.
+fn host(url: &str) -> &str {
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let authority = authority.rsplit_once('@').map_or(authority, |(_, a)| a);
+    if let Some(v6) = authority.strip_prefix('[') {
+        return v6.split(']').next().unwrap_or_default();
+    }
+    authority.split(':').next().unwrap_or_default()
+}
+
+fn is_loopback(host: &str) -> bool {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    host == "localhost"
+        || host.ends_with(".localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+}
+
 fn port(text: &str) -> Option<u16> {
     text.parse().ok().filter(|&p| p != 0)
 }
@@ -145,7 +182,7 @@ mod tests {
 
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-    use super::{Endpoint, parse_endpoint, websocket_url};
+    use super::{Endpoint, parse_endpoint, remote_warning, websocket_url};
 
     #[test]
     fn endpoints() {
@@ -177,6 +214,38 @@ mod tests {
                 .message
                 .ends_with("TLS (wss://, https://) is not supported yet")
         );
+    }
+
+    #[test]
+    fn only_remote_browsers_warn() {
+        for local in [
+            "ws://127.0.0.1:9222/devtools/browser/abc",
+            "ws://127.8.0.1:9222/x",
+            "ws://localhost:9222/x",
+            "ws://LOCALHOST./x",
+            "ws://app.localhost:9222",
+            "ws://[::1]:9222/devtools/browser/abc",
+            "ws://user@127.0.0.1:9222/x",
+            "127.0.0.1:9222",
+            "localhost:9333",
+        ] {
+            assert_eq!(remote_warning(local), None, "{local}");
+        }
+        for (remote, host) in [
+            ("ws://10.0.0.2:9222/devtools/browser/abc", "10.0.0.2"),
+            ("ws://chrome.example:9222", "chrome.example"),
+            ("ws://[fe80::1]:9222/x", "fe80::1"),
+            ("ws://127.0.0.1@evil.example:9222/x", "evil.example"),
+            ("ws://localhost.evil.example/x", "localhost.evil.example"),
+            ("0.0.0.0:9222", "0.0.0.0"),
+            ("10.0.0.2:9222", "10.0.0.2"),
+        ] {
+            let warning = remote_warning(remote).expect(remote);
+            assert!(
+                warning.starts_with(&format!("{host} is not this machine")),
+                "{warning}"
+            );
+        }
     }
 
     #[tokio::test]
