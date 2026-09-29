@@ -427,6 +427,9 @@ fn serve_until_stopped() -> (String, impl FnOnce()) {
                     break;
                 }
                 let Ok(mut stream) = stream else { continue };
+                // Chrome may preconnect a socket it never sends on; waiting
+                // on it forever would hang `stop`.
+                let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(1)));
                 let mut buf = [0; 4096];
                 if !matches!(stream.read(&mut buf), Ok(n) if n > 0) {
                     continue;

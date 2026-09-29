@@ -406,6 +406,9 @@ impl Shot<'_> {
     /// waits for it to be there and rendered.
     async fn element(&self, locator: &Locator) -> Result<Capture, ErrorInfo> {
         let retry = |r: &str| Cmd::new("screenshot").arg(r);
+        // Why the last try failed: a call cut short by the deadline says
+        // less than that.
+        let mut last: Option<ErrorInfo> = None;
         loop {
             let found = self
                 .engine
@@ -423,7 +426,13 @@ impl Shot<'_> {
                     let measured = self.measure(&target.context, &target.object_id).await;
                     let (frame, note) = (target.key.frame.clone(), target.note.clone());
                     target.release();
-                    match measured? {
+                    let measured = match (measured, last.take()) {
+                        (Err(e), Some(last)) if e.kind == ErrorKind::Timeout => {
+                            return Err(last.note("waited", format::duration(self.timeout)));
+                        }
+                        (measured, _) => measured?,
+                    };
+                    match measured {
                         Some(rect) => {
                             self.scroll_owners(rect, &frame).await?;
                             return self.element_area(rect, &frame, note).await;
@@ -444,11 +453,17 @@ impl Shot<'_> {
                     }
                 }
                 Err(err) if waits_for(&err) => err,
-                Err(err) => return Err(err),
+                Err(err) => match last {
+                    Some(last) if err.kind == ErrorKind::Timeout => {
+                        return Err(last.note("waited", format::duration(self.timeout)));
+                    }
+                    _ => return Err(err),
+                },
             };
             if Instant::now() + RETRY_DELAY >= self.deadline {
                 return Err(err.note("waited", format::duration(self.timeout)));
             }
+            last = Some(err);
             tokio::time::sleep(RETRY_DELAY).await;
         }
     }

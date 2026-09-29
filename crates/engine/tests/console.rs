@@ -262,15 +262,23 @@ async fn errors_are_exceptions_error_logs_and_own_failed_loads() {
         out.text
     );
 
-    // A CSP violation.
+    // A CSP violation. Chrome may report it after the load, so wait for it.
+    let csp = |text: &str| {
+        text.contains("error [security] Loading the image") && text.contains("(/console/csp.html:")
+    };
     goto(&engine, &site.url("/console/csp.html")).await;
-    let (out, _) = read(&engine, request(true)).await;
-    assert!(
-        out.text.contains("error [security] Loading the image")
-            && out.text.contains("(/console/csp.html:"),
-        "{}",
-        out.text
-    );
+    let mut text = String::new();
+    for _ in 0..20 {
+        let wait = ConsoleRequest {
+            wait_ms: 500,
+            ..request(true)
+        };
+        text.push_str(&read(&engine, wait).await.0.text);
+        if csp(&text) {
+            break;
+        }
+    }
+    assert!(csp(&text), "{text}");
     engine.close().await;
 }
 
