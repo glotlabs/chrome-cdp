@@ -1167,6 +1167,16 @@ const CASES: &[Case] = &[
         ]),
     },
     Case {
+        name: "console-worker",
+        args: &["console", "--grep", "from service", "--since", "0"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/targets/matrix.html"],
+            &["wait", "--fn", "document.title === 'Targets: ready'"],
+            &["eval", "ask('service', 'log')"],
+        ]),
+    },
+    Case {
         name: "network-none",
         args: &["network"],
         modes: ALL,

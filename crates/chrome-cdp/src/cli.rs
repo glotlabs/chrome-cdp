@@ -1029,7 +1029,9 @@ Examples:
 Every tab records its console from the moment it opens (the newest 1,000
 entries; see `open --console-buffer`). By default only entries this command
 has not shown before are printed, so running it again shows what is new.
-Stack frames of localhost pages are resolved with source maps.
+Stack frames of localhost pages are resolved with source maps. Workers log
+here too, marked `[dedicated worker w.js]`; a shared or service worker's
+messages are in every tab with a frame on its origin.
 
 Examples:
   chrome-cdp console

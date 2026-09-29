@@ -207,6 +207,9 @@ pub struct EngineStatus {
     pub crash: Option<String>,
     pub tabs: Option<u32>,
     pub uptime: Option<Duration>,
+    /// Console messages and requests of shared and service workers no
+    /// tab had a frame on the origin of.
+    pub worker_events_dropped: u64,
 }
 
 /// What `close` did to the browser.
@@ -795,6 +798,7 @@ impl Engine {
                 crash: None,
                 tabs: Some(running.tabs.count()),
                 uptime: Some(running.started.elapsed()),
+                worker_events_dropped: running.tabs.worker_events_dropped(),
             },
             Err(Some(crash)) => EngineStatus {
                 state: SessionState::Crashed,
@@ -802,6 +806,7 @@ impl Engine {
                 crash: Some(crash.reason),
                 tabs: None,
                 uptime: None,
+                worker_events_dropped: 0,
             },
             Err(None) => EngineStatus {
                 state: SessionState::Idle,
@@ -809,6 +814,7 @@ impl Engine {
                 crash: None,
                 tabs: None,
                 uptime: None,
+                worker_events_dropped: 0,
             },
         }
     }

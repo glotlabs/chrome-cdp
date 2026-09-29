@@ -133,6 +133,9 @@ pub(crate) struct Target {
     /// The init scripts and exposed functions it has, with the id of
     /// each one's script (`None` while Chrome is adding it).
     pub(crate) injected: HashMap<Key, Option<String>>,
+    /// A worker's console events so far: numbers each, the same in every
+    /// tab it goes to.
+    pub(crate) events: u64,
 }
 
 impl Target {
@@ -156,6 +159,7 @@ impl Target {
             clock: None,
             interception: None,
             injected: HashMap::new(),
+            events: 0,
         }
     }
 

@@ -445,6 +445,17 @@
                 "string",
                 "null"
               ]
+            },
+            "worker": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Worker"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The worker it came from, if a worker's."
             }
           },
           "required": [
@@ -897,6 +908,43 @@
         "kept"
       ],
       "type": "object"
+    },
+    "Worker": {
+      "description": "A worker, as an entry of a tab's log names it.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/WorkerKind"
+        },
+        "url": {
+          "description": "Its script.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "url"
+      ],
+      "type": "object"
+    },
+    "WorkerKind": {
+      "description": "What kind of worker.",
+      "oneOf": [
+        {
+          "const": "dedicated",
+          "description": "A page's or iframe's own `Worker`, of one tab.",
+          "type": "string"
+        },
+        {
+          "const": "shared",
+          "description": "A `SharedWorker`: of every tab of its origin.",
+          "type": "string"
+        },
+        {
+          "const": "service",
+          "description": "A service worker: of every tab of its origin.",
+          "type": "string"
+        }
+      ]
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",

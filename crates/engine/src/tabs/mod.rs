@@ -68,7 +68,7 @@ use crate::inject::{Injector, MOCK_BINDING, SEED_BINDING};
 use crate::injected;
 use crate::input::Pointer;
 use crate::network::{Exchange, Failure, Idle, InFlight, Network};
-use crate::observe::console::{self, Console, ConsoleError};
+use crate::observe::console::{self, Console, ConsoleError, FromWorker};
 use crate::observe::netlog::{self, NetLog};
 use crate::request::{DialogPolicy, HttpCredentials};
 use crate::route::Router;
@@ -281,6 +281,9 @@ struct State {
     /// of a context of ours, `None` for the others), first visit first,
     /// for `state save`.
     visited: HashMap<Option<String>, Vec<String>>,
+    /// Console messages and requests of shared and service workers no
+    /// tab had a frame on the origin of (`status`).
+    dropped: u64,
 }
 
 #[derive(Debug)]
@@ -299,8 +302,8 @@ struct Tab {
     frames: FrameTree,
     /// Its requests, also those of its OOPIF sessions.
     network: Network,
-    /// Its console, also that of its OOPIF sessions and dedicated
-    /// workers.
+    /// Its console, also that of its OOPIF sessions and workers (see
+    /// `watch_worker`).
     console: Console,
     /// Its network log, also that of its OOPIF sessions.
     netlog: NetLog,
@@ -857,6 +860,12 @@ impl Tabs {
     }
 
     /// How many tabs are open.
+    /// Console messages and requests of shared and service workers that
+    /// no tab had a frame on the origin of.
+    pub(crate) fn worker_events_dropped(&self) -> u64 {
+        self.shared.lock().dropped
+    }
+
     pub(crate) fn count(&self) -> u32 {
         let state = self.shared.lock();
         let ready = state.tabs.values().filter(|t| t.ready).count();
@@ -1448,6 +1457,7 @@ impl State {
             seq: 0,
             starting: true,
             visited: HashMap::new(),
+            dropped: 0,
         }
     }
 
@@ -1727,7 +1737,7 @@ async fn watch_host(
             | "Runtime.bindingCalled"
             | "Log.entryAdded" => {
                 if let Some(tab) = tab {
-                    console_event(&shared, tab, &event, None);
+                    console_event(&shared, tab, &event);
                 }
             }
             page::JavascriptDialogOpening::NAME => {
@@ -1891,25 +1901,75 @@ fn network_event(shared: &Shared, session_id: &str, tab: u32, method: &str, even
     }
 }
 
-/// Applies a console call, uncaught exception or browser message (of the
-/// dedicated worker whose script is `worker`, if given) to tab `tab`'s
-/// console.
-fn console_event(shared: &Shared, tab: u32, event: &RawEvent, worker: Option<&str>) {
+/// Applies a console call, uncaught exception or browser message of a
+/// page or iframe session to tab `tab`'s console.
+fn console_event(shared: &Shared, tab: u32, event: &RawEvent) {
     let capacity = shared.settings.console_buffer();
     let logged = shared.lock().tabs.get_mut(&tab).is_some_and(|t| {
         t.console
-            .event(&event.method, &event.params, worker, capacity)
+            .event(&event.method, &event.params, None, capacity)
     });
     if logged {
         shared.bump();
     }
 }
 
+/// Applies a console call, uncaught exception or browser message of
+/// worker session `session_id` to the console of each tab it belongs to,
+/// marked with the worker. A shared or service worker's entry is in each
+/// tab of its origin, with the same number of the worker's own
+/// ([`crate::observe::console::ConsoleError::once`]); with no such tab it
+/// is dropped and counted.
+fn worker_console_event(shared: &Shared, session_id: &str, event: &RawEvent) {
+    let capacity = shared.settings.console_buffer();
+    let mut guard = shared.lock();
+    let state = &mut *guard;
+    let Some(target) = state.targets.get_mut(session_id) else {
+        return;
+    };
+    let Some(worker) = target.worker() else {
+        return;
+    };
+    target.events += 1;
+    let once =
+        (target.kind != TargetKind::DedicatedWorker).then(|| (target.id.clone(), target.events));
+    let tabs = state.tabs_of(&state.targets[session_id]);
+    if tabs.is_empty() && is_logged(event) {
+        state.dropped += 1;
+    }
+    let from = FromWorker {
+        worker: &worker,
+        once: once.as_ref().map(|(id, n)| (id.as_str(), *n)),
+    };
+    let mut logged = false;
+    for id in tabs {
+        if let Some(t) = state.tabs.get_mut(&id) {
+            logged |= t
+                .console
+                .event(&event.method, &event.params, Some(from), capacity);
+        }
+    }
+    drop(guard);
+    if logged {
+        shared.bump();
+    }
+}
+
+/// Whether a console event is one a tab's console keeps (not a revoked
+/// rejection, nor a worker's `Log` repeating its console calls).
+fn is_logged(event: &RawEvent) -> bool {
+    match event.method.as_str() {
+        "Runtime.exceptionRevoked" => false,
+        "Log.entryAdded" => event.params["entry"]["source"] != "worker",
+        _ => true,
+    }
+}
+
 /// Handles a worker's events (see "Where worker events go" in plan 13):
-/// its requests go to the network of each tab it belongs to (see
-/// `State::tabs_of`, asked at each event), a dedicated worker's console
-/// calls, uncaught exceptions and browser messages to its tab's console,
-/// and its mock shim's calls to the router.
+/// its requests go to the network, and its console calls, uncaught
+/// exceptions and browser messages to the console, of each tab it
+/// belongs to (see `State::tabs_of`, asked at each event), and its mock
+/// shim's calls to the router.
 async fn watch_worker(shared: Arc<Shared>, mut events: LosslessEventStream, session_id: String) {
     while let Some(event) = events.next().await {
         match event.method.as_str() {
@@ -1923,17 +1983,7 @@ async fn watch_worker(shared: Arc<Shared>, mut events: LosslessEventStream, sess
             "Runtime.consoleAPICalled"
             | "Runtime.exceptionThrown"
             | "Runtime.exceptionRevoked"
-            | "Log.entryAdded" => {
-                let dedicated = shared
-                    .lock()
-                    .targets
-                    .get(&session_id)
-                    .filter(|t| t.kind == TargetKind::DedicatedWorker)
-                    .and_then(|t| Some((t.tab()?, t.url.clone())));
-                if let Some((tab, url)) = dedicated {
-                    console_event(&shared, tab, &event, Some(&url));
-                }
-            }
+            | "Log.entryAdded" => worker_console_event(&shared, &session_id, &event),
             _ => {}
         }
     }
@@ -1950,8 +2000,12 @@ fn worker_network_event(shared: &Shared, session_id: &str, method: &str, event: 
         return;
     };
     let worker = target.worker();
+    let tabs = state.tabs_of(target);
+    if tabs.is_empty() && method == "Network.requestWillBeSent" {
+        state.dropped += 1;
+    }
     let mut followed = false;
-    for id in state.tabs_of(target) {
+    for id in tabs {
         if let Some(t) = state.tabs.get_mut(&id) {
             followed |= t.network.worker_event(session_id, method, &event.params);
             followed |=

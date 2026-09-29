@@ -84,15 +84,9 @@ impl Feature {
     /// The kinds of target it applies to.
     pub(crate) fn kinds(self) -> KindSet {
         match self {
-            // A dedicated worker's console goes to its tab's.
-            Self::Runtime => KindSet::of(&[
-                TargetKind::Page,
-                TargetKind::Iframe,
-                TargetKind::DedicatedWorker,
-            ]),
-            // A worker's requests go to its tabs' network logs; it gets
-            // the mock shim.
-            Self::Network | Self::Inject => KindSet::HOSTS_AND_WORKERS,
+            // A worker's console and requests go to its tabs' logs; it
+            // gets the mock shim.
+            Self::Runtime | Self::Network | Self::Inject => KindSet::HOSTS_AND_WORKERS,
             // Chrome has no `Fetch` in a dedicated worker: its requests
             // are paused in the session of the frame that started it.
             Self::Fetch => KindSet::of(&[
@@ -283,7 +277,7 @@ mod tests {
             table,
             [
                 "base      xx....",
-                "runtime   xxx...",
+                "runtime   xxxxx.",
                 "network   xxxxx.",
                 "world     xx....",
                 "inject    xxxxx.",

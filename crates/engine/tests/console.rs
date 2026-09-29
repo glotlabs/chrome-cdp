@@ -15,7 +15,7 @@ use engine::{
 };
 use fixtures::Fixtures;
 use protocol::Output;
-use protocol::schema::{ConsoleData, Level};
+use protocol::schema::{ConsoleData, Level, WorkerKind};
 
 const TIMEOUT_MS: u64 = 30_000;
 
@@ -303,6 +303,7 @@ async fn workers_log_to_their_tab() {
         assert!(!data.entries.is_empty(), "the worker logged nothing");
         for entry in data.entries {
             assert_eq!(entry.worker, Some(site.url("/console/worker.js")));
+            assert_eq!(entry.worker_kind, Some(WorkerKind::Dedicated));
             texts.push(entry.text);
         }
     }
@@ -321,7 +322,7 @@ async fn workers_log_to_their_tab() {
     .await;
     assert!(
         out.text.contains(
-            "error [worker] worker failed Error: worker boom\n    at /console/worker.js:2:"
+            "error [dedicated worker worker.js] worker failed Error: worker boom\n    at /console/worker.js:2:"
         ),
         "{}",
         out.text

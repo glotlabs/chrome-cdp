@@ -315,6 +315,7 @@ impl Actor<'_> {
                 line: e.line,
                 column: e.column,
                 uncaught: e.uncaught,
+                worker: e.worker.clone(),
             })
             .collect()
     }

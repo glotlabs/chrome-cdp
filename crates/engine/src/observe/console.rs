@@ -5,8 +5,11 @@
 //!
 //! Every page and iframe session of the tab has `Runtime` and `Log`
 //! enabled from before its first script (see `tabs::setup`), and so has
-//! each dedicated worker, so entries are recorded from the moment the tab
-//! exists, whether or not anyone asks. `Runtime.consoleAPICalled` and
+//! each worker, so entries are recorded from the moment the tab exists,
+//! whether or not anyone asks. A dedicated worker's entries go to its
+//! tab; a shared or service worker's to each tab of its scope with a
+//! frame on its origin (plan 13), marked so that counting across tabs
+//! counts each once ([`ConsoleError::once`]). `Runtime.consoleAPICalled` and
 //! `Runtime.exceptionThrown` bring the page's own messages;
 //! `Log.entryAdded` brings the browser's (failed loads, CSP violations,
 //! interventions, deprecations). Arguments are formatted as they arrive
@@ -17,7 +20,7 @@
 use std::collections::VecDeque;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use protocol::schema::{ConsoleEntry, Level, StackFrame};
+use protocol::schema::{ConsoleEntry, Level, StackFrame, Worker};
 use serde_json::Value;
 
 use super::format::{self, one_based};
@@ -47,6 +50,20 @@ pub(crate) struct ConsoleError {
     pub(crate) column: Option<u32>,
     /// An uncaught exception (else a `console.error` call).
     pub(crate) uncaught: bool,
+    /// The worker it came from, if a worker's.
+    pub(crate) worker: Option<Worker>,
+    /// For a shared or service worker's, which is in several tabs: the
+    /// worker's target id and the event's number in it, the same in
+    /// every tab.
+    pub(crate) once: Option<(String, u64)>,
+}
+
+/// The worker a console event came from.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FromWorker<'a> {
+    pub(crate) worker: &'a Worker,
+    /// See [`ConsoleError::once`]: set for a shared or service worker.
+    pub(crate) once: Option<(&'a str, u64)>,
 }
 
 /// The read cursors of `console` and `errors`: the last entry each showed.
@@ -71,6 +88,8 @@ struct Stored {
     entry: ConsoleEntry,
     /// An uncaught exception's id, until a late handler revokes it.
     exception_id: Option<i64>,
+    /// See [`ConsoleError::once`].
+    once: Option<(String, u64)>,
 }
 
 impl Console {
@@ -90,14 +109,13 @@ impl Console {
         self.entries.iter().map(|s| &s.entry)
     }
 
-    /// Applies one `Runtime` or `Log` event (of a dedicated worker whose
-    /// script is `worker`, if given), keeping at most `capacity` entries;
-    /// `false` if it logged nothing.
+    /// Applies one `Runtime` or `Log` event (of worker `from`, if given),
+    /// keeping at most `capacity` entries; `false` if it logged nothing.
     pub(crate) fn event(
         &mut self,
         method: &str,
         params: &Value,
-        worker: Option<&str>,
+        from: Option<FromWorker<'_>>,
         capacity: usize,
     ) -> bool {
         let (mut entry, exception_id) = match method {
@@ -129,7 +147,8 @@ impl Console {
         self.seq += 1;
         entry.seq = self.seq;
         entry.time_ms = now_ms();
-        entry.worker = worker.map(str::to_owned);
+        entry.worker = from.map(|f| f.worker.url.clone());
+        entry.worker_kind = from.map(|f| f.worker.kind);
         format::cut(&mut entry.text, TEXT_LEN);
         entry.stack.truncate(STACK_LEN);
         if entry.url.is_none()
@@ -147,6 +166,7 @@ impl Console {
         self.entries.push_back(Stored {
             entry,
             exception_id,
+            once: from.and_then(|f| f.once).map(|(id, n)| (id.to_owned(), n)),
         });
         true
     }
@@ -154,15 +174,24 @@ impl Console {
     /// The `console.error` calls, failed `console.assert`s and uncaught
     /// exceptions logged after mark `after`, oldest first.
     pub(crate) fn errors_since(&self, after: u64) -> Vec<ConsoleError> {
-        self.entries()
-            .filter(|e| e.seq > after && is_page_error(e))
-            .map(|e| ConsoleError {
-                seq: e.seq,
-                message: e.text.lines().next().unwrap_or_default().trim().to_owned(),
-                url: e.url.clone(),
-                line: e.line,
-                column: e.column,
-                uncaught: e.source == "exception",
+        self.entries
+            .iter()
+            .filter(|s| s.entry.seq > after && is_page_error(&s.entry))
+            .map(|s| {
+                let e = &s.entry;
+                ConsoleError {
+                    seq: e.seq,
+                    message: e.text.lines().next().unwrap_or_default().trim().to_owned(),
+                    url: e.url.clone(),
+                    line: e.line,
+                    column: e.column,
+                    uncaught: e.source == "exception",
+                    worker: e
+                        .worker_kind
+                        .zip(e.worker.clone())
+                        .map(|(kind, url)| Worker { kind, url }),
+                    once: s.once.clone(),
+                }
             })
             .collect()
     }
@@ -194,6 +223,7 @@ fn entry(level: Level, source: &str, kind: Option<&str>, text: String) -> Consol
         column: None,
         stack: Vec::new(),
         worker: None,
+        worker_kind: None,
     }
 }
 
@@ -323,10 +353,10 @@ fn log_entry(log: &Value) -> ConsoleEntry {
 
 #[cfg(test)]
 mod tests {
-    use protocol::schema::Level;
+    use protocol::schema::{Level, Worker, WorkerKind};
     use serde_json::json;
 
-    use super::Console;
+    use super::{Console, FromWorker};
 
     const CAP: usize = 1000;
 
@@ -413,10 +443,17 @@ mod tests {
             None,
             CAP,
         );
+        let dedicated = Worker {
+            kind: WorkerKind::Dedicated,
+            url: "http://x/worker.js".into(),
+        };
         console.event(
             "Runtime.consoleAPICalled",
             &json!({ "type": "warning", "args": [{ "type": "string", "value": "slow" }] }),
-            Some("http://x/worker.js"),
+            Some(FromWorker {
+                worker: &dedicated,
+                once: None,
+            }),
             CAP,
         );
         console.event(
@@ -431,9 +468,37 @@ mod tests {
         assert_eq!(entries[0].line, None);
         assert_eq!(entries[1].level, Level::Warn);
         assert_eq!(entries[1].worker.as_deref(), Some("http://x/worker.js"));
+        assert_eq!(entries[1].worker_kind, Some(WorkerKind::Dedicated));
         assert_eq!(entries[2].text, "Assertion failed: x > 0");
         // Chrome's own messages are not the page's errors.
         assert_eq!(console.errors_since(0).len(), 1);
+        assert_eq!(console.errors_since(0)[0].worker, None);
+    }
+
+    #[test]
+    fn a_shared_workers_error_knows_its_worker() {
+        let mut console = Console::default();
+        let shared = Worker {
+            kind: WorkerKind::Shared,
+            url: "http://x/shared.js".into(),
+        };
+        assert!(console.event(
+            "Runtime.exceptionThrown",
+            &json!({ "exceptionDetails": {
+                "exceptionId": 1, "text": "Uncaught", "lineNumber": 0, "columnNumber": 0,
+                "exception": { "type": "object", "subtype": "error", "description": "Error: boom" },
+            } }),
+            Some(FromWorker {
+                worker: &shared,
+                once: Some(("W1", 4)),
+            }),
+            CAP,
+        ));
+        let entry = console.entries().next().unwrap();
+        assert_eq!(entry.worker_kind, Some(WorkerKind::Shared));
+        let errors = console.errors_since(0);
+        assert_eq!(errors[0].worker.as_ref(), Some(&shared));
+        assert_eq!(errors[0].once, Some(("W1".to_owned(), 4)));
     }
 
     #[test]

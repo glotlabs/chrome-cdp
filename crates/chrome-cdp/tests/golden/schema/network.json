@@ -445,6 +445,17 @@
                 "string",
                 "null"
               ]
+            },
+            "worker": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Worker"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The worker it came from, if a worker's."
             }
           },
           "required": [

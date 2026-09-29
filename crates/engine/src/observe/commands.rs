@@ -15,7 +15,7 @@ use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use protocol::schema::{ConsoleData, ConsoleEntry, Level, StackFrame};
+use protocol::schema::{ConsoleData, ConsoleEntry, Level, StackFrame, Worker};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use regex::Regex;
 use tokio::time::Instant;
@@ -416,8 +416,16 @@ fn entry_text(text: &mut String, entry: &ConsoleEntry, page_origin: Option<&str>
     let mut lines = message.lines();
     let first = lines.next().unwrap_or_default();
     let _ = write!(text, "#{} {} ", entry.seq, entry.level.as_str());
-    if entry.worker.is_some() {
-        text.push_str("[worker] ");
+    match (entry.worker_kind, &entry.worker) {
+        (Some(kind), Some(url)) => {
+            let worker = Worker {
+                kind,
+                url: url.clone(),
+            };
+            let _ = write!(text, "{} ", worker.label());
+        }
+        (None, Some(_)) => text.push_str("[worker] "),
+        _ => {}
     }
     match (entry.source.as_str(), &entry.kind) {
         ("exception", Some(kind)) => {
@@ -626,6 +634,7 @@ mod tests {
                 frame("", "http://cdn/lib.js", 9),
             ],
             worker: None,
+            worker_kind: None,
         };
         error.stack[0].original = Some(SourcePosition {
             source: "http://x/src/app.ts".into(),
@@ -642,6 +651,7 @@ mod tests {
             text: "two\nlines".into(),
             stack: vec![frame("", "http://x/app.js", 8)],
             worker: Some("http://x/worker.js".into()),
+            worker_kind: Some(protocol::schema::WorkerKind::Dedicated),
             ..error.clone()
         };
         entry_text(&mut text, &log, Some("http://x"));
@@ -661,7 +671,7 @@ mod tests {
             "#3 error uncaught TypeError: x is undefined\n\
              \x20   at go (/src/app.ts:12:7)\n\
              \x20   at http://cdn/lib.js:9:5\n\
-             #4 info [worker] two (/app.js:8)\n\
+             #4 info [dedicated worker worker.js] two (/app.js:8)\n\
              \x20   lines\n\
              #5 error [network] Failed to load resource: 404 (/api)\n"
         );

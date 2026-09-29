@@ -81,6 +81,12 @@ pub fn status(data: &StatusData) -> Output {
     if let Some(tabs) = data.tabs {
         let _ = write!(text, "\ntabs: {tabs}");
     }
+    if let Some(dropped) = data.worker_events_dropped {
+        let _ = write!(
+            text,
+            "\nworker events dropped: {dropped} (shared or service workers of an origin no tab had open)"
+        );
+    }
     if let Some(pid) = data.daemon_pid {
         let _ = write!(text, "\ndaemon: pid {pid}");
         if let Some(idle) = data.idle_timeout_ms {
@@ -146,6 +152,7 @@ pub fn stopped(session: &str, dir: &Path, logs: Option<Vec<String>>) -> StatusDa
         idle_timeout_ms: None,
         dir: dir.display().to_string(),
         logs,
+        worker_events_dropped: None,
     }
 }
 

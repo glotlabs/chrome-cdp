@@ -2,6 +2,7 @@
 //! `--no-failed-requests` (since the page loaded, or since a `mark`) and
 //! `--a11y` (the injected `a11y.ts` rules).
 
+use std::collections::HashSet;
 use std::time::Duration;
 
 use cdp::domains::runtime;
@@ -124,6 +125,7 @@ impl Engine {
                 line: e.line,
                 column: e.column,
                 uncaught: e.uncaught,
+                worker: e.worker.clone(),
             })
             .collect();
         let mut failed = Failed {
@@ -161,24 +163,29 @@ impl Engine {
         let scope = self.context_key()?;
         let mut tabs = running.tabs.tab_ids_in(scope.as_deref());
         tabs.sort_unstable();
-        let events: Vec<Event> = tabs
-            .iter()
-            .flat_map(|&id| {
-                let tab = tab_name(id);
-                running
-                    .tabs
-                    .console_errors_since(id, 0)
-                    .into_iter()
-                    .map(move |e| Event::ConsoleError {
-                        tab: tab.clone(),
-                        message: e.message,
-                        url: e.url,
-                        line: e.line,
-                        column: e.column,
-                        uncaught: e.uncaught,
-                    })
-            })
-            .collect();
+        // A shared or service worker's error is in each tab of its
+        // origin: counted once, in the first.
+        let mut seen = HashSet::new();
+        let mut events: Vec<Event> = Vec::new();
+        for &id in &tabs {
+            for e in running.tabs.console_errors_since(id, 0) {
+                if e.once
+                    .as_ref()
+                    .is_some_and(|once| !seen.insert(once.clone()))
+                {
+                    continue;
+                }
+                events.push(Event::ConsoleError {
+                    tab: tab_name(id),
+                    message: e.message,
+                    url: e.url,
+                    line: e.line,
+                    column: e.column,
+                    uncaught: e.uncaught,
+                    worker: e.worker,
+                });
+            }
+        }
         let assertion = assertion_text(req);
         let expected = format!("{} in any tab", expected(req, None));
         if events.is_empty() {

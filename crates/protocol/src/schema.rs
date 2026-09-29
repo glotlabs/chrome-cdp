@@ -1232,6 +1232,10 @@ pub struct StatusData {
     /// With `--logs`: the last lines of Chrome's stderr (`chrome.log`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logs: Option<Vec<String>>,
+    /// Console messages and requests of shared and service workers that
+    /// no tab had a frame on the origin of, so no tab's log has them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_events_dropped: Option<u64>,
 }
 
 /// `data` of `chrome-cdp sessions --json`.
@@ -1425,9 +1429,13 @@ pub struct ConsoleEntry {
     /// The top of the stack (5 frames at most), innermost first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stack: Vec<StackFrame>,
-    /// The worker's script, for a message of a dedicated worker.
+    /// The worker's script, for a message of a worker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worker: Option<String>,
+    /// What kind of worker `worker` is. A shared or service worker's
+    /// message is in each tab of its origin (plan 13).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker_kind: Option<WorkerKind>,
 }
 
 /// One frame of a stack trace.
@@ -3315,6 +3323,9 @@ pub enum Event {
         column: Option<u32>,
         /// An uncaught exception (else a `console.error` call).
         uncaught: bool,
+        /// The worker it came from, if a worker's.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        worker: Option<Worker>,
     },
     /// A request of the page to its own origin failed after the command
     /// began: an HTTP status of 400 or more, or no response.

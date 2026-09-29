@@ -714,6 +714,8 @@ impl Daemon {
             idle_timeout_ms: Some(millis(*lock_ignoring_poison(&self.idle_timeout))),
             dir: self.paths.dir.display().to_string(),
             logs: p.logs.map(|n| output::log_tail(&self.paths.chrome_log, n)),
+            worker_events_dropped: (st.worker_events_dropped > 0)
+                .then_some(st.worker_events_dropped),
         }
     }
 }

@@ -1,0 +1,15 @@
+$ chrome-cdp console --grep 'from service' --since 0
+exit: 0
+--- stdout
+#2 info [service worker sw.js] log from service (/targets/ops.js:30)
+
+$ chrome-cdp console --grep 'from service' --since 0 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"cursor":2,"dropped":0,"entries":[{"column":15,"kind":"log","level":"info","line":30,"seq":2,"source":"console","stack":[{"column":15,"function":"targetRun","line":30,"url":"<site>/targets/ops.js"},{"column":18,"function":"","line":6,"url":"<site>/targets/ops.js"},{"column":57,"function":"","line":8,"url":"<site>/targets/sw.js"},{"column":5,"function":"","line":9,"url":"<site>/targets/sw.js"}],"text":"log from service","time_ms":<ms>,"url":"<site>/targets/ops.js","worker":"<site>/targets/sw.js","worker_kind":"service"}],"skipped":0,"tab":"t1"}}
+
+$ chrome-cdp console --grep 'from service' --since 0 -q
+exit: 0
+--- stdout
+log from service
+

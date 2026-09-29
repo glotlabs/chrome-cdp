@@ -234,7 +234,11 @@ impl Engine {
                 format!("navigated to {} {title:?}{how}", shown_url(url))
             }
             Event::ConsoleError {
-                message, url, line, ..
+                message,
+                url,
+                line,
+                worker,
+                ..
             } => {
                 let place = url
                     .as_deref()
@@ -243,7 +247,11 @@ impl Engine {
                         line.map_or_else(|| format!(" ({file})"), |l| format!(" ({file}:{l})"))
                     })
                     .unwrap_or_default();
-                format!("console error: {message}{place}")
+                let from = worker
+                    .as_ref()
+                    .map(|w| format!(" {}", w.label()))
+                    .unwrap_or_default();
+                format!("console error: {message}{place}{from}")
             }
             Event::RequestFailed {
                 id,

@@ -22,8 +22,8 @@ use engine::{
     CdpRequest, ConsoleRequest, EmulateRequest, EmulationChange, Engine, EvalRequest, EvalWorld,
     ExpectRequest, Expectation, HttpCredentials, InitScriptAddRequest, MockLogRequest,
     MockOffRequest, MockUseRequest, NavigateRequest, Navigation, NetworkRequest, OpenRequest,
-    RequestCheck, RouteAction, RouteBody, RouteRequest, RouteSpec, Since, Target, UnrouteRequest,
-    WaitUntil,
+    RequestCheck, RouteAction, RouteBody, RouteRequest, RouteSpec, Since, TabNewRequest, Target,
+    UnrouteRequest, WaitUntil,
 };
 use fixtures::Fixtures;
 use protocol::schema::{ConsoleData, EvalData, Level, MockLogData, NetworkData, WorkerKind};
@@ -128,12 +128,12 @@ const ROWS: &[Row] = &[
     Row {
         feature: "console",
         probe: Probe::Console,
-        cells: [Check, Check, Check, Check, Todo("13.3"), Todo("13.3")],
+        cells: [Check, Check, Check, Check, Check, Check],
     },
     Row {
         feature: "errors",
         probe: Probe::Errors,
-        cells: [Check, Check, Check, Check, Todo("13.3"), Todo("13.3")],
+        cells: [Check, Check, Check, Check, Check, Check],
     },
     Row {
         feature: "network",
@@ -419,8 +419,14 @@ async fn probe(engine: &Arc<Engine>, probe: Probe, who: &str) -> Result<(), Stri
                 data.entries.iter().any(|e| e.text == text)
             })
             .await;
-            seen.then_some(())
-                .ok_or_else(|| format!("no `{text}` in the console"))
+            let data = console(engine, false).await;
+            let Some(entry) = data.entries.iter().find(|e| e.text == text) else {
+                return Err(format!("no `{text}` in the console"));
+            };
+            // A worker's entry is marked with it.
+            (seen && entry.worker_kind == worker_kind(who))
+                .then_some(())
+                .ok_or_else(|| format!("`{text}` is marked {:?}", entry.worker_kind))
         }
         Probe::Errors => {
             ask(engine, who, "throw").await;
@@ -758,5 +764,78 @@ async fn every_target_attaches_and_resumes() {
         .map(|(k, f)| ((*k).to_owned(), (*f).to_owned()))
         .collect();
     assert_eq!(kinds, want);
+    engine.close().await;
+}
+
+/// A shared worker's error is in the console of each tab of its origin,
+/// and `expect --no-errors --all-tabs` counts it once.
+#[tokio::test]
+async fn a_shared_workers_error_counts_once_across_tabs() {
+    let Some(path) = chrome_path() else { return };
+    let engine = matrix(&path, "engine-targets-errors-once").await;
+    let site = Fixtures::shared();
+    engine
+        .tab_new(TabNewRequest {
+            url: Some(site.url("/targets/matrix.html")),
+            base_url: None,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("tab new: {}", e.to_text()));
+    eventually("the second tab's targets to answer", async || {
+        let title = eval(&engine, "document.title").await;
+        (title == json!("Targets: ready")).then_some(())
+    })
+    .await;
+    ask(&engine, "shared", "throw").await;
+    let in_both = eventually("the error in both tabs", async || {
+        let mut tabs = 0;
+        for tab in [1, 2] {
+            let out = engine
+                .console(ConsoleRequest {
+                    errors: true,
+                    tab: Some(format!("t{tab}")),
+                    level: Level::Debug,
+                    since: Since::Seq { seq: 0 },
+                    grep: None,
+                    limit: 0,
+                    wait_ms: 0,
+                    sourcemaps: false,
+                    timeout_ms: TIMEOUT_MS,
+                    max_chars: 0,
+                })
+                .await
+                .unwrap();
+            let data: ConsoleData = serde_json::from_value(out.data).unwrap();
+            if data.entries.iter().any(|e| {
+                e.text.contains("thrown in shared") && e.worker_kind == Some(WorkerKind::Shared)
+            }) {
+                tabs += 1;
+            }
+        }
+        (tabs == 2).then_some(tabs)
+    })
+    .await;
+    assert_eq!(in_both, 2);
+    let err = Box::pin(engine.expect(ExpectRequest {
+        expectation: Expectation::NoErrors {
+            since: None,
+            all_tabs: true,
+        },
+        not: false,
+        tab: None,
+        strict_refs: false,
+        testid_attribute: None,
+        timeout_ms: 5_000,
+        max_chars: 0,
+    }))
+    .await
+    .unwrap_err();
+    let text = err.to_text();
+    assert!(text.contains("  actual: 1 error\n"), "{text}");
+    assert!(
+        text.contains("thrown in shared") && text.contains("[shared worker shared.js]"),
+        "{text}"
+    );
     engine.close().await;
 }
