@@ -354,6 +354,7 @@ fn web_servers_are_reused_or_fail_the_run() {
     let out = project.test(&["scenarios/only"]);
     assert_eq!(out.status.code(), Some(0));
     assert!(stdout(&out).contains(" (already running)\n"));
+    assert!(!stderr(&out).contains("running: "), "{}", stderr(&out));
     // A server that exits at once fails the run with its log.
     let port = std::net::TcpListener::bind("127.0.0.1:0")
         .unwrap()
@@ -370,6 +371,15 @@ fn web_servers_are_reused_or_fail_the_run() {
     let out = project.test(&["scenarios/only"]);
     assert_eq!(out.status.code(), Some(4), "{}", stderr(&out));
     assert!(stderr(&out).contains("booting"), "{}", stderr(&out));
+    // The command was shown, with the config it came from, before it ran.
+    assert!(
+        stderr(&out).contains(&format!(
+            "running: echo booting; exit 3 (from {})\nerror: ",
+            config.display()
+        )),
+        "{}",
+        stderr(&out)
+    );
     assert!(project.sandbox.daemons().is_empty());
 }
 
@@ -1142,6 +1152,14 @@ fn the_same_scenarios_pass_against_the_mocks_and_a_real_backend() {
         text.contains("teardown: echo down > teardown-ran.txt ("),
         "{text}"
     );
+    let config = project.root.join("chrome-cdp.toml");
+    for command in ["echo up > setup-ran.txt", "echo down > teardown-ran.txt"] {
+        assert!(
+            stderr(&out).contains(&format!("running: {command} (from {})\n", config.display())),
+            "{}",
+            stderr(&out)
+        );
+    }
     assert!(project.root.join("setup-ran.txt").is_file());
     assert!(project.root.join("teardown-ran.txt").is_file());
     // The todos the tests added through the page went to the real API;
@@ -1449,8 +1467,8 @@ fn verify_mocks_reports_drift_and_update_fixes_data_files() {
         "{text}"
     );
     assert!(
-        stderr(&out).starts_with(
-            "error: the mocks do not match backend local: 1 real request has no mock\n"
+        stderr(&out).contains(
+            "\nerror: the mocks do not match backend local: 1 real request has no mock\n"
         ),
         "{}",
         stderr(&out)

@@ -285,6 +285,13 @@ fn with_backend<T>(
     result
 }
 
+/// Shows a command from the project config on stderr before it runs, in
+/// every output mode: the config may come from a parent directory or a
+/// hidden `.chrome-cdp.toml`, so nothing it runs goes unseen.
+pub(super) fn running(command: &str, config: &std::path::Path) {
+    output::stderr(&format!("running: {command} (from {})\n", config.display()));
+}
+
 /// What the tests did: one run's results, or `--watch`'s last exit code
 /// (its runs print their own results).
 enum Ran {
@@ -592,7 +599,11 @@ fn with_servers<T: Send>(
                 .or_insert_with(|| url.clone());
         }
     }
-    let mut servers = runtime.block_on(WebServers::start(&web_servers, &config.artifacts))?;
+    let mut servers = runtime.block_on(WebServers::start_with(
+        &web_servers,
+        &config.artifacts,
+        |server| running(&server.command, &config.file),
+    ))?;
     started.store(
         servers.servers().iter().any(|s| !s.reused),
         Ordering::SeqCst,

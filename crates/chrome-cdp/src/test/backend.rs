@@ -44,6 +44,7 @@ fn log_file(plan: &Plan, what: &str) -> PathBuf {
 
 fn run(plan: &Plan, command: &str, what: &str, mode: Mode) -> Result<(), ErrorInfo> {
     let backend = &plan.backend;
+    super::running(command, &plan.config.file);
     let started = Instant::now();
     let mut cmd = Command::new("sh");
     cmd.arg("-c")
