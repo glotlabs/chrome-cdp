@@ -1,8 +1,8 @@
 //! `scroll [loc] [--by dx,dy | --to where]` (plan 05, milestone 5.2).
 //!
 //! Scrolling is done with real wheel events (`Input.dispatchMouseEvent`
-//! `mouseWheel`) over the element, or the middle of the viewport without
-//! one, so the page's scroll and wheel listeners run (infinite scroll
+//! `mouseWheel`) over the element, or without one over the page (the
+//! middle of the viewport, unless a scroll container sits there), so the page's scroll and wheel listeners run (infinite scroll
 //! loads more). The report is on the scroll container a wheel there
 //! scrolls first: the element or its nearest scrollable ancestor, or the
 //! page. `scroll <loc>` alone scrolls the element into view (the
@@ -309,20 +309,21 @@ impl Actor<'_> {
         element
     }
 
-    /// The middle of the tab's viewport.
+    /// Where a wheel scrolls the page: the middle of the tab's viewport,
+    /// unless a scroll container (a fixed sidebar, a map) or an iframe
+    /// sits there and would take the wheel first; then the first of a few
+    /// other points that has none.
     async fn viewport_centre(&self) -> Result<(f64, f64), ErrorInfo> {
         #[derive(Deserialize)]
-        struct Size {
-            width: f64,
-            height: f64,
+        struct Point {
+            x: f64,
+            y: f64,
         }
         let context = self
             .engine
             .frame_context(self.running, self.page, None, World::Isolated, self.timeout)
             .await?;
-        let mut params = runtime::CallFunctionOnParams::new(
-            "function () { return { width: innerWidth, height: innerHeight }; }".to_owned(),
-        );
+        let mut params = runtime::CallFunctionOnParams::new(PAGE_POINT.to_owned());
         params.execution_context_id = Some(context.context_id);
         params.return_by_value = Some(true);
         let result = context
@@ -331,15 +332,40 @@ impl Actor<'_> {
             .call(params)
             .await
             .map_err(|e| from_cdp(&e, self.session()))?;
-        let size: Size = serde_json::from_value(returned(result)?).map_err(|e| {
+        let point: Point = serde_json::from_value(returned(result)?).map_err(|e| {
             ErrorInfo::new(
                 ErrorKind::ProtocolError,
                 format!("reading the viewport: {e}"),
             )
         })?;
-        Ok((size.width / 2.0, size.height / 2.0))
+        Ok((point.x, point.y))
     }
 }
+
+/// Finds a point in the viewport over which a wheel scrolls the page (see
+/// `viewport_centre`): the middle first, then around it.
+const PAGE_POINT: &str = r"function () {
+  const w = document.documentElement.clientWidth || innerWidth;
+  const h = document.documentElement.clientHeight || innerHeight;
+  const root = document.scrollingElement || document.documentElement;
+  const takesWheel = (el) => {
+    for (; el && el !== root && el !== document.body; el = el.parentElement || el.getRootNode().host) {
+      if (el.localName === 'iframe' || el.localName === 'frame') return true;
+      const s = getComputedStyle(el);
+      const y = /auto|scroll/.test(s.overflowY) && el.scrollHeight > el.clientHeight;
+      const x = /auto|scroll/.test(s.overflowX) && el.scrollWidth > el.clientWidth;
+      if (x || y) return true;
+    }
+    return false;
+  };
+  const at = [[0.5, 0.5], [0.5, 0.25], [0.5, 0.75], [0.25, 0.5], [0.75, 0.5],
+    [0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75], [0.1, 0.5], [0.9, 0.5]];
+  for (const [fx, fy] of at) {
+    const x = Math.round(w * fx), y = Math.round(h * fy);
+    if (!takesWheel(document.elementFromPoint(x, y))) return { x, y };
+  }
+  return { x: Math.round(w / 2), y: Math.round(h / 2) };
+}";
 
 /// The wheel deltas still needed to reach `to` from `now`, or `None` when
 /// it is there.

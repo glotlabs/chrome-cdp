@@ -528,6 +528,26 @@ async fn scrolls_with_the_wheel() {
     assert_eq!(out.data["y"], 0.0);
     assert_eq!(out.data["at_top"], true);
 
+    // A scroll container over the middle of the viewport does not take
+    // the page's wheel.
+    eval(
+        &engine,
+        "document.getElementById('inbox').style.cssText = 'top: 200px; left: 250px; width: 300px; height: 200px'",
+    )
+    .await;
+    let out = act(&engine, scroll(None, Some((0.0, 200.0)), None)).await;
+    assert_eq!(out.data["y"], 200.0, "{}", out.text);
+    assert_eq!(eval(&engine, "scrollY").await, 200);
+    assert_eq!(
+        eval(&engine, "document.getElementById('inbox').scrollTop").await,
+        0
+    );
+    eval(
+        &engine,
+        "document.getElementById('inbox').style.cssText = ''; scrollTo(0, 0)",
+    )
+    .await;
+
     // In a scroll container: it scrolls, not the page.
     let out = act(&engine, scroll(Some("#inbox"), Some((0.0, 100.0)), None)).await;
     assert_eq!(out.data["container"]["name"], "Inbox");
