@@ -149,9 +149,10 @@ An `on_message` rule: the messages it answers, and the answer.
 |---|---|---|
 | `close` | integer | Close the socket with this code (1000, or 3000-4999) instead. |
 | `delay` | text | How long to wait before answering. |
-| `match` | any TOML value | Which messages: a table matches JSON messages as `match.json` does (a subset; `"*"` for any value), a string is a glob on the text. Every message when not set. |
+| `match` | any TOML value | Which messages: a table matches JSON messages as `match.json` does (a subset; `"*"` for any value), a string is a glob on the text. Every message when not set, binary ones too (only then). |
 | `reason` | text | With `close`: the reason the page sees. |
 | `send` | any TOML value | The answer: a string is sent as it is, anything else as JSON text. |
+| `send_base64` | text | A binary answer instead: its bytes in base64 (`AQID`), a template too (`{{body}}` of a binary message is its base64). |
 
 <a id="websocketaction"></a>
 
@@ -165,6 +166,7 @@ A WebSocket mock's action: send a message, or close the socket.
 | `delay` | text | How long to wait first (`300ms`, `2s`), after the action before it. |
 | `reason` | text | With `close`: the reason the page sees. |
 | `send` | any TOML value | The message: a string is sent as it is, anything else as JSON text. Strings may be templates (`{{json.id}}` is the page's message's). |
+| `send_base64` | text | A binary message instead: its bytes in base64 (`AQID`), a template too (`{{body}}` of a binary message is its base64). |
 
 <a id="graphql"></a>
 

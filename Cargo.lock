@@ -350,6 +350,7 @@ dependencies = [
 name = "chrome-cdp-mock"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "chrome-cdp-protocol",
  "minijinja",
  "percent-encoding",

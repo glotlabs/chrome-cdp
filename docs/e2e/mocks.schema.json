@@ -674,6 +674,13 @@
         },
         "send": {
           "description": "The message: a string is sent as it is, anything else as JSON text.\nStrings may be templates (`{{json.id}}` is the page's message's)."
+        },
+        "send_base64": {
+          "description": "A binary message instead: its bytes in base64 (`AQID`), a template\ntoo (`{{body}}` of a binary message is its base64).",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -698,7 +705,7 @@
           ]
         },
         "match": {
-          "description": "Which messages: a table matches JSON messages as `match.json` does\n(a subset; `\"*\"` for any value), a string is a glob on the text.\nEvery message when not set."
+          "description": "Which messages: a table matches JSON messages as `match.json` does\n(a subset; `\"*\"` for any value), a string is a glob on the text.\nEvery message when not set, binary ones too (only then)."
         },
         "reason": {
           "default": null,
@@ -710,6 +717,13 @@
         },
         "send": {
           "description": "The answer: a string is sent as it is, anything else as JSON text."
+        },
+        "send_base64": {
+          "description": "A binary answer instead: its bytes in base64 (`AQID`), a template\ntoo (`{{body}}` of a binary message is its base64).",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "type": "object"

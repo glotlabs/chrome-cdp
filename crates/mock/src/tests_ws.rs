@@ -5,7 +5,9 @@ use std::time::Duration;
 use serde_json::json;
 
 use crate::tests::{dir, mocks, req};
-use crate::{Outcome, Response, SseEvent, Unmatched, WsFrame, WsOutcome, WsStep, parse_sse};
+use crate::{
+    Outcome, Response, SseEvent, Unmatched, WsFrame, WsMessage, WsOutcome, WsStep, parse_sse,
+};
 
 fn load_err(text: &str) -> String {
     crate::tests::load_err(&[("base.toml", text)])
@@ -73,7 +75,7 @@ fn websocket_mocks_open_and_answer() {
     assert_eq!(steps[1].frame, text("tick"));
 
     let url = "ws://app/ws/prices/ACME";
-    let pong = m.ws_message(&key, url, r#"{"type":"ping","id":7}"#, 0);
+    let pong = m.ws_message(&key, url, WsMessage::Text(r#"{"type":"ping","id":7}"#), 0);
     assert_eq!(pong.len(), 1);
     let WsFrame::Text(pong) = &pong[0].frame else {
         panic!()
@@ -82,7 +84,7 @@ fn websocket_mocks_open_and_answer() {
         serde_json::from_str::<serde_json::Value>(pong).unwrap(),
         json!({"type": "pong", "id": 7})
     );
-    let echo = m.ws_message(&key, url, "echo hi", 0);
+    let echo = m.ws_message(&key, url, WsMessage::Text("echo hi"), 0);
     assert_eq!(
         echo,
         vec![WsStep {
@@ -91,15 +93,21 @@ fn websocket_mocks_open_and_answer() {
         }]
     );
     assert_eq!(
-        m.ws_message(&key, url, "bye now", 0)[0].frame,
+        m.ws_message(&key, url, WsMessage::Text("bye now"), 0)[0].frame,
         WsFrame::Close {
             code: 4000,
             reason: "done".into()
         }
     );
     // No rule fits: no answer.
-    assert!(m.ws_message(&key, url, "what?", 0).is_empty());
-    assert!(m.ws_message(&key, url, r#"{"type":"other"}"#, 0).is_empty());
+    assert!(
+        m.ws_message(&key, url, WsMessage::Text("what?"), 0)
+            .is_empty()
+    );
+    assert!(
+        m.ws_message(&key, url, WsMessage::Text(r#"{"type":"other"}"#), 0)
+            .is_empty()
+    );
 
     // A second socket is the mock's second hit; `mock reset` starts over.
     let (_, _, steps) = open(&mut m, url);
@@ -121,6 +129,60 @@ fn websocket_mocks_open_and_answer() {
         listed.contains(&"WS wss://push.example.com/**"),
         "{listed:?}"
     );
+}
+
+#[test]
+fn websocket_mocks_send_and_take_binary_messages() {
+    let d = dir(&[(
+        "base.toml",
+        r#"
+[[websocket]]
+url = "/ws"
+on_open = [{ send_base64 = "AQID" }, { send = "text" }]
+on_message = [
+  { match = "ping", send = "pong" },
+  { send_base64 = "{{body}}" },
+]
+
+[[websocket]]
+url = "/text"
+on_message = [{ match = "*", send = "text only" }]
+"#,
+    )]);
+    let mut m = mocks(d.path(), &["base"]);
+    let (key, _, steps) = open(&mut m, "ws://app/ws");
+    assert_eq!(steps[0].frame, WsFrame::Binary("AQID".into()));
+    assert_eq!(steps[1].frame, text("text"));
+    let url = "ws://app/ws";
+    // A binary message fits only a rule without `match`; its `body` is
+    // its base64 (normalised on the way out).
+    let echo = m.ws_message(&key, url, WsMessage::Binary("BAUG"), 0);
+    assert_eq!(echo[0].frame, WsFrame::Binary("BAUG".into()));
+    let echo = m.ws_message(&key, url, WsMessage::Binary("_-8"), 0);
+    assert_eq!(echo[0].frame, WsFrame::Binary("/+8=".into()));
+    assert_eq!(
+        m.ws_message(&key, url, WsMessage::Binary("cGluZw=="), 0)[0].frame,
+        WsFrame::Binary("cGluZw==".into()),
+        "binary \"ping\" is not the text rule's"
+    );
+    assert_eq!(
+        m.ws_message(&key, url, WsMessage::Text("ping"), 0)[0].frame,
+        text("pong")
+    );
+    // A glob on the text takes no binary message.
+    let (key, _, _) = open(&mut m, "ws://app/text");
+    assert!(
+        m.ws_message(&key, "ws://app/text", WsMessage::Binary("AQID"), 0)
+            .is_empty()
+    );
+    // What a template makes must be base64.
+    let (key, _, _) = open(&mut m, url);
+    let steps = m.ws_message(&key, url, WsMessage::Text("no base64!"), 0);
+    let WsFrame::Close { code, reason } = &steps[0].frame else {
+        panic!("{steps:?}")
+    };
+    assert_eq!(*code, 1011);
+    assert!(reason.contains("is not base64"), "{reason}");
 }
 
 #[test]
@@ -215,6 +277,14 @@ fn websocket_mocks_are_checked() {
         (
             "[[websocket]]\nurl = \"/ws\"\nsend = 1\n",
             "unknown field `send`",
+        ),
+        (
+            "[[websocket]]\nurl = \"/ws\"\non_open = [{ send_base64 = \"a*b\" }]\n",
+            "websocket.on_open[0].send_base64: `a*b` is not base64",
+        ),
+        (
+            "[[websocket]]\nurl = \"/ws\"\non_message = [{ send = \"x\", send_base64 = \"AQID\" }]\n",
+            "give `send` or `send_base64`, not both",
         ),
     ] {
         let err = load_err(text);

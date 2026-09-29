@@ -57,7 +57,7 @@ pub use respond::{
     MAX_FILE, NETWORK_ERRORS, Response, SseEvent, content_type, is_header_name, network_error,
     parse_sse,
 };
-pub use ws::{SocketGlob, WsFrame, WsKey, WsOutcome, WsStep};
+pub use ws::{SocketGlob, WsFrame, WsKey, WsMessage, WsOutcome, WsStep};
 
 #[cfg(test)]
 mod tests;

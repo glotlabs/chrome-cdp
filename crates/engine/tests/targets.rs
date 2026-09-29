@@ -82,6 +82,9 @@ enum Probe {
     Unmatched,
     /// A `[[websocket]]` mock answers its `WebSocket`.
     MockWebSocket,
+    /// A `[[websocket]]` mock answers its binary message with one (an
+    /// `ArrayBuffer`, and a `Blob`).
+    MockWebSocketBinary,
     /// `open --http-credentials` answers the challenge of its `fetch`.
     HttpAuth,
     /// An `init-script --now` ran in it.
@@ -158,6 +161,11 @@ const ROWS: &[Row] = &[
     Row {
         feature: "mocked WebSocket",
         probe: Probe::MockWebSocket,
+        cells: [Check, Check, Check, Check, Check, Check],
+    },
+    Row {
+        feature: "binary WebSocket",
+        probe: Probe::MockWebSocketBinary,
         cells: [Check, Check, Check, Check, Check, Check],
     },
     Row {
@@ -534,6 +542,18 @@ async fn probe(engine: &Arc<Engine>, probe: Probe, who: &str) -> Result<(), Stri
             (answer == json!("pong"))
                 .then_some(())
                 .ok_or_else(|| format!("the socket answered {answer}"))
+        }
+        Probe::MockWebSocketBinary => {
+            let answers = with_mocks(engine, async || {
+                (
+                    ask(engine, who, "ws-binary").await,
+                    ask(engine, who, "ws-blob").await,
+                )
+            })
+            .await;
+            (answers == (json!("4,5,6"), json!("4,5,6")))
+                .then_some(())
+                .ok_or_else(|| format!("the socket answered {answers:?}"))
         }
         Probe::HttpAuth => {
             engine

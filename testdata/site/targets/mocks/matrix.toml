@@ -1,6 +1,7 @@
 # The target matrix's mock set (plan 13.2): each frame and worker's
 # /targets/api answer comes from here, /targets/unmatched has no mock
-# (the set owns it: the request fails), and /targets/ws is a WebSocket.
+# (the set owns it: the request fails), and /targets/ws is a WebSocket
+# that answers text and binary messages.
 [settings]
 scope = ["/targets/api", "/targets/unmatched", "/targets/ws"]
 
@@ -13,4 +14,8 @@ respond = { json = { from = "mocked {{query.from}}" } }
 name = "matrix socket"
 url = "/targets/ws"
 on_open = [{ send = "hello" }]
-on_message = [{ match = "ping", send = "pong" }]
+on_message = [
+  { match = "ping", send = "pong" },
+  # Binary messages fit rules without `match`: bytes 1,2,3 get 4,5,6.
+  { send_base64 = "BAUG" },
+]

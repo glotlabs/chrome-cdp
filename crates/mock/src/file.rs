@@ -234,6 +234,10 @@ pub(crate) struct RawWsAction {
     /// Strings may be templates (`{{json.id}}` is the page's message's).
     #[serde(default)]
     pub(crate) send: Option<At<Value>>,
+    /// A binary message instead: its bytes in base64 (`AQID`), a template
+    /// too (`{{body}}` of a binary message is its base64).
+    #[serde(default)]
+    pub(crate) send_base64: Option<At<String>>,
     /// Close the socket with this code (1000, or 3000-4999).
     #[serde(default)]
     pub(crate) close: Option<At<i64>>,
@@ -252,12 +256,16 @@ pub(crate) struct RawWsAction {
 pub(crate) struct RawWsRule {
     /// Which messages: a table matches JSON messages as `match.json` does
     /// (a subset; `"*"` for any value), a string is a glob on the text.
-    /// Every message when not set.
+    /// Every message when not set, binary ones too (only then).
     #[serde(default, rename = "match")]
     pub(crate) matcher: Option<At<Value>>,
     /// The answer: a string is sent as it is, anything else as JSON text.
     #[serde(default)]
     pub(crate) send: Option<At<Value>>,
+    /// A binary answer instead: its bytes in base64 (`AQID`), a template
+    /// too (`{{body}}` of a binary message is its base64).
+    #[serde(default)]
+    pub(crate) send_base64: Option<At<String>>,
     /// Close the socket with this code (1000, or 3000-4999) instead.
     #[serde(default)]
     pub(crate) close: Option<At<i64>>,

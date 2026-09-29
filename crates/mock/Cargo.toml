@@ -14,6 +14,7 @@ exclude = ["tests/"]
 name = "mock"
 
 [dependencies]
+base64.workspace = true
 minijinja.workspace = true
 percent-encoding.workspace = true
 protocol.workspace = true

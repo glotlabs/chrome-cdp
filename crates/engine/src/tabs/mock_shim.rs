@@ -2,8 +2,9 @@
 //! or EventSource asks what it gets, and the answers go back to it.
 //!
 //! The shim (`route/shim.js`) calls [`MOCK_BINDING`] with a JSON message:
-//! `ws-open`, `ws-send`, `ws-close`, `sse-open` or `sse-close`, each with
-//! the shim's id of the socket. The router decides (see
+//! `ws-open`, `ws-send` (`data`, or a binary message's bytes as `base64`),
+//! `ws-close`, `sse-open` or `sse-close`, each with the shim's id of the
+//! socket. The router decides (see
 //! `route::sockets`); the answers are handed to the document the call
 //! came from with `Runtime.evaluate`, each after its delay, in a task of
 //! their own.
@@ -118,11 +119,13 @@ pub(super) fn called(shared: &Arc<Shared>, session_id: &str, tab: Option<u32>, e
             let Some(socket) = routes.socket(session_id, context, id) else {
                 return;
             };
-            // Binary messages get no answer: rules match text.
-            let Some(text) = message["data"].as_str() else {
-                return;
+            // A binary message comes as base64.
+            let message = match (message["data"].as_str(), message["base64"].as_str()) {
+                (Some(text), _) => mock::WsMessage::Text(text),
+                (None, Some(base64)) => mock::WsMessage::Binary(base64),
+                (None, None) => return,
             };
-            let steps = routes.ws_message(&socket, text, now_ms);
+            let steps = routes.ws_message(&socket, message, now_ms);
             if steps.is_empty() {
                 return;
             }

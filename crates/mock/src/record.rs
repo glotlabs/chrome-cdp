@@ -266,7 +266,7 @@ pub fn har_exchanges(har: &Value) -> Result<Vec<Exchange>, String> {
 }
 
 /// Standard base64, with or without padding; `None` if it is not.
-fn decode_base64(text: &str) -> Option<Vec<u8>> {
+pub(crate) fn decode_base64(text: &str) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(text.len() / 4 * 3);
     let mut acc = 0u32;
     let mut bits = 0;

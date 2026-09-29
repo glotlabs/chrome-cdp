@@ -28,6 +28,7 @@ on_message = [
   { match = { type = "ping" }, send = { type = "pong", id = "{{json.id}}" } },   # JSON subset
   { match = "subscribe *", send = "ok" },                                         # a glob on the text
   { match = "bye", close = 4000, reason = "bye" },
+  { send_base64 = "{{body}}" },          # no `match`: any other message, binary too (echoed)
 ]
 ```
 
@@ -35,9 +36,13 @@ on_message = [
   `on_open` actions in order, each after its `delay`. Each message the
   page sends gets the action of the first `on_message` rule that fits it,
   or nothing. `send` sends a string as it is, anything else as JSON text
-  (keys in order). Strings are templates: `{{params.x}}` and `{{query.x}}`
+  (keys in order); `send_base64` sends a binary message, its bytes in
+  base64 (`AQID`). Strings are templates: `{{params.x}}` and `{{query.x}}`
   of the socket's URL, `{{json.x}}` and `{{body}}` of the page's message,
   `{{state.x}}`, `{{seq}}`, `{{uuid}}`, `{{now}}`.
+- A binary message the page sends (an `ArrayBuffer`, a typed array or a
+  `Blob`) fits only rules without `match`, and its `{{body}}` is its
+  base64. The page gets binary messages as its `binaryType` says.
 - A scenario pushes a message with `mock ws send`, which waits (up to
   `--timeout`) for a matching socket to open:
 
@@ -88,8 +93,8 @@ what it gets (a mock, a failure, or the real thing, which it then wraps),
 so real sockets take one more round trip to start. `mock off` gives
 sockets opened later the browser's own classes back.
 
-Limits: binary messages the page sends get no answer (rules match
-text), and `mock ws send` only reaches sockets a `[[websocket]]` answers.
+Limits: `mock ws send` only sends text, and only reaches sockets a
+`[[websocket]]` answers.
 
 ## `mock serve`: the mocks as an HTTP server
 

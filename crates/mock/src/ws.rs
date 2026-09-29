@@ -3,15 +3,18 @@
 //! Fetch cannot intercept WebSockets, so the daemon replaces the page's
 //! `WebSocket` with a stand-in that asks [`Mocks::ws_open`] about each
 //! socket it opens, and [`Mocks::ws_message`] about each message the page
-//! sends. The answers are [`WsStep`]s: messages to hand the page, or a
-//! close, each after its delay. Templates see the socket's URL (`params`,
-//! `query`), the page's message (`body`, `json`), the named values and
-//! the usual `uuid`, `now`, `seq` and `faker`.
+//! sends. The answers are [`WsStep`]s: messages to hand the page (text,
+//! or binary with `send_base64`), or a close, each after its delay.
+//! Templates see the socket's URL (`params`, `query`), the page's message
+//! (`body`, `json`; a binary message's `body` is its base64), the named
+//! values and the usual `uuid`, `now`, `seq` and `faker`. A binary
+//! message fits only rules without `match`.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::time::Duration;
 
+use base64::Engine as _;
 use protocol::schema::{MockInfo, MockRef};
 use serde::Serialize;
 use serde_json::Value;
@@ -21,6 +24,7 @@ use crate::file::Unmatched;
 use crate::glob::{Glob, PathGlob};
 use crate::load::MockSet;
 use crate::matcher::{Parsed, Request, json_subset};
+use crate::record::decode_base64;
 use crate::respond::text_of;
 use crate::template;
 
@@ -42,9 +46,18 @@ pub(crate) struct WsMock {
 /// An action as written (strings are templates).
 #[derive(Debug, Clone)]
 pub(crate) struct WsAction {
-    pub(crate) send: Option<Value>,
+    pub(crate) send: Option<WsSend>,
     pub(crate) close: Option<(u16, String)>,
     pub(crate) delay: Duration,
+}
+
+/// What an action sends.
+#[derive(Debug, Clone)]
+pub(crate) enum WsSend {
+    /// `send`: a text message (a string as it is, anything else as JSON).
+    Text(Value),
+    /// `send_base64`: a binary message, its bytes in base64.
+    Base64(String),
 }
 
 /// An `on_message` rule.
@@ -70,6 +83,8 @@ pub(crate) enum WsMatch {
 pub enum WsFrame {
     /// Hand the page a message.
     Text(String),
+    /// Hand the page a binary message: its bytes in (standard) base64.
+    Binary(String),
     /// Close the socket.
     Close { code: u16, reason: String },
 }
@@ -141,6 +156,14 @@ impl WsMock {
     }
 }
 
+/// A message the page sent on a socket.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WsMessage<'a> {
+    Text(&'a str),
+    /// Its bytes in base64.
+    Binary(&'a str),
+}
+
 impl WsMatch {
     fn fits(&self, parsed: &Parsed) -> bool {
         match self {
@@ -170,8 +193,8 @@ fn steps(actions: &[&WsAction], ctx: &minijinja::Value, mock: &MockRef) -> Vec<W
     let mut steps = Vec::with_capacity(actions.len());
     for action in actions {
         let frame = match (&action.send, &action.close) {
-            (Some(send), _) => match template::render_json(send, ctx) {
-                Ok(value) => WsFrame::Text(text_of(&value)),
+            (Some(send), _) => match frame_of(send, ctx) {
+                Ok(frame) => frame,
                 Err(e) => {
                     steps.push(WsStep {
                         delay: Duration::ZERO,
@@ -198,6 +221,21 @@ fn steps(actions: &[&WsAction], ctx: &minijinja::Value, mock: &MockRef) -> Vec<W
         });
     }
     steps
+}
+
+/// The message `send` sends, rendered.
+fn frame_of(send: &WsSend, ctx: &minijinja::Value) -> Result<WsFrame, String> {
+    match send {
+        WsSend::Text(value) => Ok(WsFrame::Text(text_of(&template::render_json(value, ctx)?))),
+        WsSend::Base64(text) => {
+            let text = template::render(text, ctx)?;
+            let bytes = decode_base64(&text)
+                .ok_or_else(|| format!("send_base64: `{text}` is not base64"))?;
+            Ok(WsFrame::Binary(
+                base64::engine::general_purpose::STANDARD.encode(bytes),
+            ))
+        }
+    }
 }
 
 /// A close reason fits in 123 bytes.
@@ -278,7 +316,7 @@ impl Mocks {
         let protocol = ws.protocol.clone().or_else(|| protocols.first().cloned());
         let sends = steps
             .iter()
-            .filter(|s| matches!(s.frame, WsFrame::Text(_)))
+            .filter(|s| !matches!(s.frame, WsFrame::Close { .. }))
             .count();
         let outcome = match sends {
             0 => "websocket open".to_owned(),
@@ -297,11 +335,25 @@ impl Mocks {
         }
     }
 
-    /// The answer of socket `key` (its URL `url`) to the page's message
-    /// `text`: the first `on_message` rule that fits, else nothing. A set
-    /// no longer in use answers nothing.
-    pub fn ws_message(&mut self, key: &WsKey, url: &str, text: &str, now_ms: i64) -> Vec<WsStep> {
-        let parsed = parsed(url, Some(text));
+    /// The answer of socket `key` (its URL `url`) to the page's
+    /// `message`: the first `on_message` rule that fits, else nothing (a
+    /// binary message fits only a rule without `match`). A set no longer
+    /// in use answers nothing.
+    pub fn ws_message(
+        &mut self,
+        key: &WsKey,
+        url: &str,
+        message: WsMessage<'_>,
+        now_ms: i64,
+    ) -> Vec<WsStep> {
+        let (text, binary) = match message {
+            WsMessage::Text(text) => (text, false),
+            WsMessage::Binary(base64) => (base64, true),
+        };
+        let mut parsed = parsed(url, Some(text));
+        if binary {
+            parsed.json = None;
+        }
         let seed = self.rng.next_u64();
         let state = self.state.clone();
         let Some(set) = self.sets.iter_mut().find(|s| s.name() == key.set) else {
@@ -310,7 +362,14 @@ impl Mocks {
         let Some(ws) = set.websockets.get_mut(key.index) else {
             return Vec::new();
         };
-        let Some(rule) = ws.on_message.iter().position(|r| r.matcher.fits(&parsed)) else {
+        let fits = |r: &WsRule| {
+            if binary {
+                matches!(r.matcher, WsMatch::Any)
+            } else {
+                r.matcher.fits(&parsed)
+            }
+        };
+        let Some(rule) = ws.on_message.iter().position(fits) else {
             return Vec::new();
         };
         ws.answered += 1;

@@ -11,10 +11,10 @@ self.targetOps = async (who, op) => {
 
 // A WebSocket to the matrix's mocked `/targets/ws`, once it has opened
 // and said hello.
-const targetSocket = () =>
+const targetSocket = (binaryType = 'arraybuffer') =>
   new Promise((resolve, reject) => {
     const ws = new WebSocket(new URL('/targets/ws', location.href).href.replace(/^http/, 'ws'));
-    ws.binaryType = 'arraybuffer';
+    ws.binaryType = binaryType;
     ws.onmessage = (e) => (e.data === 'hello' ? resolve(ws) : reject(new Error('said ' + e.data)));
     ws.onerror = () => reject(new Error('the WebSocket failed'));
   });
@@ -60,6 +60,16 @@ async function targetRun(who, op) {
       const data = await answer;
       ws.close();
       return data instanceof ArrayBuffer ? Array.from(new Uint8Array(data)).join(',') : 'text ' + data;
+    }
+    case 'ws-blob': {
+      // The same, as Blobs both ways.
+      const ws = await targetSocket('blob');
+      const answer = targetNext(ws);
+      ws.send(new Blob([new Uint8Array([1, 2, 3])]));
+      const data = await answer;
+      ws.close();
+      if (!(data instanceof Blob)) return 'not a Blob: ' + data;
+      return Array.from(new Uint8Array(await data.arrayBuffer())).join(',');
     }
     case 'init':
       // What the matrix's init script set, if it ran here.

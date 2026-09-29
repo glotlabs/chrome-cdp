@@ -15,7 +15,7 @@
 
 use std::time::Duration;
 
-use mock::{Outcome, Response, SseEvent, WsKey, WsOutcome, WsStep};
+use mock::{Outcome, Response, SseEvent, WsKey, WsMessage, WsOutcome, WsStep};
 use protocol::schema::MockRef;
 use serde_json::Value;
 
@@ -135,11 +135,16 @@ impl Router {
     }
 
     /// The mock's answer to a message the page sent on `socket`.
-    pub(crate) fn ws_message(&self, socket: &Socket, text: &str, now_ms: i64) -> Vec<WsStep> {
+    pub(crate) fn ws_message(
+        &self,
+        socket: &Socket,
+        message: WsMessage<'_>,
+        now_ms: i64,
+    ) -> Vec<WsStep> {
         let mut table = lock(&self.table);
         let mocks = table.mocks_in(socket.scope.as_deref());
         mocks.refresh();
-        mocks.ws_message(&socket.key, &socket.url, text, now_ms)
+        mocks.ws_message(&socket.key, &socket.url, message, now_ms)
     }
 
     /// Decides what the page's `EventSource` to `url` gets, and journals
@@ -316,6 +321,7 @@ impl Table {
 pub(crate) fn frame_message(id: u64, step: &WsStep) -> Value {
     match &step.frame {
         mock::WsFrame::Text(text) => serde_json::json!({ "id": id, "text": text }),
+        mock::WsFrame::Binary(base64) => serde_json::json!({ "id": id, "base64": base64 }),
         mock::WsFrame::Close { code, reason } => {
             serde_json::json!({ "id": id, "close": { "code": code, "reason": reason } })
         }

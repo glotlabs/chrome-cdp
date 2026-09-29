@@ -18,9 +18,10 @@ use crate::file::{
 };
 use crate::glob::{Glob, PathGlob};
 use crate::matcher::{BodyMatcher, Matcher, Target};
+use crate::record::decode_base64;
 use crate::respond::{Body, Latency, Respond, SseSpec, is_header_name, network_error, parse_delay};
 use crate::template::{self, is_template};
-use crate::ws::{WsAction, WsMatch, WsMock, WsRule};
+use crate::ws::{WsAction, WsMatch, WsMock, WsRule, WsSend};
 
 /// Where a mock set comes from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -430,7 +431,7 @@ impl Check<'_> {
                     ws_action(
                         &format!("websocket.on_open[{i}]"),
                         span,
-                        a.send,
+                        (a.send, a.send_base64),
                         a.close,
                         a.reason,
                         a.delay,
@@ -904,11 +905,12 @@ impl Check<'_> {
     }
 }
 
-/// An `on_open` action, or a rule's answer.
+/// An `on_open` action, or a rule's answer: `send` and `send_base64`
+/// (at most one), or `close`.
 fn ws_action(
     key: &str,
     span: Range<usize>,
-    send: Option<At<Value>>,
+    (send, send_base64): (Option<At<Value>>, Option<At<String>>),
     close: Option<At<i64>>,
     reason: Option<String>,
     delay: Option<At<String>>,
@@ -942,16 +944,34 @@ fn ws_action(
             Some((code, reason))
         }
     };
-    let send = send.map(At::into_inner);
+    let send = match (send.map(At::into_inner), send_base64) {
+        (Some(_), Some(_)) => {
+            return Err((
+                span,
+                format!("{key}: give `send` or `send_base64`, not both"),
+            ));
+        }
+        (Some(value), None) => {
+            template::check_json(&value).map_err(|m| (span.clone(), format!("{key}.send: {m}")))?;
+            Some(WsSend::Text(value))
+        }
+        (None, Some(base64)) => {
+            let (at, text) = (base64.span(), base64.into_inner());
+            if template::is_template(&text) {
+                template::check(&text).map_err(|m| (at, format!("{key}.send_base64: {m}")))?;
+            } else if decode_base64(&text).is_none() {
+                return Err((at, format!("{key}.send_base64: `{text}` is not base64")));
+            }
+            Some(WsSend::Base64(text))
+        }
+        (None, None) => None,
+    };
     match (&send, &close) {
         (Some(_), Some(_)) => {
             return Err((span, format!("{key}: give `send` or `close`, not both")));
         }
         (None, None) => return Err((span, format!("{key}: give `send` or `close`"))),
-        (Some(value), None) => {
-            template::check_json(value).map_err(|m| (span.clone(), format!("{key}.send: {m}")))?;
-        }
-        (None, Some(_)) => {}
+        _ => {}
     }
     Ok(WsAction { send, close, delay })
 }
@@ -972,7 +992,14 @@ fn ws_rule(key: &str, raw: At<RawWsRule>) -> Result<WsRule, Problem> {
             ));
         }
     };
-    let action = ws_action(key, span, raw.send, raw.close, raw.reason, raw.delay)?;
+    let action = ws_action(
+        key,
+        span,
+        (raw.send, raw.send_base64),
+        raw.close,
+        raw.reason,
+        raw.delay,
+    )?;
     Ok(WsRule { matcher, action })
 }
 

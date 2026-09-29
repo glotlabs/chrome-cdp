@@ -23,6 +23,26 @@
   const live = new Map();
   let last = 0;
 
+  // Binary messages cross the binding as base64.
+  const toBase64 = (bytes) => {
+    let text = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(text);
+  };
+  const fromBase64 = (base64) => Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const isBinary = (data) =>
+    data instanceof ArrayBuffer || ArrayBuffer.isView(data) || (typeof Blob === 'function' && data instanceof Blob);
+  // The bytes as they are at `send`, as a real socket takes them.
+  const bytesOf = (data) => {
+    if (data instanceof ArrayBuffer) return Promise.resolve(new Uint8Array(data.slice(0)));
+    if (ArrayBuffer.isView(data)) {
+      return Promise.resolve(new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)));
+    }
+    return data.arrayBuffer().then((buffer) => new Uint8Array(buffer));
+  };
+
   const syntaxError = (what, url) =>
     new DOMException(`Failed to construct '${what}': The URL '${url}' is invalid.`, 'SyntaxError');
 
@@ -65,6 +85,8 @@
     #protocol = '';
     #binaryType = 'blob';
     #real = null;
+    // Sends in order: a Blob is read before it goes, and later ones wait.
+    #sending = Promise.resolve();
 
     constructor(url, protocols) {
       super();
@@ -120,11 +142,16 @@
         throw new DOMException("Failed to execute 'send' on 'WebSocket': Still in CONNECTING state.", 'InvalidStateError');
       }
       if (this.#state !== 1) return;
-      if (typeof data === 'string') {
-        post({ op: 'ws-send', id: this.#id, data });
-      } else {
-        post({ op: 'ws-send', id: this.#id, binary: true });
+      const id = this.#id;
+      if (!isBinary(data)) {
+        const text = String(data);
+        this.#sending = this.#sending.then(() => post({ op: 'ws-send', id, data: text }));
+        return;
       }
+      const bytes = bytesOf(data);
+      this.#sending = this.#sending
+        .then(async () => post({ op: 'ws-send', id, base64: toBase64(await bytes) }))
+        .catch(() => {});
     }
 
     close(code, reason) {
@@ -189,6 +216,14 @@
         if (this.#state !== 1) return;
         const origin = new URL(this.#url).origin;
         this.dispatchEvent(new MessageEvent('message', { data: message.text, origin }));
+        return;
+      }
+      if (message.base64 !== undefined) {
+        if (this.#state !== 1) return;
+        const bytes = fromBase64(message.base64);
+        const data = this.#binaryType === 'arraybuffer' ? bytes.buffer : new Blob([bytes]);
+        const origin = new URL(this.#url).origin;
+        this.dispatchEvent(new MessageEvent('message', { data, origin }));
         return;
       }
       if (message.close) {
