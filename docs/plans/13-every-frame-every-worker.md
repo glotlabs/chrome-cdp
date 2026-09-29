@@ -1,6 +1,6 @@
 # Plan 13 — Every frame, every worker
 
-Status: IN PROGRESS (13.1 done)
+Status: IN PROGRESS (13.1-13.2 done)
 Depends on: v1 (plans 01-11). Track 1 of [plan 12](12-after-v1.md).
 
 ## Goal
@@ -322,8 +322,10 @@ marked `todo`; the plan is done when no `todo` is left.
       no feature loops over sessions on its own.
 - [x] Shared and service workers are resumed and answer (no page can
       hang on a paused worker).
-- [ ] Requests from every kind of worker are logged, routed and mocked;
-      an unmatched worker request fails a test like a page's does.
+- [x] Requests from every kind of worker are logged, routed and mocked;
+      an unmatched worker request fails a test like a page's does
+      (a shared worker's only as far as Chrome allows: see the decisions
+      log, 13.2).
 - [ ] Console output and errors of every worker reach the right tabs;
       `--all-tabs` counts each once.
 - [ ] Emulation, the frozen clock and the determinism script reach
@@ -365,3 +367,48 @@ marked `todo`; the plan is done when no `todo` is left.
 - 13.1: The table test (`crates/engine/tests/targets.rs`) has an `eval
   --frame` row so `n/a` cells exist from the start; its `todo` cells were
   checked to fail today.
+- 13.2: Chrome 154 has no `Fetch` domain in a dedicated worker
+  (`'Fetch.enable' wasn't found`, at setup too): its requests are paused
+  in the session of the frame that started it, with that frame's tab.
+  So `fetch` applies to pages, iframes, shared and service workers, and
+  a dedicated worker's requests are routed without it.
+- 13.2: Chrome 154 takes `Fetch.enable` in a shared worker only before it
+  starts, and the worker's loader is made when its script request starts,
+  a few microseconds after `Target.attachedToTarget`, whether or not the
+  worker waits for the debugger. A shared worker therefore intercepts
+  every request from its start (auth challenges too; requests go on at
+  once while no route, mock or credential needs them), with the call
+  sent from the attach handler itself; nothing is sent to it later. When
+  the daemon is starved at that moment (two browsers starting at once in
+  a test), Chrome wins and that worker is never intercepted. Tried and
+  dropped: a browser-level `Fetch.enable` sees the worker's requests only
+  if it is on, with patterns, before the loader is made; an idle one
+  (`patterns: []`) does not take patterns later, and one always on would
+  pause every request of every page. The table test's `Partly` cells
+  (checked, a miss noted) mark the shared worker's route, mock, unmatched
+  and HTTP auth cells.
+- 13.2: A service worker is also announced by the page sessions it
+  controls; that session is only resumed (kind `Other`), and the
+  browser's is used, so its requests are logged once.
+- 13.2: A worker's own script is requested on the session of the page
+  that starts it and, once the worker has `Network` on, answered on the
+  worker's: a worker event for a request its session did not send
+  applies to the tab's live request of that id (`Network::worker_event`,
+  and the same in `NetLog`), so the page no longer waits on it.
+- 13.2: Network entries gain `worker` (`{kind, url}`, `kind` one of
+  `dedicated`, `shared`, `service`); the console's `worker` (a string,
+  since v1) stays as it is. Text lines end with `[service worker sw.js]`.
+  Worker requests count for the tab's network idle and the action
+  report's failed requests too; a shared or service worker's go to every
+  tab of its scope with a frame on its origin, and `expect request`
+  counts one once across tabs.
+- 13.2: Workers get the mock shim through `Runtime.addBinding` and
+  `Runtime.evaluate` (before a new worker's script, late in a running
+  one); `Wanted::in_workers` says which injected items reach workers,
+  only the shim for now, so 13.3 decides about init scripts. Shared and
+  service workers report `Runtime.bindingCalled` without `Runtime.enable`.
+- 13.2: Binary messages: `send_base64` (an action's or a rule's, a
+  template too) sends one; a binary message from the page fits only
+  rules without `match`, with its base64 as `{{body}}`; `mock ws send
+  --base64` pushes one. Also fixed: the shim did not turn back on in a
+  document after `mock use`, `mock off`, `mock use`.
