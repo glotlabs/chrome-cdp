@@ -1048,6 +1048,27 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/read/index.html"),
     },
     Case {
+        name: "frames",
+        args: &["frames"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/frames/nested.html"),
+    },
+    Case {
+        name: "frames-workers",
+        args: &["frames"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/targets/matrix.html"],
+            &["wait", "--fn", "document.title === 'Targets: ready'"],
+        ]),
+    },
+    Case {
+        name: "frames-not-found",
+        args: &["eval", "--frame", "nope", "1"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/frames/nested.html"),
+    },
+    Case {
         name: "box-not-rendered",
         args: &["box", "#hidden-text"],
         modes: ALL,
@@ -2709,7 +2730,40 @@ impl Normalizer {
         })
         // A busy machine can leave room for one retry only.
         .replace("<n> retry)", "<n> retries)")
+        .pipe(|text| chrome_ids(&text))
     }
+}
+
+trait Pipe: Sized {
+    fn pipe<T>(self, f: impl FnOnce(Self) -> T) -> T {
+        f(self)
+    }
+}
+
+impl Pipe for String {}
+
+/// Replaces Chrome's ids of frames and targets (32 upper-case hex
+/// digits) with `<id>`.
+fn chrome_ids(text: &str) -> String {
+    let hex = |c: char| c.is_ascii_digit() || ('A'..='F').contains(&c);
+    let mut out = String::new();
+    let mut run = String::new();
+    for c in text.chars().chain(std::iter::once('\0')) {
+        if hex(c) {
+            run.push(c);
+            continue;
+        }
+        if run.len() == 32 {
+            out.push_str("<id>");
+        } else {
+            out.push_str(&run);
+        }
+        run.clear();
+        if c != '\0' {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Replaces the run of chars matching `keep` after each `prefix` with
@@ -2846,7 +2900,9 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
     }
 
     let site = Fixtures::shared();
-    norm = norm.with(Path::new(site.a()), "<site>");
+    norm = norm
+        .with(Path::new(site.a()), "<site>")
+        .with(Path::new(site.b()), "<site-b>");
     // Sockets' URLs (plan 11.9).
     norm = norm.with(Path::new(&site.a().replacen("http", "ws", 1)), "<ws-site>");
     let files = upload_files();

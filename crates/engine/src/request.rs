@@ -274,6 +274,17 @@ pub struct TabsRequest {
     pub max_chars: usize,
 }
 
+/// `frames`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FramesRequest {
+    /// The tab (`t2`); the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
 /// `tab new [url]`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TabNewRequest {

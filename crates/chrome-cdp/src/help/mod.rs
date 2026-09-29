@@ -82,7 +82,7 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
     (
         "Tabs and navigation",
         &[
-            "goto", "back", "forward", "reload", "tabs", "tab", "context", "wait",
+            "goto", "back", "forward", "reload", "tabs", "tab", "frames", "context", "wait",
         ],
     ),
     (

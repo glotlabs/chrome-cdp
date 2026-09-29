@@ -52,7 +52,7 @@ locators in single quotes.
   `testid=submit`, `'text=Sign in'`
 - CSS: `#id`, `.class`, `'css=form button'`; XPath: `xpath=//a`
 - `'#list >> text=Delete >> nth=-1'` chains; `'frame=payment >> #card'`
-  looks inside an iframe.
+  looks inside an iframe (`chrome-cdp frames` lists them, and workers).
 
 ## Pitfalls
 
@@ -131,6 +131,7 @@ screenshot [loc] [--full [loc]] [-o f.png]   --full loc: all of a scrolling cont
 errors | console | network [--failed]
 eval '<js>'                    run JavaScript, print the value (elements with refs)
 tabs | tab <id> | tab new <url> | tab close
+frames                         the tab's iframes (cross-site too) and workers
 dialog accept|dismiss          answer alert/confirm/prompt
 route '<url glob>' --json-body '{...}'   mock a request
 viewport 390x844 | emulate 'iPhone 15'   devices

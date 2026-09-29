@@ -1,0 +1,23 @@
+$ chrome-cdp frames
+exit: 0
+--- stdout
+frame main <site>/frames/nested.html
+  iframe "local" <site>/frames/local.html
+    iframe "deep" <site-b>/frames/leaf.html (out of process)
+  iframe "remote" <site-b>/frames/remote.html (out of process)
+    iframe "remote-leaf" <site-b>/frames/leaf.html (out of process)
+
+$ chrome-cdp frames --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"frames":[{"depth":0,"id":"<id>","name":"","oopif":false,"parent":null,"url":"<site>/frames/nested.html"},{"depth":1,"id":"<id>","name":"local","oopif":false,"parent":"<id>","url":"<site>/frames/local.html"},{"depth":2,"id":"<id>","name":"deep","oopif":true,"parent":"<id>","url":"<site-b>/frames/leaf.html"},{"depth":1,"id":"<id>","name":"remote","oopif":true,"parent":"<id>","url":"<site-b>/frames/remote.html"},{"depth":2,"id":"<id>","name":"remote-leaf","oopif":true,"parent":"<id>","url":"<site-b>/frames/leaf.html"}],"tab":"t1","workers":[]}}
+
+$ chrome-cdp frames -q
+exit: 0
+--- stdout
+<id>
+<id>
+<id>
+<id>
+<id>
+

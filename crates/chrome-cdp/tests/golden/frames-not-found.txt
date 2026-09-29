@@ -1,0 +1,16 @@
+$ chrome-cdp eval --frame nope 1
+exit: 1
+--- stderr
+error: no frame in tab t1 matches "nope"
+  frame: <site>/frames/nested.html (main)
+  frame: name "local" <site>/frames/local.html
+  frame: name "deep" <site-b>/frames/leaf.html
+  frame: name "remote" <site-b>/frames/remote.html
+  frame: name "remote-leaf" <site-b>/frames/leaf.html
+  hint: chrome-cdp frames   (lists the tab's frames; name one by its name attribute, a part of its URL, or its id)
+
+$ chrome-cdp eval --frame nope 1 --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"no frame in tab t1 matches \"nope\"","hint":"chrome-cdp frames   (lists the tab's frames; name one by its name attribute, a part of its URL, or its id)","notes":[{"label":"frame","text":"<site>/frames/nested.html (main)"},{"label":"frame","text":"name \"local\" <site>/frames/local.html"},{"label":"frame","text":"name \"deep\" <site-b>/frames/leaf.html"},{"label":"frame","text":"name \"remote\" <site-b>/frames/remote.html"},{"label":"frame","text":"name \"remote-leaf\" <site-b>/frames/leaf.html"}],"details":{"frame":"nope","frames":[{"depth":0,"id":"<id>","name":"","oopif":false,"parent":null,"url":"<site>/frames/nested.html"},{"depth":1,"id":"<id>","name":"local","oopif":false,"parent":"<id>","url":"<site>/frames/local.html"},{"depth":2,"id":"<id>","name":"deep","oopif":true,"parent":"<id>","url":"<site-b>/frames/leaf.html"},{"depth":1,"id":"<id>","name":"remote","oopif":true,"parent":"<id>","url":"<site-b>/frames/remote.html"},{"depth":2,"id":"<id>","name":"remote-leaf","oopif":true,"parent":"<id>","url":"<site-b>/frames/leaf.html"}],"tab":"t1"}}}
+

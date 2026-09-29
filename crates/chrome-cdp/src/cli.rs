@@ -288,6 +288,22 @@ Examples:
     )]
     Tab(TabArgs),
 
+    /// List the tab's frames and workers as a tree.
+    #[command(after_help = "\
+One line per frame, indented under its parent, in the order of the <iframe>
+elements: `frame main URL` for the page, then `iframe \"name\" URL`, marked
+`(out of process)` for a cross-site iframe that runs in its own process.
+Each frame's dedicated workers follow its iframes; the shared and service
+workers of the origins the tab's frames are on come last. --frame and
+frame= take a frame's name, a part of its URL, or its id (in --json, or
+one per line with -q).
+
+Examples:
+  chrome-cdp frames
+  chrome-cdp frames --json | jq -r '.data.frames[].url'
+  chrome-cdp eval --frame \"$(chrome-cdp frames -q | sed -n 2p)\" 'document.title'")]
+    Frames(FramesArgs),
+
     /// Make, list or close browser contexts: isolated cookies, storage,
     /// routes and mocks in one browser.
     #[command(after_help = "\
@@ -5460,6 +5476,13 @@ impl ElementStateArg {
 
 #[derive(Debug, Args)]
 pub(crate) struct TabsArgs {
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct FramesArgs {
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,

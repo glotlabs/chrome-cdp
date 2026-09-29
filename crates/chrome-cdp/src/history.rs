@@ -29,6 +29,7 @@ const READS: &[&str] = &[
     "downloads",
     "errors",
     "find",
+    "frames",
     "highlight",
     "html",
     "inspect",

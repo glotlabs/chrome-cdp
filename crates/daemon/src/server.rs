@@ -394,6 +394,10 @@ impl Daemon {
                 Ok(p) => output(self.engine.tabs(p).await),
                 Err(e) => Err(e),
             },
+            rpc::FRAMES => match params(req.params) {
+                Ok(p) => output(self.engine.list_frames(p).await),
+                Err(e) => Err(e),
+            },
             rpc::TAB_NEW => match params(req.params) {
                 Ok(p) => output(self.engine.tab_new(p).await),
                 Err(e) => Err(e),

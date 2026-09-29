@@ -126,6 +126,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Sessions(args)) => session::sessions(&args, &cli.global),
         Some(Command::Cdp(args)) => session::cdp(&args, &cli.global),
         Some(Command::Tabs(args)) => session::tabs(&args, &cli.global),
+        Some(Command::Frames(args)) => session::frames(&args, &cli.global),
         Some(Command::Context(args)) => session::context(&args, &cli.global),
         Some(Command::Tab(args)) => session::tab(&args, &cli.global),
         Some(Command::Goto(args)) => session::goto(&args, &cli.global),

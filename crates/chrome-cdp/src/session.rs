@@ -27,12 +27,12 @@ use engine::{
     Action, ActionRequest, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
     ConsoleRequest, ContextCloseRequest, ContextListRequest, ContextNewRequest,
     CoverageStartRequest, CoverageStopRequest, DialogRequest, DownloadsRequest, ElementState,
-    EvalRequest, FindRequest, HarStartRequest, HarStopRequest, HighlightRequest, HttpCredentials,
-    ImageFormat, InspectRequest, NavigateRequest, Navigation, NetworkClearRequest, NetworkRequest,
-    NetworkShowRequest, OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest, RouteRequest,
-    RoutesRequest, ScreenshotRequest, SnapshotRequest, TabCloseRequest, TabNewRequest,
-    TabSelectRequest, TabsRequest, TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor,
-    WaitRequest,
+    EvalRequest, FindRequest, FramesRequest, HarStartRequest, HarStopRequest, HighlightRequest,
+    HttpCredentials, ImageFormat, InspectRequest, NavigateRequest, Navigation, NetworkClearRequest,
+    NetworkRequest, NetworkShowRequest, OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest,
+    RouteRequest, RoutesRequest, ScreenshotRequest, SnapshotRequest, TabCloseRequest,
+    TabNewRequest, TabSelectRequest, TabsRequest, TraceStartRequest, TraceStopRequest,
+    UnrouteRequest, WaitFor, WaitRequest,
 };
 use engine::{
     CookieFilter, CookieSpec, CookiesOp, CookiesRequest, StateLoadRequest, StateSaveRequest,
@@ -49,7 +49,7 @@ use crate::cli::{
     AfterArgs, BlockArgs, CdpArgs, CloseArgs, ConnectArgs, ContextArgs, ContextCommand,
     CookieFilterArgs, CookieSetArgs, CookiesArgs, CookiesCommand, CoverageArgs, CoverageCommand,
     DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, FindArgs,
-    GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs,
+    FramesArgs, GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs,
     ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs, LogReadArgs,
     NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs, PermissionsCommand,
     ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs, StateArgs,
@@ -521,6 +521,20 @@ pub(crate) fn tabs(args: &TabsArgs, global: &GlobalArgs) -> Result<Output, Error
     };
     ctx.runtime
         .block_on(client.call_output(rpc::TABS, &request, ctx.timeout + QUICK))
+}
+
+/// `frames`: needs a running session.
+pub(crate) fn frames(args: &FramesArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let request = FramesRequest {
+        tab: ctx.tab.clone(),
+        timeout_ms: millis(ctx.timeout),
+        max_chars: args.max_chars,
+    };
+    ctx.runtime
+        .block_on(client.call_output(rpc::FRAMES, &request, ctx.timeout + QUICK))
 }
 
 /// `context new|list|close`.

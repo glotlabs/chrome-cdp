@@ -126,6 +126,9 @@ pub(crate) struct Target {
     pub(crate) scope: Option<String>,
     /// The id of the session that announced it; `None` for the browser's.
     pub(crate) parent: Option<String>,
+    /// A dedicated worker's frame: the one that started it (or the worker
+    /// that did).
+    pub(crate) frame: Option<String>,
     /// The id of its frozen clock script (`time freeze`), if it has one.
     pub(crate) clock: Option<String>,
     /// What it was last told to intercept.
@@ -156,6 +159,7 @@ impl Target {
             owner,
             scope,
             parent,
+            frame: None,
             clock: None,
             interception: None,
             injected: HashMap::new(),

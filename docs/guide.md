@@ -79,6 +79,8 @@ self-signed certificates.
 ## Frames
 
 Each tab's frames are tracked, cross-site (out-of-process) iframes included.
+`chrome-cdp frames` lists them as a tree, in the order of their `<iframe>`
+elements, with the tab's workers (dedicated, shared and service).
 `cdp --frame <name|url-part|id>` sends a call to one:
 `chrome-cdp cdp --frame checkout Runtime.evaluate '{"expression":"location.href"}'`
 runs in that iframe's page, whichever process it lives in. chrome-cdp's own

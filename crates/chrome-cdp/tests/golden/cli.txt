@@ -68,6 +68,8 @@ command chrome-cdp tab new
 command chrome-cdp tab close
   arg ID
   flag --close-browser
+command chrome-cdp frames
+  flag --max-chars value=N
 command chrome-cdp context
 command chrome-cdp context new
   arg URL

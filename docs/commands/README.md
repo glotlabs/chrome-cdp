@@ -27,6 +27,7 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`reload`](reload.md) | Load the current page again |
 | [`tabs`](tabs.md) | List the session's tabs; `*` marks the active one |
 | [`tab`](tab.md) | Switch to a tab, or open or close one |
+| [`frames`](frames.md) | List the tab's frames and workers as a tree |
 | [`context`](context.md) | Make, list or close browser contexts: isolated cookies, storage, routes and mocks in one browser |
 | [`wait`](wait.md) | Wait for the page: an element, text, the URL, network idle, a request, … |
 

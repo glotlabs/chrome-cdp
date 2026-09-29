@@ -39,22 +39,7 @@ pub enum World {
     Isolated,
 }
 
-/// A frame as commands show it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FrameInfo {
-    /// Chrome's frame id (a tab's main frame has the tab's target id).
-    pub id: String,
-    /// The parent frame's id; `None` for the main frame.
-    pub parent: Option<String>,
-    /// The `name` attribute of its `<iframe>`, or `""`.
-    pub name: String,
-    /// Its document's URL, with the fragment.
-    pub url: String,
-    /// 0 for the main frame, 1 for its iframes, …
-    pub depth: usize,
-    /// Whether it runs in another process than the main frame (an OOPIF).
-    pub oopif: bool,
-}
+pub use protocol::schema::FrameInfo;
 
 /// An execution context, as its session numbers it.
 #[derive(Debug, Clone, PartialEq, Eq)]

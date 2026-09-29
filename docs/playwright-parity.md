@@ -18,7 +18,7 @@ around it. **The v1 gate: no ❌ in an agent-critical row.** A test
 (`crates/chrome-cdp/tests/parity.rs`) holds the tables to that, checks the
 counts below, and checks that every command a row names exists.
 
-Today: 128 rows; 105 ✅, 15 🟡, 3 ❌, 5 ➖. No agent-critical row is ❌.
+Today: 129 rows; 106 ✅, 15 🟡, 3 ❌, 5 ➖. No agent-critical row is ❌.
 
 ## Navigation
 
@@ -113,7 +113,8 @@ Today: 128 rows; 105 ✅, 15 🟡, 3 ❌, 5 ➖. No agent-critical row is ❌.
 | dialogs (`page.on('dialog')`, `accept(text)`) | an alert is accepted; a confirm or prompt exits 5 until `dialog accept [TEXT]` or `dialog dismiss`; `open --dialogs accept` | ✅ | yes |
 | downloads | always accepted into the session's directory; `wait --download -q` prints the path, `downloads` lists them | ✅ | yes |
 | popups | the action reports `→ new tab t2`; `tab t2`, `--tab t2`, `open --follow-popups` | ✅ | yes |
-| frames (`frameLocator`, `contentFrame`, `page.frame`) | `'frame=NAME >> LOC'`, an iframe's ref (`'e30 >> text=Pay'`), `eval --frame`, `snapshot --scope`; cross-origin iframes too | ✅ | yes |
+| frames (`frameLocator`, `contentFrame`, `page.frame`, `page.frames()`) | `'frame=NAME >> LOC'`, an iframe's ref (`'e30 >> text=Pay'`), `eval --frame`, `snapshot --scope`, `frames` lists them; cross-origin iframes too | ✅ | yes |
+| `page.workers()`, `context.serviceWorkers()` | `frames` lists the tab's dedicated, shared and service workers | ✅ | no |
 | shadow DOM | pierced by every locator but XPath, and by `snapshot` | ✅ | yes |
 
 ## Screenshots, PDF and video

@@ -16,6 +16,7 @@ pub const CDP: &str = "cdp";
 pub const STATUS: &str = "status";
 pub const CLOSE: &str = "close";
 pub const TABS: &str = "tabs";
+pub const FRAMES: &str = "frames";
 pub const CONTEXT_NEW: &str = "context_new";
 pub const CONTEXT_LIST: &str = "context_list";
 pub const CONTEXT_CLOSE: &str = "context_close";

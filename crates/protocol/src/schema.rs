@@ -129,6 +129,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<TabsData>),
     },
     CommandSchema {
+        name: "frames",
+        summary: "the tab's frames, out-of-process ones too, and its workers",
+        schema: || schema_for!(Envelope<FramesData>),
+    },
+    CommandSchema {
         name: "tab",
         summary: "the tab made active",
         schema: || schema_for!(Envelope<TabData>),
@@ -2995,6 +3000,53 @@ pub struct ClipboardWriteData {
 pub struct TabsData {
     /// Every open tab, by id.
     pub tabs: Vec<TabInfo>,
+}
+
+/// `data` of `chrome-cdp frames --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FramesData {
+    /// The tab, e.g. `t1`.
+    pub tab: String,
+    /// Its frames: the main frame first, parents before their children,
+    /// siblings in the order of their `<iframe>` elements.
+    pub frames: Vec<FrameInfo>,
+    /// Its workers: the dedicated workers its frames started, and the
+    /// shared and service workers of the origins its frames are on.
+    pub workers: Vec<WorkerInfo>,
+}
+
+/// A frame of a tab.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FrameInfo {
+    /// Chrome's frame id (a tab's main frame has the tab's target id).
+    /// `--frame` and `frame=` take it.
+    pub id: String,
+    /// The parent frame's id; `None` for the main frame.
+    pub parent: Option<String>,
+    /// The `name` attribute of its `<iframe>`, or `""`.
+    pub name: String,
+    /// Its document's URL, with the fragment.
+    pub url: String,
+    /// 0 for the main frame, 1 for its iframes, …
+    pub depth: usize,
+    /// Whether it runs in another process than the main frame (an
+    /// out-of-process iframe, of another site).
+    pub oopif: bool,
+}
+
+/// A worker of a tab.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WorkerInfo {
+    pub kind: WorkerKind,
+    /// Its script.
+    pub url: String,
+    /// Chrome's target id.
+    pub id: String,
+    /// A dedicated worker's frame: the id of the frame that started it
+    /// (for a worker a worker started, the frame that started the
+    /// first).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<String>,
 }
 
 /// `data` of `chrome-cdp tab <id> --json` and `chrome-cdp tab new --json`.

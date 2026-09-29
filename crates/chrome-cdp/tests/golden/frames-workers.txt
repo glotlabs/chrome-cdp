@@ -1,0 +1,24 @@
+$ chrome-cdp frames
+exit: 0
+--- stdout
+frame main <site>/targets/matrix.html
+  iframe "same" <site>/targets/frame.html?who=same
+  iframe "oopif" <site-b>/targets/frame.html?who=oopif&workers=1 (out of process)
+    dedicated worker <site-b>/targets/dedicated.js?who=oopif-dedicated
+  dedicated worker <site>/targets/dedicated.js?who=dedicated
+shared worker <site>/targets/shared.js?who=shared
+shared worker <site-b>/targets/shared.js?who=oopif-shared
+service worker <site>/targets/sw.js
+
+$ chrome-cdp frames --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"frames":[{"depth":0,"id":"<id>","name":"","oopif":false,"parent":null,"url":"<site>/targets/matrix.html"},{"depth":1,"id":"<id>","name":"same","oopif":false,"parent":"<id>","url":"<site>/targets/frame.html?who=same"},{"depth":1,"id":"<id>","name":"oopif","oopif":true,"parent":"<id>","url":"<site-b>/targets/frame.html?who=oopif&workers=1"}],"tab":"t1","workers":[{"frame":"<id>","id":"<id>","kind":"dedicated","url":"<site>/targets/dedicated.js?who=dedicated"},{"frame":"<id>","id":"<id>","kind":"dedicated","url":"<site-b>/targets/dedicated.js?who=oopif-dedicated"},{"id":"<id>","kind":"shared","url":"<site>/targets/shared.js?who=shared"},{"id":"<id>","kind":"shared","url":"<site-b>/targets/shared.js?who=oopif-shared"},{"id":"<id>","kind":"service","url":"<site>/targets/sw.js"}]}}
+
+$ chrome-cdp frames -q
+exit: 0
+--- stdout
+<id>
+<id>
+<id>
+

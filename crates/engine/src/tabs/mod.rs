@@ -57,7 +57,7 @@ use std::time::Duration;
 use cdp::domains::{browser, page, runtime, security, target};
 use cdp::{Connection, Event as _, LosslessEventStream, RawEvent, Session};
 use futures_util::future::join_all;
-use protocol::schema::{Event, TabInfo, Viewport, Worker};
+use protocol::schema::{Event, TabInfo, Viewport, Worker, WorkerInfo, WorkerKind};
 
 use self::dialogs::OpenDialog;
 use self::downloads::Download;
@@ -954,6 +954,32 @@ impl Tabs {
             .get(&id)
             .map(|t| t.frames.list())
             .unwrap_or_default()
+    }
+
+    /// Tab `id`'s workers: the dedicated workers of its frames, then the
+    /// shared and service workers of its origins, each kind by URL.
+    pub(crate) fn workers(&self, id: u32) -> Vec<WorkerInfo> {
+        let state = self.shared.lock();
+        let mut workers: Vec<WorkerInfo> = state
+            .targets
+            .values()
+            .filter(|t| t.kind.worker().is_some() && state.tabs_of(t).contains(&id))
+            .filter_map(|t| {
+                Some(WorkerInfo {
+                    kind: t.kind.worker()?,
+                    url: t.url.clone(),
+                    id: t.id.clone(),
+                    frame: t.frame.clone(),
+                })
+            })
+            .collect();
+        let rank = |kind: WorkerKind| match kind {
+            WorkerKind::Dedicated => 0,
+            WorkerKind::Shared => 1,
+            WorkerKind::Service => 2,
+        };
+        workers.sort_by(|a, b| (rank(a.kind), &a.url, &a.id).cmp(&(rank(b.kind), &b.url, &b.id)));
+        workers
     }
 
     /// Records where the `<iframe>` of each of tab `id`'s frames of
@@ -2128,18 +2154,19 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent<'_>) {
         .kinds()
         .contains(kind)
         .then(|| session.events_lossless("Fetch."));
-    shared.lock().targets.insert(
-        session_id.clone(),
-        Target::new(
-            session.clone(),
-            kind,
-            info.target_id.clone(),
-            info.url.clone(),
-            owner,
-            scope,
-            parent_session,
-        ),
+    let mut target = Target::new(
+        session.clone(),
+        kind,
+        info.target_id.clone(),
+        info.url.clone(),
+        owner,
+        scope,
+        parent_session,
     );
+    if kind == TargetKind::DedicatedWorker {
+        target.frame.clone_from(&info.parent_frame_id);
+    }
+    shared.lock().targets.insert(session_id.clone(), target);
     if let Some(fetch_events) = fetch_events {
         fetch::enable_early(shared, &session, kind);
         shared.spawn(fetch::watch_fetch(

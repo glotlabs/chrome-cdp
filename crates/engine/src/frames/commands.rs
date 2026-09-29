@@ -9,12 +9,14 @@ use std::time::Duration;
 
 use cdp::domains::{dom, runtime};
 use futures_util::future::join_all;
-use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, format};
+use protocol::schema::{FramesData, WorkerInfo, WorkerKind};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde_json::{Value, json};
 
 use super::{FindError, FrameInfo, World};
 use crate::context::Scoped as _;
 use crate::errors::from_cdp;
+use crate::request::{FramesRequest, millis};
 use crate::tabs::{FrameContext, FrameError, Page, tab_name};
 use crate::{Engine, Running};
 
@@ -62,6 +64,31 @@ impl Engine {
         let page = self.page(&running, tab, timeout).await?;
         self.place_frames(&running, &page, timeout).await;
         Ok(running.tabs.frames(page.id))
+    }
+
+    /// `frames`: the tab's frames as a tree, out-of-process iframes too,
+    /// with its workers.
+    pub async fn list_frames(&self, req: FramesRequest) -> Result<Output, ErrorInfo> {
+        let running = self.running()?;
+        let timeout = millis(req.timeout_ms);
+        let page = self.page(&running, req.tab.as_deref(), timeout).await?;
+        self.place_frames(&running, &page, timeout).await;
+        let frames = running.tabs.frames(page.id);
+        let workers = running.tabs.workers(page.id);
+        let text = render(&frames, &workers);
+        let quiet = frames
+            .iter()
+            .map(|f| f.id.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let data = FramesData {
+            tab: tab_name(page.id),
+            frames,
+            workers,
+        };
+        Ok(Output::typed(&data, text)
+            .quiet(quiet)
+            .limit(req.max_chars, "--max-chars 0 for all of it"))
     }
 
     /// Looks up where the `<iframe>` of each frame of `page` that has
@@ -366,6 +393,83 @@ fn describe(frame: &FrameInfo) -> String {
     }
 }
 
+/// `frames`' text: a line per frame, indented by depth, each followed by
+/// the dedicated workers it started once its iframes are listed; then the
+/// shared and service workers.
+///
+/// ```text
+/// frame main https://a.test/
+///   iframe "pay" https://b.test/pay (out of process)
+///     dedicated worker https://b.test/w.js
+///   dedicated worker https://a.test/w.js
+/// service worker https://a.test/sw.js
+/// ```
+fn render(frames: &[FrameInfo], workers: &[WorkerInfo]) -> String {
+    let mut lines = Vec::new();
+    let worker_line = |depth: usize, worker: &WorkerInfo| {
+        format!(
+            "{}{} {}",
+            "  ".repeat(depth),
+            worker.kind.as_str(),
+            worker.url
+        )
+    };
+    // Closes the frames at `depth` or deeper: their workers go after
+    // their iframes.
+    let close = |open: &mut Vec<&FrameInfo>, lines: &mut Vec<String>, depth: usize| {
+        while let Some(frame) = open.pop_if(|f| f.depth >= depth) {
+            lines.extend(
+                workers
+                    .iter()
+                    .filter(|w| {
+                        w.kind == WorkerKind::Dedicated && w.frame.as_deref() == Some(&frame.id)
+                    })
+                    .map(|w| worker_line(frame.depth + 1, w)),
+            );
+        }
+    };
+    // The frames whose iframes are being listed, innermost last.
+    let mut open: Vec<&FrameInfo> = Vec::new();
+    for frame in frames {
+        close(&mut open, &mut lines, frame.depth);
+        let indent = "  ".repeat(frame.depth);
+        let url = if frame.url.is_empty() {
+            "(no URL yet)"
+        } else {
+            &frame.url
+        };
+        let line = if frame.parent.is_none() {
+            format!("{indent}frame main {url}")
+        } else {
+            let name = if frame.name.is_empty() {
+                String::new()
+            } else {
+                format!("{:?} ", frame.name)
+            };
+            let oopif = if frame.oopif { " (out of process)" } else { "" };
+            format!("{indent}iframe {name}{url}{oopif}")
+        };
+        lines.push(line);
+        open.push(frame);
+    }
+    close(&mut open, &mut lines, 0);
+    // Dedicated workers of no listed frame, then the shared and service
+    // ones.
+    lines.extend(
+        workers
+            .iter()
+            .filter(|w| {
+                w.kind != WorkerKind::Dedicated
+                    || !w
+                        .frame
+                        .as_deref()
+                        .is_some_and(|id| frames.iter().any(|f| f.id == id))
+            })
+            .map(|w| worker_line(0, w)),
+    );
+    lines.join("\n")
+}
+
 /// One note line per frame, at most [`LISTED_FRAMES`] of them.
 fn list(frames: &[FrameInfo]) -> Vec<String> {
     let mut lines: Vec<String> = frames
@@ -391,4 +495,65 @@ fn list(frames: &[FrameInfo]) -> Vec<String> {
 fn is_stale_context(err: &cdp::CdpError) -> bool {
     matches!(err, cdp::CdpError::Protocol { message, .. }
         if message.starts_with("Cannot find context with specified id"))
+}
+
+#[cfg(test)]
+mod tests {
+    use protocol::schema::{WorkerInfo, WorkerKind};
+
+    use super::{FrameInfo, render};
+
+    fn frame(id: &str, parent: Option<&str>, name: &str, depth: usize, oopif: bool) -> FrameInfo {
+        FrameInfo {
+            id: id.into(),
+            parent: parent.map(Into::into),
+            name: name.into(),
+            url: format!("https://{id}.test/"),
+            depth,
+            oopif,
+        }
+    }
+
+    fn worker(kind: WorkerKind, url: &str, frame: Option<&str>) -> WorkerInfo {
+        WorkerInfo {
+            kind,
+            url: url.into(),
+            id: format!("w-{url}"),
+            frame: frame.map(Into::into),
+        }
+    }
+
+    #[test]
+    fn frames_as_a_tree_with_their_workers() {
+        let frames = [
+            frame("t", None, "", 0, false),
+            frame("a", Some("t"), "pay", 1, true),
+            frame("c", Some("a"), "", 2, true),
+            frame("b", Some("t"), "", 1, false),
+        ];
+        let workers = [
+            worker(WorkerKind::Dedicated, "https://t.test/w.js", Some("t")),
+            worker(WorkerKind::Dedicated, "https://a.test/w.js", Some("a")),
+            worker(
+                WorkerKind::Dedicated,
+                "https://gone.test/w.js",
+                Some("gone"),
+            ),
+            worker(WorkerKind::Shared, "https://t.test/s.js", None),
+            worker(WorkerKind::Service, "https://t.test/sw.js", None),
+        ];
+        assert_eq!(
+            render(&frames, &workers),
+            "frame main https://t.test/
+  iframe \"pay\" https://a.test/ (out of process)
+    iframe https://c.test/ (out of process)
+    dedicated worker https://a.test/w.js
+  iframe https://b.test/
+  dedicated worker https://t.test/w.js
+dedicated worker https://gone.test/w.js
+shared worker https://t.test/s.js
+service worker https://t.test/sw.js"
+        );
+        assert_eq!(render(&frames[..1], &[]), "frame main https://t.test/");
+    }
 }
