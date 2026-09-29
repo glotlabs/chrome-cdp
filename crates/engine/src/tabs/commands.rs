@@ -19,8 +19,8 @@ use crate::request::{
 };
 use crate::{Engine, Running};
 
-/// How long a report of new tabs waits for popups being set up, and then
-/// for them to have a URL.
+/// How long a command waits for popups being set up (before it picks its
+/// tab, and before it reports new tabs), and then for them to have a URL.
 const POPUP_URL_WAIT: Duration = Duration::from_millis(500);
 
 /// What `tab close` did; the daemon closes the session when asked to.
@@ -40,6 +40,10 @@ impl Engine {
         timeout: Duration,
     ) -> Result<Page, ErrorInfo> {
         let id = tab.map(parse_tab_id).transpose()?;
+        // A popup a click opened after its command returned is still
+        // being set up: until then its opener, likely the tab to act on,
+        // is hidden behind it.
+        running.tabs.wait_for_popups(POPUP_URL_WAIT).await;
         let page = match self.current_context()? {
             Some(scope) => running.tabs.page_in(&scope.browser_id, id, timeout).await,
             None => running.tabs.page(id, timeout).await,

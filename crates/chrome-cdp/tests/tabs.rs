@@ -228,6 +228,18 @@ fn the_active_tab_stays_visible_behind_a_popup() {
         eval_json(&sandbox, "document.visibilityState", &["--tab", "t2"]),
         json!("hidden")
     );
+    // A target=_blank click opens its popup after the command returned;
+    // the next command still finds the active tab in front.
+    eval(
+        &sandbox,
+        "Object.assign(document.createElement('a'), { href: '/tabs/popup-target.html', target: '_blank' }).click()",
+        &[],
+    );
+    assert_eq!(
+        eval_json(&sandbox, "document.visibilityState", &[]),
+        json!("visible")
+    );
+    popup(&sandbox, "t3");
     // Switching brings the other tab to the front.
     assert_eq!(code(&sandbox.run(&["tab", "t2"])), 0);
     assert_eq!(
