@@ -127,7 +127,7 @@ wait <loc> | --text t | --url u | --idle
 expect <loc> visible|text t|value v|count n [--not]   assert, retrying
 expect --url u | --no-errors | --no-failed-requests | --a11y
 expect-snapshot <name>         snapshot -i vs a stored baseline; a diff if not
-screenshot [loc] [--full] [-o f.png]
+screenshot [loc] [--full [loc]] [-o f.png]   --full loc: all of a scrolling container
 errors | console | network [--failed]
 eval '<js>'                    run JavaScript, print the value (elements with refs)
 tabs | tab <id> | tab new <url> | tab close

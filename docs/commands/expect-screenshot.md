@@ -14,7 +14,7 @@ Arguments:
 
 Options:
 
-- `--full`: The whole page, not only the viewport
+- `--full <LOC>`: The whole page, not only the viewport; with LOC, all of the container the page scrolls in (as screenshot --full does)
 - `--mask <LOCATOR>`: Paint over the elements this locator matches (repeatable)
 - `--threshold <T>`: How far (0 to 1) a pixel's colour may move before it has changed (default `0.1`)
 - `--max-diff-pixels <N>`: How many pixels may change and still pass (default `0`)

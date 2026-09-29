@@ -298,7 +298,7 @@ what it saw and what to run next. `--not` inverts element matchers,
 | Playwright | chrome-cdp | |
 |---|---|---|
 | `page.screenshot({ path })` | `screenshot -o PATH` (without `-o`, prints where it saved it) | ✅ |
-| `screenshot({ fullPage: true })` | `screenshot --full` | ✅ |
+| `screenshot({ fullPage: true })` | `screenshot --full` (a page that scrolls inside a container, a scrolling `<main>`, has all of that container captured; `--full LOC` names it) | ✅ |
 | `loc.screenshot()` | `screenshot LOC` | ✅ |
 | `screenshot({ mask: [loc] })` | `screenshot --mask LOC` (repeat it) | ✅ |
 | `screenshot({ type: 'jpeg', quality, omitBackground })` | `screenshot --format jpeg --quality 70 --omit-background` | ✅ |

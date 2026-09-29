@@ -425,6 +425,15 @@ element (`screenshot e12`, scrolled into view first) and prints its path:
 /run/user/1000/chrome-cdp/default/shots/3.png: 1280x720 png, 48KB
 ```
 
+Many apps never scroll the page itself: `html, body { height: 100% }` and a
+scrolling `<main>`. There `--full` finds the container the page scrolls in
+(the scrolling element that shows the most of itself, if that is at least a
+quarter of the viewport), makes the viewport tall enough for all of its
+content for the capture, and then puts the viewport and the container's
+scroll position back. The output names it (`the page scrolls in main#feed`;
+`container` in `--json`). `--full '#feed'` names the container when the one
+found is not the one you want.
+
 Images go to the session's `shots` directory, numbered, unless `-o` names a
 file (`-o -` writes it to stdout). They are in CSS pixels and at most 1,568
 pixels on their longest side (`--max-size`, scaled down to fit), a size
