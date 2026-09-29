@@ -7,8 +7,10 @@
     "snapshot-tokens": "node snapshot-tokens.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.129.0",
     "@modelcontextprotocol/sdk": "1.30.1",
     "@playwright/mcp": "0.0.82",
-    "gpt-tokenizer": "4.0.0"
+    "gpt-tokenizer": "4.0.0",
+    "playwright-core": "1.64.0-alpha-1789764292000"
   }
 }

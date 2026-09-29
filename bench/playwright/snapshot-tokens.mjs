@@ -9,10 +9,16 @@
 // fixtures`) and CHROME_PATH, the Chrome both tools drive. Usage:
 //
 //   node snapshot-tokens.mjs [--pages simple,login] [--dump <dir>] [--json]
+//                            [--tokenizer auto|anthropic|o200k]
 //
-// Tokens are counted with the o200k_base BPE (gpt-tokenizer), offline; the
-// Anthropic token counting API would send the pages elsewhere and needs a
-// key. The ratio is what matters, and both outputs use the same tokenizer.
+// `cargo xtask bench tokens` runs it and writes the table to
+// docs/benchmarks.md. Tokenizers: `anthropic` counts with the Anthropic
+// token counting API (model `claude-opus-5-5`; needs ANTHROPIC_API_KEY or
+// ANTHROPIC_AUTH_TOKEN, and sends the fixture pages' snapshots there);
+// `o200k` uses the o200k_base BPE (gpt-tokenizer), offline, as an
+// approximation. `auto` (the default) takes `anthropic` when a key is set.
+// The output names the tokenizer used; the ratio is what matters, and both
+// tools' outputs go through the same one.
 
 import { spawn, execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -23,6 +29,7 @@ import { createInterface } from 'node:readline';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { encode } from 'gpt-tokenizer';
+import Anthropic from '@anthropic-ai/sdk';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '../..');
@@ -39,12 +46,13 @@ const ACTIONABLE = new Set(['button', 'link', 'textbox', 'searchbox', 'checkbox'
   'tab', 'slider', 'spinbutton', 'treeitem']);
 
 function args() {
-  const out = { pages: CORPUS, dump: null, json: false };
+  const out = { pages: CORPUS, dump: null, json: false, tokenizer: 'auto' };
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--pages') out.pages = argv[++i].split(',');
     else if (argv[i] === '--dump') out.dump = argv[++i];
     else if (argv[i] === '--json') out.json = true;
+    else if (argv[i] === '--tokenizer') out.tokenizer = argv[++i];
     else throw new Error(`unknown argument ${argv[i]}`);
   }
   return out;
@@ -110,7 +118,25 @@ async function playwrightMcp() {
   };
 }
 
-const tokens = (text) => encode(text).length;
+/** The model whose tokenizer the `anthropic` tokenizer counts with. */
+const COUNT_MODEL = 'claude-opus-5-5';
+
+/** A counter: `{ name, count(text) → Promise<number> }`. */
+async function tokenizer(which) {
+  const keyed = Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+  if (which === 'auto') which = keyed ? 'anthropic' : 'o200k';
+  if (which === 'o200k') return { name: 'o200k_base', count: async (text) => encode(text).length };
+  if (which !== 'anthropic') throw new Error(`unknown tokenizer ${which}; use auto, anthropic or o200k`);
+  const client = new Anthropic();
+  const raw = async (text) => (await client.messages.countTokens({
+    model: COUNT_MODEL,
+    messages: [{ role: 'user', content: text }],
+  })).input_tokens;
+  // The count includes the message's framing: subtract a one-character
+  // message's count, less that character.
+  const framing = (await raw('.')) - 1;
+  return { name: `anthropic:${COUNT_MODEL}`, count: async (text) => (await raw(text)) - framing };
+}
 
 /** (role, name) of every line with a ref, from either format. */
 function reffed(text, pattern) {
@@ -158,6 +184,8 @@ function lost(pw, ours) {
 async function main() {
   const opts = args();
   if (!process.env.CHROME_PATH) throw new Error('set CHROME_PATH to the Chrome chrome-cdp should use');
+  const counter = await tokenizer(opts.tokenizer);
+  const tokens = counter.count;
   const site = await fixtures();
   const ccdp = chromeCdp();
   const pw = await playwrightMcp();
@@ -176,9 +204,9 @@ async function main() {
       const missing = lost(pwRefs, reffed(full, OUR_LINE));
       const row = {
         page,
-        chrome_cdp: tokens(ours),
-        interactive: tokens(interactive),
-        playwright: tokens(theirs),
+        chrome_cdp: await tokens(ours),
+        interactive: await tokens(interactive),
+        playwright: await tokens(theirs),
         actionable: pwRefs.filter((n) => ACTIONABLE.has(n.role)).length,
         missing,
       };
@@ -198,12 +226,12 @@ async function main() {
   const sum = (k) => rows.reduce((s, r) => s + r[k], 0);
   const total = { chrome_cdp: sum('chrome_cdp'), interactive: sum('interactive'), playwright: sum('playwright') };
   if (opts.json) {
-    console.log(JSON.stringify({ tokenizer: 'o200k_base', rows, total }, null, 2));
+    console.log(JSON.stringify({ tokenizer: counter.name, rows, total }, null, 2));
     return;
   }
   const pct = (a, b) => `${Math.round((100 * a) / b)}%`;
   const pad = (s, n) => String(s).padStart(n);
-  console.log('tokenizer: o200k_base (gpt-tokenizer)');
+  console.log(`tokenizer: ${counter.name}`);
   console.log(`${'page'.padEnd(14)}${pad('snapshot', 10)}${pad('-i', 8)}${pad('playwright', 12)}${pad('ratio', 7)}${pad('actionable', 12)}${pad('lost', 6)}`);
   for (const r of rows) {
     console.log(`${r.page.padEnd(14)}${pad(r.chrome_cdp, 10)}${pad(r.interactive, 8)}${pad(r.playwright, 12)}${pad(pct(r.chrome_cdp, r.playwright), 7)}${pad(r.actionable, 12)}${pad(r.missing.length, 6)}`);
