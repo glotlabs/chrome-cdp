@@ -118,6 +118,12 @@ fn popups_open_as_background_tabs_with_stable_ids() {
     let data = &json_out(&out)["data"];
     assert_eq!(data["closed"], json!("t3"));
     assert_eq!(data["active"]["id"], json!("t1"));
+    // Chrome shows a neighbour of the closed tab; the active one comes
+    // back to the front.
+    assert_eq!(
+        eval_json(&sandbox, "document.visibilityState", &[]),
+        json!("visible")
+    );
 
     // Ids are never reused.
     let out = sandbox.run(&["tab", "new", "-q"]);
@@ -224,6 +230,42 @@ fn the_active_tab_stays_visible_behind_a_popup() {
     );
     // Switching brings the other tab to the front.
     assert_eq!(code(&sandbox.run(&["tab", "t2"])), 0);
+    assert_eq!(
+        eval_json(&sandbox, "document.visibilityState", &[]),
+        json!("visible")
+    );
+}
+
+#[test]
+fn a_context_keeps_its_active_tab_in_front() {
+    let Some(chrome) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let url = site.url("/tabs/popup.html");
+    assert_eq!(code(&sandbox.run(&["open", &url])), 0);
+    let out = sandbox.run(&["context", "new", &url, "-q"]);
+    assert_eq!(stdout(&out), "c1\n", "{}", stderr(&out));
+    let visibility = |tab: &str| {
+        eval_json(
+            &sandbox,
+            "document.visibilityState",
+            &["--context", "c1", "--tab", tab],
+        )
+    };
+    // t2 is the context's tab; its popup t3 goes behind it.
+    eval_json(
+        &sandbox,
+        "window.open('/tabs/popup-target.html'), 1",
+        &["--context", "c1"],
+    );
+    popup(&sandbox, "t3");
+    assert_eq!(visibility("t2"), json!("visible"));
+    assert_eq!(visibility("t3"), json!("hidden"));
+    // `tab` in a context brings the tab to the front.
+    assert_eq!(code(&sandbox.run(&["tab", "t3", "--context", "c1"])), 0);
+    assert_eq!(visibility("t3"), json!("visible"));
+    assert_eq!(visibility("t2"), json!("hidden"));
+    // The session's own tab is in another window, and stays visible.
     assert_eq!(
         eval_json(&sandbox, "document.visibilityState", &[]),
         json!("visible")

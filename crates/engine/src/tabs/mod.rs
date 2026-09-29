@@ -700,12 +700,21 @@ impl Tabs {
         let page = self.page(Some(id), timeout).await?;
         self.shared.lock().activate(id);
         self.shared.bump();
-        self.conn
-            .browser()
-            .with_timeout(timeout)
-            .call(target::ActivateTargetParams::new(page.target_id.clone()))
-            .await?;
+        self.bring_to_front(id, timeout).await?;
         Ok(page)
+    }
+
+    /// Brings tab `id` to the front of its window, so its page is visible
+    /// (`document.visibilityState`) and not throttled. `Page.bringToFront`
+    /// and not `Target.activateTarget`, which leaves a tab of a context of
+    /// ours hidden in headless Chrome.
+    pub(crate) async fn bring_to_front(&self, id: u32, timeout: Duration) -> Result<(), TabError> {
+        let page = self.page(Some(id), timeout).await?;
+        page.session
+            .with_timeout(timeout)
+            .call(page::BringToFrontParams::default())
+            .await?;
+        Ok(())
     }
 
     /// Closes tab `id`; another becomes active if it was.

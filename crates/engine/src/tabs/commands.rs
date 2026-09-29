@@ -397,6 +397,11 @@ impl Engine {
                     .await
                     .map_err(|e| self.tab_error(&running, e))?;
                 running.tabs.activate_in(&scope.browser_id, id);
+                running
+                    .tabs
+                    .bring_to_front(id, timeout)
+                    .await
+                    .map_err(|e| self.tab_error(&running, e))?;
             }
             None => {
                 running
@@ -462,7 +467,14 @@ impl Engine {
             || running.tabs.active(),
             |s| running.tabs.active_in(&s.browser_id),
         ) {
-            Some(id) => Some(self.tab_info(&running, id).await),
+            Some(id) => {
+                // Chrome shows the closed tab's neighbour, which may not be
+                // the one active before it.
+                if let Err(e) = running.tabs.bring_to_front(id, timeout).await {
+                    tracing::debug!("bringing tab {id} to the front failed: {e:?}");
+                }
+                Some(self.tab_info(&running, id).await)
+            }
             None => None,
         };
         let mut text = format!("closed tab {closed}");
