@@ -9,8 +9,14 @@
 (() => {
   const binding = globalThis.__BINDING__;
   const hook = Symbol.for('chrome-cdp.mock');
-  if (typeof binding !== 'function' || globalThis[hook]) return;
+  if (typeof binding !== 'function') return;
   delete globalThis.__BINDING__;
+  if (globalThis[hook]) {
+    // Here before (mock sets were turned off and on again): its
+    // stand-ins take new sockets again.
+    globalThis[hook]({ on: true });
+    return;
+  }
   const post = (message) => binding(JSON.stringify(message));
   const RealWebSocket = globalThis.WebSocket;
   const RealEventSource = globalThis.EventSource;
@@ -309,6 +315,11 @@
         // Mocks are off: new sockets are real again.
         if (typeof RealWebSocket === 'function') replace('WebSocket', RealWebSocket);
         if (typeof RealEventSource === 'function') replace('EventSource', RealEventSource);
+        return true;
+      }
+      if (message.on) {
+        if (typeof RealWebSocket === 'function') replace('WebSocket', WebSocket);
+        if (typeof RealEventSource === 'function') replace('EventSource', EventSource);
         return true;
       }
       const deliver = live.get(message.id);
