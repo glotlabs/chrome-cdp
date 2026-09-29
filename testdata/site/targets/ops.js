@@ -71,6 +71,16 @@ async function targetRun(who, op) {
       if (!(data instanceof Blob)) return 'not a Blob: ' + data;
       return Array.from(new Uint8Array(await data.arrayBuffer())).join(',');
     }
+    case 'sse': {
+      if (typeof EventSource !== 'function') return 'no EventSource';
+      const events = new EventSource('/targets/sse');
+      const data = await new Promise((resolve) => {
+        events.onmessage = (e) => resolve(e.data);
+        events.onerror = () => resolve('failed');
+      });
+      events.close();
+      return data;
+    }
     case 'init':
       // What the matrix's init script set, if it ran here.
       return self.matrixInit ?? null;

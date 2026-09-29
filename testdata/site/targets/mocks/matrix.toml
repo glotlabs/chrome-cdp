@@ -1,14 +1,19 @@
 # The target matrix's mock set (plan 13.2): each frame and worker's
 # /targets/api answer comes from here, /targets/unmatched has no mock
-# (the set owns it: the request fails), and /targets/ws is a WebSocket
-# that answers text and binary messages.
+# (the set owns it: the request fails), /targets/sse is an event stream
+# and /targets/ws is a WebSocket that answers text and binary messages.
 [settings]
-scope = ["/targets/api", "/targets/unmatched", "/targets/ws"]
+scope = ["/targets/api", "/targets/unmatched", "/targets/sse", "/targets/ws"]
 
 [[mock]]
 name = "api"
 match = { method = "GET", path = "/targets/api" }
 respond = { json = { from = "mocked {{query.from}}" } }
+
+[[mock]]
+name = "events"
+match = { method = "GET", path = "/targets/sse" }
+respond = { sse = [{ data = "streamed" }] }
 
 [[websocket]]
 name = "matrix socket"

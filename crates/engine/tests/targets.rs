@@ -82,6 +82,8 @@ enum Probe {
     Unmatched,
     /// A `[[websocket]]` mock answers its `WebSocket`.
     MockWebSocket,
+    /// A mock's `sse` answer streams to its `EventSource`.
+    MockEventSource,
     /// A `[[websocket]]` mock answers its binary message with one (an
     /// `ArrayBuffer`, and a `Blob`).
     MockWebSocketBinary,
@@ -161,6 +163,11 @@ const ROWS: &[Row] = &[
     Row {
         feature: "mocked WebSocket",
         probe: Probe::MockWebSocket,
+        cells: [Check, Check, Check, Check, Check, Check],
+    },
+    Row {
+        feature: "mocked EventSource",
+        probe: Probe::MockEventSource,
         cells: [Check, Check, Check, Check, Check, Check],
     },
     Row {
@@ -542,6 +549,12 @@ async fn probe(engine: &Arc<Engine>, probe: Probe, who: &str) -> Result<(), Stri
             (answer == json!("pong"))
                 .then_some(())
                 .ok_or_else(|| format!("the socket answered {answer}"))
+        }
+        Probe::MockEventSource => {
+            let answer = with_mocks(engine, async || ask(engine, who, "sse").await).await;
+            (answer == json!("streamed"))
+                .then_some(())
+                .ok_or_else(|| format!("the EventSource got {answer}"))
         }
         Probe::MockWebSocketBinary => {
             let answers = with_mocks(engine, async || {
