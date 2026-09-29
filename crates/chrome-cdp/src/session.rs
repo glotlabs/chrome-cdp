@@ -2000,7 +2000,7 @@ pub(crate) fn delay_ms(target: &str) -> Option<u64> {
 fn auto_open(ctx: &Ctx, session: &mut Session) -> Result<Vec<String>, ErrorInfo> {
     let idle_timeout_ms = std::env::var("CHROME_CDP_IDLE_TIMEOUT")
         .ok()
-        .and_then(|v| crate::cli::parse_idle_timeout(&v).ok())
+        .and_then(|v| crate::cli::parse_duration_or_zero(&v).ok())
         .map(millis);
     let replaced = session.replaced.clone().unwrap_or_else(empty_meta);
     let value = if let Some(endpoint) = &replaced.endpoint {

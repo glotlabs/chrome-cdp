@@ -77,7 +77,8 @@ Environment variables:
   CHROME_CDP_CACHE                      where install puts browsers
   CHROME_CDP_CFT_URL                    a Chrome for Testing index mirror
   CHROME_CDP_AUTO_INSTALL, CHROME_CDP_IDLE_TIMEOUT,
-  CHROME_CDP_HTTP_CREDENTIALS, CHROME_CDP_CONSOLE_BUFFER,
+  CHROME_CDP_HTTP_CREDENTIALS, CHROME_CDP_HTTP_CREDENTIALS_ORIGIN,
+  CHROME_CDP_CONSOLE_BUFFER,
   CHROME_CDP_NETWORK_BUFFER             open's flags of those names
 
 Examples:

@@ -174,6 +174,76 @@ fn code_blocks_run_real_commands() {
     );
 }
 
+/// Every `chrome-cdp …` example of the command reference (the commands'
+/// `--help`) parses the way `lint` parses a `.cdp` line: its flags and
+/// locators are valid. Lines with shell syntax are skipped, and so are
+/// the problems that only concern scripts (refs, `--json`, commands a
+/// script cannot run).
+#[test]
+fn help_examples_parse() {
+    let mut examples = Vec::new();
+    let mut dir: Vec<PathBuf> = fs::read_dir(root().join("docs/commands"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .collect();
+    dir.sort();
+    for page in dir {
+        let text = fs::read_to_string(&page).unwrap();
+        for line in split(&text).1 {
+            // Examples are indented; `Usage:` lines are not.
+            let Some(rest) = line.strip_prefix("  chrome-cdp ") else {
+                continue;
+            };
+            let command = rest.split("  #").next().unwrap().trim();
+            if command.is_empty() || command.contains(['|', '<', '>', ';', '&', '$', '`']) {
+                continue;
+            }
+            examples.push((page.file_name().unwrap().to_owned(), command.to_owned()));
+        }
+    }
+    assert!(examples.len() > 300, "{} examples", examples.len());
+
+    let sandbox = Sandbox::new();
+    let script = sandbox.tmp().join("examples.cdp");
+    let lines: Vec<&str> = examples.iter().map(|(_, c)| c.as_str()).collect();
+    fs::write(&script, lines.join("\n")).unwrap();
+    let out = common::run(
+        sandbox
+            .cli()
+            .args(["lint", "--json", "--max-chars", "0"])
+            .arg(&script),
+    );
+    let json: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
+    let problems = json["error"]["details"]["problems"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let script_only = |p: &serde_json::Value| {
+        let message = p["message"].as_str().unwrap_or("");
+        matches!(p["rule"].as_str(), Some("ref" | "unknown-command"))
+            || message.contains("cannot run inside a script")
+            || message.contains("--json on a line")
+    };
+    let bad: Vec<String> = problems
+        .iter()
+        .filter(|p| !script_only(p))
+        .map(|p| {
+            let (page, command) = &examples[p["line"].as_u64().unwrap() as usize - 1];
+            format!(
+                "{}: chrome-cdp {command}\n  {}",
+                page.display(),
+                p["message"]
+            )
+        })
+        .collect();
+    assert!(
+        bad.is_empty(),
+        "help examples that do not parse:\n{}",
+        bad.join("\n")
+    );
+}
+
 #[test]
 fn troubleshooting_covers_every_error_kind() {
     let text = fs::read_to_string(root().join("docs/troubleshooting.md")).unwrap();

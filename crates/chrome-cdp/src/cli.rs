@@ -671,7 +671,7 @@ Examples:
   chrome-cdp html e12
   chrome-cdp html '#cart' --outer
   chrome-cdp html                           # the whole document
-  chrome-cdp html form --raw")]
+  chrome-cdp html css=form --raw")]
     Html(HtmlArgs),
 
     /// Print an attribute of an element.
@@ -4643,7 +4643,7 @@ pub(crate) struct HighlightArgs {
     pub(crate) locator: String,
 
     /// How long the highlight stays (0: until the next highlight).
-    #[arg(long, default_value = "2s", value_parser = parse_duration, value_name = "DURATION")]
+    #[arg(long, default_value = "2s", value_parser = parse_duration_or_zero, value_name = "DURATION")]
     pub(crate) duration: Duration,
 
     #[command(flatten)]
@@ -4876,7 +4876,7 @@ pub(crate) struct IdleArgs {
     #[arg(
         long,
         env = "CHROME_CDP_IDLE_TIMEOUT",
-        value_parser = parse_idle_timeout,
+        value_parser = parse_duration_or_zero,
         value_name = "DURATION"
     )]
     pub(crate) idle_timeout: Option<Duration>,
@@ -5758,8 +5758,9 @@ impl Target {
     }
 }
 
-/// Parses `--idle-timeout`: a duration, or `0` for never.
-pub(crate) fn parse_idle_timeout(s: &str) -> Result<Duration, String> {
+/// A duration, or `0` (for `--idle-timeout`, never; for `highlight
+/// --duration`, until the next one).
+pub(crate) fn parse_duration_or_zero(s: &str) -> Result<Duration, String> {
     if s.trim() == "0" {
         return Ok(Duration::ZERO);
     }
@@ -5990,6 +5991,15 @@ mod tests {
         };
         assert_eq!(args.idle.idle_timeout, Some(Duration::ZERO));
         assert!(Cli::try_parse_from(["chrome-cdp", "open", "--idle-timeout", "5"]).is_err());
+    }
+
+    #[test]
+    fn highlight_duration_takes_zero_for_until_the_next() {
+        let cli = Cli::try_parse_from(["chrome-cdp", "highlight", "#cart", "--duration", "0"]);
+        let Some(super::Command::Highlight(args)) = cli.unwrap().command else {
+            panic!("not highlight")
+        };
+        assert_eq!(args.duration, Duration::ZERO);
     }
 
     #[test]

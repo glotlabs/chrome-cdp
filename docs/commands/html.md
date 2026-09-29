@@ -29,6 +29,6 @@ Examples:
   chrome-cdp html e12
   chrome-cdp html '#cart' --outer
   chrome-cdp html                           # the whole document
-  chrome-cdp html form --raw
+  chrome-cdp html css=form --raw
 ```
 
