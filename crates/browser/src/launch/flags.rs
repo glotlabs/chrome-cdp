@@ -87,6 +87,21 @@ pub fn default_flags(os: Os, headed: bool) -> Vec<String> {
     flags
 }
 
+/// The warning for `--chrome-arg`s that open a DevTools port, which
+/// chrome-cdp never needs (it talks over its pipe): the port has no
+/// authentication, so any process of the machine can take the browser.
+pub fn debug_port_warning(extra: &[String]) -> Option<String> {
+    let flag = extra
+        .iter()
+        .map(|arg| arg.split_once('=').map_or(arg.as_str(), |(n, _)| n))
+        .find(|n| matches!(*n, "--remote-debugging-port" | "--remote-debugging-address"))?;
+    Some(format!(
+        "{flag} opens a DevTools port with no authentication: any process on \
+         this machine (or the network, with --remote-debugging-address) can control \
+         the browser; chrome-cdp does not need it"
+    ))
+}
+
 /// Checks the `--chrome-arg` values: each must be a `--flag`, and must not
 /// take over what launch owns.
 pub fn check_extra(extra: &[String]) -> Result<(), ErrorInfo> {
@@ -178,7 +193,8 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        DISABLED_FEATURES, EXTENSIONS_FLAG, FLAGS, check_extra, command_line, default_flags,
+        DISABLED_FEATURES, EXTENSIONS_FLAG, FLAGS, check_extra, command_line, debug_port_warning,
+        default_flags,
     };
     use crate::host::Os;
 
@@ -293,5 +309,16 @@ mod tests {
                 "{feature} is not in docs/chrome-flags.md"
             );
         }
+    }
+
+    #[test]
+    fn a_debugging_port_warns() {
+        assert_eq!(debug_port_warning(&strings(&["--window-size=1,1"])), None);
+        let warning = debug_port_warning(&strings(&["--remote-debugging-port=9222"])).unwrap();
+        assert!(
+            warning.starts_with("--remote-debugging-port opens a DevTools port"),
+            "{warning}"
+        );
+        assert!(debug_port_warning(&strings(&["--remote-debugging-address=0.0.0.0"])).is_some());
     }
 }

@@ -183,6 +183,7 @@ pub(crate) fn prepare(
                     .hint("set HOME, or pass --user-data-dir <path>")
             })?;
             create_private(&dir)?;
+            keep_private(&dir)?;
             dir
         }
         ProfileChoice::Dir(path) => {
@@ -235,6 +236,33 @@ fn create_private(dir: &Path) -> Result<(), ErrorInfo> {
         .mode(0o700)
         .create(dir)
         .map_err(|e| launch_failed(format!("cannot create {}: {e}", dir.display())))
+}
+
+/// Makes an existing named profile dir user-only, as a new one is: it
+/// holds logins. One owned by another user is refused. A symlink to a dir
+/// of the user's own (a profile kept on another disk) is fine.
+fn keep_private(dir: &Path) -> Result<(), ErrorInfo> {
+    use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
+    let meta = dir
+        .metadata()
+        .map_err(|e| launch_failed(format!("cannot read {}: {e}", dir.display())))?;
+    let uid = super::effective_uid();
+    if meta.uid() != uid {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!(
+                "the profile {} belongs to uid {}, not to you ({uid})",
+                dir.display(),
+                meta.uid()
+            ),
+        )
+        .hint("remove it, or use another --profile name"));
+    }
+    if meta.mode() & 0o077 != 0 {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| launch_failed(format!("cannot make {} private: {e}", dir.display())))?;
+    }
+    Ok(())
 }
 
 /// Whether a snap can write `dir`: not under `/tmp` and no hidden
@@ -437,6 +465,18 @@ mod tests {
         let kept = root
             .path()
             .join("home/.local/share/chrome-cdp/profiles/work");
+        assert_eq!(kept.metadata().unwrap().permissions().mode() & 0o777, 0o700);
+
+        // One made open to others (by hand, or an older chrome-cdp) is
+        // closed again.
+        std::fs::set_permissions(&kept, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let p = prepare(
+            &ProfileChoice::Named("work".into()),
+            &h,
+            &chrome("/c", false),
+        )
+        .unwrap();
+        drop(p);
         assert_eq!(kept.metadata().unwrap().permissions().mode() & 0o777, 0o700);
         let err = prepare(
             &ProfileChoice::Named("../x".into()),

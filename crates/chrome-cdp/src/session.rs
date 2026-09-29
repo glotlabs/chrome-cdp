@@ -222,10 +222,13 @@ fn open_in(
     } else {
         None
     };
-    let warnings = chrome
+    let mut warnings = chrome
         .as_ref()
         .map(|c| c.warnings.clone())
         .unwrap_or_default();
+    warnings.extend(browser::launch::flags::debug_port_warning(
+        &launch.chrome_args(),
+    ));
     let mut request = OpenRequest {
         chrome,
         chrome_flag: launch.chrome.clone(),
