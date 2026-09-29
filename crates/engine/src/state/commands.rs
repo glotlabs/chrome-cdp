@@ -90,11 +90,7 @@ impl Engine {
     ) -> Result<Vec<Cookie>, ErrorInfo> {
         let mut cookies = if let Some(url) = &filter.url {
             check_url(url, "--url")?;
-            let page = running
-                .tabs
-                .page(None, timeout)
-                .await
-                .map_err(|e| self.tab_error(running, e))?;
+            let page = self.page(running, None, timeout).await?;
             let params = network::GetCookiesParams {
                 urls: Some(vec![url.clone()]),
             };

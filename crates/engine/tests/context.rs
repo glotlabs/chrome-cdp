@@ -12,15 +12,17 @@ use std::sync::Arc;
 
 use browser::Host;
 use engine::{
-    ContextCloseRequest, ContextListRequest, ContextNewRequest, EmulateRequest, EmulationChange,
-    Engine, EvalRequest, EvalWorld, InitScriptAddRequest, MockStateRequest, MockUseRequest,
-    NavigateRequest, Navigation, OpenRequest, RouteAction, RouteRequest, RouteSpec, TabNewRequest,
-    TabsRequest, WaitUntil, in_context,
+    ContextCloseRequest, ContextListRequest, ContextNewRequest, CookieFilter, CookiesOp,
+    CookiesRequest, EmulateRequest, EmulationChange, Engine, EvalRequest, EvalWorld,
+    InitScriptAddRequest, MockStateRequest, MockUseRequest, NavigateRequest, Navigation,
+    OpenRequest, RouteAction, RouteRequest, RouteSpec, TabNewRequest, TabsRequest, WaitUntil,
+    in_context,
 };
 use fixtures::Fixtures;
 use protocol::ErrorKind;
 use protocol::schema::{
-    ContextCloseData, ContextNewData, ContextsData, EvalData, MockStateData, TabsData, Viewport,
+    ContextCloseData, ContextNewData, ContextsData, CookiesData, EvalData, MockStateData, TabsData,
+    Viewport,
 };
 use serde_json::{Value, json};
 
@@ -156,6 +158,28 @@ async fn tabs(engine: &Engine) -> TabsData {
     serde_json::from_value(out.data).unwrap()
 }
 
+/// `cookies --url url`, as `name=value`s.
+async fn cookies_for(engine: &Engine, url: &str) -> Vec<String> {
+    let out = engine
+        .cookies(CookiesRequest {
+            op: CookiesOp::List {
+                filter: CookieFilter {
+                    url: Some(url.to_owned()),
+                    ..CookieFilter::default()
+                },
+            },
+            max_chars: 0,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("cookies --url: {}", e.to_text()));
+    let data: CookiesData = serde_json::from_value(out.data).unwrap();
+    data.cookies
+        .into_iter()
+        .map(|c| format!("{}={}", c.name, c.value))
+        .collect()
+}
+
 #[tokio::test]
 async fn contexts_keep_cookies_mocks_and_routes_apart() {
     let Some(path) = chrome_path() else { return };
@@ -244,6 +268,12 @@ async fn contexts_keep_cookies_mocks_and_routes_apart() {
         json!("")
     );
     assert_eq!(eval(&engine, "localStorage.x ?? null").await, Value::Null);
+
+    // `cookies --url` reads the context's cookies, not the active tab's.
+    within("c2", eval(&engine, "document.cookie = 'who=c2'")).await;
+    assert_eq!(within("c1", cookies_for(&engine, &page)).await, ["who=c1"]);
+    assert_eq!(within("c2", cookies_for(&engine, &page)).await, ["who=c2"]);
+    assert!(cookies_for(&engine, &page).await.is_empty());
 
     // The list says what each context has.
     let out = engine
