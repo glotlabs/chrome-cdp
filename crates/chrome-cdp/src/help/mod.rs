@@ -15,6 +15,9 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, suggest};
 
 use crate::cli::{Cli, HelpArgs};
 
+#[cfg(test)]
+mod reference;
+
 /// `chrome-cdp --help`: the overview.
 pub(crate) const SHORT: &str = include_str!("short.txt");
 
