@@ -396,7 +396,9 @@ async fn storage_is_read_and_changed_in_a_frame_of_its_origin() {
 /// Logs in on the fixture: every kind of state the login page leaves.
 async fn log_in(engine: &Engine, f: &Fixtures) {
     goto(engine, &f.url("/state/login.html")).await;
-    eval(engine, "logIn()").await;
+    // Not awaited: logIn() navigates away when it is done, and an eval
+    // whose page is gone before it answers fails. The wait below sees it.
+    eval(engine, "logIn(), null").await;
     engine
         .wait(engine::WaitRequest {
             condition: engine::WaitFor::Text {

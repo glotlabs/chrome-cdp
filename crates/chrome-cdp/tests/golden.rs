@@ -2601,6 +2601,8 @@ impl Normalizer {
         .fold(text, |text, (prefix, keep, to)| {
             mask(&text, prefix, keep, to)
         })
+        // A busy machine can leave room for one retry only.
+        .replace("<n> retry)", "<n> retries)")
     }
 }
 
