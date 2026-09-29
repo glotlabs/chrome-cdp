@@ -39,7 +39,9 @@ Options:
 Finds the scenarios by the `tests` globs of [e2e] in chrome-cdp.toml
 (default e2e/scenarios/**/*.cdp), starts the [e2e.web_server]s unless
 something already answers on their URLs, and opens a browser session of
-its own. Every test gets a fresh browser context: its own cookies,
+its own. Each command the config runs (a web server's, a backend's setup
+and teardown) is first shown on stderr: `running: <command> (from
+<config path>)`. Every test gets a fresh browser context: its own cookies,
 storage, routes and mock sets (default_mocks, then the file's and the
 test's @mocks), so tests cannot leak into each other. Each also sees the
 same time (2026-01-01T10:00:00Z), random values, locale (en-US), time

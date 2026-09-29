@@ -103,6 +103,10 @@ overrides `document.querySelector` or `Array.prototype`.
 runner's web servers (`[e2e.web_server]`) are your own commands, started
 from the project's `chrome-cdp.toml`: running `chrome-cdp test` in a
 project runs them, so treat that file like a `package.json` script.
+The config may be a parent directory's, or a hidden `.chrome-cdp.toml`,
+so each command it runs (a web server's, a backend's setup and teardown)
+is printed on stderr before it starts: `running: npm run dev (from
+/home/me/app/chrome-cdp.toml)`, in every output mode.
 
 ## When an agent drives it
 

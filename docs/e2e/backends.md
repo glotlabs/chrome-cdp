@@ -42,7 +42,9 @@ A backend's `base_url`, `web_server`, `jobs`, `timeout`, `retries` and
 `sh -c` in the project root, once the web servers answer; they see
 `CHROME_CDP_BACKEND` and `CHROME_CDP_BASE_URL`, and log to
 `e2e/.results/backend-setup.log`. A failed setup command stops the run; a
-failed teardown command is a warning.
+failed teardown command is a warning. Before each command runs, stderr
+shows it and the config it came from: `running: ./scripts/e2e-reset-db.sh
+(from /home/me/app/chrome-cdp.toml)`, as for a web server's command.
 
 `--backend all` runs `mock` and then every real backend, each with its
 own servers and setup. Real backends' artifacts go below

@@ -151,6 +151,8 @@ These are known and accepted for v1, or tracked:
 - **Project config runs commands.** `chrome-cdp test` in an untrusted
   checkout runs the `[e2e.web_server]` and backend commands its
   `chrome-cdp.toml` names, as `npm test` runs `package.json` scripts.
+  Each is printed on stderr (`running: <command> (from <config>)`) before
+  it starts, so none runs unseen, but nothing asks first.
 - **`mock serve` is reachable by any local web page.** With `cors =
   "auto"` it answers any origin, and it does not check `Host`, so a page
   in another browser can read or change its fake data.
