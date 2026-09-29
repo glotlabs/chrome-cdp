@@ -47,9 +47,37 @@ thread_local! {
 
 /// Sets the words of the command about to run on this thread (`None`
 /// for one that is not to be kept in the history). Its first call to a
-/// daemon carries them.
+/// daemon carries them, with the password of `--http-credentials` hidden.
 pub fn set_history_line(words: Option<Vec<String>>) {
+    let words = words.map(redact);
     LINE.with(|line| *line.borrow_mut() = words);
+}
+
+/// The flags whose value is a secret, which `history` must not show.
+const SECRET_FLAGS: [&str; 1] = ["--http-credentials"];
+
+/// `words` with each [`SECRET_FLAGS`] value but `-` (stdin) as `***`.
+fn redact(mut words: Vec<String>) -> Vec<String> {
+    let mut next_is_secret = false;
+    for word in &mut words {
+        if std::mem::take(&mut next_is_secret) {
+            if word != "-" {
+                "***".clone_into(word);
+            }
+            continue;
+        }
+        for flag in SECRET_FLAGS {
+            if word == flag {
+                next_is_secret = true;
+            } else if word
+                .strip_prefix(flag)
+                .is_some_and(|rest| rest.starts_with('=') && rest != "=-")
+            {
+                *word = format!("{flag}=***");
+            }
+        }
+    }
+    words
 }
 
 /// A connection to a session's daemon.
@@ -465,4 +493,32 @@ pub fn live_sessions(env: &Env) -> Vec<SessionPaths> {
     found.sort_by(|a, b| a.name.cmp(&b.name));
     found.dedup_by(|a, b| a.name == b.name);
     found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redact;
+
+    #[test]
+    fn history_hides_credentials() {
+        let words = |s: &str| s.split(' ').map(str::to_owned).collect::<Vec<_>>();
+        assert_eq!(
+            redact(words("open --http-credentials ada:s3cret http://x")),
+            words("open --http-credentials *** http://x")
+        );
+        assert_eq!(
+            redact(words("open --http-credentials=ada:s3cret")),
+            words("open --http-credentials=***")
+        );
+        assert_eq!(
+            redact(words(
+                "open --http-credentials - --http-credentials-origin https://x"
+            )),
+            words("open --http-credentials - --http-credentials-origin https://x")
+        );
+        assert_eq!(
+            redact(words("fill e1 ada:s3cret")),
+            words("fill e1 ada:s3cret")
+        );
+    }
 }

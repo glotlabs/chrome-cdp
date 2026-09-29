@@ -39,7 +39,10 @@ impl Auth {
                 return;
             }
         };
-        let credentials = shared.settings.http_credentials();
+        let credentials = shared
+            .settings
+            .http_credentials()
+            .filter(|c| answers(c, &required.auth_challenge));
         let first = self.answered.insert(required.request_id.clone());
         if self.answered.len() > 1024 {
             self.answered.clear();
@@ -59,6 +62,15 @@ impl Auth {
             }
         });
     }
+}
+
+/// Whether `credentials` answer `challenge`. Credentials scoped to an
+/// origin are not for another one's challenge (a third-party frame, a
+/// redirect elsewhere); a proxy's challenge gets them only when it is the
+/// origin named, since they are the site's.
+fn answers(credentials: &HttpCredentials, challenge: &fetch::AuthChallenge) -> bool {
+    let proxy = challenge.source == Some(fetch::AuthChallengeSource::Proxy);
+    (!proxy || credentials.origin.is_some()) && credentials.applies_to(&challenge.origin)
 }
 
 /// The answer to a challenge: the credentials the first time, else give
@@ -82,7 +94,9 @@ fn response(credentials: Option<&HttpCredentials>, first: bool) -> fetch::AuthCh
 mod tests {
     use cdp::domains::fetch::AuthChallengeResponseResponse as Answer;
 
-    use super::response;
+    use cdp::domains::fetch::{AuthChallenge, AuthChallengeSource};
+
+    use super::{answers, response};
     use crate::request::HttpCredentials;
 
     #[test]
@@ -90,6 +104,7 @@ mod tests {
         let credentials = HttpCredentials {
             username: "ada".into(),
             password: "s3cret".into(),
+            origin: None,
         };
         let first = response(Some(&credentials), true);
         assert_eq!(first.response, Answer::ProvideCredentials);
@@ -99,5 +114,55 @@ mod tests {
             Answer::CancelAuth
         );
         assert_eq!(response(None, true).response, Answer::CancelAuth);
+    }
+
+    #[test]
+    fn credentials_can_be_scoped_to_an_origin() {
+        let mut credentials = HttpCredentials {
+            username: "ada".into(),
+            password: "s3cret".into(),
+            origin: None,
+        };
+        assert!(credentials.applies_to("https://anyone.example"));
+        credentials.origin = Some("https://App.test:443/".into());
+        for yes in ["https://app.test", "https://app.test/admin?x=1"] {
+            assert!(credentials.applies_to(yes), "{yes}");
+        }
+        for no in [
+            "http://app.test",
+            "https://app.test:8443",
+            "https://evil.app.test",
+            "https://app.test.evil.example",
+            "",
+            "null",
+        ] {
+            assert!(!credentials.applies_to(no), "{no}");
+        }
+        credentials.origin = Some("not an origin".into());
+        assert!(!credentials.applies_to("https://app.test"));
+    }
+
+    #[test]
+    fn a_proxy_gets_them_only_when_named() {
+        let challenge = |source, origin: &str| AuthChallenge {
+            source,
+            origin: origin.into(),
+            scheme: "basic".into(),
+            realm: String::new(),
+        };
+        let mut credentials = HttpCredentials {
+            username: "ada".into(),
+            password: "s3cret".into(),
+            origin: None,
+        };
+        let proxy = challenge(Some(AuthChallengeSource::Proxy), "http://proxy.test:3128");
+        assert!(answers(&credentials, &challenge(None, "https://app.test")));
+        assert!(answers(
+            &credentials,
+            &challenge(Some(AuthChallengeSource::Server), "https://app.test")
+        ));
+        assert!(!answers(&credentials, &proxy));
+        credentials.origin = Some("http://proxy.test:3128".into());
+        assert!(answers(&credentials, &proxy));
     }
 }

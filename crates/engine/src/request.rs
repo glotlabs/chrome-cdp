@@ -127,6 +127,24 @@ impl DialogPolicy {
 pub struct HttpCredentials {
     pub username: String,
     pub password: String,
+    /// The only origin (`https://app.test`) whose challenges get them;
+    /// `None` for every origin, as Playwright's `httpCredentials`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+}
+
+impl HttpCredentials {
+    /// Whether a challenge from `url` (a URL or an origin) gets these
+    /// credentials. An origin that does not parse gets none.
+    pub fn applies_to(&self, url: &str) -> bool {
+        match &self.origin {
+            None => true,
+            Some(origin) => {
+                let of = |s: &str| url::Url::parse(s).ok().map(|u| u.origin());
+                of(url).is_some_and(|o| o.is_tuple() && Some(o) == of(origin))
+            }
+        }
+    }
 }
 
 impl std::fmt::Debug for HttpCredentials {
@@ -134,6 +152,7 @@ impl std::fmt::Debug for HttpCredentials {
         f.debug_struct("HttpCredentials")
             .field("username", &self.username)
             .field("password", &"…")
+            .field("origin", &self.origin)
             .finish()
     }
 }

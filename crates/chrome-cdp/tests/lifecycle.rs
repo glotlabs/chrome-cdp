@@ -192,4 +192,54 @@ fn http_basic_auth() {
 
     let out = sandbox.run(&["open", "--http-credentials", "nocolon"]);
     assert_eq!(code(&out), 2, "{}", stderr(&out));
+    let out = sandbox.run(&[
+        "open",
+        "--http-credentials",
+        &format!("{AUTH_USER}:{AUTH_PASSWORD}"),
+        "--http-credentials-origin",
+        "app.test",
+    ]);
+    assert_eq!(code(&out), 2, "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("is not an http(s) origin"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+/// `--http-credentials-origin`: another origin's challenge gets nothing.
+/// A browser of its own, since Chrome caches credentials it sent once.
+#[test]
+fn http_credentials_scoped_to_an_origin() {
+    let Some(chrome) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let members = site.url("/auth/");
+
+    // Scoped to another origin, a challenge gets nothing: the 401 stands.
+    let credentials = format!("{AUTH_USER}:{AUTH_PASSWORD}");
+    let other = site.url_b("/");
+    let out = sandbox.run(&[
+        "open",
+        "--http-credentials",
+        &credentials,
+        "--http-credentials-origin",
+        &other,
+    ]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["goto", &members, "--json"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert_eq!(json_out(&out)["data"]["status"], 401);
+    // Scoped to the page's own origin, it does.
+    let out = sandbox.run(&[
+        "open",
+        "--http-credentials",
+        &credentials,
+        "--http-credentials-origin",
+        &site.url("/auth/"),
+    ]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["goto", &members, "--json"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert_eq!(json_out(&out)["data"]["title"], "Members");
 }

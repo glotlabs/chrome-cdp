@@ -28,7 +28,8 @@ Options:
 - `--ignore-https-errors`: Load pages despite certificate errors (self-signed test servers). The session keeps this setting; it applies to a running browser too
 - `--bypass-service-worker`: Send requests past service workers to the network, even without routes (routes always do, since a service worker would answer before them). The session keeps this setting; it applies to a running browser too
 - `--dialogs <POLICY>`: How to answer JavaScript dialogs. The session keeps this setting (one of `auto`, `accept`, `dismiss`, `manual`)
-- `--http-credentials <USER:PASSWORD>`: Answer HTTP authentication (basic, digest) with USER:PASSWORD; `-` reads it from stdin. The session keeps it; it applies to a running browser too (env `CHROME_CDP_HTTP_CREDENTIALS`)
+- `--http-credentials <USER:PASSWORD>`: Answer HTTP authentication (basic, digest) with USER:PASSWORD; `-` reads it from stdin. The session keeps it; it applies to a running browser too. Every origin that asks gets it, unless --http-credentials-origin names one (env `CHROME_CDP_HTTP_CREDENTIALS`)
+- `--http-credentials-origin <ORIGIN>`: Send --http-credentials only to this origin (e.g. https://app.test); other origins' challenges are cancelled, so a third-party frame or a redirect elsewhere never gets them (env `CHROME_CDP_HTTP_CREDENTIALS_ORIGIN`)
 - `--console-buffer <N>`: How many console entries each tab keeps (default 1,000). The session keeps this setting (env `CHROME_CDP_CONSOLE_BUFFER`)
 - `--network-buffer <N>`: How many requests each tab's network log keeps (default 2,000). The session keeps this setting (env `CHROME_CDP_NETWORK_BUFFER`)
 - `--idle-timeout <DURATION>`: Close the browser and stop the daemon after this long without commands, e.g. 10m or 2h; 0 means never. Default 30m (env `CHROME_CDP_IDLE_TIMEOUT`)

@@ -611,6 +611,7 @@ async fn credentials_still_work_with_and_after_routes() {
         Some(HttpCredentials {
             username: AUTH_USER.into(),
             password: AUTH_PASSWORD.into(),
+            origin: None,
         }),
     )
     .await;

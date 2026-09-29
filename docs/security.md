@@ -67,7 +67,13 @@ says whether the sandbox is on.
 - **Credentials on the command line** are visible to other processes of
   the machine and end up in shell history. Pass them by environment
   variable (`fill label=Password "${env:APP_PASSWORD}"` in scripts) or
-  from stdin (`open --http-credentials -`).
+  from stdin (`open --http-credentials -`). The session's `history`
+  shows `--http-credentials ***`.
+- **HTTP credentials go to every origin that asks** unless
+  `--http-credentials-origin https://app.test` names the one they are
+  for; then a third-party frame or a redirect to another site gets a
+  cancelled challenge instead. A proxy's challenge never gets them unless
+  its origin is the one named.
 
 ## Powerful on purpose
 

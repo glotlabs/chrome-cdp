@@ -345,7 +345,10 @@ impl Engine {
         if response.status() == reqwest::StatusCode::UNAUTHORIZED
             && header(headers, "authorization").is_none()
             && response.headers().contains_key("www-authenticate")
-            && let Some(credentials) = self.settings.http_credentials()
+            && let Some(credentials) = self
+                .settings
+                .http_credentials()
+                .filter(|c| c.applies_to(response.url().as_str()))
         {
             response = build()
                 .basic_auth(&credentials.username, Some(&credentials.password))

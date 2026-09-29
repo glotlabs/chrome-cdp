@@ -165,7 +165,7 @@ pub(crate) fn open(args: &OpenArgs, global: &GlobalArgs) -> Result<Output, Error
     let credentials = args
         .http_credentials
         .as_deref()
-        .map(http_credentials)
+        .map(|arg| http_credentials(arg, args.http_credentials_origin.as_deref()))
         .transpose()?;
     let launch = &args.launch;
     browser::launch::flags::check_extra(&launch.chrome_args)?;
@@ -347,14 +347,17 @@ fn extension_dirs(dirs: &[PathBuf]) -> Result<Vec<PathBuf>, ErrorInfo> {
     Ok(out)
 }
 
-/// Parses `--http-credentials USER:PASSWORD` (`-` reads it from stdin).
-fn http_credentials(arg: &str) -> Result<HttpCredentials, ErrorInfo> {
+/// Parses `--http-credentials USER:PASSWORD` (`-` reads it from stdin)
+/// and `--http-credentials-origin`.
+fn http_credentials(arg: &str, origin: Option<&str>) -> Result<HttpCredentials, ErrorInfo> {
+    let origin = origin.map(credentials_origin).transpose()?;
     let text = input::text_arg(arg, "USER:PASSWORD")?;
     let text = text.trim_end_matches(['\r', '\n']);
     match text.split_once(':') {
         Some((username, password)) if !username.is_empty() => Ok(HttpCredentials {
             username: username.to_owned(),
             password: password.to_owned(),
+            origin,
         }),
         _ => Err(
             bad_args("--http-credentials needs USER:PASSWORD").hint(Hint::run(
@@ -362,6 +365,25 @@ fn http_credentials(arg: &str) -> Result<HttpCredentials, ErrorInfo> {
             )),
         ),
     }
+}
+
+/// `--http-credentials-origin` as an origin: `https://App.test/x` is
+/// `https://app.test`.
+fn credentials_origin(arg: &str) -> Result<String, ErrorInfo> {
+    let origin = url::Url::parse(arg.trim())
+        .ok()
+        .filter(|u| matches!(u.scheme(), "http" | "https"))
+        .map(|u| u.origin().ascii_serialization());
+    origin.ok_or_else(|| {
+        bad_args(format!(
+            "--http-credentials-origin `{arg}` is not an http(s) origin"
+        ))
+        .hint(Hint::run(
+            Cmd::new("open")
+                .flag("http-credentials", "ada:s3cret")
+                .flag("http-credentials-origin", "https://app.test"),
+        ))
+    })
 }
 
 /// `connect <endpoint>`.

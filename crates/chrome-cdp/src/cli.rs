@@ -2147,7 +2147,8 @@ pub(crate) struct OpenArgs {
 
     /// Answer HTTP authentication (basic, digest) with USER:PASSWORD; `-`
     /// reads it from stdin. The session keeps it; it applies to a running
-    /// browser too.
+    /// browser too. Every origin that asks gets it, unless
+    /// --http-credentials-origin names one.
     #[arg(
         long,
         env = "CHROME_CDP_HTTP_CREDENTIALS",
@@ -2155,6 +2156,17 @@ pub(crate) struct OpenArgs {
         value_name = "USER:PASSWORD"
     )]
     pub(crate) http_credentials: Option<String>,
+
+    /// Send --http-credentials only to this origin (e.g.
+    /// https://app.test); other origins' challenges are cancelled, so a
+    /// third-party frame or a redirect elsewhere never gets them.
+    #[arg(
+        long,
+        env = "CHROME_CDP_HTTP_CREDENTIALS_ORIGIN",
+        value_name = "ORIGIN",
+        requires = "http_credentials"
+    )]
+    pub(crate) http_credentials_origin: Option<String>,
 
     /// How many console entries each tab keeps (default 1,000). The
     /// session keeps this setting.
