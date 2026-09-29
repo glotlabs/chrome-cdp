@@ -4,7 +4,9 @@ chrome-cdp gives whoever runs it full control of a browser: every page it
 opens, every cookie it holds, and any JavaScript. The model is simple:
 **the browser belongs to the user who started it, and nobody else can
 reach it.** This page says how that holds, what is powerful on purpose,
-and what to watch for when an agent drives it.
+and what to watch for when an agent drives it. The
+[threat model](threat-model.md) has the details: who is trusted, where
+each defence lives in the code, and what is left.
 
 ## Nobody else can reach the browser
 
@@ -107,8 +109,9 @@ project runs them, so treat that file like a `package.json` script.
 Pages are untrusted input. Text read from a page (`snapshot`, `text`,
 `markdown`, `console`) can contain instructions written to hijack an agent
 ("ignore previous instructions and …"). chrome-cdp prints what the page
-says; it cannot tell data from instructions. When an agent browses sites
-you do not control:
+says; it cannot tell data from instructions. (It does keep a page from
+sending escape sequences to your terminal: control characters show as
+symbols such as `␛`.) When an agent browses sites you do not control:
 
 - run it in a session with a temporary profile, not one logged in to your
   accounts (`--profile`, `--state`);
@@ -122,6 +125,8 @@ you do not control:
 - `chrome-cdp install` downloads Chrome for Testing over HTTPS from
   Google's servers (or the mirror `CHROME_CDP_CFT_URL` names) into your
   cache, and checks that it starts.
+- Downloads never fall back to plain HTTP, even on a redirect; a mirror
+  may use plain HTTP only on this machine.
 - chrome-cdp is written in Rust, uses TLS from `rustls` (no OpenSSL), and
   opens no network connections of its own besides these downloads and
   the requests you ask for (`http`, `goto`).

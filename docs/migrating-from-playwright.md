@@ -375,7 +375,7 @@ every tab of it. `emulate reset` turns everything off.
 | `colorScheme`, `reducedMotion`, `forcedColors`, `emulateMedia({ media: 'print' })` | `media --color-scheme dark --reduced-motion reduce --forced-colors active --type print` | ✅ |
 | `offline`, `context.setOffline(true)` | `offline on` | ✅ |
 | network throttling (via CDP) | `throttle slow-3g`, `cpu-throttle 4` | ✅ |
-| `httpCredentials` | `open --http-credentials user:pass` | ✅ |
+| `httpCredentials` (with `origin`) | `open --http-credentials user:pass [--http-credentials-origin https://app.test]` | ✅ |
 | `ignoreHTTPSErrors` | `open --ignore-https-errors` | ✅ |
 | `bypassCSP` | `cdp Page.setBypassCSP '{"enabled":true}'` | 🟡 |
 | `javaScriptEnabled: false` | `cdp Emulation.setScriptExecutionDisabled '{"value":true}'` | 🟡 |

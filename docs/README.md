@@ -22,6 +22,7 @@
 | [docker.md](docker.md) | the `ghcr.io/glotlabs/chrome-cdp` image with Chrome and fonts |
 | [migrating-from-playwright.md](migrating-from-playwright.md) | Playwright's API, call by call, as chrome-cdp commands |
 | [security.md](security.md) | the security model: who can reach the browser, secrets, the sandbox, agents |
+| [threat-model.md](threat-model.md) | the threat model behind it: trust boundaries, each defence in the code, what is left |
 | [troubleshooting.md](troubleshooting.md) | every error kind: what it means and what to do |
 
 ## E2E testing
