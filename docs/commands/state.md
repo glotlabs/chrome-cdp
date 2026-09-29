@@ -39,11 +39,12 @@ Options:
 - `--indexeddb`: Also save each origin's IndexedDB databases
 
 ```text
-Saves the browser's cookies and the storage of every origin a tab has
-open (a page or an iframe): localStorage, sessionStorage (a chrome-cdp
-extension Playwright ignores) and, with --indexeddb, IndexedDB. Origins
-visited earlier but not open now are not saved: save while the app is
-open.
+Saves the browser's cookies and the storage of every origin the session
+visited (in a page or an iframe): localStorage, sessionStorage (a
+chrome-cdp extension Playwright ignores) and, with --indexeddb, IndexedDB.
+An origin no tab has open now (a login provider the app redirected
+through) is read in a hidden page that gets an empty document of it, as
+Playwright does; its sessionStorage went with its tab.
 
 Examples:
   chrome-cdp state save auth.json

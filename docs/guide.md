@@ -405,7 +405,7 @@ chrome-cdp cookies set theme=dark               # for the active tab's URL, or -
 chrome-cdp cookies clear --domain example.com   # or --name, --url, or everything
 chrome-cdp storage local                        # localStorage of https://app.example.com: 2 items
 chrome-cdp storage session set draft 7          # get, set, remove, clear; --origin for an iframe's
-chrome-cdp state save auth.json                 # cookies + storage of the open origins (--indexeddb)
+chrome-cdp state save auth.json                 # cookies + storage of the visited origins (--indexeddb)
 chrome-cdp open --state auth.json https://app.example.com   # logged in from the first load
 ```
 
