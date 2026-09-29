@@ -199,9 +199,22 @@ jobs:
           for dir in target/npm/*/; do (cd "$dir" && npm pack --dry-run); done
       - run: shellcheck install.sh .github/scripts/*.sh
 
+  # Plan 10.7: licenses, bans and sources (deny.toml), and the RustSec
+  # advisories twice over: cargo-deny's check and cargo-audit's. The nightly
+  # `audit` job reruns both, since a new advisory needs no new commit.
   deny:
     name: cargo-deny
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
+
+  audit:
+    name: cargo-audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - run: cargo audit

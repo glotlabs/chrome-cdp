@@ -1,0 +1,24 @@
+# Plan 11.6: what every test gets unless [e2e.determinism] turns it off.
+@mocks determinism
+
+@before
+  goto /e2e/determinism.html
+
+@test "the clock is frozen, for the page and its mocks"
+  expect '#now' text 2026-01-01T10:00:00.000Z --exact
+  expect '#server' text 'server 2026-01-01T10:00:00.000Z' --exact
+
+@test "random values are the same in every run"
+  expect '#random' text 0.7683905567973852 --exact
+  expect '#uuid' text 4409bbc9-4269-43a0-b9fc-b10eb699570a --exact
+  expect '#bytes' text 223,144,61,21 --exact
+  reload
+  expect '#random' text 0.7683905567973852 --exact
+
+@test "no animations; locale, time zone and pixel ratio are fixed"
+  eval "(() => { const s = getComputedStyle(document.querySelector('#spinner')); const seen = [s.animationDuration, s.transitionDuration, matchMedia('(prefers-reduced-motion: reduce)').matches, navigator.language, Intl.DateTimeFormat().resolvedOptions().timeZone, devicePixelRatio].join(' '); if (seen !== '0s 0s true en-US UTC 1') throw new Error(seen); })()"
+
+@test "time advance runs the timers due by then"
+  expect '#session' text 'Session active'
+  time advance 5m
+  expect '#session' text 'Session expired'

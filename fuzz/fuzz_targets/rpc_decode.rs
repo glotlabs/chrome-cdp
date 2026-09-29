@@ -25,7 +25,10 @@ fuzz_target!(|data: &[u8]| {
 
     if let Ok(resp) = decode_response(line) {
         let again = serde_json::to_string(&resp).expect("a response serialises");
-        assert_eq!(decode_response(&again).expect("a response reads back"), resp);
+        assert_eq!(
+            decode_response(&again).expect("a response reads back"),
+            resp
+        );
         let result: Result<Output, ErrorInfo> = match resp.into_result() {
             Ok(value) => match serde_json::from_value(value) {
                 Ok(output) => Ok(output),

@@ -1,0 +1,9 @@
+# Every kind of mistake the checker finds before a step runs.
+open
+clik e6
+fill label=Email 'ada
+  goto /
+click #submit
+fill label=Name ${name}
+@test "logs in"
+  goto /login

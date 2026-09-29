@@ -24,7 +24,8 @@ usage: cargo xtask <task> [args]
 
 tasks:
   ci                  run cargo fmt --check, gen-cdp --check, clippy -D warnings
-                      and tests (with cargo-nextest when it is installed)
+                      (the fuzz targets too) and tests (with cargo-nextest when it
+                      is installed)
   e2e [--repeat N]    run the whole suite with cargo-nextest (profile `ci`, no
                       retries) N times (default 1), checking for leaks after each
                       run; any failing run fails the task (the flakiness gate)
@@ -51,6 +52,9 @@ tasks:
                       <which>: stable, beta, min (the oldest supported major), a
                       version (154, 154.0.8037.57) or system (Google Chrome's own
                       install); all but system run `chrome-cdp install`
+  fuzz [--time SECS] run each fuzz target in fuzz/fuzz_targets/ for SECS seconds
+                      (default 60) with cargo-fuzz and the nightly toolchain, from
+                      its seeds and kept corpus; a crash fails the task
   gen-cdp [--check]   regenerate CDP types from the vendored protocol JSON
   build-js [--check]  typecheck and bundle the injected helper (needs Node's npx)
                       into crates/engine/src/injected/ccdp.js
@@ -73,6 +77,7 @@ fn main() -> ExitCode {
         "e2e" => e2e(rest),
         "leaks" => leaks(rest),
         "soak" => soak(rest),
+        "fuzz" => fuzz(rest),
         "bench" => bench(rest),
         "dist" => dist(rest),
         "release" => release::run(rest),
@@ -99,12 +104,24 @@ fn main() -> ExitCode {
 fn ci(args: &[String]) -> Result {
     no_args("ci", args)?;
     cargo(["fmt", "--all", "--check"])?;
+    cargo(["fmt", "--manifest-path", "fuzz/Cargo.toml", "--check"])?;
     gen_cdp(&["--check".to_owned()])?;
     cargo([
         "clippy",
         "--workspace",
         "--all-targets",
         "--locked",
+        "--",
+        "-D",
+        "warnings",
+    ])?;
+    // The fuzz crate is its own workspace; this keeps its targets building
+    // against the crates they fuzz.
+    cargo([
+        "clippy",
+        "--manifest-path",
+        "fuzz/Cargo.toml",
+        "--all-targets",
         "--",
         "-D",
         "warnings",
@@ -319,6 +336,91 @@ fn soak(args: &[String]) -> Result {
         "1",
     ])?;
     leaks(&[])
+}
+
+/// Where `fuzz` writes what failed (the nightly job files it as an issue).
+const FUZZ_SUMMARY: &str = "target/fuzz/summary.md";
+
+/// Runs every target in `fuzz/fuzz_targets/` for `--time` seconds (plan
+/// 10.7), from its seeds (`fuzz/seeds/<target>/`, committed) and its
+/// corpus (`fuzz/corpus/<target>/`, which the nightly job caches). Needs
+/// cargo-fuzz and the nightly toolchain; a crash leaves its input in
+/// `fuzz/artifacts/<target>/` and fails the task after the other targets
+/// ran.
+fn fuzz(args: &[String]) -> Result {
+    let secs: u64 = match args {
+        [] => 60,
+        [flag, n] if flag == "--time" => n
+            .parse()
+            .ok()
+            .filter(|&n| n > 0)
+            .ok_or_else(|| format!("--time takes seconds, got `{n}`"))?,
+        _ => return Err("usage: cargo xtask fuzz [--time SECS]".into()),
+    };
+    let fuzz_dir = workspace_root().join("fuzz");
+    let mut targets: Vec<String> = fs::read_dir(fuzz_dir.join("fuzz_targets"))
+        .map_err(|e| format!("read fuzz/fuzz_targets: {e}"))?
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            (path.extension()? == "rs").then(|| path.file_stem()?.to_str().map(str::to_owned))?
+        })
+        .collect();
+    targets.sort();
+    let mut failed = Vec::new();
+    for target in &targets {
+        eprintln!("=== fuzz {target} for {secs}s");
+        let corpus = fuzz_dir.join("corpus").join(target);
+        fs::create_dir_all(&corpus).map_err(|e| format!("create {}: {e}", corpus.display()))?;
+        // The rustup proxy, not `$CARGO`: only the proxy takes `+nightly`.
+        let mut cmd = Command::new("cargo");
+        cmd.current_dir(workspace_root())
+            .args(["+nightly", "fuzz", "run", target])
+            .arg(&corpus);
+        let seeds = fuzz_dir.join("seeds").join(target);
+        if seeds.is_dir() {
+            cmd.arg(&seeds);
+        }
+        // A single input that runs for 10 s is a hang, and a failure.
+        cmd.args([
+            "--".to_owned(),
+            format!("-max_total_time={secs}"),
+            "-timeout=10".to_owned(),
+        ]);
+        if let Err(e) = run(&mut cmd) {
+            failed.push(format!(
+                "- `{target}`: {e}; the input is in fuzz/artifacts/{target}/"
+            ));
+        }
+    }
+    let mut summary = format!(
+        "# Fuzzing: {} of {} targets failed\n\n",
+        failed.len(),
+        targets.len()
+    );
+    for line in &failed {
+        let _ = writeln!(summary, "{line}");
+    }
+    if !failed.is_empty() {
+        summary.push_str(
+            "\nThe job's `fuzz-artifacts` artifact has the inputs; \
+             `cargo +nightly fuzz run <target> <input>` replays one.\n",
+        );
+    }
+    let path = workspace_root().join(FUZZ_SUMMARY);
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    }
+    fs::write(&path, &summary).map_err(|e| format!("write {}: {e}", path.display()))?;
+    eprint!("{summary}");
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} of {} targets failed",
+            failed.len(),
+            targets.len()
+        ))
+    }
 }
 
 /// The ignored tests that time a plan's budget inside a crate, run by

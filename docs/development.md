@@ -18,8 +18,11 @@ cargo xtask release archive --target x86_64-unknown-linux-musl  # dist/*.tar.gz 
                     # also manifest, notes, formula, npm, check (docs/releasing.md)
 cargo xtask fixtures # serve testdata/site on two local origins
 cargo xtask docs    # regenerate the command reference in docs/commands/
-cargo deny check    # licenses and advisories
-cargo +nightly fuzz run parse_script  # fuzz the .cdp parser (needs cargo-fuzz)
+cargo deny check    # licenses, bans, sources and advisories
+cargo audit         # RustSec advisories (needs cargo-audit)
+cargo xtask fuzz --time 60  # each fuzz target for 60 s (needs cargo-fuzz and nightly)
+cargo +nightly fuzz run rpc_decode  # one target: rpc_decode (the CLI <-> daemon
+                    # decoder) or parse_script (the .cdp parser)
 ```
 
 Integration tests need a real Chrome: set `CHROME_PATH` to a Chrome or
