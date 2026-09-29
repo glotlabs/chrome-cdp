@@ -20,10 +20,10 @@ use std::time::{Duration, Instant};
 use browser::Host;
 use engine::{
     CdpRequest, ConsoleRequest, EmulateRequest, EmulationChange, Engine, EvalRequest, EvalWorld,
-    ExpectRequest, Expectation, HttpCredentials, InitScriptAddRequest, MockLogRequest,
-    MockOffRequest, MockUseRequest, NavigateRequest, Navigation, NetworkRequest, OpenRequest,
-    RequestCheck, RouteAction, RouteBody, RouteRequest, RouteSpec, Since, TabNewRequest, Target,
-    UnrouteRequest, WaitUntil,
+    ExpectRequest, Expectation, HttpCredentials, InitScriptAddRequest, InitScriptRemoveRequest,
+    MockLogRequest, MockOffRequest, MockUseRequest, NavigateRequest, Navigation, NetworkRequest,
+    OpenRequest, RequestCheck, RouteAction, RouteBody, RouteRequest, RouteSpec, Since,
+    TabNewRequest, Target, UnrouteRequest, WaitUntil,
 };
 use fixtures::Fixtures;
 use protocol::schema::{ConsoleData, EvalData, Level, MockLogData, NetworkData, WorkerKind};
@@ -50,6 +50,7 @@ enum Cell {
     /// The feature means nothing there; why.
     Na(&'static str),
     /// It should work there but does not yet; the milestone that does it.
+    #[allow(dead_code, reason = "no cell is left to do; a new row may have some")]
     Todo(&'static str),
     /// Chrome lets it work there only in part; why. The probe runs, and
     /// a miss is a note, not a failure.
@@ -91,8 +92,19 @@ enum Probe {
     HttpAuth,
     /// An `init-script --now` ran in it.
     InitScript,
-    /// `ua` reaches its `navigator.userAgent`.
+    /// `ua` reaches its `navigator.userAgent` and its requests.
     UserAgent,
+    /// `locale` reaches its `navigator.language` and its requests'
+    /// `Accept-Language`.
+    Locale,
+    /// `tz` reaches its time zone.
+    Timezone,
+    /// `time freeze` stops its `Date.now()`.
+    TimeFreeze,
+    /// `time advance` moves its frozen `Date.now()` on.
+    TimeAdvance,
+    /// The test runner's determinism script seeds its `Math.random`.
+    Determinism,
 }
 
 struct Row {
@@ -178,14 +190,7 @@ const ROWS: &[Row] = &[
     Row {
         feature: "init-script",
         probe: Probe::InitScript,
-        cells: [
-            Check,
-            Check,
-            Check,
-            Todo("13.3"),
-            Todo("13.3"),
-            Todo("13.3"),
-        ],
+        cells: [Check, Check, Check, Check, Check, Check],
     },
     // Last: the credentials stay.
     Row {
@@ -196,16 +201,40 @@ const ROWS: &[Row] = &[
     Row {
         feature: "ua",
         probe: Probe::UserAgent,
-        cells: [
-            Check,
-            Check,
-            Check,
-            Todo("13.3"),
-            Todo("13.3"),
-            Todo("13.3"),
-        ],
+        cells: [Check, Check, Check, Check, Check, Check],
+    },
+    Row {
+        feature: "locale",
+        probe: Probe::Locale,
+        cells: [Check, Check, Check, Check, Check, Check],
+    },
+    Row {
+        feature: "tz",
+        probe: Probe::Timezone,
+        cells: [Check, Check, Check, Check, Check, Check],
+    },
+    Row {
+        feature: "time freeze",
+        probe: Probe::TimeFreeze,
+        cells: [Check, Check, Check, Check, Check, Check],
+    },
+    Row {
+        feature: "time advance",
+        probe: Probe::TimeAdvance,
+        cells: [Check, Check, Check, Check, Check, Check],
+    },
+    Row {
+        feature: "determinism",
+        probe: Probe::Determinism,
+        cells: [Check, Check, Check, Check, Check, Check],
     },
 ];
+
+/// The test runner's determinism script (plan 11.6).
+const DETERMINISM: &str = include_str!("../../chrome-cdp/src/test/determinism.js");
+
+/// When the clock rows freeze it: 2030-01-01T00:00:00Z.
+const FROZEN_MS: i64 = 1_893_456_000_000;
 
 fn chrome_path() -> Option<PathBuf> {
     match std::env::var_os("CHROME_PATH") {
@@ -610,21 +639,128 @@ async fn probe(engine: &Arc<Engine>, probe: Probe, who: &str) -> Result<(), Stri
         }
         Probe::UserAgent => {
             const AGENT: &str = "chrome-cdp-matrix/1.0";
+            emulate(
+                engine,
+                EmulationChange::UserAgent {
+                    user_agent: Some(AGENT.to_owned()),
+                },
+            )
+            .await;
+            let report = ask(engine, who, "report").await;
+            let headers = ask(engine, who, "headers").await;
+            (report["userAgent"] == json!(AGENT) && headers["userAgent"] == json!(AGENT))
+                .then_some(())
+                .ok_or_else(|| {
+                    format!(
+                        "userAgent {}, its requests' {}",
+                        report["userAgent"], headers["userAgent"]
+                    )
+                })
+        }
+        Probe::Locale => {
+            emulate(
+                engine,
+                EmulationChange::Locale {
+                    locale: Some("de-DE".to_owned()),
+                },
+            )
+            .await;
+            let report = ask(engine, who, "report").await;
+            let headers = ask(engine, who, "headers").await;
+            (report["language"] == json!("de-DE") && headers["language"] == json!("de-DE"))
+                .then_some(())
+                .ok_or_else(|| {
+                    format!(
+                        "language {}, its requests' {}",
+                        report["language"], headers["language"]
+                    )
+                })
+        }
+        Probe::Timezone => {
+            emulate(
+                engine,
+                EmulationChange::Timezone {
+                    timezone: Some("Asia/Tokyo".to_owned()),
+                },
+            )
+            .await;
+            let report = ask(engine, who, "report").await;
+            (report["timeZone"] == json!("Asia/Tokyo"))
+                .then_some(())
+                .ok_or_else(|| format!("time zone {}", report["timeZone"]))
+        }
+        Probe::TimeFreeze => {
+            emulate(
+                engine,
+                EmulationChange::TimeFreeze {
+                    epoch_ms: FROZEN_MS,
+                },
+            )
+            .await;
+            let report = ask(engine, who, "report").await;
+            (report["now"] == json!(FROZEN_MS))
+                .then_some(())
+                .ok_or_else(|| format!("Date.now() {}", report["now"]))
+        }
+        Probe::TimeAdvance => {
+            emulate(
+                engine,
+                EmulationChange::TimeFreeze {
+                    epoch_ms: FROZEN_MS,
+                },
+            )
+            .await;
+            emulate(engine, EmulationChange::TimeAdvance { ms: 60_000 }).await;
+            let report = ask(engine, who, "report").await;
+            (report["now"] == json!(FROZEN_MS + 60_000))
+                .then_some(())
+                .ok_or_else(|| format!("Date.now() {}", report["now"]))
+        }
+        Probe::Determinism => {
+            // Seeded, each target starts the same sequence: its first
+            // value is the one a fresh copy gives.
+            let seeded = format!("{}(1, 0, false);", DETERMINISM.trim_end());
+            let want = eval(
+                engine,
+                &format!("(() => {{ {seeded} return Math.random(); }})()"),
+            )
+            .await;
             engine
-                .emulate(EmulateRequest {
-                    change: EmulationChange::UserAgent {
-                        user_agent: Some(AGENT.to_owned()),
-                    },
+                .init_script_add(InitScriptAddRequest {
+                    source: seeded,
+                    file: None,
+                    world: EvalWorld::Main,
+                    now: true,
                     timeout_ms: TIMEOUT_MS,
                 })
                 .await
-                .unwrap_or_else(|e| panic!("ua: {}", e.to_text()));
+                .unwrap_or_else(|e| panic!("init-script: {}", e.to_text()));
             let report = ask(engine, who, "report").await;
-            (report["userAgent"] == json!(AGENT))
+            engine
+                .init_script_remove(InitScriptRemoveRequest {
+                    ids: Vec::new(),
+                    all: true,
+                    timeout_ms: TIMEOUT_MS,
+                })
+                .await
+                .unwrap_or_else(|e| panic!("init-script remove: {}", e.to_text()));
+            (report["random"] == want)
                 .then_some(())
-                .ok_or_else(|| format!("userAgent {}", report["userAgent"]))
+                .ok_or_else(|| format!("Math.random() {}, not {want}", report["random"]))
         }
     }
+}
+
+/// `emulate`'s warnings.
+async fn emulate(engine: &Engine, change: EmulationChange) -> Vec<String> {
+    engine
+        .emulate(EmulateRequest {
+            change,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("emulate: {}", e.to_text()))
+        .warnings
 }
 
 /// Every row's checked cells hold. The table goes to stderr, with why
@@ -682,6 +818,48 @@ async fn every_feature_in_every_target() {
     eprintln!("{table}\n{}\n{todo} cells to do", reasons.join("\n"));
     engine.close().await;
     assert!(failed.is_empty(), "{}", failed.join("\n"));
+}
+
+/// `tz` and `locale` check that every worker took them (all do in Chrome
+/// 154: nothing to say), and a first `time freeze` says the workers there
+/// are got the clock late.
+#[tokio::test]
+async fn emulate_says_what_workers_missed() {
+    let Some(path) = chrome_path() else { return };
+    let engine = matrix(&path, "engine-targets-emulate").await;
+    let tz = EmulationChange::Timezone {
+        timezone: Some("Asia/Tokyo".to_owned()),
+    };
+    assert_eq!(emulate(&engine, tz).await, Vec::<String>::new());
+    let locale = EmulationChange::Locale {
+        locale: Some("fr-FR".to_owned()),
+    };
+    assert_eq!(emulate(&engine, locale).await, Vec::<String>::new());
+    let freeze = EmulationChange::TimeFreeze {
+        epoch_ms: FROZEN_MS,
+    };
+    let warnings = emulate(&engine, freeze.clone()).await;
+    // The dedicated, shared and service worker, and the OOPIF's
+    // dedicated and shared worker.
+    assert_eq!(
+        warnings,
+        [
+            "5 workers already running got the frozen clock late: timers set there before keep real time"
+        ]
+    );
+    // Frozen already: nothing new.
+    assert_eq!(emulate(&engine, freeze).await, Vec::<String>::new());
+    // A worker that starts now has the frozen clock from its start.
+    let now = eval(
+        &engine,
+        "new Promise((resolve) => { \
+           const w = new Worker('/targets/dedicated.js?who=late'); \
+           w.onmessage = (e) => { if (e.data.ready) w.postMessage({ id: 1, op: 'report' }); \
+             else resolve(e.data.result.now); }; })",
+    )
+    .await;
+    assert_eq!(now, json!(FROZEN_MS));
+    engine.close().await;
 }
 
 /// A dedicated or shared worker started while mock sets are in use has

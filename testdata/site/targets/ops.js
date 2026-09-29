@@ -84,6 +84,12 @@ async function targetRun(who, op) {
     case 'init':
       // What the matrix's init script set, if it ran here.
       return self.matrixInit ?? null;
+    case 'headers': {
+      // What its requests carry.
+      const response = await fetch('/echo/targets');
+      const { headers } = await response.json();
+      return { userAgent: headers['user-agent'], language: headers['accept-language'] };
+    }
     case 'report':
       return {
         userAgent: navigator.userAgent,
