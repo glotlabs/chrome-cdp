@@ -11,6 +11,7 @@ use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use cdp::Session;
 use cdp::domains::network::{self, Cookie, CookieParam};
 use cdp::domains::{runtime, storage};
 use protocol::schema::{
@@ -20,6 +21,7 @@ use protocol::schema::{
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde_json::{Value, json};
 
+use super::visited::HiddenPage;
 use super::{
     LIBRARY, OriginState, StorageState, cookie_info, cookie_param, expired, in_domain, origin_of,
     parse_same_site, state_cookie,
@@ -537,8 +539,9 @@ impl Engine {
     }
 
     /// `state save`: writes the browser's cookies and the storage of every
-    /// origin open in a tab, as Playwright's `storageState`, readable by
-    /// the user only.
+    /// origin the context visited, as Playwright's `storageState`,
+    /// readable by the user only. An origin open in a tab is read there;
+    /// one no frame has open now, in a hidden page (see [`HiddenPage`]).
     pub async fn state_save(&self, req: StateSaveRequest) -> Result<Output, ErrorInfo> {
         let timeout = millis(req.timeout_ms);
         let running = self.running()?;
@@ -547,28 +550,48 @@ impl Engine {
         let mut warnings = Vec::new();
         let mut origins = Vec::new();
         let expression = format!("({LIBRARY}).collect({})", req.indexed_db);
-        for (tab, frame, origin) in open_origins(&running, scope.as_deref()) {
+        let mut keep = |origin: &str, collected: Result<Value, String>| match collected
+            .and_then(|v| serde_json::from_value::<OriginState>(v).map_err(|e| e.to_string()))
+        {
+            Ok(state) => {
+                let has_db = state.indexed_db.as_ref().is_some_and(|d| !d.is_empty());
+                if !state.local_storage.is_empty() || !state.session_storage.is_empty() || has_db {
+                    origins.push(state);
+                }
+            }
+            Err(e) => warnings.push(format!("cannot read the storage of {origin}: {e}")),
+        };
+        let open = open_origins(&running, scope.as_deref());
+        for (tab, frame, origin) in &open {
             let collected = match running
                 .tabs
-                .context(tab, &frame, World::Isolated, timeout)
+                .context(*tab, frame, World::Isolated, timeout)
                 .await
             {
                 Ok(context) => run(&context, expression.clone(), timeout).await,
                 Err(e) => Err(frame_error(&e)),
             };
-            match collected
-                .and_then(|v| serde_json::from_value::<OriginState>(v).map_err(|e| e.to_string()))
-            {
-                Ok(state) => {
-                    let has_db = state.indexed_db.as_ref().is_some_and(|d| !d.is_empty());
-                    if !state.local_storage.is_empty()
-                        || !state.session_storage.is_empty()
-                        || has_db
-                    {
-                        origins.push(state);
+            keep(origin, collected);
+        }
+        let away: Vec<String> = running
+            .tabs
+            .visited_in(scope.as_deref())
+            .into_iter()
+            .filter(|visited| !open.iter().any(|(_, _, o)| o == visited))
+            .collect();
+        if !away.is_empty() {
+            match HiddenPage::open(&running.conn, scope.as_deref(), timeout).await {
+                Ok(page) => {
+                    for origin in &away {
+                        keep(origin, page.run_in(origin, &expression, timeout).await);
+                    }
+                    page.close(timeout).await;
+                }
+                Err(e) => {
+                    for origin in &away {
+                        keep(origin, Err(format!("cannot open a hidden page: {e}")));
                     }
                 }
-                Err(e) => warnings.push(format!("cannot read the storage of {origin}: {e}")),
             }
         }
         let state = StorageState {
@@ -730,12 +753,28 @@ async fn run(
     expression: String,
     timeout: Duration,
 ) -> Result<Value, String> {
+    evaluate(
+        &context.session,
+        Some(context.context_id),
+        expression,
+        timeout,
+    )
+    .await
+}
+
+/// Runs `expression` in `session`'s execution context `context_id` (the
+/// main frame's page world with `None`) and returns its value (awaited).
+pub(super) async fn evaluate(
+    session: &Session,
+    context_id: Option<runtime::ExecutionContextId>,
+    expression: String,
+    timeout: Duration,
+) -> Result<Value, String> {
     let mut params = runtime::EvaluateParams::new(expression);
-    params.context_id = Some(context.context_id);
+    params.context_id = context_id;
     params.return_by_value = Some(true);
     params.await_promise = Some(true);
-    let result = context
-        .session
+    let result = session
         .with_timeout(timeout)
         .call(params)
         .await

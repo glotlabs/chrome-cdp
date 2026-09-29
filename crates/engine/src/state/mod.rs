@@ -12,13 +12,15 @@
 //! `cookies` and `origins` with their `localStorage` (and `indexedDB` with
 //! `--indexeddb`, as Playwright's `storageState({ indexedDB: true })` has
 //! it). chrome-cdp adds `sessionStorage` to each origin; Playwright
-//! ignores it. `state save` reads the origins of the frames open in any
-//! tab. `state load` gives an origin with a frame open its storage at
+//! ignores it. `state save` reads every origin the context's frames
+//! visited: in a frame of it where one is open, else in a hidden page (see
+//! [`visited`]), as Playwright does. `state load` gives an origin with a frame open its storage at
 //! once, and seeds the others: an init script for the origin's next
 //! document, which takes itself out once it ran (see
 //! [`crate::inject::Injector::seed`]).
 
 pub(crate) mod commands;
+mod visited;
 
 use cdp::domains::network::{Cookie, CookieParam, CookiePartitionKey, CookieSameSite};
 use protocol::schema::{CookieInfo, StorageItem};

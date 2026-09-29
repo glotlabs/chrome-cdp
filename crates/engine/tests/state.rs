@@ -12,12 +12,14 @@ use std::sync::Arc;
 use browser::Host;
 use engine::{
     CookieFilter, CookieSpec, CookiesOp, CookiesRequest, Engine, EvalRequest, EvalWorld,
-    InitScriptListRequest, NavigateRequest, Navigation, OpenRequest, StateLoadRequest,
-    StateSaveRequest, StorageArea, StorageOp, StorageRequest, StorageState, WaitUntil,
+    InitScriptListRequest, NavigateRequest, Navigation, OpenRequest, RouteAction, RouteBody,
+    RouteRequest, RouteSpec, RoutesRequest, StateLoadRequest, StateSaveRequest, StorageArea,
+    StorageOp, StorageRequest, StorageState, TabNewRequest, TabsRequest, WaitUntil,
 };
 use fixtures::Fixtures;
 use protocol::schema::{
-    CookieSetData, CookiesClearData, CookiesData, EvalData, InitScriptsData, StateData, StorageData,
+    CookieSetData, CookiesClearData, CookiesData, EvalData, InitScriptsData, RoutesData, StateData,
+    StorageData, TabData, TabsData,
 };
 use protocol::{ErrorInfo, ErrorKind};
 use serde_json::{Value, json};
@@ -399,10 +401,15 @@ async fn log_in(engine: &Engine, f: &Fixtures) {
     // Not awaited: logIn() navigates away when it is done, and an eval
     // whose page is gone before it answers fails. The wait below sees it.
     eval(engine, "logIn(), null").await;
+    wait_text(engine, "Logged in as Ada").await;
+}
+
+/// Waits until the active tab shows `text`.
+async fn wait_text(engine: &Engine, text: &str) {
     engine
         .wait(engine::WaitRequest {
             condition: engine::WaitFor::Text {
-                text: "Logged in as Ada".into(),
+                text: text.into(),
                 within: None,
                 gone: false,
             },
@@ -639,4 +646,134 @@ async fn playwright_state_files_load_unchanged() {
         })
     );
     engine.close().await;
+}
+
+/// The tabs' ids and URLs.
+async fn tab_list(engine: &Engine) -> Vec<(String, String)> {
+    let out = engine
+        .tabs(TabsRequest {
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 0,
+        })
+        .await
+        .unwrap();
+    let data: TabsData = serde_json::from_value(out.data).unwrap();
+    data.tabs.into_iter().map(|t| (t.id, t.url)).collect()
+}
+
+/// A login through a single sign-on provider on the other origin: once
+/// back in the app, no frame of the provider is open, yet `state save`
+/// keeps its storage (read in a hidden page, as Playwright does), without
+/// a new tab or a hit on the session's routes.
+#[tokio::test(flavor = "multi_thread")]
+async fn state_save_keeps_origins_no_longer_open() {
+    let Some(path) = chrome_path() else { return };
+    let f = Fixtures::shared();
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("sso.json");
+
+    let first = start(&path, "state-save-sso").await;
+    goto(&first, &f.url("/state/login.html")).await;
+    eval(
+        &first,
+        "setTimeout(() => document.getElementById('sso').click()), null",
+    )
+    .await;
+    wait_text(&first, "Continue as Ada").await;
+    eval(&first, "signIn(), null").await;
+    wait_text(&first, "Logged in as Ada").await;
+    // A route that would answer the provider's pages: the hidden page
+    // must not use it.
+    first
+        .route(RouteRequest {
+            rules: vec![RouteSpec {
+                pattern: f.url_b("/**"),
+                label: None,
+                methods: Vec::new(),
+                resource_types: Vec::new(),
+                times: None,
+                delay_ms: 0,
+                context: None,
+                action: RouteAction::Fulfill {
+                    status: 200,
+                    headers: Vec::new(),
+                    body: RouteBody::Text {
+                        text: "<script>localStorage.clear()</script>".into(),
+                    },
+                },
+            }],
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("{}", e.to_text()));
+    let tabs = tab_list(&first).await;
+    assert_eq!(tabs.len(), 1, "{tabs:?}");
+
+    let out = first
+        .state_save(StateSaveRequest {
+            path: file.clone(),
+            indexed_db: true,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("{}", e.to_text()));
+    assert_eq!(out.warnings.len(), 1, "{:?}", out.warnings);
+    let saved: StateData = serde_json::from_value(out.data).unwrap();
+    let origins: Vec<(&str, usize, Option<usize>)> = saved
+        .origins
+        .iter()
+        .map(|o| (o.origin.as_str(), o.local_storage, o.indexed_db))
+        .collect();
+    assert_eq!(origins, vec![(f.a(), 1, Some(0)), (f.b(), 1, Some(1))]);
+    let json: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    let sso = &json["origins"][1];
+    assert_eq!(
+        sso["localStorage"],
+        json!([{"name": "sso-user", "value": "ada"}])
+    );
+    assert_eq!(sso["indexedDB"][0]["name"], "sso");
+    assert_eq!(
+        sso["indexedDB"][0]["stores"][0]["records"][0]["value"],
+        json!({"client": "app", "user": "ada"})
+    );
+
+    // Nothing else changed: the same tabs, the route never hit, and the
+    // next tab still gets the next id.
+    assert_eq!(tab_list(&first).await, tabs);
+    let routes = first
+        .routes(&RoutesRequest {
+            log: false,
+            limit: 0,
+            max_chars: 0,
+        })
+        .unwrap();
+    let routes: RoutesData = serde_json::from_value(routes.data).unwrap();
+    assert_eq!(routes.routes[0].hits, 0);
+    let out = first
+        .tab_new(TabNewRequest {
+            url: None,
+            base_url: None,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("{}", e.to_text()));
+    let opened: TabData = serde_json::from_value(out.data).unwrap();
+    assert_eq!(opened.tab.id, "t2");
+    first.close().await;
+
+    // A new session with the file is signed in at the provider too.
+    let second = Engine::new("state-load-sso", None, None);
+    let mut open = open_request(&path);
+    open.url = Some(f.url_b("/state/sso.html"));
+    open.state = Some(StateLoadRequest {
+        state: StorageState::parse(&std::fs::read_to_string(&file).unwrap()).unwrap(),
+        path: None,
+        timeout_ms: TIMEOUT_MS,
+    });
+    second
+        .open(open)
+        .await
+        .unwrap_or_else(|e| panic!("{}", e.to_text()));
+    wait_text(&second, "Signed in as ada").await;
+    second.close().await;
 }

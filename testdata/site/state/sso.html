@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SSO</title>
+</head>
+<body>
+<h1 id="status">Sign in to continue</h1>
+<button id="continue" onclick="signIn()">Continue as Ada</button>
+<script>
+// A single sign-on provider on the other origin (served there): signing in
+// leaves its own state (localStorage and IndexedDB) and sends the user back
+// to the app's callback with a token. State of this origin must survive a
+// `state save` made once the app is open again.
+if (localStorage.getItem('sso-user')) {
+  document.getElementById('status').textContent = 'Signed in as ' + localStorage.getItem('sso-user');
+}
+
+function saveGrant() {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open('sso', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('grants', { keyPath: 'client' });
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      const tx = db.transaction('grants', 'readwrite');
+      tx.objectStore('grants').put({ client: 'app', user: 'ada' });
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => reject(tx.error);
+    };
+  });
+}
+
+async function signIn() {
+  localStorage.setItem('sso-user', 'ada');
+  await saveGrant();
+  location.href = '{{ORIGIN_A}}/state/callback.html?token=tok-ada-42';
+}
+</script>
+</body>
+</html>

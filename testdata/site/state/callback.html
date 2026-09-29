@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Signing in…</title>
+</head>
+<body>
+<h1>Signing in…</h1>
+<script>
+// The app's SSO callback: keeps the provider's token and logs in, as
+// login.html does.
+localStorage.setItem('token', new URLSearchParams(location.search).get('token'));
+location.replace('/state/app.html?set-cookie=' +
+  encodeURIComponent('session=ada-42; Path=/; HttpOnly; SameSite=Lax'));
+</script>
+</body>
+</html>
