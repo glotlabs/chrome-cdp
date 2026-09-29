@@ -168,8 +168,147 @@ impl Sandbox {
 }
 
 impl Drop for Sandbox {
+    /// Closes every session and then checks for leaks (plan 10.1): no
+    /// daemon or Chrome of this sandbox may still run, and no socket file
+    /// may be left in its session dirs, since `close` waits for both to go.
+    /// A leak fails the test that caused it (unless it failed already),
+    /// and the sandbox's dir is kept for a look.
     fn drop(&mut self) {
         let _ = self.cli().args(["close", "--all"]).output();
+        let leaks = self.leaks();
+        if leaks.is_empty() || std::thread::panicking() {
+            return;
+        }
+        let kept = std::mem::replace(&mut self.dir, tempfile::tempdir().unwrap()).keep();
+        panic!(
+            "the sandbox leaked after `close --all` (kept in {}):\n  {}",
+            kept.display(),
+            leaks.join("\n  ")
+        );
+    }
+}
+
+impl Sandbox {
+    /// What is left of this sandbox's sessions: live daemons and Chrome
+    /// processes (after a grace period of 5 s, as a browser's helpers exit
+    /// shortly after it) and socket files in its session dirs.
+    pub fn leaks(&self) -> Vec<String> {
+        let start = std::time::Instant::now();
+        while !(self.daemons().is_empty() && self.chromes().is_empty())
+            && start.elapsed() < std::time::Duration::from_secs(5)
+        {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let mut leaks: Vec<String> = self
+            .daemons()
+            .into_iter()
+            .map(|pid| format!("daemon {pid}"))
+            .collect();
+        leaks.extend(self.chromes().into_iter().map(|p| format!("process {p}")));
+        leaks.extend(
+            sockets_in(&self.runtime_dir())
+                .into_iter()
+                .map(|s| format!("socket {}", s.display())),
+        );
+        leaks
+    }
+
+    /// A session with a name no other test uses, closed when dropped.
+    pub fn session(&self) -> Session<'_> {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Session {
+            sandbox: self,
+            name: format!("t{}-{n}", std::process::id()),
+        }
+    }
+}
+
+/// The socket files under `dir`, at any depth.
+pub fn sockets_in(dir: &Path) -> Vec<PathBuf> {
+    use std::os::unix::fs::FileTypeExt as _;
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for entry in entries.flatten() {
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if kind.is_socket() {
+            found.push(entry.path());
+        } else if kind.is_dir() {
+            found.extend(sockets_in(&entry.path()));
+        }
+    }
+    found
+}
+
+/// One `--session` of a [`Sandbox`] (plan 10.1's E2E harness): every
+/// command runs with its name, and dropping it runs `close` for it, even
+/// when the test failed.
+pub struct Session<'a> {
+    pub sandbox: &'a Sandbox,
+    pub name: String,
+}
+
+impl Session<'_> {
+    /// The sandbox's `cli()` with `--session <name>`.
+    pub fn cli(&self) -> Command {
+        let mut cmd = self.sandbox.cli();
+        cmd.env("CHROME_CDP_SESSION", &self.name);
+        cmd
+    }
+
+    /// Runs `chrome-cdp <args>` in this session.
+    pub fn run(&self, args: &[&str]) -> Output {
+        run(self.cli().args(args))
+    }
+
+    /// Runs a command that must succeed and write nothing to stderr, and
+    /// returns its stdout.
+    pub fn ok(&self, args: &[&str]) -> String {
+        let out = self.run(args);
+        assert_eq!(
+            code(&out),
+            0,
+            "chrome-cdp {}: {}",
+            args.join(" "),
+            stderr(&out)
+        );
+        assert_eq!(stderr(&out), "", "chrome-cdp {}", args.join(" "));
+        stdout(&out)
+    }
+
+    /// Runs a command with `--json` that must succeed, and returns `data`.
+    pub fn json(&self, args: &[&str]) -> Value {
+        let out = self.run(&[args, &["--json"]].concat());
+        assert_eq!(
+            code(&out),
+            0,
+            "chrome-cdp {}: {}",
+            args.join(" "),
+            stderr(&out)
+        );
+        let envelope = json_out(&out);
+        assert_eq!(envelope["ok"], true, "{envelope}");
+        envelope["data"].clone()
+    }
+
+    /// Runs a command with `--json` that must fail with exit code `exit`
+    /// and error kind `kind`, and returns the error object.
+    pub fn fails(&self, args: &[&str], exit: i32, kind: &str) -> Value {
+        let out = self.run(&[args, &["--json"]].concat());
+        assert_eq!(code(&out), exit, "chrome-cdp {}", args.join(" "));
+        let error = json_out(&out)["error"].clone();
+        assert_eq!(error["kind"], kind, "{error}");
+        error
+    }
+}
+
+impl Drop for Session<'_> {
+    fn drop(&mut self) {
+        let _ = self.cli().arg("close").output();
     }
 }
 

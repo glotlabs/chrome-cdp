@@ -1,0 +1,27 @@
+# cargo-nextest (plan 10, milestone 10.1): every test in its own process,
+# in parallel, with retries off, so a flaky test fails the run instead of
+# passing on a second try. `cargo xtask ci` and `cargo xtask e2e` use the
+# `ci` profile.
+
+[profile.default]
+retries = 0
+# A test that hangs fails after 5 minutes instead of stalling the run.
+slow-timeout = { period = "60s", terminate-after = 5 }
+# Keep a leftover Chrome from hiding: a test's children must be gone
+# within 10s of it ending, or nextest reports it as leaky.
+leak-timeout = { period = "10s", result = "fail" }
+
+[profile.ci]
+fail-fast = false
+failure-output = "immediate-final"
+status-level = "fail"
+final-status-level = "flaky"
+
+[profile.ci.junit]
+path = "junit.xml"
+
+# The golden test runs every command's text, --json and -q cases in one
+# test: minutes when the machine is busy with the rest of the suite.
+[[profile.default.overrides]]
+filter = "test(=command_output_matches_golden_files)"
+slow-timeout = { period = "120s", terminate-after = 8 }
