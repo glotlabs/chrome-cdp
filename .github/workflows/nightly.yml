@@ -107,18 +107,9 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
-      # The same Chrome as the `ci` workflow's.
-      - name: Locate Chrome
-        shell: bash
-        run: |
-          for c in /opt/google/chrome/chrome "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"; do
-            if [ -x "$c" ]; then
-              echo "CHROME_PATH=$c" >> "$GITHUB_ENV"
-              echo "CHROME_CDP_REQUIRE_CHROME=1" >> "$GITHUB_ENV"
-              exit 0
-            fi
-          done
-          echo "::warning::no Chrome on this runner; CDP integration tests are skipped"
+      # CfT stable, as the `ci` workflow's main jobs.
+      - name: Chrome stable
+        run: cargo xtask chrome stable --with-deps
       - run: cargo xtask e2e --repeat 20
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -138,21 +129,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            chrome: /opt/google/chrome/chrome
-          - os: macos-latest
-            chrome: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
       issues: write
-    env:
-      CHROME_PATH: ${{ matrix.chrome }}
     steps:
       - uses: actions/checkout@v4
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      - name: Chrome stable
+        run: cargo xtask chrome stable --with-deps
       - run: cargo xtask soak
       - uses: ./.github/actions/nightly-issue
         if: failure()

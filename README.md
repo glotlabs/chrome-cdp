@@ -591,14 +591,19 @@ cargo xtask leaks   # no Chrome, daemon or socket file of chrome-cdp is left
 cargo xtask soak    # 1,000 random commands, and an hour of logging (needs CHROME_PATH)
 cargo xtask gen-cdp # regenerate CDP types (crates/cdp/protocol/README.md)
 cargo xtask build-js # rebuild the injected helper from TypeScript (needs npx)
-cargo xtask dist    # release binary in dist/ (size budget: 15 MB)
+cargo xtask dist --target x86_64-unknown-linux-musl  # release binary in dist/;
+                    # fails at +20% over its size in xtask/binary-sizes.txt
+cargo xtask chrome stable  # install CfT stable (or beta, min, 150, system), print its path
 cargo xtask fixtures # serve testdata/site on two local origins
 cargo deny check    # licenses and advisories
 cargo +nightly fuzz run parse_script  # fuzz the .cdp parser (needs cargo-fuzz)
 ```
 
 Integration tests need a real Chrome: set `CHROME_PATH` to a Chrome or
-Chromium binary. They load pages from the fixture site in `testdata/site`,
+Chromium binary (`export CHROME_PATH=$(cargo xtask chrome stable)`). CI runs
+them against Chrome for Testing stable on Linux and macOS, x86_64 and arm64,
+and on Linux also against the system Google Chrome and the oldest supported
+Chrome; a weekly job runs them against beta. They load pages from the fixture site in `testdata/site`,
 served by `crates/fixtures` on two sites (`127.0.0.1` and `localhost`, so
 frames from one in the other run out of process) and on an HTTPS origin with
 a self-signed certificate; `cargo xtask fixtures`

@@ -13,42 +13,48 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Plan 10.2's matrix: every OS and architecture against Chrome for Testing
+  # stable, plus Ubuntu's preinstalled Google Chrome and the oldest Chrome
+  # chrome-cdp supports (MIN_CHROME_MAJOR). `cargo xtask chrome` installs
+  # it with `chrome-cdp install` and exports CHROME_PATH and
+  # CHROME_CDP_REQUIRE_CHROME, so a missing Chrome fails the Chrome tests
+  # instead of skipping them. Beta runs weekly (weekly.yml).
   ci:
-    name: ci (${{ matrix.os }})
+    name: ci (${{ matrix.os }}, chrome ${{ matrix.chrome }})
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest      # linux x86_64
-          - ubuntu-24.04-arm   # linux arm64
-          - macos-latest       # macOS arm64
-          - macos-15-intel     # macOS x86_64
+        include:
+          - os: ubuntu-latest      # linux x86_64
+            chrome: stable
+          - os: ubuntu-latest
+            chrome: system
+          - os: ubuntu-latest
+            chrome: min
+          - os: ubuntu-24.04-arm   # linux arm64 (CfT has linux-arm64 since 153)
+            chrome: stable
+          - os: macos-latest       # macOS arm64
+            chrome: stable
+          - os: macos-15-intel     # macOS x86_64 (macos-13 is retired)
+            chrome: stable
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       # rustup reads rust-toolchain.toml and installs the pinned toolchain.
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: chrome-${{ matrix.chrome }}
       # `cargo xtask ci` runs the tests with nextest (plan 10.1) when it is
       # installed: one process per test, retries off.
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-nextest
-      # CDP integration tests run against the runner's preinstalled Google
-      # Chrome. Ubuntu ships an AppArmor profile for /opt/google/chrome, so the
-      # sandbox works there. There is no Google Chrome for Linux arm64; that
-      # runner only covers the pipe transport with a stand-in child.
-      - name: Locate Chrome
-        shell: bash
-        run: |
-          for c in /opt/google/chrome/chrome "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"; do
-            if [ -x "$c" ]; then
-              echo "CHROME_PATH=$c" >> "$GITHUB_ENV"
-              echo "CHROME_CDP_REQUIRE_CHROME=1" >> "$GITHUB_ENV"
-              exit 0
-            fi
-          done
-          echo "::warning::no Chrome on this runner; CDP integration tests are skipped"
+      # --with-deps installs missing libraries and, on Ubuntu, the AppArmor
+      # profile Chrome's sandbox needs (runners have passwordless sudo).
+      # Never --no-sandbox. Ubuntu's Google Chrome brings its own profile.
+      - name: Chrome ${{ matrix.chrome }}
+        run: cargo xtask chrome ${{ matrix.chrome }} --with-deps
       - run: cargo xtask ci
       # Plans 02 and 10.1: no test may leave a Chrome it launched, its
       # watchdog, a session daemon, or a socket file in a session dir.
@@ -57,8 +63,35 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: junit-${{ matrix.os }}
+          name: junit-${{ matrix.os }}-${{ matrix.chrome }}
           path: target/nextest/ci/junit.xml
+
+  # Plan 10.2's "distro Chromium" row: Ubuntu's Chromium is a snap, whose
+  # confinement blocks /tmp and hidden dirs in $HOME (plan 02.3 moves the
+  # profile under ~/snap). The suite's sandboxes live in such dirs, so this
+  # job launches it through the CLI instead, with a temporary profile and a
+  # named one.
+  chromium:
+    name: chromium (ubuntu-24.04-arm, snap)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo snap install chromium
+      - run: cargo build --locked -p chrome-cdp
+      - name: Launch it
+        env:
+          CHROME_CDP_CHROME: /snap/bin/chromium
+        run: |
+          target/debug/chrome-cdp open https://example.com
+          target/debug/chrome-cdp cdp Browser.getVersion
+          target/debug/chrome-cdp snapshot -i
+          target/debug/chrome-cdp close
+          target/debug/chrome-cdp open --session named --profile ci https://example.com
+          target/debug/chrome-cdp cdp Browser.getVersion --session named
+          target/debug/chrome-cdp close --session named
+      - run: cargo xtask leaks
 
   # Plan 11.10: a Next.js app whose server-side fetches the mocks answer
   # through `mock serve`. Its build is not committed, so this job needs
@@ -93,14 +126,42 @@ jobs:
           name: e2e-ssr-results
           path: examples/e2e-ssr/e2e/.results/
 
-  dist:
-    name: dist size budget
-    runs-on: ubuntu-latest
+  # Plan 10.2: the release targets build, the binary starts, and it stays
+  # under 15MB and within 20% of its baseline in xtask/binary-sizes.txt.
+  # Each builds on its own architecture, so the smoke test runs it.
+  build:
+    name: build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - run: rustup toolchain install
+      - run: rustup toolchain install && rustup target add ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-      - run: cargo xtask dist
+        with:
+          key: ${{ matrix.target }}
+      # ring compiles C for the target: musl-gcc.
+      - if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo xtask dist --target ${{ matrix.target }}
+      - name: The binary runs
+        run: |
+          dist/chrome-cdp-${{ matrix.target }} --version
+          dist/chrome-cdp-${{ matrix.target }} install --list
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chrome-cdp-${{ matrix.target }}
+          path: dist/chrome-cdp-${{ matrix.target }}
 
   deny:
     name: cargo-deny

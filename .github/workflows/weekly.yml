@@ -1,0 +1,46 @@
+name: Weekly
+
+# Plan 10, milestone 10.2: the whole suite against Chrome for Testing beta,
+# so a protocol or behaviour change shows up about a month before it
+# reaches stable. A failure opens an issue.
+
+on:
+  schedule:
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  beta:
+    name: beta (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      - name: Chrome beta
+        run: cargo xtask chrome beta --with-deps
+      # One run with retries off and a leak check after it.
+      - run: cargo xtask e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: beta-junit-${{ matrix.os }}
+          path: target/nextest/ci/junit.xml
+      - uses: ./.github/actions/nightly-issue
+        if: failure()
+        with:
+          title: "Weekly: the suite failed against Chrome beta on ${{ matrix.os }}"
+          summary: target/nextest/e2e-summary.md
