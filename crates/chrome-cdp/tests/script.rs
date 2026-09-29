@@ -400,22 +400,30 @@ fn run_reads_a_file_with_vars_and_data() {
 }
 
 #[test]
-fn a_converted_playwright_test_runs() {
+fn a_converted_playwright_test_passes_with_chrome_cdp_test() {
     let Some(chrome) = chrome_path() else { return };
     let site = Fixtures::shared();
     let sandbox = Sandbox::with_chrome(&chrome);
     let spec = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../testdata/scripts/login.spec.ts");
-    let script = sandbox.dir.path().join("login.cdp");
+    let root = sandbox.dir.path().join("app");
+    std::fs::create_dir_all(&root).unwrap();
+    // `goto /script/login.html` resolves against the project's base_url.
+    std::fs::write(
+        root.join("chrome-cdp.toml"),
+        format!("[e2e]\nbase_url = \"{}\"\n", site.a()),
+    )
+    .unwrap();
+    let scenario = root.join("login.cdp");
     let out = sandbox.run(&[
         "convert",
         spec.to_str().unwrap(),
         "-o",
-        script.to_str().unwrap(),
+        scenario.to_str().unwrap(),
     ]);
     assert_eq!(code(&out), 0, "{}", stderr(&out));
     assert!(
-        stdout(&out).contains(": 2 tests, 18 steps, 2 TODOs → "),
+        stdout(&out).contains(": 2 tests, 13 steps, 2 TODOs → "),
         "{}",
         stdout(&out)
     );
@@ -425,19 +433,23 @@ fn a_converted_playwright_test_runs() {
         stderr(&out)
     );
 
-    // `goto /script/login.html` resolves against the page open before.
-    let out = sandbox.run(&["open", &site.url("/")]);
-    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    // Each test runs in a context of its own, the @before steps first.
     let out = common::run(
         sandbox
             .cli()
-            .args(["run", script.to_str().unwrap()])
+            .current_dir(&root)
+            .args(["test", "login.cdp"])
             .env("APP_PASSWORD", "s3cret"),
     );
-    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert_eq!(code(&out), 0, "{}\n{}", stdout(&out), stderr(&out));
+    let text = stdout(&out);
     assert!(
-        stdout(&out).contains("[18/18] expect 'role=heading[level=1]' hidden --not ✓\n"),
-        "{}",
-        stdout(&out)
+        text.contains("✓ login.cdp:11 sign in > welcomes the user ("),
+        "{text}"
     );
+    assert!(
+        text.contains("✓ login.cdp:19 sign in > asks for the password ("),
+        "{text}"
+    );
+    assert!(text.contains("\n2 tests: 2 passed ("), "{text}");
 }
