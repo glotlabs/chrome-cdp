@@ -26,6 +26,7 @@ use protocol::schema::{HttpData, MockRef};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde_json::Value;
 
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::request::{HttpRequest, millis};
 use crate::route::{self, Act, Decision, Handler, merge_patch, reason_name, route_name};
@@ -273,7 +274,8 @@ impl Engine {
                 Cmd::new("mock")
                     .arg("explain")
                     .arg(method)
-                    .arg(url.as_str()),
+                    .arg(url.as_str())
+                    .scoped(&self.session),
             ))),
             Act::Continue {
                 set_headers,
