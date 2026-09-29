@@ -175,6 +175,61 @@ fn a_command_reports_the_popup_it_opened() {
     );
 }
 
+/// `eval`'s value, as JSON.
+fn eval_json(sandbox: &Sandbox, expression: &str, extra: &[&str]) -> Value {
+    let mut args = vec!["eval", expression, "--json"];
+    args.extend(extra);
+    let out = sandbox.run(&args);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    json_out(&out)["data"]["value"].clone()
+}
+
+#[test]
+fn the_active_tab_stays_visible_behind_a_popup() {
+    let Some(chrome) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let url = site.url("/emulate/permissions.html");
+    assert_eq!(code(&sandbox.run(&["open", &url])), 0);
+    assert_eq!(
+        code(&sandbox.run(&["permissions", "grant", "geolocation"])),
+        0
+    );
+    assert_eq!(code(&sandbox.run(&["geo", "59.9139,10.7522"])), 0);
+    eval(&sandbox, "window.open('/tabs/popup-target.html'), 1", &[]);
+    popup(&sandbox, "t2");
+    assert_eq!(active(&sandbox), "t1");
+
+    // Chrome shows the popup in front; chrome-cdp brings the active tab
+    // back, so it is not throttled.
+    assert_eq!(
+        eval_json(&sandbox, "document.visibilityState", &[]),
+        json!("visible")
+    );
+    assert_eq!(
+        eval_json(
+            &sandbox,
+            "new Promise((r) => requestAnimationFrame(() => r('frame')))",
+            &["--timeout", "5s"]
+        ),
+        json!("frame")
+    );
+    assert_eq!(
+        eval_json(&sandbox, "position()", &["--timeout", "10s"]),
+        json!([59.9139, 10.7522, 10])
+    );
+    assert_eq!(
+        eval_json(&sandbox, "document.visibilityState", &["--tab", "t2"]),
+        json!("hidden")
+    );
+    // Switching brings the other tab to the front.
+    assert_eq!(code(&sandbox.run(&["tab", "t2"])), 0);
+    assert_eq!(
+        eval_json(&sandbox, "document.visibilityState", &[]),
+        json!("visible")
+    );
+}
+
 #[test]
 fn follow_popups_makes_each_popup_active() {
     let Some(chrome) = chrome_path() else { return };
@@ -185,6 +240,11 @@ fn follow_popups_makes_each_popup_active() {
     click(&sandbox, "#open");
     popup(&sandbox, "t2");
     assert_eq!(active(&sandbox), "t2");
+    // A followed popup stays in front.
+    assert_eq!(
+        eval_json(&sandbox, "document.visibilityState", &[]),
+        json!("visible")
+    );
     // The session keeps the setting.
     assert_eq!(code(&sandbox.run(&["tab", "t1"])), 0);
     click(&sandbox, "#blank");

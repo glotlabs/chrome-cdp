@@ -19,7 +19,8 @@ use crate::request::{
 };
 use crate::{Engine, Running};
 
-/// How long a report of a new tab waits for it to have a URL.
+/// How long a report of new tabs waits for popups being set up, and then
+/// for them to have a URL.
 const POPUP_URL_WAIT: Duration = Duration::from_millis(500);
 
 /// What `tab close` did; the daemon closes the session when asked to.
@@ -136,6 +137,7 @@ impl Engine {
         mark: u64,
         shown: Option<&DownloadInfo>,
     ) -> Vec<Event> {
+        running.tabs.wait_for_popups(POPUP_URL_WAIT).await;
         let ids: Vec<u32> = running
             .tabs
             .opened_since(mark)

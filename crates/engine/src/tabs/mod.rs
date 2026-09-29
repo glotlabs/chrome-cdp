@@ -745,6 +745,19 @@ impl Tabs {
         state.tabs.contains_key(&id).then(|| state.info(id))
     }
 
+    /// Waits up to `timeout` until no popup is still being set up, so a
+    /// command that opened one reports it (and the active tab is back in
+    /// front, see [`front_after_popup`]).
+    pub(crate) async fn wait_for_popups(&self, timeout: Duration) {
+        self.wait(timeout, |state| {
+            state
+                .tabs
+                .values()
+                .all(|t| t.ready || t.opener_target.is_none())
+        })
+        .await;
+    }
+
     /// Waits up to `timeout` until tabs `ids` have a URL: a popup has none
     /// until its first navigation commits.
     pub(crate) async fn wait_for_urls(&self, ids: &[u32], timeout: Duration) {
@@ -1861,6 +1874,12 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
         let session = session.with_timeout(SETUP_TIMEOUT);
         setup(&task_shared, &session, kind, main, tab, waiting).await;
         if let Some(id) = new_tab {
+            if let Some(front) = front_after_popup(&task_shared, id) {
+                let front = front.with_timeout(SETUP_TIMEOUT);
+                if let Err(e) = front.call(page::BringToFrontParams::default()).await {
+                    tracing::debug!("bringing the active tab back to the front failed: {e}");
+                }
+            }
             ready(&task_shared, id);
         }
     });
@@ -2031,6 +2050,33 @@ type Step = Pin<Box<dyn Future<Output = cdp::Result<()>> + Send>>;
 
 fn step<T>(call: impl Future<Output = cdp::Result<T>> + Send + 'static) -> Step {
     Box::pin(async move { call.await.map(drop) })
+}
+
+/// The page session of the tab to bring back to the front once popup `id` is set up: the
+/// active tab of the popup's context, unless the session follows popups.
+/// Chrome shows a popup in front of its opener, which then reports
+/// `document.visibilityState` "hidden": no `requestAnimationFrame`,
+/// throttled timers, geolocation held back. The active tab is the one
+/// commands act on, so it stays in front; the popup is a background tab,
+/// as `tab <id>` would leave it. `None` for tabs a command opened (no
+/// opener) and for the tabs found at start.
+fn front_after_popup(shared: &Shared, id: u32) -> Option<Session> {
+    let state = shared.lock();
+    let popup = state.tabs.get(&id)?;
+    if state.starting
+        || popup.opener_target.is_none()
+        || state.ours.contains(&popup.target_id)
+        || shared.settings.follow_popups.load(Ordering::Relaxed)
+    {
+        return None;
+    }
+    let ready = |id: &u32| state.tabs.get(id).is_some_and(|t| t.ready);
+    let front = match &popup.context {
+        Some((browser_id, _)) => state.current_in(browser_id),
+        None => state.active.filter(ready).or_else(|| state.fallback()),
+    }?;
+    let front = state.tabs.get(&front)?;
+    (front.target_id != popup.target_id).then(|| front.session.clone())
 }
 
 /// Tab `id` is set up: commands may use it now.
