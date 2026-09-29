@@ -1,0 +1,254 @@
+[
+  {
+    "name": "snapshot/simple",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 65.0,
+    "p95": 65.0,
+    "mean": 65.0
+  },
+  {
+    "name": "snapshot-i/simple",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 40.0,
+    "p95": 40.0,
+    "mean": 40.0
+  },
+  {
+    "name": "snapshot/login",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 221.0,
+    "p95": 221.0,
+    "mean": 221.0
+  },
+  {
+    "name": "snapshot-i/login",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 192.0,
+    "p95": 192.0,
+    "mean": 192.0
+  },
+  {
+    "name": "snapshot/forms",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 525.0,
+    "p95": 525.0,
+    "mean": 525.0
+  },
+  {
+    "name": "snapshot-i/forms",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 519.0,
+    "p95": 519.0,
+    "mean": 519.0
+  },
+  {
+    "name": "snapshot/hidden",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 116.0,
+    "p95": 116.0,
+    "mean": 116.0
+  },
+  {
+    "name": "snapshot-i/hidden",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 79.0,
+    "p95": 79.0,
+    "mean": 79.0
+  },
+  {
+    "name": "snapshot/clickable",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 229.0,
+    "p95": 229.0,
+    "mean": 229.0
+  },
+  {
+    "name": "snapshot-i/clickable",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 194.0,
+    "p95": 194.0,
+    "mean": 194.0
+  },
+  {
+    "name": "snapshot/lists-tables",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 665.0,
+    "p95": 665.0,
+    "mean": 665.0
+  },
+  {
+    "name": "snapshot-i/lists-tables",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 131.0,
+    "p95": 131.0,
+    "mean": 131.0
+  },
+  {
+    "name": "snapshot/widgets",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 352.0,
+    "p95": 352.0,
+    "mean": 352.0
+  },
+  {
+    "name": "snapshot-i/widgets",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 253.0,
+    "p95": 253.0,
+    "mean": 253.0
+  },
+  {
+    "name": "snapshot/modal",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 93.0,
+    "p95": 93.0,
+    "mean": 93.0
+  },
+  {
+    "name": "snapshot-i/modal",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 83.0,
+    "p95": 83.0,
+    "mean": 83.0
+  },
+  {
+    "name": "snapshot/shadow",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 68.0,
+    "p95": 68.0,
+    "mean": 68.0
+  },
+  {
+    "name": "snapshot-i/shadow",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 47.0,
+    "p95": 47.0,
+    "mean": 47.0
+  },
+  {
+    "name": "snapshot/frames",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 132.0,
+    "p95": 132.0,
+    "mean": 132.0
+  },
+  {
+    "name": "snapshot-i/frames",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 100.0,
+    "p95": 100.0,
+    "mean": 100.0
+  },
+  {
+    "name": "snapshot/article",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 226.0,
+    "p95": 226.0,
+    "mean": 226.0
+  },
+  {
+    "name": "snapshot-i/article",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 43.0,
+    "p95": 43.0,
+    "mean": 43.0
+  },
+  {
+    "name": "snapshot/big-app",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 4181.0,
+    "p95": 4181.0,
+    "mean": 4181.0
+  },
+  {
+    "name": "snapshot-i/big-app",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 2782.0,
+    "p95": 2782.0,
+    "mean": 2782.0
+  },
+  {
+    "name": "snapshot/huge",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 7752.0,
+    "p95": 7752.0,
+    "mean": 7752.0
+  },
+  {
+    "name": "snapshot-i/huge",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 7130.0,
+    "p95": 7130.0,
+    "mean": 7130.0
+  },
+  {
+    "name": "snapshot/total",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 14625.0,
+    "p95": 14625.0,
+    "mean": 14625.0
+  },
+  {
+    "name": "snapshot-i/total",
+    "unit": "tokens",
+    "better": "lower",
+    "samples": 1,
+    "p50": 11593.0,
+    "p95": 11593.0,
+    "mean": 11593.0
+  }
+]
