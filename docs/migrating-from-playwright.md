@@ -26,7 +26,7 @@ background daemon keeps the browser, tabs and refs between commands.
 |---|---|
 | a script or test file | shell commands, or a `.cdp` script run with `chrome-cdp run` (syntax: [scenario-syntax.md](scenario-syntax.md)) |
 | `const browser = await chromium.launch()` | nothing: the first command starts the session's browser (`open` sets launch options) |
-| `browser.newContext()` / `context.newPage()` | `--session NAME` (a separate browser and daemon) / `tab new` |
+| `browser.newContext()` / `context.newPage()` | `context new` (then `--context c1` on any command) / `tab new` |
 | a `Page` object | the active tab (`tabs`, `tab t2`), or `--tab t2` on any command |
 | a `Locator` | a locator string (`'role=button[name="Save"]'`) or a **ref** (`e12`) from `snapshot -i` or `find` |
 | `await` on each call | each command returns when it finished and prints what it caused (a navigation, a dialog, a failed request) |
@@ -89,7 +89,8 @@ expect .row count 3
 | `launch({ args })` | `open --chrome-arg=--flag` | ✅ |
 | `launchPersistentContext(dir)` | `open --profile NAME` or `open --user-data-dir DIR` | ✅ |
 | `chromium.connectOverCDP(url)` | `connect 9222` or `connect ws://…` | ✅ |
-| `browser.newContext()` | `--session NAME` on every command: its own browser, cookies and storage | 🟡 a whole browser, not a context in one |
+| `browser.newContext()` | `context new [url]`, then `--context c1` on any command: its own cookies, storage, routes, mocks and emulation; `context close c1` | ✅ |
+| a separate browser | `--session NAME` on every command: its own daemon and Chrome | ✅ |
 | `context.newPage()` | `tab new [url]` | ✅ |
 | `page.bringToFront()` | `tab t2` (commands act on the active tab) | ✅ |
 | `context.pages()` | `tabs` | ✅ |
@@ -348,13 +349,14 @@ rule that matches handles a request.
 | Server-Sent Events | a mock's `respond = { sse = [...] }`, streamed to the page's `EventSource` | ✅ |
 | server-side fetches (SSR) | `mock serve` (not interceptable in Playwright) | ✅ |
 | `recordHar: { path }`, `routeFromHAR(file, { update: true })` | `har start`, then `har stop -o FILE` | ✅ |
-| `routeFromHAR(file)` (replay) | `route URL --body-file` per request | ❌ |
-| `context.request`, `APIRequestContext` | `eval 'await fetch("/api/x").then(r => r.json())'` (in the page, with its cookies) | 🟡 |
+| `routeFromHAR(file)` (replay) | `mock import FILE.har` writes a mock set (`--scope '**'` for every request, not only fetch and XHR), then `mock use NAME` | ✅ |
+| `context.request`, `APIRequestContext` | `http GET /api/x` (with the context's cookies, `--json-body`, `--header`, `--expect-status`) | ✅ |
 
 ## Contexts, storage and emulation
 
-Playwright sets these per context; `chrome-cdp` sets them per session, where
-they apply to every tab. `emulate reset` turns everything off.
+Playwright sets these per context, and so does `chrome-cdp`: the session's
+own context, or one from `context new` (`--context c1`). They apply to
+every tab of it. `emulate reset` turns everything off.
 
 | Playwright | chrome-cdp | |
 |---|---|---|
@@ -464,8 +466,9 @@ them.
   accepts an `alert`. A `confirm` or `prompt` waits for `dialog accept` or
   `dialog dismiss`, and the blocked command exits 5.
 - **Popups** open as new tabs that do not become active; switch with `tab`.
-- **State is per session**, not per context: emulation, routes, init
-  scripts and permissions apply to every tab of the session.
+- **State is per context**: emulation, routes, mocks and init scripts
+  apply to every tab of the context (the session's own, or one from
+  `context new`), not to one page.
 - **No test code.** A `.cdp` script has no variables to assign, loops or
   conditions, by design. Logic that needs them belongs in a shell or
   program that calls `chrome-cdp`, reading `-q` or `--json` output.
