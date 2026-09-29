@@ -56,7 +56,9 @@ switches to it, and `tab close [id]` closes one; closing the last tab leaves a
 blank one unless `--close-browser` closes the session. A popup (`window.open`,
 `target=_blank`) opens a new tab that stays in the background, and the command
 that opened it says `opened tab t3`; `open --follow-popups` makes popups
-active instead. Every new tab, frame and worker is set up before it runs any
+active instead. The active tab stays in front, so its page stays visible
+(`document.visibilityState`), with animation frames, full-speed timers and
+geolocation; the other tabs are hidden, as background tabs are. Every new tab, frame and worker is set up before it runs any
 script.
 
 ## Navigation

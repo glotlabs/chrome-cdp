@@ -14,7 +14,8 @@ Options:
 ```text
 Tabs have short ids (t1, t2, …) in the order they opened, never reused.
 Commands act on the active tab unless --tab names another. A popup opens a
-new tab but does not become active (unless `open --follow-popups`).
+new tab but does not become active (unless `open --follow-popups`). The
+active tab stays in front, visible and not throttled; the others are hidden.
 
 Examples:
   chrome-cdp tabs

@@ -467,6 +467,9 @@ them.
   accepts an `alert`. A `confirm` or `prompt` waits for `dialog accept` or
   `dialog dismiss`, and the blocked command exits 5.
 - **Popups** open as new tabs that do not become active; switch with `tab`.
+  Only the active tab is in front: the others report
+  `document.visibilityState` "hidden" and are throttled (Playwright makes
+  every page act visible and focused).
 - **State is per context**: emulation, routes, mocks and init scripts
   apply to every tab of the context (the session's own, or one from
   `context new`), not to one page.
