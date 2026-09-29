@@ -529,9 +529,7 @@ impl Runner<'_> {
         };
         let recorder = self.recorder.borrow_mut().take();
         result.map_err(|mut failure| {
-            if kept {
-                self.name_context(&mut failure.error);
-            } else {
+            if !kept {
                 artifacts::point_hint_at_files(&mut failure.error, dir);
             }
             let steps = recorder.as_ref().map(Recorder::steps).unwrap_or_default();
@@ -564,28 +562,6 @@ impl Runner<'_> {
             .debug
             .as_ref()
             .and_then(|k| k.lock().unwrap_or_else(PoisonError::into_inner).clone())
-    }
-
-    /// Adds `--context` of the context `--debug` kept to the commands in
-    /// `error`'s hint and notes that name its session, so they act on the
-    /// test's page.
-    fn name_context(&self, error: &mut ErrorInfo) {
-        let Some(kept) = self.kept_context() else {
-            return;
-        };
-        let flag = format!(" --session {}", kept.session);
-        let with = format!("{flag} --context {}", kept.context);
-        let add = |text: &mut String| {
-            if !text.contains(" --context ") {
-                *text = text.replace(&flag, &with);
-            }
-        };
-        if let Some(hint) = &mut error.hint {
-            add(hint);
-        }
-        for note in &mut error.notes {
-            add(&mut note.text);
-        }
     }
 
     /// With `--debug`, whether `context` is the first to fail, and stays.
