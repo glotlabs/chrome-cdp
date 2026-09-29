@@ -426,3 +426,25 @@ async fn checks_visible_enabled_and_editable() {
 
     engine.close().await;
 }
+
+#[tokio::test]
+async fn names_what_covers_the_element_while_a_frame_keeps_loading() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "actionable-obscured-busy").await;
+    goto(&engine, &site.url("/actions/obscured-busy.html")).await;
+
+    // Another frame loads a new document every 50 ms, during the hit test
+    // and the look after it: the banner still gets a ref.
+    let Err(err) = aim(&engine, "#under", CLICK, SHORT).await else {
+        panic!("#under should be covered");
+    };
+    assert_eq!(err.kind, ErrorKind::Obscured, "{}", err.to_text());
+    let details = err.details.unwrap();
+    assert!(details["covering"]["ref"].is_string(), "{details}");
+    let dismiss = details["dismiss"]["ref"].as_str().unwrap().to_owned();
+    clicks(&engine, &dismiss, None, "accept").await;
+    clicks(&engine, "#under", None, "under").await;
+
+    engine.close().await;
+}

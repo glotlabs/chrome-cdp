@@ -312,7 +312,46 @@ impl Engine {
             }
             failure => failure,
         };
+        let failure = match failure {
+            Failure::Obscured(mut obscured) => {
+                self.still_there(running, page, &mut obscured).await;
+                Failure::Obscured(obscured)
+            }
+            failure => failure,
+        };
         Err(self.not_actionable(running, page, locator, failure, timeout, retry))
+    }
+
+    /// When a frame loaded a new document since the hit test (another
+    /// frame, if the page keeps loading ads), what covers the element may
+    /// still be there: if it is, its elements get refs after all. One that
+    /// is gone gets none.
+    async fn still_there(&self, running: &Running, page: &Page, obscured: &mut Obscured) {
+        let generation = || {
+            running
+                .tabs
+                .snapshot_memory(page.id, |m| m.refs.generation())
+        };
+        for _ in 0..3 {
+            let now = generation();
+            if now == obscured.generation {
+                return;
+            }
+            for listed in [&mut obscured.covering, &mut obscured.dismiss]
+                .into_iter()
+                .flatten()
+            {
+                let Some(key) = &listed.key else { continue };
+                match self.live_node(running, page, key, LAST_LOOK).await {
+                    Ok(Some((context, object_id))) => release(&context, object_id),
+                    _ => listed.key = None,
+                }
+            }
+            if generation() == now {
+                obscured.generation = now;
+                return;
+            }
+        }
     }
 
     /// One run of the pipeline.
