@@ -994,7 +994,9 @@ Examples:
         after_help = "\
 By default an alert, and a beforeunload (\"leave the page?\"), are accepted
 at once; a confirm or prompt waits for this command, and the command that
-ran into it fails with exit code 5 (see `open --dialogs`).
+ran into it fails with exit code 5 (see `open --dialogs`). With no dialog
+open in the tab yet, this waits for one (up to --timeout), so a prompt the
+page opens right after a confirm needs no `wait` in between.
 
 Examples:
   chrome-cdp dialog accept

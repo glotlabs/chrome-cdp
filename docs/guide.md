@@ -252,8 +252,9 @@ JavaScript dialogs never hang a command. By default an `alert` and a
 `beforeunload` ("leave the page?") are accepted and mentioned in the output;
 a `confirm` or `prompt` stays open, and the command that ran into it returns
 at once with exit code 5: `dialog open in tab t1: confirm "Delete item?"`.
-`dialog accept [text]` or `dialog dismiss` answers it; `tabs` shows open
-dialogs. `open --dialogs accept|dismiss|manual` changes the policy for the
+`dialog accept [text]` or `dialog dismiss` answers it (waiting up to
+`--timeout` for one to open, so a prompt that follows a confirm needs no
+`wait`); `tabs` shows open dialogs. `open --dialogs accept|dismiss|manual` changes the policy for the
 session (`manual`: every dialog waits for `dialog`).
 
 ## Console and errors

@@ -67,6 +67,8 @@ locators in single quotes.
 - A popup opens a new tab but stays in the background: `chrome-cdp tabs`,
   then `chrome-cdp tab t2`.
 - An `alert`/`confirm` blocks the page (exit 5): `chrome-cdp dialog accept`.
+  It waits for a dialog about to open, so a prompt after a confirm needs no
+  `wait`.
 - Long output is cut, with a line saying how to get more. Prefer
   `snapshot -i`, `--scope e12`, `find`, or `text <loc>`.
 - Exit codes: 0 ok, 1 action failed, 2 usage, 3 timeout, 4 browser, 5 dialog.
