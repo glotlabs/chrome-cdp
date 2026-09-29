@@ -789,15 +789,16 @@ pub struct SkillData {
 pub struct ConvertData {
     /// The Playwright file, as given (`stdin` for `-`).
     pub file: String,
-    /// The `.cdp` script.
+    /// The `.cdp` file: a scenario for `chrome-cdp test`, or a plain
+    /// script for `chrome-cdp run` when the Playwright file has no tests.
     pub script: String,
-    /// How many tests it has.
+    /// How many tests (`@test` blocks) it has.
     pub tests: usize,
     /// How many command lines it has.
     pub steps: usize,
-    /// The statements it could not translate, in the script as TODO lines.
+    /// The statements it could not translate, in the file as TODO lines.
     pub todos: Vec<ConvertTodo>,
-    /// With `-o`: the absolute path of the script.
+    /// With `-o`: the absolute path of the file written.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
 }

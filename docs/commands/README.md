@@ -144,7 +144,7 @@ same text as `chrome-cdp help <command>`. The guides in
 |---|---|
 | [`batch`](batch.md) | Run commands from stdin, one per line, in one call |
 | [`run`](run.md) | Run a .cdp script: commands one per line, with ${var} substitution |
-| [`convert`](convert.md) | Translate a Playwright test file into a .cdp script (best effort) |
+| [`convert`](convert.md) | Translate a Playwright test file into a .cdp scenario (best effort) |
 | [`cdp`](cdp.md) | Make one raw CDP call on the session's browser or current page |
 
 ## Help and tooling

@@ -38,14 +38,14 @@
           "type": "string"
         },
         "path": {
-          "description": "With `-o`: the absolute path of the script.",
+          "description": "With `-o`: the absolute path of the file written.",
           "type": [
             "string",
             "null"
           ]
         },
         "script": {
-          "description": "The `.cdp` script.",
+          "description": "The `.cdp` file: a scenario for `chrome-cdp test`, or a plain\nscript for `chrome-cdp run` when the Playwright file has no tests.",
           "type": "string"
         },
         "steps": {
@@ -55,13 +55,13 @@
           "type": "integer"
         },
         "tests": {
-          "description": "How many tests it has.",
+          "description": "How many tests (`@test` blocks) it has.",
           "format": "uint",
           "minimum": 0,
           "type": "integer"
         },
         "todos": {
-          "description": "The statements it could not translate, in the script as TODO lines.",
+          "description": "The statements it could not translate, in the file as TODO lines.",
           "items": {
             "$ref": "#/$defs/ConvertTodo"
           },

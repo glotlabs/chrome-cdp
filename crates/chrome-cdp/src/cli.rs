@@ -1674,25 +1674,29 @@ Examples:
   chrome-cdp run login.cdp --json    # one JSON line per step")]
     Run(RunArgs),
 
-    /// Translate a Playwright test file into a .cdp script (best effort).
+    /// Translate a Playwright test file into a .cdp scenario (best effort).
     #[command(after_help = "\
 Reads a Playwright test (TypeScript or JavaScript) and writes the .cdp
-script that does the same, following docs/migrating-from-playwright.md:
+scenario that does the same, following docs/migrating-from-playwright.md:
 goto, getBy… locators, click, fill, check, selectOption, press, waitFor…,
-route with fulfill or abort, and the expect matchers. Each test becomes a
-section after a `# test: …` comment, with its beforeEach steps and
-test.use options; the tests run one after another in one session.
+route with fulfill or abort, and the expect matchers. Each test(…) becomes
+a @test \"describe > title\" block (docs/e2e/scenarios.md), beforeEach and
+afterEach become @before and @after, beforeAll and afterAll @before-all
+and @after-all, test.skip/fixme/only @skip and @only, and test.use a
+@viewport or @device setting plus emulation commands. chrome-cdp test runs
+it, each test in a fresh browser context. A file without tests (a script
+that launches the browser itself) becomes a plain script for run.
 
 What it cannot translate (conditions, loops, helper functions, values kept
 in variables) becomes a `# TODO line N (why): code` line, and a warning
-counts them: rewrite those before running the script. Nothing is run and
-no browser starts.
+counts them: rewrite those before running it. A test left with no steps
+gets @skip, so the file still loads. Nothing is run and no browser starts.
 
 Examples:
   chrome-cdp convert tests/login.spec.ts
-  chrome-cdp convert tests/login.spec.ts -o login.cdp && chrome-cdp run login.cdp
+  chrome-cdp convert tests/login.spec.ts -o login.cdp && chrome-cdp test login.cdp
   chrome-cdp convert - < checkout.spec.ts > checkout.cdp
-  chrome-cdp convert tests/login.spec.ts --json    # the script and each TODO")]
+  chrome-cdp convert tests/login.spec.ts --json    # the scenario and each TODO")]
     Convert(ConvertArgs),
 
     /// Format .cdp scenario files and mock files in place; --check only reports.
@@ -2009,11 +2013,11 @@ pub(crate) struct ConvertArgs {
     #[arg(value_name = "SPEC", allow_hyphen_values = true)]
     pub(crate) file: PathBuf,
 
-    /// Write the script to this file instead of printing it.
+    /// Write the scenario to this file instead of printing it.
     #[arg(short = 'o', long = "output", value_name = "PATH")]
     pub(crate) output: Option<PathBuf>,
 
-    /// Bound the printed script to this many characters (0 = no limit).
+    /// Bound the printed scenario to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
 }
