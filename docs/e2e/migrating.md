@@ -3,8 +3,8 @@
 This page moves a `@playwright/test` suite, and the `page.route` mocks in
 it, to `chrome-cdp test`. For single commands (locators, actions,
 assertions), [../migrating-from-playwright.md](../migrating-from-playwright.md)
-has the full tables, and `chrome-cdp convert spec.ts` translates the step
-lines of a spec file.
+has the full tables, and `chrome-cdp convert spec.ts` translates a spec
+file into a scenario.
 
 ## The shape of a suite
 
@@ -145,9 +145,10 @@ the mocks are complete, so a missing mock can never hide.
 3. Turn the route handlers into mock sets, as above; the files under
    your fixtures folder go to `e2e/mocks/data/`. `chrome-cdp mock
    explain GET /api/products/2` tells which mock answers a request.
-4. `chrome-cdp convert tests/checkout.spec.ts -o checkout.cdp` for the
-   step lines, then put them under `@test` lines and indent them. Rewrite
-   the lines it marks `# TODO`.
+4. `chrome-cdp convert tests/checkout.spec.ts -o e2e/scenarios/checkout.cdp`
+   writes the scenario: a `@test` per test, the hooks as `@before` and
+   `@after`, and `test.use` as settings. Replace its `route` lines with
+   `@mocks` sets, and rewrite the lines it marks `# TODO`.
 5. `chrome-cdp lint` checks the scenarios and mocks, `chrome-cdp test`
    runs them, and each failure's `report.md` says what to fix.
 6. `chrome-cdp test --repeat 20` before deleting the Playwright suite.

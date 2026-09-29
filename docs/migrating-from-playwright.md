@@ -12,7 +12,7 @@ section is a table: the Playwright call, what to run instead, and a status.
 | ➖ | not planned |
 
 `chrome-cdp convert spec.ts` translates simple Playwright tests into `.cdp`
-scripts using these tables ([below](#convert-a-spec-file)). For a whole
+scenarios using these tables ([below](#convert-a-spec-file)). For a whole
 `@playwright/test` suite with `page.route` mocks, see
 [e2e/migrating.md](e2e/migrating.md).
 
@@ -425,29 +425,51 @@ mocks; [e2e/quickstart.md](e2e/quickstart.md) starts from scratch.
 
 ## Convert a spec file
 
-`chrome-cdp convert` translates a Playwright test file into a `.cdp` script
-using the tables above. It is best-effort: it understands the common calls
-(`goto`, `getBy…` locators, `click`, `fill`, `check`, `selectOption`,
-`press`, `waitFor…`, `route` with `fulfill`/`abort`, and the `expect`
-matchers). Anything else becomes a comment such as
+`chrome-cdp convert` translates a Playwright test file into a `.cdp`
+scenario ([e2e/scenarios.md](e2e/scenarios.md)) using the tables above.
+It is best-effort: it understands the common calls (`goto`, `getBy…`
+locators, `click`, `fill`, `check`, `selectOption`, `press`, `waitFor…`,
+`route` with `fulfill`/`abort`, and the `expect` matchers). Anything else
+becomes a comment such as
 `# TODO line 27 (textContent() gives a value: read it with text LOC, or check
 it with expect): const heading = …`, which gives the line in the spec, why, and
-the original code. Rewrite the TODO lines before you run the script.
+the original code. Rewrite the TODO lines before you run the tests.
 
 ```
-$ chrome-cdp convert tests/login.spec.ts -o login.cdp
-converted tests/login.spec.ts: 2 tests, 14 steps, 1 TODO → /repo/login.cdp
-$ chrome-cdp run login.cdp
+$ chrome-cdp convert tests/login.spec.ts -o e2e/scenarios/login.cdp
+converted tests/login.spec.ts: 2 tests, 13 steps, 2 TODOs → /repo/e2e/scenarios/login.cdp
+$ chrome-cdp test e2e/scenarios/login.cdp
 ```
 
-Each `test(…)` becomes a section that starts with a `# test: …` comment.
-`beforeEach` and `afterEach` steps are copied into each test, and
-`test.use({ … })` becomes emulation commands. The tests run one after the other in the same session.
+The Playwright test runner's structure becomes directives:
+
+| Playwright | Scenario |
+|---|---|
+| `test('title', …)` | `@test "describe > title"`, its steps indented below |
+| `test.beforeEach` / `test.afterEach` | `@before` / `@after` |
+| `test.beforeAll` / `test.afterAll` | `@before-all` / `@after-all` |
+| `test.skip('title', …)`, `test.fixme(…)`, `test.describe.skip`, `test.skip()` in a test | `@skip` on the `@test` line (`@skip "fixme"` for fixme) |
+| `test.only`, `test.describe.only` | `@only` |
+| `test.use({ viewport })`, `test.use({ ...devices['iPhone 15'] })` | `@viewport 1024x768`, `@device "iPhone 15"` |
+| other `test.use` options (`locale`, `colorScheme`, …) | emulation commands at the start of `@before` |
+| `test.setTimeout(ms)`, `describe.configure({ retries, timeout })` | `@timeout 60s`, `@retries 2` |
+
+What applies to every test of the file (the hooks and `test.use` of the
+file, or of a `describe` that holds every test) is written once, at the
+top and in `@before`/`@after`. A nested `describe`'s settings go on its
+tests' `@test` lines, and its hooks' steps are copied into each of its
+tests. `chrome-cdp test` runs each test in a fresh browser context, so
+nothing leaks from one test to the next, as in Playwright. A test left
+without steps (all TODO lines) gets `@skip "convert: rewrite its TODO
+lines"`, so the file still loads; `chrome-cdp lint` checks it.
+
 Locators stored in variables (`const email = page.getByLabel('Email')`) are
 tracked, and so is `const p = page.waitForResponse(…)` followed by
-`await p`. It does not run TypeScript: loops, conditions, helper functions,
-and values read into variables need a person (or an agent) to rewrite
-them.
+`await p`. It does not run TypeScript: loops, conditions (a conditional
+`test.skip(…)` too), helper functions, and values read into variables
+need a person (or an agent) to rewrite them. A file without tests (a
+script that launches the browser itself) becomes a plain script for
+`chrome-cdp run`.
 
 ## Where the models differ
 

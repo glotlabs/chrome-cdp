@@ -580,8 +580,8 @@ EOF
 Coming from Playwright? [migrating-from-playwright.md](migrating-from-playwright.md)
 maps its API (locators, actions, waits, `expect`, mocking, contexts) to
 commands, and `chrome-cdp convert tests/login.spec.ts -o login.cdp`
-translates a simple test file into a script, with a `# TODO` line for each
-statement it cannot translate.
+translates a simple test file into a scenario for `chrome-cdp test`, with a
+`# TODO` line for each statement it cannot translate.
 
 ## E2E tests and mock files
 
