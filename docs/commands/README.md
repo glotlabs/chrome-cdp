@@ -60,7 +60,7 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`uncheck`](uncheck.md) | Uncheck a checkbox or switch (no-op if it is not checked) |
 | [`focus`](focus.md) | Give an element focus (without clicking it) |
 | [`blur`](blur.md) | Take focus away from an element (blur and change fire) |
-| [`upload`](upload.md) | Put files into a file input, or the file chooser a button opens |
+| [`upload`](upload.md) | Put files into a file input, the file chooser a button opens, or a drop zone |
 | [`drag`](drag.md) | Drag an element onto another: mouse events, or HTML5 drag and drop |
 | [`scroll`](scroll.md) | Scroll the page or an element with the mouse wheel |
 | [`mouse`](mouse.md) | Low-level mouse events at viewport coordinates |

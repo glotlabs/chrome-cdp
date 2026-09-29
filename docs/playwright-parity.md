@@ -81,7 +81,7 @@ Today: 128 rows; 105 ✅, 15 🟡, 3 ❌, 5 ➖. No agent-critical row is ❌.
 | `keyboard.down` / `up` | `click --modifiers`, a chord (`press Shift+ArrowDown`), or `cdp Input.dispatchKeyEvent` | 🟡 | no |
 | `check`, `uncheck`, `setChecked` | `check LOC`, `uncheck LOC` (a no-op when already so) | ✅ | yes |
 | `selectOption` | `select LOC value…` (a value, else a label) | ✅ | yes |
-| `setInputFiles`, the file chooser | `upload LOC file…` (an input, or a button that opens the chooser), `upload LOC --clear` | ✅ | yes |
+| `setInputFiles`, the file chooser | `upload LOC file…` (an input, or a button that opens the chooser), `upload LOC --clear`; `upload LOC file… --drop` for a drop zone | ✅ | yes |
 | `dragTo` | `drag LOC TARGET` (mouse events, or HTML5 drag and drop) | ✅ | yes |
 | `tap` | `tap LOC` (with touch emulation) | ✅ | no |
 | `focus`, `blur` | `focus LOC`, `blur LOC` | ✅ | yes |

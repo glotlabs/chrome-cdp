@@ -182,6 +182,7 @@ events, like Playwright's actionability checks. `--force` skips the checks
 | `loc.selectOption('blue')`, `selectOption(['a', 'b'])`, `{ label }` | `select LOC blue`, `select LOC a b` (a value, else a label) | ✅ |
 | `loc.setInputFiles('a.png')`, `[]` | `upload LOC a.png`, `upload LOC --clear` | ✅ |
 | `page.waitForEvent('filechooser')` + `setFiles` | `upload 'role=button[name="Choose"]' a.png` (clicks it and answers the chooser) | ✅ |
+| `loc.dispatchEvent('drop', { dataTransfer })` (files dropped on a drop zone) | `upload LOC a.png --drop` (trusted drag events carrying the files) | ✅ |
 | `loc.dragTo(target)` | `drag LOC TARGET` (mouse events, or HTML5 drag and drop) | ✅ |
 | `loc.focus()` / `loc.blur()` | `focus LOC` / `blur LOC` | ✅ |
 | `loc.scrollIntoViewIfNeeded()` | `scroll LOC` | ✅ |

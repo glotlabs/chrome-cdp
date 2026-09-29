@@ -122,7 +122,7 @@ fill <loc> <text>              set a field (type <text> types key by key)
 press Enter | 'Control+A'      keys and shortcuts
 select <loc> <value>           a <select> option
 check | uncheck <loc>          checkboxes and radios
-upload <loc> <file...>         file inputs
+upload <loc> <file...> [--drop] file inputs; --drop for drop zones
 wait <loc> | --text t | --url u | --idle
 expect <loc> visible|text t|value v|count n [--not]   assert, retrying
 expect --url u | --no-errors | --no-failed-requests | --a11y
