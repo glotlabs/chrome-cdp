@@ -140,15 +140,38 @@ impl Sandbox {
     }
 
     /// The pids of this sandbox's live daemons, from their session dirs'
-    /// pid files (sessions with shortened dirs are not included).
+    /// pid files, shortened dirs included.
     pub fn daemons(&self) -> Vec<u32> {
-        let Ok(dirs) = std::fs::read_dir(self.runtime_dir().join("chrome-cdp")) else {
-            return Vec::new();
-        };
-        dirs.flatten()
-            .filter_map(|d| std::fs::read_to_string(d.path().join("pid")).ok())
+        let homes = std::fs::read_dir(self.runtime_dir().join("chrome-cdp"));
+        homes
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|d| d.path())
+            .chain(self.short_dirs())
+            .filter_map(|d| std::fs::read_to_string(d.join("pid")).ok())
             .filter_map(|pid| pid.trim().parse().ok())
             .filter(|&pid| is_daemon(pid))
+            .collect()
+    }
+
+    /// The dirs of this sandbox's sessions whose socket path was too long
+    /// for their home (`/tmp/ccdp-<uid>/<hash>/`, as `daemon::paths` makes
+    /// them), found by the home their `meta.json` names.
+    pub fn short_dirs(&self) -> Vec<PathBuf> {
+        let base = daemon::paths::Env::current().short_base();
+        let Ok(dirs) = std::fs::read_dir(base) else {
+            return Vec::new();
+        };
+        let run = self.runtime_dir();
+        dirs.flatten()
+            .map(|d| d.path())
+            .filter(|dir| {
+                std::fs::read(dir.join("meta.json"))
+                    .ok()
+                    .and_then(|m| serde_json::from_slice::<daemon::meta::Meta>(&m).ok())
+                    .is_some_and(|m| m.home.starts_with(&run))
+            })
             .collect()
     }
 
@@ -205,9 +228,9 @@ impl Sandbox {
             .map(|pid| format!("daemon {pid}"))
             .collect();
         leaks.extend(self.chromes().into_iter().map(|p| format!("process {p}")));
+        let dirs = std::iter::once(self.runtime_dir()).chain(self.short_dirs());
         leaks.extend(
-            sockets_in(&self.runtime_dir())
-                .into_iter()
+            dirs.flat_map(|d| sockets_in(&d))
                 .map(|s| format!("socket {}", s.display())),
         );
         leaks
