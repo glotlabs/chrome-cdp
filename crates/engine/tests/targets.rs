@@ -105,6 +105,8 @@ enum Probe {
     TimeAdvance,
     /// The test runner's determinism script seeds its `Math.random`.
     Determinism,
+    /// `offline` fails its `fetch`.
+    Offline,
 }
 
 struct Row {
@@ -221,6 +223,11 @@ const ROWS: &[Row] = &[
     Row {
         feature: "time advance",
         probe: Probe::TimeAdvance,
+        cells: [Check, Check, Check, Check, Check, Check],
+    },
+    Row {
+        feature: "offline",
+        probe: Probe::Offline,
         cells: [Check, Check, Check, Check, Check, Check],
     },
     Row {
@@ -715,6 +722,16 @@ async fn probe(engine: &Arc<Engine>, probe: Probe, who: &str) -> Result<(), Stri
             (report["now"] == json!(FROZEN_MS + 60_000))
                 .then_some(())
                 .ok_or_else(|| format!("Date.now() {}", report["now"]))
+        }
+        Probe::Offline => {
+            emulate(engine, EmulationChange::Offline { offline: true }).await;
+            let answer = ask(engine, who, "fetch").await;
+            emulate(engine, EmulationChange::Offline { offline: false }).await;
+            answer
+                .as_str()
+                .is_some_and(|a| a.starts_with("failed"))
+                .then_some(())
+                .ok_or_else(|| format!("fetch answered {answer}"))
         }
         Probe::Determinism => {
             // Seeded, each target starts the same sequence: its first
