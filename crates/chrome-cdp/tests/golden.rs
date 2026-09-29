@@ -2043,6 +2043,12 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/actions/mouse.html"),
     },
     Case {
+        name: "click-missing-in-context",
+        args: &["--context", "c2", "click", "#nothing", "--timeout", "1s"],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(&[&["open"], &["context", "new"], &["context", "new"]]),
+    },
+    Case {
         name: "click-count-zero",
         args: &["click", "#go", "--count", "0"],
         modes: ERR,
