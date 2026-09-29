@@ -36,6 +36,8 @@ mod schema;
 mod script;
 mod session;
 mod skill;
+#[cfg(test)]
+mod surface;
 mod test;
 mod upgrade;
 mod version;

@@ -5,7 +5,9 @@
 //! Each case runs the binary once per output mode and compares the result
 //! with `tests/golden/<case>.txt`, after replacing machine-specific parts
 //! (version, git sha, Chrome path, temp dirs) with placeholders. Every
-//! registered JSON Schema is also kept in `tests/golden/schema/`.
+//! registered JSON Schema is also kept in `tests/golden/schema/`, and the
+//! command line's commands and flags in `tests/golden/cli.txt`
+//! (`src/surface.rs`).
 //!
 //! To accept new output: `UPDATE_GOLDEN=1 cargo test -p chrome-cdp --test
 //! golden` (with `CHROME_PATH` set, or the Chrome cases are not written).
@@ -2972,6 +2974,8 @@ fn no_stale_golden_files() {
             .join("schema")
             .join(format!("{}.json", c.name.replace(' ', "_")))
     }));
+    // The command line's surface, kept by the binary's `surface` test.
+    expected.push(golden_dir().join("cli.txt"));
     for dir in [golden_dir(), golden_dir().join("schema")] {
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;

@@ -1,0 +1,657 @@
+# chrome-cdp's command line: each command with its arguments (in order)
+# and flags. `cargo xtask release check` compares it with the previous
+# release's. Regenerate: UPDATE_GOLDEN=1 cargo test -p chrome-cdp --bin chrome-cdp surface
+command chrome-cdp
+  flag --json env=CHROME_CDP_JSON
+  flag --quiet -q env=CHROME_CDP_QUIET
+  flag --session value=NAME env=CHROME_CDP_SESSION
+  flag --timeout value=DURATION env=CHROME_CDP_TIMEOUT
+  flag --tab value=ID env=CHROME_CDP_TAB
+  flag --context value=ID env=CHROME_CDP_CONTEXT
+  flag --verbose -v repeatable
+  flag --version -V
+command chrome-cdp schema
+  arg COMMAND multiple
+command chrome-cdp install
+  flag --channel value=CHANNEL values=stable|beta|dev|canary
+  flag --version value=VERSION
+  flag --headless-shell
+  flag --force
+  flag --with-deps
+  flag --list
+command chrome-cdp uninstall
+  arg ID required
+command chrome-cdp doctor
+  flag --chrome value=PATH
+  flag --no-launch
+command chrome-cdp upgrade
+  flag --check
+  flag --version value=VERSION
+  flag --force
+command chrome-cdp open
+  arg URL
+  flag --chrome value=PATH
+  flag --auto-install env=CHROME_CDP_AUTO_INSTALL
+  flag --headed
+  flag --profile value=NAME
+  flag --user-data-dir value=PATH
+  flag --chrome-arg value=FLAG repeatable
+  flag --fake-media
+  flag --extension value=DIR repeatable
+  flag --restart
+  flag --device value=DEVICE
+  flag --state value=FILE
+  flag --follow-popups
+  flag --ignore-https-errors
+  flag --bypass-service-worker
+  flag --dialogs value=POLICY values=auto|accept|dismiss|manual
+  flag --http-credentials value=USER:PASSWORD env=CHROME_CDP_HTTP_CREDENTIALS
+  flag --http-credentials-origin value=ORIGIN env=CHROME_CDP_HTTP_CREDENTIALS_ORIGIN
+  flag --console-buffer value=N env=CHROME_CDP_CONSOLE_BUFFER
+  flag --network-buffer value=N env=CHROME_CDP_NETWORK_BUFFER
+  flag --idle-timeout value=DURATION env=CHROME_CDP_IDLE_TIMEOUT
+command chrome-cdp connect
+  arg ENDPOINT required
+  flag --idle-timeout value=DURATION env=CHROME_CDP_IDLE_TIMEOUT
+command chrome-cdp close
+  flag --all
+command chrome-cdp status
+  flag --logs
+  flag --limit value=N
+command chrome-cdp sessions
+command chrome-cdp tabs
+  flag --max-chars value=N
+command chrome-cdp tab
+  arg ID
+command chrome-cdp tab new
+  arg URL
+command chrome-cdp tab close
+  arg ID
+  flag --close-browser
+command chrome-cdp context
+command chrome-cdp context new
+  arg URL
+command chrome-cdp context list
+  flag --max-chars value=N
+command chrome-cdp context close
+  arg ID multiple
+  flag --all
+command chrome-cdp test
+  arg PATH multiple
+  flag --grep value=REGEX
+  flag --tags value=TAGS
+  flag --jobs value=N
+  flag --jobs-isolation value=HOW values=context|browser
+  flag --shard value=INDEX/TOTAL
+  flag --retries value=N
+  flag --repeat value=N
+  flag --bail
+  flag --headed
+  flag --update-snapshots
+  flag --list
+  flag --trace
+  flag --debug
+  flag --watch
+  flag --reporter value=NAMES repeatable
+  flag --backend value=NAME env=CHROME_CDP_BACKEND
+  flag --verify-mocks
+  flag --update
+  flag --allow-writes
+  flag --record-mocks
+  flag --max-chars value=N
+command chrome-cdp history
+  flag --as-scenario value=NAME
+  flag --from value=N
+  flag --clear
+  flag --limit value=N
+  flag --max-chars value=N
+command chrome-cdp goto
+  arg URL required
+  flag --wait value=EVENT values=settle|load|domcontentloaded|networkidle|commit|none
+command chrome-cdp back
+  flag --wait value=EVENT values=settle|load|domcontentloaded|networkidle|commit|none
+command chrome-cdp forward
+  flag --wait value=EVENT values=settle|load|domcontentloaded|networkidle|commit|none
+command chrome-cdp reload
+  flag --hard
+  flag --wait value=EVENT values=settle|load|domcontentloaded|networkidle|commit|none
+command chrome-cdp wait
+  arg LOCATOR|MS
+  flag --state value=STATE values=visible|hidden|attached|detached|enabled
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+  flag --load
+  flag --domcontentloaded
+  flag --idle
+  flag --settle
+  flag --text value=TEXT
+  flag --text-gone value=TEXT
+  flag --in value=LOCATOR
+  flag --url value=PATTERN
+  flag --fn value=JS
+  flag --request value=PATTERN
+  flag --response value=PATTERN
+  flag --status value=CODE
+  flag --download
+  flag --max-chars value=N
+command chrome-cdp expect
+  arg LOCATOR
+  arg MATCHER
+  arg VALUE multiple
+  flag --not
+  flag --exact
+  flag --min value=N
+  flag --max value=N
+  flag --url value=PATTERN
+  flag --title value=TEXT
+  flag --no-errors
+  flag --all-tabs
+  flag --no-failed-requests
+  flag --since value=MARK
+  flag --count value=N
+  flag --query value=NAME=VALUE repeatable
+  flag --header value=HEADER repeatable
+  flag --json-body value=JSON
+  flag --origin value=ORIGIN
+  flag --a11y
+  flag --level value=LEVEL values=A|AA
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+  flag --max-chars value=N
+command chrome-cdp mark
+  arg NAME required
+command chrome-cdp expect-snapshot
+  arg NAME required
+  flag --scope value=LOCATOR
+  flag --full
+  flag --update
+  flag --dir value=DIR
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+  flag --max-chars value=N
+command chrome-cdp expect-screenshot
+  arg NAME required
+  arg LOCATOR
+  flag --full value=LOC
+  flag --mask value=LOCATOR repeatable
+  flag --threshold value=T
+  flag --max-diff-pixels value=N
+  flag --update
+  flag --dir value=DIR
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp snapshot
+  flag --interactive -i
+  flag --scope value=LOCATOR
+  flag --depth value=N
+  flag --diff
+  flag --all-refs
+  flag --all
+  flag --text-limit value=N
+  flag --no-text
+  flag --engine value=ENGINE values=ax|dom
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+  flag --max-chars value=N
+command chrome-cdp find
+  arg QUERY required multiple
+  flag --role value=ROLE
+  flag --scope value=LOCATOR
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+  flag --limit value=N
+  flag --max-chars value=N
+command chrome-cdp text
+  arg LOCATOR
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+  flag --max-chars value=N
+command chrome-cdp html
+  arg LOCATOR
+  flag --outer
+  flag --raw
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+  flag --max-chars value=N
+command chrome-cdp attr
+  arg LOCATOR required
+  arg NAME required
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+  flag --max-chars value=N
+command chrome-cdp value
+  arg LOCATOR required
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+  flag --max-chars value=N
+command chrome-cdp count
+  arg LOCATOR required
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp box
+  arg LOCATOR required
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp markdown
+  arg LOCATOR
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+  flag --max-chars value=N
+command chrome-cdp click
+  arg LOCATOR required
+  flag --modifiers value=KEYS
+  flag --position value=X,Y
+  flag --force
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+  flag --button value=BUTTON values=left|right|middle
+  flag --count value=N
+command chrome-cdp dblclick
+  arg LOCATOR required
+  flag --modifiers value=KEYS
+  flag --position value=X,Y
+  flag --force
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+  flag --button value=BUTTON values=left|right|middle
+command chrome-cdp hover
+  arg LOCATOR required
+  flag --modifiers value=KEYS
+  flag --position value=X,Y
+  flag --force
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp tap
+  arg LOCATOR required
+  flag --modifiers value=KEYS
+  flag --position value=X,Y
+  flag --force
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp drag
+  arg FROM required
+  arg TO required
+  flag --steps value=N
+  flag --force
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp scroll
+  arg LOCATOR
+  flag --by value=DX,DY
+  flag --to value=WHERE
+  flag --force
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp mouse
+command chrome-cdp mouse move
+  arg X required
+  arg Y required
+  flag --steps value=N
+command chrome-cdp mouse down
+  arg X
+  arg Y
+  flag --button value=BUTTON values=left|right|middle
+  flag --count value=N
+command chrome-cdp mouse up
+  arg X
+  arg Y
+  flag --button value=BUTTON values=left|right|middle
+  flag --count value=N
+command chrome-cdp mouse wheel
+  arg DX required
+  arg DY required
+command chrome-cdp press
+  arg KEYS required
+  flag --in value=LOCATOR
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp type
+  arg TEXT required
+  flag --in value=LOCATOR
+  flag --delay value=DURATION
+  flag --force
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp fill
+  arg LOCATOR required
+  arg TEXT required
+  flag --force
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp select
+  arg LOCATOR required
+  arg VALUE required multiple
+  flag --force
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp check
+  arg LOCATOR required
+  flag --force
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp uncheck
+  arg LOCATOR required
+  flag --force
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp focus
+  arg LOCATOR required
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp blur
+  arg LOCATOR required
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp upload
+  arg LOCATOR required
+  arg FILE multiple
+  flag --clear
+  flag --drop
+  flag --force
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp clipboard
+command chrome-cdp clipboard read
+  flag --max-chars value=N
+command chrome-cdp clipboard write
+  arg TEXT required
+command chrome-cdp dialog
+command chrome-cdp dialog accept
+  arg TEXT
+command chrome-cdp dialog dismiss
+command chrome-cdp downloads
+  flag --max-chars value=N
+command chrome-cdp console
+  flag --level value=LEVEL values=error|warn|info|debug
+  flag --since value=WHEN
+  flag --grep value=REGEX
+  flag --limit value=N
+  flag --follow -f
+  flag --sourcemaps
+  flag --max-chars value=N
+command chrome-cdp errors
+  flag --since value=WHEN
+  flag --grep value=REGEX
+  flag --limit value=N
+  flag --follow -f
+  flag --sourcemaps
+  flag --max-chars value=N
+command chrome-cdp network
+  flag --failed
+  flag --type value=TYPES repeatable
+  flag --url value=PATTERN
+  flag --method value=METHOD
+  flag --status value=STATUS repeatable
+  flag --since value=WHEN
+  flag --limit value=N
+  flag --follow -f
+  flag --max-chars value=N
+command chrome-cdp network show
+  arg ID required
+  flag --headers
+  flag --body
+  flag --request-body
+  flag --output -o value=PATH
+  flag --max-chars value=N
+command chrome-cdp network clear
+command chrome-cdp route
+  arg PATTERN required
+  flag --method value=METHODS repeatable
+  flag --resource-type value=TYPES repeatable
+  flag --times value=N
+  flag --delay value=DURATION
+  flag --status value=CODE
+  flag --body value=TEXT
+  flag --json-body value=JSON
+  flag --body-file value=PATH
+  flag --header value=NAME:VALUE repeatable
+  flag --abort value=REASON
+  flag --set-header value=NAME:VALUE repeatable
+  flag --remove-header value=NAME repeatable
+  flag --rewrite-url value=URL
+  flag --patch-json value=JSON
+command chrome-cdp block
+  arg PATTERN multiple
+  flag --images
+  flag --fonts
+  flag --media
+  flag --ads
+command chrome-cdp routes
+  flag --log
+  flag --limit value=N
+  flag --max-chars value=N
+command chrome-cdp unroute
+  arg ID multiple
+  flag --all
+command chrome-cdp mock
+command chrome-cdp mock use
+  arg SET multiple
+  flag --add
+  flag --no-defaults
+  flag --dir value=DIR
+command chrome-cdp mock off
+  arg SET multiple
+command chrome-cdp mock list
+  flag --available
+  flag --dir value=DIR
+  flag --max-chars value=N
+command chrome-cdp mock log
+  flag --unmatched
+  flag --all
+  flag --limit value=N
+  flag --max-chars value=N
+command chrome-cdp mock reset
+command chrome-cdp mock explain
+  arg METHOD required
+  arg URL required
+  flag --json-body value=JSON
+  flag --body value=TEXT
+  flag --header value=HEADER repeatable
+  flag --mocks value=SET repeatable
+  flag --dir value=DIR
+  flag --limit value=N
+  flag --max-chars value=N
+command chrome-cdp mock state
+  arg NAME
+  flag --set value=NAME=VALUE repeatable
+  flag --max-chars value=N
+command chrome-cdp mock seed
+  arg COLLECTION required
+  arg FILE
+command chrome-cdp mock record
+  flag --scope value=GLOB repeatable
+  flag --output -o value=FILE
+  flag --force
+  flag --dir value=DIR
+  flag --max-chars value=N
+command chrome-cdp mock import
+  arg FILE required
+  flag --scope value=GLOB repeatable
+  flag --output -o value=FILE
+  flag --force
+  flag --dir value=DIR
+  flag --max-chars value=N
+command chrome-cdp mock check
+  arg SET multiple
+  flag --openapi value=FILE
+  flag --dir value=DIR
+  flag --max-chars value=N
+command chrome-cdp mock serve
+  arg SET multiple
+  flag --port value=PORT
+  flag --host value=ADDR
+  flag --no-defaults
+  flag --dir value=DIR
+command chrome-cdp mock ws
+command chrome-cdp mock ws send
+  arg URL required
+  arg MESSAGE required
+  flag --max-chars value=N
+command chrome-cdp http
+  arg METHOD required
+  arg URL required
+  flag --json-body value=JSON
+  flag --body value=TEXT
+  flag --header value=HEADER repeatable
+  flag --expect-status value=STATUSES
+  flag --save value=NAME
+  flag --max-chars value=N
+command chrome-cdp init-script
+command chrome-cdp init-script add
+  arg FILE
+  flag --code value=JS
+  flag --world value=WORLD values=main|isolated
+  flag --now
+command chrome-cdp init-script list
+  flag --max-chars value=N
+command chrome-cdp init-script remove
+  arg ID multiple
+  flag --all
+command chrome-cdp expose
+  arg NAME multiple
+command chrome-cdp unexpose
+  arg NAME multiple
+  flag --all
+command chrome-cdp emulate
+  arg DEVICE multiple
+  flag --list
+command chrome-cdp viewport
+  arg SIZE required
+  flag --dpr value=N
+  flag --mobile
+  flag --touch
+command chrome-cdp geo
+  arg LAT,LON required
+  flag --accuracy value=METRES
+command chrome-cdp tz
+  arg NAME required
+command chrome-cdp locale
+  arg NAME required
+command chrome-cdp ua
+  arg USER-AGENT required
+command chrome-cdp media
+  arg reset values=reset
+  flag --type value=TYPE values=screen|print
+  flag --color-scheme value=SCHEME values=light|dark
+  flag --reduced-motion value=VALUE values=reduce|no-preference
+  flag --forced-colors value=VALUE values=active|none
+command chrome-cdp offline
+  arg on|off required values=on|off
+command chrome-cdp throttle
+  arg PRESET
+  flag --latency value=DURATION
+  flag --down value=KBPS
+  flag --up value=KBPS
+command chrome-cdp cpu-throttle
+  arg RATE required
+command chrome-cdp permissions
+command chrome-cdp permissions grant
+  arg NAME required multiple
+  flag --origin value=ORIGIN
+command chrome-cdp permissions deny
+  arg NAME required multiple
+  flag --origin value=ORIGIN
+command chrome-cdp permissions reset
+  arg NAME multiple
+  flag --origin value=ORIGIN
+command chrome-cdp cookies
+  flag --url value=URL
+  flag --domain value=DOMAIN
+  flag --name value=NAME
+  flag --max-chars value=N
+command chrome-cdp cookies set
+  arg NAME=VALUE required
+  flag --url value=URL
+  flag --domain value=DOMAIN
+  flag --path value=PATH
+  flag --secure
+  flag --httponly
+  flag --samesite value=POLICY values=strict|lax|none
+  flag --expires value=TIME
+command chrome-cdp cookies clear
+  flag --url value=URL
+  flag --domain value=DOMAIN
+  flag --name value=NAME
+command chrome-cdp storage
+  arg AREA required values=local|session
+  arg ACTION values=list|get|set|remove|clear
+  arg KEY
+  arg VALUE
+  flag --origin value=ORIGIN
+  flag --max-chars value=N
+command chrome-cdp state
+command chrome-cdp state save
+  arg FILE required
+  flag --indexeddb
+command chrome-cdp state load
+  arg FILE required
+command chrome-cdp time
+command chrome-cdp time freeze
+  arg TIME
+command chrome-cdp time advance
+  arg DURATION required
+command chrome-cdp time reset
+command chrome-cdp screenshot
+  arg LOCATOR
+  flag --full value=LOC
+  flag --format value=FORMAT values=png|jpeg|webp
+  flag --quality value=N
+  flag --output -o value=PATH
+  flag --scale value=SCALE values=css|device
+  flag --max-size value=PX
+  flag --omit-background
+  flag --mask value=LOCATOR repeatable
+  flag --annotate
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp pdf
+  flag --output -o value=PATH
+  flag --format value=PAPER values=Letter|Legal|Tabloid|A3|A4|A5
+  flag --landscape
+  flag --background
+  flag --margin value=LENGTHS
+  flag --pages value=RANGES
+  flag --css-page-size
+command chrome-cdp eval
+  arg JS required
+  flag --in value=LOCATOR
+  flag --frame value=FRAME
+  flag --world value=WORLD values=main|isolated
+  flag --sourcemaps
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+  flag --max-chars value=N
+command chrome-cdp har
+command chrome-cdp har start
+  flag --content value=HOW values=embed|omit
+command chrome-cdp har stop
+  flag --output -o value=PATH
+command chrome-cdp trace
+command chrome-cdp trace start
+  flag --screenshots
+  flag --categories value=LIST repeatable
+command chrome-cdp trace stop
+  flag --output -o value=PATH
+command chrome-cdp perf
+command chrome-cdp coverage
+command chrome-cdp coverage start
+command chrome-cdp coverage stop
+  flag --limit value=N
+  flag --max-chars value=N
+command chrome-cdp highlight
+  arg LOCATOR required
+  flag --duration value=DURATION
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp inspect
+  flag --panel value=PANEL values=elements|console|network|sources|application|performance|memory|lighthouse|security|recorder
+command chrome-cdp cdp
+  arg Domain.method
+  arg JSON
+  flag --target value=TARGET values=browser|page
+  flag --frame value=FRAME
+  flag --listen value=EVENT repeatable
+  flag --count value=N
+  flag --max-chars value=N
+command chrome-cdp batch
+  flag --continue
+  flag --var value=KEY=VALUE repeatable
+command chrome-cdp run
+  arg FILE required
+  flag --continue
+  flag --var value=KEY=VALUE repeatable
+command chrome-cdp convert
+  arg SPEC required
+  flag --output -o value=PATH
+  flag --max-chars value=N
+command chrome-cdp fmt
+  arg PATH multiple
+  flag --check
+  flag --max-chars value=N
+command chrome-cdp lint
+  arg PATH multiple
+  flag --format value=FORMAT values=text|json|github
+  flag --openapi value=FILE
+  flag --max-chars value=N
+command chrome-cdp init
+command chrome-cdp init e2e
+  flag --dir value=DIR
+  flag --framework value=NAME values=vite|next|cra|astro|sveltekit|none
+command chrome-cdp help
+  arg TOPIC multiple
+command chrome-cdp skill
+  flag --format value=FORMAT values=skill|agents-md|llms-txt
+  flag --install
+  flag --project
+  flag --user
+command chrome-cdp completions
+  arg SHELL required values=bash|elvish|fish|powershell|zsh
