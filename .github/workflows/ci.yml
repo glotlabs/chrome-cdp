@@ -29,6 +29,11 @@ jobs:
       # rustup reads rust-toolchain.toml and installs the pinned toolchain.
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
+      # `cargo xtask ci` runs the tests with nextest (plan 10.1) when it is
+      # installed: one process per test, retries off.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
       # CDP integration tests run against the runner's preinstalled Google
       # Chrome. Ubuntu ships an AppArmor profile for /opt/google/chrome, so the
       # sandbox works there. There is no Google Chrome for Linux arm64; that
@@ -45,17 +50,15 @@ jobs:
           done
           echo "::warning::no Chrome on this runner; CDP integration tests are skipped"
       - run: cargo xtask ci
-      # Plan 02: no test may leave a Chrome it launched, its watchdog, or a
-      # session daemon running. Only chrome-cdp starts Chrome with
-      # --remote-debugging-pipe.
-      - name: No leftover Chrome or daemon processes
-        shell: bash
-        run: |
-          sleep 2
-          if pgrep -fl -- '--remote-debugging-pipe|chrome-cdp-watchdog|chrome-cdp __daemon'; then
-            echo "::error::Chrome or daemon processes outlived the tests"
-            exit 1
-          fi
+      # Plans 02 and 10.1: no test may leave a Chrome it launched, its
+      # watchdog, a session daemon, or a socket file in a session dir.
+      - name: No leftover processes or sockets
+        run: cargo xtask leaks
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: junit-${{ matrix.os }}
+          path: target/nextest/ci/junit.xml
 
   # Plan 11.10: a Next.js app whose server-side fetches the mocks answer
   # through `mock serve`. Its build is not committed, so this job needs

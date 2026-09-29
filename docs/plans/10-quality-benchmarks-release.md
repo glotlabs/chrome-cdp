@@ -1,6 +1,6 @@
 # Plan 10 — Quality, benchmarks & release
 
-Status: TODO (the fixture site and CI matrix start in plan 01 and grow with every plan)
+Status: IN PROGRESS (10.1 done; the fixture site and CI matrix start in plan 01 and grow with every plan)
 Depends on: all; the benchmark harness should exist by the end of plan 04
 
 ## Goal
@@ -163,3 +163,12 @@ methodology, and nightly regressions of more than 15% fail CI.
 ## Decisions log
 
 _(append here)_
+- 10.1: The fixture server stays on `hyper` (`crates/fixtures`, from plan 01) rather than `axum`: it already serves both origins, HTTPS, WebSockets and the dynamic routes, and axum would add a framework for no new feature. The shop's backend is `fixtures::Shop` in the same crate.
+- 10.1: The E2E harness lives in `crates/chrome-cdp/tests/common/`, not a top-level `tests/`: integration tests need `CARGO_BIN_EXE_chrome-cdp`, which Cargo only gives the binary's own crate. Each test's `Sandbox` has its own `XDG_RUNTIME_DIR` and `TMPDIR`, which isolates it more than a unique `--session`; `Sandbox::session()` adds a `Session` guard with a unique name, `ok`/`json`/`fails` assertions on exit code, stdout and stderr, and `close` on drop.
+- 10.1: Leak checks happen twice. Dropping a `Sandbox` runs `close --all`, then fails the test if a daemon, a Chrome or a socket file of it is left (keeping its dir to look at); so a leak names the test that caused it. After the suite, `cargo xtask leaks` (replacing CI's `pgrep` step) checks the whole machine for chrome-cdp's processes and for socket files in every session dir and `target/tmp`. nextest's own `leak-timeout` fails a test whose children hold its output open.
+- 10.1: `.config/nextest.toml`: retries 0 everywhere; a test hangs for at most 5 minutes (the golden test, which runs every command's cases in one test, 16), so a hang like `.looper`'s "navigate test hung once" fails the run. `cargo xtask ci` uses nextest when installed (plus `cargo test --doc`, which nextest does not run); CI installs it.
+- 10.1: The flakiness gate is `cargo xtask e2e --repeat 20`: the whole workspace suite 20 times with the `ci` profile and `xtask leaks` after each run, all 20 even after a failure, with a summary in `target/nextest/e2e-summary.md`. The nightly `flaky` job runs it on the 4 CI runners; a failure opens an issue through `.github/actions/nightly-issue` (label `nightly`, one open issue per title, later failures comment on it). plan 11.10's `e2e-shop --repeat 20` job stays as it is.
+- 10.1: Its first nextest runs found two flakes that `cargo test` had hidden: the golden test's `<n> retries` mask missed the singular, and the state test's `logIn()` eval raced its own navigation. Both are fixed.
+- 10.1: The soak test (`random_command_mix_does_not_crash_or_grow` in `crates/chrome-cdp/tests/soak.rs`, ignored; `cargo xtask soak`, nightly on Linux and macOS) draws 1,000 commands from a seeded, weighted mix of 23 kinds over 13 fixture pages, acting on refs from its last `snapshot -i`. A crash is a signal, a new daemon pid, or exit 2 or 4; exits 1, 3 and 5 are allowed, with at most 2% timeouts. Budgets: daemon RSS under 150 MB (as plan 06's), p99 at most 2 s including page loads. The budgets are not tuned: deferred: benchmarks run after all plans. Short runs (150-200 commands, three seeds) only checked that the mix runs.
+- 10.1: The framework apps (`testdata/site/apps/`) are one todo app written three times (React 18 UMD with `createElement`, Vue 3 with an in-DOM template, Svelte 5 compiled from `vendor/src/Todos.svelte`), so one test (`tests/apps.rs`) checks all three. The vendored builds moved from `actions/vendor/` to `/vendor/` for all pages to share; `vendor/README.md` says how to rebuild the Svelte bundles.
+- 10.1: "Consolidate the fixture site": `testdata/site/index.html` now links every folder, and `crates/fixtures/tests/site.rs` fails when a folder is missing from it or a link is broken.

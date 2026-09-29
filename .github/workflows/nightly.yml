@@ -2,6 +2,8 @@ name: Nightly
 
 # Installs Chrome for Testing for real on every OS and architecture
 # (plan 02, milestone 2.2), so a change in the index or the zips shows up.
+# Runs the flakiness gate and the soak tests (plan 10, milestone 10.1): a
+# failure of either opens an issue.
 
 on:
   schedule:
@@ -80,3 +82,79 @@ jobs:
         with:
           name: e2e-shop-results-${{ matrix.os }}
           path: examples/e2e-shop/e2e/.results/
+
+  # Plan 10.1: the flakiness gate. The whole suite 20 times per runner with
+  # retries off (nextest's `ci` profile) and a leak check after each run.
+  # Any failed run opens an issue.
+  flaky:
+    name: flaky (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest      # linux x86_64
+          - ubuntu-24.04-arm   # linux arm64
+          - macos-latest       # macOS arm64
+          - macos-15-intel     # macOS x86_64
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+      # The same Chrome as the `ci` workflow's.
+      - name: Locate Chrome
+        shell: bash
+        run: |
+          for c in /opt/google/chrome/chrome "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"; do
+            if [ -x "$c" ]; then
+              echo "CHROME_PATH=$c" >> "$GITHUB_ENV"
+              echo "CHROME_CDP_REQUIRE_CHROME=1" >> "$GITHUB_ENV"
+              exit 0
+            fi
+          done
+          echo "::warning::no Chrome on this runner; CDP integration tests are skipped"
+      - run: cargo xtask e2e --repeat 20
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: flaky-junit-${{ matrix.os }}
+          path: target/nextest/ci/junit.xml
+      - uses: ./.github/actions/nightly-issue
+        if: failure()
+        with:
+          title: "Nightly: the flakiness gate failed on ${{ matrix.os }}"
+          summary: target/nextest/e2e-summary.md
+
+  # Plan 10.1: 1,000 random commands against the fixture site (no crash,
+  # bounded RSS, p99 within budget) and the hour of constant logging.
+  soak:
+    name: soak (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            chrome: /opt/google/chrome/chrome
+          - os: macos-latest
+            chrome: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      issues: write
+    env:
+      CHROME_PATH: ${{ matrix.chrome }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo xtask soak
+      - uses: ./.github/actions/nightly-issue
+        if: failure()
+        with:
+          title: "Nightly: the soak tests failed on ${{ matrix.os }}"

@@ -586,6 +586,9 @@ bash|zsh|fish|elvish|powershell` prints a shell completion script.
 
 ```sh
 cargo xtask ci      # fmt --check, gen-cdp --check, clippy -D warnings, tests
+cargo xtask e2e --repeat 20  # the whole suite 20 times, no retries (flakiness gate)
+cargo xtask leaks   # no Chrome, daemon or socket file of chrome-cdp is left
+cargo xtask soak    # 1,000 random commands, and an hour of logging (needs CHROME_PATH)
 cargo xtask gen-cdp # regenerate CDP types (crates/cdp/protocol/README.md)
 cargo xtask build-js # rebuild the injected helper from TypeScript (needs npx)
 cargo xtask dist    # release binary in dist/ (size budget: 15 MB)
@@ -599,7 +602,15 @@ Chromium binary. They load pages from the fixture site in `testdata/site`,
 served by `crates/fixtures` on two sites (`127.0.0.1` and `localhost`, so
 frames from one in the other run out of process) and on an HTTPS origin with
 a self-signed certificate; `cargo xtask fixtures`
-serves it for poking at by hand. Command output is pinned by golden files in
+serves it for poking at by hand, and its index lists every folder. It
+includes the same todo app in React, Vue and Svelte (`testdata/site/apps/`),
+prebuilt so tests need no Node. Tests run with
+[cargo-nextest](https://nexte.st) (`.config/nextest.toml`): one process per
+test and retries off, so a flaky test fails. The binary's tests use the
+harness in `crates/chrome-cdp/tests/common/`: a `Sandbox` per test (its own
+session and temp dirs) and a `Session` guard that closes its session on
+drop; dropping the sandbox fails the test if a daemon, a Chrome or a socket
+file of it is left. Command output is pinned by golden files in
 `crates/chrome-cdp/tests/golden/`; after an intended change, rewrite them with
 `UPDATE_GOLDEN=1 cargo test -p chrome-cdp --test golden`. The snapshot corpus
 (`testdata/site/snapshot/`: pages from five lines to 50,000 nodes, each with

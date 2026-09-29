@@ -44,10 +44,7 @@ fn a_killed_daemon_is_a_leak() {
     assert!(killed.success());
     wait_until("the daemon to die", || sandbox.daemons().is_empty());
     let leaks = sandbox.leaks();
-    assert!(
-        leaks.iter().any(|l| l.starts_with("socket ")),
-        "{leaks:?}"
-    );
+    assert!(leaks.iter().any(|l| l.starts_with("socket ")), "{leaks:?}");
 
     // What the next command of the session does with a dead one: it
     // cleans up, so the sandbox ends clean.

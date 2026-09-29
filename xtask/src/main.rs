@@ -7,6 +7,7 @@
 
 use std::env;
 use std::ffi::OsStr;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -19,7 +20,14 @@ usage: cargo xtask <task> [args]
 
 tasks:
   ci                  run cargo fmt --check, gen-cdp --check, clippy -D warnings
-                      and tests
+                      and tests (with cargo-nextest when it is installed)
+  e2e [--repeat N]    run the whole suite with cargo-nextest (profile `ci`, no
+                      retries) N times (default 1), checking for leaks after each
+                      run; any failing run fails the task (the flakiness gate)
+  leaks               fail if a Chrome, watchdog or daemon of chrome-cdp still runs,
+                      or a session dir still holds a socket file
+  soak                run the ignored soak tests (release build; needs CHROME_PATH),
+                      then check for leaks
   dist [--target T]   build the release binary into dist/ and check its size
   gen-cdp [--check]   regenerate CDP types from the vendored protocol JSON
   build-js [--check]  typecheck and bundle the injected helper (needs Node's npx)
@@ -38,6 +46,9 @@ fn main() -> ExitCode {
     };
     let result = match task.as_str() {
         "ci" => ci(rest),
+        "e2e" => e2e(rest),
+        "leaks" => leaks(rest),
+        "soak" => soak(rest),
         "dist" => dist(rest),
         "gen-cdp" => gen_cdp(rest),
         "build-js" => build_js(rest),
@@ -70,8 +81,216 @@ fn ci(args: &[String]) -> Result {
         "-D",
         "warnings",
     ])?;
-    cargo(["test", "--workspace", "--locked"])?;
+    if has_nextest() {
+        cargo([
+            "nextest",
+            "run",
+            "--workspace",
+            "--locked",
+            "--profile",
+            "ci",
+        ])?;
+        // nextest does not run doctests.
+        cargo(["test", "--workspace", "--locked", "--doc"])?;
+    } else {
+        cargo(["test", "--workspace", "--locked"])?;
+    }
     Ok(())
+}
+
+fn has_nextest() -> bool {
+    let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    Command::new(cargo)
+        .args(["nextest", "--version"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
+/// Where `e2e` writes the summary of its runs (the nightly job files it as
+/// an issue when a run failed).
+const E2E_SUMMARY: &str = "target/nextest/e2e-summary.md";
+
+/// Runs the whole suite `--repeat N` times with nextest's `ci` profile
+/// (retries off, so a flaky test fails a run) and checks for leaks after
+/// each run. Every run happens even after a failure, so the summary says
+/// how often each run failed. Arguments after `--` go to nextest.
+fn e2e(args: &[String]) -> Result {
+    let (own, extra) = match args.iter().position(|a| a == "--") {
+        Some(i) => (&args[..i], &args[i + 1..]),
+        None => (args, &[][..]),
+    };
+    let repeat: usize = match own {
+        [] => 1,
+        [flag, n] if flag == "--repeat" => n
+            .parse()
+            .ok()
+            .filter(|&n| n > 0)
+            .ok_or_else(|| format!("--repeat takes a count, got `{n}`"))?,
+        _ => return Err("usage: cargo xtask e2e [--repeat N] [-- <nextest args>]".into()),
+    };
+    if !has_nextest() {
+        return Err("cargo-nextest is not installed: cargo install --locked cargo-nextest".into());
+    }
+    let mut failed = Vec::new();
+    for n in 1..=repeat {
+        eprintln!("=== e2e run {n} of {repeat}");
+        let mut run = vec![
+            "nextest",
+            "run",
+            "--workspace",
+            "--locked",
+            "--profile",
+            "ci",
+        ];
+        run.extend(extra.iter().map(String::as_str));
+        let tests = cargo(run).err();
+        let leaked = leaks(&[]).err();
+        if tests.is_some() || leaked.is_some() {
+            let why: Vec<String> = tests.into_iter().chain(leaked).collect();
+            failed.push((n, why.join("; ")));
+        }
+    }
+    let mut summary = format!("# E2E suite: {} of {repeat} runs failed\n\n", failed.len());
+    for (n, why) in &failed {
+        let _ = writeln!(summary, "- run {n}: {why}");
+    }
+    if !failed.is_empty() {
+        summary.push_str(
+            "\nRetries are off, so a test that failed once and passed in the other \
+             runs is flaky. The job's log has each run's failures.\n",
+        );
+    }
+    let path = workspace_root().join(E2E_SUMMARY);
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    }
+    fs::write(&path, &summary).map_err(|e| format!("write {}: {e}", path.display()))?;
+    eprint!("{summary}");
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("{} of {repeat} runs failed", failed.len()))
+    }
+}
+
+/// What a run of chrome-cdp may leave behind. Only chrome-cdp starts Chrome
+/// with `--remote-debugging-pipe`.
+const LEAKED_PROCESSES: [&str; 3] = [
+    "--remote-debugging-pipe",
+    "chrome-cdp-watchdog",
+    "chrome-cdp __daemon",
+];
+
+/// Fails if a process of [`LEAKED_PROCESSES`] still runs (after a grace
+/// period of 5 s, as processes exit shortly after `close`), or a socket
+/// file is left in a session dir or under `target/tmp` (the tests' fixed
+/// dirs). Meant for CI, after the tests: on a machine with sessions of its
+/// own, those count too.
+fn leaks(args: &[String]) -> Result {
+    no_args("leaks", args)?;
+    let mut processes = leaked_processes()?;
+    for _ in 0..50 {
+        if processes.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        processes = leaked_processes()?;
+    }
+    let mut found: Vec<String> = processes
+        .into_iter()
+        .map(|p| format!("process {p}"))
+        .collect();
+    for dir in session_dirs()? {
+        found.extend(
+            sockets_in(&dir)
+                .into_iter()
+                .map(|s| format!("socket {}", s.display())),
+        );
+    }
+    if found.is_empty() {
+        eprintln!("no leaks: no chrome-cdp processes or socket files are left");
+        return Ok(());
+    }
+    Err(format!(
+        "chrome-cdp left these behind:\n  {}",
+        found.join("\n  ")
+    ))
+}
+
+fn leaked_processes() -> Result<Vec<String>> {
+    let ps = output(Command::new("ps").args(["-eo", "pid=,args="]))?;
+    Ok(ps
+        .lines()
+        .filter(|l| LEAKED_PROCESSES.iter().any(|p| l.contains(p)))
+        .map(|l| l.trim().to_owned())
+        .collect())
+}
+
+/// The dirs sessions live in (see `crates/daemon/src/paths.rs`), plus the
+/// tests' fixed dirs under `target/tmp`.
+fn session_dirs() -> Result<Vec<PathBuf>> {
+    let uid = output(Command::new("id").arg("-u"))?.trim().to_owned();
+    let mut dirs = vec![
+        PathBuf::from(format!("/tmp/chrome-cdp-{uid}")),
+        PathBuf::from(format!("/tmp/ccdp-{uid}")),
+        workspace_root().join("target/tmp"),
+    ];
+    for var in ["XDG_RUNTIME_DIR", "TMPDIR"] {
+        if let Some(dir) = env::var_os(var).filter(|d| !d.is_empty()) {
+            dirs.push(PathBuf::from(dir).join("chrome-cdp"));
+        }
+    }
+    Ok(dirs)
+}
+
+/// The socket files under `dir`, at any depth.
+fn sockets_in(dir: &Path) -> Vec<PathBuf> {
+    #[cfg(unix)]
+    use std::os::unix::fs::FileTypeExt as _;
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for entry in entries.flatten() {
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        #[cfg(unix)]
+        if kind.is_socket() {
+            found.push(entry.path());
+            continue;
+        }
+        if kind.is_dir() {
+            found.extend(sockets_in(&entry.path()));
+        }
+    }
+    found
+}
+
+/// Runs the ignored soak tests in a release build (they need `CHROME_PATH`;
+/// see `crates/chrome-cdp/tests/soak.rs`), then checks for leaks.
+fn soak(args: &[String]) -> Result {
+    no_args("soak", args)?;
+    if env::var_os("CHROME_PATH").is_none_or(|p| p.is_empty()) {
+        return Err("the soak tests need a Chrome: set CHROME_PATH".into());
+    }
+    cargo([
+        "test",
+        "--release",
+        "--locked",
+        "--package",
+        "chrome-cdp",
+        "--test",
+        "soak",
+        "--",
+        "--ignored",
+        "--nocapture",
+        "--test-threads",
+        "1",
+    ])?;
+    leaks(&[])
 }
 
 fn dist(args: &[String]) -> Result {
