@@ -434,6 +434,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
                     .collect::<Result<_, _>>()?,
                 clear: args.clear,
                 force: args.force,
+                drop: args.drop,
             },
             args.refs.strict_refs,
             &args.after,
