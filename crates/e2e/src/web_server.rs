@@ -96,6 +96,17 @@ impl WebServers {
     /// Starts (or reuses) `servers` in order, logging into `log_dir`. On an
     /// error, the ones already started are stopped.
     pub async fn start(servers: &[WebServer], log_dir: &Path) -> Result<Self, ErrorInfo> {
+        Self::start_with(servers, log_dir, |_| {}).await
+    }
+
+    /// Like [`Self::start`], calling `spawning` with each server whose
+    /// command is about to run (not one reused or served by chrome-cdp),
+    /// so the caller can show it first.
+    pub async fn start_with(
+        servers: &[WebServer],
+        log_dir: &Path,
+        mut spawning: impl FnMut(&WebServer),
+    ) -> Result<Self, ErrorInfo> {
         let (exits_tx, exits) = mpsc::unbounded_channel();
         let mut this = Self {
             servers: Vec::new(),
@@ -109,7 +120,7 @@ impl WebServers {
             } else {
                 format!("web-server-{}.log", i + 1)
             });
-            if let Err(e) = this.start_one(&client, config, log).await {
+            if let Err(e) = this.start_one(&client, config, log, &mut spawning).await {
                 this.stop().await;
                 return Err(e);
             }
@@ -127,6 +138,7 @@ impl WebServers {
         client: &reqwest::Client,
         config: &WebServer,
         log: PathBuf,
+        spawning: &mut impl FnMut(&WebServer),
     ) -> Result<(), ErrorInfo> {
         let started = Instant::now();
         let mut info = ServerInfo {
@@ -179,6 +191,7 @@ impl WebServers {
             return Ok(());
         }
 
+        spawning(config);
         let (pgid, exited) = self.spawn(config, &log)?;
         info.log = Some(log.clone());
         info.pgid = Some(pgid);
