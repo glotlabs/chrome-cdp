@@ -23,12 +23,13 @@ use cdp::{LosslessEventStream, RawEvent, Session};
 use futures_util::future::join_all;
 
 use super::auth::Auth;
+use super::features::Feature;
 use super::{Shared, Step, lock, step};
 use crate::route::{self, Decision, PendingPatches};
 
 /// What a page or iframe session intercepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct Interception {
+pub(crate) struct Interception {
     /// `Fetch` is on.
     fetch: bool,
     /// Requests skip service workers.
@@ -65,9 +66,9 @@ fn enable(shared: &Shared) -> fetch::EnableParams {
 pub(super) fn setup_steps(shared: &Shared, session: &Session, steps: &mut Vec<(&str, Step)>) {
     let wanted = wanted(shared);
     if let Some(id) = session.id()
-        && let Some(host) = lock(&shared.state).hosts.get_mut(id)
+        && let Some(target) = lock(&shared.state).targets.get_mut(id)
     {
-        host.interception = Some(wanted);
+        target.interception = Some(wanted);
     }
     if wanted.fetch {
         steps.push(("Fetch.enable", step(session.call(enable(shared)))));
@@ -82,7 +83,8 @@ pub(super) fn setup_steps(shared: &Shared, session: &Session, steps: &mut Vec<(&
     }
 }
 
-/// Brings every page and iframe session in line with the settings (after
+/// Brings every target [`Feature::Fetch`] applies to in line with the
+/// settings (after
 /// routes or credentials changed); new sessions get them in their setup.
 /// A session that already intercepts as wanted is left alone: `Fetch.enable`
 /// again would drop the requests it holds paused (another context's
@@ -91,12 +93,12 @@ pub(super) fn setup_steps(shared: &Shared, session: &Session, steps: &mut Vec<(&
 pub(super) async fn apply(shared: &Shared, timeout: Duration, force: bool) {
     let now = wanted(shared);
     let hosts: Vec<Session> = lock(&shared.state)
-        .hosts
-        .values_mut()
-        .filter(|h| force || h.interception != Some(now))
-        .map(|h| {
-            h.interception = Some(now);
-            h.session.with_timeout(timeout)
+        .applies_mut(Feature::Fetch)
+        .map(|(_, t)| t)
+        .filter(|t| force || t.interception != Some(now))
+        .map(|t| {
+            t.interception = Some(now);
+            t.session.with_timeout(timeout)
         })
         .collect();
     let mut calls: Vec<Step> = Vec::new();

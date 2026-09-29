@@ -53,9 +53,9 @@ pub(super) fn called(shared: &Arc<Shared>, session_id: &str, tab: Option<u32>, e
     };
     let Some((session, scope)) = shared
         .lock()
-        .hosts
+        .targets
         .get(session_id)
-        .map(|h| (h.session.clone(), h.scope.clone()))
+        .map(|t| (t.session.clone(), t.scope.clone()))
     else {
         return;
     };
@@ -200,9 +200,9 @@ impl Tabs {
         let session = self
             .shared
             .lock()
-            .hosts
+            .targets
             .get(&socket.session)
-            .map(|h| h.session.clone());
+            .map(|t| t.session.clone());
         let known = match session {
             Some(session) => {
                 let text = json!({ "id": socket.id, "text": message });

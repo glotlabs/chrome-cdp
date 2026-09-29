@@ -29,16 +29,23 @@
 //! emulation, which every page and iframe session gets (see
 //! [`emulation`]), and so do init scripts and exposed functions (see
 //! [`inject`]).
+//!
+//! Plan 13 keeps every attached target, of every kind, in one map (see
+//! [`targets`]), and what each kind gets in one registry of features
+//! (see [`features`]): [`setup`] and every change of a setting go through
+//! it.
 
 mod auth;
 pub(crate) mod commands;
 pub(crate) mod dialogs;
 mod downloads;
 pub(crate) mod emulation;
+mod features;
 mod fetch;
 mod inject;
 mod locks;
 mod mock_shim;
+mod targets;
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -47,19 +54,20 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use cdp::domains::{browser, network, page, runtime, security, target};
+use cdp::domains::{browser, page, runtime, security, target};
 use cdp::{Connection, Event as _, LosslessEventStream, RawEvent, Session};
 use protocol::schema::{Event, TabInfo, Viewport};
 
 use self::dialogs::OpenDialog;
 use self::downloads::Download;
+use self::features::{NewTarget, REGISTRY};
+use self::targets::{Owner, Target, TargetKind};
 use crate::emulate::{Aspects, Emulator};
 use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
-use crate::inject::{Injector, Key, MOCK_BINDING, SEED_BINDING};
+use crate::inject::{Injector, MOCK_BINDING, SEED_BINDING};
 use crate::injected;
 use crate::input::Pointer;
 use crate::network::{Exchange, Failure, Idle, InFlight, Network};
-use crate::observe;
 use crate::observe::console::{self, Console, ConsoleError};
 use crate::observe::netlog::{self, NetLog};
 use crate::request::{DialogPolicy, HttpCredentials};
@@ -253,8 +261,8 @@ struct State {
     recent: Vec<u32>,
     /// The active tab of each context of ours, by Chrome's context id.
     context_active: HashMap<String, u32>,
-    /// Page and iframe sessions (they take init scripts), by session id.
-    hosts: HashMap<String, Host>,
+    /// Every attached target, by session id.
+    targets: HashMap<String, Target>,
     /// Targets commands created (or found at start): not "opened" events.
     ours: HashSet<String>,
     /// Tabs that opened, newest last, with a sequence number.
@@ -317,6 +325,38 @@ struct Tab {
     pointer: Pointer,
 }
 
+impl Tab {
+    /// A tab for page `info`, not set up yet.
+    fn new(
+        info: &target::TargetInfo,
+        session: &Session,
+        session_id: &str,
+        context: Option<(String, String)>,
+    ) -> Self {
+        Self {
+            target_id: info.target_id.clone(),
+            session: session.clone(),
+            url: info.url.clone(),
+            title: info.title.clone(),
+            opener_target: info.opener_id.clone(),
+            context,
+            ready: false,
+            frames: FrameTree::new(&info.target_id, session_id),
+            network: Network::default(),
+            netlog: NetLog::default(),
+            console: Console::default(),
+            command_marks: (0, 0),
+            document_marks: (0, 0),
+            marks: HashMap::new(),
+            event_marks: (0, 0),
+            dialog: None,
+            crashed: None,
+            snapshot: SnapshotMemory::default(),
+            pointer: Pointer::default(),
+        }
+    }
+}
+
 /// Where a tab's logs were at a `mark`: the network tracker's
 /// sequence ([`Tabs::failures_since`]), the console's
 /// ([`Tabs::console_errors_since`], `console --since`) and the network
@@ -329,26 +369,6 @@ pub(crate) struct Marks {
     /// When it was set (ms since the Unix epoch), for the other tabs'
     /// requests (`expect request --since`).
     pub(crate) time_ms: u64,
-}
-
-/// A page or iframe session.
-#[derive(Debug)]
-struct Host {
-    session: Session,
-    /// The tab whose frames it has (none for a prerender page).
-    tab: Option<u32>,
-    /// A page's own session, not an iframe's: it has the viewport.
-    main: bool,
-    /// Its context's settings key: Chrome's context id for a context of
-    /// ours, `None` for the session's default one.
-    scope: Option<String>,
-    /// The id of its frozen clock script (`time freeze`), if it has one.
-    clock: Option<String>,
-    /// What it was last told to intercept.
-    interception: Option<fetch::Interception>,
-    /// The init scripts and exposed functions it has, with the id of
-    /// each one's script (`None` while Chrome is adding it).
-    injected: HashMap<Key, Option<String>>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -374,21 +394,7 @@ impl Tabs {
         let shared = Arc::new(Shared {
             conn: conn.clone(),
             settings,
-            state: Mutex::new(State {
-                next_id: 1,
-                tabs: BTreeMap::new(),
-                active: None,
-                recent: Vec::new(),
-                context_active: HashMap::new(),
-                hosts: HashMap::new(),
-                ours: HashSet::new(),
-                opened: VecDeque::new(),
-                logged: VecDeque::new(),
-                downloads: Vec::new(),
-                seq: 0,
-                starting: true,
-                visited: HashMap::new(),
-            }),
+            state: Mutex::new(State::new()),
             changed: watch::Sender::new(0),
             security_applied: AtomicBool::new(false),
             default_viewport,
@@ -927,7 +933,7 @@ impl Tabs {
             .into_iter()
             .filter_map(|info| {
                 let owner = tab.frames.owner(&info.id)?;
-                let session = state.hosts.get(owner)?.session.clone();
+                let session = state.targets.get(owner)?.session.clone();
                 Some(FrameSource { info, session })
             })
             .collect()
@@ -1022,7 +1028,7 @@ impl Tabs {
         .await;
         let session_of = |session_id: &str| {
             let state = self.shared.lock();
-            state.hosts.get(session_id).map(|h| h.session.clone())
+            state.targets.get(session_id).map(|t| t.session.clone())
         };
         match found {
             Some(Found::Context(context)) => Ok(FrameContext {
@@ -1284,14 +1290,14 @@ impl Tabs {
             .map(|tab| f(&mut tab.netlog))
     }
 
-    /// The page or iframe session with id `session_id`, if it is still
+    /// The session with id `session_id`, if its target is still
     /// attached.
     pub(crate) fn host_session(&self, session_id: &str) -> Option<Session> {
         self.shared
             .lock()
-            .hosts
+            .targets
             .get(session_id)
-            .map(|h| h.session.clone())
+            .map(|t| t.session.clone())
     }
 
     /// The requests that keep tab `id`'s network busy now.
@@ -1427,6 +1433,68 @@ impl Shared {
 }
 
 impl State {
+    fn new() -> Self {
+        Self {
+            next_id: 1,
+            tabs: BTreeMap::new(),
+            active: None,
+            recent: Vec::new(),
+            context_active: HashMap::new(),
+            targets: HashMap::new(),
+            ours: HashSet::new(),
+            opened: VecDeque::new(),
+            logged: VecDeque::new(),
+            downloads: Vec::new(),
+            seq: 0,
+            starting: true,
+            visited: HashMap::new(),
+        }
+    }
+
+    /// Forgets the target of session `session_id`, and the targets it
+    /// announced, whose own detach events came through it; returns it.
+    fn forget_target(&mut self, session_id: &str) -> Option<Target> {
+        let target = self.targets.remove(session_id)?;
+        let mut gone = vec![session_id.to_owned()];
+        while let Some(parent) = gone.pop() {
+            let children: Vec<String> = self
+                .targets
+                .iter()
+                .filter(|(_, t)| t.parent.as_deref() == Some(parent.as_str()))
+                .map(|(id, _)| id.clone())
+                .collect();
+            for child in children {
+                self.targets.remove(&child);
+                gone.push(child);
+            }
+        }
+        Some(target)
+    }
+
+    /// The tabs `target` belongs to: its own, or for a shared or service
+    /// worker, the tabs of its scope with a frame on its origin.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "worker events use it (plan 13.2)")
+    )]
+    fn tabs_of(&self, target: &Target) -> Vec<u32> {
+        match &target.owner {
+            Owner::Tab(id) => vec![*id],
+            Owner::None => Vec::new(),
+            Owner::Origin { origin } => self
+                .tabs
+                .iter()
+                .filter(|&(&id, tab)| {
+                    self.in_scope(id, target.scope.as_deref())
+                        && tab.frames.list().iter().any(|f| {
+                            crate::state::origin_of(&f.url).as_deref() == Some(origin.as_str())
+                        })
+                })
+                .map(|(&id, _)| id)
+                .collect(),
+        }
+    }
+
     fn page(&self, id: u32) -> Option<Page> {
         let tab = self.tabs.get(&id).filter(|t| t.ready)?;
         Some(Page {
@@ -1500,7 +1568,7 @@ impl State {
 
     fn remove(&mut self, id: u32) {
         if self.tabs.remove(&id).is_some() {
-            self.hosts.retain(|_, h| h.tab != Some(id));
+            self.targets.retain(|_, t| t.owner != Owner::Tab(id));
         }
         self.recent.retain(|&r| r != id);
         if self.active == Some(id) {
@@ -1509,6 +1577,11 @@ impl State {
     }
 
     fn update(&mut self, info: &target::TargetInfo) {
+        for target in self.targets.values_mut() {
+            if target.id == info.target_id {
+                target.url.clone_from(&info.url);
+            }
+        }
         if let Some(tab) = self
             .tabs
             .values_mut()
@@ -1592,12 +1665,7 @@ async fn watch_browser(shared: Arc<Shared>, mut events: LosslessEventStream) {
             }
             target::TargetDestroyed::NAME => {
                 if let Some(target_id) = event.params["targetId"].as_str() {
-                    let mut state = shared.lock();
-                    if let Some(id) = state.id_of(target_id) {
-                        state.remove(id);
-                        drop(state);
-                        shared.bump();
-                    }
+                    destroyed(&shared, target_id);
                 }
             }
             target::TargetInfoChanged::NAME => {
@@ -1628,7 +1696,13 @@ async fn watch_host(
     let session_id = session.id().unwrap_or_default().to_owned();
     while let Some(event) = events.next().await {
         match event.method.as_str() {
-            target::AttachedToTarget::NAME => attached(&shared, &event, Parent::Host(tab)),
+            target::AttachedToTarget::NAME => {
+                let parent = Parent::Host {
+                    session: &session_id,
+                    tab,
+                };
+                attached(&shared, &event, parent);
+            }
             target::DetachedFromTarget::NAME => {
                 if let Some(session_id) = event.params["sessionId"].as_str() {
                     detached(&shared, session_id);
@@ -1691,9 +1765,9 @@ fn seeded(shared: &Arc<Shared>, session_id: &str, event: &RawEvent) {
     };
     let scope = shared
         .lock()
-        .hosts
+        .targets
         .get(session_id)
-        .and_then(|h| h.scope.clone());
+        .and_then(|t| t.scope.clone());
     if shared.settings.injections.seeded(scope.as_deref(), origin) {
         tracing::debug!("{origin} got its storage; its seed is taken out");
         let shared2 = shared.clone();
@@ -1849,15 +1923,18 @@ fn decode<E: cdp::Event>(event: &RawEvent) -> Result<E, serde_json::Error> {
 
 /// Which session announced a target.
 #[derive(Debug, Clone, Copy)]
-enum Parent {
+enum Parent<'a> {
     Browser,
     /// A page or iframe session, with its tab (none for a prerender).
-    Host(Option<u32>),
+    Host {
+        session: &'a str,
+        tab: Option<u32>,
+    },
 }
 
-/// A target attached (paused if new): register a tab for a page, then set
-/// it up and resume it in its own task.
-fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
+/// A target attached (paused if new): record it (and register a tab for a
+/// page), then set it up and resume it in its own task.
+fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent<'_>) {
     let attached = match decode::<target::AttachedToTarget>(event) {
         Ok(attached) => attached,
         Err(e) => {
@@ -1875,30 +1952,9 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
         let mut state = shared.lock();
         let id = state.next_id;
         state.next_id += 1;
-        state.tabs.insert(
-            id,
-            Tab {
-                target_id: info.target_id.clone(),
-                session: session.clone(),
-                url: info.url.clone(),
-                title: info.title.clone(),
-                opener_target: info.opener_id.clone(),
-                context,
-                ready: false,
-                frames: FrameTree::new(&info.target_id, &session_id),
-                network: Network::default(),
-                netlog: NetLog::default(),
-                console: Console::default(),
-                command_marks: (0, 0),
-                document_marks: (0, 0),
-                marks: HashMap::new(),
-                event_marks: (0, 0),
-                dialog: None,
-                crashed: None,
-                snapshot: SnapshotMemory::default(),
-                pointer: Pointer::default(),
-            },
-        );
+        state
+            .tabs
+            .insert(id, Tab::new(&info, &session, &session_id, context));
         Some(id)
     } else {
         None
@@ -1910,29 +1966,35 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
         "attached to {}",
         info.target_id
     );
-    let host = matches!(info.r#type.as_str(), "page" | "iframe");
-    let tab = match parent {
-        Parent::Browser => new_tab,
-        Parent::Host(tab) => tab,
+    let kind = TargetKind::of(&info.r#type);
+    let (tab, parent_session) = match parent {
+        Parent::Browser => (new_tab, None),
+        Parent::Host { session, tab } => (tab, Some(session.to_owned())),
     };
-    if host {
-        // Before auto-attach and the domains are turned on for it, so no
-        // child and no frame event is missed.
-        let events = session.events_lossless("");
-        let fetch_events = session.events_lossless("Fetch.");
-        shared.lock().hosts.insert(
-            session_id.clone(),
-            Host {
-                session: session.clone(),
-                tab,
-                main: info.r#type == "page",
-                scope,
-                clock: None,
-                interception: None,
-                injected: HashMap::new(),
-            },
-        );
-        shared.spawn(watch_host(shared.clone(), events, session.clone(), tab));
+    let owner = match kind {
+        // Shared by the tabs of its scope on its origin.
+        TargetKind::SharedWorker | TargetKind::ServiceWorker => crate::state::origin_of(&info.url)
+            .map_or(Owner::None, |origin| Owner::Origin { origin }),
+        _ => tab.map_or(Owner::None, Owner::Tab),
+    };
+    // Before auto-attach and the domains are turned on for it, so no
+    // child and no frame event is missed.
+    let events = (kind.is_host() || kind == TargetKind::DedicatedWorker)
+        .then(|| session.events_lossless(""));
+    let fetch_events = kind.is_host().then(|| session.events_lossless("Fetch."));
+    shared.lock().targets.insert(
+        session_id.clone(),
+        Target::new(
+            session.clone(),
+            kind,
+            info.target_id.clone(),
+            info.url.clone(),
+            owner,
+            scope,
+            parent_session,
+        ),
+    );
+    if let Some(fetch_events) = fetch_events {
         shared.spawn(fetch::watch_fetch(
             shared.clone(),
             fetch_events,
@@ -1941,25 +2003,24 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
             info.browser_context_id.clone(),
         ));
     }
-    // A dedicated worker of a tab: its console goes to the tab's.
-    let worker = info.r#type == "worker" && matches!(parent, Parent::Host(Some(_)));
-    if worker && let Some(tab) = tab {
-        let events = session.events_lossless("");
-        shared.spawn(watch_worker(shared.clone(), events, tab, info.url.clone()));
+    if let Some(events) = events {
+        if kind.is_host() {
+            shared.spawn(watch_host(shared.clone(), events, session.clone(), tab));
+        } else if let Some(tab) = tab {
+            // A dedicated worker of a tab: its console goes to the tab's.
+            shared.spawn(watch_worker(shared.clone(), events, tab, info.url.clone()));
+        }
     }
-    let kind = if host {
-        Kind::Host
-    } else if worker {
-        Kind::Worker
-    } else {
-        Kind::Other
-    };
     let waiting = attached.waiting_for_debugger;
-    let main = info.r#type == "page";
     let task_shared = shared.clone();
     shared.spawn(async move {
         let session = session.with_timeout(SETUP_TIMEOUT);
-        setup(&task_shared, &session, kind, main, tab, waiting).await;
+        let target = NewTarget {
+            session: &session,
+            kind,
+            tab,
+        };
+        setup(&task_shared, target, waiting).await;
         if let Some(id) = new_tab {
             if let Some(front) = front_after_popup(&task_shared, id) {
                 let front = front.with_timeout(SETUP_TIMEOUT);
@@ -1972,148 +2033,28 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
     });
 }
 
-/// How much of the page's traffic Chrome keeps for `network show`: the
-/// bodies of its responses (evicted oldest first past the total), and
-/// request bodies up to 64KB in the request events.
-fn network_enable() -> network::EnableParams {
-    network::EnableParams {
-        max_total_buffer_size: Some(BODIES),
-        max_resource_buffer_size: Some(BODY),
-        max_post_data_size: Some(64 * 1024),
-        ..network::EnableParams::default()
-    }
-}
-
-/// Keeps response bodies (up to [`BODIES`] a session, [`BODY`] each)
-/// outside the renderer, where a navigation does not drop them.
-fn durable_messages() -> network::ConfigureDurableMessagesParams {
-    network::ConfigureDurableMessagesParams {
-        max_total_buffer_size: Some(BODIES),
-        max_resource_buffer_size: Some(BODY),
-    }
-}
-
-/// How many bytes of response bodies Chrome keeps for a page or iframe
-/// session, and for one response.
-const BODIES: i64 = 64 * 1024 * 1024;
-const BODY: i64 = 10 * 1024 * 1024;
-
-/// What a target is to [`setup`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Kind {
-    /// A page or iframe session.
-    Host,
-    /// A tab's dedicated worker.
-    Worker,
-    Other,
-}
-
-/// Prepares a new target before it runs: auto-attach for its children,
-/// the domains commands need, frame tracking and chrome-cdp's isolated
-/// world, the session's settings; then resumes it. `kind` is
-/// [`Kind::Host`] for page and iframe sessions, with `tab` the tab whose
-/// frames they have; a tab's dedicated worker gets only its console.
+/// Prepares a new target before it runs, then resumes it: every feature
+/// that applies to its kind (see [`features`]) adds its steps. A page or
+/// iframe gets auto-attach for its children, the domains commands need,
+/// frame tracking and chrome-cdp's isolated world, and the session's
+/// settings; a tab's dedicated worker gets only its console; the others
+/// are only resumed.
 ///
 /// Every step and the resume are sent at once and only then awaited. Chrome
 /// runs them in order, but some answers (`Page.enable` in a popup's new
 /// renderer) only come once the target runs, so awaiting each step before
 /// sending the next would stall until the timeout.
-///
-/// `main` is set for a page's own session (not an iframe's).
-async fn setup(
-    shared: &Arc<Shared>,
-    session: &Session,
-    kind: Kind,
-    main: bool,
-    tab: Option<u32>,
-    waiting: bool,
-) {
+async fn setup(shared: &Arc<Shared>, target: NewTarget<'_>, waiting: bool) {
     let mut steps: Vec<(&str, Step)> = Vec::new();
-    if kind == Kind::Worker {
-        // Console calls and exceptions, and the browser's messages.
-        steps.push((
-            "Runtime.enable",
-            step(session.call(runtime::EnableParams::default())),
-        ));
-        steps.push((
-            "Log.enable",
-            step(session.call(cdp::domains::log::EnableParams::default())),
-        ));
-    }
-    if kind == Kind::Host {
-        steps.push(("auto-attach", step(session.call(auto_attach()))));
-        steps.push((
-            "Page.enable",
-            step(session.call(page::EnableParams::default())),
-        ));
-        // `init`, `DOMContentLoaded`, `load`, … per frame, for navigation
-        // waits.
-        steps.push((
-            "Page.setLifecycleEventsEnabled",
-            step(session.call(page::SetLifecycleEventsEnabledParams::new(true))),
-        ));
-        // Reports every execution context, the existing ones too, and
-        // console calls and exceptions (for the console).
-        steps.push((
-            "Runtime.enable",
-            step(session.call(runtime::EnableParams::default())),
-        ));
-        // The browser's messages: failed loads, CSP violations, …
-        steps.push((
-            "Log.enable",
-            step(session.call(cdp::domains::log::EnableParams::default())),
-        ));
-        // Response bodies kept in the browser process, so `network show
-        // --body` still has them after the page navigates. Sent before
-        // `Network.enable`, but not waited for with the other steps: in a
-        // new popup Chrome answers it only much later, and the tab must
-        // not wait for that to be ready.
-        let durable = session.call(durable_messages());
-        shared.spawn(async move {
-            if let Err(e) = durable.await {
-                tracing::debug!("cannot keep response bodies durably: {e}");
-            }
-        });
-        // Requests, for network idle, `wait --request/--response` and
-        // the network log.
-        steps.push(("Network.enable", step(session.call(network_enable()))));
-        // The frames that exist already; events report later ones.
-        let tree = session.call(page::GetFrameTreeParams::default());
-        let seed_shared = shared.clone();
-        let session_id = session.id().unwrap_or_default().to_owned();
-        steps.push((
-            "Page.getFrameTree",
-            Box::pin(async move {
-                let tree = tree.await?.frame_tree;
-                if let Some(tab) = tab {
-                    seed(&seed_shared, tab, &session_id, &tree);
-                }
-                Ok(())
-            }),
-        ));
-        // chrome-cdp's isolated world, with its helper bundle, in every
-        // document from now on, and in the ones that exist already.
-        let mut world =
-            page::AddScriptToEvaluateOnNewDocumentParams::new(injected::BUNDLE.to_owned());
-        world.world_name = Some(frames::WORLD_NAME.to_owned());
-        world.run_immediately = Some(true);
-        steps.push(("the isolated world", step(session.call(world))));
-        // `perf`'s observer of LCP, layout shifts, interactions and long
-        // tasks, in the same world, from each document's start.
-        let mut perf =
-            page::AddScriptToEvaluateOnNewDocumentParams::new(observe::PERF_OBSERVER.to_owned());
-        perf.world_name = Some(frames::WORLD_NAME.to_owned());
-        steps.push(("the perf observer", step(session.call(perf))));
-        // `init-script` and `expose` (see `inject`).
-        inject::setup_steps(shared, session, &mut steps);
-        // Routes and HTTP authentication (see `fetch`).
-        fetch::setup_steps(shared, session, &mut steps);
-        // Devices, viewport, locale, … (see `emulation`).
-        emulation::setup_steps(shared, session, main, &mut steps);
+    for feature in REGISTRY {
+        if feature.kinds().contains(target.kind) {
+            tracing::trace!(feature = feature.name(), kind = ?target.kind, "setting up");
+            feature.setup_steps(shared, target, &mut steps);
+        }
     }
     if waiting {
         let resume = runtime::RunIfWaitingForDebuggerParams::default();
-        steps.push(("resuming", step(session.call(resume))));
+        steps.push(("resuming", step(target.session.call(resume))));
     }
     for (what, result) in steps {
         if let Err(e) = result.await {
@@ -2192,6 +2133,17 @@ fn front_after_popup(shared: &Shared, id: u32) -> Option<Session> {
     (front.target_id != popup.target_id).then(|| front.session.clone())
 }
 
+/// Target `target_id` is gone: forget it, and its tab if it is one.
+fn destroyed(shared: &Shared, target_id: &str) {
+    let mut state = shared.lock();
+    state.targets.retain(|_, t| t.id != target_id);
+    if let Some(id) = state.id_of(target_id) {
+        state.remove(id);
+    }
+    drop(state);
+    shared.bump();
+}
+
 /// Tab `id` is set up: commands may use it now.
 fn ready(shared: &Shared, id: u32) {
     let mut state = shared.lock();
@@ -2216,11 +2168,11 @@ fn ready(shared: &Shared, id: u32) {
     shared.bump();
 }
 
-/// A session went away: forget its tab or frame.
+/// A session went away: forget its target, and its tab or frame.
 fn detached(shared: &Shared, session_id: &str) {
     let mut state = shared.lock();
-    let host = state.hosts.remove(session_id);
-    if let Some(tab) = host.and_then(|h| h.tab)
+    let target = state.forget_target(session_id);
+    if let Some(tab) = target.filter(|t| t.kind.is_host()).and_then(|t| t.tab())
         && let Some(tab) = state.tabs.get_mut(&tab)
     {
         tab.frames.session_gone(session_id);
@@ -2249,7 +2201,10 @@ mod tests {
     use serde_json::json;
     use tokio::time::Instant;
 
-    use super::{Settings, Tabs, parse_tab_id};
+    use cdp::domains::{page, target};
+
+    use super::targets::{Owner, Target, TargetKind};
+    use super::{Settings, State, Tab, Tabs, parse_tab_id};
 
     /// A burst far past the old 1024-event broadcast buffer, sent while
     /// the tab's watchers cannot run, loses nothing: every console entry
@@ -2279,7 +2234,7 @@ mod tests {
         }}));
         // Its setup starts once the tab and its watchers are there.
         assert!(peer.recv_json().await.is_some());
-        assert!(tabs.shared.lock().hosts.contains_key("S1"));
+        assert!(tabs.shared.lock().targets.contains_key("S1"));
         let mut probe = conn.session("S1").events_lossless("Probe.");
         let (dispatched, burst_done) = std::sync::mpsc::channel();
         io.spawn(async move {
@@ -2335,6 +2290,100 @@ mod tests {
         }
         drop(tabs);
         io.shutdown_background();
+    }
+
+    /// A shared or service worker belongs to the tabs of its scope with
+    /// a frame on its origin: the main frame's or an iframe's.
+    #[tokio::test]
+    async fn tabs_of_a_worker() {
+        let (transport, _peer) = MemoryTransport::pair();
+        let conn = Connection::new(transport);
+        let mut state = State::new();
+        let frame = |id: &str, parent: Option<&str>, url: &str| -> page::Frame {
+            serde_json::from_value(json!({
+                "id": id, "parentId": parent, "loaderId": "L", "url": url,
+                "domainAndRegistry": "", "securityOrigin": "", "mimeType": "text/html",
+                "secureContextType": "Secure", "crossOriginIsolatedContextType": "NotIsolated",
+                "gatedAPIFeatures": [],
+            }))
+            .unwrap()
+        };
+        // t1: a.test with a b.test iframe; t2: b.test; t3: a.test in
+        // context c1; t4: b.test on another port.
+        let tabs = [
+            ("http://a.test/", Some("http://b.test/frame"), None),
+            ("http://b.test/x", None, None),
+            ("http://a.test/y", None, Some("C1")),
+            ("http://b.test:8080/", None, None),
+        ];
+        for (n, (url, iframe, context)) in tabs.into_iter().enumerate() {
+            let id = u32::try_from(n + 1).unwrap();
+            let target_id = format!("T{id}");
+            let session_id = format!("S{id}");
+            let info: target::TargetInfo = serde_json::from_value(json!({
+                "targetId": target_id, "type": "page", "title": "", "url": url,
+                "attached": true, "canAccessOpener": false,
+            }))
+            .unwrap();
+            let context = context.map(|c: &str| (c.to_owned(), "c1".to_owned()));
+            let session = conn.session(session_id.clone());
+            let mut tab = Tab::new(&info, &session, &session_id, context);
+            tab.frames
+                .navigated(&session_id, &frame(&target_id, None, url));
+            if let Some(iframe) = iframe {
+                tab.frames.attached(&session_id, "F", &target_id);
+                tab.frames
+                    .navigated(&session_id, &frame("F", Some(&target_id), iframe));
+            }
+            state.tabs.insert(id, tab);
+        }
+        let worker = |origin: &str, scope: Option<&str>| {
+            Target::new(
+                conn.session("W".to_owned()),
+                TargetKind::ServiceWorker,
+                "W".to_owned(),
+                format!("{origin}/sw.js"),
+                Owner::Origin {
+                    origin: origin.to_owned(),
+                },
+                scope.map(str::to_owned),
+                None,
+            )
+        };
+        assert_eq!(state.tabs_of(&worker("http://b.test", None)), [1, 2]);
+        assert_eq!(state.tabs_of(&worker("http://a.test", None)), [1]);
+        assert_eq!(state.tabs_of(&worker("http://a.test", Some("C1"))), [3]);
+        assert!(state.tabs_of(&worker("http://c.test", None)).is_empty());
+        let mut dedicated = worker("http://b.test", None);
+        dedicated.owner = Owner::Tab(4);
+        assert_eq!(state.tabs_of(&dedicated), [4]);
+        dedicated.owner = Owner::None;
+        assert!(state.tabs_of(&dedicated).is_empty());
+    }
+
+    /// A target that goes takes the targets it announced with it.
+    #[tokio::test]
+    async fn forgetting_a_target_forgets_its_children() {
+        let (transport, _peer) = MemoryTransport::pair();
+        let conn = Connection::new(transport);
+        let mut state = State::new();
+        for (session, parent) in [("P", None), ("I", Some("P")), ("W", Some("I")), ("X", None)] {
+            let target = Target::new(
+                conn.session(session.to_owned()),
+                TargetKind::Other,
+                session.to_owned(),
+                String::new(),
+                Owner::None,
+                None,
+                parent.map(str::to_owned),
+            );
+            state.targets.insert(session.to_owned(), target);
+        }
+        assert!(state.forget_target("I").is_some());
+        let mut left: Vec<&String> = state.targets.keys().collect();
+        left.sort();
+        assert_eq!(left, ["P", "X"]);
+        assert!(state.forget_target("I").is_none());
     }
 
     #[test]

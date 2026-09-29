@@ -1,7 +1,7 @@
 //! Init scripts and exposed functions in page and iframe sessions (plan
 //! 07, milestone 7.3; the session's list is [`crate::inject`]'s).
 //!
-//! Each session records what it was given ([`super::Host::injected`]), by
+//! Each session records what it was given ([`super::Target::injected`]), by
 //! a key that is never reused, with the script id Chrome gave back. A new
 //! session gets everything during its setup, while paused
 //! ([`setup_steps`]); a change compares every session with the list and
@@ -21,6 +21,7 @@ use cdp::Session;
 use cdp::domains::{page, runtime};
 use futures_util::future::join_all;
 
+use super::features::Feature;
 use super::{Shared, Step};
 use crate::frames::WORLD_NAME;
 use crate::inject::{
@@ -36,15 +37,15 @@ pub(super) fn setup_steps(shared: &Arc<Shared>, session: &Session, steps: &mut V
     }
 }
 
-/// Brings every page and iframe session in line with the session's list;
+/// Brings every target [`Feature::Inject`] applies to in line with the
+/// session's list;
 /// with `now`, scripts added run in the documents there are too. Returns
 /// the errors Chrome gave.
 pub(super) async fn apply(shared: &Arc<Shared>, now: bool, timeout: Duration) -> Vec<String> {
     let hosts: Vec<(String, Session)> = shared
         .lock()
-        .hosts
-        .iter()
-        .map(|(id, h)| (id.clone(), h.session.with_timeout(timeout)))
+        .applies(Feature::Inject)
+        .map(|(id, t)| (id.clone(), t.session.with_timeout(timeout)))
         .collect();
     let calls: Vec<Step> = hosts
         .iter()
@@ -68,7 +69,7 @@ pub(super) async fn apply(shared: &Arc<Shared>, now: bool, timeout: Duration) ->
 /// to await.
 fn sync(shared: &Arc<Shared>, session_id: &str, session: &Session, now: bool) -> Vec<Step> {
     let mut state = shared.lock();
-    let Some(host) = state.hosts.get_mut(session_id) else {
+    let Some(host) = state.targets.get_mut(session_id) else {
         return Vec::new();
     };
     // Each session gets its own context's items (see `crate::context`).
@@ -147,9 +148,9 @@ fn add(
         let kept = {
             let mut state = shared.lock();
             match state
-                .hosts
+                .targets
                 .get_mut(&session_id)
-                .and_then(|h| h.injected.get_mut(&key))
+                .and_then(|t| t.injected.get_mut(&key))
             {
                 Some(slot) => {
                     *slot = Some(identifier.clone());
@@ -181,9 +182,9 @@ fn add_seed_binding(shared: &Arc<Shared>, session_id: &str, session: &Session, k
         let kept = {
             let mut state = shared.lock();
             match state
-                .hosts
+                .targets
                 .get_mut(&session_id)
-                .and_then(|h| h.injected.get_mut(&key))
+                .and_then(|t| t.injected.get_mut(&key))
             {
                 Some(slot) => {
                     *slot = Some(String::new());

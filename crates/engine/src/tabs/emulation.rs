@@ -23,6 +23,8 @@ use cdp::domains::{browser, network, page};
 use futures_util::future::join_all;
 use protocol::schema::{Emulation, Viewport};
 
+use super::features::Feature;
+use super::targets::TargetKind;
 use super::{Shared, Step, lock, step};
 use crate::emulate::{Aspects, clock_script};
 
@@ -35,9 +37,9 @@ pub(super) fn setup_steps(
 ) {
     let scope = session.id().and_then(|id| {
         lock(&shared.state)
-            .hosts
+            .targets
             .get(id)
-            .and_then(|h| h.scope.clone())
+            .and_then(|t| t.scope.clone())
     });
     let state = shared.settings.emulation.get_in(scope.as_deref());
     let default = shared.default_viewport.as_ref();
@@ -51,8 +53,8 @@ pub(super) fn setup_steps(
             "the frozen clock",
             Box::pin(async move {
                 let identifier = add.await?;
-                if let Some(host) = lock(&shared.state).hosts.get_mut(&session_id) {
-                    host.clock = Some(identifier);
+                if let Some(target) = lock(&shared.state).targets.get_mut(&session_id) {
+                    target.clock = Some(identifier);
                 }
                 Ok(())
             }),
@@ -60,8 +62,8 @@ pub(super) fn setup_steps(
     }
 }
 
-/// Sends what changed (`aspects`) to every page and iframe session of
-/// `scope`. Returns the errors Chrome gave (an unknown time zone, say).
+/// Sends what changed (`aspects`) to every target of `scope`
+/// [`Feature::Emulation`] applies to. Returns the errors Chrome gave (an unknown time zone, say).
 pub(super) async fn apply(
     shared: &Shared,
     aspects: Aspects,
@@ -71,15 +73,14 @@ pub(super) async fn apply(
     let state = shared.settings.emulation.get_in(scope);
     let default = shared.default_viewport.as_ref();
     let hosts: Vec<(String, Session, bool, Option<String>)> = lock(&shared.state)
-        .hosts
-        .iter()
-        .filter(|(_, h)| h.scope.as_deref() == scope)
-        .map(|(id, h)| {
+        .applies(Feature::Emulation)
+        .filter(|(_, t)| t.scope.as_deref() == scope)
+        .map(|(id, t)| {
             (
                 id.clone(),
-                h.session.with_timeout(timeout),
-                h.main,
-                h.clock.clone(),
+                t.session.with_timeout(timeout),
+                t.kind == TargetKind::Page,
+                t.clock.clone(),
             )
         })
         .collect();
@@ -105,8 +106,8 @@ pub(super) async fn apply(
         for (id, result) in join_all(clocks).await {
             match result {
                 Ok(identifier) => {
-                    if let Some(host) = lock(&shared.state).hosts.get_mut(&id) {
-                        host.clock = identifier;
+                    if let Some(target) = lock(&shared.state).targets.get_mut(&id) {
+                        target.clock = identifier;
                     }
                 }
                 Err(e) => errors.push(e.to_string()),
@@ -319,9 +320,9 @@ fn grow_window(session: &Session, viewport: &Viewport) -> Step {
 fn page_viewport(shared: &Shared, session: &Session) -> Option<Viewport> {
     let scope = session.id().and_then(|id| {
         lock(&shared.state)
-            .hosts
+            .targets
             .get(id)
-            .and_then(|h| h.scope.clone())
+            .and_then(|t| t.scope.clone())
     });
     shared
         .settings
