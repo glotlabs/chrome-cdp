@@ -1,0 +1,13 @@
+title = "Log in on a public sandbox"
+network = true
+prompt = """
+Log in at https://the-internet.herokuapp.com/login as tomsmith with the
+password SuperSecretPassword! and tell me the message the site shows
+after logging in. End your reply with a line `ANSWER: <the message>`.
+"""
+
+[verify]
+answer = ["secure area"]
+
+[solution]
+answer = "You logged into a secure area!"

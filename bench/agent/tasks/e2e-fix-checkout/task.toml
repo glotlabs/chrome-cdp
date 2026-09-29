@@ -1,0 +1,34 @@
+title = "Fix an app change that broke an E2E test"
+timeout_secs = 900
+prompt = """
+This directory is a small shop (a React app; the built app is in dist/,
+its sources in src/) with end-to-end tests in e2e/. A recent change broke
+checkout: `chrome-cdp test e2e/scenarios/checkout.cdp` fails, and placing
+an order in the app fails too. Find the bug in the app and fix it. Do not
+change the tests or the mocks. The tests run the built app in dist/, and
+there is no Node here to rebuild it, so fix both src/ and the built file
+in dist/assets/.
+"""
+
+[setup]
+copy = [{ from = "examples/e2e-shop", exclude = ["node_modules", ".results"] }]
+replace = [
+  { file = "chrome-cdp.toml", from = "cargo run --quiet --manifest-path ../../Cargo.toml -p fixtures --", to = "{fixtures}" },
+  { file = "chrome-cdp.toml", from = "4173", to = "{port}" },
+  { file = "chrome-cdp.toml", from = "4174", to = "{port2}" },
+  { file = "src/api.js", from = '"/api/orders", { items, total }', to = '"/api/order", { items, total }' },
+  { file = "dist/assets/index-*.js", from = '`/api/orders`,{items:e,total:t}', to = '`/api/order`,{items:e,total:t}' },
+]
+
+[verify]
+unchanged = ["e2e/scenarios", "e2e/mocks", "e2e/steps", "e2e/vars"]
+
+[[verify.test]]
+args = ["e2e/scenarios/checkout.cdp"]
+min_passed = 3
+
+[solution]
+replace = [
+  { file = "src/api.js", from = '"/api/order", { items, total }', to = '"/api/orders", { items, total }' },
+  { file = "dist/assets/index-*.js", from = '`/api/order`,{items:e,total:t}', to = '`/api/orders`,{items:e,total:t}' },
+]

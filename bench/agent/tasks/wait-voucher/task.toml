@@ -1,0 +1,11 @@
+title = "Wait for a slow result"
+prompt = """
+Generate a voucher on {site}/bench/dynamic.html and tell me its code. End
+your reply with a line `ANSWER: <the voucher code>`.
+"""
+
+[verify]
+answer = ["7F3K-92"]
+
+[solution]
+answer = "7F3K-92"

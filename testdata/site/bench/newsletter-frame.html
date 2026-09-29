@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Newsletter</title>
+<script src="record.js"></script>
+<form id="subscribe">
+  <p>Get our monthly letter.</p>
+  <label>Your email <input name="email" type="email"></label>
+  <label><input type="checkbox" name="weekly"> Weekly digest instead</label>
+  <button>Subscribe</button>
+  <p role="status" id="status"></p>
+</form>
+<script>
+  document.getElementById('subscribe').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = e.target.email.value.trim();
+    await record({ form: 'newsletter', email, weekly: e.target.weekly.checked });
+    document.getElementById('status').textContent = `Subscribed ${email}.`;
+  });
+</script>

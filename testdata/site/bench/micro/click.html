@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Click benchmark</title>
+<!-- Micro benchmark (plan 10.4): click-to-report latency. -->
+<h1>Counter</h1>
+<button id="inc">Add one</button>
+<p id="count" role="status">0</p>
+<script>
+  const count = document.getElementById('count');
+  document.getElementById('inc').addEventListener('click', () => {
+    count.textContent = String(Number(count.textContent) + 1);
+  });
+</script>

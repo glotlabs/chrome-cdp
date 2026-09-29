@@ -1,0 +1,19 @@
+title = "Log in"
+prompt = """
+Sign in at {site}/bench/login.html as ada@example.com with the password
+correct-horse-battery, and keep the session signed in ("Keep me signed in").
+"""
+
+[[verify.record]]
+form = "login"
+fields = { email = "ada@example.com", remember = true }
+
+[solution]
+batch = """
+open {site}/bench/login.html
+fill label=Email ada@example.com
+fill label=Password correct-horse-battery
+check 'label=Keep me signed in'
+click 'role=button[name="Sign in"]'
+expect 'text=Welcome back, Ada' visible
+"""

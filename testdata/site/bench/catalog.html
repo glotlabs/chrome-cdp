@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Lighting catalog</title>
+<h1>Lighting</h1>
+<ul id="list"></ul>
+<nav aria-label="Pages">
+  <button id="prev">Previous</button>
+  <span id="page"></span>
+  <button id="next">Next</button>
+</nav>
+<script>
+  // 40 products, 8 per page, rendered one page at a time.
+  const kinds = ['Desk lamp', 'Floor lamp', 'Pendant', 'Wall light', 'Night light'];
+  const finishes = ['Oak', 'Walnut', 'Steel', 'Copper', 'Ceramic', 'Linen', 'Glass', 'Marble'];
+  const products = [];
+  for (let i = 0; i < 40; i++) {
+    products.push({ name: `${finishes[i % 8]} ${kinds[i % 5].toLowerCase()}`, price: 19 + ((i * 37) % 180) + 0.5 });
+  }
+  products[27] = { name: 'Brass lamp', price: 74.5 };
+  let page = 0;
+  function show() {
+    const items = products.slice(page * 8, page * 8 + 8);
+    document.getElementById('list').innerHTML =
+      items.map((p) => `<li>${p.name} — $${p.price.toFixed(2)}</li>`).join('');
+    document.getElementById('page').textContent = `Page ${page + 1} of 5`;
+    document.getElementById('prev').disabled = page === 0;
+    document.getElementById('next').disabled = page === 4;
+  }
+  document.getElementById('prev').addEventListener('click', () => { page--; show(); });
+  document.getElementById('next').addEventListener('click', () => { page++; show(); });
+  show();
+</script>

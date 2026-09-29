@@ -1,0 +1,18 @@
+title = "Fill a form in a cross-site iframe"
+prompt = """
+Subscribe ada@example.com to the newsletter on {site}/bench/newsletter.html,
+with the weekly digest.
+"""
+
+[[verify.record]]
+form = "newsletter"
+fields = { email = "ada@example.com", weekly = true }
+
+[solution]
+batch = """
+open {site}/bench/newsletter.html
+fill 'frame=newsletter-frame >> label=Your email' ada@example.com
+check 'frame=newsletter-frame >> label=Weekly digest instead'
+click 'frame=newsletter-frame >> role=button[name=Subscribe]'
+expect 'frame=newsletter-frame >> text=Subscribed ada@example.com' visible
+"""

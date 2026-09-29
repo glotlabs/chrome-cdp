@@ -1,0 +1,75 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Create your account</title>
+<script src="record.js"></script>
+<style>body{font-family:sans-serif;max-width:32rem;margin:2rem auto}label{display:block;margin:.6rem 0}fieldset{border:0;padding:0}.error{color:#b00}</style>
+<h1>Create your account</h1>
+<p id="progress">Step 1 of 3</p>
+<form id="wizard" novalidate>
+  <fieldset data-step="1">
+    <legend>Account</legend>
+    <label>Full name <input name="name" required></label>
+    <label>Email <input name="email" type="email" required></label>
+  </fieldset>
+  <fieldset data-step="2" hidden>
+    <legend>Address</legend>
+    <label>Street <input name="street" required></label>
+    <label>City <input name="city" required></label>
+    <label>Country
+      <select name="country" required>
+        <option value="">Choose…</option>
+        <option value="DK">Denmark</option>
+        <option value="NO">Norway</option>
+        <option value="SE">Sweden</option>
+      </select>
+    </label>
+  </fieldset>
+  <fieldset data-step="3" hidden>
+    <legend>Plan</legend>
+    <label><input type="radio" name="plan" value="free"> Free</label>
+    <label><input type="radio" name="plan" value="pro"> Pro — $12/month</label>
+    <label><input type="radio" name="plan" value="team"> Team — $40/month</label>
+    <label><input type="checkbox" name="terms"> I accept the terms</label>
+  </fieldset>
+  <p class="error" role="alert" id="error"></p>
+  <button type="button" id="back" hidden>Back</button>
+  <button type="button" id="next">Next</button>
+</form>
+<p id="done" hidden>Account created. Check your inbox.</p>
+<script>
+  const form = document.getElementById('wizard');
+  const steps = [...form.querySelectorAll('fieldset')];
+  const error = document.getElementById('error');
+  const next = document.getElementById('next');
+  const back = document.getElementById('back');
+  let step = 0;
+  function show() {
+    steps.forEach((f, i) => { f.hidden = i !== step; });
+    back.hidden = step === 0;
+    next.textContent = step === steps.length - 1 ? 'Create account' : 'Next';
+    document.getElementById('progress').textContent = `Step ${step + 1} of ${steps.length}`;
+    error.textContent = '';
+  }
+  function valid() {
+    const fields = [...steps[step].querySelectorAll('input:not([type=radio]):not([type=checkbox]), select')];
+    const empty = fields.find((f) => !f.value.trim());
+    if (empty) return `${empty.closest('label').firstChild.textContent.trim()} is required.`;
+    if (step === 2) {
+      if (!form.plan.value) return 'Choose a plan.';
+      if (!form.terms.checked) return 'Accept the terms to continue.';
+    }
+    return '';
+  }
+  back.addEventListener('click', () => { step--; show(); });
+  next.addEventListener('click', async () => {
+    const problem = valid();
+    if (problem) { error.textContent = problem; return; }
+    if (step < steps.length - 1) { step++; show(); return; }
+    const d = new FormData(form);
+    await record({ form: 'signup', name: d.get('name'), email: d.get('email'), street: d.get('street'),
+      city: d.get('city'), country: d.get('country'), plan: d.get('plan') });
+    form.hidden = true;
+    document.getElementById('done').hidden = false;
+  });
+  show();
+</script>

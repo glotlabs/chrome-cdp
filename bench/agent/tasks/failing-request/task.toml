@@ -1,0 +1,12 @@
+title = "Debug a failed request"
+prompt = """
+One widget of the dashboard at {site}/bench/dashboard.html says it could
+not load. Which request fails, and with what HTTP status? End your reply
+with a line `ANSWER: <the request's path> <the status code>`.
+"""
+
+[verify]
+answer = ["error-budget", "503"]
+
+[solution]
+answer = "/bench/data/error-budget.json 503"

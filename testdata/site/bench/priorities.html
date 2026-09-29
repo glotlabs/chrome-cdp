@@ -1,0 +1,49 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sprint priorities</title>
+<script src="record.js"></script>
+<style>
+  ol { list-style: none; padding: 0; width: 18rem; }
+  li { padding: .6rem; margin: .3rem 0; background: #eef; border: 1px solid #99c; cursor: grab; user-select: none; }
+  li.dragging { opacity: .5; }
+</style>
+<h1>Sprint priorities</h1>
+<p>Drag the items into order, most important first, then save.</p>
+<ol id="list">
+  <li>Update the docs</li>
+  <li>Fix the login bug</li>
+  <li>Upgrade the database</li>
+  <li>Design the new logo</li>
+</ol>
+<button id="save">Save order</button>
+<p role="status" id="status"></p>
+<script>
+  // Sorting with pointer events (no buttons to move items).
+  const list = document.getElementById('list');
+  let dragged = null;
+  list.addEventListener('pointerdown', (e) => {
+    const li = e.target.closest('li');
+    if (!li) return;
+    dragged = li;
+    li.classList.add('dragging');
+    li.setPointerCapture(e.pointerId);
+  });
+  list.addEventListener('pointermove', (e) => {
+    if (!dragged) return;
+    const over = [...list.children].find((li) => {
+      const r = li.getBoundingClientRect();
+      return li !== dragged && e.clientY >= r.top && e.clientY <= r.bottom;
+    });
+    if (!over) return;
+    const r = over.getBoundingClientRect();
+    list.insertBefore(dragged, e.clientY < r.top + r.height / 2 ? over : over.nextSibling);
+  });
+  const drop = () => { if (dragged) dragged.classList.remove('dragging'); dragged = null; };
+  list.addEventListener('pointerup', drop);
+  list.addEventListener('pointercancel', drop);
+  document.getElementById('save').addEventListener('click', async () => {
+    const order = [...list.children].map((li) => li.textContent.trim());
+    await record({ form: 'priorities', order: order.join(' | ') });
+    document.getElementById('status').textContent = 'Order saved.';
+  });
+</script>

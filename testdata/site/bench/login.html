@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Acme — Sign in</title>
+<script src="record.js"></script>
+<style>body{font-family:sans-serif;max-width:28rem;margin:3rem auto}label{display:block;margin:.6rem 0}.error{color:#b00}</style>
+<h1>Sign in to Acme</h1>
+<form id="login">
+  <label>Email <input name="email" type="email" autocomplete="username" required></label>
+  <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+  <label><input name="remember" type="checkbox"> Keep me signed in</label>
+  <button>Sign in</button>
+  <p class="error" role="alert" id="error"></p>
+</form>
+<section id="account" hidden>
+  <h2>Welcome back, Ada</h2>
+  <p>Your plan: Team (renews on 1 March).</p>
+</section>
+<script>
+  const form = document.getElementById('login');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const data = new FormData(form);
+    if (data.get('email') !== 'ada@example.com' || data.get('password') !== 'correct-horse-battery') {
+      document.getElementById('error').textContent = 'Wrong email or password.';
+      return;
+    }
+    await record({ form: 'login', email: data.get('email'), remember: data.get('remember') === 'on' });
+    form.hidden = true;
+    document.getElementById('account').hidden = false;
+  });
+</script>

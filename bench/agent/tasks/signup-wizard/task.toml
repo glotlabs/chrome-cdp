@@ -1,0 +1,26 @@
+title = "Fill a multi-step form"
+prompt = """
+Create an account at {site}/bench/signup.html for Grace Hopper,
+grace@example.com, living at Storgata 1, Oslo, Norway, on the Pro plan.
+Accept the terms.
+"""
+
+[[verify.record]]
+form = "signup"
+fields = { name = "Grace Hopper", email = "grace@example.com", street = "Storgata 1", city = "Oslo", country = "NO", plan = "pro" }
+
+[solution]
+batch = """
+open {site}/bench/signup.html
+fill 'label=Full name' 'Grace Hopper'
+fill label=Email grace@example.com
+click role=button[name=Next]
+fill label=Street 'Storgata 1'
+fill label=City Oslo
+select label=Country Norway
+click role=button[name=Next]
+check 'role=radio[name="Pro — $12/month"]'
+check 'label=I accept the terms'
+click 'role=button[name="Create account"]'
+expect 'text=Account created' visible
+"""

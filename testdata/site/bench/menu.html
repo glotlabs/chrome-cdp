@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Spreadsheet</title>
+<script src="record.js"></script>
+<style>
+  .menubar > li { display: inline-block; position: relative; padding: .4rem .8rem; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  .menu { display: none; position: absolute; top: 100%; left: 0; background: #fff; border: 1px solid #999; min-width: 10rem; }
+  .menu li { position: relative; padding: .4rem .8rem; }
+  li:hover > .menu { display: block; }
+  .menu .menu { top: 0; left: 100%; }
+</style>
+<h1>Q3 budget.xlsx</h1>
+<ul class="menubar" role="menubar">
+  <li role="menuitem" aria-haspopup="true" aria-label="File">File
+    <ul class="menu" role="menu">
+      <li role="menuitem">New</li>
+      <li role="menuitem">Open…</li>
+      <li role="menuitem" aria-haspopup="true" aria-label="Export">Export ▸
+        <ul class="menu" role="menu">
+          <li role="menuitem" data-format="pdf">PDF</li>
+          <li role="menuitem" data-format="csv">CSV</li>
+          <li role="menuitem" data-format="xlsx">Excel</li>
+        </ul>
+      </li>
+    </ul>
+  </li>
+  <li role="menuitem" aria-haspopup="true" aria-label="Edit">Edit
+    <ul class="menu" role="menu"><li role="menuitem">Undo</li><li role="menuitem">Redo</li></ul>
+  </li>
+</ul>
+<p role="status" id="status"></p>
+<script>
+  document.querySelectorAll('[data-format]').forEach((item) => {
+    item.addEventListener('click', async () => {
+      await record({ form: 'export', format: item.dataset.format });
+      document.getElementById('status').textContent = `Exported as ${item.textContent}.`;
+    });
+  });
+</script>

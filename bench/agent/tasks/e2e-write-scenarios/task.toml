@@ -1,0 +1,31 @@
+title = "Write E2E tests with mocks for a frontend"
+# The runner and its mock files are chrome-cdp's; Playwright MCP has no
+# counterpart to write them for.
+arms = ["chrome-cdp"]
+timeout_secs = 1200
+prompt = """
+This directory is a small shop (a React app; the built app is in dist/,
+its sources in src/). It has no end-to-end tests yet. Write E2E tests for
+it with chrome-cdp's test runner (chrome-cdp.toml already configures it:
+scenarios in e2e/scenarios, mocks in e2e/mocks with a default set named
+base, vars in e2e/vars/mock.toml): at least the product list, a product
+page, signing in (ada@example.com, password "secret") and adding a product
+to the cart. The tests must run against mocks, with no backend: make
+`chrome-cdp test` pass. For the API's real answers, src/api.js has the
+calls, and `{fixtures} --shop dist --port {port2}` serves the real
+backend if you want to look at it.
+"""
+
+[setup]
+copy = [{ from = "examples/e2e-shop", exclude = ["node_modules", ".results", "e2e"] }]
+replace = [
+  { file = "chrome-cdp.toml", from = "cargo run --quiet --manifest-path ../../Cargo.toml -p fixtures --", to = "{fixtures}" },
+  { file = "chrome-cdp.toml", from = "4173", to = "{port}" },
+  { file = "chrome-cdp.toml", from = "4174", to = "{port2}" },
+]
+
+[[verify.test]]
+min_passed = 4
+
+[solution]
+copy = [{ from = "examples/e2e-shop/e2e", to = "e2e", exclude = [".results"] }]

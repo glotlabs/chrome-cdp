@@ -1,0 +1,23 @@
+title = "Get past form validation"
+prompt = """
+Fill in the shipping details on {site}/bench/shipping.html for Ada
+Lovelace, postcode 0150, phone +47 22 33 44 55, and continue to payment.
+Fix whatever the form complains about.
+"""
+
+[[verify.record]]
+form = "shipping"
+fields = { name = "Ada Lovelace", postcode = "0150", phone = "+4722334455" }
+
+[solution]
+batch = """
+open {site}/bench/shipping.html
+fill 'label=Full name' 'Ada Lovelace'
+fill label=Postcode 0150
+fill label=Phone '+47 22 33 44 55'
+click 'role=button[name="Continue to payment"]'
+expect 'text=no spaces' visible
+fill label=Phone +4722334455
+click 'role=button[name="Continue to payment"]'
+expect 'text=On to payment' visible
+"""

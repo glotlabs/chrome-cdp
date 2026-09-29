@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Accept the terms</title>
+<script src="record.js"></script>
+<h1>Before you continue</h1>
+<p>Read our terms of service. They open in a new window and end with an acceptance code.</p>
+<button id="open">Read the terms</button>
+<form id="accept">
+  <label>Acceptance code <input name="code"></label>
+  <button>Accept</button>
+  <p role="status" id="status"></p>
+</form>
+<script>
+  document.getElementById('open').addEventListener('click', () => {
+    window.open('terms-popup.html', 'terms', 'width=500,height=600');
+  });
+  document.getElementById('accept').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const code = e.target.code.value.trim();
+    const status = document.getElementById('status');
+    if (code !== 'TX-4471') { status.textContent = 'That code is not right.'; return; }
+    await record({ form: 'terms', code });
+    status.textContent = 'Thanks, the terms are accepted.';
+  });
+</script>

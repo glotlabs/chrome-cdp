@@ -1,0 +1,12 @@
+title = "Turn on a feature flag in local storage"
+prompt = """
+Join the beta on {site}/bench/flags.html; the page says how to turn beta
+features on. What tester code does it give you then? End your reply with
+a line `ANSWER: <the code>`.
+"""
+
+[verify]
+answer = ["B-5521"]
+
+[solution]
+answer = "B-5521"

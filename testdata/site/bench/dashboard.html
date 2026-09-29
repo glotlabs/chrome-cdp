@@ -1,0 +1,23 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Ops dashboard</title>
+<h1>Ops dashboard</h1>
+<section><h2>Users</h2><p id="users">Loading…</p></section>
+<section><h2>Uptime</h2><p id="uptime">Loading…</p></section>
+<section><h2>Error budget</h2><p id="budget">Loading…</p></section>
+<script>
+  // Three widgets; one of their requests fails on the server.
+  async function load(id, url, show) {
+    const el = document.getElementById(id);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('bad status');
+      el.textContent = show(await res.json());
+    } catch {
+      el.textContent = 'Could not load this widget.';
+    }
+  }
+  load('users', '/items?n=3', (items) => `${items.length * 1204} active users`);
+  load('uptime', '/bench/data/uptime.json', (d) => `${d.uptime}% this month`);
+  load('budget', '/bench/data/error-budget.json?status=503', (d) => `${d.left}% left`);
+</script>

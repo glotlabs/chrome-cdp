@@ -1,0 +1,21 @@
+title = "Answer JavaScript dialogs"
+prompt = """
+Delete the account on {site}/bench/delete.html. Confirm whatever the page
+asks.
+"""
+
+[[verify.record]]
+form = "delete"
+fields = { confirmed = "DELETE" }
+
+[solution]
+continue_on_error = true
+batch = """
+open {site}/bench/delete.html
+click 'role=button[name="Delete account"]'
+dialog accept
+# The prompt opens just after the confirm closes.
+wait 500
+dialog accept DELETE
+expect 'text=scheduled for deletion' visible
+"""

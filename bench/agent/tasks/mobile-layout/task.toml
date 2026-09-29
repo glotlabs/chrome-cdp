@@ -1,0 +1,13 @@
+title = "Verify a responsive layout on mobile"
+prompt = """
+Check the cart page {site}/bench/responsive.html on a phone: a 390×844
+viewport (iPhone-sized, mobile). One of its buttons ends up partly or
+wholly off-screen there. Which one? End your reply with a line
+`ANSWER: <the button's label>`.
+"""
+
+[verify]
+answer = ["go to checkout"]
+
+[solution]
+answer = "Go to checkout"

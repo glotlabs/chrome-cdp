@@ -1,0 +1,17 @@
+title = "Edit text and save with a shortcut"
+prompt = """
+Replace the whole team note on {site}/bench/editor.html with the text
+"Release moved to Friday." and save it.
+"""
+
+[[verify.record]]
+form = "note"
+fields = { text = "Release moved to Friday." }
+
+[solution]
+batch = """
+open {site}/bench/editor.html
+fill label=Note 'Release moved to Friday.'
+press Control+Enter
+expect text=Saved. visible
+"""

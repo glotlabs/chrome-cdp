@@ -1,0 +1,22 @@
+title = "Find and fix a failing button on the local dev server"
+prompt = """
+Our notes app is running on a local dev server at {dev}/ (it serves the
+files in ./app of the current directory, fresh on every request). Its
+"Save" button does nothing. Find out why, fix the bug in ./app, and check
+in the browser that saving a note works.
+"""
+
+[setup]
+serve = "app"
+
+[verify]
+page = """
+open {dev}/
+fill label=Title Groceries
+fill label=Note 'Milk, bread'
+click role=button[name=Save]
+expect 'text=Saved "Groceries"' visible
+"""
+
+[solution]
+replace = [{ file = "app/app.js", from = "#save-button", to = "#save" }]

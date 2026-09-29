@@ -1,0 +1,18 @@
+title = "Handle a popup"
+prompt = """
+Accept the terms at {site}/bench/terms.html. You need the acceptance code
+from the terms, which open in a new window.
+"""
+
+[[verify.record]]
+form = "terms"
+fields = { code = "TX-4471" }
+
+[solution]
+batch = """
+open {site}/bench/terms.html
+click 'role=button[name="Read the terms"]'
+fill 'label=Acceptance code' TX-4471
+click role=button[name=Accept]
+expect 'text=the terms are accepted' visible
+"""

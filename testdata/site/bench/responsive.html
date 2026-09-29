@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your cart</title>
+<style>
+  body { font-family: sans-serif; margin: 0; padding: 1rem; }
+  .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+  button { padding: .6rem 1rem; }
+  /* A layout bug on narrow screens: the checkout bar keeps a fixed
+     minimum width, so its button runs off the right edge. */
+  @media (max-width: 480px) {
+    .actions { flex-direction: column; align-items: flex-start; }
+    .checkout-bar { min-width: 560px; display: flex; justify-content: flex-end; }
+    body { overflow-x: hidden; }
+  }
+</style>
+<h1>Your cart</h1>
+<ul>
+  <li>Linen shirt — $49.00</li>
+  <li>Canvas tote — $18.00</li>
+</ul>
+<p>Total: $67.00</p>
+<div class="actions">
+  <button>Continue shopping</button>
+  <button>Apply coupon</button>
+  <div class="checkout-bar"><button>Go to checkout</button></div>
+</div>

@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Voucher</title>
+<h1>Get your voucher</h1>
+<button id="start">Generate voucher</button>
+<p id="busy" hidden>Generating… this takes a few seconds.</p>
+<p id="result" hidden></p>
+<script>
+  document.getElementById('start').addEventListener('click', () => {
+    document.getElementById('busy').hidden = false;
+    setTimeout(() => {
+      document.getElementById('busy').hidden = true;
+      const result = document.getElementById('result');
+      // Assembled late, so the code is not in the page's source as is.
+      result.textContent = 'Your voucher code: ' + ['7F3K', 90 + 2].join('-');
+      result.hidden = false;
+    }, 2500);
+  });
+</script>

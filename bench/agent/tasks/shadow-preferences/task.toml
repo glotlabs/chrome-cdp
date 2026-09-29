@@ -1,0 +1,19 @@
+title = "Change settings inside a web component"
+prompt = """
+On {site}/bench/settings.html, turn dark mode on, set the language to
+Norsk bokmål and show 50 items per page, then save the preferences.
+"""
+
+[[verify.record]]
+form = "preferences"
+fields = { dark = true, language = "nb", per_page = 50 }
+
+[solution]
+batch = """
+open {site}/bench/settings.html
+check 'role=switch[name="Dark mode"]'
+select label=Language 'Norsk bokmål'
+fill 'label=Items per page' 50
+click 'role=button[name="Save preferences"]'
+expect text=Saved. visible
+"""

@@ -1,0 +1,17 @@
+title = "Upload a file"
+prompt = """
+Submit an expense claim at {site}/bench/upload.html with the receipt
+./receipt-2291.txt from the current directory.
+"""
+
+[[verify.record]]
+form = "upload"
+fields = { name = "receipt-2291.txt", first_line = "Receipt 2291" }
+
+[solution]
+batch = """
+open {site}/bench/upload.html
+upload label=Receipt receipt-2291.txt
+click 'role=button[name="Submit claim"]'
+expect 'text=Claim submitted' visible
+"""

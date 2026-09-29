@@ -1,0 +1,11 @@
+title = "Download a file and read it"
+prompt = """
+Download the Q3 report from {site}/bench/exports.html. What was the
+revenue in September? End your reply with a line `ANSWER: <the revenue>`.
+"""
+
+[verify]
+answer = ["48210"]
+
+[solution]
+answer = "48,210"

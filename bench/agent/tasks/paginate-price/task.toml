@@ -1,0 +1,11 @@
+title = "Find an item across pages"
+prompt = """
+What does the brass lamp cost in the catalog at {site}/bench/catalog.html?
+End your reply with a line `ANSWER: <the price>`.
+"""
+
+[verify]
+answer = ["74.50"]
+
+[solution]
+answer = "$74.50"

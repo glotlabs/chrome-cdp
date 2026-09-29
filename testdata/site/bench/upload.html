@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Expense claim</title>
+<script src="record.js"></script>
+<h1>Submit an expense claim</h1>
+<form id="claim">
+  <label>Receipt <input type="file" name="receipt" accept=".txt,.pdf,.png"></label>
+  <button>Submit claim</button>
+  <p role="status" id="status"></p>
+</form>
+<script>
+  document.getElementById('claim').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const file = e.target.receipt.files[0];
+    const status = document.getElementById('status');
+    if (!file) { status.textContent = 'Attach a receipt first.'; return; }
+    const text = await file.text();
+    await record({ form: 'upload', name: file.name, size: file.size, first_line: text.split('\n')[0].trim() });
+    status.textContent = `Claim submitted with ${file.name}.`;
+  });
+</script>

@@ -1,0 +1,12 @@
+title = "Debug a console error"
+prompt = """
+On {site}/bench/report.html, clicking "Load report" shows nothing. Find
+the JavaScript error behind it. End your reply with a line
+`ANSWER: <the error message>`.
+"""
+
+[verify]
+answer = ["undefined", "total"]
+
+[solution]
+answer = "TypeError: Cannot read properties of undefined (reading 'total')"

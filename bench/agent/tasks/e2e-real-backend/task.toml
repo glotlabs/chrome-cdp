@@ -1,0 +1,59 @@
+title = "Make a mocked suite also pass against the real backend"
+# `chrome-cdp test --backend` is chrome-cdp's; Playwright MCP has no
+# counterpart.
+arms = ["chrome-cdp"]
+timeout_secs = 1200
+prompt = """
+This directory is a small shop (a React app; the built app is in dist/)
+with end-to-end tests in e2e/ that run against mocks: `chrome-cdp test`
+passes. chrome-cdp.toml also defines a real backend, `local` (the shop's
+real API, started for the run), but `chrome-cdp test --backend local`
+fails: the tests assume the mocks' data and behaviour. Make the suite pass
+against the real backend too, while it keeps passing against the mocks.
+Keep the tests: a test that can only work with mocks may be skipped on a
+real backend, but the rest must run there.
+"""
+
+[setup]
+copy = [{ from = "examples/e2e-shop", exclude = ["node_modules", ".results"] }]
+remove = ["e2e/vars"]
+# The suite as if it had been written for the mocks only: no vars files,
+# the mocks' values written out, no `@backend mock` markers.
+replace = [
+  { file = "chrome-cdp.toml", from = "cargo run --quiet --manifest-path ../../Cargo.toml -p fixtures --", to = "{fixtures}" },
+  { file = "chrome-cdp.toml", from = "4173", to = "{port}" },
+  { file = "chrome-cdp.toml", from = "4174", to = "{port2}" },
+  { file = "chrome-cdp.toml", from = "vars = \"e2e/vars/mock.toml\"\n", to = "" },
+  { file = "chrome-cdp.toml", from = "vars = \"e2e/vars/local.toml\"\n", to = "" },
+  { file = "e2e/steps/sign-in.cdp", from = "${var:password}", to = "secret" },
+  { file = "e2e/scenarios/cart.cdp", from = "@test \"starts empty\" @backend mock", to = "@test \"starts empty\"" },
+  { file = "e2e/scenarios/cart.cdp", from = "${var:keyboard}", to = "Mechanical keyboard" },
+  { file = "e2e/scenarios/search.cdp", from = "expect text=${var:keyboard} visible", to = "expect 'text=Mechanical keyboard' visible" },
+  { file = "e2e/scenarios/search.cdp", from = "${var:search}", to = "keyboard" },
+  { file = "e2e/scenarios/products.cdp", from = "count ${var:products}", to = "count 3" },
+  { file = "e2e/scenarios/products.cdp", from = "expect text=${var:keyboard} visible", to = "expect 'text=Mechanical keyboard' visible" },
+  { file = "e2e/scenarios/products.cdp", from = "role=link[name=${var:keyboard}]", to = "role=link[name=Mechanical keyboard]" },
+  { file = "e2e/scenarios/products.cdp", from = "text ${var:keyboard_price}", to = "text '$89.00'" },
+  { file = "e2e/scenarios/products.cdp", from = "text ${var:keyboard}", to = "text 'Mechanical keyboard'" },
+  { file = "e2e/scenarios/checkout.cdp", from = "  @backend mock\n", to = "" },
+  { file = "e2e/scenarios/errors.cdp", from = "  @backend mock\n", to = "" },
+  { file = "e2e/scenarios/live-prices.cdp", from = "@backend mock\n", to = "" },
+]
+
+[[verify.test]]
+min_passed = 17
+
+[[verify.test]]
+args = ["--backend", "local"]
+min_passed = 12
+
+[solution]
+copy = [
+  { from = "examples/e2e-shop/e2e", to = "e2e", exclude = [".results"] },
+  { from = "examples/e2e-shop/chrome-cdp.toml", to = "chrome-cdp.toml" },
+]
+replace = [
+  { file = "chrome-cdp.toml", from = "cargo run --quiet --manifest-path ../../Cargo.toml -p fixtures --", to = "{fixtures}" },
+  { file = "chrome-cdp.toml", from = "4173", to = "{port}" },
+  { file = "chrome-cdp.toml", from = "4174", to = "{port2}" },
+]

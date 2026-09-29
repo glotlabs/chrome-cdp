@@ -1,0 +1,19 @@
+title = "Reorder a list by dragging"
+prompt = """
+On {site}/bench/priorities.html, put the sprint priorities in this order,
+by dragging: Fix the login bug, Upgrade the database, Update the docs,
+Design the new logo. Then save the order.
+"""
+
+[[verify.record]]
+form = "priorities"
+fields = { order = "Fix the login bug | Upgrade the database | Update the docs | Design the new logo" }
+
+[solution]
+batch = """
+open {site}/bench/priorities.html
+drag 'text=Update the docs' 'text=Upgrade the database'
+expect 'role=listitem >> nth=2' text 'Update the docs'
+click 'role=button[name="Save order"]'
+expect 'text=Order saved.' visible
+"""

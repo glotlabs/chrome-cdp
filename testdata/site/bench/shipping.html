@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Shipping details</title>
+<script src="record.js"></script>
+<style>label{display:block;margin:.5rem 0}.error{color:#b00;display:block}</style>
+<h1>Shipping details</h1>
+<form id="ship" novalidate>
+  <label>Full name <input name="name"></label>
+  <label>Postcode <input name="postcode"></label>
+  <label>Phone <input name="phone"></label>
+  <button>Continue to payment</button>
+</form>
+<div role="alert" id="errors"></div>
+<p role="status" id="status"></p>
+<script>
+  document.getElementById('ship').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const errors = [];
+    if (!f.name.value.trim()) errors.push('Full name is required.');
+    if (!/^\d{4}$/.test(f.postcode.value)) errors.push('Postcode must be exactly 4 digits.');
+    if (!/^\+\d{8,15}$/.test(f.phone.value)) errors.push('Phone must be + and digits only, no spaces (e.g. +4712345678).');
+    document.getElementById('errors').innerHTML = errors.map((x) => `<span class="error">${x}</span>`).join('');
+    if (errors.length) return;
+    await record({ form: 'shipping', name: f.name.value.trim(), postcode: f.postcode.value, phone: f.phone.value });
+    document.getElementById('status').textContent = 'Saved. On to payment.';
+  });
+</script>

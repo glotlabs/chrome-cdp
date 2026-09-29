@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Beta program</title>
+<h1>Beta program</h1>
+<p id="state">Beta features are off.</p>
+<details>
+  <summary>For developers</summary>
+  <p>Beta features are on when localStorage has the key <code>features</code> set to
+  <code>beta</code>. Reload the page after setting it.</p>
+</details>
+<script>
+  if (localStorage.getItem('features') === 'beta') {
+    // Assembled here, so the code is not in the page's source as is.
+    document.getElementById('state').textContent = 'Beta features are on. Your tester code: ' + ['B', 5500 + 21].join('-');
+  }
+</script>

@@ -1,0 +1,13 @@
+title = "Read a table on a public sandbox"
+network = true
+prompt = """
+On https://the-internet.herokuapp.com/tables, how much does Jason Doe owe
+(the "Due" column of the first table)? End your reply with a line
+`ANSWER: <the amount>`.
+"""
+
+[verify]
+answer = ["100.00"]
+
+[solution]
+answer = "$100.00"

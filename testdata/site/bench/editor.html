@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Team note</title>
+<script src="record.js"></script>
+<h1>Team note</h1>
+<p>Edit the note. <kbd>Ctrl</kbd>+<kbd>Enter</kbd> saves it (there is no save button).</p>
+<textarea id="note" aria-label="Note" rows="4" cols="50">Release is on Thursday.
+Remember the changelog.</textarea>
+<p role="status" id="status"></p>
+<script>
+  const note = document.getElementById('note');
+  note.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      await record({ form: 'note', text: note.value });
+      document.getElementById('status').textContent = 'Saved.';
+    }
+  });
+</script>

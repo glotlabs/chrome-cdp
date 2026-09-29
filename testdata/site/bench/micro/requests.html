@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Requests benchmark</title>
+<!-- Micro benchmark (plan 10.4): route overhead. The load event waits for
+     all 50 images, so a load's time includes every request. -->
+<h1>50 images</h1>
+<div id="images"></div>
+<script>
+  const images = document.getElementById('images');
+  for (let i = 1; i <= 50; i++) {
+    const img = document.createElement('img');
+    img.src = 'asset.svg?n=' + i;
+    img.alt = 'asset ' + i;
+    img.width = 16;
+    img.height = 16;
+    images.append(img);
+  }
+</script>

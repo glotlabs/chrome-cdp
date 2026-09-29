@@ -1,0 +1,11 @@
+title = "Read a table"
+prompt = """
+On {site}/bench/invoices.html, what is the total amount of the overdue
+invoices? End your reply with a line `ANSWER: <the total>`.
+"""
+
+[verify]
+answer = ["17,449.75"]
+
+[solution]
+answer = "$17,449.75"

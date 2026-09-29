@@ -1,0 +1,13 @@
+title = "Wait for content on a public sandbox"
+network = true
+prompt = """
+On https://the-internet.herokuapp.com/dynamic_loading/2, start the
+loading and tell me the text that appears when it finishes. End your reply
+with a line `ANSWER: <the text>`.
+"""
+
+[verify]
+answer = ["Hello World!"]
+
+[solution]
+answer = "Hello World!"

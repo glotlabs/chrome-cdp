@@ -1,0 +1,18 @@
+title = "Use a hover menu"
+prompt = """
+Export the spreadsheet on {site}/bench/menu.html as CSV, from its File
+menu.
+"""
+
+[[verify.record]]
+form = "export"
+fields = { format = "csv" }
+
+[solution]
+batch = """
+open {site}/bench/menu.html
+hover role=menuitem[name=File]
+hover role=menuitem[name=Export]
+click role=menuitem[name=CSV]
+expect 'text=Exported as CSV.' visible
+"""
