@@ -1,0 +1,19 @@
+$ chrome-cdp eval '[...document.querySelectorAll('\''.item, #save'\'')]'
+exit: 0
+--- stdout
+[
+  "li.item [e1]",
+  "li.item [e2]",
+  "button#save.primary.wide [e3]"
+]
+
+$ chrome-cdp eval '[...document.querySelectorAll('\''.item, #save'\'')]' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"refs":["e1","e2","e3"],"tab":"t1","type":"array","value":["li.item [e1]","li.item [e2]","button#save.primary.wide [e3]"],"world":"main"}}
+
+$ chrome-cdp eval '[...document.querySelectorAll('\''.item, #save'\'')]' -q
+exit: 0
+--- stdout
+["li.item [e1]","li.item [e2]","button#save.primary.wide [e3]"]
+

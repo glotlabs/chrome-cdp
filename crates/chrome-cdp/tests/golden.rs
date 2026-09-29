@@ -1870,6 +1870,12 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/eval/index.html"),
     },
     Case {
+        name: "eval-nodes",
+        args: &["eval", "[...document.querySelectorAll('.item, #save')]"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/eval/index.html"),
+    },
+    Case {
         name: "eval-in",
         args: &["eval", "--in", "#name", "el.value"],
         modes: ALL,

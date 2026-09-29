@@ -2429,10 +2429,19 @@ pub struct EvalData {
     pub kind: String,
     /// The value as JSON: `undefined` is `null` (see `type`); `NaN`,
     /// `Infinity`, bigints (`12n`) and symbols are strings; a DOM node is
-    /// a string such as `button#save.primary`; a `Date` its ISO string;
-    /// a `Map` an object (or an array of `[key, value]` pairs); a `Set` an
-    /// array; a cycle `"[Circular]"`.
+    /// a string such as `button#save.primary`, with its ref when it is an
+    /// element of the frame's document (`button#save.primary [e14]`); a
+    /// `Date` its ISO string; a `Map` an object (or an array of
+    /// `[key, value]` pairs); a `Set` an array; a cycle `"[Circular]"`.
     pub value: Value,
+    /// The refs the elements in the value have, in the order they first
+    /// appear (at most 50 per call).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refs: Vec<String>,
+    /// How many more elements are in the value, past the 50 that get
+    /// refs.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub refs_cut: u64,
 }
 
 /// `data` of `chrome-cdp snapshot --json`.

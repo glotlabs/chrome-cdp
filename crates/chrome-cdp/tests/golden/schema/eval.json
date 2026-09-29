@@ -274,6 +274,19 @@
             "null"
           ]
         },
+        "refs": {
+          "description": "The refs the elements in the value have, in the order they first\nappear (at most 50 per call).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "refs_cut": {
+          "description": "How many more elements are in the value, past the 50 that get\nrefs.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "tab": {
           "description": "The tab, e.g. `t1`.",
           "type": "string"
@@ -283,7 +296,7 @@
           "type": "string"
         },
         "value": {
-          "description": "The value as JSON: `undefined` is `null` (see `type`); `NaN`,\n`Infinity`, bigints (`12n`) and symbols are strings; a DOM node is\na string such as `button#save.primary`; a `Date` its ISO string;\na `Map` an object (or an array of `[key, value]` pairs); a `Set` an\narray; a cycle `\"[Circular]\"`."
+          "description": "The value as JSON: `undefined` is `null` (see `type`); `NaN`,\n`Infinity`, bigints (`12n`) and symbols are strings; a DOM node is\na string such as `button#save.primary`, with its ref when it is an\nelement of the frame's document (`button#save.primary [e14]`); a\n`Date` its ISO string; a `Map` an object (or an array of\n`[key, value]` pairs); a `Set` an array; a cycle `\"[Circular]\"`."
         },
         "world": {
           "description": "`main` or `isolated`.",

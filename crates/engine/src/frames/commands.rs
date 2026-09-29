@@ -117,6 +117,20 @@ impl Engine {
         world: World,
         timeout: Duration,
     ) -> Result<FrameContext, ErrorInfo> {
+        self.frame_and_context(running, page, frame, world, timeout)
+            .await
+            .map(|(_, context)| context)
+    }
+
+    /// [`Engine::frame_context`], with the id of the frame it is in.
+    pub(crate) async fn frame_and_context(
+        &self,
+        running: &Running,
+        page: &Page,
+        frame: Option<&str>,
+        world: World,
+        timeout: Duration,
+    ) -> Result<(String, FrameContext), ErrorInfo> {
         let frame = if let Some(query) = frame {
             running
                 .tabs
@@ -137,6 +151,7 @@ impl Engine {
             .tabs
             .context(page.id, &frame.id, world, timeout)
             .await
+            .map(|context| (frame.id.clone(), context))
             .map_err(|e| self.frame_error(page.id, &frame, e, timeout))
     }
 

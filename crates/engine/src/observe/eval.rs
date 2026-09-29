@@ -16,6 +16,12 @@
 //! the message and the stack, its frames in page scripts resolved with
 //! source maps as `errors` does; frames in the script itself are named
 //! `eval` with the script's own line numbers.
+//!
+//! Elements of the frame's document in the value get refs from the tab's
+//! registry (`button#save.primary [e14]`), the first [`MAX_REFS`] of them:
+//! `eval.js` hands them back in a list, `DOM.describeNode` gives their
+//! backend ids, and the helper bundle in the isolated world their role
+//! and name, which the ref keeps for its role+name fallback.
 
 use std::fmt::Write as _;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -23,6 +29,7 @@ use std::time::Duration;
 
 use cdp::CdpError;
 use cdp::domains::{dom, runtime};
+use futures_util::future::join_all;
 use protocol::schema::{EvalData, StackFrame};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde_json::{Value, json};
@@ -32,9 +39,11 @@ use super::format::{arg_text, error_message, parse_stack, stack_frames};
 use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::frames::World;
+use crate::injected::{self, GUARD, own_properties};
 use crate::input::origin;
 use crate::locator::{LocateOptions, Locator};
-use crate::request::{EvalRequest, EvalWorld, millis};
+use crate::request::{EvalRequest, EvalWorld, SnapshotEngine, millis};
+use crate::snapshot::NodeKey;
 use crate::tabs::{FrameContext, Page, tab_name};
 use crate::{Engine, Running};
 
@@ -56,14 +65,32 @@ const ELEMENT_SLOT: &str = "Symbol.for('chrome-cdp.eval.el')";
 /// How many frames of an exception's stack the text form shows.
 const SHOWN_FRAMES: usize = 5;
 
+/// How many elements of one value get refs: each costs a few calls.
+pub(crate) const MAX_REFS: usize = 50;
+
+/// Ends the mark `eval.js` puts after an element, where its ref goes.
+const MARK_END: char = '⟧';
+
+/// What each element's role and name are, for its ref (the bundle's
+/// `describe`, engine B's code).
+fn describe_js() -> String {
+    format!(
+        "function (...els) {{ {GUARD} return els.map((e) => {{ const d = globalThis.__ccdp.describe(e); return [d.role, d.name]; }}); }}"
+    )
+}
+
 /// A script's value.
 #[derive(Debug)]
 struct ScriptValue {
     /// `string`, `object`, `undefined`, … (see [`EvalData::kind`]).
     kind: String,
-    /// The value's JSON text as the page wrote it (its keys in order);
-    /// empty for `undefined`.
+    /// The value's JSON text as the page wrote it (its keys in order),
+    /// with the elements' refs in it; empty for `undefined`.
     text: String,
+    /// The refs given, in the order of the elements in the value.
+    refs: Vec<String>,
+    /// Elements past [`MAX_REFS`], which got none.
+    cut: u64,
 }
 
 /// The script as it is sent: wrapped in a block, `el` bound, named.
@@ -122,16 +149,27 @@ impl Engine {
         self.check_not_blocked(&running, &page)?;
         let mark = running.tabs.mark();
         let _tab = self.tabs.lock(&page.target_id).await;
+        let number = GROUPS.fetch_add(1, Ordering::Relaxed);
         let run = Run {
             engine: self,
             running: &running,
             page: &page,
             req: &req,
             deadline,
-            group: format!("chrome-cdp-eval-{}", GROUPS.fetch_add(1, Ordering::Relaxed)),
+            group: format!("chrome-cdp-eval-{number}"),
+            mark: ref_mark(number),
+            // Elements seen from now on get refs only while this holds.
+            generation: running
+                .tabs
+                .snapshot_memory(page.id, |m| m.refs.generation()),
         };
         let (value, note) = self
-            .unless_blocked(&running, &page, mark, run.run(locator.as_ref(), &options))
+            .unless_blocked(
+                &running,
+                &page,
+                mark,
+                Box::pin(run.run(locator.as_ref(), &options)),
+            )
             .await?;
         let output = eval_output(&page, &req, locator.as_ref(), value)?;
         let output = match note {
@@ -178,6 +216,10 @@ struct Run<'a> {
     deadline: Instant,
     /// The object group of this call.
     group: String,
+    /// What `eval.js` marks an element's place for its ref with.
+    mark: String,
+    /// The tab's document generation when the call began.
+    generation: Option<u64>,
 }
 
 impl Run<'_> {
@@ -201,13 +243,13 @@ impl Run<'_> {
         locator: Option<&Locator>,
         options: &LocateOptions,
     ) -> Result<(ScriptValue, Option<String>), ErrorInfo> {
-        let (context, element, note) = if let Some(locator) = locator {
-            let (context, element, note) = self.element(locator, options).await?;
-            (context, Some(element), note)
+        let (frame, context, element, note) = if let Some(locator) = locator {
+            let (frame, context, element, note) = self.element(locator, options).await?;
+            (frame, context, Some(element), note)
         } else {
-            let context = self
+            let (frame, context) = self
                 .engine
-                .frame_context(
+                .frame_and_context(
                     self.running,
                     self.page,
                     self.req.frame.as_deref(),
@@ -215,9 +257,9 @@ impl Run<'_> {
                     self.left(),
                 )
                 .await?;
-            (context, None, None)
+            (frame, context, None, None)
         };
-        let result = self.evaluate(&context, element.as_deref()).await;
+        let result = self.evaluate(&frame, &context, element.as_deref()).await;
         let session = context.session.clone();
         let group = self.group.clone();
         tokio::spawn(async move {
@@ -228,13 +270,13 @@ impl Run<'_> {
         Ok((result?, note))
     }
 
-    /// The `--in` element's frame context (in the chosen world) and the
-    /// element's handle there.
+    /// The `--in` element's frame and its context (in the chosen world),
+    /// and the element's handle there.
     async fn element(
         &self,
         locator: &Locator,
         options: &LocateOptions,
-    ) -> Result<(FrameContext, String, Option<String>), ErrorInfo> {
+    ) -> Result<(String, FrameContext, String, Option<String>), ErrorInfo> {
         let retry = |r: &str| Cmd::new("eval").flag("in", r).raw("…");
         let target = self
             .engine
@@ -277,13 +319,14 @@ impl Run<'_> {
             .object
             .object_id
             .ok_or_else(|| self.engine.not_found(self.page, locator))?;
-        Ok((context, object, note))
+        Ok((frame, context, object, note))
     }
 
-    /// Evaluates the script (with `element` as `el`), then finishes an
-    /// object value.
+    /// Evaluates the script (with `element` as `el`) in `context`, of
+    /// frame `frame`, then finishes an object value.
     async fn evaluate(
         &self,
+        frame: &str,
         context: &FrameContext,
         element: Option<&str>,
     ) -> Result<ScriptValue, ErrorInfo> {
@@ -336,7 +379,13 @@ impl Run<'_> {
                 return Err(self.thrown(details, wrapped.lines_before).await);
             }
             return self
-                .finish(context, &result["result"], element, wrapped.lines_before)
+                .finish(
+                    frame,
+                    context,
+                    &result["result"],
+                    element,
+                    wrapped.lines_before,
+                )
                 .await;
         }
         unreachable!("the last attempt returns")
@@ -345,6 +394,7 @@ impl Run<'_> {
     /// The value of `object`, the script's result.
     async fn finish(
         &self,
+        frame: &str,
         context: &FrameContext,
         object: &Value,
         element: Option<&str>,
@@ -353,16 +403,15 @@ impl Run<'_> {
         let Some(object_id) = object["objectId"].as_str() else {
             return Ok(primitive(object));
         };
-        let mut params = json!({
+        let el = element.map_or_else(|| json!({}), |id| json!({ "objectId": id }));
+        let params = json!({
             "functionDeclaration": FINISH_JS,
             "objectId": object_id,
-            "returnByValue": true,
+            "arguments": [el, { "value": self.mark }, { "value": MAX_REFS }],
+            "objectGroup": self.group,
             "awaitPromise": true,
             "userGesture": true,
         });
-        if let Some(element) = element {
-            params["arguments"] = json!([{ "objectId": element }]);
-        }
         let session = context.session.with_timeout(self.left());
         let result = self
             .call(&session, "Runtime.callFunctionOn", params)
@@ -370,11 +419,145 @@ impl Run<'_> {
         if let Some(details) = result.get("exceptionDetails") {
             return Err(self.thrown(details, lines_before).await);
         }
-        let value = &result["result"]["value"];
+        let answer = result["result"]["objectId"].as_str().ok_or_else(|| {
+            ErrorInfo::new(
+                ErrorKind::ProtocolError,
+                "the script's value came back empty",
+            )
+        })?;
+        let properties = own_properties(&session, answer)
+            .await
+            .map_err(|e| self.cdp_error(&e))?;
+        let field = |name: &str| {
+            properties
+                .iter()
+                .find(|p| p.name == name)
+                .and_then(|p| p.value.as_ref())
+        };
+        let read = |name: &str| field(name).and_then(|v| v.value.clone());
+        let numbers = match field("els").and_then(|v| v.object_id.as_deref()) {
+            Some(els) => self.refs(frame, &session, els).await,
+            None => Vec::new(),
+        };
+        let text = read("text");
+        let (text, refs) = put_refs(
+            text.as_ref().and_then(Value::as_str).unwrap_or_default(),
+            &self.mark,
+            &numbers,
+        );
         Ok(ScriptValue {
-            kind: value["type"].as_str().unwrap_or("object").to_owned(),
-            text: value["text"].as_str().unwrap_or_default().to_owned(),
+            kind: read("type")
+                .as_ref()
+                .and_then(Value::as_str)
+                .unwrap_or("object")
+                .to_owned(),
+            text,
+            refs,
+            cut: read("over").as_ref().and_then(Value::as_u64).unwrap_or(0),
         })
+    }
+
+    /// The refs of the elements in the list `els` (by index, `None` for
+    /// one that got none), given now to those without one. A ref needs
+    /// the element's role and name, which the helper bundle in the
+    /// frame's isolated world works out. Any failure means no refs: the
+    /// value is worth more than they are.
+    async fn refs(&self, frame: &str, session: &cdp::Session, els: &str) -> Vec<Option<u32>> {
+        let Ok(listed) = own_properties(session, els).await else {
+            return Vec::new();
+        };
+        let handles: Vec<(usize, String)> = listed
+            .into_iter()
+            .filter_map(|p| {
+                let index = p.name.parse::<usize>().ok().filter(|&i| i < MAX_REFS)?;
+                Some((index, p.value?.object_id?))
+            })
+            .collect();
+        if handles.is_empty() {
+            return Vec::new();
+        }
+        let described = join_all(handles.iter().map(|(_, id)| {
+            session.call(dom::DescribeNodeParams {
+                object_id: Some(id.clone()),
+                ..dom::DescribeNodeParams::default()
+            })
+        }))
+        .await;
+        let backends: Vec<(usize, i64)> = handles
+            .iter()
+            .zip(described)
+            .filter_map(|((index, _), d)| Some((*index, d.ok()?.node.backend_node_id)))
+            .collect();
+        let Ok(isolated) = self
+            .engine
+            .frame_context(
+                self.running,
+                self.page,
+                Some(frame),
+                World::Isolated,
+                self.left(),
+            )
+            .await
+        else {
+            return Vec::new();
+        };
+        let isolated_session = isolated.session.with_timeout(self.left());
+        let resolved = join_all(backends.iter().map(|(_, backend)| {
+            isolated_session.call(dom::ResolveNodeParams {
+                node_id: None,
+                backend_node_id: Some(*backend),
+                object_group: Some(self.group.clone()),
+                execution_context_id: Some(isolated.context_id),
+            })
+        }))
+        .await;
+        let found: Vec<(usize, i64, String)> = backends
+            .iter()
+            .zip(resolved)
+            .filter_map(|((index, backend), r)| Some((*index, *backend, r.ok()?.object.object_id?)))
+            .collect();
+        let mut describe = runtime::CallFunctionOnParams::new(describe_js());
+        describe.arguments = Some(
+            found
+                .iter()
+                .map(|(_, _, id)| runtime::CallArgument {
+                    value: None,
+                    unserializable_value: None,
+                    object_id: Some(id.clone()),
+                })
+                .collect(),
+        );
+        describe.return_by_value = Some(true);
+        let names: Vec<(String, String)> =
+            match injected::call(&isolated_session, isolated.context_id, describe).await {
+                Ok(r) if r.exception_details.is_none() => r
+                    .result
+                    .value
+                    .and_then(|v| serde_json::from_value(v).ok())
+                    .unwrap_or_default(),
+                _ => Vec::new(),
+            };
+        if names.len() != found.len() {
+            return Vec::new();
+        }
+        self.running
+            .tabs
+            .snapshot_memory(self.page.id, |m| {
+                if Some(m.refs.generation()) != self.generation {
+                    return Vec::new();
+                }
+                let mut numbers = vec![None; MAX_REFS];
+                for ((index, backend, _), (role, name)) in found.iter().zip(&names) {
+                    let key = NodeKey {
+                        frame: frame.to_owned(),
+                        backend: *backend,
+                    };
+                    numbers[*index] =
+                        Some(m.refs.assign_from(&key, role, name, SnapshotEngine::Dom));
+                }
+                numbers
+            })
+            .unwrap_or_default()
     }
 
     async fn call(
@@ -558,7 +741,49 @@ fn primitive(object: &Value) -> ScriptValue {
         } else {
             serde_json::to_string_pretty(&value).unwrap_or_default()
         },
+        refs: Vec::new(),
+        cut: 0,
     }
+}
+
+/// The mark of call `number`: odd enough that no page text has it.
+fn ref_mark(number: u64) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or_default();
+    format!(" ⟦ccdp{number:x}.{nanos:x}:")
+}
+
+/// `text` with each element's mark (`mark`, its index in `numbers`,
+/// [`MARK_END`]) turned into its ref, ` [e14]`, or taken out if it got
+/// none; and the refs, in the order they first appear.
+fn put_refs(text: &str, mark: &str, numbers: &[Option<u32>]) -> (String, Vec<String>) {
+    let mut out = String::with_capacity(text.len());
+    let mut refs: Vec<String> = Vec::new();
+    let mut rest = text;
+    while let Some(at) = rest.find(mark) {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + mark.len()..];
+        let Some(end) = after.find(MARK_END) else {
+            rest = &rest[at..];
+            break;
+        };
+        let number = after[..end]
+            .parse::<usize>()
+            .ok()
+            .and_then(|i| numbers.get(i).copied().flatten());
+        if let Some(number) = number {
+            let reference = format!("e{number}");
+            let _ = write!(out, " [{reference}]");
+            if !refs.contains(&reference) {
+                refs.push(reference);
+            }
+        }
+        rest = &after[end + MARK_END.len_utf8()..];
+    }
+    out.push_str(rest);
+    (out, refs)
 }
 
 /// JSON text without the whitespace between its tokens.
@@ -615,18 +840,29 @@ fn eval_output(
         world: req.world.as_str().to_owned(),
         kind: value.kind,
         value: parsed,
+        refs: value.refs,
+        refs_cut: value.cut,
     };
-    Ok(Output::typed(&data, text).quiet(quiet).limit(
+    let output = Output::typed(&data, text).quiet(quiet).limit(
         req.max_chars,
         "--max-chars 0 for all of it, or return less (one property, .slice(0, 20))",
-    ))
+    );
+    Ok(if value.cut > 0 {
+        output.warning(format!(
+            "{} more elements have no ref: eval gives refs to the first {MAX_REFS} only; \
+             return the rest to get theirs (.slice({MAX_REFS}))",
+            format::thousands(usize::try_from(value.cut).unwrap_or(usize::MAX)),
+        ))
+    } else {
+        output
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
-    use super::{compact, looks_like_object, primitive, wrap};
+    use super::{compact, looks_like_object, primitive, put_refs, ref_mark, wrap};
 
     #[test]
     fn scripts_run_in_a_block_named_eval() {
@@ -663,6 +899,22 @@ mod tests {
         assert_eq!(primitive(&json!({"type": "undefined"})).text, "");
         let null = primitive(&json!({"type": "object", "subtype": "null", "value": null}));
         assert_eq!((null.kind.as_str(), null.text.as_str()), ("null", "null"));
+    }
+
+    #[test]
+    fn marks_become_refs_or_go() {
+        let mark = ref_mark(7);
+        let text =
+            format!("[\"a{mark}0⟧\", \"b{mark}1⟧\", \"a{mark}0⟧\", \"c{mark}2⟧\", \"{mark}\"]");
+        let (text, refs) = put_refs(&text, &mark, &[Some(14), None, Some(3)]);
+        assert_eq!(
+            text,
+            format!("[\"a [e14]\", \"b\", \"a [e14]\", \"c [e3]\", \"{mark}\"]")
+        );
+        assert_eq!(refs, ["e14", "e3"]);
+        // No refs at all (a failure, or a new document): marks go.
+        let (text, refs) = put_refs(&format!("x{mark}0⟧"), &mark, &[]);
+        assert_eq!((text.as_str(), refs.len()), ("x", 0));
     }
 
     #[test]

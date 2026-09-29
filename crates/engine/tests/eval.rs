@@ -125,7 +125,7 @@ async fn values_print_as_json_or_as_they_are() {
         ),
         (
             "document.querySelector('#save')",
-            "button#save.primary.wide",
+            "button#save.primary.wide [e1]",
             "node",
         ),
         (
@@ -338,6 +338,164 @@ async fn elements_frames_and_worlds() {
     .unwrap();
     assert_eq!(output.text, "undefined Eval");
     assert_eq!(data.world, "isolated");
+    engine.close().await;
+}
+
+/// Elements in the value get refs from the tab's registry (the first 50),
+/// which act like a snapshot's: `--in` takes them, and one whose element
+/// was re-rendered falls back to its role and name.
+#[tokio::test]
+async fn returned_elements_get_refs() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "engine-eval-refs").await;
+    goto(&engine, &site.url("/eval/index.html")).await;
+
+    let (output, data) = eval(
+        &engine,
+        request("[...document.querySelectorAll('.item'), document.querySelector('.item')]"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        output.text,
+        "[\n  \"li.item [e1]\",\n  \"li.item [e2]\",\n  \"li.item [e1]\"\n]"
+    );
+    assert_eq!(data.refs, ["e1", "e2"]);
+    assert_eq!(data.refs_cut, 0);
+    assert!(output.warnings.is_empty(), "{:?}", output.warnings);
+    assert_eq!(data.value[1], json!("li.item [e2]"));
+
+    // A ref names the element for any command, as a snapshot's does.
+    let (output, _) = eval(
+        &engine,
+        EvalRequest {
+            locator: Some("e2".into()),
+            ..request("el.textContent")
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(output.text, "two");
+    let (output, data) = eval(&engine, request("document.querySelector('#save')"))
+        .await
+        .unwrap();
+    assert_eq!(output.text, "button#save.primary.wide [e3]");
+    assert_eq!(
+        output.quiet.as_deref(),
+        Some("button#save.primary.wide [e3]")
+    );
+    assert_eq!(data.kind, "node");
+    let snapshot = engine
+        .snapshot(SnapshotRequest {
+            tab: None,
+            interactive: true,
+            scope: None,
+            depth: None,
+            diff: false,
+            all_refs: false,
+            all: false,
+            text_limit: 200,
+            no_text: false,
+            engine: None,
+            strict_refs: false,
+            testid_attribute: None,
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 0,
+        })
+        .await
+        .unwrap();
+    let snapshot: SnapshotData = serde_json::from_value(snapshot.data).unwrap();
+    assert_eq!(
+        snapshot_ref(&snapshot.nodes, "button", "Save").as_deref(),
+        Some("e3")
+    );
+
+    // Nodes outside the document, and text, get none.
+    let (output, data) = eval(
+        &engine,
+        request("[document.createElement('div'), document.querySelector('h1').firstChild]"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(output.text, "[\n  \"div\",\n  \"#text \\\"Eval\\\"\"\n]");
+    assert!(data.refs.is_empty());
+
+    // In a frame, and in the isolated world.
+    let (output, data) = eval(
+        &engine,
+        EvalRequest {
+            frame: Some("inner".into()),
+            ..request("document.querySelector('#in-frame')")
+        },
+    )
+    .await
+    .unwrap();
+    let inner = data.refs[0].clone();
+    assert_eq!(output.text, format!("p#in-frame [{inner}]"));
+    let (output, _) = eval(
+        &engine,
+        EvalRequest {
+            locator: Some(inner),
+            ..request("`${el.textContent} ${location.pathname}`")
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(output.text, "inside the frame /eval/frame.html");
+    let (output, data) = eval(
+        &engine,
+        EvalRequest {
+            world: EvalWorld::Isolated,
+            ..request("document.querySelector('#name')")
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(output.text, format!("input#name [{}]", data.refs[0]));
+
+    // At most 50 per call; the output says how many more there were.
+    let script = "const box = document.createElement('div'); \
+                  for (let i = 0; i < 60; i++) box.append(document.createElement('span')); \
+                  document.body.append(box); [...box.children]";
+    let (output, data) = eval(&engine, request(script)).await.unwrap();
+    assert_eq!(data.refs.len(), 50);
+    assert_eq!(data.refs_cut, 10);
+    assert_eq!(data.value[49], json!(format!("span [{}]", data.refs[49])));
+    assert_eq!(data.value[50], json!("span"));
+    assert!(
+        output
+            .warnings
+            .iter()
+            .any(|w| w.starts_with("10 more elements have no ref")),
+        "{:?}",
+        output.warnings
+    );
+
+    // The ref keeps the role and name, for when the element is re-rendered.
+    value(
+        &engine,
+        "const b = document.querySelector('#save'); b.replaceWith(b.cloneNode(true))",
+    )
+    .await;
+    let (output, _) = eval(
+        &engine,
+        EvalRequest {
+            locator: Some("e3".into()),
+            ..request("el.id")
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(output.text, "save");
+    assert!(
+        output
+            .warnings
+            .iter()
+            .any(|w| w.contains("re-resolved by role+name")),
+        "{:?}",
+        output.warnings
+    );
     engine.close().await;
 }
 

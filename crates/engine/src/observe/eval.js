@@ -4,13 +4,21 @@
 // keeps its keys' order. DOM nodes, cycles, `NaN`, bigints and the like
 // become strings that say what they were; `budget` bounds the work on a
 // huge value.
-async function (el) {
+//
+// Elements of the frame's document are collected in `els` (the first
+// `cap` of them) and marked in the text with `mark`, their index and `⟧`,
+// where the caller puts their refs; `over` counts the elements past the
+// cap. The answer goes back by reference, so `els` stays a list of nodes.
+async function (el, mark, cap) {
   'use strict'; // Keeps a symbol `this` a symbol.
   let value = this;
   if (typeof value === 'function') value = value(el);
   value = await value;
   let budget = 20000;
   const ancestors = new Set();
+  const els = [];
+  const indexes = new Map();
+  const over = new Set();
   const tag = (v) => Object.prototype.toString.call(v).slice(8, -1);
   const isNode = (v) => {
     try {
@@ -25,7 +33,18 @@ async function (el) {
       let text = n.localName;
       if (n.id) text += `#${n.id}`;
       for (const c of n.classList || []) text += `.${c}`;
-      return text;
+      if (!n.isConnected || n.ownerDocument !== document) return text;
+      let i = indexes.get(n);
+      if (i === undefined && els.length < cap) {
+        i = els.length;
+        indexes.set(n, i);
+        els.push(n);
+      }
+      if (i === undefined) {
+        over.add(n);
+        return text;
+      }
+      return `${text}${mark}${i}⟧`;
     }
     if (n.nodeType === 3) {
       const data = n.data.length > 60 ? `${n.data.slice(0, 60)}…` : n.data;
@@ -105,5 +124,6 @@ async function (el) {
   if (type === 'object') {
     type = Array.isArray(value) ? 'array' : isNode(value) ? 'node' : 'object';
   }
-  return { type, text: type === 'undefined' ? '' : JSON.stringify(json(value, 0), null, 2) };
+  const text = type === 'undefined' ? '' : JSON.stringify(json(value, 0), null, 2);
+  return { type, text, els, over: over.size };
 }
