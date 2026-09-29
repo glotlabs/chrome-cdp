@@ -4,9 +4,11 @@
 //! `eval --frame --world` build on [`Engine::frame_context`] and
 //! [`Engine::evaluate`].
 
+use std::collections::HashMap;
 use std::time::Duration;
 
-use cdp::domains::runtime;
+use cdp::domains::{dom, runtime};
+use futures_util::future::join_all;
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, format};
 use serde_json::{Value, json};
 
@@ -22,9 +24,35 @@ const LISTED_FRAMES: usize = 10;
 /// How often a call is retried in a newer context.
 const STALE_RETRIES: u32 = 3;
 
+/// The longest [`Engine::place_frames`] waits for a document to answer.
+const PLACE_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// The object group of the `<iframe>` elements [`Engine::place_frames`]
+/// looks at, released when it is done.
+const PLACE_GROUP: &str = "chrome-cdp-frames";
+
+/// Where the element it is called on is in its document: the index of
+/// each node on the path down to it, a shadow root being `-1` under its
+/// host.
+const PATH_JS: &str = "function () {
+  const path = [];
+  for (let node = this; node && node.parentNode; ) {
+    const parent = node.parentNode;
+    path.push(Array.prototype.indexOf.call(parent.childNodes, node));
+    if (parent.nodeType === 11 && parent.host) {
+      path.push(-1);
+      node = parent.host;
+    } else {
+      node = parent;
+    }
+  }
+  return path.reverse();
+}";
+
 impl Engine {
     /// The frames of tab `tab` (`t2`; the active tab if `None`), parents
-    /// before their children.
+    /// before their children, siblings in the order of their `<iframe>`
+    /// elements.
     pub async fn frames(
         &self,
         tab: Option<&str>,
@@ -32,7 +60,81 @@ impl Engine {
     ) -> Result<Vec<FrameInfo>, ErrorInfo> {
         let running = self.running()?;
         let page = self.page(&running, tab, timeout).await?;
+        self.place_frames(&running, &page, timeout).await;
         Ok(running.tabs.frames(page.id))
+    }
+
+    /// Looks up where the `<iframe>` of each frame of `page` that has
+    /// siblings is in its parent's document (`DOM.getFrameOwner`), so the
+    /// tab's frames are listed in document order, not in the order
+    /// chrome-cdp first saw them (which differs from run to run after
+    /// `connect`). A frame it cannot place keeps its place after the
+    /// others.
+    pub(crate) async fn place_frames(&self, running: &Running, page: &Page, timeout: Duration) {
+        let timeout = timeout.min(PLACE_TIMEOUT);
+        let frames = running.tabs.frames(page.id);
+        let mut children: HashMap<&str, Vec<&str>> = HashMap::new();
+        for frame in &frames {
+            if let Some(parent) = &frame.parent {
+                children.entry(parent).or_default().push(&frame.id);
+            }
+        }
+        let places = children
+            .into_iter()
+            .filter(|(_, siblings)| siblings.len() > 1)
+            .map(|(parent, siblings)| {
+                self.place_siblings(running, page, parent, siblings, timeout)
+            });
+        let positions: Vec<(String, Vec<i64>)> =
+            join_all(places).await.into_iter().flatten().collect();
+        running.tabs.set_frame_positions(page.id, positions);
+    }
+
+    /// Where the `<iframe>` of each of `siblings` is in the document of
+    /// frame `parent`; those it found.
+    async fn place_siblings(
+        &self,
+        running: &Running,
+        page: &Page,
+        parent: &str,
+        siblings: Vec<&str>,
+        timeout: Duration,
+    ) -> Vec<(String, Vec<i64>)> {
+        let Ok(context) = self
+            .frame_context(running, page, Some(parent), World::Isolated, timeout)
+            .await
+        else {
+            return Vec::new();
+        };
+        let session = context.session.with_timeout(timeout);
+        let places = siblings.into_iter().map(|id| {
+            let session = session.clone();
+            async move {
+                let owner = session
+                    .call(dom::GetFrameOwnerParams::new(id.to_owned()))
+                    .await
+                    .ok()?;
+                let resolve = dom::ResolveNodeParams {
+                    backend_node_id: Some(owner.backend_node_id),
+                    execution_context_id: Some(context.context_id),
+                    object_group: Some(PLACE_GROUP.to_owned()),
+                    ..dom::ResolveNodeParams::default()
+                };
+                let object = session.call(resolve).await.ok()?.object.object_id?;
+                let mut call = runtime::CallFunctionOnParams::new(PATH_JS.to_owned());
+                call.object_id = Some(object);
+                call.return_by_value = Some(true);
+                let path = session.call(call).await.ok()?.result.value?;
+                Some((id.to_owned(), serde_json::from_value(path).ok()?))
+            }
+        });
+        let positions = join_all(places).await.into_iter().flatten().collect();
+        let _ = session
+            .call(runtime::ReleaseObjectGroupParams::new(
+                PLACE_GROUP.to_owned(),
+            ))
+            .await;
+        positions
     }
 
     /// Runs `expression` in `world` of frame `frame` (see
@@ -132,10 +234,7 @@ impl Engine {
         timeout: Duration,
     ) -> Result<(String, FrameContext), ErrorInfo> {
         let frame = if let Some(query) = frame {
-            running
-                .tabs
-                .find_frame(page.id, query)
-                .map_err(|e| find_error(page.id, query, e))?
+            self.find_frame(running, page, query, timeout).await?
         } else {
             // The main frame always comes first.
             let main = running.tabs.frames(page.id).into_iter().next();
@@ -153,6 +252,26 @@ impl Engine {
             .await
             .map(|context| (frame.id.clone(), context))
             .map_err(|e| self.frame_error(page.id, &frame, e, timeout))
+    }
+
+    /// The frame of `page` that `query` names (see
+    /// [`crate::frames::FrameTree::find`]); when none or several do, an
+    /// error that lists the tab's frames in document order.
+    pub(crate) async fn find_frame(
+        &self,
+        running: &Running,
+        page: &Page,
+        query: &str,
+        timeout: Duration,
+    ) -> Result<FrameInfo, ErrorInfo> {
+        if let Ok(frame) = running.tabs.find_frame(page.id, query) {
+            return Ok(frame);
+        }
+        self.place_frames(running, page, timeout).await;
+        running
+            .tabs
+            .find_frame(page.id, query)
+            .map_err(|e| find_error(page.id, query, e, &self.session))
     }
 
     fn frame_error(
@@ -192,15 +311,17 @@ impl Engine {
     }
 }
 
-pub(crate) fn find_error(tab: u32, query: &str, err: FindError) -> ErrorInfo {
+pub(crate) fn find_error(tab: u32, query: &str, err: FindError, session: &str) -> ErrorInfo {
+    let frames_cmd = || Cmd::new("frames").scoped(session);
     let (info, frames) = match err {
         FindError::NotFound(frames) => (
             ErrorInfo::new(
                 ErrorKind::NotFound,
                 format!("no frame in tab {} matches {query:?}", tab_name(tab)),
             )
-            .hint(Hint::text(
-                "name a frame by its name attribute, a part of its URL, or its id",
+            .hint(Hint::run(frames_cmd()).why(
+                "lists the tab's frames; name one by its name attribute, a part of its URL, or \
+                 its id",
             )),
             frames,
         ),
@@ -213,9 +334,10 @@ pub(crate) fn find_error(tab: u32, query: &str, err: FindError) -> ErrorInfo {
                     tab_name(tab)
                 ),
             )
-            .hint(Hint::text(
-                "use a longer part of the URL, the frame's name, or its id",
-            )),
+            .hint(
+                Hint::text("use a longer part of the URL, the frame's name, or its id")
+                    .or(format!("{} shows the ids", frames_cmd().switch("json"))),
+            ),
             frames,
         ),
     };

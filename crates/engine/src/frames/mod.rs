@@ -106,6 +106,9 @@ struct Frame {
     main: Option<Context>,
     isolated: Option<Context>,
     seq: u64,
+    /// Where its `<iframe>` is in its parent's document (see
+    /// [`FrameTree::set_positions`]), when that was last looked up.
+    position: Option<Vec<i64>>,
 }
 
 impl FrameTree {
@@ -138,6 +141,7 @@ impl FrameTree {
                 main: None,
                 isolated: None,
                 seq: *seq,
+                position: None,
             }
         })
     }
@@ -408,8 +412,21 @@ impl FrameTree {
             .unwrap_or_default()
     }
 
+    /// Records where the `<iframe>` of each frame of `positions` is in
+    /// its parent's document: the index of each node on the path from the
+    /// document down to it (a shadow root is `-1` under its host), as
+    /// `DOM.getFrameOwner` finds it. Siblings are listed in that order.
+    pub(crate) fn set_positions(&mut self, positions: Vec<(String, Vec<i64>)>) {
+        for (id, position) in positions {
+            if let Some(frame) = self.frames.get_mut(&id) {
+                frame.position = Some(position);
+            }
+        }
+    }
+
     /// Every frame, parents before their children, siblings in the order
-    /// they appeared.
+    /// of their `<iframe>` elements where that is known (see
+    /// [`FrameTree::set_positions`]), else in the order they appeared.
     pub(crate) fn list(&self) -> Vec<FrameInfo> {
         let mut children: HashMap<&str, Vec<(&str, &Frame)>> = HashMap::new();
         for (id, frame) in &self.frames {
@@ -419,7 +436,10 @@ impl FrameTree {
             }
         }
         for siblings in children.values_mut() {
-            siblings.sort_by_key(|(_, f)| f.seq);
+            siblings.sort_by(|(_, a), (_, b)| {
+                let placed = |f: &Frame| (f.position.is_none(), f.position.clone());
+                placed(a).cmp(&placed(b)).then(a.seq.cmp(&b.seq))
+            });
         }
         let mut out = Vec::with_capacity(self.frames.len());
         let mut stack = vec![(self.root.as_str(), 0)];
@@ -568,6 +588,25 @@ mod tests {
         let root = &tree.list()[0];
         assert_eq!(root.parent, None);
         assert_eq!(root.url, "http://a.test/");
+    }
+
+    #[test]
+    fn siblings_follow_their_iframes_once_placed() {
+        let mut tree = tree();
+        // `B`'s <iframe> comes first; `A`'s is in a shadow root after it.
+        tree.set_positions(vec![
+            ("A".into(), vec![1, 4, -1, 0]),
+            ("B".into(), vec![1, 2]),
+            ("nope".into(), vec![0]),
+        ]);
+        let expected = [("T", 0), ("B", 1), ("A", 1), ("C", 2)];
+        assert_eq!(
+            ids(&tree),
+            expected.map(|(id, d)| (id.to_owned(), d)).to_vec()
+        );
+        // A frame not placed yet comes after the placed ones.
+        tree.attached("s1", "D", "T");
+        assert_eq!(ids(&tree).last().unwrap(), &("D".to_owned(), 1));
     }
 
     #[test]

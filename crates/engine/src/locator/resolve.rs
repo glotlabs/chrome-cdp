@@ -20,7 +20,6 @@ use super::parse::{Locator, Step, parse_locator};
 use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::frames::World;
-use crate::frames::commands::find_error;
 use crate::injected::{self, GUARD, own_properties};
 use crate::request::SnapshotEngine;
 use crate::snapshot::{NodeKey, RefCall, Target, parse_ref};
@@ -499,13 +498,7 @@ impl Engine {
                                 ))
                             })?
                         }
-                        None => {
-                            running
-                                .tabs
-                                .find_frame(page.id, query)
-                                .map_err(|e| find_error(page.id, query, e))?
-                                .id
-                        }
+                        None => self.find_frame(running, page, query, timeout).await?.id,
                     };
                 }
                 _ => {}

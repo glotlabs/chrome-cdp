@@ -956,6 +956,14 @@ impl Tabs {
             .unwrap_or_default()
     }
 
+    /// Records where the `<iframe>` of each of tab `id`'s frames of
+    /// `positions` is (see [`FrameTree::set_positions`]).
+    pub(crate) fn set_frame_positions(&self, id: u32, positions: Vec<(String, Vec<i64>)>) {
+        if let Some(tab) = self.shared.lock().tabs.get_mut(&id) {
+            tab.frames.set_positions(positions);
+        }
+    }
+
     /// Tab `id`'s frames, parents before their children, each with the
     /// session that owns it (an OOPIF has its own).
     pub(crate) fn frame_sources(&self, id: u32) -> Vec<FrameSource> {

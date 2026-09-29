@@ -431,10 +431,10 @@ async fn frames_that_existed_before_connecting_are_found() {
 
     let engine = connect(&port).await;
     let frames = frames_loaded(&engine, 5).await;
-    // Siblings are listed in the order they were found, and on connect
-    // the cross-site frame's session may report before `getFrameTree`
-    // (which leaves it out) answers; the shape is fixed.
-    let mut shape: Vec<(&str, usize, Option<&str>)> = frames
+    // On connect the cross-site frame's session may report before
+    // `getFrameTree` (which leaves it out) answers; siblings are still
+    // listed in the order of their <iframe> elements.
+    let shape: Vec<(&str, usize, Option<&str>)> = frames
         .iter()
         .map(|f| {
             let parent = f.parent.as_deref().and_then(|p| {
@@ -446,13 +446,12 @@ async fn frames_that_existed_before_connecting_are_found() {
             (f.name.as_str(), f.depth, parent)
         })
         .collect();
-    shape.sort_unstable();
     assert_eq!(
         shape,
         [
             ("", 0, None),
-            ("deep", 2, Some("local")),
             ("local", 1, Some("")),
+            ("deep", 2, Some("local")),
             ("remote", 1, Some("")),
             ("remote-leaf", 2, Some("remote")),
         ]
