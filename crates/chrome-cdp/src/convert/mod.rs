@@ -1,6 +1,8 @@
 //! `chrome-cdp convert <spec.ts>` (plan 09, milestone 9.4): a best-effort
-//! translation of a Playwright test file into a `.cdp` script, following
-//! the tables of `docs/migrating-from-playwright.md`.
+//! translation of a Playwright test file into a `.cdp` scenario (plan 11:
+//! `@test` blocks, `@before`/`@after` hooks, settings), following the
+//! tables of `docs/migrating-from-playwright.md`. A file without tests (a
+//! script) becomes a plain script for `chrome-cdp run`.
 //!
 //! It reads the file with a small, forgiving JavaScript parser of its own
 //! (`parse`), not tree-sitter: the calls a Playwright test is made of are
@@ -25,6 +27,13 @@ use crate::cli::ConvertArgs;
 /// One line of the script.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Line {
+    /// A scenario directive, written as is: `@test "name" @skip`, or a
+    /// setting such as `@viewport 390x844`. The lines after a block's
+    /// directive (`block`), up to a blank line, are its body.
+    Directive {
+        text: String,
+        block: bool,
+    },
     Cmd(Vec<Word>),
     Comment(String),
     Todo {
@@ -104,6 +113,7 @@ impl Word {
 impl Line {
     fn render(&self) -> String {
         match self {
+            Line::Directive { text, .. } => text.clone(),
             Line::Cmd(words) => words.iter().map(Word::render).collect::<Vec<_>>().join(" "),
             Line::Comment(text) => format!("# {text}"),
             Line::Todo { line, reason, code } => format!("# TODO line {line} ({reason}): {code}"),
@@ -128,9 +138,9 @@ pub(crate) fn convert(name: &str, src: &str) -> Converted {
     let mut lines = vec![Line::Comment(format!(
         "Converted from {name} by chrome-cdp convert: check the TODO lines."
     ))];
-    if converter.tests > 1 {
+    if converter.tests > 0 {
         lines.push(Line::Comment(
-            "The tests run one after another, in one session.".into(),
+            "Run it with chrome-cdp test: each test gets a fresh browser context.".into(),
         ));
     }
     lines.push(Line::Blank);
@@ -139,6 +149,7 @@ pub(crate) fn convert(name: &str, src: &str) -> Converted {
     let mut steps = 0;
     let mut todos = Vec::new();
     let mut blank = false;
+    let mut in_block = false;
     for line in &lines {
         match line {
             Line::Blank if blank => continue,
@@ -151,6 +162,12 @@ pub(crate) fn convert(name: &str, src: &str) -> Converted {
             _ => {}
         }
         blank = matches!(line, Line::Blank);
+        match line {
+            Line::Directive { block, .. } => in_block = *block,
+            Line::Blank => in_block = false,
+            _ if in_block => script.push_str("  "),
+            _ => {}
+        }
         script.push_str(&line.render());
         script.push('\n');
     }

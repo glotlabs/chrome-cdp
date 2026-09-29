@@ -335,7 +335,7 @@ fn scenario(name: &str, entries: &[HistoryEntry], base_url: Option<&str>) -> Sce
 }
 
 /// `"adds item to cart"`, with `"` and `\` escaped and `${` made literal.
-fn quoted_name(name: &str) -> String {
+pub(crate) fn quoted_name(name: &str) -> String {
     let escaped = name
         .replace('\\', "\\\\")
         .replace('"', "\\\"")

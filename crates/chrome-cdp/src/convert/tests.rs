@@ -1,6 +1,6 @@
-//! `convert`: Playwright statements → `.cdp` lines. Every generated line
-//! is also checked the way `run` checks a script, so what convert writes
-//! always parses.
+//! `convert`: Playwright statements → `.cdp` lines. What convert writes is
+//! also loaded the way `test` loads a scenario (`e2e::scenario::load`), and
+//! every step checked as a command, so it always parses.
 
 use std::fmt::Write as _;
 
@@ -8,15 +8,16 @@ use super::convert;
 use crate::script;
 
 /// The lines `code` becomes inside a test, without the header and the
-/// `# test:` comment.
+/// `@test` line, unindented.
 fn body(code: &str) -> String {
     let src = format!("test('t', async ({{ page, context }}) => {{\n{code}\n}});\n");
     let script = convert("t.spec.ts", &src).script;
     let lines: Vec<&str> = script
         .lines()
-        .skip_while(|l| !l.starts_with("# test: t"))
+        .skip_while(|l| !l.starts_with("@test \"t\""))
         .skip(1)
-        .filter(|l| !l.is_empty())
+        .take_while(|l| !l.is_empty())
+        .map(|l| l.strip_prefix("  ").unwrap_or(l))
         .collect();
     lines.join("\n")
 }
@@ -551,90 +552,231 @@ fn every_generated_line_is_a_valid_command() {
         );
     }
     let script = convert("all.spec.ts", &src).script;
-    if let Err(problems) = script::check(&script) {
+    if let Err(problems) = script::check_scenario(&script) {
         panic!("{}\n\n{script}", problems.join("\n"));
     }
 }
 
 #[test]
-fn the_fixture_converts_to_a_script_that_runs() {
+fn the_fixture_converts_to_a_scenario_that_loads() {
     let src = include_str!("../../../../testdata/scripts/login.spec.ts");
     let converted = convert("login.spec.ts", src);
     assert_eq!(
         converted.script,
         "\
 # Converted from login.spec.ts by chrome-cdp convert: check the TODO lines.
-# The tests run one after another, in one session.
+# Run it with chrome-cdp test: each test gets a fresh browser context.
 
-# test: sign in > welcomes the user
-viewport 1024x768
-locale en-GB
-route '**/api/flags' --json-body '{\"beta\":true}'
-goto /script/login.html
-fill label=Email ada@example.com
-fill label=Password \"${env:APP_PASSWORD}\"
-click 'role=button[name=Sign in]'
-expect '#welcome' text 'Welcome, ada@example.com' --exact
-expect label=Email value ada@example.com
-expect --title '/Sign in/'
+@viewport 1024x768
 
-# test: sign in > asks for the password
-viewport 1024x768
-locale en-GB
-route '**/api/flags' --json-body '{\"beta\":true}'
-goto /script/login.html
-fill label=Email ada@example.com
-press Enter
-expect 'text=Password required' visible
-expect 'role=heading[level=1]' hidden --not
-# TODO line 27 (textContent() gives a value: read it with text LOC, or check it with expect): const heading = await page.locator('h1').textContent();
-# TODO line 28 (toBe on a value, not a locator: compare a command's -q output in a shell): expect(heading).toBe('Sign in');
+@before
+  locale en-GB
+  route '**/api/flags' --json-body '{\"beta\":true}'
+  goto /script/login.html
+
+@test \"sign in > welcomes the user\"
+  fill label=Email ada@example.com
+  fill label=Password \"${env:APP_PASSWORD}\"
+  click 'role=button[name=Sign in]'
+  expect '#welcome' text 'Welcome, ada@example.com' --exact
+  expect label=Email value ada@example.com
+  expect --title '/Sign in/'
+
+@test \"sign in > asks for the password\"
+  fill label=Email ada@example.com
+  press Enter
+  expect 'text=Password required' visible
+  expect 'role=heading[level=1]' hidden --not
+  # TODO line 27 (textContent() gives a value: read it with text LOC, or check it with expect): const heading = await page.locator('h1').textContent();
+  # TODO line 28 (toBe on a value, not a locator: compare a command's -q output in a shell): expect(heading).toBe('Sign in');
 "
     );
     assert_eq!(
         (converted.tests, converted.steps, converted.todos.len()),
-        (2, 18, 2)
+        (2, 13, 2)
     );
     assert_eq!(converted.todos[0].line, 27);
-    script::check(&converted.script).unwrap();
+    assert_eq!(script::check_scenario(&converted.script).unwrap().len(), 13);
 }
 
 #[test]
-fn describe_hooks_and_skips_keep_their_order() {
+fn describe_hooks_skips_and_settings_become_directives() {
     let src = "\
 import { test, expect } from '@playwright/test';
-test.use({ ...devices['iPhone 15'], colorScheme: 'dark', baseURL: 'http://localhost:3000' });
+test.use({ colorScheme: 'dark', baseURL: 'http://localhost:3000' });
 test.describe('cart', () => {
+  test.describe.configure({ retries: 2 });
   test.beforeAll(async ({ browser }) => { console.log('once'); });
   test.beforeEach(async ({ page }) => { await page.goto('/cart'); });
-  test.afterEach(async ({ page }) => { await page.screenshot(); });
-  test.afterAll(async () => {});
+  test.afterEach(async ({ page }) => { await page.getByText('Clear').click(); });
+  test.afterAll(async ({ request }) => { await request.delete('/api/cart'); });
   test('adds', async ({ page }) => { await page.getByText('Add').click(); });
   test.skip('removes', async ({ page }) => {});
-  test.describe.skip('later', () => {});
+  test.fixme('empties', async ({ page }) => { await page.getByText('Empty').click(); });
+  test.describe.skip('later', () => {
+    test('pays', async ({ page }) => { await page.getByText('Pay').click(); });
+  });
+  test.describe('wide', () => {
+    test.use({ viewport: { width: 1600, height: 900 }, locale: 'nb-NO' });
+    test.beforeEach(async ({ page }) => { await page.getByText('Wide').click(); });
+    test.only('shows all', async ({ page }) => {
+      test.setTimeout(60000);
+      await page.getByText('All').click();
+    });
+    test('hides none', async ({ page }) => {
+      test.skip();
+      await page.getByText('None').click();
+    });
+    test('reads', async ({ page }) => {
+      const t = await page.locator('h1').textContent();
+    });
+  });
 });
 ";
-    let script = convert("cart.spec.ts", src).script;
+    let converted = convert("cart.spec.ts", src);
     let want = "\
 # Converted from cart.spec.ts by chrome-cdp convert: check the TODO lines.
+# Run it with chrome-cdp test: each test gets a fresh browser context.
 
-# beforeAll
+@retries 2
 
-# test: cart > adds
-emulate 'iPhone 15'
-media --color-scheme dark
-# TODO line 2 (set base_url in .chrome-cdp.toml; goto /path resolves against it): test.use({ ...devices['iPhone 15'], colorScheme: 'dark', baseURL: 'http://localhost:3000' });
-goto /cart
-click text=Add
-screenshot
+@before
+  media --color-scheme dark
+  # TODO line 2 (set base_url in .chrome-cdp.toml; goto /path resolves against it): test.use({ colorScheme: 'dark', baseURL: 'http://localhost:3000' });
+  goto /cart
 
-# skipped: cart > removes
+@after
+  click text=Clear
 
-# skipped: cart > later
+# afterAll: no step to run
+# TODO line 8 (request is not a locator the script knows): await request.delete('/api/cart');
 
-# afterAll
+@test \"cart > adds\"
+  click text=Add
+
+@test \"cart > removes\" @skip
+
+@test \"cart > empties\" @skip \"fixme\"
+  click text=Empty
+
+@test \"cart > later > pays\" @skip
+  click text=Pay
+
+@test \"cart > wide > shows all\" @only @timeout 60s @viewport 1600x900
+  locale nb-NO
+  click text=Wide
+  click text=All
+
+@test \"cart > wide > hides none\" @skip @viewport 1600x900
+  locale nb-NO
+  click text=Wide
+  click text=None
+
+@test \"cart > wide > reads\" @viewport 1600x900
+  locale nb-NO
+  click text=Wide
+  # TODO line 27 (textContent() gives a value: read it with text LOC, or check it with expect): const t = await page.locator('h1').textContent();
 ";
-    assert_eq!(script, want);
+    assert_eq!(converted.script, want);
+    assert_eq!(converted.tests, 7);
+    script::check_scenario(&converted.script).unwrap();
+}
+
+#[test]
+fn a_test_without_steps_is_skipped_so_the_scenario_loads() {
+    let src = "\
+test('reads', async ({ page }) => {
+  const t = await page.locator('h1').textContent();
+});
+test('empty', async ({ page }) => {});
+";
+    let script = convert("t.spec.ts", src).script;
+    assert!(
+        script.contains(
+            "\n@test \"reads\" @skip \"convert: rewrite its TODO lines\"\n  # TODO line 2 "
+        ),
+        "{script}"
+    );
+    assert!(
+        script.contains("\n@test \"empty\" @skip \"convert: no steps\"\n"),
+        "{script}"
+    );
+    script::check_scenario(&script).unwrap();
+}
+
+#[test]
+fn hooks_with_unnamed_screenshots_stay_in_each_test() {
+    let src = "\
+test.afterEach(async ({ page }) => { await expect(page).toHaveScreenshot(); });
+test('a', async ({ page }) => { await page.goto('/a'); });
+test('b', async ({ page }) => { await page.goto('/b'); });
+";
+    let script = convert("t.spec.ts", src).script;
+    assert!(!script.contains("@after"), "{script}");
+    assert!(
+        script.contains("@test \"a\"\n  goto /a\n  expect-screenshot a-1\n"),
+        "{script}"
+    );
+    assert!(
+        script.contains("@test \"b\"\n  goto /b\n  expect-screenshot b-1\n"),
+        "{script}"
+    );
+    script::check_scenario(&script).unwrap();
+}
+
+#[test]
+fn an_inner_viewport_keeps_the_files_device() {
+    let src = "\
+test.use({ ...devices['Pixel 7'] });
+test.describe('wide', () => {
+  test.use({ viewport: { width: 1600, height: 900 } });
+  test('a', async ({ page }) => { await page.goto('/a'); });
+});
+test('b', async ({ page }) => { await page.goto('/b'); });
+";
+    let script = convert("t.spec.ts", src).script;
+    assert!(script.contains("\n@device \"Pixel 7\"\n"), "{script}");
+    assert!(
+        script.contains("\n@test \"wide > a\"\n  viewport 1600x900\n  goto /a\n"),
+        "{script}"
+    );
+    script::check_scenario(&script).unwrap();
+}
+
+#[test]
+fn conditional_skips_become_todo_lines() {
+    let src = "\
+test.skip(({ browserName }) => browserName !== 'chromium', 'Chromium only');
+test('a', async ({ page }) => {
+  test.skip(process.env.CI, 'not in CI');
+  await page.goto('/a');
+});
+";
+    let converted = convert("t.spec.ts", src);
+    let reasons: Vec<(usize, &str)> = converted
+        .todos
+        .iter()
+        .map(|t| (t.line, t.reason.as_str()))
+        .collect();
+    assert_eq!(
+        reasons,
+        [
+            (
+                1,
+                "a runner call with a condition: write @skip on the tests it skips"
+            ),
+            (
+                3,
+                "a runner call with a condition: write @skip on the @test line when it holds"
+            ),
+        ]
+    );
+    assert!(
+        converted.script.contains("\n@test \"a\"\n"),
+        "{}",
+        converted.script
+    );
+    script::check_scenario(&converted.script).unwrap();
 }
 
 #[test]

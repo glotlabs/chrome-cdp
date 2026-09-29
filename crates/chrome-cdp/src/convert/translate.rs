@@ -8,6 +8,7 @@ use std::fmt::Write as _;
 use super::lex::TemplatePart;
 use super::parse::{Body, Expr, Func, Pattern, Prop, Stmt, StmtKind};
 use super::{Line, Part, Word};
+use crate::history::quoted_name;
 
 /// Why a statement was not converted.
 #[derive(Debug)]
@@ -36,15 +37,106 @@ struct Env {
     /// The test's title as a file name, for unnamed screenshots.
     slug: String,
     screenshots: usize,
+    /// In a test's own body (not a hook): `test.skip()` and
+    /// `test.setTimeout(…)` there set [`Env::settings`].
+    in_test: bool,
+    settings: Settings,
 }
 
+/// A scenario's settings (docs/e2e/scenarios.md), for the file or a test.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct Settings {
+    /// `@skip [reason]`.
+    skip: Option<String>,
+    only: bool,
+    timeout: Option<String>,
+    retries: Option<String>,
+    viewport: Option<String>,
+    device: Option<String>,
+}
+
+impl Settings {
+    /// What a runner call's last word says: `test.only`, `describe.skip`,
+    /// `test.fixme`, ….
+    fn of_call(path: &str) -> Self {
+        let last = path.rsplit('.').next();
+        Self {
+            only: last == Some("only"),
+            skip: match last {
+                Some("skip") => Some(String::new()),
+                Some("fixme") => Some("fixme".into()),
+                _ => None,
+            },
+            ..Self::default()
+        }
+    }
+
+    /// These settings with `inner`'s on top, as the runner puts a test's
+    /// on its file's.
+    fn with(&self, inner: &Self) -> Self {
+        let (viewport, device) = if inner.viewport.is_some() || inner.device.is_some() {
+            (inner.viewport.clone(), inner.device.clone())
+        } else {
+            (self.viewport.clone(), self.device.clone())
+        };
+        Self {
+            skip: inner.skip.clone().or_else(|| self.skip.clone()),
+            only: self.only || inner.only,
+            timeout: inner.timeout.clone().or_else(|| self.timeout.clone()),
+            retries: inner.retries.clone().or_else(|| self.retries.clone()),
+            viewport,
+            device,
+        }
+    }
+
+    /// The directives, in `chrome-cdp fmt`'s order.
+    fn directives(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        match self.skip.as_deref() {
+            Some("") => out.push("@skip".to_owned()),
+            Some(reason) => out.push(format!("@skip {}", quoted_name(reason))),
+            None => {}
+        }
+        if self.only {
+            out.push("@only".into());
+        }
+        if let Some(t) = &self.timeout {
+            out.push(format!("@timeout {t}"));
+        }
+        if let Some(r) = &self.retries {
+            out.push(format!("@retries {r}"));
+        }
+        if let Some(v) = &self.viewport {
+            out.push(format!("@viewport {v}"));
+        }
+        if let Some(d) = &self.device {
+            out.push(format!("@device {}", quoted_name(d)));
+        }
+        out
+    }
+}
+
+/// A `describe` block, or the file.
 #[derive(Default)]
 struct Scope {
     title: Option<String>,
     uses: Vec<Stmt>,
     before_each: Vec<Func>,
     after_each: Vec<Func>,
-    after_all: Vec<Func>,
+    /// From `describe.skip`/`only` and `describe.configure`.
+    settings: Settings,
+    /// The names its hooks see, once the block is read.
+    env: Env,
+}
+
+/// A `test(…)`, read; it is converted once every hook is known.
+struct TestCall {
+    title: String,
+    func: Func,
+    env: Env,
+    /// Its scopes, outermost (the file) first.
+    chain: Vec<usize>,
+    settings: Settings,
 }
 
 pub(super) struct Converter<'s> {
@@ -52,6 +144,14 @@ pub(super) struct Converter<'s> {
     pub(super) lines: Vec<Line>,
     pub(super) tests: usize,
     scopes: Vec<Scope>,
+    /// The open scopes, the file first.
+    open: Vec<usize>,
+    calls: Vec<TestCall>,
+    before_all: Vec<(Func, Env)>,
+    after_all: Vec<(Func, Env)>,
+    /// Runner calls that cannot be converted, e.g. a conditional
+    /// `test.skip(…)` outside a test: TODO lines at the top.
+    runner_todos: Vec<Line>,
     /// Statements outside any test: converted as a script when the file
     /// has no tests.
     loose: Vec<Stmt>,
@@ -64,6 +164,11 @@ impl<'s> Converter<'s> {
             lines: Vec::new(),
             tests: 0,
             scopes: vec![Scope::default()],
+            open: vec![0],
+            calls: Vec::new(),
+            before_all: Vec::new(),
+            after_all: Vec::new(),
+            runner_todos: Vec::new(),
             loose: Vec::new(),
         }
     }
@@ -72,13 +177,15 @@ impl<'s> Converter<'s> {
     pub(super) fn file(&mut self, stmts: &[Stmt]) {
         let mut env = Env::default();
         self.walk(stmts, &mut env);
-        self.close_scope(&env);
-        if self.tests == 0 {
+        self.close_scope(env.clone());
+        if self.calls.is_empty() {
             let mut env = env;
             env.pages.insert("page".into());
             let loose = std::mem::take(&mut self.loose);
             let lines = self.body(&mut env, &loose);
             self.lines.extend(lines);
+        } else {
+            self.scenario();
         }
     }
 
@@ -133,24 +240,56 @@ impl<'s> Converter<'s> {
             | "test.describe.serial"
             | "test.describe.parallel"
             | "test.describe.only"
+            | "test.describe.skip"
+            | "test.describe.fixme"
             | "describe"
-            | "describe.only" => {
+            | "describe.only"
+            | "describe.skip" => {
                 let Some(f) = func else { return false };
+                let settings = Settings::of_call(&path);
                 self.scopes.push(Scope {
                     title,
+                    settings,
                     ..Scope::default()
                 });
+                self.open.push(self.scopes.len() - 1);
                 let mut inner = env.clone();
                 if let Body::Block(body) = &f.body {
                     self.walk(body, &mut inner);
                 }
-                self.close_scope(&inner);
-                self.scopes.pop();
+                self.close_scope(inner);
+                self.open.pop();
             }
-            "test.describe.skip" | "test.describe.fixme" | "describe.skip" => {
-                self.skipped(title.as_deref().unwrap_or("describe"));
+            "test.describe.configure" => {
+                let Some(Expr::Object(props)) = args.first() else {
+                    return true;
+                };
+                for p in props {
+                    match p {
+                        Prop::Pair(k, v) if k == "retries" => {
+                            if let Ok(n) = number(v) {
+                                self.scope().settings.retries = Some(n);
+                            }
+                        }
+                        Prop::Pair(k, v) if k == "timeout" => {
+                            if let Ok(t) = duration(v)
+                                && t != "0ms"
+                            {
+                                self.scope().settings.timeout = Some(t);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
             }
-            "test.describe.configure" | "test.slow" | "test.setTimeout" => {}
+            "test.slow" => {}
+            "test.setTimeout" => {
+                if let Some(Ok(t)) = args.first().map(duration)
+                    && t != "0ms"
+                {
+                    self.scope().settings.timeout = Some(t);
+                }
+            }
             "test.use" => self.scope().uses.push(s.clone()),
             "test.beforeEach" | "beforeEach" => {
                 if let Some(f) = func {
@@ -164,24 +303,40 @@ impl<'s> Converter<'s> {
             }
             "test.beforeAll" | "beforeAll" => {
                 if let Some(f) = func {
-                    let mut env = Self::hook_env(env, &f);
-                    self.lines.push(Line::Comment("beforeAll".into()));
-                    let lines = self.func_body(&mut env, &f);
-                    self.lines.extend(lines);
-                    self.lines.push(Line::Blank);
+                    self.before_all.push((f, env.clone()));
                 }
             }
             "test.afterAll" | "afterAll" => {
                 if let Some(f) = func {
-                    self.scope().after_all.push(f);
+                    self.after_all.push((f, env.clone()));
                 }
             }
-            "test" | "test.only" | "it" | "it.only" => {
-                let Some(f) = func else { return false };
-                self.test(title.as_deref().unwrap_or("test"), &f, env);
+            "test" | "test.only" | "it" | "it.only" | "test.skip" | "test.fixme" | "it.skip"
+                if !matches!(args.first(), Some(Expr::Func(_))) =>
+            {
+                let Some(func) = func else { return false };
+                let settings = Settings::of_call(&path);
+                self.calls.push(TestCall {
+                    title: self.full_title(title.as_deref().unwrap_or("test")),
+                    func,
+                    env: env.clone(),
+                    chain: self.open.clone(),
+                    settings,
+                });
             }
-            "test.skip" | "test.fixme" | "it.skip" if func.is_some() => {
-                self.skipped(title.as_deref().unwrap_or("test"));
+            "test.skip" | "test.fixme" if args.is_empty() => {
+                self.scope().settings.skip = Some(if path == "test.fixme" {
+                    "fixme".into()
+                } else {
+                    String::new()
+                });
+            }
+            "test.skip" | "test.fixme" | "test.fail" => {
+                let todo = self.todo(
+                    s,
+                    "a runner call with a condition: write @skip on the tests it skips",
+                );
+                self.runner_todos.push(todo);
             }
             _ => return false,
         }
@@ -189,36 +344,20 @@ impl<'s> Converter<'s> {
     }
 
     fn scope(&mut self) -> &mut Scope {
-        if self.scopes.is_empty() {
-            self.scopes.push(Scope::default());
-        }
-        let last = self.scopes.len() - 1;
-        &mut self.scopes[last]
+        let open = *self.open.last().unwrap_or(&0);
+        &mut self.scopes[open]
     }
 
-    fn close_scope(&mut self, env: &Env) {
-        let after: Vec<Func> = std::mem::take(&mut self.scope().after_all);
-        for f in after {
-            let mut env = Self::hook_env(env, &f);
-            self.lines.push(Line::Comment("afterAll".into()));
-            let lines = self.func_body(&mut env, &f);
-            self.lines.extend(lines);
-            self.lines.push(Line::Blank);
-        }
-    }
-
-    fn skipped(&mut self, title: &str) {
-        self.lines.push(Line::Comment(format!(
-            "skipped: {}",
-            self.full_title(title)
-        )));
-        self.lines.push(Line::Blank);
+    /// Ends the innermost open scope: `env` is what its hooks see, and its
+    /// `afterAll` hooks run after its tests.
+    fn close_scope(&mut self, env: Env) {
+        self.scope().env = env;
     }
 
     fn full_title(&self, title: &str) -> String {
-        self.scopes
+        self.open
             .iter()
-            .filter_map(|s| s.title.as_deref())
+            .filter_map(|&i| self.scopes[i].title.as_deref())
             .chain([title])
             .collect::<Vec<_>>()
             .join(" > ")
@@ -227,6 +366,7 @@ impl<'s> Converter<'s> {
     /// The names a hook or test function's fixtures bring.
     fn hook_env(env: &Env, f: &Func) -> Env {
         let mut env = env.clone();
+        env.in_test = false;
         for p in &f.params {
             match p.as_str() {
                 "page" => {
@@ -241,65 +381,226 @@ impl<'s> Converter<'s> {
         env
     }
 
-    fn test(&mut self, title: &str, f: &Func, env: &Env) {
-        self.tests += 1;
-        let full = self.full_title(title);
-        let mut env = Self::hook_env(env, f);
-        env.slug = slug(title);
-        env.screenshots = 0;
-        let mut lines = vec![Line::Comment(format!("test: {full}"))];
-        let uses: Vec<Stmt> = self.scopes.iter().flat_map(|s| s.uses.clone()).collect();
-        for s in &uses {
-            lines.extend(self.test_use(&env, s));
-        }
-        let before: Vec<Func> = self
-            .scopes
+    /// The scenario of the tests read: settings, hooks and `@test`s. The
+    /// scopes every test is in make the file's settings and its `@before`
+    /// and `@after`; the steps of inner scopes' hooks are copied into
+    /// their tests.
+    fn scenario(&mut self) {
+        let calls = std::mem::take(&mut self.calls);
+        self.tests = calls.len();
+        let first = &calls[0].chain;
+        let common = calls
             .iter()
-            .flat_map(|s| s.before_each.clone())
-            .collect();
-        for hook in &before {
-            let mut hook_env = Self::hook_env(&env, hook);
-            lines.extend(self.func_body(&mut hook_env, hook));
-            env.locators.extend(hook_env.locators);
+            .map(|c| {
+                c.chain
+                    .iter()
+                    .zip(first)
+                    .take_while(|(a, b)| a == b)
+                    .count()
+            })
+            .min()
+            .unwrap_or(1);
+        let shared = first[..common].to_vec();
+
+        // The file's settings.
+        let mut settings = Settings::default();
+        let mut before = Vec::new();
+        let mut locators = HashMap::new();
+        for &i in &shared {
+            let env = self.scopes[i].env.clone();
+            let mut uses = self.scopes[i].settings.clone();
+            for s in &self.scopes[i].uses {
+                before.extend(self.test_use(&env, s, &mut uses));
+            }
+            settings = settings.with(&uses);
         }
-        lines.extend(self.func_body(&mut env, f));
-        let after: Vec<Func> = self
-            .scopes
-            .iter()
-            .rev()
-            .flat_map(|s| s.after_each.clone())
-            .collect();
-        for hook in &after {
-            let mut hook_env = Self::hook_env(&env, hook);
-            lines.extend(self.func_body(&mut hook_env, hook));
+        // An unnamed toHaveScreenshot() is named after its test, so a hook
+        // with one stays in each test.
+        let mut named = false;
+        for &i in &shared {
+            for hook in &self.scopes[i].before_each {
+                let mut env = Self::hook_env(&self.scopes[i].env, hook);
+                before.extend(self.func_body(&mut env, hook));
+                named |= env.screenshots > 0;
+                locators.extend(env.locators);
+            }
         }
-        lines.push(Line::Blank);
-        self.lines.extend(lines);
+        let mut after = Vec::new();
+        for &i in shared.iter().rev() {
+            for hook in &self.scopes[i].after_each {
+                let mut env = Self::hook_env(&self.scopes[i].env, hook);
+                env.locators.extend(locators.clone());
+                after.extend(self.func_body(&mut env, hook));
+                named |= env.screenshots > 0;
+            }
+        }
+        let hooks_from = if named {
+            before.clear();
+            after.clear();
+            locators.clear();
+            0
+        } else {
+            common
+        };
+        let hook = |lines: &mut Vec<Line>, lines_of: Vec<Line>, name: &str, pw: &str| {
+            if lines_of.iter().any(|l| matches!(l, Line::Cmd(_))) {
+                lines.push(Line::Directive {
+                    text: format!("@{name}"),
+                    block: true,
+                });
+                lines.extend(lines_of);
+                lines.push(Line::Blank);
+            } else if !lines_of.is_empty() {
+                // A block of comments only would not load.
+                lines.push(Line::Comment(format!("{pw}: no step to run")));
+                lines.extend(lines_of);
+                lines.push(Line::Blank);
+            }
+        };
+
+        let mut out = std::mem::take(&mut self.runner_todos);
+        if !out.is_empty() {
+            out.push(Line::Blank);
+        }
+        let directives = settings.directives();
+        if !directives.is_empty() {
+            for d in directives {
+                out.push(Line::Directive {
+                    text: d,
+                    block: false,
+                });
+            }
+            out.push(Line::Blank);
+        }
+        let mut before_all = Vec::new();
+        for (f, env) in &self.before_all {
+            before_all.extend(self.func_body(&mut Self::hook_env(env, f), f));
+        }
+        hook(&mut out, before_all, "before-all", "beforeAll");
+        hook(&mut out, before, "before", "beforeEach");
+        hook(&mut out, after, "after", "afterEach");
+        let mut after_all = Vec::new();
+        for (f, env) in self.after_all.iter().rev() {
+            after_all.extend(self.func_body(&mut Self::hook_env(env, f), f));
+        }
+        hook(&mut out, after_all, "after-all", "afterAll");
+
+        for call in &calls {
+            out.extend(self.test(call, &settings, common, hooks_from, &locators));
+        }
+        self.lines.extend(out);
     }
 
-    /// `test.use({ … })`: emulation commands.
-    fn test_use(&self, env: &Env, s: &Stmt) -> Vec<Line> {
+    /// A `@test` block: the settings of its scopes after the first
+    /// `common` (the file's), the hooks and `test.use` commands of those
+    /// after the first `hooks_from`, then its steps.
+    fn test(
+        &self,
+        call: &TestCall,
+        file: &Settings,
+        common: usize,
+        hooks_from: usize,
+        locators: &HashMap<String, String>,
+    ) -> Vec<Line> {
+        let inner = &call.chain[hooks_from..];
+        let mut env = Self::hook_env(&call.env, &call.func);
+        env.locators.extend(locators.clone());
+        env.slug = slug(call.title.rsplit(" > ").next().unwrap_or(&call.title));
+        env.screenshots = 0;
+        let mut settings = Settings::default();
+        let mut body = Vec::new();
+        for (depth, &i) in inner.iter().enumerate() {
+            let mut uses = self.scopes[i].settings.clone();
+            for s in &self.scopes[i].uses {
+                body.extend(self.test_use(&env, s, &mut uses));
+            }
+            if hooks_from + depth >= common {
+                settings = settings.with(&uses);
+            }
+        }
+        for &i in inner {
+            for hook in &self.scopes[i].before_each {
+                let mut hook_env = Self::hook_env(&env, hook);
+                body.extend(self.func_body(&mut hook_env, hook));
+                env.locators.extend(hook_env.locators);
+            }
+        }
+        env.in_test = true;
+        body.extend(self.func_body(&mut env, &call.func));
+        for &i in inner.iter().rev() {
+            for hook in &self.scopes[i].after_each {
+                let mut hook_env = Self::hook_env(&env, hook);
+                body.extend(self.func_body(&mut hook_env, hook));
+            }
+        }
+        if file.device.is_some()
+            && settings.device.is_none()
+            && let Some(size) = settings.viewport.take()
+        {
+            // @viewport would replace the file's @device; Playwright keeps
+            // the device and changes only the size.
+            body.insert(0, cmd(["viewport"]).arg(size).line());
+        }
+        let mut settings = settings.with(&call.settings).with(&env.settings);
+        if settings.skip.is_none() && !body.iter().any(|l| matches!(l, Line::Cmd(_))) {
+            // A test without steps does not load unless it is skipped.
+            settings.skip = Some(if body.iter().any(|l| matches!(l, Line::Todo { .. })) {
+                "convert: rewrite its TODO lines".into()
+            } else {
+                "convert: no steps".into()
+            });
+        }
+        let mut head = format!("@test {}", quoted_name(&call.title));
+        for d in settings.directives() {
+            head.push(' ');
+            head.push_str(&d);
+        }
+        let mut lines = vec![Line::Directive {
+            text: head,
+            block: true,
+        }];
+        lines.extend(body);
+        lines.push(Line::Blank);
+        lines
+    }
+
+    /// `test.use({ … })`: `@viewport` and `@device` in `settings`, and
+    /// emulation commands.
+    fn test_use(&self, env: &Env, s: &Stmt, settings: &mut Settings) -> Vec<Line> {
         let StmtKind::Expr(Expr::Call(_, args)) = &s.kind else {
             return vec![self.todo(s, "not understood")];
         };
         match args.first() {
-            Some(Expr::Object(props)) => self.options(env, s, props),
+            Some(Expr::Object(props)) => self.options(env, s, props, Some(settings)),
             _ => vec![self.todo(s, "test.use takes an object")],
         }
     }
 
     /// Context options (`test.use`, `browser.newContext`) as commands.
-    fn options(&self, env: &Env, s: &Stmt, props: &[Prop]) -> Vec<Line> {
+    /// With `settings` (`test.use`), a device and a plain viewport are
+    /// the `@device` and `@viewport` settings instead.
+    fn options(
+        &self,
+        env: &Env,
+        s: &Stmt,
+        props: &[Prop],
+        mut settings: Option<&mut Settings>,
+    ) -> Vec<Line> {
         let mut lines = Vec::new();
         let mut get = HashMap::new();
+        let spread = props.iter().any(|p| matches!(p, Prop::Spread(_)));
         for p in props {
             match p {
                 Prop::Pair(k, v) => {
                     get.insert(k.as_str(), v);
                 }
-                Prop::Spread(e) => match device(e) {
-                    Some(name) => lines.push(cmd(["emulate"]).arg(name).line()),
-                    None => lines.push(self.todo(s, "a spread of options")),
+                Prop::Spread(e) => match (device(e), settings.as_deref_mut()) {
+                    (Some(name), Some(settings)) => {
+                        settings.device = Some(name);
+                        settings.viewport = None;
+                    }
+                    (Some(name), None) => lines.push(cmd(["emulate"]).arg(name).line()),
+                    (None, _) => lines.push(self.todo(s, "a spread of options")),
                 },
                 Prop::Other => lines.push(self.todo(s, "a computed option")),
             }
@@ -312,6 +613,18 @@ impl<'s> Converter<'s> {
         });
         for key in keys {
             let value = get[key];
+            if key == "viewport"
+                && !spread
+                && !["deviceScaleFactor", "isMobile", "hasTouch"]
+                    .iter()
+                    .any(|k| get.contains_key(k))
+                && let Some(settings) = settings.as_deref_mut()
+                && let Ok(size) = size(value)
+            {
+                settings.viewport = Some(size);
+                settings.device = None;
+                continue;
+            }
             let line = match key {
                 "viewport" => viewport(value, &get),
                 "deviceScaleFactor" | "isMobile" | "hasTouch" if get.contains_key("viewport") => {
@@ -456,7 +769,7 @@ impl<'s> Converter<'s> {
                     ("newContext", Some(b)) if env.browsers.contains(b) => {
                         env.contexts.insert(name.clone());
                         return Ok(match args.first() {
-                            Some(Expr::Object(props)) => self.options(env, s, props),
+                            Some(Expr::Object(props)) => self.options(env, s, props, None),
                             _ => vec![],
                         });
                     }
@@ -519,8 +832,29 @@ impl<'s> Converter<'s> {
                     lines.extend(self.func_body(env, f));
                     return Ok(lines);
                 }
+                "test.setTimeout" if env.in_test => {
+                    if let Some(Ok(t)) = args.first().map(duration)
+                        && t != "0ms"
+                    {
+                        env.settings.timeout = Some(t);
+                    }
+                    return Ok(vec![]);
+                }
+                "test.skip" | "test.fixme" if env.in_test && args.is_empty() => {
+                    env.settings.skip = Some(if path == "test.fixme" {
+                        "fixme".into()
+                    } else {
+                        String::new()
+                    });
+                    return Ok(vec![]);
+                }
                 "test.slow" | "test.setTimeout" | "console.log" => return Ok(vec![]),
-                "test.skip" | "test.fixme" | "test.fail" | "test.info" => {
+                "test.skip" | "test.fixme" => {
+                    return why(
+                        "a runner call with a condition: write @skip on the @test line when it holds",
+                    );
+                }
+                "test.fail" | "test.info" => {
                     return why("a runner call");
                 }
                 _ => {}
