@@ -1700,6 +1700,11 @@ pub struct ScreenshotData {
     pub locator: Option<String>,
     /// `--full`: the whole page.
     pub full: bool,
+    /// `--full` of a page that scrolls inside a container: that
+    /// container (`main#feed`), whose whole content is in the image; the
+    /// viewport grew for the capture.
+    #[serde(default)]
+    pub container: Option<String>,
     /// Image pixels per CSS pixel: 1 at `--scale css`, the device pixel
     /// ratio at `--scale device`, less when `--max-size` scaled it down.
     /// A point (x, y) in the image is (x / scale, y / scale) from the

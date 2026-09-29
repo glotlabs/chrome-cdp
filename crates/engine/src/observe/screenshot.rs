@@ -8,6 +8,13 @@
 //! models) need no image processing here: Chrome renders the smaller
 //! image itself.
 //!
+//! A page that does not scroll itself but inside a container (`html,
+//! body { height: 100% }` and a scrolling `<main>`) has nothing beyond
+//! its viewport, so `--full` finds that container (or takes `--full
+//! <loc>`), grows the viewport until the container's whole content fits
+//! it, as Playwright's docs suggest for such pages, and gives the page its
+//! viewport and the container its scroll position back afterwards.
+//!
 //! `--mask` and `--annotate` draw into the page just before the capture
 //! and remove it right after: a zero-size element (`<chrome-cdp-overlay>`,
 //! its content in a closed shadow root) placed at the top of each frame's
@@ -30,6 +37,7 @@ use base64::Engine as _;
 use cdp::domains::{dom, emulation, page as cdp_page, runtime};
 use protocol::schema::ScreenshotData;
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
+use serde::Deserialize;
 use serde_json::json;
 use tokio::time::Instant;
 
@@ -118,6 +126,50 @@ const STILL_JS: &str = r"function () {
   globalThis.__ccdpStill = { style, endless };
 }";
 
+/// The container a page that does not scroll itself scrolls in: of the
+/// elements that scroll, the one that shows the most of itself in the
+/// viewport, if that is at least a quarter of it (the outer one of two
+/// that show as much).
+const SCROLLER_JS: &str = r"function () {
+  const can = (v) => v === 'auto' || v === 'scroll' || v === 'overlay';
+  let best = null, most = innerWidth * innerHeight / 4 - 1;
+  for (const el of document.querySelectorAll('*')) {
+    if (el === document.scrollingElement || el === document.documentElement) continue;
+    const dx = el.scrollWidth - el.clientWidth, dy = el.scrollHeight - el.clientHeight;
+    if (dx <= 1 && dy <= 1) continue;
+    const s = getComputedStyle(el);
+    if (!(dy > 1 && can(s.overflowY)) && !(dx > 1 && can(s.overflowX))) continue;
+    const r = el.getBoundingClientRect();
+    const w = Math.min(r.right, innerWidth) - Math.max(r.left, 0);
+    const h = Math.min(r.bottom, innerHeight) - Math.max(r.top, 0);
+    if (w > 0 && h > 0 && w * h > most) {
+      best = el;
+      most = w * h;
+    }
+  }
+  return best;
+}";
+
+/// A container's [`Overflow`].
+const OVERFLOW_JS: &str = r"function () {
+  const can = (v) => v === 'auto' || v === 'scroll' || v === 'overlay';
+  const s = getComputedStyle(this);
+  const page = this === document.scrollingElement || this === document.documentElement;
+  let name = this.localName;
+  if (this.id) name += '#' + this.id;
+  else if (this.classList.length) name += '.' + this.classList[0];
+  return {
+    dx: !page && can(s.overflowX) ? Math.max(0, this.scrollWidth - this.clientWidth) : 0,
+    dy: !page && can(s.overflowY) ? Math.max(0, this.scrollHeight - this.clientHeight) : 0,
+    left: this.scrollLeft, top: this.scrollTop,
+    width: innerWidth, height: innerHeight, dpr: devicePixelRatio, name, page,
+  };
+}";
+
+/// How many times the viewport grows for a container whose content has
+/// not fit yet (content that grows with the viewport never does).
+const STRETCHES: usize = 3;
+
 /// Checks a screenshot request's arguments without a browser, so the CLI
 /// can fail before it starts one.
 pub fn check_screenshot(req: &ScreenshotRequest) -> Result<(), ErrorInfo> {
@@ -131,8 +183,18 @@ fn locate_options(req: &ScreenshotRequest) -> LocateOptions {
     }
 }
 
-/// The element to capture and the `--mask` locators, parsed.
-fn locators(req: &ScreenshotRequest) -> Result<(Option<Locator>, Vec<Locator>), ErrorInfo> {
+/// A request's locators, parsed.
+struct Locators {
+    /// The element to capture.
+    element: Option<Locator>,
+    /// `--full <loc>`.
+    container: Option<Locator>,
+    masks: Vec<Locator>,
+}
+
+/// The element to capture, the container and the `--mask` locators,
+/// parsed.
+fn locators(req: &ScreenshotRequest) -> Result<Locators, ErrorInfo> {
     let bad = |message: &str, example: Cmd| {
         Err(ErrorInfo::new(ErrorKind::BadArgs, message).hint(Hint::run(example)))
     };
@@ -164,11 +226,27 @@ fn locators(req: &ScreenshotRequest) -> Result<(Option<Locator>, Vec<Locator>), 
             Cmd::new("screenshot").switch("omit-background"),
         );
     }
+    if req.container.is_some() && !req.full {
+        return bad(
+            "a container is for --full: --full <loc> names it",
+            Cmd::new("screenshot").flag("full", "css=main"),
+        );
+    }
     let options = locate_options(req);
-    let locator = req
+    let element = req
         .locator
         .as_deref()
         .map(|l| options.parse(l))
+        .transpose()?;
+    let container = req
+        .container
+        .as_deref()
+        .map(|c| {
+            options.parse(c).map_err(|e| {
+                let message = format!("--full: {}", e.message);
+                ErrorInfo { message, ..e }
+            })
+        })
         .transpose()?;
     let masks = req
         .mask
@@ -180,7 +258,11 @@ fn locators(req: &ScreenshotRequest) -> Result<(Option<Locator>, Vec<Locator>), 
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok((locator, masks))
+    Ok(Locators {
+        element,
+        container,
+        masks,
+    })
 }
 
 /// A rectangle in CSS pixels.
@@ -223,6 +305,47 @@ struct Capture {
     dpr: f64,
     /// Set when a ref was re-resolved by role and name.
     note: Option<String>,
+    /// The container stretched out for `--full` ([`Stretched::name`]).
+    container: Option<String>,
+}
+
+/// What [`OVERFLOW_JS`] reads of a container.
+#[derive(Debug, Deserialize)]
+struct Overflow {
+    /// How much wider and taller its content is than it, in CSS pixels,
+    /// on the axes it scrolls on.
+    dx: f64,
+    dy: f64,
+    /// Its scroll position.
+    left: f64,
+    top: f64,
+    /// The viewport (`innerWidth`, `innerHeight`) and `devicePixelRatio`.
+    width: f64,
+    height: f64,
+    dpr: f64,
+    /// `main#feed`: its tag and id or first class.
+    name: String,
+    /// It is the document's scrolling element, not a container.
+    page: bool,
+}
+
+impl Overflow {
+    fn fits(&self) -> bool {
+        self.dx <= 1.0 && self.dy <= 1.0
+    }
+}
+
+/// A container whose content the viewport grew to fit, to put back
+/// afterwards.
+struct Stretched {
+    context: FrameContext,
+    object_id: String,
+    name: String,
+    /// Its scroll position before.
+    scroll: (f64, f64),
+    /// The viewport before, and its `devicePixelRatio`.
+    viewport: (u32, u32),
+    dpr: f64,
 }
 
 /// One screenshot in progress.
@@ -250,7 +373,7 @@ struct Drawn {
 impl Engine {
     /// `screenshot`: the active tab (or `--tab`) as an image file.
     pub async fn screenshot(&self, req: ScreenshotRequest) -> Result<Output, ErrorInfo> {
-        let (locator, masks) = locators(&req)?;
+        let locators = locators(&req)?;
         let running = self.running()?;
         let timeout = millis(req.timeout_ms);
         let deadline = Instant::now() + timeout;
@@ -267,7 +390,7 @@ impl Engine {
             timeout,
             deadline,
         };
-        let work = shot.run(locator.as_ref(), &masks, mark);
+        let work = shot.run(&locators, mark);
         let output = Box::pin(self.unless_blocked(&running, &page, mark, work)).await?;
         Ok(self.report_events(&running, mark, output, None).await)
     }
@@ -286,7 +409,7 @@ impl Engine {
         mark: u64,
         deadline: Instant,
     ) -> Result<(Vec<u8>, Vec<String>), ErrorInfo> {
-        let (locator, masks) = locators(req)?;
+        let locators = locators(req)?;
         let shot = Shot {
             engine: self,
             running,
@@ -296,7 +419,7 @@ impl Engine {
             timeout: deadline.saturating_duration_since(Instant::now()),
             deadline,
         };
-        let (capture, drawn, bytes) = shot.take(locator.as_ref(), &masks, mark, true).await?;
+        let (capture, drawn, bytes) = shot.take(&locators, mark, true).await?;
         let mut warnings: Vec<String> = capture.note.into_iter().collect();
         warnings.extend(drawn.warnings);
         Ok((bytes, warnings))
@@ -314,41 +437,311 @@ impl Shot<'_> {
         &self.engine.session
     }
 
-    async fn run(
-        &self,
-        locator: Option<&Locator>,
-        masks: &[Locator],
-        mark: u64,
-    ) -> Result<Output, ErrorInfo> {
-        let (capture, drawn, bytes) = self.take(locator, masks, mark, false).await?;
-        self.output(locator, &capture, drawn, &bytes)
+    async fn run(&self, locators: &Locators, mark: u64) -> Result<Output, ErrorInfo> {
+        let (capture, drawn, bytes) = self.take(locators, mark, false).await?;
+        self.output(locators.element.as_ref(), &capture, drawn, &bytes)
     }
 
-    /// Finds the area, draws the masks and labels (on a `still` page),
-    /// takes the image and clears what was drawn.
+    /// Stretches out the container `--full` captures, finds the area,
+    /// draws the masks and labels (on a `still` page), takes the image
+    /// and clears what was drawn, and puts the container back.
     async fn take(
         &self,
-        locator: Option<&Locator>,
-        masks: &[Locator],
+        locators: &Locators,
         mark: u64,
         still: bool,
     ) -> Result<(Capture, Drawn, Vec<u8>), ErrorInfo> {
-        let capture = match locator {
+        let mut drawn = Drawn::default();
+        let stretched = if self.req.full {
+            self.stretch(locators.container.as_ref(), &mut drawn.warnings)
+                .await?
+        } else {
+            None
+        };
+        let result = self.shoot(locators, mark, still, &mut drawn).await;
+        let container = match stretched {
+            Some(stretched) => Some(self.unstretch(stretched).await),
+            None => None,
+        };
+        let (mut capture, bytes) = result?;
+        capture.container = container;
+        Ok((capture, drawn, bytes))
+    }
+
+    async fn shoot(
+        &self,
+        locators: &Locators,
+        mark: u64,
+        still: bool,
+        drawn: &mut Drawn,
+    ) -> Result<(Capture, Vec<u8>), ErrorInfo> {
+        let capture = match &locators.element {
             Some(locator) => self.element(locator).await?,
             None => self.page_area().await?,
         };
-        let mut drawn = Drawn::default();
         if still {
-            self.still(&mut drawn).await;
+            self.still(drawn).await;
         }
         let result = async {
-            self.draw(masks, mark, &capture, &mut drawn).await?;
+            self.draw(&locators.masks, mark, &capture, drawn).await?;
             self.capture(&capture).await
         }
         .await;
         self.clear(&drawn.frames).await;
-        let bytes = result?;
-        Ok((capture, drawn, bytes))
+        Ok((capture, result?))
+    }
+
+    /// For `--full`: grows the viewport until the whole content of
+    /// `container`, or of the one the page scrolls in if it does not
+    /// scroll itself, fits (`None` if there is nothing to stretch).
+    async fn stretch(
+        &self,
+        container: Option<&Locator>,
+        warnings: &mut Vec<String>,
+    ) -> Result<Option<Stretched>, ErrorInfo> {
+        let found = match container {
+            Some(locator) => Some(self.container(locator, warnings).await?),
+            None => self.scroller().await?,
+        };
+        let Some((context, object_id)) = found else {
+            return Ok(None);
+        };
+        let before = match self.overflow(&context, &object_id).await {
+            Ok(before) => before,
+            Err(e) => {
+                release(&context, object_id);
+                return Err(e);
+            }
+        };
+        if before.page || before.fits() {
+            release(&context, object_id);
+            if let Some(locator) = container
+                && !before.page
+            {
+                warnings.push(format!(
+                    "{locator} does not scroll, so --full captured the page as it is"
+                ));
+            }
+            return Ok(None);
+        }
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let px = |css: f64| css.ceil().max(1.0) as u32;
+        let stretched = Stretched {
+            context,
+            object_id,
+            name: before.name.clone(),
+            scroll: (before.left, before.top),
+            viewport: (px(before.width), px(before.height)),
+            dpr: before.dpr,
+        };
+        let grown = async {
+            // Content that does not all fit shows from its start.
+            self.scroll_to(&stretched, (0.0, 0.0)).await?;
+            let (mut width, mut height) = (before.width, before.height);
+            let mut overflow = before;
+            for _ in 0..STRETCHES {
+                width += overflow.dx;
+                height += overflow.dy;
+                self.running
+                    .tabs
+                    .stretch_viewport(
+                        self.page,
+                        (px(width), px(height)),
+                        stretched.dpr,
+                        self.left(),
+                    )
+                    .await
+                    .map_err(|e| from_cdp(&e, self.session()))?;
+                overflow = self
+                    .overflow(&stretched.context, &stretched.object_id)
+                    .await?;
+                if overflow.fits() {
+                    return Ok(None);
+                }
+            }
+            Ok::<_, ErrorInfo>(Some(format!(
+                "{} still scrolls with the viewport at {}x{}: its content grows with the \
+                 viewport, so the image ends there",
+                stretched.name,
+                px(width),
+                px(height)
+            )))
+        }
+        .await;
+        match grown {
+            Ok(warning) => {
+                warnings.extend(warning);
+                Ok(Some(stretched))
+            }
+            Err(e) => {
+                self.unstretch(stretched).await;
+                Err(e)
+            }
+        }
+    }
+
+    /// The one element `locator` matches, in the page's own document, for
+    /// `--full <loc>`; waits for it to be there.
+    async fn container(
+        &self,
+        locator: &Locator,
+        warnings: &mut Vec<String>,
+    ) -> Result<(FrameContext, String), ErrorInfo> {
+        let retry = |r: &str| Cmd::new("screenshot").flag("full", r);
+        let target = loop {
+            let err = match self
+                .engine
+                .locate_one(
+                    self.running,
+                    self.page,
+                    locator,
+                    &self.options,
+                    Some(&retry),
+                    self.left(),
+                )
+                .await
+            {
+                Ok(target) => break target,
+                Err(err) if waits_for(&err) => err,
+                Err(err) => return Err(err),
+            };
+            if Instant::now() + RETRY_DELAY >= self.deadline {
+                return Err(err.note("waited", format::duration(self.timeout)));
+            }
+            tokio::time::sleep(RETRY_DELAY).await;
+        };
+        let top = self
+            .running
+            .tabs
+            .frames(self.page.id)
+            .into_iter()
+            .find(|f| f.parent.is_none());
+        if top.is_some_and(|f| f.id != target.key.frame) {
+            target.release();
+            return Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!(
+                    "{locator} is in an iframe; --full stretches a container of the page itself"
+                ),
+            )
+            .hint(
+                Hint::run(
+                    Cmd::new("screenshot")
+                        .arg(locator.to_string())
+                        .scoped(self.session()),
+                )
+                .why("captures what the element shows"),
+            )
+            .details(json!({ "locator": locator.to_string() })));
+        }
+        warnings.extend(target.note.clone());
+        Ok((target.context, target.object_id))
+    }
+
+    /// The container the page scrolls in ([`SCROLLER_JS`]), unless the
+    /// page scrolls itself.
+    async fn scroller(&self) -> Result<Option<(FrameContext, String)>, ErrorInfo> {
+        let metrics = self.metrics().await?;
+        let (viewport, size) = (&metrics.css_layout_viewport, &metrics.css_content_size);
+        #[allow(clippy::cast_precision_loss)]
+        if size.width > viewport.client_width as f64 + 1.0
+            || size.height > viewport.client_height as f64 + 1.0
+        {
+            return Ok(None);
+        }
+        let context = self
+            .engine
+            .frame_context(self.running, self.page, None, World::Isolated, self.left())
+            .await?;
+        let mut params = runtime::CallFunctionOnParams::new(SCROLLER_JS.to_owned());
+        params.execution_context_id = Some(context.context_id);
+        let result = context
+            .session
+            .with_timeout(self.left())
+            .call(params)
+            .await
+            .map_err(|e| from_cdp(&e, self.session()))?;
+        Ok(result.result.object_id.map(|id| (context, id)))
+    }
+
+    /// Reads [`Overflow`] of the container `object_id`.
+    async fn overflow(
+        &self,
+        context: &FrameContext,
+        object_id: &str,
+    ) -> Result<Overflow, ErrorInfo> {
+        let mut params = runtime::CallFunctionOnParams::new(OVERFLOW_JS.to_owned());
+        params.object_id = Some(object_id.to_owned());
+        params.return_by_value = Some(true);
+        let result = context
+            .session
+            .with_timeout(self.left())
+            .call(params)
+            .await
+            .map_err(|e| from_cdp(&e, self.session()))?;
+        result
+            .result
+            .value
+            .and_then(|v| serde_json::from_value(v).ok())
+            .ok_or_else(|| {
+                ErrorInfo::new(
+                    ErrorKind::ProtocolError,
+                    "cannot read how far the container scrolls",
+                )
+            })
+    }
+
+    async fn scroll_to(
+        &self,
+        stretched: &Stretched,
+        (left, top): (f64, f64),
+    ) -> Result<(), ErrorInfo> {
+        let mut params = runtime::CallFunctionOnParams::new(format!(
+            "function () {{ this.scrollLeft = {left}; this.scrollTop = {top}; }}"
+        ));
+        params.object_id = Some(stretched.object_id.clone());
+        stretched
+            .context
+            .session
+            .with_timeout(self.timeout)
+            .call(params)
+            .await
+            .map(drop)
+            .map_err(|e| from_cdp(&e, self.session()))
+    }
+
+    /// Gives the page its viewport back (as it was, if it was not the one
+    /// the session emulates: a `cdp` call may have set it) and the
+    /// container its scroll position (best effort). Returns its name.
+    async fn unstretch(&self, stretched: Stretched) -> String {
+        let tabs = &self.running.tabs;
+        let _ = tabs.restore_viewport(self.page, self.timeout).await;
+        let now = self
+            .overflow(&stretched.context, &stretched.object_id)
+            .await;
+        #[allow(clippy::float_cmp)]
+        let changed = now.is_ok_and(|now| {
+            (now.width, now.height, now.dpr)
+                != (
+                    f64::from(stretched.viewport.0),
+                    f64::from(stretched.viewport.1),
+                    stretched.dpr,
+                )
+        });
+        if changed {
+            let _ = tabs
+                .stretch_viewport(self.page, stretched.viewport, stretched.dpr, self.timeout)
+                .await;
+        }
+        let _ = self.scroll_to(&stretched, stretched.scroll).await;
+        let Stretched {
+            context,
+            object_id,
+            name,
+            ..
+        } = stretched;
+        release(&context, object_id);
+        name
     }
 
     /// The viewport, or the whole page with `--full`.
@@ -382,6 +775,7 @@ impl Shot<'_> {
                 beyond_viewport: true,
                 dpr,
                 note: None,
+                container: None,
             });
         }
         Ok(Capture {
@@ -400,6 +794,7 @@ impl Shot<'_> {
             beyond_viewport: false,
             dpr,
             note: None,
+            container: None,
         })
     }
 
@@ -594,6 +989,7 @@ impl Shot<'_> {
             beyond_viewport,
             dpr: self.dpr().await?,
             note,
+            container: None,
         })
     }
 
@@ -956,6 +1352,12 @@ impl Shot<'_> {
                 }
             );
         }
+        if let Some(container) = &capture.container {
+            let _ = write!(
+                text,
+                "\nthe page scrolls in {container}; the viewport grew to show all of it"
+            );
+        }
         if drawn.masked > 0 {
             let _ = write!(
                 text,
@@ -977,6 +1379,7 @@ impl Shot<'_> {
             bytes: bytes.len() as u64,
             locator: locator.map(ToString::to_string),
             full: self.req.full,
+            container: capture.container.clone(),
             scale,
             downscaled,
             annotated: drawn.labelled,
@@ -997,8 +1400,10 @@ impl Shot<'_> {
         }
         if downscaled && scale < SMALL {
             let mut cmd = Cmd::new("screenshot");
-            if self.req.full {
-                cmd = cmd.switch("full");
+            match (&self.req.container, self.req.full) {
+                (Some(container), _) => cmd = cmd.flag("full", container),
+                (None, true) => cmd = cmd.switch("full"),
+                (None, false) => {}
             }
             if let Some(locator) = locator {
                 cmd = cmd.arg(locator.to_string());
@@ -1140,6 +1545,7 @@ mod tests {
             beyond_viewport: false,
             dpr,
             note: None,
+            container: None,
         }
     }
 

@@ -99,6 +99,7 @@ fn request() -> ScreenshotRequest {
         tab: None,
         locator: None,
         full: false,
+        container: None,
         format: ImageFormat::Png,
         quality: None,
         path: None,
@@ -369,6 +370,96 @@ async fn viewport_element_and_full_page() {
     .await;
     assert_eq!((data.width, data.height, data.scale), (800, 600, 2.0));
     assert!(output.text.contains("(1 CSS px = 2 px)"), "{}", output.text);
+
+    engine.close().await;
+}
+
+/// A page script's value.
+async fn eval(engine: &Engine, expression: &str) -> serde_json::Value {
+    let data = cdp(
+        engine,
+        "Runtime.evaluate",
+        json!({ "expression": expression, "returnByValue": true }),
+    )
+    .await;
+    data["result"]["value"].clone()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn full_page_of_an_app_that_scrolls_inside() {
+    let Some(chrome) = chrome_path() else { return };
+    let out = tempfile::tempdir().unwrap();
+    let engine = start(&chrome, "engine-shot-scroller", out.path()).await;
+    goto(&engine, &Fixtures::shared().url("/shots/scroller.html")).await;
+    viewport(&engine, 800, 600, 1.0).await;
+    eval(&engine, "document.getElementById('feed').scrollTop = 500").await;
+    let full = |container: Option<&str>| ScreenshotRequest {
+        full: true,
+        container: container.map(str::to_owned),
+        max_size: 0,
+        ..request()
+    };
+
+    // The document does not scroll, <main> does: the whole feed (3000px
+    // under a 60px header) is in the image, from its start.
+    let (data, output) = shoot(&engine, full(None)).await;
+    assert_eq!((data.width, data.height), (800, 3060), "{}", output.text);
+    assert_eq!(data.container.as_deref(), Some("main#feed"));
+    assert!(
+        output
+            .text
+            .ends_with("\nthe page scrolls in main#feed; the viewport grew to show all of it"),
+        "{}",
+        output.text
+    );
+    assert!(output.warnings.is_empty(), "{:?}", output.warnings);
+    let image = Image::load(&data.path);
+    assert!(near(image.pixel(400, 30), [0, 0, 255]));
+    assert!(near(image.pixel(400, 70), [255, 0, 0]));
+    assert!(near(image.pixel(400, 3050), [0, 200, 0]));
+    // The viewport and the feed's scroll position are as they were.
+    assert_eq!(
+        eval(&engine, "[innerWidth, innerHeight]").await,
+        json!([800, 600])
+    );
+    assert_eq!(
+        eval(&engine, "document.getElementById('feed').scrollTop").await,
+        json!(500)
+    );
+
+    // --full <loc> names another container: the 2000px sidebar.
+    let (data, output) = shoot(&engine, full(Some("#side"))).await;
+    assert_eq!((data.width, data.height), (800, 2060), "{}", output.text);
+    assert_eq!(data.container.as_deref(), Some("nav#side"));
+    assert!(near(
+        Image::load(&data.path).pixel(100, 2050),
+        [255, 255, 0]
+    ));
+    assert_eq!(eval(&engine, "innerHeight").await, json!(600));
+
+    // One that does not scroll leaves the page as it is, and says so.
+    let (data, output) = shoot(&engine, full(Some("css=header"))).await;
+    assert_eq!((data.width, data.height), (800, 600));
+    assert_eq!(data.container, None);
+    assert_eq!(
+        output.warnings,
+        ["css=header does not scroll, so --full captured the page as it is"]
+    );
+    let err = shoot_err(
+        &engine,
+        ScreenshotRequest {
+            timeout_ms: 300,
+            ..full(Some("#nothing"))
+        },
+    )
+    .await;
+    assert_eq!(err.kind, ErrorKind::NotFound, "{}", err.to_text());
+
+    // A page that scrolls itself is captured as before.
+    goto(&engine, &Fixtures::shared().url("/shots/tall.html")).await;
+    let (data, _) = shoot(&engine, full(None)).await;
+    assert_eq!((data.width, data.height), (800, 20_000));
+    assert_eq!(data.container, None);
 
     engine.close().await;
 }

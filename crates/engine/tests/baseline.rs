@@ -341,6 +341,7 @@ fn screenshot_request(path: &Path) -> ExpectScreenshotRequest {
         path: path.to_owned(),
         locator: Some("#box".into()),
         full: false,
+        container: None,
         mask: Vec::new(),
         threshold: 0.1,
         max_diff_pixels: 0,

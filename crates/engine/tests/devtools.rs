@@ -87,6 +87,7 @@ async fn middle_of_red(engine: &Engine, dir: &Path, name: &str) -> [u8; 3] {
             tab: None,
             locator: None,
             full: false,
+            container: None,
             format: ImageFormat::Png,
             quality: None,
             path: Some(path.clone()),

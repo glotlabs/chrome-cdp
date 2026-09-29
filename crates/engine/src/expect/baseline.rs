@@ -132,6 +132,7 @@ fn shot_request(req: &ExpectScreenshotRequest) -> ScreenshotRequest {
         tab: req.tab.clone(),
         locator: req.locator.clone(),
         full: req.full,
+        container: req.container.clone(),
         format: ImageFormat::Png,
         quality: None,
         path: None,
@@ -170,8 +171,10 @@ fn screenshot_command(req: &ExpectScreenshotRequest) -> Cmd {
     if let Some(locator) = &req.locator {
         cmd = cmd.arg(locator);
     }
-    if req.full {
-        cmd = cmd.switch("full");
+    match (&req.container, req.full) {
+        (Some(container), _) => cmd = cmd.flag("full", container),
+        (None, true) => cmd = cmd.switch("full"),
+        (None, false) => {}
     }
     for mask in &req.mask {
         cmd = cmd.flag("mask", mask);

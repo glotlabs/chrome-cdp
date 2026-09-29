@@ -519,6 +519,25 @@ impl Tabs {
         emulation::apply(&self.shared, aspects, scope, timeout).await
     }
 
+    /// Makes `page`'s viewport `size` CSS pixels until
+    /// [`Tabs::restore_viewport`]; `dpr` if it emulates no viewport.
+    pub(crate) async fn stretch_viewport(
+        &self,
+        page: &Page,
+        size: (u32, u32),
+        dpr: f64,
+        timeout: Duration,
+    ) -> cdp::Result<()> {
+        let session = page.session.with_timeout(timeout);
+        emulation::stretch_viewport(&self.shared, &session, size, dpr).await
+    }
+
+    /// Gives `page` back the viewport it emulates (or none).
+    pub(crate) async fn restore_viewport(&self, page: &Page, timeout: Duration) -> cdp::Result<()> {
+        let session = page.session.with_timeout(timeout);
+        emulation::restore_viewport(&self.shared, &session).await
+    }
+
     /// The viewport of pages without their own, if there is one.
     pub(crate) fn default_viewport(&self) -> Option<Viewport> {
         self.shared.default_viewport.clone()

@@ -778,6 +778,9 @@ pub struct ExpectScreenshotRequest {
     /// `--full`: the whole page, not only the viewport.
     #[serde(default)]
     pub full: bool,
+    /// `--full <loc>`: the container the page scrolls in.
+    #[serde(default)]
+    pub container: Option<String>,
     /// `--mask`: locators whose matches are painted over.
     #[serde(default)]
     pub mask: Vec<String>,
@@ -1742,6 +1745,10 @@ pub struct ScreenshotRequest {
     /// `--full`: the whole page, not only the viewport.
     #[serde(default)]
     pub full: bool,
+    /// `--full <loc>`: the container the page scrolls in, whose whole
+    /// content is captured; found on its own if `None`.
+    #[serde(default)]
+    pub container: Option<String>,
     #[serde(default)]
     pub format: ImageFormat,
     /// `--quality`: 0 to 100, for jpeg and webp.

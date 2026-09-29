@@ -314,6 +314,54 @@ fn grow_window(session: &Session, viewport: &Viewport) -> Step {
     })
 }
 
+/// The viewport the page session `session` emulates: its context's, else
+/// the default one.
+fn page_viewport(shared: &Shared, session: &Session) -> Option<Viewport> {
+    let scope = session.id().and_then(|id| {
+        lock(&shared.state)
+            .hosts
+            .get(id)
+            .and_then(|h| h.scope.clone())
+    });
+    shared
+        .settings
+        .emulation
+        .get_in(scope.as_deref())
+        .viewport
+        .or_else(|| shared.default_viewport.clone())
+}
+
+/// Makes the page's viewport `width` x `height` CSS pixels for a while
+/// (`screenshot --full` of a page that scrolls inside a container), as
+/// the viewport it emulates otherwise is (at `dpr` if it emulates none),
+/// screen and orientation included.
+pub(super) async fn stretch_viewport(
+    shared: &Shared,
+    session: &Session,
+    (width, height): (u32, u32),
+    dpr: f64,
+) -> cdp::Result<()> {
+    let mut params = match page_viewport(shared, session) {
+        Some(viewport) => metrics(&viewport),
+        None => SetDeviceMetricsOverrideParams::new(0, 0, dpr, false),
+    };
+    params.width = i64::from(width);
+    params.height = i64::from(height);
+    session.call(params).await.map(drop)
+}
+
+/// Gives the page back the viewport it emulates, or none, after
+/// [`stretch_viewport`].
+pub(super) async fn restore_viewport(shared: &Shared, session: &Session) -> cdp::Result<()> {
+    match page_viewport(shared, session) {
+        Some(viewport) => session.call(metrics(&viewport)).await.map(drop),
+        None => session
+            .call(ClearDeviceMetricsOverrideParams::default())
+            .await
+            .map(drop),
+    }
+}
+
 /// `Emulation.setDeviceMetricsOverride` for `viewport`; a mobile screen
 /// is turned the way its viewport is.
 fn metrics(viewport: &Viewport) -> SetDeviceMetricsOverrideParams {
