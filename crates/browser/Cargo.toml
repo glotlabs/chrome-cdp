@@ -17,6 +17,7 @@ name = "browser"
 cdp.workspace = true
 protocol.workspace = true
 reqwest.workspace = true
+url.workspace = true
 rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true

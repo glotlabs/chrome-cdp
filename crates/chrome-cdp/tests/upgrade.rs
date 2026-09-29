@@ -363,3 +363,36 @@ fn leaves_an_npm_install_to_npm() {
         stdout(&out)
     );
 }
+
+/// A mirror on plain HTTP elsewhere than this machine is refused before
+/// anything is downloaded (plan 10.7).
+#[test]
+fn a_plain_http_mirror_is_refused() {
+    let installed = Installed::new("bin");
+    let mut cmd = std::process::Command::new(installed.exe("bin"));
+    for (key, value) in cli().get_envs() {
+        match value {
+            Some(v) => cmd.env(key, v),
+            None => cmd.env_remove(key),
+        };
+    }
+    cmd.current_dir(std::env::temp_dir())
+        .stdin(std::process::Stdio::null())
+        .env("XDG_RUNTIME_DIR", installed.dir.path().join("run"))
+        .env("CHROME_CDP_RELEASES_URL", "http://mirror.example/releases")
+        .args(["upgrade", "--check", "--json"]);
+    let out = run(&mut cmd);
+    assert_eq!(code(&out), 4, "{}", stderr(&out));
+    let error = &json_out(&out)["error"];
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .ends_with("is not HTTPS: downloads use HTTPS, or HTTP only to this machine"),
+        "{error}"
+    );
+    assert_eq!(
+        error["hint"],
+        "set CHROME_CDP_RELEASES_URL to an https:// URL"
+    );
+}

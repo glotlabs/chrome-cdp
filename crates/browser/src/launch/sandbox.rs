@@ -195,7 +195,9 @@ pub struct AppArmorProfile {
 /// The profile for this host's install cache. For the default Linux cache
 /// (`~/.cache/chrome-cdp`) it is `chrome-cdp` and covers every user's
 /// cache through `@{HOME}`; another cache gets its own
-/// `chrome-cdp-<hash>` for its absolute path.
+/// `chrome-cdp-<hash>` for its absolute path. A path with a control
+/// character gets none: a newline in it would add rules to a profile
+/// that is loaded with sudo.
 pub fn apparmor_profile(host: &Host) -> Option<AppArmorProfile> {
     let cache = cache_dir(host)?;
     let default = host.home().map(|h| h.join(".cache/chrome-cdp"));
@@ -207,6 +209,9 @@ pub fn apparmor_profile(host: &Host) -> Option<AppArmorProfile> {
     } else {
         let resolved = std::fs::canonicalize(&cache).unwrap_or(cache);
         let base = escape_glob(&resolved.to_string_lossy());
+        if base.contains(char::is_control) {
+            return None;
+        }
         (format!("chrome-cdp-{:08x}", fnv(base.as_bytes())), base)
     };
     let attach = format!("{base}/browsers/*/{{{}}}", CFT_BINARIES.join(","));
@@ -374,6 +379,12 @@ mod tests {
                 .join(build);
             assert!(parsed[0].attaches_to(&bin, Some(home)), "{build}");
         }
+
+        // A newline in the path would add rules: no profile at all.
+        let injected = host
+            .clone()
+            .with_var("XDG_CACHE_HOME", "/data/x {}\n  capability sys_admin,\n#");
+        assert!(apparmor_profile(&injected).is_none());
 
         // XDG_CACHE_HOME elsewhere: its own profile for that path.
         let custom = host.clone().with_var("XDG_CACHE_HOME", "/data/my cache");

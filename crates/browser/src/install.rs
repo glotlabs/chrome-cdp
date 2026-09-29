@@ -554,6 +554,7 @@ impl Client {
         let http = reqwest::Client::builder()
             .connect_timeout(timeout)
             .read_timeout(timeout)
+            .redirect(crate::download::redirect_policy())
             .user_agent(concat!("chrome-cdp/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| InstallError::Http {
@@ -583,6 +584,11 @@ impl Client {
 
     async fn get(&self, url: &str) -> Result<reqwest::Response, InstallError> {
         tracing::debug!(url, "GET");
+        // The index (a mirror's too) and the zips it lists alike.
+        crate::download::check_url(url).map_err(|error| InstallError::Http {
+            url: url.to_owned(),
+            error,
+        })?;
         let response = self
             .http
             .get(url)

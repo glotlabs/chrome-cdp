@@ -112,6 +112,20 @@ pub(crate) fn run(args: &UpgradeArgs, timeout: Duration) -> Result<Output, Error
             manifest.version
         ))
     })?;
+    // Both go into the archive's URL and into what is printed: a version
+    // and a plain file name, nothing that could point elsewhere.
+    let plain = |s: &str| {
+        !s.is_empty()
+            && !s.starts_with('.')
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'))
+    };
+    if !plain(&manifest.version) || !plain(&entry.archive) {
+        return Err(failed(format!(
+            "{manifest_url} is not a release manifest: version {:?}, archive {:?}",
+            manifest.version, entry.archive
+        )));
+    }
     let archive_url = format!(
         "{base}/download/v{}/{}",
         manifest.version.trim_start_matches('v'),
@@ -385,6 +399,7 @@ impl Http {
         let client = reqwest::Client::builder()
             .connect_timeout(timeout)
             .read_timeout(timeout)
+            .redirect(browser::download::redirect_policy())
             .user_agent(concat!("chrome-cdp/", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|e| failed(format!("cannot start the HTTP client: {e}")))?;
@@ -404,6 +419,10 @@ impl Http {
                     .hint(Hint::text("check the network, then run it again"))
             }
         };
+        browser::download::check_url(url).map_err(|why| {
+            failed(format!("cannot download {url}: {why}"))
+                .hint(Hint::text(format!("set {RELEASES_ENV} to an https:// URL")))
+        })?;
         let response = self.client.get(url).send().await.map_err(|e| error(&e))?;
         let status = response.status();
         if status == reqwest::StatusCode::NOT_FOUND {

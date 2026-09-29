@@ -15,6 +15,7 @@
 mod cft;
 mod deps;
 mod discover;
+pub mod download;
 mod host;
 mod install;
 mod installed;

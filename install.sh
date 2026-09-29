@@ -61,8 +61,16 @@ detect_target() {
 download() {
 	url=$1
 	out=$2
+	# HTTPS, and no redirect off it; a mirror may also be a local dir
+	# (file://) or plain HTTP on this machine.
+	case "$url" in
+	https://*) proto='=https' ;;
+	file://*) proto='=file' ;;
+	http://127.0.0.1[:/]* | http://localhost[:/]* | http://\[::1\][:/]*) proto='=http' ;;
+	*) fail "$url is not HTTPS" "downloads use HTTPS, or HTTP only to this machine" ;;
+	esac
 	if command -v curl >/dev/null 2>&1; then
-		curl -fsSL --retry 3 -o "$out" "$url" || fail "cannot download $url" "check the version, the network, or the releases at $REPO_RELEASES"
+		curl -fsSL --proto "$proto" --proto-redir "$proto" --tlsv1.2 --retry 3 -o "$out" "$url" || fail "cannot download $url" "check the version, the network, or the releases at $REPO_RELEASES"
 	elif command -v wget >/dev/null 2>&1; then
 		wget -q -O "$out" "$url" || fail "cannot download $url" "check the version, the network, or the releases at $REPO_RELEASES"
 	else
