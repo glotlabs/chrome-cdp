@@ -4,8 +4,9 @@
 //! `wait --request` and `wait --response`, and of failed requests, for
 //! the post-action report (5.5).
 //!
-//! The tab's page session and its OOPIF sessions feed it their `Network`
-//! events (see `tabs::watch_host`). Requests are keyed by session and
+//! The tab's page session, its OOPIF sessions and its workers' sessions
+//! feed it their `Network` events (see `tabs::watch_host` and
+//! `tabs::watch_worker`). Requests are keyed by session and
 //! request id, since each session numbers its own. Plan 06's network
 //! buffer can grow from the same events.
 

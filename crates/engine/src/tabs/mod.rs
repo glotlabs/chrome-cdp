@@ -2095,8 +2095,9 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent<'_>) {
 /// that applies to its kind (see [`features`]) adds its steps. A page or
 /// iframe gets auto-attach for its children, the domains commands need,
 /// frame tracking and chrome-cdp's isolated world, and the session's
-/// settings; a tab's dedicated worker gets only its console; the others
-/// are only resumed.
+/// settings; a worker gets its requests followed and routed and the mock
+/// shim (a dedicated worker also its console); the others are only
+/// resumed.
 ///
 /// Every step and the resume are sent at once and only then awaited. Chrome
 /// runs them in order, but some answers (`Page.enable` in a popup's new

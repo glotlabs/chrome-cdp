@@ -2,9 +2,11 @@
 //! requests, for `network` and `network show` (and plan 06's HAR export
 //! later).
 //!
-//! Every page and iframe session of the tab has `Network` enabled from
-//! before its first request (see `tabs::setup`), and feeds its events here
-//! (see `tabs::watch_host`), whether or not anyone asks. Each request, and
+//! Every page and iframe session of the tab, and every worker of it, has
+//! `Network` enabled from before its first request (see `tabs::setup`),
+//! and feeds its events here (see `tabs::watch_host` and
+//! `tabs::watch_worker`; a shared or service worker feeds every tab of its
+//! origin, and its records name it), whether or not anyone asks. Each request, and
 //! each hop of a redirect, is one record: what was asked, the response
 //! (status, MIME type, sizes, timing, cache, protocol), how it failed
 //! (`errorText`, `blockedReason`, CORS), and for a WebSocket its frames,

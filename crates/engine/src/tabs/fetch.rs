@@ -13,13 +13,14 @@
 //! are paused in the session of the frame that started it, with the
 //! frame's tab. A shared or service worker's are intercepted in its own
 //! session (plan 13.2), with its scope and no tab, which is all routes and
-//! mock sets need. Page requests skip
-//! service workers while routes exist, so they still reach the routes;
-//! what a service worker fetches itself is routed in its session. Chrome
-//! takes `Fetch.enable` in a shared worker only while it waits to start
+//! mock sets need. Page requests skip service workers while routes exist,
+//! so they still reach the routes; what a service worker fetches itself
+//! is routed in its session.
+//!
+//! Chrome takes `Fetch.enable` in a shared worker only before it starts
 //! (later it answers "'Fetch.enable' wasn't found"), so a shared worker
-//! intercepts every request from its start, auth challenges too, and
-//! whatever needs no route or credentials goes on at once.
+//! intercepts every request from its start, auth challenges too, and what
+//! needs no route or credentials goes on at once ([`enable_early`]).
 //!
 //! Each session's `Fetch` events come through a lossless stream and are
 //! handled in their own task ([`watch_fetch`]): a paused request whose
@@ -85,10 +86,11 @@ fn enable(shared: &Shared, kind: TargetKind) -> fetch::EnableParams {
 }
 
 /// Turns `Fetch` on in a new shared worker, as soon as it attached:
-/// Chrome makes the worker's loader once it has its script, paused or
-/// not, and requests of a loader made before `Fetch.enable` are never
-/// paused (see the module documentation). The sooner, the likelier it
-/// comes first; nothing makes it certain.
+/// Chrome makes the worker's loader as its script request starts,
+/// microseconds after, whether or not the worker waits for the debugger,
+/// and requests of a loader made before `Fetch.enable` are never paused.
+/// The sooner, the likelier it comes first; nothing makes it certain (see
+/// plan 13's decisions log).
 pub(super) fn enable_early(shared: &Arc<Shared>, session: &Session, kind: TargetKind) {
     if switchable(kind) {
         return;
