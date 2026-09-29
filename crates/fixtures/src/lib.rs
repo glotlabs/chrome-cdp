@@ -416,6 +416,7 @@ async fn respond(site: &Site, origin: &str, req: &Request<Incoming>) -> Response
         .and_then(|code| StatusCode::from_u16(code).ok());
     let mut response = match file(site, path) {
         None if path == "/items" => items(query),
+        None if path == "/targets/api" => targets_api(query),
         Some(file) => {
             let Ok(body) = std::fs::read(&file) else {
                 return not_found(path);
@@ -575,6 +576,14 @@ fn items(query: &str) -> Response<Full<Bytes>> {
         "application/json",
         Bytes::from(format!("[{}]", items.join(","))),
     )
+}
+
+/// `/targets/api?from=<who>`: `{"from": who}`, for the frames and
+/// workers of `targets/matrix.html` (plan 13).
+fn targets_api(query: &str) -> Response<Full<Bytes>> {
+    let from = percent_decode(param(query, "from").unwrap_or_default());
+    let body = serde_json::json!({ "from": from }).to_string();
+    response(StatusCode::OK, "application/json", Bytes::from(body))
 }
 
 /// `/echo`: the request as JSON.
@@ -882,6 +891,14 @@ mod tests {
         assert_eq!(json["path"], "/echo/x");
         assert_eq!(json["query"], "a=1");
         assert_eq!(json["headers"]["x-test"], "yes");
+    }
+
+    #[test]
+    fn targets_api_says_who_asked() {
+        let f = Fixtures::shared();
+        let (status, body) = get(&f.url_b("/targets/api?from=oopif-shared"));
+        assert!(status.contains("200"), "{status}");
+        assert_eq!(body, r#"{"from":"oopif-shared"}"#);
     }
 
     #[test]

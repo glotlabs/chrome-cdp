@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Target frame</title>
+<script src="/targets/ops.js"></script>
+<script>
+  // `?who=` names the frame; `?workers=1` starts a dedicated and a shared
+  // worker of its own (`<who>-dedicated`, `<who>-shared`). Everything
+  // goes up to the matrix page.
+  const params = new URLSearchParams(location.search);
+  const who = params.get('who');
+  const up = (message) => parent.postMessage(message, '*');
+  const workers = {};
+  if (params.get('workers')) {
+    const dedicated = new Worker('/targets/dedicated.js?who=' + who + '-dedicated');
+    dedicated.onmessage = (e) => up(e.data);
+    workers[who + '-dedicated'] = dedicated;
+    const shared = new SharedWorker('/targets/shared.js?who=' + who + '-shared');
+    shared.port.onmessage = (e) => up(e.data);
+    workers[who + '-shared'] = shared.port;
+  }
+  addEventListener('message', async (e) => {
+    const { id, op, to } = e.data;
+    if (to) {
+      workers[to].postMessage({ id, op });
+      return;
+    }
+    up({ id, result: await targetOps(who, op) });
+  });
+  up({ ready: who });
+</script>
+<h1>Target frame</h1>

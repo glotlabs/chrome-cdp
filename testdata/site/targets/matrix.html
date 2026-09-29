@@ -1,0 +1,91 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Targets: waiting</title>
+<script src="/targets/ops.js"></script>
+<script>
+  // Every kind of target (plan 13): this page (`main`), a same-site
+  // iframe (`same`), a cross-site one (`oopif`, with its own dedicated
+  // and shared worker), and a dedicated, a shared and a service worker.
+  // `ask(who, op)` has one of them run `targetOps` and resolves with its
+  // answer, which also goes into `#out-<who>`. The title turns to
+  // "Targets: ready" once every one has answered.
+  const ALL = ['main', 'same', 'oopif', 'oopif-dedicated', 'oopif-shared',
+               'dedicated', 'shared', 'service'];
+  const ready = new Set();
+  const waiting = new Map();
+  let next = 0;
+
+  function show(who, text) {
+    let li = document.getElementById('out-' + who);
+    if (!li) {
+      li = document.createElement('li');
+      li.id = 'out-' + who;
+      document.getElementById('out').append(li);
+    }
+    li.textContent = who + ': ' + text;
+  }
+
+  function answered(data) {
+    if (data.ready) {
+      ready.add(data.ready);
+      show(data.ready, 'ready');
+      if (ALL.every((w) => ready.has(w))) document.title = 'Targets: ready';
+      return;
+    }
+    const resolve = waiting.get(data.id);
+    if (resolve) {
+      waiting.delete(data.id);
+      resolve(data.result);
+    }
+  }
+  addEventListener('message', (e) => answered(e.data));
+
+  let dedicated, shared, service;
+  function send(who, message) {
+    switch (who) {
+      case 'same':
+      case 'oopif':
+        document.getElementById(who).contentWindow.postMessage(message, '*');
+        break;
+      case 'oopif-dedicated':
+      case 'oopif-shared':
+        document.getElementById('oopif').contentWindow.postMessage({ ...message, to: who }, '*');
+        break;
+      case 'dedicated': dedicated.postMessage(message); break;
+      case 'shared': shared.port.postMessage(message); break;
+      case 'service': service.postMessage(message); break;
+      default: throw new Error('no target ' + who);
+    }
+  }
+
+  window.ask = async (who, op) => {
+    let result;
+    if (who === 'main') {
+      result = await targetOps('main', op);
+    } else {
+      const id = ++next;
+      result = await new Promise((resolve) => {
+        waiting.set(id, resolve);
+        send(who, { id, op });
+      });
+    }
+    show(who, op + ' ' + JSON.stringify(result));
+    return result;
+  };
+
+  addEventListener('DOMContentLoaded', async () => {
+    dedicated = new Worker('/targets/dedicated.js?who=dedicated');
+    dedicated.onmessage = (e) => answered(e.data);
+    shared = new SharedWorker('/targets/shared.js?who=shared');
+    shared.port.onmessage = (e) => answered(e.data);
+    answered({ ready: 'main' });
+    navigator.serviceWorker.onmessage = (e) => answered(e.data);
+    await navigator.serviceWorker.register('/targets/sw.js', { scope: '/targets/' });
+    service = (await navigator.serviceWorker.ready).active;
+    if (await window.ask('service', 'ping') === 'pong') answered({ ready: 'service' });
+  });
+</script>
+<h1>Targets</h1>
+<iframe id="same" name="same" src="/targets/frame.html?who=same"></iframe>
+<iframe id="oopif" name="oopif" src="{{ORIGIN_B}}/targets/frame.html?who=oopif&amp;workers=1"></iframe>
+<ul id="out"></ul>
