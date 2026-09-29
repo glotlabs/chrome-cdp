@@ -197,7 +197,16 @@ impl NetLog {
         let Some(id) = params["requestId"].as_str() else {
             return false;
         };
-        let key = (session.to_owned(), id.to_owned());
+        let mut key = (session.to_owned(), id.to_owned());
+        if worker.is_some()
+            && method != "Network.requestWillBeSent"
+            && !self.live.contains_key(&key)
+            && let Some(sent) = self.live.keys().find(|(_, r)| r == id)
+        {
+            // A worker's own script: requested on the session of the page
+            // that starts it, answered on the worker's.
+            key = sent.clone();
+        }
         match method {
             "Network.requestWillBeSentExtraInfo" => {
                 let raw = headers(&params["headers"]);
@@ -737,10 +746,10 @@ fn now_ms() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use protocol::schema::RequestState;
+    use protocol::schema::{RequestState, Worker, WorkerKind};
     use serde_json::{Value, json};
 
-    use super::NetLog;
+    use super::{NetLog, Record};
 
     const CAP: usize = 100;
 
@@ -759,6 +768,37 @@ mod tests {
 
     fn event(log: &mut NetLog, method: &str, params: &Value) -> bool {
         log.event("s1", method, params, CAP, None)
+    }
+
+    /// A worker's script is requested on its page's session and answered
+    /// on the worker's: one record, done.
+    #[test]
+    fn a_workers_script_ends_on_its_session() {
+        let mut log = NetLog::default();
+        sent(&mut log, "W1", "GET", "http://x/worker.js", "Other", 10.0);
+        let worker = Worker {
+            kind: WorkerKind::Dedicated,
+            url: "http://x/worker.js".into(),
+        };
+        let response = json!({
+            "requestId": "W1", "type": "Script",
+            "response": { "url": "http://x/worker.js", "status": 200, "headers": {} },
+        });
+        assert!(log.event(
+            "w",
+            "Network.responseReceived",
+            &response,
+            CAP,
+            Some(&worker)
+        ));
+        let end = json!({ "requestId": "W1", "timestamp": 10.5, "encodedDataLength": 100 });
+        assert!(log.event("w", "Network.loadingFinished", &end, CAP, Some(&worker)));
+        let records: Vec<&Record> = log.records().collect();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].entry.state, RequestState::Done);
+        assert_eq!(records[0].entry.status, Some(200));
+        // Requested on the page's session: not marked with the worker.
+        assert_eq!(records[0].entry.worker, None);
     }
 
     #[test]

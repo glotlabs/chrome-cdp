@@ -1953,7 +1953,7 @@ fn worker_network_event(shared: &Shared, session_id: &str, method: &str, event: 
     let mut followed = false;
     for id in state.tabs_of(target) {
         if let Some(t) = state.tabs.get_mut(&id) {
-            followed |= t.network.event(session_id, method, &event.params);
+            followed |= t.network.worker_event(session_id, method, &event.params);
             followed |=
                 t.netlog
                     .event(session_id, method, &event.params, capacity, worker.as_ref());
@@ -2014,7 +2014,15 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent<'_>) {
         "attached to {}",
         info.target_id
     );
-    let kind = TargetKind::of(&info.r#type);
+    let mut kind = TargetKind::of(&info.r#type);
+    if matches!(parent, Parent::Host { .. })
+        && matches!(kind, TargetKind::SharedWorker | TargetKind::ServiceWorker)
+    {
+        // A service worker is also announced by the pages it controls:
+        // the browser's own session of it is the one used, this one is
+        // only resumed.
+        kind = TargetKind::Other;
+    }
     let (tab, parent_session) = match parent {
         Parent::Browser => (new_tab, None),
         Parent::Host { session, tab } => (tab, Some(session.to_owned())),

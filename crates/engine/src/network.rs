@@ -132,11 +132,33 @@ impl Network {
     /// Applies one `Network` event of session `session`; `false` if it is
     /// not one this tracker follows.
     pub(crate) fn event(&mut self, session: &str, method: &str, params: &Value) -> bool {
-        let now = Instant::now();
         let Some(id) = params["requestId"].as_str() else {
             return false;
         };
         let key = (session.to_owned(), id.to_owned());
+        self.apply(key, method, params)
+    }
+
+    /// [`Network::event`] for a worker's session. A worker's own script
+    /// is requested on the session of the page that starts it, and ends
+    /// on the worker's: an event of a request the worker's session did
+    /// not send applies to the request of that id another session sent.
+    pub(crate) fn worker_event(&mut self, session: &str, method: &str, params: &Value) -> bool {
+        let Some(id) = params["requestId"].as_str() else {
+            return false;
+        };
+        let mut key = (session.to_owned(), id.to_owned());
+        if method != "Network.requestWillBeSent"
+            && !self.in_flight.contains_key(&key)
+            && let Some(sent) = self.in_flight.keys().find(|(_, r)| r == id)
+        {
+            key = sent.clone();
+        }
+        self.apply(key, method, params)
+    }
+
+    fn apply(&mut self, key: (String, String), method: &str, params: &Value) -> bool {
+        let now = Instant::now();
         let text = |v: &Value| v.as_str().unwrap_or_default().to_owned();
         match method {
             "Network.requestWillBeSent" => {
@@ -385,6 +407,27 @@ mod tests {
 
     fn finished(net: &mut Network, id: &str) {
         assert!(net.event("s1", "Network.loadingFinished", &json!({ "requestId": id })));
+    }
+
+    /// A worker's script, requested on its page's session, ends on the
+    /// worker's; a request of the worker's own ends there too.
+    #[tokio::test(start_paused = true)]
+    async fn a_workers_script_ends_on_its_session() {
+        let mut net = Network::default();
+        let start = Instant::now();
+        sent(&mut net, "W1", "Other", "http://x/worker.js");
+        assert!(net.worker_event(
+            "w",
+            "Network.loadingFinished",
+            &json!({ "requestId": "W1" })
+        ));
+        let params = json!({
+            "requestId": "2", "type": "Fetch", "request": { "method": "GET", "url": "http://x/api" },
+        });
+        assert!(net.worker_event("w", "Network.requestWillBeSent", &params));
+        assert!(matches!(net.idle(start, Instant::now()), Idle::Busy(_)));
+        assert!(net.worker_event("w", "Network.loadingFinished", &json!({ "requestId": "2" })));
+        assert!(net.busy(Instant::now()).is_empty());
     }
 
     #[tokio::test(start_paused = true)]
