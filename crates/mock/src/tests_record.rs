@@ -346,6 +346,12 @@ fn a_har_file_is_read() {
     assert_eq!(exchanges[1].response_body.as_deref(), Some(&b""[..]));
     assert_eq!(exchanges[1].request_body.as_deref(), Some("{}"));
     assert!(har_exchanges(&json!({"x": 1})).is_err());
+    let crafted = json!({"log": {"entries": [{
+        "request": {"method": "X/../../../../home/u/.bashrc", "url": "https://x.test/api/a"},
+        "response": {"status": 200, "content": {"size": 1, "text": "x"}}
+    }]}});
+    let err = har_exchanges(&crafted).unwrap_err();
+    assert!(err.contains("not an HTTP method"), "{err}");
     let recorded = record(&exchanges, &options(&["/api/**"])).unwrap();
     assert!(
         recorded.toml.contains("respond = { status = 204 }"),
@@ -354,4 +360,32 @@ fn a_har_file_is_read() {
     );
     let d = write(&recorded);
     MockSet::load(&Source::find(d.path(), d.path(), "recorded").unwrap()).unwrap();
+}
+
+/// Whatever the requests were, data files stay under the mock file's
+/// directory.
+#[test]
+fn data_files_stay_in_their_dir() {
+    let exchanges = [
+        ex(
+            "X/../../..",
+            "https://x.test/api/%2e%2e/..%2f/items",
+            200,
+            &big_list(),
+        ),
+        ex(
+            "GET",
+            "https://x.test/api/../../etc?q=../../x",
+            200,
+            &big_list(),
+        ),
+    ];
+    let recorded = record(&exchanges, &options(&["/**"])).unwrap();
+    assert_eq!(recorded.files.len(), 2, "{}", recorded.toml);
+    for (rel, _) in &recorded.files {
+        let normal = std::path::Path::new(rel)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)));
+        assert!(normal, "{rel}");
+    }
 }

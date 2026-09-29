@@ -677,6 +677,19 @@ fn write_recording(
     };
     let mut files = Vec::new();
     for (rel, bytes) in &recorded.files {
+        // The recorder names files from requests: never outside the base.
+        if !Path::new(rel)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+        {
+            return Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!(
+                    "will not write the data file `{rel}` outside {}",
+                    out.base.display()
+                ),
+            ));
+        }
         let path = out.base.join(rel);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| io(parent, e))?;

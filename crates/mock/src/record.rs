@@ -207,6 +207,14 @@ pub fn har_exchanges(har: &Value) -> Result<Vec<Exchange>, String> {
         let request = entry
             .get("request")
             .ok_or_else(|| format!("entry {i} has no request"))?;
+        // A method names data files: only an HTTP token may, never
+        // `X/../..` from a crafted HAR.
+        let method = text(request, "method");
+        if method.is_empty() || !method.bytes().all(is_token_char) {
+            return Err(format!(
+                "entry {i} has the method `{method}`, which is not an HTTP method"
+            ));
+        }
         let response = entry.get("response");
         let content = response.and_then(|r| r.get("content"));
         let body = content.and_then(|c| {
@@ -236,7 +244,7 @@ pub fn har_exchanges(har: &Value) -> Result<Vec<Exchange>, String> {
             request_headers.push(("Cookie".into(), pairs.join("; ")));
         }
         out.push(Exchange {
-            method: text(request, "method").to_ascii_uppercase(),
+            method: method.to_ascii_uppercase(),
             url: text(request, "url"),
             request_headers,
             request_body: request
@@ -824,7 +832,7 @@ impl Files {
         }
         let mut last = segs.pop().unwrap_or_default();
         if key.method != "GET" {
-            let _ = write!(last, ".{}", key.method.to_ascii_lowercase());
+            let _ = write!(last, ".{}", clean(&key.method.to_ascii_lowercase()));
         }
         if let Some(op) = &key.graphql {
             let _ = write!(last, ".{}", clean(op));
@@ -864,6 +872,12 @@ impl Files {
         }
         path
     }
+}
+
+/// Whether `b` may be in an HTTP token (RFC 9110 `tchar`), such as a
+/// method.
+fn is_token_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&b)
 }
 
 /// `a-z0-9._-` only.
