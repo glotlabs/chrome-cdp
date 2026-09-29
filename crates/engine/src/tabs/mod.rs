@@ -48,7 +48,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use cdp::domains::{browser, network, page, runtime, security, target};
-use cdp::{Connection, Event as _, RawEvent, RawEventStream, Session};
+use cdp::{Connection, Event as _, LosslessEventStream, RawEvent, Session};
 use protocol::schema::{Event, TabInfo, Viewport};
 
 use self::dialogs::OpenDialog;
@@ -385,8 +385,9 @@ impl Tabs {
             default_viewport,
             tasks: Mutex::default(),
         });
-        // Subscribe before anything can attach.
-        let events = conn.browser().events();
+        // Subscribe before anything can attach. Lossless, as a missed
+        // target event loses a tab.
+        let events = conn.browser().events_lossless("");
         shared.spawn(watch_browser(shared.clone(), events));
         Self {
             conn: conn.clone(),
@@ -1508,7 +1509,7 @@ fn auto_attach() -> target::SetAutoAttachParams {
 }
 
 /// Handles the browser session's target events.
-async fn watch_browser(shared: Arc<Shared>, mut events: RawEventStream) {
+async fn watch_browser(shared: Arc<Shared>, mut events: LosslessEventStream) {
     while let Some(event) = events.next().await {
         match event.method.as_str() {
             target::AttachedToTarget::NAME => attached(&shared, &event, Parent::Browser),
@@ -1543,10 +1544,12 @@ async fn watch_browser(shared: Arc<Shared>, mut events: RawEventStream) {
 /// targets (OOPIFs, workers) and their detaching, the frame and execution
 /// context events of tab `tab`'s frames it owns, its dialogs and its
 /// crash. Its intercepted requests have their own task
-/// ([`fetch::watch_fetch`]).
+/// ([`fetch::watch_fetch`]). It gets every event, however far behind it
+/// falls: a skipped one would lose a frame, a console entry, or a
+/// request's end (which leaves it in flight and stalls `--idle`).
 async fn watch_host(
     shared: Arc<Shared>,
-    mut events: RawEventStream,
+    mut events: LosslessEventStream,
     session: Session,
     tab: Option<u32>,
 ) {
@@ -1751,7 +1754,7 @@ fn console_event(shared: &Shared, tab: u32, event: &RawEvent, worker: Option<&st
 
 /// Handles a dedicated worker's events: its console calls, uncaught
 /// exceptions and browser messages go to tab `tab`'s console.
-async fn watch_worker(shared: Arc<Shared>, mut events: RawEventStream, tab: u32, url: String) {
+async fn watch_worker(shared: Arc<Shared>, mut events: LosslessEventStream, tab: u32, url: String) {
     while let Some(event) = events.next().await {
         if matches!(
             event.method.as_str(),
@@ -1840,7 +1843,7 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
     if host {
         // Before auto-attach and the domains are turned on for it, so no
         // child and no frame event is missed.
-        let events = session.events();
+        let events = session.events_lossless("");
         let fetch_events = session.events_lossless("Fetch.");
         shared.lock().hosts.insert(
             session_id.clone(),
@@ -1866,7 +1869,7 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent) {
     // A dedicated worker of a tab: its console goes to the tab's.
     let worker = info.r#type == "worker" && matches!(parent, Parent::Host(Some(_)));
     if worker && let Some(tab) = tab {
-        let events = session.events();
+        let events = session.events_lossless("");
         shared.spawn(watch_worker(shared.clone(), events, tab, info.url.clone()));
     }
     let kind = if host {
@@ -2136,7 +2139,102 @@ fn detached(shared: &Shared, session_id: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_tab_id;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use cdp::Connection;
+    use cdp::transport::MemoryTransport;
+    use protocol::schema::RequestState;
+    use serde_json::json;
+    use tokio::time::Instant;
+
+    use super::{Settings, Tabs, parse_tab_id};
+
+    /// A burst far past the old 1024-event broadcast buffer, sent while
+    /// the tab's watchers cannot run, loses nothing: every console entry
+    /// is logged and every request ends.
+    #[tokio::test]
+    async fn a_lagging_watcher_misses_no_event() {
+        const LOGS: usize = 1500;
+        const REQUESTS: usize = 600;
+        // The connection reads on a runtime of its own; the watchers run
+        // on this one, which the test blocks during the burst.
+        let io = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let (transport, mut peer) = MemoryTransport::pair();
+        let conn = {
+            let _io = io.enter();
+            Connection::new(transport)
+        };
+        let tabs = Tabs::start(&conn, Arc::new(Settings::default()), None);
+        peer.send_json(&json!({"method": "Target.attachedToTarget", "params": {
+            "sessionId": "S1",
+            "targetInfo": {"targetId": "T1", "type": "page", "title": "", "url": "about:blank",
+                           "attached": true, "canAccessOpener": false},
+            "waitingForDebugger": false,
+        }}));
+        // Its setup starts once the tab and its watchers are there.
+        assert!(peer.recv_json().await.is_some());
+        assert!(tabs.shared.lock().hosts.contains_key("S1"));
+        let mut probe = conn.session("S1").events_lossless("Probe.");
+        let (dispatched, burst_done) = std::sync::mpsc::channel();
+        io.spawn(async move {
+            probe.next().await;
+            let _ = dispatched.send(());
+        });
+        for n in 0..LOGS {
+            peer.send_json(
+                &json!({"method": "Runtime.consoleAPICalled", "sessionId": "S1", "params": {
+                    "type": "log", "args": [{"type": "string", "value": format!("burst {n}")}],
+                    "executionContextId": 1, "timestamp": 0,
+                }}),
+            );
+        }
+        for n in 0..REQUESTS {
+            let id = format!("R{n}");
+            peer.send_json(&json!({"method": "Network.requestWillBeSent", "sessionId": "S1", "params": {
+                "requestId": id, "loaderId": "L1", "documentURL": "about:blank", "frameId": "T1",
+                "request": {"url": format!("http://x.test/{n}"), "method": "GET", "headers": {}},
+                "timestamp": 1.0, "wallTime": 1.0, "initiator": {"type": "other"}, "type": "Fetch",
+            }}));
+            peer.send_json(
+                &json!({"method": "Network.loadingFinished", "sessionId": "S1", "params": {
+                    "requestId": id, "timestamp": 2.0, "encodedDataLength": 0,
+                }}),
+            );
+        }
+        // Once the probe has it, the reader has handed on the whole burst,
+        // and no watcher has run meanwhile.
+        peer.send_json(&json!({"method": "Probe.done", "sessionId": "S1", "params": {}}));
+        burst_done.recv_timeout(Duration::from_secs(10)).unwrap();
+        let done = tabs
+            .wait(Duration::from_secs(10), |s| {
+                let tab = &s.tabs[&1];
+                tab.console.seq() == LOGS as u64 && tab.netlog.seq() == REQUESTS as u64
+            })
+            .await;
+        {
+            let state = tabs.shared.lock();
+            let tab = &state.tabs[&1];
+            assert!(
+                done,
+                "{} logs, {} requests",
+                tab.console.seq(),
+                tab.netlog.seq()
+            );
+            assert!(tab.network.busy(Instant::now()).is_empty());
+            assert!(
+                tab.netlog
+                    .records()
+                    .all(|r| r.entry.state == RequestState::Done)
+            );
+        }
+        drop(tabs);
+        io.shutdown_background();
+    }
 
     #[test]
     fn tab_ids() {
