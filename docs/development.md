@@ -43,7 +43,9 @@ session and temp dirs) and a `Session` guard that closes its session on
 drop; dropping the sandbox fails the test if a daemon, a Chrome or a socket
 file of it is left. Command output is pinned by golden files in
 `crates/chrome-cdp/tests/golden/`; after an intended change, rewrite them with
-`UPDATE_GOLDEN=1 cargo test -p chrome-cdp --test golden`. The snapshot corpus
+`UPDATE_GOLDEN=1 cargo test -p chrome-cdp --test golden` (and
+`golden/cli.txt`, the commands and flags, with `UPDATE_GOLDEN=1 cargo test
+-p chrome-cdp --bin chrome-cdp surface`). The snapshot corpus
 (`testdata/site/snapshot/`: pages from five lines to 50,000 nodes, each with
 an `.expected` tree) is checked by `cargo test -p chrome-cdp-engine --test snapshot`,
 which also prints both engines' scores and output tokens; its golden outputs

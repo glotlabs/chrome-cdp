@@ -79,5 +79,10 @@ CDP protocol revision it was built against); [CHANGELOG.md](../CHANGELOG.md)
 lists what each release changed.
 
 Every schema is kept in the repo as a golden file
-(`crates/chrome-cdp/tests/golden/schema/`), so a change to one fails the
-tests until it is reviewed and recorded.
+(`crates/chrome-cdp/tests/golden/schema/`), and so are the commands with
+their arguments, flags and environment variables
+(`crates/chrome-cdp/tests/golden/cli.txt`), so a change to one fails the
+tests until it is reviewed and recorded. Before a release,
+`cargo xtask release check` compares them with the previous release's and
+fails on a breaking change unless the major version went up
+([releasing.md](releasing.md#compatibility-check)).

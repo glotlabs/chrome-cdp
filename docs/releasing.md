@@ -10,13 +10,14 @@ does the rest. [docs/install.md](install.md) is the user side.
 2. Set `version = "X.Y.Z"` in `Cargo.toml`: in `[workspace.package]` and in
    each internal dependency (`package = "chrome-cdp-…"`, which crates.io
    needs), then run `cargo check` to update `Cargo.lock`.
-3. `cargo xtask release check --tag vX.Y.Z` checks both.
+3. `cargo xtask release check --tag vX.Y.Z` checks both, and that the
+   release only adds to the previous one's API (below).
 4. Commit, tag `vX.Y.Z` and push the tag. A tag with a `-` (`v1.0.0-rc.1`)
    makes a pre-release: npm's `next` tag, and no Homebrew update.
 
 The workflow then:
 
-- checks the versions (`release check --tag`);
+- checks the versions and the compatibility (`release check --tag`);
 - builds the four targets, each on its own architecture, with
   `cargo xtask dist` (the +20% size gate) and runs each binary;
 - on macOS, signs and notarizes the binary when the Apple secrets are set;
@@ -35,6 +36,40 @@ other jobs run again.
 
 The CI workflow runs every step but publishing on each push (the
 `release packaging` job), so a release does not find a broken step.
+
+## Compatibility check
+
+[output.md](output.md#versions-and-stability) promises that from 1.0 a
+minor release only adds to the public API. `release check` holds releases
+to it: it compares, in the working tree and at the previous `v*` tag
+(`git describe` from the tag's parent, or from HEAD without `--tag`):
+
+- each `--json` schema, `crates/chrome-cdp/tests/golden/schema/*.json`.
+  Breaking: a removed (or renamed) property, a changed type (any change
+  to the JSON types a value may have, `null` included), a new required
+  property or one no longer required, a removed enum value, error kind or
+  `oneOf`/`anyOf` variant (tagged variants are paired by their `type`),
+  a removed schema. `$ref`s are followed, so a renamed definition is not
+  a change;
+- the command line, `crates/chrome-cdp/tests/golden/cli.txt` (every
+  command of `help commands` and their subcommands, with their arguments,
+  flags, values and environment variables; its test regenerates it).
+  Breaking: a removed command, argument, flag, short flag, flag value or
+  environment variable, a flag that stops or starts taking a value or
+  stops being repeatable, a new required argument or flag. A flag moved
+  to the global flags is not removed.
+
+New properties, commands, flags and values, and changed descriptions and
+help text, are fine. A breaking change fails the check with one line per
+change, unless the major version went up (before 1.0, the minor one, as
+Cargo reads `0.y.z`); then it is only a warning, to copy into the
+CHANGELOG's breaking changes. Without a previous tag (the first release)
+the check says so and skips; a tag from before `cli.txt` existed has only
+its schemas compared.
+
+Without `--tag` it compares HEAD with the newest tag, so between
+releases a breaking change fails it until `Cargo.toml` has the next
+major version.
 
 ## Secrets
 
