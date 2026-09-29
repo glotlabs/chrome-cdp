@@ -31,7 +31,8 @@ pub(crate) enum Feature {
     /// `Runtime` and `Log`: execution contexts, the console, uncaught
     /// exceptions and the browser's messages.
     Runtime,
-    /// `Network`: requests, for network idle, waits and the network log.
+    /// `Network`: requests, for network idle, waits and the network log,
+    /// in frames and workers.
     Network,
     /// The frame tree and chrome-cdp's isolated world, with `perf`'s
     /// observer.
@@ -88,12 +89,11 @@ impl Feature {
                 TargetKind::Iframe,
                 TargetKind::DedicatedWorker,
             ]),
-            Self::Base
-            | Self::Network
-            | Self::World
-            | Self::Inject
-            | Self::Fetch
-            | Self::Emulation => KindSet::HOSTS,
+            // A worker's requests go to its tabs' network logs.
+            Self::Network => KindSet::HOSTS_AND_WORKERS,
+            Self::Base | Self::World | Self::Inject | Self::Fetch | Self::Emulation => {
+                KindSet::HOSTS
+            }
         }
     }
 
@@ -276,7 +276,7 @@ mod tests {
             [
                 "base      xx....",
                 "runtime   xxx...",
-                "network   xx....",
+                "network   xxxxx.",
                 "world     xx....",
                 "inject    xx....",
                 "fetch     xx....",

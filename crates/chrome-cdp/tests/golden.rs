@@ -1150,6 +1150,23 @@ const CASES: &[Case] = &[
         ]),
     },
     Case {
+        name: "network-worker",
+        args: &[
+            "network",
+            "--failed",
+            "--url",
+            "**/missing.json",
+            "--since",
+            "0",
+        ],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/workers/worker.html"],
+            &["click", "#fetch"],
+            &["wait", "--fn", "document.title === 'Worker: fetched 404'"],
+        ]),
+    },
+    Case {
         name: "network-none",
         args: &["network"],
         modes: ALL,

@@ -1452,9 +1452,13 @@ impl State {
     }
 
     /// Forgets the target of session `session_id`, and the targets it
-    /// announced, whose own detach events came through it; returns it.
-    fn forget_target(&mut self, session_id: &str) -> Option<Target> {
-        let target = self.targets.remove(session_id)?;
+    /// announced, whose own detach events came through it; returns them
+    /// by session id, its own first (none if it was not attached).
+    fn forget_target(&mut self, session_id: &str) -> Vec<(String, Target)> {
+        let Some(target) = self.targets.remove(session_id) else {
+            return Vec::new();
+        };
+        let mut forgotten = vec![(session_id.to_owned(), target)];
         let mut gone = vec![session_id.to_owned()];
         while let Some(parent) = gone.pop() {
             let children: Vec<String> = self
@@ -1464,19 +1468,17 @@ impl State {
                 .map(|(id, _)| id.clone())
                 .collect();
             for child in children {
-                self.targets.remove(&child);
+                if let Some(target) = self.targets.remove(&child) {
+                    forgotten.push((child.clone(), target));
+                }
                 gone.push(child);
             }
         }
-        Some(target)
+        forgotten
     }
 
     /// The tabs `target` belongs to: its own, or for a shared or service
     /// worker, the tabs of its scope with a frame on its origin.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "worker events use it (plan 13.2)")
-    )]
     fn tabs_of(&self, target: &Target) -> Vec<u32> {
         match &target.owner {
             Owner::Tab(id) => vec![*id],
@@ -1879,7 +1881,9 @@ fn network_event(shared: &Shared, session_id: &str, tab: u32, method: &str, even
     let capacity = shared.settings.network_buffer();
     let followed = shared.lock().tabs.get_mut(&tab).is_some_and(|t| {
         let followed = t.network.event(session_id, method, &event.params);
-        let logged = t.netlog.event(session_id, method, &event.params, capacity);
+        let logged = t
+            .netlog
+            .event(session_id, method, &event.params, capacity, None);
         followed || logged
     });
     if followed {
@@ -1901,19 +1905,63 @@ fn console_event(shared: &Shared, tab: u32, event: &RawEvent, worker: Option<&st
     }
 }
 
-/// Handles a dedicated worker's events: its console calls, uncaught
-/// exceptions and browser messages go to tab `tab`'s console.
-async fn watch_worker(shared: Arc<Shared>, mut events: LosslessEventStream, tab: u32, url: String) {
+/// Handles a worker's events (see "Where worker events go" in plan 13):
+/// its requests go to the network of each tab it belongs to (see
+/// `State::tabs_of`, asked at each event), a dedicated worker's console
+/// calls, uncaught exceptions and browser messages to its tab's console,
+/// and its mock shim's calls to the router.
+async fn watch_worker(shared: Arc<Shared>, mut events: LosslessEventStream, session_id: String) {
     while let Some(event) = events.next().await {
-        if matches!(
-            event.method.as_str(),
+        match event.method.as_str() {
+            method if method.starts_with("Network.") => {
+                worker_network_event(&shared, &session_id, method, &event);
+            }
+            "Runtime.bindingCalled" if event.params["name"] == MOCK_BINDING => {
+                let tab = shared.lock().targets.get(&session_id).and_then(Target::tab);
+                mock_shim::called(&shared, &session_id, tab, &event);
+            }
             "Runtime.consoleAPICalled"
-                | "Runtime.exceptionThrown"
-                | "Runtime.exceptionRevoked"
-                | "Log.entryAdded"
-        ) {
-            console_event(&shared, tab, &event, Some(&url));
+            | "Runtime.exceptionThrown"
+            | "Runtime.exceptionRevoked"
+            | "Log.entryAdded" => {
+                let dedicated = shared
+                    .lock()
+                    .targets
+                    .get(&session_id)
+                    .filter(|t| t.kind == TargetKind::DedicatedWorker)
+                    .and_then(|t| Some((t.tab()?, t.url.clone())));
+                if let Some((tab, url)) = dedicated {
+                    console_event(&shared, tab, &event, Some(&url));
+                }
+            }
+            _ => {}
         }
+    }
+}
+
+/// Applies a `Network` event of worker session `session_id` to the
+/// requests and network log of each tab the worker belongs to, its
+/// entries marked with the worker.
+fn worker_network_event(shared: &Shared, session_id: &str, method: &str, event: &RawEvent) {
+    let capacity = shared.settings.network_buffer();
+    let mut guard = shared.lock();
+    let state = &mut *guard;
+    let Some(target) = state.targets.get(session_id) else {
+        return;
+    };
+    let worker = target.worker();
+    let mut followed = false;
+    for id in state.tabs_of(target) {
+        if let Some(t) = state.tabs.get_mut(&id) {
+            followed |= t.network.event(session_id, method, &event.params);
+            followed |=
+                t.netlog
+                    .event(session_id, method, &event.params, capacity, worker.as_ref());
+        }
+    }
+    drop(guard);
+    if followed {
+        shared.bump();
     }
 }
 
@@ -1979,8 +2027,7 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent<'_>) {
     };
     // Before auto-attach and the domains are turned on for it, so no
     // child and no frame event is missed.
-    let events = (kind.is_host() || kind == TargetKind::DedicatedWorker)
-        .then(|| session.events_lossless(""));
+    let events = (kind.is_host() || kind.worker().is_some()).then(|| session.events_lossless(""));
     let fetch_events = kind.is_host().then(|| session.events_lossless("Fetch."));
     shared.lock().targets.insert(
         session_id.clone(),
@@ -2006,9 +2053,8 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent<'_>) {
     if let Some(events) = events {
         if kind.is_host() {
             shared.spawn(watch_host(shared.clone(), events, session.clone(), tab));
-        } else if let Some(tab) = tab {
-            // A dedicated worker of a tab: its console goes to the tab's.
-            shared.spawn(watch_worker(shared.clone(), events, tab, info.url.clone()));
+        } else {
+            shared.spawn(watch_worker(shared.clone(), events, session_id.clone()));
         }
     }
     let waiting = attached.waiting_for_debugger;
@@ -2168,15 +2214,20 @@ fn ready(shared: &Shared, id: u32) {
     shared.bump();
 }
 
-/// A session went away: forget its target, and its tab or frame.
+/// A session went away: forget its target (and those it announced),
+/// their frames and requests, and its tab.
 fn detached(shared: &Shared, session_id: &str) {
     let mut state = shared.lock();
-    let target = state.forget_target(session_id);
-    if let Some(tab) = target.filter(|t| t.kind.is_host()).and_then(|t| t.tab())
-        && let Some(tab) = state.tabs.get_mut(&tab)
-    {
-        tab.frames.session_gone(session_id);
-        tab.network.session_gone(session_id);
+    for (id, target) in state.forget_target(session_id) {
+        if target.kind.is_host()
+            && let Some(tab) = target.tab().and_then(|tab| state.tabs.get_mut(&tab))
+        {
+            tab.frames.session_gone(&id);
+        }
+        // A worker's requests may be in any tab's.
+        for tab in state.tabs.values_mut() {
+            tab.network.session_gone(&id);
+        }
     }
     let tab = state
         .tabs
@@ -2379,11 +2430,16 @@ mod tests {
             );
             state.targets.insert(session.to_owned(), target);
         }
-        assert!(state.forget_target("I").is_some());
+        let gone: Vec<String> = state
+            .forget_target("I")
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        assert_eq!(gone, ["I", "W"]);
         let mut left: Vec<&String> = state.targets.keys().collect();
         left.sort();
         assert_eq!(left, ["P", "X"]);
-        assert!(state.forget_target("I").is_none());
+        assert!(state.forget_target("I").is_empty());
     }
 
     #[test]

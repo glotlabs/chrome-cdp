@@ -1555,6 +1555,55 @@ pub struct NetworkEntry {
     /// A WebSocket's traffic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub websocket: Option<WebSocketSummary>,
+    /// The worker that sent it, for a request of a worker (not of a
+    /// frame).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker: Option<Worker>,
+}
+
+/// A worker, as an entry of a tab's log names it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Worker {
+    pub kind: WorkerKind,
+    /// Its script.
+    pub url: String,
+}
+
+/// What kind of worker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkerKind {
+    /// A page's or iframe's own `Worker`, of one tab.
+    Dedicated,
+    /// A `SharedWorker`: of every tab of its origin.
+    Shared,
+    /// A service worker: of every tab of its origin.
+    Service,
+}
+
+impl WorkerKind {
+    /// `dedicated worker`, `shared worker`, `service worker`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Dedicated => "dedicated worker",
+            Self::Shared => "shared worker",
+            Self::Service => "service worker",
+        }
+    }
+}
+
+impl Worker {
+    /// `[service worker sw.js]`: its kind and its script's file name.
+    pub fn label(&self) -> String {
+        let path = self.url.split(['?', '#']).next().unwrap_or_default();
+        let file = path.rsplit('/').next().unwrap_or_default();
+        let file = if file.is_empty() {
+            self.url.as_str()
+        } else {
+            file
+        };
+        format!("[{} {file}]", self.kind.as_str())
+    }
 }
 
 /// What sent a request.
@@ -3398,6 +3447,30 @@ mod tests {
 
     use super::{COMMANDS, VersionData, command};
     use crate::{Envelope, ErrorInfo, ErrorKind, Output};
+
+    #[test]
+    fn worker_labels() {
+        use super::{Worker, WorkerKind};
+        let label = |kind, url: &str| {
+            Worker {
+                kind,
+                url: url.to_owned(),
+            }
+            .label()
+        };
+        assert_eq!(
+            label(WorkerKind::Service, "http://a/targets/sw.js"),
+            "[service worker sw.js]"
+        );
+        assert_eq!(
+            label(WorkerKind::Dedicated, "http://a/w.js?who=x#y"),
+            "[dedicated worker w.js]"
+        );
+        assert_eq!(
+            label(WorkerKind::Shared, "blob:http://a/"),
+            "[shared worker blob:http://a/]"
+        );
+    }
 
     #[test]
     fn names_are_unique() {

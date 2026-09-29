@@ -23,7 +23,7 @@ use engine::{
     WaitUntil,
 };
 use fixtures::Fixtures;
-use protocol::schema::{ConsoleData, EvalData, Level, NetworkData};
+use protocol::schema::{ConsoleData, EvalData, Level, NetworkData, WorkerKind};
 use serde_json::{Value, json};
 
 const TIMEOUT_MS: u64 = 30_000;
@@ -111,14 +111,7 @@ const ROWS: &[Row] = &[
     Row {
         feature: "network",
         probe: Probe::Network,
-        cells: [
-            Check,
-            Check,
-            Check,
-            Todo("13.2"),
-            Todo("13.2"),
-            Todo("13.2"),
-        ],
+        cells: [Check, Check, Check, Check, Check, Check],
     },
     Row {
         feature: "init-script",
@@ -291,6 +284,16 @@ async fn network(engine: &Engine) -> NetworkData {
     serde_json::from_value(out.data).unwrap()
 }
 
+/// The kind of worker target `who` of the matrix is, if it is one.
+fn worker_kind(who: &str) -> Option<WorkerKind> {
+    match who {
+        "dedicated" => Some(WorkerKind::Dedicated),
+        "shared" => Some(WorkerKind::Shared),
+        "service" => Some(WorkerKind::Service),
+        _ => None,
+    }
+}
+
 /// Runs `probe` on target `who`; what went wrong, if anything.
 async fn probe(engine: &Engine, probe: Probe, who: &str) -> Result<(), String> {
     match probe {
@@ -340,13 +343,19 @@ async fn probe(engine: &Engine, probe: Probe, who: &str) -> Result<(), String> {
                 return Err(format!("fetch answered {answer}"));
             }
             let url = format!("/targets/api?from={who}");
-            let seen = within(async || {
+            let mut entry = None;
+            within(async || {
                 let data = network(engine).await;
-                data.requests.iter().any(|r| r.url.ends_with(&url))
+                entry = data.requests.into_iter().find(|r| r.url.ends_with(&url));
+                entry.is_some()
             })
             .await;
-            seen.then_some(())
-                .ok_or_else(|| format!("no {url} in the network log"))
+            let entry = entry.ok_or_else(|| format!("no {url} in the network log"))?;
+            // A worker's request is marked with it.
+            let kind = entry.worker.map(|w| w.kind);
+            (kind == worker_kind(who))
+                .then_some(())
+                .ok_or_else(|| format!("{url} is marked {kind:?}"))
         }
         Probe::InitScript => {
             engine

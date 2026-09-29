@@ -26,7 +26,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
 use protocol::schema::{
-    Header, Initiator, NetworkEntry, RequestState, Timing, WebSocketFrame, WebSocketSummary,
+    Header, Initiator, NetworkEntry, RequestState, Timing, WebSocketFrame, WebSocketSummary, Worker,
 };
 use serde_json::Value;
 
@@ -168,23 +168,32 @@ impl NetLog {
         cleared
     }
 
-    /// Applies one `Network` event of session `session`, keeping at most
-    /// `capacity` records; `false` if it changed nothing.
+    /// Applies one `Network` event of session `session` (a worker's, if
+    /// `worker` is given), keeping at most `capacity` records; `false` if
+    /// it changed nothing.
     pub(crate) fn event(
         &mut self,
         session: &str,
         method: &str,
         params: &Value,
         capacity: usize,
+        worker: Option<&Worker>,
     ) -> bool {
-        let changed = self.apply(session, method, params, capacity);
+        let changed = self.apply(session, method, params, capacity, worker);
         if changed {
             self.changes += 1;
         }
         changed
     }
 
-    fn apply(&mut self, session: &str, method: &str, params: &Value, capacity: usize) -> bool {
+    fn apply(
+        &mut self,
+        session: &str,
+        method: &str,
+        params: &Value,
+        capacity: usize,
+        worker: Option<&Worker>,
+    ) -> bool {
         let Some(id) = params["requestId"].as_str() else {
             return false;
         };
@@ -213,6 +222,7 @@ impl NetLog {
                 }
                 let mut record = request(session, id, params);
                 record.set_raw_request(self.take_request(&key));
+                record.entry.worker = worker.cloned();
                 self.push(key, record, capacity);
             }
             "Network.webSocketCreated" => {
@@ -220,6 +230,7 @@ impl NetLog {
                 "websocket".clone_into(&mut record.entry.kind);
                 record.entry.initiator = initiator(&params["initiator"]);
                 record.entry.websocket = Some(WebSocketSummary::default());
+                record.entry.worker = worker.cloned();
                 self.push(key, record, capacity);
             }
             _ => {
@@ -387,6 +398,7 @@ impl Record {
                 blocked: None,
                 cors: None,
                 websocket: None,
+                worker: None,
             },
             session: session.to_owned(),
             request_id: request_id.to_owned(),
@@ -742,11 +754,11 @@ mod tests {
                 { "functionName": "save", "url": "http://x/app.js", "lineNumber": 11, "columnNumber": 2 },
             ] } },
         });
-        assert!(log.event("s1", "Network.requestWillBeSent", &params, CAP));
+        assert!(log.event("s1", "Network.requestWillBeSent", &params, CAP, None));
     }
 
     fn event(log: &mut NetLog, method: &str, params: &Value) -> bool {
-        log.event("s1", method, params, CAP)
+        log.event("s1", method, params, CAP, None)
     }
 
     #[test]
@@ -992,7 +1004,7 @@ mod tests {
                 "timestamp": 1.0,
                 "request": { "method": "GET", "url": format!("http://x/{i}.png") },
             });
-            log.event("s1", "Network.requestWillBeSent", &params, 3);
+            log.event("s1", "Network.requestWillBeSent", &params, 3, None);
         }
         let ids: Vec<u64> = log.records().map(|r| r.entry.id).collect();
         assert_eq!(ids, [3, 4, 5]);

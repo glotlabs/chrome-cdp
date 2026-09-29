@@ -706,6 +706,9 @@ fn entry_line(entry: &NetworkEntry, page_origin: Option<&str>) -> String {
     if let Some(cors) = &entry.cors {
         let _ = write!(line, " (CORS: {cors})");
     }
+    if let Some(worker) = &entry.worker {
+        let _ = write!(line, " {}", worker.label());
+    }
     line
 }
 
@@ -744,6 +747,13 @@ fn show_text(
     }
     if entry.service_worker {
         about.push("from a service worker".to_owned());
+    }
+    if let Some(worker) = &entry.worker {
+        about.push(format!(
+            "sent by the {} {}",
+            worker.kind.as_str(),
+            worker.url
+        ));
     }
     if entry.state == RequestState::Pending && entry.status.is_some() && entry.websocket.is_none() {
         about.push("body still loading".to_owned());
@@ -989,7 +999,7 @@ fn indent_json(json: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use protocol::schema::{NetworkEntry, RequestState, WebSocketSummary};
+    use protocol::schema::{NetworkEntry, RequestState, WebSocketSummary, Worker, WorkerKind};
     use serde_json::json;
 
     use super::{Filter, NetLog, entry_line, select};
@@ -1016,14 +1026,14 @@ mod tests {
             "requestId": id, "type": kind, "timestamp": 1.0,
             "request": { "method": method, "url": url },
         });
-        log.event("s1", "Network.requestWillBeSent", &params, 100);
+        log.event("s1", "Network.requestWillBeSent", &params, 100, None);
     }
 
     fn done(log: &mut NetLog, id: &str, status: u16) {
         let response = json!({ "requestId": id, "response": { "url": "", "status": status } });
-        log.event("s1", "Network.responseReceived", &response, 100);
+        log.event("s1", "Network.responseReceived", &response, 100, None);
         let end = json!({ "requestId": id, "timestamp": 1.2, "encodedDataLength": 2048 });
-        log.event("s1", "Network.loadingFinished", &end, 100);
+        log.event("s1", "Network.loadingFinished", &end, 100, None);
     }
 
     fn ids(log: &mut NetLog, req: &NetworkRequest) -> Vec<u64> {
@@ -1081,6 +1091,7 @@ mod tests {
             "Network.loadingFailed",
             &json!({ "requestId": "4", "timestamp": 1.1, "errorText": "net::ERR_CONNECTION_REFUSED" }),
             100,
+            None,
         );
         sent(&mut log, "5", "GET", "http://x/gone", "Fetch");
         log.event(
@@ -1088,6 +1099,7 @@ mod tests {
             "Network.loadingFailed",
             &json!({ "requestId": "5", "timestamp": 1.1, "errorText": "net::ERR_ABORTED", "canceled": true }),
             100,
+            None,
         );
         let all = |r: NetworkRequest| NetworkRequest {
             since: Since::Seq { seq: 0 },
@@ -1173,6 +1185,7 @@ mod tests {
             blocked: None,
             cors: None,
             websocket: None,
+            worker: None,
         }
     }
 
@@ -1241,6 +1254,20 @@ mod tests {
         assert_eq!(
             entry_line(&redirect, origin),
             "#46 GET 302 /api/login xhr (disk cache) 340ms -> /b"
+        );
+        let worker = NetworkEntry {
+            method: "GET".into(),
+            status: Some(200),
+            kind: "fetch".into(),
+            worker: Some(Worker {
+                kind: WorkerKind::Service,
+                url: "http://x/sw.js".into(),
+            }),
+            ..entry(47)
+        };
+        assert_eq!(
+            entry_line(&worker, origin),
+            "#47 GET 200 /api/login fetch 12KB 340ms [service worker sw.js]"
         );
     }
 }

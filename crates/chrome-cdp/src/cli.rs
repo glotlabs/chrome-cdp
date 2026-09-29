@@ -1059,7 +1059,9 @@ Examples:
 Every tab records its requests from the moment it opens (the newest 2,000;
 see `open --network-buffer`). By default only requests this command has not
 shown before are printed; one shown while pending is shown again when it
-ends. Each line reads: #id METHOD STATUS URL TYPE SIZE TIME.
+ends. Each line reads: #id METHOD STATUS URL TYPE SIZE TIME. Requests of
+the tab's workers are in it too, marked with the worker, e.g. `[service
+worker sw.js]`; a shared or service worker's go to every tab of its origin.
 
 Examples:
   chrome-cdp network

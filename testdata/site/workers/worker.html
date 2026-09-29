@@ -2,8 +2,11 @@
 <meta charset="utf-8">
 <title>Worker: waiting</title>
 <h1>Dedicated worker</h1>
+<button id="fetch">Fetch in the worker</button>
 <script>
   const worker = new Worker('/workers/worker.js');
   worker.onmessage = (e) => { document.title = 'Worker: ' + e.data; };
   worker.postMessage('ping');
+  // The worker fetches a file that is not there (a 404 of the worker's).
+  document.getElementById('fetch').onclick = () => worker.postMessage('fetch');
 </script>

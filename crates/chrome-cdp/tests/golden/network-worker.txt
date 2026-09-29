@@ -1,0 +1,16 @@
+$ chrome-cdp network --failed --url '**/missing.json' --since 0
+exit: 0
+--- stdout
+#4 GET 404 /workers/missing.json fetch [dedicated worker worker.js]
+chrome-cdp network show 4 shows one in full
+
+$ chrome-cdp network --failed --url '**/missing.json' --since 0 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"cursor":4,"dropped":0,"requests":[{"body_size":36,"id":4,"initiator":{"function":"onmessage","line":3,"type":"script","url":"<site>/workers/worker.js"},"method":"GET","mime":"text/plain","protocol":"http/1.1","state":"pending","status":404,"status_text":"Not Found","time_ms":<ms>,"type":"fetch","url":"<site>/workers/missing.json","worker":{"kind":"dedicated","url":"<site>/workers/worker.js"}}],"skipped":0,"tab":"t1"}}
+
+$ chrome-cdp network --failed --url '**/missing.json' --since 0 -q
+exit: 0
+--- stdout
+#4
+

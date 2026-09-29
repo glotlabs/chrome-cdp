@@ -13,6 +13,7 @@
 use std::collections::HashMap;
 
 use cdp::Session;
+use protocol::schema::{Worker, WorkerKind};
 
 use super::fetch::Interception;
 use crate::inject::Key;
@@ -49,6 +50,16 @@ impl TargetKind {
         matches!(self, Self::Page | Self::Iframe)
     }
 
+    /// The kind of worker it is, if it is one.
+    pub(crate) fn worker(self) -> Option<WorkerKind> {
+        match self {
+            Self::DedicatedWorker => Some(WorkerKind::Dedicated),
+            Self::SharedWorker => Some(WorkerKind::Shared),
+            Self::ServiceWorker => Some(WorkerKind::Service),
+            _ => None,
+        }
+    }
+
     fn bit(self) -> u8 {
         1 << self as u8
     }
@@ -61,6 +72,16 @@ pub(crate) struct KindSet(u8);
 impl KindSet {
     /// Pages and iframes: the targets with frames.
     pub(crate) const HOSTS: Self = Self::of(&[TargetKind::Page, TargetKind::Iframe]);
+
+    /// Pages, iframes and every kind of worker: the targets that run a
+    /// page's scripts and send its requests.
+    pub(crate) const HOSTS_AND_WORKERS: Self = Self::of(&[
+        TargetKind::Page,
+        TargetKind::Iframe,
+        TargetKind::DedicatedWorker,
+        TargetKind::SharedWorker,
+        TargetKind::ServiceWorker,
+    ]);
 
     pub(crate) const fn of(kinds: &[TargetKind]) -> Self {
         let mut bits = 0;
@@ -144,6 +165,14 @@ impl Target {
             Owner::Tab(id) => Some(id),
             _ => None,
         }
+    }
+
+    /// It, as the entries of a tab's logs name it, if it is a worker.
+    pub(crate) fn worker(&self) -> Option<Worker> {
+        Some(Worker {
+            kind: self.kind.worker()?,
+            url: self.url.clone(),
+        })
     }
 }
 
