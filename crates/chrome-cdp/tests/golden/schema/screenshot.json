@@ -613,6 +613,14 @@
           "minimum": 0,
           "type": "integer"
         },
+        "container": {
+          "default": null,
+          "description": "`--full` of a page that scrolls inside a container: that\ncontainer (`main#feed`), whose whole content is in the image; the\nviewport grew for the capture.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "downscaled": {
           "description": "The capture was scaled down to fit `--max-size`.",
           "type": "boolean"

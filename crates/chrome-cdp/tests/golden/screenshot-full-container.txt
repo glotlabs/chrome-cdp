@@ -1,0 +1,16 @@
+$ chrome-cdp screenshot --full --max-size 0
+exit: 0
+--- stdout
+<sandbox>/run/chrome-cdp/default/shots/1.png: 1280x3060 png, 18KB
+the page scrolls in main#feed; the viewport grew to show all of it
+
+$ chrome-cdp screenshot --full --max-size 0 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"annotated":[],"bytes":18344,"container":"main#feed","downscaled":false,"format":"png","full":true,"height":3060,"locator":null,"masked":0,"path":"<sandbox>/run/chrome-cdp/default/shots/2.png","scale":1.0,"tab":"t1","width":1280}}
+
+$ chrome-cdp screenshot --full --max-size 0 -q
+exit: 0
+--- stdout
+<sandbox>/run/chrome-cdp/default/shots/3.png
+

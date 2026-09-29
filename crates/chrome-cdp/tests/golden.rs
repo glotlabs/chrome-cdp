@@ -1855,6 +1855,18 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/shots/index.html"),
     },
     Case {
+        name: "screenshot-full-container",
+        args: &["screenshot", "--full", "--max-size", "0"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/shots/scroller.html"),
+    },
+    Case {
+        name: "screenshot-full-not-scrolling",
+        args: &["screenshot", "--full", "css=header"],
+        modes: &[""],
+        fixture: Fixture::SessionAt("/shots/scroller.html"),
+    },
+    Case {
         name: "screenshot-quality-png",
         args: &["screenshot", "--quality", "80"],
         modes: ERR,

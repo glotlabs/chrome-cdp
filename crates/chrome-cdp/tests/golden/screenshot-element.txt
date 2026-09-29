@@ -6,7 +6,7 @@ exit: 0
 $ chrome-cdp screenshot '#red' --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"annotated":[],"bytes":339,"downscaled":false,"format":"png","full":false,"height":100,"locator":"#red","masked":0,"path":"<sandbox>/run/chrome-cdp/default/shots/2.png","scale":1.0,"tab":"t1","width":200}}
+{"ok":true,"data":{"annotated":[],"bytes":339,"container":null,"downscaled":false,"format":"png","full":false,"height":100,"locator":"#red","masked":0,"path":"<sandbox>/run/chrome-cdp/default/shots/2.png","scale":1.0,"tab":"t1","width":200}}
 
 $ chrome-cdp screenshot '#red' -q
 exit: 0

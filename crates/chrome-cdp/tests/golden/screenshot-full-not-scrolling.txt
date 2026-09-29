@@ -1,0 +1,7 @@
+$ chrome-cdp screenshot --full css=header
+exit: 0
+--- stdout
+<sandbox>/run/chrome-cdp/default/shots/1.png: 1280x800 png, 4.8KB
+--- stderr
+warning: css=header does not scroll, so --full captured the page as it is
+
