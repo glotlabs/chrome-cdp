@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":1,"result":{"data":{"url":"https://example.com/","title":"Example"},"text":"Example — https://example.com/","quiet":"https://example.com/","warnings":["slow page"],"limit":{"max_chars":4000,"more":"chrome-cdp text --max 0"}}}

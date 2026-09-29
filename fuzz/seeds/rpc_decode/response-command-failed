@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":2,"error":{"code":-32000,"message":"no element matches e12","data":{"kind":"NotFound","message":"no element matches e12","hint":"chrome-cdp snapshot -i","notes":[{"label":"page","text":"https://example.com/"}],"details":{"locator":"e12"}}}}

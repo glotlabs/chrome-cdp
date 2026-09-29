@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":3,"method":"cdp","params":{"method":"Page.navigate","params":{"url":"https://example.com/"}}}

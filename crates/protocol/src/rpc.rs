@@ -11,6 +11,7 @@
 //! not know (an older daemon, a newer CLI) with [`RpcError::METHOD_NOT_FOUND`]
 //! instead of failing to parse the line.
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -170,11 +171,53 @@ impl RpcError {
     }
 }
 
+/// Reads one request line, as the daemon does with each line of its
+/// socket. Anything but a JSON-RPC 2.0 request is an error to send back:
+/// [`RpcError::PARSE_ERROR`] when the line is not JSON,
+/// [`RpcError::INVALID_REQUEST`] when it is JSON but not a request. Never
+/// panics: `fuzz/fuzz_targets/rpc_decode.rs` checks it on any input.
+pub fn decode_request(line: &str) -> Result<Request, RpcError> {
+    let req: Request = serde_json::from_str(line).map_err(|e| {
+        let code = if e.is_data() {
+            RpcError::INVALID_REQUEST
+        } else {
+            RpcError::PARSE_ERROR
+        };
+        RpcError::new(code, format!("not a request: {e}"))
+    })?;
+    if req.jsonrpc != JSONRPC {
+        return Err(RpcError::new(
+            RpcError::INVALID_REQUEST,
+            format!("not a request: jsonrpc is {:?}, not \"2.0\"", req.jsonrpc),
+        ));
+    }
+    Ok(req)
+}
+
+/// Reads one response line, as the CLI does with the daemon's answer.
+/// The error is the line's fault, for the CLI to report as a daemon it
+/// cannot understand.
+pub fn decode_response(line: &str) -> Result<Response, String> {
+    serde_json::from_str(line).map_err(|e| format!("bad response: {e}"))
+}
+
+/// A method's params as its own type; `null` reads as `{}`, so a method
+/// whose params are all optional takes none.
+pub fn decode_params<T: DeserializeOwned>(params: Value) -> Result<T, RpcError> {
+    let params = if params.is_null() {
+        Value::Object(serde_json::Map::new())
+    } else {
+        params
+    };
+    serde_json::from_value(params)
+        .map_err(|e| RpcError::new(RpcError::INVALID_PARAMS, format!("bad params: {e}")))
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
 
-    use super::{Request, Response, RpcError};
+    use super::{Request, Response, RpcError, decode_params, decode_request, decode_response};
     use crate::{ErrorInfo, ErrorKind};
 
     #[test]
@@ -212,5 +255,55 @@ mod tests {
             info.message,
             "the session daemon rejected the call: no method `tab`"
         );
+    }
+
+    #[test]
+    fn decoding_tells_bad_json_from_bad_requests() {
+        let req = decode_request(r#"{"jsonrpc":"2.0","id":2,"method":"hello"}"#).unwrap();
+        assert_eq!((req.id, req.method.as_str()), (2, "hello"));
+        for (line, code) in [
+            ("{\"jsonrpc\":", RpcError::PARSE_ERROR),
+            ("hello", RpcError::PARSE_ERROR),
+            ("[1,2]", RpcError::INVALID_REQUEST),
+            (
+                r#"{"jsonrpc":"2.0","id":-1,"method":"x"}"#,
+                RpcError::INVALID_REQUEST,
+            ),
+            (
+                r#"{"jsonrpc":"1.0","id":1,"method":"x"}"#,
+                RpcError::INVALID_REQUEST,
+            ),
+        ] {
+            let err = decode_request(line).unwrap_err();
+            assert_eq!(err.code, code, "{line}");
+            assert!(
+                err.message.starts_with("not a request: "),
+                "{}",
+                err.message
+            );
+        }
+        // serde_json's recursion limit keeps a deep line from overflowing
+        // the stack.
+        let deep = format!(
+            r#"{{"jsonrpc":"2.0","id":1,"method":"x","params":{}{}}}"#,
+            "[".repeat(100_000),
+            "]".repeat(100_000)
+        );
+        assert_eq!(
+            decode_request(&deep).unwrap_err().code,
+            RpcError::PARSE_ERROR
+        );
+
+        assert!(decode_response("{}").is_err());
+        assert!(decode_response(r#"{"jsonrpc":"2.0","id":null,"result":1}"#).is_ok());
+
+        #[derive(serde::Deserialize, Debug)]
+        struct P {
+            #[serde(default)]
+            n: u32,
+        }
+        assert_eq!(decode_params::<P>(serde_json::Value::Null).unwrap().n, 0);
+        let err = decode_params::<P>(json!({"n": "x"})).unwrap_err();
+        assert_eq!(err.code, RpcError::INVALID_PARAMS);
     }
 }

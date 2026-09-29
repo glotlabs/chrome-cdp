@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":2,"method":"act","params":{"action":"click","locator":"e12","timeout_ms":5000},"context":"c1","line":["click","e12","--tab","2"]}

@@ -9,7 +9,8 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-protocol = { path = "../crates/protocol" }
+protocol = { package = "chrome-cdp-protocol", path = "../crates/protocol" }
+serde_json = { version = "1", features = ["float_roundtrip"] }
 
 # Not part of the main workspace: `cargo fuzz` builds it with nightly.
 [workspace]
@@ -18,6 +19,13 @@ members = ["."]
 [[bin]]
 name = "parse_script"
 path = "fuzz_targets/parse_script.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rpc_decode"
+path = "fuzz_targets/rpc_decode.rs"
 test = false
 doc = false
 bench = false

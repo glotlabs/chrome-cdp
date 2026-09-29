@@ -287,12 +287,9 @@ impl Daemon {
     /// Answers one request line; `true` when the daemon should exit after
     /// sending the response.
     async fn dispatch(&self, line: &str) -> (Response, bool) {
-        let req: Request = match serde_json::from_str(line) {
+        let req = match protocol::rpc::decode_request(line) {
             Ok(req) => req,
-            Err(e) => {
-                let error = RpcError::new(RpcError::PARSE_ERROR, format!("not a request: {e}"));
-                return (Response::err(None, error), false);
-            }
+            Err(error) => return (Response::err(None, error), false),
         };
         let _busy = self.busy(&req.method);
         let id = req.id;
@@ -748,9 +745,7 @@ fn millis(d: Duration) -> u64 {
 
 /// Reads a method's params; `null` counts as `{}`.
 fn params<T: DeserializeOwned>(params: Value) -> Result<T, RpcError> {
-    let params = if params.is_null() { json!({}) } else { params };
-    serde_json::from_value(params)
-        .map_err(|e| RpcError::new(RpcError::INVALID_PARAMS, format!("bad params: {e}")))
+    protocol::rpc::decode_params(params)
 }
 
 /// A command's result as an RPC result.

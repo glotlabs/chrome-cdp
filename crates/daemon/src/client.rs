@@ -17,7 +17,7 @@ use std::path::Path;
 use std::process::{Child, Stdio};
 use std::time::{Duration, Instant};
 
-use protocol::rpc::{Request, Response};
+use protocol::rpc::Request;
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -143,8 +143,7 @@ impl Client {
             Ok(Ok(None)) => return Err(lost("it closed the connection".into())),
             Ok(Ok(Some(line))) => line,
         };
-        let response: Response =
-            serde_json::from_str(&line).map_err(|e| lost(format!("bad response: {e}")))?;
+        let response = protocol::rpc::decode_response(&line).map_err(lost)?;
         response
             .into_result()
             .map_err(protocol::rpc::RpcError::into_error_info)

@@ -58,7 +58,7 @@ flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
 serde = { version = "1", features = ["derive"] }
 # Unified diffs of `expect-snapshot` baselines (plan 09).
 similar = { version = "2", default-features = false, features = ["text"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
 # "Did you mean" suggestions (plan 08.3); clap already uses it.
 strsim = "0.11"
 tempfile = "3"
