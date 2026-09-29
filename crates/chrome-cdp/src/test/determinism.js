@@ -1,9 +1,9 @@
-// chrome-cdp test: determinism (plan 11.6). Runs in every document of a
-// test before the page's own scripts. With a seed (two 32-bit halves),
-// Math.random, crypto.getRandomValues and crypto.randomUUID give the same
-// values in every run: each document starts the sequence again. With
-// `still`, CSS animations end at once, transitions are off and the caret
-// is hidden.
+// chrome-cdp test: determinism (plan 11.6). Runs in every document and
+// worker of a test before the page's own scripts. With a seed (two 32-bit
+// halves), Math.random, crypto.getRandomValues and crypto.randomUUID give
+// the same values in every run: each document and worker starts the
+// sequence again. With `still`, CSS animations end at once, transitions
+// are off and the caret is hidden, in the document and its shadow roots.
 (function (seedLow, seedHigh, still) {
   try {
     if (seedLow !== null) seedRandom(seedLow, seedHigh);
@@ -61,6 +61,8 @@
   }
 
   function stopAnimations() {
+    // A worker has nothing to animate.
+    if (typeof document === "undefined") return;
     // Animations run for 0s rather than not at all, so they end in their
     // final state and still fire animationend.
     const sheet = new CSSStyleSheet();
@@ -72,10 +74,35 @@
       caret-color: transparent !important;
       scroll-behavior: auto !important;
     }`);
-    const adopt = () => {
-      if (!document.adoptedStyleSheets.includes(sheet)) {
-        document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    const adoptIn = (root) => {
+      if (!root.adoptedStyleSheets.includes(sheet)) {
+        root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
       }
+    };
+    // Shadow roots (web components) do not see the document's sheets:
+    // each one attached from now on gets it, and those the parser made
+    // (declarative shadow DOM) are found once the document is parsed.
+    const attachShadow = Element.prototype.attachShadow;
+    Element.prototype.attachShadow = function (...args) {
+      const root = attachShadow.apply(this, args);
+      try {
+        adoptIn(root);
+      } catch (e) {
+        // Not ours to break.
+      }
+      return root;
+    };
+    const walk = (root) => {
+      for (const element of root.querySelectorAll("*")) {
+        if (element.shadowRoot) {
+          adoptIn(element.shadowRoot);
+          walk(element.shadowRoot);
+        }
+      }
+    };
+    const adopt = () => {
+      adoptIn(document);
+      walk(document);
     };
     adopt();
     // A page that sets adoptedStyleSheets itself may drop the sheet.

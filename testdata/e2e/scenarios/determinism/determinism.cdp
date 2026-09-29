@@ -15,8 +15,12 @@
   reload
   expect '#random' text 0.7683905567973852 --exact
 
+@test "a worker gets the same random values, clock, locale and time zone"
+  expect '#worker' text '0.7683905567973852 2026-01-01T10:00:00.000Z UTC en-US' --exact
+
 @test "no animations; locale, time zone and pixel ratio are fixed"
   eval "(() => { const s = getComputedStyle(document.querySelector('#spinner')); const seen = [s.animationDuration, s.transitionDuration, matchMedia('(prefers-reduced-motion: reduce)').matches, navigator.language, Intl.DateTimeFormat().resolvedOptions().timeZone, devicePixelRatio].join(' '); if (seen !== '0s 0s true en-US UTC 1') throw new Error(seen); })()"
+  eval "(() => { const seen = ['#host', '#declared'].map((h) => getComputedStyle(document.querySelector(h).shadowRoot.querySelector('#inner')).animationDuration).join(' '); if (seen !== '0s 0s') throw new Error(seen); })()"
 
 @test "time advance runs the timers due by then"
   expect '#session' text 'Session active'

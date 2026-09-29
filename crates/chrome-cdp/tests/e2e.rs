@@ -547,7 +547,7 @@ fn tests_see_a_frozen_clock_seeded_random_values_and_no_animations() {
     let out = project.test(&["scenarios/determinism", "--jobs", "2"]);
     let text = stdout(&out);
     assert_eq!(out.status.code(), Some(0), "{text}{}", stderr(&out));
-    assert!(text.contains("\n4 tests: 4 passed ("), "{text}");
+    assert!(text.contains("\n5 tests: 5 passed ("), "{text}");
 
     // [e2e.determinism] turns each of them off.
     let config = project.root.join("chrome-cdp.toml");
@@ -572,14 +572,14 @@ fn repeat_runs_each_test_and_fails_a_flaky_one() {
     let text = stdout(&out);
     assert_eq!(out.status.code(), Some(0), "{text}{}", stderr(&out));
     assert!(
-        text.starts_with("running 4 tests 3 times each from 1 file, 4 at once\n"),
+        text.starts_with("running 5 tests 3 times each from 1 file, 4 at once\n"),
         "{text}"
     );
     assert!(
         text.contains("✓ scenarios/determinism/determinism.cdp:11 random values are the same in every run (3 runs, slowest "),
         "{text}"
     );
-    assert!(text.contains("\n4 tests: 4 passed ("), "{text}");
+    assert!(text.contains("\n5 tests: 5 passed ("), "{text}");
 
     // The flaky test fails its first run (retries are off) and passes
     // the others: the run fails.
