@@ -129,7 +129,7 @@ expect --url u | --no-errors | --no-failed-requests | --a11y
 expect-snapshot <name>         snapshot -i vs a stored baseline; a diff if not
 screenshot [loc] [--full] [-o f.png]
 errors | console | network [--failed]
-eval '<js>'                    run JavaScript, print the value
+eval '<js>'                    run JavaScript, print the value (elements with refs)
 tabs | tab <id> | tab new <url> | tab close
 dialog accept|dismiss          answer alert/confirm/prompt
 route '<url glob>' --json-body '{...}'   mock a request

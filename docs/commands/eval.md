@@ -25,13 +25,17 @@ The script runs like a line typed into DevTools' console: statements are
 fine and the last one's value is printed, `await` works at the top level,
 and it counts as a user gesture. A promise is awaited; a function
 (`() => …`, `el => …`) is called, with the --in element. Strings print as
-they are; other values print as JSON (DOM nodes as `button#id.class`).
-The script's `let`s and `const`s do not stay behind in the page. An
-exception exits 1 with its message and stack. Needs a running session.
+they are; other values print as JSON. DOM nodes print as
+`button#id.class`, and elements of the page with a ref to act on
+(`button#save.primary [e14]`): the first 50 of a value; a warning says how
+many more got none. The script's `let`s and `const`s do not stay behind in
+the page. An exception exits 1 with its message and stack. Needs a running
+session.
 
 Examples:
   chrome-cdp eval document.title
   chrome-cdp eval 'document.querySelectorAll("a").length'
+  chrome-cdp eval '[...document.querySelectorAll(".row button")]'
   chrome-cdp eval --in e12 'el.value'
   chrome-cdp eval --in '#price' 'getComputedStyle(el).color'
   chrome-cdp eval 'await fetch("/api/me").then((r) => r.json())'
