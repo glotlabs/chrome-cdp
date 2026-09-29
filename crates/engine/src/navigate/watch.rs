@@ -13,7 +13,7 @@
 use std::collections::HashSet;
 
 use cdp::domains::page;
-use cdp::{Event as _, RawEvent, RawEventStream, Session};
+use cdp::{Event as _, LosslessEventStream, RawEvent, Session};
 use serde::Deserialize as _;
 use tokio::time::Instant;
 
@@ -22,7 +22,9 @@ use crate::request::WaitUntil;
 /// What happened to the main frame since the watch began.
 #[derive(Debug)]
 pub(crate) struct Watch {
-    events: RawEventStream,
+    /// The page session's `Page` events, none skipped however long an
+    /// action keeps the watch from reading.
+    events: LosslessEventStream,
     /// The main frame's id (its target id).
     frame: String,
     /// The loader (document) being waited for: the one `Page.navigate`
@@ -71,7 +73,7 @@ impl Watch {
     /// Starts watching `session`'s main frame `frame`.
     pub(crate) fn new(session: &Session, frame: &str) -> Self {
         Self {
-            events: session.events(),
+            events: session.events_lossless("Page."),
             frame: frame.to_owned(),
             loader: None,
             lifecycle: HashSet::new(),
