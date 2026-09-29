@@ -297,13 +297,18 @@ impl Daemon {
         // `--context`: the engine picks the context's tab and settings.
         let context = req.context.clone();
         let line = req.line.clone().filter(|_| req.method != rpc::HISTORY);
+        // Only the commands a scenario keeps need their refs' locators.
+        let kept = matches!(
+            req.method.as_str(),
+            rpc::ACT | rpc::EXPECT | rpc::WAIT | rpc::EXPECT_SNAPSHOT | rpc::EXPECT_SCREENSHOT
+        );
         let (refs, result) = engine::in_context(
             context.clone(),
             Box::pin(async {
                 // A ref's element may be gone once the command ran.
                 let refs = match &line {
-                    Some(words) => self.stable_locators(words).await,
-                    None => Vec::new(),
+                    Some(words) if kept => self.stable_locators(words).await,
+                    _ => Vec::new(),
                 };
                 (refs, self.call(req, &mut exit).await)
             }),
