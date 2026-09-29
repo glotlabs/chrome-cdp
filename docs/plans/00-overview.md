@@ -170,6 +170,10 @@ Locator grammar (shared by all commands, defined in plan 04):
 Plans 06, 07 and 08 can run in parallel once 03 is done. Plan 08 sets
 conventions early: **read 08 §2–§4 before implementing any command.**
 
+What comes after v1.0 is in [plan 12](12-after-v1.md), a roadmap of
+tracks that each become their own plan when picked up (plans 13–19 so
+far).
+
 ## 7. Definition of done for v1.0
 
 - [ ] Every command in §5 is implemented, documented, and covered by integration tests on Linux and macOS (amd64 and arm64).
