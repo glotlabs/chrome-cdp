@@ -1,6 +1,6 @@
 # Plan 13 — Every frame, every worker
 
-Status: NOT STARTED
+Status: IN PROGRESS (13.1 done)
 Depends on: v1 (plans 01-11). Track 1 of [plan 12](12-after-v1.md).
 
 ## Goal
@@ -320,7 +320,7 @@ marked `todo`; the plan is done when no `todo` is left.
 
 - [ ] One map of targets; every feature registers its target kinds, and
       no feature loops over sessions on its own.
-- [ ] Shared and service workers are resumed and answer (no page can
+- [x] Shared and service workers are resumed and answer (no page can
       hang on a paused worker).
 - [ ] Requests from every kind of worker are logged, routed and mocked;
       an unmatched worker request fails a test like a page's does.
@@ -340,4 +340,28 @@ marked `todo`; the plan is done when no `todo` is left.
 
 ## Decisions log
 
-_(append here)_
+- 13.1: The registry is an enum (`tabs/features.rs`, `Feature`) with a
+  `match` per feature, not a trait: each `apply` keeps its own arguments
+  (`aspects`, `force`, `now`), and finds its targets through
+  `State::applies(feature)`, the same kind filter `setup()` uses.
+- 13.1: The "base domains" are four features, `base` (auto-attach,
+  `Page`, lifecycle), `runtime` (`Runtime`, `Log`: contexts and console),
+  `network` and `world` (frame tree, isolated world, perf observer), so
+  `runtime` alone reaches dedicated workers and the steps keep their
+  order. Console, network log and the mock shim are not features of
+  their own: their events come from `runtime`/`network`, and the shim is
+  an `inject` item.
+- 13.1: Coverage is not in the registry yet: it is turned on by `coverage
+  start` on one tab's session only; 13.4 makes it a registry feature with
+  a live on/off, as that milestone says.
+- 13.1: `Target`'s Chrome id is `id` (clippy's `struct_field_names`
+  rejects `target_id` on `Target`). `tabs_of` is on `State` (callers
+  hold the lock), not on `Shared`.
+- 13.1: A detached target takes the targets it announced with it
+  (`State::forget_target`): their own detach events came through its
+  session and may never arrive.
+- 13.1: A dedicated worker of a prerender (no tab) now gets `runtime`'s
+  `Runtime.enable` like any dedicated worker; nothing reads its events.
+- 13.1: The table test (`crates/engine/tests/targets.rs`) has an `eval
+  --frame` row so `n/a` cells exist from the start; its `todo` cells were
+  checked to fail today.
