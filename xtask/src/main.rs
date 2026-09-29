@@ -12,8 +12,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-/// The release binary must stay under this size (plan 01, milestone 1.1).
-const MAX_BINARY_BYTES: u64 = 15 * 1024 * 1024;
+/// Each target's release binary size, in bytes: `dist` fails when a build
+/// is more than 20% over it (plan 10, milestone 10.2; it replaced plan 01's
+/// fixed 15MB budget).
+const SIZE_BASELINES: &str = "xtask/binary-sizes.txt";
 
 const USAGE: &str = "\
 usage: cargo xtask <task> [args]
@@ -28,7 +30,16 @@ tasks:
                       or a session dir still holds a socket file
   soak                run the ignored soak tests (release build; needs CHROME_PATH),
                       then check for leaks
-  dist [--target T]   build the release binary into dist/ and check its size
+  dist [--target T] [--update-size]
+                      build the release binary into dist/ and check its size: at most
+                      20% over the target's baseline in xtask/binary-sizes.txt
+                      (--update-size records the new size there)
+  chrome <which> [--with-deps]
+                      get the Chrome the tests run against and print its path; in
+                      GitHub Actions, also set CHROME_PATH and CHROME_CDP_REQUIRE_CHROME.
+                      <which>: stable, beta, min (the oldest supported major), a
+                      version (154, 154.0.8037.57) or system (Google Chrome's own
+                      install); all but system run `chrome-cdp install`
   gen-cdp [--check]   regenerate CDP types from the vendored protocol JSON
   build-js [--check]  typecheck and bundle the injected helper (needs Node's npx)
                       into crates/engine/src/injected/ccdp.js
@@ -50,6 +61,7 @@ fn main() -> ExitCode {
         "leaks" => leaks(rest),
         "soak" => soak(rest),
         "dist" => dist(rest),
+        "chrome" => chrome(rest),
         "gen-cdp" => gen_cdp(rest),
         "build-js" => build_js(rest),
         "fixtures" => fixtures(rest),
@@ -294,11 +306,17 @@ fn soak(args: &[String]) -> Result {
 }
 
 fn dist(args: &[String]) -> Result {
-    let target = match args {
-        [] => None,
-        [flag, triple] if flag == "--target" => Some(triple.as_str()),
-        _ => return Err("usage: cargo xtask dist [--target <triple>]".into()),
-    };
+    let usage = || "usage: cargo xtask dist [--target <triple>] [--update-size]".to_owned();
+    let mut target = None;
+    let mut update = false;
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--target" => target = Some(rest.next().ok_or_else(usage)?.as_str()),
+            "--update-size" => update = true,
+            _ => return Err(usage()),
+        }
+    }
 
     let mut build = vec!["build", "--release", "--locked", "--package", "chrome-cdp"];
     if let Some(triple) = target {
@@ -324,14 +342,242 @@ fn dist(args: &[String]) -> Result {
         .map_err(|e| format!("stat {}: {e}", out.display()))?
         .len();
     println!("{} ({})", out.display(), human_size(size));
-    if size > MAX_BINARY_BYTES {
-        return Err(format!(
-            "binary is {}, over the {} budget",
-            human_size(size),
-            human_size(MAX_BINARY_BYTES)
-        ));
+
+    let triple = match target {
+        Some(triple) => triple.to_owned(),
+        None => host_triple()?,
+    };
+    let path = root.join(SIZE_BASELINES);
+    let baselines =
+        fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    if update {
+        let updated = with_baseline(&baselines, &triple, size);
+        fs::write(&path, updated).map_err(|e| format!("write {}: {e}", path.display()))?;
+        eprintln!("recorded {triple} {size} in {SIZE_BASELINES}");
+        return Ok(());
     }
+    let check = check_size(&triple, size, baseline(&baselines, &triple));
+    summarize(&format!(
+        "| `{triple}` | {} | {} |",
+        human_size(size),
+        check.note
+    ));
+    match check.verdict {
+        Verdict::Fine => {
+            eprintln!("{triple}: {}", check.note);
+            Ok(())
+        }
+        Verdict::Warn => {
+            warn(&format!("{triple}: {}", check.note));
+            Ok(())
+        }
+        Verdict::Fail => Err(format!("{triple}: {}", check.note)),
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Verdict {
+    Fine,
+    Warn,
+    Fail,
+}
+
+#[derive(Debug)]
+struct SizeCheck {
+    verdict: Verdict,
+    note: String,
+}
+
+/// Compares a binary's size with its target's baseline: more than 20% over
+/// it fails; no baseline, or more than 20% under it, warns, because the
+/// baseline wants recording.
+fn check_size(triple: &str, size: u64, baseline: Option<u64>) -> SizeCheck {
+    let update = format!("cargo xtask dist --target {triple} --update-size");
+    let Some(baseline) = baseline else {
+        return SizeCheck {
+            verdict: Verdict::Warn,
+            note: format!("no size baseline in {SIZE_BASELINES}; record it with `{update}`"),
+        };
+    };
+    let change = (i128::from(size) - i128::from(baseline)) * 100 / i128::from(baseline.max(1));
+    let versus = format!("{change:+}% vs its {} baseline", human_size(baseline));
+    if size * 5 > baseline * 6 {
+        SizeCheck {
+            verdict: Verdict::Fail,
+            note: format!(
+                "{versus}, over the 20% limit; if the growth is wanted, run `{update}` \
+                 and commit {SIZE_BASELINES}"
+            ),
+        }
+    } else if size * 5 < baseline * 4 {
+        SizeCheck {
+            verdict: Verdict::Warn,
+            note: format!("{versus}; lower the baseline with `{update}`"),
+        }
+    } else {
+        SizeCheck {
+            verdict: Verdict::Fine,
+            note: versus,
+        }
+    }
+}
+
+/// The baseline for `triple` in the baselines file: lines of
+/// `<triple> <bytes>`, `#` comments.
+fn baseline(file: &str, triple: &str) -> Option<u64> {
+    file.lines().find_map(|line| {
+        let mut words = line.split_whitespace();
+        (words.next()? == triple).then_some(())?;
+        words.next()?.parse().ok()
+    })
+}
+
+/// `file` with `triple`'s baseline set to `size`, replacing its line or
+/// appending one.
+fn with_baseline(file: &str, triple: &str, size: u64) -> String {
+    let entry = format!("{triple} {size}");
+    let mut found = false;
+    let mut out: Vec<String> = file
+        .lines()
+        .map(|line| {
+            if line.split_whitespace().next() == Some(triple) {
+                found = true;
+                entry.clone()
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect();
+    if !found {
+        out.push(entry);
+    }
+    out.join("\n") + "\n"
+}
+
+/// The target triple `rustc` builds for by default.
+fn host_triple() -> Result<String> {
+    let rustc = env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let info = output(Command::new(rustc).arg("-vV"))?;
+    info.lines()
+        .find_map(|l| l.strip_prefix("host: "))
+        .map(str::to_owned)
+        .ok_or_else(|| "rustc -vV printed no host".into())
+}
+
+/// Prints a warning, as an annotation in GitHub Actions.
+fn warn(message: &str) {
+    if env::var_os("GITHUB_ACTIONS").is_some() {
+        println!("::warning::{message}");
+    } else {
+        eprintln!("warning: {message}");
+    }
+}
+
+/// Adds a line to the GitHub Actions job summary, if there is one.
+fn summarize(line: &str) {
+    if let Some(path) = env::var_os("GITHUB_STEP_SUMMARY") {
+        let _ = append(Path::new(&path), &format!("{line}\n"));
+    }
+}
+
+fn append(path: &Path, text: &str) -> Result {
+    use std::io::Write as _;
+    fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .and_then(|mut f| f.write_all(text.as_bytes()))
+        .map_err(|e| format!("write {}: {e}", path.display()))
+}
+
+/// Where Google Chrome installs itself; `chrome system` takes the first
+/// that exists.
+const SYSTEM_CHROME: [&str; 2] = [
+    "/opt/google/chrome/chrome",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+];
+
+/// The file that defines the oldest supported Chrome major.
+const MIN_CHROME_SOURCE: &str = "crates/browser/src/version.rs";
+
+/// Gets the Chrome a CI job tests against (plan 10, milestone 10.2) and
+/// prints its path. Every Chrome but `system` comes from Chrome for
+/// Testing through `chrome-cdp install` (a debug build), so CI also covers
+/// the installer. In GitHub Actions it exports `CHROME_PATH` for the tests
+/// and `CHROME_CDP_REQUIRE_CHROME=1`, so they fail instead of skipping.
+fn chrome(args: &[String]) -> Result {
+    let usage =
+        || "usage: cargo xtask chrome <stable|beta|min|VERSION|system> [--with-deps]".to_owned();
+    let (which, with_deps) = match args {
+        [which] => (which.as_str(), false),
+        [which, flag] if flag == "--with-deps" => (which.as_str(), true),
+        _ => return Err(usage()),
+    };
+    let path = if which == "system" {
+        SYSTEM_CHROME
+            .iter()
+            .find(|p| Path::new(p).is_file())
+            .map(|p| (*p).to_owned())
+            .ok_or_else(|| {
+                format!(
+                    "no Google Chrome here; looked at {}",
+                    SYSTEM_CHROME.join(", ")
+                )
+            })?
+    } else {
+        let mut install = vec!["install".to_owned(), "--quiet".to_owned()];
+        match which {
+            "stable" | "beta" => install.extend(["--channel".to_owned(), which.to_owned()]),
+            "min" => install.extend(["--version".to_owned(), min_chrome_major()?.to_string()]),
+            version if version.starts_with(|c: char| c.is_ascii_digit()) => {
+                install.extend(["--version".to_owned(), version.to_owned()]);
+            }
+            _ => return Err(usage()),
+        }
+        if with_deps {
+            install.push("--with-deps".to_owned());
+        }
+        cargo(["build", "--locked", "--package", "chrome-cdp"])?;
+        let exe = workspace_root()
+            .join("target/debug")
+            .join(format!("chrome-cdp{}", env::consts::EXE_SUFFIX));
+        output(Command::new(exe).args(&install))?.trim().to_owned()
+    };
+    let version = output(Command::new(&path).arg("--version"))?;
+    let version = version.trim();
+    eprintln!("{version}");
+    summarize(&format!("Chrome under test: {version} (`{path}`)"));
+    if let Some(env_file) = env::var_os("GITHUB_ENV") {
+        append(
+            Path::new(&env_file),
+            &format!("CHROME_PATH={path}\nCHROME_CDP_REQUIRE_CHROME=1\n"),
+        )?;
+    }
+    println!("{path}");
     Ok(())
+}
+
+/// `MIN_CHROME_MAJOR` from the browser crate (xtask is std-only, so it
+/// reads the source).
+fn min_chrome_major() -> Result<u32> {
+    let path = workspace_root().join(MIN_CHROME_SOURCE);
+    let source = fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    parse_min_chrome_major(&source).ok_or_else(|| {
+        format!(
+            "no `pub const MIN_CHROME_MAJOR: u32 = N;` in {}",
+            path.display()
+        )
+    })
+}
+
+fn parse_min_chrome_major(source: &str) -> Option<u32> {
+    source.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("pub const MIN_CHROME_MAJOR: u32 = ")?
+            .strip_suffix(';')?
+            .parse()
+            .ok()
+    })
 }
 
 /// Runs the `cdp-gen` binary. It needs serde, so it lives in its own crate
@@ -525,6 +771,64 @@ mod tests {
         assert_eq!(human_size(512), "512B");
         assert_eq!(human_size(12 * 1024), "12KB");
         assert_eq!(human_size(3 * 1024 * 1024 + 512 * 1024), "3.5MB");
+    }
+
+    #[test]
+    fn size_check_fails_over_twenty_percent() {
+        let mb = 1024 * 1024;
+        assert_eq!(
+            check_size("t", 10 * mb, Some(10 * mb)).verdict,
+            Verdict::Fine
+        );
+        assert_eq!(
+            check_size("t", 12 * mb, Some(10 * mb)).verdict,
+            Verdict::Fine
+        );
+        let over = check_size("t", 12 * mb + 1, Some(10 * mb));
+        assert_eq!(over.verdict, Verdict::Fail);
+        assert!(
+            over.note.starts_with("+20% vs its 10.0MB baseline"),
+            "{}",
+            over.note
+        );
+        assert!(
+            over.note
+                .contains("cargo xtask dist --target t --update-size")
+        );
+        assert_eq!(
+            check_size("t", 8 * mb, Some(10 * mb)).verdict,
+            Verdict::Fine
+        );
+        assert_eq!(
+            check_size("t", 8 * mb - 1, Some(10 * mb)).verdict,
+            Verdict::Warn
+        );
+        assert_eq!(check_size("t", mb, None).verdict, Verdict::Warn);
+    }
+
+    #[test]
+    fn baselines_are_read_and_replaced_by_target() {
+        let file = "# comment\nx86_64-unknown-linux-musl 100\naarch64-apple-darwin 200\n";
+        assert_eq!(baseline(file, "aarch64-apple-darwin"), Some(200));
+        assert_eq!(baseline(file, "x86_64-apple-darwin"), None);
+        assert_eq!(
+            with_baseline(file, "x86_64-unknown-linux-musl", 150),
+            "# comment\nx86_64-unknown-linux-musl 150\naarch64-apple-darwin 200\n"
+        );
+        assert_eq!(
+            with_baseline(file, "x86_64-apple-darwin", 300),
+            format!("{file}x86_64-apple-darwin 300\n")
+        );
+    }
+
+    #[test]
+    fn min_chrome_major_is_read_from_the_browser_crate() {
+        let major = min_chrome_major().unwrap();
+        assert!((100..1000).contains(&major), "{major}");
+        assert_eq!(
+            parse_min_chrome_major("/// x\npub const MIN_CHROME_MAJOR: u32 = 150;\n"),
+            Some(150)
+        );
     }
 
     #[test]

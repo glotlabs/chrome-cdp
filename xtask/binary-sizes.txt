@@ -1,0 +1,8 @@
+# The release binary's size in bytes, per target (plan 10, milestone 10.2).
+# `cargo xtask dist --target <triple>` fails when a build is more than 20%
+# over its line here. When the growth is wanted, record the new size with
+# `cargo xtask dist --target <triple> --update-size` and commit this file.
+# A target with no line only gets a warning.
+x86_64-unknown-linux-gnu 21469784
+aarch64-unknown-linux-musl 17003344
+x86_64-unknown-linux-musl 21552360
