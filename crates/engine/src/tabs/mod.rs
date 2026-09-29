@@ -79,6 +79,10 @@ pub(crate) const BLANK: &str = "about:blank";
 /// the setup ends, so a hung call must not hold it forever.
 const SETUP_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How often [`Tabs::context`] looks again for a frame's new document
+/// when the one it was making a world in went away.
+const GONE_POLL: Duration = Duration::from_millis(10);
+
 /// How many unreported tab openings (and logged dialogs) are kept.
 const OPENED_MEMORY: usize = 64;
 
@@ -947,8 +951,30 @@ impl Tabs {
     /// session that owns the frame and the context's id. Waits up to
     /// `timeout` for the frame's document to have one. The isolated world
     /// is made on first use if the frame has none yet (a frame that
-    /// existed before the session attached).
+    /// existed before the session attached); if the document goes away
+    /// meanwhile, in the next one.
     pub(crate) async fn context(
+        &self,
+        id: u32,
+        frame: &str,
+        world: World,
+        timeout: Duration,
+    ) -> Result<FrameContext, FrameError> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            match self.context_once(id, frame, world, left).await {
+                Err(FrameError::Cdp(e)) if document_gone(&e) && !left.is_zero() => {
+                    // Until the event that says the old document's
+                    // contexts are gone arrives.
+                    tokio::time::sleep(GONE_POLL.min(left)).await;
+                }
+                found => return found,
+            }
+        }
+    }
+
+    async fn context_once(
         &self,
         id: u32,
         frame: &str,
@@ -1513,6 +1539,15 @@ impl State {
             self.logged.pop_front();
         }
     }
+}
+
+/// Whether a call in a frame's document failed because the document
+/// went away (the frame navigated).
+fn document_gone(err: &cdp::CdpError) -> bool {
+    matches!(err, cdp::CdpError::Protocol { message, .. }
+        if message.starts_with("Cannot find context with specified id")
+            || message.starts_with("Execution context was destroyed")
+            || message.starts_with("Inspected target navigated or closed"))
 }
 
 /// Whether a target is a tab: a page, not a prerender or other special
