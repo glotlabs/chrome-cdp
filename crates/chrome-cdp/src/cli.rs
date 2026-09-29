@@ -1461,7 +1461,11 @@ session's shots/ directory (1.png, 2.png, …) unless -o names a file, or
 Images are in CSS pixels (--scale css) and at most --max-size pixels on
 their longest side (scaled down to fit; 0 for no limit), so a point in the
 image is a point on the page. An element is scrolled into view (and waited
-for) first, and the image is its box. --annotate labels the elements
+for) first, and the image is its box. --full captures the whole page; when
+the page does not scroll itself but inside a container (html, body
+{ height: 100% } and a scrolling <main>), the viewport grows for the
+capture until that container's content fits, and is put back afterwards.
+--full LOC names the container. --annotate labels the elements
 `snapshot -i` gives refs with those refs; --mask paints over elements.
 Both are drawn only for the screenshot. Needs a running session.
 
@@ -1470,6 +1474,7 @@ Examples:
   chrome-cdp screenshot --annotate            # label the refs in the image
   chrome-cdp screenshot e12                   # one element
   chrome-cdp screenshot --full -o page.png    # the whole page
+  chrome-cdp screenshot --full '#feed'        # all of what #feed scrolls
   chrome-cdp screenshot --mask '.price' --mask e7
   chrome-cdp screenshot --format jpeg --quality 70 -o - > shot.jpg")]
     Screenshot(ScreenshotArgs),
@@ -3202,9 +3207,12 @@ pub(crate) struct ScreenshotArgs {
     #[arg(value_name = "LOCATOR", conflicts_with = "full")]
     pub(crate) locator: Option<String>,
 
-    /// The whole page, not only what the viewport shows.
-    #[arg(long)]
-    pub(crate) full: bool,
+    /// The whole page, not only what the viewport shows. A page that
+    /// scrolls inside a container (a scrolling <main>) has that
+    /// container's whole content captured; LOC names the container if the
+    /// one found is not it.
+    #[arg(long, value_name = "LOC", num_args = 0..=1, default_missing_value = "")]
+    pub(crate) full: Option<String>,
 
     /// The image format; else the -o file's extension, else png.
     #[arg(long, value_enum, value_name = "FORMAT")]
@@ -5369,9 +5377,10 @@ pub(crate) struct ExpectScreenshotArgs {
     #[arg(value_name = "LOCATOR", conflicts_with = "full")]
     pub(crate) locator: Option<String>,
 
-    /// The whole page, not only the viewport.
-    #[arg(long)]
-    pub(crate) full: bool,
+    /// The whole page, not only the viewport; with LOC, all of the
+    /// container the page scrolls in (as screenshot --full does).
+    #[arg(long, value_name = "LOC", num_args = 0..=1, default_missing_value = "")]
+    pub(crate) full: Option<String>,
 
     /// Paint over the elements this locator matches (repeatable).
     #[arg(long, value_name = "LOCATOR", action = ArgAction::Append)]
