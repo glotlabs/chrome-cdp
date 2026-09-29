@@ -619,7 +619,7 @@ file of it is left. Command output is pinned by golden files in
 `crates/chrome-cdp/tests/golden/`; after an intended change, rewrite them with
 `UPDATE_GOLDEN=1 cargo test -p chrome-cdp --test golden`. The snapshot corpus
 (`testdata/site/snapshot/`: pages from five lines to 50,000 nodes, each with
-an `.expected` tree) is checked by `cargo test -p engine --test snapshot`,
+an `.expected` tree) is checked by `cargo test -p chrome-cdp-engine --test snapshot`,
 which also prints both engines' scores and output tokens; its golden outputs
 live in `crates/engine/tests/snapshots/`.
 

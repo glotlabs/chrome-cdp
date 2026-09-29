@@ -315,9 +315,13 @@ fn soak(args: &[String]) -> Result {
 /// The ignored tests that time a plan's budget inside a crate, run by
 /// `bench micro` in a release build: (package, test target, test name).
 const TIMING_TESTS: [(&str, &str, &str); 4] = [
-    ("cdp", "chrome", "sequential_evaluate_latency"),
-    ("engine", "snapshot", "snapshot_latency_benchmark"),
-    ("engine", "route", "overhead_with_20_rules"),
+    ("chrome-cdp-cdp", "chrome", "sequential_evaluate_latency"),
+    (
+        "chrome-cdp-engine",
+        "snapshot",
+        "snapshot_latency_benchmark",
+    ),
+    ("chrome-cdp-engine", "route", "overhead_with_20_rules"),
     (
         "chrome-cdp",
         "bench",

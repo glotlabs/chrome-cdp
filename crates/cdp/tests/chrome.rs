@@ -247,7 +247,7 @@ async fn websocket_transport() {
 
 /// Latency baseline for plan 10: 10,000 sequential `Runtime.evaluate("1+1")`
 /// calls. Run with
-/// `cargo test -p cdp --release --test chrome -- --ignored --nocapture`.
+/// `cargo test -p chrome-cdp-cdp --release --test chrome -- --ignored --nocapture`.
 #[tokio::test]
 #[ignore = "benchmark; run explicitly in release mode"]
 async fn sequential_evaluate_latency() {

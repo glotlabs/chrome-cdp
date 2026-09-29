@@ -1,7 +1,9 @@
 //! Embeds the git commit in the binary for `chrome-cdp --version`.
 //!
 //! `CHROME_CDP_GIT_SHA` at build time overrides it (for builds from a source
-//! tarball); outside a git checkout it is `unknown`.
+//! tarball). A crates.io build (`cargo install chrome-cdp`) reads the commit
+//! `cargo package` recorded in `.cargo_vcs_info.json`; outside a git checkout
+//! it is `unknown`.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -11,9 +13,23 @@ fn main() {
     let sha = std::env::var("CHROME_CDP_GIT_SHA")
         .ok()
         .filter(|s| !s.is_empty())
+        .or_else(packaged_sha)
         .or_else(git_sha)
         .unwrap_or_else(|| "unknown".into());
     println!("cargo::rustc-env=CHROME_CDP_GIT_SHA={sha}");
+}
+
+/// The commit in `.cargo_vcs_info.json`, which only a packaged crate has.
+fn packaged_sha() -> Option<String> {
+    let dir = std::env::var_os("CARGO_MANIFEST_DIR")?;
+    let info = std::fs::read_to_string(PathBuf::from(dir).join(".cargo_vcs_info.json")).ok()?;
+    let rest = &info[info.find("\"sha1\"")? + 6..];
+    let start = rest.find('"')? + 1;
+    let sha: String = rest[start..]
+        .chars()
+        .take_while(char::is_ascii_hexdigit)
+        .collect();
+    (sha.len() >= 12).then(|| sha[..12].to_owned())
 }
 
 fn git(args: &[&str]) -> Option<String> {

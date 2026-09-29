@@ -7,18 +7,21 @@ default-members = ["crates/*"]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
-publish = false
+repository = "https://github.com/glotlabs/chrome-cdp"
+homepage = "https://github.com/glotlabs/chrome-cdp"
 
 [workspace.dependencies]
-# Internal crates.
-cdp = { path = "crates/cdp" }
-browser = { path = "crates/browser" }
-engine = { path = "crates/engine" }
-daemon = { path = "crates/daemon" }
-protocol = { path = "crates/protocol" }
+# Internal crates. Published to crates.io as chrome-cdp-<name> (the short
+# names are taken) for `cargo install chrome-cdp`; each keeps its short lib
+# name. `version` must follow the workspace version (`xtask release check`).
+cdp = { path = "crates/cdp", package = "chrome-cdp-cdp", version = "0.1.0" }
+browser = { path = "crates/browser", package = "chrome-cdp-browser", version = "0.1.0" }
+engine = { path = "crates/engine", package = "chrome-cdp-engine", version = "0.1.0" }
+daemon = { path = "crates/daemon", package = "chrome-cdp-daemon", version = "0.1.0" }
+protocol = { path = "crates/protocol", package = "chrome-cdp-protocol", version = "0.1.0" }
 fixtures = { path = "crates/fixtures" }
-e2e = { path = "crates/e2e" }
-mock = { path = "crates/mock" }
+e2e = { path = "crates/e2e", package = "chrome-cdp-e2e", version = "0.1.0" }
+mock = { path = "crates/mock", package = "chrome-cdp-mock", version = "0.1.0" }
 
 # External crates.
 base64 = "0.22"

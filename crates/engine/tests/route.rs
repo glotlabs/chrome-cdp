@@ -629,7 +629,7 @@ async fn credentials_still_work_with_and_after_routes() {
 /// checked against all 20 and sent on.
 ///
 /// Ignored: benchmarks run on a quiet machine after all plans are in. Run
-/// it with `CHROME_PATH=… cargo test -p engine --release --test route --
+/// it with `CHROME_PATH=… cargo test -p chrome-cdp-engine --release --test route --
 /// --ignored`.
 #[tokio::test]
 #[ignore = "benchmark; run after all plans are implemented"]

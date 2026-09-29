@@ -162,25 +162,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "browser"
-version = "0.1.0"
-dependencies = [
- "cdp",
- "libc",
- "protocol",
- "reqwest",
- "rustls",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
- "xattr",
- "zip",
-]
-
-[[package]]
 name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -200,26 +181,6 @@ checksum = "f360145194ee8e21db5ee7f3fcd4fe52210864c75c985dae33218202c8bbe040"
 dependencies = [
  "find-msvc-tools",
  "shlex",
-]
-
-[[package]]
-name = "cdp"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "dashmap",
- "futures-util",
- "libc",
- "proptest",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-stream",
- "tokio-tungstenite",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -253,16 +214,16 @@ name = "chrome-cdp"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
- "browser",
- "cdp",
+ "chrome-cdp-browser",
+ "chrome-cdp-cdp",
+ "chrome-cdp-daemon",
+ "chrome-cdp-e2e",
+ "chrome-cdp-engine",
+ "chrome-cdp-mock",
+ "chrome-cdp-protocol",
  "clap",
  "clap_complete",
- "daemon",
- "e2e",
- "engine",
  "fixtures",
- "mock",
- "protocol",
  "regex",
  "serde",
  "serde_json",
@@ -273,6 +234,141 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+]
+
+[[package]]
+name = "chrome-cdp-browser"
+version = "0.1.0"
+dependencies = [
+ "chrome-cdp-cdp",
+ "chrome-cdp-protocol",
+ "libc",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "xattr",
+ "zip",
+]
+
+[[package]]
+name = "chrome-cdp-cdp"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "dashmap",
+ "futures-util",
+ "libc",
+ "proptest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "chrome-cdp-daemon"
+version = "0.1.0"
+dependencies = [
+ "chrome-cdp-browser",
+ "chrome-cdp-engine",
+ "chrome-cdp-protocol",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "chrome-cdp-e2e"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "chrome-cdp-browser",
+ "chrome-cdp-mock",
+ "chrome-cdp-protocol",
+ "futures-util",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "percent-encoding",
+ "proptest",
+ "regex",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "toml",
+ "tracing",
+]
+
+[[package]]
+name = "chrome-cdp-engine"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrome-cdp-browser",
+ "chrome-cdp-cdp",
+ "chrome-cdp-mock",
+ "chrome-cdp-protocol",
+ "fixtures",
+ "flate2",
+ "futures-util",
+ "png",
+ "regex",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "similar",
+ "sourcemap",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "chrome-cdp-mock"
+version = "0.1.0"
+dependencies = [
+ "chrome-cdp-protocol",
+ "minijinja",
+ "percent-encoding",
+ "proptest",
+ "regex",
+ "schemars",
+ "serde",
+ "serde_json",
+ "strsim",
+ "tempfile",
+ "toml",
+ "toml_edit",
+ "url",
+ "yaml-rust2",
+]
+
+[[package]]
+name = "chrome-cdp-protocol"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "strsim",
 ]
 
 [[package]]
@@ -396,20 +492,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "daemon"
-version = "0.1.0"
-dependencies = [
- "browser",
- "engine",
- "protocol",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "dashmap"
 version = "6.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -466,57 +548,6 @@ name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
-
-[[package]]
-name = "e2e"
-version = "0.1.0"
-dependencies = [
- "browser",
- "bytes",
- "futures-util",
- "http-body-util",
- "hyper",
- "hyper-util",
- "mock",
- "percent-encoding",
- "proptest",
- "protocol",
- "regex",
- "reqwest",
- "rustls",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "toml",
- "tracing",
-]
-
-[[package]]
-name = "engine"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "browser",
- "cdp",
- "fixtures",
- "flate2",
- "futures-util",
- "mock",
- "png",
- "protocol",
- "regex",
- "reqwest",
- "rustls",
- "serde",
- "serde_json",
- "similar",
- "sourcemap",
- "tempfile",
- "tokio",
- "tracing",
- "url",
-]
 
 [[package]]
 name = "equivalent"
@@ -1129,26 +1160,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mock"
-version = "0.1.0"
-dependencies = [
- "minijinja",
- "percent-encoding",
- "proptest",
- "protocol",
- "regex",
- "schemars",
- "serde",
- "serde_json",
- "strsim",
- "tempfile",
- "toml",
- "toml_edit",
- "url",
- "yaml-rust2",
-]
-
-[[package]]
 name = "num-traits"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1273,17 +1284,6 @@ dependencies = [
  "rusty-fork",
  "tempfile",
  "unarray",
-]
-
-[[package]]
-name = "protocol"
-version = "0.1.0"
-dependencies = [
- "proptest",
- "schemars",
- "serde",
- "serde_json",
- "strsim",
 ]
 
 [[package]]

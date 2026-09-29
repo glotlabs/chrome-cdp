@@ -796,7 +796,7 @@ async fn a_blocked_page_fails_at_once() {
 
 /// Snapshot latency per engine and page (plan 04's gate: p95 < 150 ms at
 /// 5k nodes, < 1 s at 50k). Benchmarks run after all plans are in:
-/// `cargo test -p engine --test snapshot -- --ignored --nocapture`.
+/// `cargo test -p chrome-cdp-engine --test snapshot -- --ignored --nocapture`.
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "a benchmark; run on an idle machine"]
 async fn snapshot_latency_benchmark() {

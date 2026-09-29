@@ -17,7 +17,7 @@ pub fn reference() -> String {
     let mut out = String::from(
         "# Mock file reference\n\n\
          <!-- Generated from `chrome-cdp schema mocks` by the mock crate's tests;\n\
-         run `UPDATE_GOLDEN=1 cargo test -p mock reference` after changing the format. -->\n\n",
+         run `UPDATE_GOLDEN=1 cargo test -p chrome-cdp-mock reference` after changing the format. -->\n\n",
     );
     let _ = writeln!(out, "{}\n", prose(&schema["description"]));
     out.push_str(
@@ -243,7 +243,7 @@ mod tests {
             let committed = std::fs::read_to_string(&path).unwrap_or_default();
             assert!(
                 committed == text,
-                "docs/e2e/{name} is out of date (UPDATE_GOLDEN=1 cargo test -p mock reference writes it)"
+                "docs/e2e/{name} is out of date (UPDATE_GOLDEN=1 cargo test -p chrome-cdp-mock reference writes it)"
             );
         }
     }

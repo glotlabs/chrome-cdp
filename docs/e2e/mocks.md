@@ -1,7 +1,7 @@
 # Mock file reference
 
 <!-- Generated from `chrome-cdp schema mocks` by the mock crate's tests;
-run `UPDATE_GOLDEN=1 cargo test -p mock reference` after changing the format. -->
+run `UPDATE_GOLDEN=1 cargo test -p chrome-cdp-mock reference` after changing the format. -->
 
 A chrome-cdp mock file: one mock set. Each `[[mock]]` answers the requests it matches; within a file the first match wins, then the `[[collection]]`s are tried, and sets applied later are tried first. Data files (`json_file`, `body_file`, `file`, `seed`) are relative to the mocks directory.
 
