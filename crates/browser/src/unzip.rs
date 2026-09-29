@@ -9,7 +9,9 @@ use zip::ZipArchive;
 
 /// Extracts the zip at `archive` into `dest`, calling `progress(done,
 /// total)` in uncompressed bytes. Entries may not leave `dest`, by path or
-/// by symlink. Each file's CRC is checked as it is read.
+/// by symlink, and nothing is written through a symlink an earlier entry
+/// made (links chained through links could otherwise point anywhere).
+/// Each file's CRC is checked as it is read.
 pub(crate) fn extract(
     archive: &Path,
     dest: &Path,
@@ -33,6 +35,12 @@ pub(crate) fn extract(
             .ok_or_else(|| format!("the zip has an unsafe path: {name}"))?;
         let path = dest.join(&rel);
         let io_err = |e: io::Error| format!("cannot unpack {name}: {e}");
+        if let Some(link) = first_link(dest, &rel).map_err(io_err)? {
+            return Err(format!(
+                "the zip writes {name} through the symlink {}",
+                link.display()
+            ));
+        }
         if entry.is_dir() {
             fs::create_dir_all(&path).map_err(io_err)?;
             continue;
@@ -62,6 +70,23 @@ pub(crate) fn extract(
         progress(done, total);
     }
     Ok(())
+}
+
+/// The first path of `dest`/`rel`, from the top, that is a symlink: an
+/// entry at `rel` would be written through it. `None` when there is none
+/// (a path that does not exist yet has none below it).
+fn first_link(dest: &Path, rel: &Path) -> io::Result<Option<std::path::PathBuf>> {
+    let mut path = dest.to_path_buf();
+    for component in rel.components() {
+        path.push(component);
+        match path.symlink_metadata() {
+            Ok(meta) if meta.file_type().is_symlink() => return Ok(Some(path)),
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(None)
 }
 
 /// Whether a symlink at `link` (relative to the root) pointing at `target`
@@ -217,6 +242,41 @@ pub(crate) mod tests {
         write_zip(&archive, &[Entry::File("../evil", "x", 0o644)]);
         let err = extract(&archive, &dir.path().join("out"), &mut |_, _| {}).unwrap_err();
         assert_eq!(err, "the zip has an unsafe path: ../evil");
+
+        // Each link stays inside on its own, but the second is made through
+        // the first, so it would point at the destination's parent, and the
+        // file would be written there.
+        write_zip(
+            &archive,
+            &[
+                Entry::Link("a/b", ".."),
+                Entry::Link("a/b/c", ".."),
+                Entry::File("a/b/c/escaped", "x", 0o644),
+            ],
+        );
+        let out = dir.path().join("chain");
+        let err = extract(&archive, &out, &mut |_, _| {}).unwrap_err();
+        assert_eq!(
+            err,
+            format!(
+                "the zip writes a/b/c through the symlink {}",
+                out.join("a/b").display()
+            )
+        );
+        assert!(!dir.path().join("escaped").exists());
+
+        // Nor over a link to a file.
+        write_zip(
+            &archive,
+            &[Entry::Link("a/f", "g"), Entry::File("a/./f", "x", 0o644)],
+        );
+        let out = dir.path().join("over");
+        let err = extract(&archive, &out, &mut |_, _| {}).unwrap_err();
+        assert!(
+            err.starts_with("the zip writes a/./f through the symlink"),
+            "{err}"
+        );
+        assert!(!out.join("a/g").exists());
 
         std::fs::write(&archive, "not a zip").unwrap();
         let err = extract(&archive, &dir.path().join("out"), &mut |_, _| {}).unwrap_err();
