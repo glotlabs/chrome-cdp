@@ -12,11 +12,12 @@ use std::sync::Arc;
 
 use browser::Host;
 use engine::{
-    CdpRequest, Engine, ImageFormat, Margins, NavigateRequest, Navigation, OpenRequest,
-    PaperFormat, PdfRequest, ScreenshotRequest, ShotScale, Target, WaitUntil,
+    CdpRequest, EmulateRequest, EmulationChange, Engine, ImageFormat, Margins, NavigateRequest,
+    Navigation, OpenRequest, PaperFormat, PdfRequest, ScreenshotRequest, ShotScale, Target,
+    WaitUntil,
 };
 use fixtures::Fixtures;
-use protocol::schema::{PdfData, ScreenshotData};
+use protocol::schema::{PdfData, ScreenshotData, Viewport};
 use protocol::{ErrorInfo, ErrorKind, Output};
 use serde_json::json;
 
@@ -455,10 +456,40 @@ async fn full_page_of_an_app_that_scrolls_inside() {
     .await;
     assert_eq!(err.kind, ErrorKind::NotFound, "{}", err.to_text());
 
+    // The viewport the session emulates is the one it gets back, screen
+    // and pixel ratio included.
+    engine
+        .emulate(EmulateRequest {
+            change: EmulationChange::Viewport {
+                viewport: Some(Viewport {
+                    width: 500,
+                    height: 400,
+                    dpr: 2.0,
+                    mobile: false,
+                    touch: false,
+                    screen_width: Some(1000),
+                    screen_height: Some(900),
+                }),
+            },
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap();
+    let (data, output) = shoot(&engine, full(None)).await;
+    assert_eq!((data.width, data.height), (500, 3060), "{}", output.text);
+    assert_eq!(
+        eval(
+            &engine,
+            "[innerWidth, innerHeight, devicePixelRatio, screen.width, screen.height]"
+        )
+        .await,
+        json!([500, 400, 2, 1000, 900])
+    );
+
     // A page that scrolls itself is captured as before.
     goto(&engine, &Fixtures::shared().url("/shots/tall.html")).await;
     let (data, _) = shoot(&engine, full(None)).await;
-    assert_eq!((data.width, data.height), (800, 20_000));
+    assert_eq!((data.width, data.height), (500, 20_000));
     assert_eq!(data.container, None);
 
     engine.close().await;
