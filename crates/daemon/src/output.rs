@@ -260,7 +260,7 @@ mod tests {
 
     use protocol::schema::{ClosedSession, SessionEntry, SessionState};
 
-    use super::{closed, log_tail, sessions, uptime_text};
+    use super::{closed, log_tail, sessions, status, stopped, uptime_text};
 
     #[test]
     fn uptimes() {
@@ -324,6 +324,20 @@ mod tests {
         assert_eq!(
             sessions(vec![]).text,
             "no sessions; start one: chrome-cdp open"
+        );
+    }
+
+    #[test]
+    fn status_counts_dropped_worker_events() {
+        let mut data = stopped("default", std::path::Path::new("/tmp/s"), None);
+        assert!(!status(&data).text.contains("worker events"));
+        data.worker_events_dropped = Some(3);
+        assert!(
+            status(&data).text.contains(
+                "\nworker events dropped: 3 (shared or service workers of an origin no tab had open)"
+            ),
+            "{}",
+            status(&data).text
         );
     }
 }
