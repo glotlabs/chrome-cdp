@@ -1,6 +1,6 @@
 # Plan 10 — Quality, benchmarks & release
 
-Status: IN PROGRESS (10.1-10.2 done; the fixture site and CI matrix start in plan 01 and grow with every plan)
+Status: IN PROGRESS (10.1-10.3 done; the fixture site and CI matrix start in plan 01 and grow with every plan)
 Depends on: all; the benchmark harness should exist by the end of plan 04
 
 ## Goal
@@ -152,7 +152,7 @@ methodology, and nightly regressions of more than 15% fail CI.
 ## v1.0 release checklist
 
 - [ ] Overview §7 definition of done is fully ticked.
-- [ ] Parity matrix: no ❌ in agent-critical rows.
+- [x] Parity matrix: no ❌ in agent-critical rows.
 - [ ] Benchmarks published; the agent benchmark beats Playwright MCP on success
       rate and tokens.
 - [ ] Nightly flakiness job green for 7 consecutive days.
@@ -179,3 +179,7 @@ _(append here)_
 - 10.2: The `build` job builds the four release targets, each on its own architecture so the smoke test (`--version`, `install --list`) runs the binary; the musl targets use `musl-tools` for ring's C. The size gate is a committed baseline per target in `xtask/binary-sizes.txt`: `cargo xtask dist --target T` fails over +20%, warns under −20% or with no baseline, and writes each size to the job summary; `--update-size` records a new baseline. Comparing with the base branch's build instead would double the build time. The macOS baselines could not be measured here (no macOS SDK); until they are recorded their jobs only warn.
 - 10.2: The binary had outgrown plan 01's fixed 15MB budget (20.5MB for x86_64 Linux at 10.2; the `dist` job would have failed), so the +20% baseline replaces it. Baselines: x86_64 musl 20.6MB, aarch64 musl 16.2MB (cross-built here with clang and rust-lld).
 - 10.2: The whole suite passed here against the minimum Chrome (CfT 150.0.7871.124 via `cargo xtask chrome min`: 956 tests, nextest `ci` profile), and the static x86_64 musl binary opened, snapshotted and closed CfT 154 with the sandbox on. None of the workflows has run on GitHub yet (the repo has no remote).
+- 10.3: `docs/playwright-parity.md` has one table per area with the plan's four columns, 128 rows. It is the short form of `docs/migrating-from-playwright.md` (plan 09.4), which keeps the per-call examples; the statuses were checked against the commands' `--help` and code, which made three of the guide's rows stale: `browser.newContext()` is `context new` (✅, was 🟡), HAR replay is `mock import FILE.har` + `mock use` (✅, was ❌; not `route --from-har`, since mock sets already replay requests), and `APIRequestContext` is `http` (✅, was 🟡). The guide is fixed too.
+- 10.3: Agent-critical means an agent needs it routinely to open, operate or verify a page, or to write and run E2E tests, with no reasonable way around it. The three ❌ rows (`filter({ has, hasNot })`, `or()`/`and()`, paused timers) are not agent-critical, so the v1 gate holds; they stay `.looper` follow-ups.
+- 10.3: Video is ➖, not in v1: an agent cannot watch a video, a failed test already leaves step screenshots (`test --trace`) and a `report.md`, and `Page.startScreencast` needs an ack per frame, so it would need its own recorder and an ffmpeg dependency for little agent value.
+- 10.3: `crates/chrome-cdp/tests/parity.rs` keeps the matrix honest in CI: every row has a status and a yes/no, no agent-critical row is ❌, the summary line's counts match, and every command a row names (the first word of a code span in the chrome-cdp column) is in `help commands`. Playwright MCP's tools got no table of their own: each maps to a row here (`browser_generate_locator` to `history --as-scenario`).

@@ -173,7 +173,7 @@ conventions early: **read 08 §2–§4 before implementing any command.**
 ## 7. Definition of done for v1.0
 
 - [ ] Every command in §5 is implemented, documented, and covered by integration tests on Linux and macOS (amd64 and arm64).
-- [ ] The Playwright parity matrix (plan 10) has no ❌ in the "agent-critical" rows.
+- [x] The Playwright parity matrix (plan 10) has no ❌ in the "agent-critical" rows.
 - [ ] The agent benchmark (plan 10) shows task success rate ≥ Playwright MCP, with ≤ 50% of its tokens and faster wall-clock time.
 - [ ] Cold `open https://example.com` takes < 1.5 s. A warm command round trip takes < 30 ms (p50, excluding page work).
 - [ ] No crash, hang, or zombie Chrome across a 1,000-command soak test.

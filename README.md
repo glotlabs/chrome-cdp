@@ -634,3 +634,5 @@ is older than its sources.
 The design and roadmap live in [docs/plans/](docs/plans/00-overview.md).
 [docs/migrating-from-playwright.md](docs/migrating-from-playwright.md)
 maps Playwright's API to chrome-cdp commands.
+[docs/playwright-parity.md](docs/playwright-parity.md) sums it up: each
+capability's status, and which gaps matter to an agent.
