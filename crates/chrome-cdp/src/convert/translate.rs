@@ -962,6 +962,13 @@ impl<'s> Converter<'s> {
             }
             "dispatchEvent" => {
                 let event = plain(env, need(arg(0), "an event")?)?;
+                if event.starts_with("drag") || event == "drop" {
+                    // The dataTransfer a test builds to drop files cannot
+                    // go into the eval.
+                    return why(
+                        "dispatching drag events: drop files on the element with upload LOC FILE --drop",
+                    );
+                }
                 one(cmd(["eval"]).flag("--in", loc.to_owned()).arg(format!(
                     "el => el.dispatchEvent(new Event({}, {{ bubbles: true }}))",
                     js_string(&event)

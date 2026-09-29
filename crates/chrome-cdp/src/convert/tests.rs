@@ -481,6 +481,10 @@ const TODOS: &[(&str, &str)] = &[
     ),
     ("await page.keyboard.down('Shift');", "(holding keys"),
     (
+        "await page.locator('#zone').dispatchEvent('drop', { dataTransfer });",
+        "(dispatching drag events: drop files on the element with upload LOC FILE --drop",
+    ),
+    (
         "await page.locator('li').filter({ has: page.locator('b') }).click();",
         "(filter({ has })",
     ),
