@@ -62,7 +62,7 @@ impl Engine {
             }
         );
         if geolocation {
-            emulator.record_permission("geolocation", "granted", None);
+            emulator.record_permission(scope, "geolocation", "granted", None);
         }
         let aspects = Aspects::changed(&before, &after);
         if let Some(running) = self.running_now() {
@@ -81,7 +81,8 @@ impl Engine {
                 }
             }
             if geolocation {
-                let params = permission_params("geolocation", PermissionSetting::Granted, None);
+                let params =
+                    permission_params("geolocation", PermissionSetting::Granted, None, scope);
                 running
                     .conn
                     .browser()
@@ -243,10 +244,13 @@ impl Engine {
         ErrorInfo::new(ErrorKind::BadArgs, message).hint(Hint::run(example.scoped(&self.session)))
     }
 
-    /// `permissions`: lists, grants, denies or resets permissions.
+    /// `permissions`: lists, grants, denies or resets permissions, in the
+    /// call's context.
     pub async fn permissions(&self, req: PermissionsRequest) -> Result<Output, ErrorInfo> {
         let timeout = millis(req.timeout_ms);
         let emulator = &self.settings.emulation;
+        let scope = self.context_key()?;
+        let scope = scope.as_deref();
         let _changing = emulator.changing.lock().await;
         let names = req
             .names
@@ -260,7 +264,7 @@ impl Engine {
             .map(|r| r.conn.browser().with_timeout(timeout));
         let whom = origin.map_or_else(|| "every origin".to_owned(), str::to_owned);
         let text = match req.op {
-            PermissionsOp::List => list_text(&emulator.permissions(), &self.session),
+            PermissionsOp::List => list_text(&emulator.permissions(scope), &self.session),
             PermissionsOp::Grant | PermissionsOp::Deny => {
                 if names.is_empty() {
                     return Err(ErrorInfo::new(ErrorKind::BadArgs, "name a permission")
@@ -279,13 +283,14 @@ impl Engine {
                 };
                 for name in &names {
                     if let Some(browser) = &browser {
-                        let params = permission_params(name, setting, origin.map(str::to_owned));
+                        let params =
+                            permission_params(name, setting, origin.map(str::to_owned), scope);
                         browser
                             .call(params)
                             .await
                             .map_err(|e| self.bad_permission(name, origin, &e))?;
                     }
-                    emulator.record_permission(name, word, origin);
+                    emulator.record_permission(scope, name, word, origin);
                 }
                 format!("{verb} {} for {whom}", names.join(", "))
             }
@@ -293,14 +298,16 @@ impl Engine {
                 if names.is_empty() && origin.is_none() {
                     if let Some(browser) = &browser {
                         browser
-                            .call(ResetPermissionsParams::default())
+                            .call(ResetPermissionsParams {
+                                browser_context_id: scope.map(str::to_owned),
+                            })
                             .await
                             .map_err(|e| from_cdp(&e, &self.session))?;
                     }
-                    emulator.forget_permissions(|_| true);
+                    emulator.forget_permissions(scope, |_| true);
                     "every permission is back to asking".to_owned()
                 } else {
-                    let gone = emulator.forget_permissions(|p| {
+                    let gone = emulator.forget_permissions(scope, |p| {
                         (names.is_empty() || names.contains(&p.name))
                             && (origin.is_none() || p.origin.as_deref() == origin)
                     });
@@ -316,8 +323,12 @@ impl Engine {
                     }
                     if let Some(browser) = &browser {
                         for (name, origin) in &reset {
-                            let params =
-                                permission_params(name, PermissionSetting::Prompt, origin.clone());
+                            let params = permission_params(
+                                name,
+                                PermissionSetting::Prompt,
+                                origin.clone(),
+                                scope,
+                            );
                             browser
                                 .call(params)
                                 .await
@@ -335,7 +346,7 @@ impl Engine {
             }
         };
         let data = PermissionsData {
-            permissions: emulator.permissions(),
+            permissions: emulator.permissions(scope),
         };
         Ok(Output::typed(&data, text))
     }

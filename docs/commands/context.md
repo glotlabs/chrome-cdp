@@ -9,8 +9,9 @@ chrome-cdp context [OPTIONS] <COMMAND>
 
 ```text
 A context is like an incognito window: its own cookies, storage and
-cache, plus its own routes, mock sets, init scripts and emulation, none
-of which it shares with the session's default context or other contexts.
+cache, plus its own routes, mock sets, init scripts, emulation and
+permissions, none of which it shares with the session's default context
+or other contexts.
 Contexts have ids (c1, c2, …) in the order they were made, never reused.
 Any command takes --context <id> (or CHROME_CDP_CONTEXT) to act in one; a
 page command then acts on the context's active tab. `chrome-cdp test`

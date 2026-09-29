@@ -99,6 +99,8 @@ impl Engine {
             return Err(self.no_clipboard(page, &origin));
         }
         let browser = running.conn.browser().with_timeout(timeout);
+        // The page is of the call's context, whose permissions they are.
+        let scope = self.context_key()?;
         for name in PERMISSIONS {
             let mut params = SetPermissionParams::new(
                 PermissionDescriptor {
@@ -112,14 +114,18 @@ impl Engine {
                 PermissionSetting::Granted,
             );
             params.origin = Some(origin.origin.clone());
+            params.browser_context_id.clone_from(&scope);
             browser
                 .call(params)
                 .await
                 .map_err(|e| from_cdp(&e, &self.session))?;
             // `permissions` lists it, and can take it back.
-            self.settings
-                .emulation
-                .record_permission(name, "granted", Some(&origin.origin));
+            self.settings.emulation.record_permission(
+                scope.as_deref(),
+                name,
+                "granted",
+                Some(&origin.origin),
+            );
         }
         let page_session = page.session.with_timeout(timeout);
         page_session

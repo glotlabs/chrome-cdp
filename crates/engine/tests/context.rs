@@ -15,14 +15,14 @@ use engine::{
     ContextCloseRequest, ContextListRequest, ContextNewRequest, CookieFilter, CookiesOp,
     CookiesRequest, EmulateRequest, EmulationChange, Engine, EvalRequest, EvalWorld,
     InitScriptAddRequest, MockStateRequest, MockUseRequest, NavigateRequest, Navigation,
-    OpenRequest, RouteAction, RouteRequest, RouteSpec, TabNewRequest, TabsRequest, WaitUntil,
-    in_context,
+    OpenRequest, PermissionsOp, PermissionsRequest, RouteAction, RouteRequest, RouteSpec,
+    TabNewRequest, TabsRequest, WaitUntil, in_context,
 };
 use fixtures::Fixtures;
 use protocol::ErrorKind;
 use protocol::schema::{
-    ContextCloseData, ContextNewData, ContextsData, CookiesData, EvalData, MockStateData, TabsData,
-    Viewport,
+    ContextCloseData, ContextNewData, ContextsData, CookiesData, EvalData, MockStateData,
+    PermissionsData, TabsData, Viewport,
 };
 use serde_json::{Value, json};
 
@@ -408,4 +408,83 @@ async fn a_context_has_its_own_tabs_emulation_and_init_scripts() {
     assert_eq!(err.kind, ErrorKind::NotFound);
     // Ids are never reused.
     assert_eq!(new_context(&engine, &page).await.context.id, "c2");
+}
+
+async fn permissions(engine: &Engine, op: PermissionsOp, names: &[&str]) -> PermissionsData {
+    let out = engine
+        .permissions(PermissionsRequest {
+            op,
+            names: names.iter().map(|&n| n.to_owned()).collect(),
+            origin: None,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("permissions: {}", e.to_text()));
+    serde_json::from_value(out.data).unwrap()
+}
+
+/// `permissions` applies in the call's context only (plan 13.3), and so
+/// does `geo`'s grant.
+#[tokio::test]
+async fn a_context_has_its_own_permissions() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "context-permissions").await;
+    let page = site.url("/emulate/permissions.html");
+    goto(&engine, &page).await;
+    new_context(&engine, &page).await;
+    new_context(&engine, &page).await;
+    let state = "state('notifications')";
+
+    let granted = within(
+        "c1",
+        permissions(&engine, PermissionsOp::Grant, &["notifications"]),
+    )
+    .await;
+    assert_eq!(granted.permissions.len(), 1);
+    assert_eq!(within("c1", eval(&engine, state)).await, json!("granted"));
+    assert_eq!(within("c2", eval(&engine, state)).await, json!("prompt"));
+    assert_eq!(eval(&engine, state).await, json!("prompt"));
+    let listed = within("c2", permissions(&engine, PermissionsOp::List, &[])).await;
+    assert!(listed.permissions.is_empty(), "{listed:?}");
+    assert!(
+        permissions(&engine, PermissionsOp::List, &[])
+            .await
+            .permissions
+            .is_empty()
+    );
+
+    // The session's own grant stays out of the contexts.
+    permissions(&engine, PermissionsOp::Deny, &["notifications"]).await;
+    assert_eq!(eval(&engine, state).await, json!("denied"));
+    assert_eq!(within("c1", eval(&engine, state)).await, json!("granted"));
+    assert_eq!(within("c2", eval(&engine, state)).await, json!("prompt"));
+
+    // geo grants the position in its context.
+    within(
+        "c2",
+        engine.emulate(EmulateRequest {
+            change: EmulationChange::Geolocation {
+                geolocation: Some(protocol::schema::Geolocation {
+                    latitude: 59.91,
+                    longitude: 10.75,
+                    accuracy: 10.0,
+                }),
+            },
+            timeout_ms: TIMEOUT_MS,
+        }),
+    )
+    .await
+    .unwrap();
+    let geo = "state('geolocation')";
+    assert_eq!(within("c2", eval(&engine, geo)).await, json!("granted"));
+    assert_eq!(within("c1", eval(&engine, geo)).await, json!("prompt"));
+    let listed = within("c2", permissions(&engine, PermissionsOp::List, &[])).await;
+    assert_eq!(listed.permissions[0].name, "geolocation");
+
+    // Reset in c1 leaves the others alone.
+    within("c1", permissions(&engine, PermissionsOp::Reset, &[])).await;
+    assert_eq!(within("c1", eval(&engine, state)).await, json!("prompt"));
+    assert_eq!(eval(&engine, state).await, json!("denied"));
+    assert_eq!(within("c2", eval(&engine, geo)).await, json!("granted"));
 }

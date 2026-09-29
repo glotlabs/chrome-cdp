@@ -436,15 +436,16 @@ fn metrics(viewport: &Viewport) -> SetDeviceMetricsOverrideParams {
     params
 }
 
-/// Gives a new browser the session's permissions.
+/// Gives a new browser the session's permissions (its contexts are new:
+/// they have none).
 pub(super) async fn apply_permissions(shared: &Shared, timeout: Duration) {
     let browser = shared.conn.browser().with_timeout(timeout);
-    for permission in shared.settings.emulation.permissions() {
+    for permission in shared.settings.emulation.permissions(None) {
         let setting = match permission.setting.as_str() {
             "denied" => browser::PermissionSetting::Denied,
             _ => browser::PermissionSetting::Granted,
         };
-        let params = permission_params(&permission.name, setting, permission.origin.clone());
+        let params = permission_params(&permission.name, setting, permission.origin.clone(), None);
         if let Err(e) = browser.call(params).await {
             tracing::warn!("cannot set the {} permission: {e}", permission.name);
         }
@@ -452,11 +453,13 @@ pub(super) async fn apply_permissions(shared: &Shared, timeout: Duration) {
 }
 
 /// `Browser.setPermission` for a name `permissions` takes (`midi-sysex`
-/// is `midi` with sysex).
+/// is `midi` with sysex), in context `scope` (Chrome's id of a context of
+/// ours; the default context with `None`).
 pub(crate) fn permission_params(
     name: &str,
     setting: browser::PermissionSetting,
     origin: Option<String>,
+    scope: Option<&str>,
 ) -> browser::SetPermissionParams {
     let sysex = name == "midi-sysex";
     let mut params = browser::SetPermissionParams::new(
@@ -471,5 +474,6 @@ pub(crate) fn permission_params(
         setting,
     );
     params.origin = origin;
+    params.browser_context_id = scope.map(str::to_owned);
     params
 }

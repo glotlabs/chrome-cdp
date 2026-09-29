@@ -240,7 +240,9 @@ pub(crate) struct Emulator {
     /// Each browser context of ours has its own (plan 11.4), starting
     /// from nothing emulated; by scope (see `crate::context`).
     scoped: Mutex<std::collections::HashMap<String, Emulation>>,
-    permissions: Mutex<Vec<PermissionInfo>>,
+    /// What `permissions` (and `geo`) set, by scope: a context of ours
+    /// has its own, as Chrome does (plan 13.3).
+    permissions: Mutex<std::collections::HashMap<Option<String>, Vec<PermissionInfo>>>,
     /// Serialises the commands that change them.
     pub(crate) changing: tokio::sync::Mutex<()>,
 }
@@ -275,19 +277,32 @@ impl Emulator {
         }
     }
 
-    /// Forgets what `scope`, a context that closed, emulated.
+    /// Forgets what `scope`, a context that closed, emulated and was
+    /// allowed.
     pub(crate) fn drop_scope(&self, scope: &str) {
         lock(&self.scoped).remove(scope);
+        lock(&self.permissions).remove(&Some(scope.to_owned()));
     }
 
-    pub(crate) fn permissions(&self) -> Vec<PermissionInfo> {
-        lock(&self.permissions).clone()
+    /// The permissions set in `scope` (the session's with `None`).
+    pub(crate) fn permissions(&self, scope: Option<&str>) -> Vec<PermissionInfo> {
+        lock(&self.permissions)
+            .get(&scope.map(str::to_owned))
+            .cloned()
+            .unwrap_or_default()
     }
 
-    /// Records `name` as `setting` for `origin` (replacing what was set
-    /// for the same name and origin).
-    pub(crate) fn record_permission(&self, name: &str, setting: &str, origin: Option<&str>) {
-        let mut permissions = lock(&self.permissions);
+    /// Records `name` as `setting` for `origin` in `scope` (replacing what
+    /// was set for the same name and origin).
+    pub(crate) fn record_permission(
+        &self,
+        scope: Option<&str>,
+        name: &str,
+        setting: &str,
+        origin: Option<&str>,
+    ) {
+        let mut all = lock(&self.permissions);
+        let permissions = all.entry(scope.map(str::to_owned)).or_default();
         permissions.retain(|p| !(p.name == name && p.origin.as_deref() == origin));
         permissions.push(PermissionInfo {
             name: name.to_owned(),
@@ -296,12 +311,14 @@ impl Emulator {
         });
     }
 
-    /// Forgets the permissions `forget` accepts; returns them.
+    /// Forgets the permissions of `scope` `forget` accepts; returns them.
     pub(crate) fn forget_permissions(
         &self,
+        scope: Option<&str>,
         mut forget: impl FnMut(&PermissionInfo) -> bool,
     ) -> Vec<PermissionInfo> {
-        let mut permissions = lock(&self.permissions);
+        let mut all = lock(&self.permissions);
+        let permissions = all.entry(scope.map(str::to_owned)).or_default();
         let (gone, kept) = permissions.drain(..).partition(|p| forget(p));
         *permissions = kept;
         gone

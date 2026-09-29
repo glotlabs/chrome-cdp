@@ -9,8 +9,9 @@ chrome-cdp permissions [OPTIONS] [COMMAND]
 
 ```text
 Without a subcommand, lists the permissions the session set (`geo` and
-`clipboard` grant some too). Permissions belong to the browser, so they
-apply to every tab; without --origin, to every origin. For camera and
+`clipboard` grant some too). Permissions belong to a browser context, so
+they apply to every tab of the session, or with --context to every tab of
+that context only; without --origin, to every origin. For camera and
 microphone streams, start the browser with `open --fake-media`.
 
 Examples:
