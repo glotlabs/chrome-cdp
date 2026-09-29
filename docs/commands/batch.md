@@ -29,7 +29,7 @@ Examples:
     click 'role=button[name="Sign in"]'
     wait --url /dashboard
   EOF
-  printf 'goto example.com\ntext h1\n' | chrome-cdp batch --json
+  printf 'goto example.com\ntext css=h1\n' | chrome-cdp batch --json
   chrome-cdp batch --continue --var user=ada < steps.cdp
 ```
 

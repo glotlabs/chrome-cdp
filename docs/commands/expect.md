@@ -89,7 +89,7 @@ Examples:
   chrome-cdp expect '.row' count 3
   chrome-cdp expect '.spinner' visible --not
   chrome-cdp expect 'role=button[name="Save"]' enabled --timeout 10s
-  chrome-cdp expect h1 text '/^Welcome, \w+$/'
+  chrome-cdp expect css=h1 text '/^Welcome, \w+$/'
   chrome-cdp expect --url '**/dashboard'
   chrome-cdp expect --no-errors --since before-save
   chrome-cdp expect --a11y --level A

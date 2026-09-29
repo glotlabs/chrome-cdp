@@ -534,7 +534,7 @@ Examples:
   chrome-cdp expect '.row' count 3
   chrome-cdp expect '.spinner' visible --not
   chrome-cdp expect 'role=button[name=\"Save\"]' enabled --timeout 10s
-  chrome-cdp expect h1 text '/^Welcome, \\w+$/'
+  chrome-cdp expect css=h1 text '/^Welcome, \\w+$/'
   chrome-cdp expect --url '**/dashboard'
   chrome-cdp expect --no-errors --since before-save
   chrome-cdp expect --a11y --level A
@@ -1633,7 +1633,7 @@ Examples:
     click 'role=button[name=\"Sign in\"]'
     wait --url /dashboard
   EOF
-  printf 'goto example.com\\ntext h1\\n' | chrome-cdp batch --json
+  printf 'goto example.com\\ntext css=h1\\n' | chrome-cdp batch --json
   chrome-cdp batch --continue --var user=ada < steps.cdp")]
     Batch(BatchArgs),
 
