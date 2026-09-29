@@ -557,7 +557,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 {node}      - name: Install chrome-cdp
-        run: cargo install --locked chrome-cdp
+        run: |
+          curl -fsSL https://github.com/glotlabs/chrome-cdp/releases/latest/download/install.sh | sh
+          echo \"$HOME/.local/bin\" >> \"$GITHUB_PATH\"
       - uses: actions/cache@v4
         with:
           path: ~/.cache/chrome-cdp
@@ -585,7 +587,9 @@ jobs:
   #     ADMIN_PASSWORD: ${{{{ secrets.STAGING_ADMIN_PASSWORD }}}}
   #   steps:
   #     - uses: actions/checkout@v4
-  #     - run: cargo install --locked chrome-cdp
+  #     - run: |
+  #         curl -fsSL https://github.com/glotlabs/chrome-cdp/releases/latest/download/install.sh | sh
+  #         echo \"$HOME/.local/bin\" >> \"$GITHUB_PATH\"
   #     - run: chrome-cdp test --backend staging --verify-mocks
 "
     )
