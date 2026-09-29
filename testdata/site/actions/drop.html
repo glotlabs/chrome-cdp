@@ -10,9 +10,13 @@
      dropped files (it cancels dragover and drop) and logs each drag event
      it gets into #drops, one per line: type, zone id, each file of
      dataTransfer.files as name(size), trusted. #inert takes no drop (it
-     leaves dragover alone). -->
+     leaves dragover alone). #comment takes no drop itself, but a drag
+     entering it shows #overlay over the page, which takes it (as GitHub's
+     comment boxes do). -->
 <div id="zone" class="zone" role="region" aria-label="Drop files here">Drop files here</div>
 <div id="inert" class="zone" role="region" aria-label="Not a drop zone">Not a drop zone</div>
+<div id="comment" class="zone" role="region" aria-label="Comment">Comment</div>
+<div id="overlay" hidden style="position: fixed; inset: 0; background: #def">Drop to attach</div>
 <pre id="drops"></pre>
 <script>
   const out = document.getElementById('drops');
@@ -27,4 +31,8 @@
   zone.addEventListener('drop', (e) => { e.preventDefault(); zone.classList.remove('over'); log(e); });
   const inert = document.getElementById('inert');
   inert.addEventListener('drop', log);
+  const overlay = document.getElementById('overlay');
+  document.getElementById('comment').addEventListener('dragenter', () => { overlay.hidden = false; });
+  overlay.addEventListener('dragover', (e) => { e.preventDefault(); });
+  overlay.addEventListener('drop', (e) => { e.preventDefault(); overlay.hidden = true; log(e); });
 </script>

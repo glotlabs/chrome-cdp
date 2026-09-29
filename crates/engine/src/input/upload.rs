@@ -101,15 +101,16 @@ const WATCH_DROP: &str = "function () {\n\
     this[Symbol.for('chrome-cdp.drop')] = watch;\n\
 }";
 
-/// Whether a `drop` reached `this` (or something in it) since
-/// [`WATCH_DROP`], which stops watching.
+/// Whether a `drop` fired in `this`'s window since [`WATCH_DROP`], which
+/// stops watching. Anywhere: many pages show an overlay on `dragenter`
+/// that takes the drop in the element's place.
 const DROPPED: &str = "function () {\n\
     const key = Symbol.for('chrome-cdp.drop');\n\
     const watch = this[key];\n\
     if (!watch) return false;\n\
     watch.stop();\n\
     delete this[key];\n\
-    return watch.drops.some((e) => e.target instanceof Node && this.contains(e.target));\n\
+    return watch.drops.length > 0;\n\
 }";
 
 /// `dragOperationsMask`: copy, as files dragged from the desktop offer.

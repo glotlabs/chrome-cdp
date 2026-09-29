@@ -416,10 +416,18 @@ async fn drops_files_on_drop_zones() {
     assert_eq!(err.details.as_ref().unwrap()["check"], json!("drop"));
     assert_eq!(drops(&engine, "").await.len(), 2);
 
+    // A drop an overlay takes in the element's place counts.
+    let out = act(&engine, drop("#comment", &["hello.txt"])).await;
+    assert_eq!(out.text, "dropped hello.txt (6B) on e3 region \"Comment\"");
+    assert_eq!(
+        drops(&engine, "").await[2],
+        "drop overlay hello.txt(6) trusted"
+    );
+
     // The refused drag ended: the next drop works, and so does a click.
     act(&engine, drop("#zone", &["notes.md"])).await;
     assert_eq!(
-        drops(&engine, "").await[3],
+        drops(&engine, "").await[4],
         "drop zone notes.md(31) trusted"
     );
     act(
