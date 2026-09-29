@@ -219,6 +219,35 @@ async fn lossless_listeners_miss_nothing() {
 }
 
 #[tokio::test]
+async fn a_burst_past_the_default_buffer_reaches_a_lagging_lossless_listener() {
+    const BURST: usize = 3000;
+    let (conn, peer) = connect();
+    let session = conn.session("S1");
+    let mut all = session.events_lossless("");
+    let mut broadcast = session.events();
+    // Neither listener reads until the whole burst is in.
+    for n in 0..BURST {
+        let method = if n % 2 == 0 {
+            "Runtime.consoleAPICalled"
+        } else {
+            "Network.dataReceived"
+        };
+        peer.send_json(&json!({"method": method, "params": {"n": n}, "sessionId": "S1"}));
+    }
+    peer.send_json(&json!({"method": "Target.detachedFromTarget", "params": {"sessionId": "S1", "targetId": "T1"}}));
+    for n in 0..BURST {
+        assert_eq!(all.next().await.unwrap().params["n"], n);
+    }
+    assert!(all.next().await.is_none());
+    // The broadcast stream kept only its newest 1024.
+    let mut seen = 0;
+    while broadcast.next().await.is_some() {
+        seen += 1;
+    }
+    assert!(seen <= 1024, "{seen}");
+}
+
+#[tokio::test]
 async fn calls_are_sent_when_made_not_when_polled() {
     let (conn, mut peer) = connect();
     let session = conn.session("S1");

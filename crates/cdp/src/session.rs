@@ -108,9 +108,12 @@ impl Session {
     }
 
     /// Streams this session's events whose method starts with `prefix`
-    /// (e.g. `"Fetch."`), untyped. Unlike [`Session::events`], none is ever
-    /// skipped, however far behind the listener falls: for events that
-    /// each need an answer, such as a paused request's. The stream ends
+    /// (e.g. `"Fetch."`; `""` for all of them), untyped. Unlike
+    /// [`Session::events`], none is ever skipped, however far behind the
+    /// listener falls: for events that each need an answer, such as a
+    /// paused request's, and for listeners that keep state from them (a
+    /// tab's frames, requests and console). The events wait in memory
+    /// until read, so the listener must keep reading. The stream ends
     /// when the session detaches or the connection closes.
     pub fn events_lossless(&self, prefix: &str) -> LosslessEventStream {
         LosslessEventStream {

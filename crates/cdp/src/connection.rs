@@ -6,8 +6,9 @@
 //! oneshot in the pending map, and hand the serialised request to the writer.
 //! The reader completes pending calls by id and routes events by `sessionId`
 //! to per-session broadcast channels, and to lossless listeners: events a
-//! listener must never miss (a paused request's `Fetch.requestPaused`) go
-//! through an unbounded channel instead, see [`Session::events_lossless`].
+//! listener must never miss (a paused request's `Fetch.requestPaused`, or
+//! the events a tab's state is kept from) go through an unbounded channel
+//! instead, see [`Session::events_lossless`].
 //!
 //! When the transport closes or fails, every pending call fails with
 //! [`CdpError::Disconnected`], every event stream ends, and later calls fail
