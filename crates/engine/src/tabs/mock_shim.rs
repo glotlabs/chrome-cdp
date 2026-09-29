@@ -17,7 +17,7 @@ use cdp::{RawEvent, Session};
 use serde_json::{Value, json};
 
 use super::{Shared, Tabs};
-use crate::route::{self, Socket, SseReply, WsReply, frame_message};
+use crate::route::{self, Socket, SseReply, WsReply, frame_json, frame_message};
 
 /// How long a delivery may take.
 const DELIVER_TIMEOUT: Duration = Duration::from_secs(5);
@@ -197,9 +197,9 @@ async fn send_steps(
 }
 
 impl Tabs {
-    /// Hands text `message` to `socket`, as its mock would; whether it
-    /// was still there to take it (if not, it is forgotten).
-    pub(crate) async fn ws_deliver(&self, socket: &Socket, message: &str) -> bool {
+    /// Hands `message` (text, or binary) to `socket`, as its mock would;
+    /// whether it was still there to take it (if not, it is forgotten).
+    pub(crate) async fn ws_deliver(&self, socket: &Socket, message: &mock::WsFrame) -> bool {
         let session = self
             .shared
             .lock()
@@ -208,8 +208,8 @@ impl Tabs {
             .map(|t| t.session.clone());
         let known = match session {
             Some(session) => {
-                let text = json!({ "id": socket.id, "text": message });
-                deliver(&session, socket.context, &text).await
+                let message = frame_json(socket.id, message);
+                deliver(&session, socket.context, &message).await
             }
             None => false,
         };

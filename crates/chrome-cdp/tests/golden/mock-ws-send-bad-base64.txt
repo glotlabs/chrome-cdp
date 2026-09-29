@@ -1,0 +1,11 @@
+$ chrome-cdp mock ws send '/mock/ws/**' 'not base64!' --base64
+exit: 2
+--- stderr
+error: mock ws send --base64: the message is not base64 (Invalid symbol 32, offset 3.)
+  hint: e.g. mock ws send '/ws/**' AQID --base64
+
+$ chrome-cdp mock ws send '/mock/ws/**' 'not base64!' --base64 --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"mock ws send --base64: the message is not base64 (Invalid symbol 32, offset 3.)","hint":"e.g. mock ws send '/ws/**' AQID --base64"}}
+

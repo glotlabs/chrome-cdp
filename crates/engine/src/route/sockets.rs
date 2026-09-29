@@ -319,7 +319,12 @@ impl Table {
 
 /// The JSON a delivery hands the shim.
 pub(crate) fn frame_message(id: u64, step: &WsStep) -> Value {
-    match &step.frame {
+    frame_json(id, &step.frame)
+}
+
+/// The JSON that hands `frame` to socket `id`.
+pub(crate) fn frame_json(id: u64, frame: &mock::WsFrame) -> Value {
+    match frame {
         mock::WsFrame::Text(text) => serde_json::json!({ "id": id, "text": text }),
         mock::WsFrame::Binary(base64) => serde_json::json!({ "id": id, "base64": base64 }),
         mock::WsFrame::Close { code, reason } => {

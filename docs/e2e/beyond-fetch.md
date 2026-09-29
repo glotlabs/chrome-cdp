@@ -43,8 +43,9 @@ on_message = [
 - A binary message the page sends (an `ArrayBuffer`, a typed array or a
   `Blob`) fits only rules without `match`, and its `{{body}}` is its
   base64. The page gets binary messages as its `binaryType` says.
-- A scenario pushes a message with `mock ws send`, which waits (up to
-  `--timeout`) for a matching socket to open:
+- A scenario pushes a message with `mock ws send` (a binary one with
+  `--base64`), which waits (up to `--timeout`) for a matching socket to
+  open:
 
   ```
   mock ws send '/ws/**' '{"type":"price","value":43}'
@@ -93,8 +94,7 @@ what it gets (a mock, a failure, or the real thing, which it then wraps),
 so real sockets take one more round trip to start. `mock off` gives
 sockets opened later the browser's own classes back.
 
-Limits: `mock ws send` only sends text, and only reaches sockets a
-`[[websocket]]` answers.
+Limits: `mock ws send` only reaches sockets a `[[websocket]]` answers.
 
 ## `mock serve`: the mocks as an HTTP server
 

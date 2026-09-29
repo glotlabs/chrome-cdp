@@ -11,6 +11,7 @@
 
 use std::fmt::Write as _;
 
+use base64::Engine as _;
 use mock::{MockSet, Mocks, Seed, SocketGlob, StateItem};
 use protocol::schema::{
     MockCollectionInfo, MockExplainData, MockLogData, MockOffData, MockSeedData, MockSetInfo,
@@ -216,6 +217,24 @@ impl Engine {
                 "e.g. mock ws send '/ws/**' '{\"type\":\"ping\"}'",
             ))
         })?;
+        let frame = if req.base64 {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(req.message.trim())
+                .map_err(|e| {
+                    ErrorInfo::new(
+                        ErrorKind::BadArgs,
+                        format!("mock ws send --base64: the message is not base64 ({e})"),
+                    )
+                    .hint(Hint::text("e.g. mock ws send '/ws/**' AQID --base64"))
+                })?;
+            (
+                bytes.len(),
+                mock::WsFrame::Binary(req.message.trim().to_owned()),
+            )
+        } else {
+            (req.message.len(), mock::WsFrame::Text(req.message.clone()))
+        };
+        let (size, frame) = frame;
         let scope = self.context_key()?;
         let running = match &*self.lock_state() {
             State::Running(running) => Some(running.clone()),
@@ -239,7 +258,7 @@ impl Engine {
                 .filter(|s| glob.matches(&s.url))
                 .collect();
             for socket in sockets {
-                if running.tabs.ws_deliver(&socket, &req.message).await {
+                if running.tabs.ws_deliver(&socket, &frame).await {
                     sent.push(MockSocketInfo {
                         tab: socket.tab.map(crate::tabs::tab_name),
                         url: socket.url.clone(),
@@ -255,10 +274,10 @@ impl Engine {
         if sent.is_empty() {
             return Err(self.no_socket(scope.as_deref(), &req));
         }
-        let size = req.message.len();
         let mut text = format!(
-            "sent {} to {} {}:",
+            "sent {}{} to {} {}:",
             protocol::format::size(size as u64),
+            if req.base64 { " (binary)" } else { "" },
             sent.len(),
             if sent.len() == 1 { "socket" } else { "sockets" }
         );

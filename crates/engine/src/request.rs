@@ -1235,6 +1235,9 @@ pub struct MockWsSendRequest {
     /// `*`, a path glob or a full-URL glob.
     pub url: String,
     pub message: String,
+    /// `--base64`: `message` is base64, sent as a binary message.
+    #[serde(default)]
+    pub base64: bool,
     pub max_chars: usize,
     pub timeout_ms: u64,
 }

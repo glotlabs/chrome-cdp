@@ -458,6 +458,7 @@ command chrome-cdp mock ws
 command chrome-cdp mock ws send
   arg URL required
   arg MESSAGE required
+  flag --base64
   flag --max-chars value=N
 command chrome-cdp http
   arg METHOD required

@@ -36,7 +36,7 @@ mod mocking;
 mod sockets;
 
 pub(crate) use mocking::unknown_state;
-pub(crate) use sockets::{Socket, SseReply, Tag, WsReply, frame_message};
+pub(crate) use sockets::{Socket, SseReply, Tag, WsReply, frame_json, frame_message};
 
 use std::collections::VecDeque;
 use std::fmt::Write as _;

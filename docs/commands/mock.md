@@ -441,19 +441,21 @@ Arguments:
 
 Options:
 
+- `--base64`: MESSAGE is base64: send its bytes as a binary message
 - `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
 
 ```text
-Hands MESSAGE, as it is, to every open socket of the context whose URL the
-glob matches (a path glob such as /ws/**, a full-URL glob, or * for all),
-as if the fake server sent it. Waits (up to --timeout) for such a socket
-to open. Only sockets a [[websocket]] mock answers can be sent to: the
-page's `WebSocket` talks to the mocks after `mock use`, in documents
-loaded since.
+Hands MESSAGE, as it is (with --base64, its bytes as a binary message), to
+every open socket of the context whose URL the glob matches (a path glob
+such as /ws/**, a full-URL glob, or * for all), as if the fake server sent
+it. Waits (up to --timeout) for such a socket to open. Only sockets a
+[[websocket]] mock answers can be sent to: the page's and its workers'
+`WebSocket`s talk to the mocks after `mock use`.
 
 Examples:
   chrome-cdp mock ws send '/ws/**' '{"type":"price","value":42}'
   chrome-cdp mock ws send '*' hello
+  chrome-cdp mock ws send /ws/feed AQID --base64    # a binary message: bytes 1, 2, 3
   echo '{"type":"bye"}' | chrome-cdp mock ws send /ws/prices -
 ```
 

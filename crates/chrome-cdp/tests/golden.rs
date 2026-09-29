@@ -1449,6 +1449,25 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAfter(LIVE),
     },
     Case {
+        name: "mock-ws-send-binary",
+        args: &["mock", "ws", "send", "/mock/ws/**", "AQID", "--base64"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(LIVE),
+    },
+    Case {
+        name: "mock-ws-send-bad-base64",
+        args: &[
+            "mock",
+            "ws",
+            "send",
+            "/mock/ws/**",
+            "not base64!",
+            "--base64",
+        ],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(LIVE),
+    },
+    Case {
         name: "mock-ws-send-none",
         args: &["mock", "ws", "send", "/nope/**", "hi", "--timeout", "200ms"],
         modes: ERR,

@@ -830,6 +830,7 @@ fn ws_send(args: &MockWsSendArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
     let request = MockWsSendRequest {
         url: args.url.clone(),
         message,
+        base64: args.base64,
         max_chars: args.max_chars,
         timeout_ms: session::timeout_ms(global),
     };
