@@ -186,6 +186,11 @@ on the untouched task and passes after the task's known solution (a
 verifier shows up before a paid run. It needs no API access and is safe to
 run anywhere.
 
+In CI, the `Agent benchmark` workflow (`.github/workflows/bench-agent.yml`)
+runs it by hand only (`workflow_dispatch`, with the `ANTHROPIC_API_KEY`
+secret): it checks the tasks, runs the benchmark, and uploads the logs and
+the updated page.
+
 Each run's log is kept under `target/bench/agent/<time>/`: Claude Code's
 JSON result, its stderr, and `episodes.jsonl` with every check's outcome.
 Only a full run (every task, both arms) is published here.

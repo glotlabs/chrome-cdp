@@ -1,0 +1,58 @@
+name: Agent benchmark
+
+# Plan 10, milestone 10.4: Claude Code on the tasks of bench/agent/tasks,
+# with only chrome-cdp skill and with only Playwright MCP. It spends API
+# credit (needs the ANTHROPIC_API_KEY secret), so it only runs by hand.
+# A throwaway runner suits it: the agents run with permissions skipped.
+# Every run checks the tasks first (`--check`, no agent).
+
+on:
+  workflow_dispatch:
+    inputs:
+      reps:
+        description: Runs per task and arm
+        default: "5"
+      args:
+        description: More arguments for `bench agent` (e.g. --task login --arm chrome-cdp)
+        default: ""
+      model:
+        description: Claude Code's --model (empty for its default)
+        default: ""
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 720
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: bench/playwright
+      - run: npm install --global @anthropic-ai/claude-code
+      - name: Chrome stable
+        run: cargo xtask chrome stable --with-deps
+      - run: cargo xtask bench agent -- --check
+      - name: Run the benchmark
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REPS: ${{ inputs.reps }}
+          ARGS: ${{ inputs.args }}
+          MODEL: ${{ inputs.model }}
+        run: |
+          # shellcheck disable=SC2086 # ARGS is a list of arguments
+          cargo xtask bench agent -- --reps "$REPS" ${MODEL:+--model "$MODEL"} $ARGS
+          cat target/bench/agent/*/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: agent-benchmark
+          path: |
+            target/bench/agent/
+            docs/benchmarks.md
