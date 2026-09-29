@@ -91,6 +91,12 @@ impl Engine {
                     .map_err(|e| from_cdp(&e, &self.session))?;
             }
         }
+        let mut warnings = Vec::new();
+        if let Some(running) = self.running_now() {
+            warnings = self
+                .worker_warnings(&running, scope, &req.change, &before, timeout)
+                .await;
+        }
         let default_viewport = self.default_viewport();
         let text = describe_change(&req.change, &after, default_viewport.as_ref());
         let data = EmulateData {
@@ -98,7 +104,88 @@ impl Engine {
             default_viewport,
             devices: None,
         };
-        Ok(Output::typed(&data, text))
+        Ok(warnings
+            .into_iter()
+            .fold(Output::typed(&data, text), Output::warning))
+    }
+
+    /// What a change did not do in the workers of `scope`: a time zone or
+    /// locale one kept (Chrome sets them per renderer; the page's is the
+    /// one to match), or the frozen clock reaching running workers late.
+    async fn worker_warnings(
+        &self,
+        running: &Running,
+        scope: Option<&str>,
+        change: &EmulationChange,
+        before: &Emulation,
+        timeout: std::time::Duration,
+    ) -> Vec<String> {
+        let (what, expression) = match change {
+            EmulationChange::Timezone { .. } => (
+                "time zone",
+                "Intl.DateTimeFormat().resolvedOptions().timeZone",
+            ),
+            EmulationChange::Locale { .. } => ("locale", "navigator.language"),
+            EmulationChange::TimeFreeze { .. } if before.time.is_none() => {
+                let workers = running.tabs.in_workers(scope, "0", timeout).await.len();
+                if workers == 0 {
+                    return Vec::new();
+                }
+                return vec![format!(
+                    "{} already running got the frozen clock late: timers set there before \
+                     keep real time",
+                    if workers == 1 {
+                        "1 worker".to_owned()
+                    } else {
+                        format!("{workers} workers")
+                    }
+                )];
+            }
+            _ => return Vec::new(),
+        };
+        let workers = running.tabs.in_workers(scope, expression, timeout).await;
+        if workers.is_empty() {
+            return Vec::new();
+        }
+        let Some(page) = self
+            .value_in_page(running, scope, expression, timeout)
+            .await
+        else {
+            return Vec::new();
+        };
+        workers
+            .into_iter()
+            .filter(|(_, value)| *value != page)
+            .map(|(worker, value)| {
+                let value = value
+                    .as_str()
+                    .map_or_else(|| value.to_string(), str::to_owned);
+                format!(
+                    "the {} {} kept the {what} {value}",
+                    worker.kind.as_str(),
+                    worker.url
+                )
+            })
+            .collect()
+    }
+
+    /// `expression`'s value in the active tab of `scope`, if it has one.
+    async fn value_in_page(
+        &self,
+        running: &Running,
+        scope: Option<&str>,
+        expression: &str,
+        timeout: std::time::Duration,
+    ) -> Option<serde_json::Value> {
+        let page = match scope {
+            Some(scope) => running.tabs.page_in(scope, None, timeout).await,
+            None => running.tabs.page(None, timeout).await,
+        }
+        .ok()?;
+        let mut params = runtime::EvaluateParams::new(expression.to_owned());
+        params.return_by_value = Some(true);
+        let result = page.session.with_timeout(timeout).call(params).await.ok()?;
+        result.result.value
     }
 
     /// Whether `expression` is true in the active tab; `true` when it

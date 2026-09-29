@@ -177,6 +177,16 @@ pub(crate) fn clock_script(at: Option<i64>) -> String {
     format!("{}({at});", include_str!("clock.js").trim_end())
 }
 
+/// The script that makes a worker's `navigator.userAgent` `agent`, or
+/// with `None` gives it the browser's back.
+pub(crate) fn agent_script(agent: Option<&str>) -> String {
+    let agent = agent.map_or_else(
+        || "null".to_owned(),
+        |a| serde_json::Value::String(a.to_owned()).to_string(),
+    );
+    format!("{}({agent});", include_str!("agent.js").trim_end())
+}
+
 /// What a change touches, so only those calls are sent.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct Aspects {

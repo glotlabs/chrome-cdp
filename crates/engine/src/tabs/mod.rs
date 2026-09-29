@@ -56,7 +56,8 @@ use std::time::Duration;
 
 use cdp::domains::{browser, page, runtime, security, target};
 use cdp::{Connection, Event as _, LosslessEventStream, RawEvent, Session};
-use protocol::schema::{Event, TabInfo, Viewport};
+use futures_util::future::join_all;
+use protocol::schema::{Event, TabInfo, Viewport, Worker};
 
 use self::dialogs::OpenDialog;
 use self::downloads::Download;
@@ -525,9 +526,34 @@ impl Tabs {
         fetch::apply(&self.shared, timeout, force).await;
     }
 
-    /// Sends a change of the session's emulation (`aspects`) to every page
-    /// and iframe session (new ones get it during [`setup`]). Returns the
-    /// errors Chrome gave.
+    /// The value of `expression` in each worker of `scope` (that has
+    /// one: a worker that closed meanwhile has none).
+    pub(crate) async fn in_workers(
+        &self,
+        scope: Option<&str>,
+        expression: &str,
+        timeout: Duration,
+    ) -> Vec<(Worker, serde_json::Value)> {
+        let workers: Vec<(Worker, Session)> = self
+            .shared
+            .lock()
+            .targets
+            .values()
+            .filter(|t| t.scope.as_deref() == scope)
+            .filter_map(|t| Some((t.worker()?, t.session.with_timeout(timeout))))
+            .collect();
+        let values = workers.into_iter().map(|(worker, session)| async move {
+            let mut params = runtime::EvaluateParams::new(expression.to_owned());
+            params.return_by_value = Some(true);
+            let value = session.call(params).await.ok()?.result.value?;
+            Some((worker, value))
+        });
+        join_all(values).await.into_iter().flatten().collect()
+    }
+
+    /// Sends a change of the session's emulation (`aspects`) to every page,
+    /// iframe and worker session (new ones get it during [`setup`]).
+    /// Returns the errors Chrome gave.
     pub(crate) async fn apply_emulation(
         &self,
         aspects: Aspects,

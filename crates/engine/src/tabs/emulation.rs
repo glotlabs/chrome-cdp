@@ -1,5 +1,5 @@
-//! Emulation in page and iframe sessions (plan 07, milestone 7.2; the
-//! settings are [`crate::emulate`]'s).
+//! Emulation in page, iframe and worker sessions (plan 07, milestone 7.2;
+//! workers since plan 13.3; the settings are [`crate::emulate`]'s).
 //!
 //! A new session gets every setting that is on during its setup, while it
 //! is paused ([`setup_steps`]); a change is sent to every session there is
@@ -7,6 +7,14 @@
 //! out-of-process iframe follows its page's); the rest is sent to iframe
 //! sessions too, since each renderer has its own. The frozen clock is an
 //! init script, and each session remembers its id to replace it.
+//!
+//! A worker gets what means something there (see "Decisions log", plan
+//! 13.3): the user agent (its requests', and `navigator.userAgent`
+//! through [`agent_script`], which Chrome leaves alone), the locale, the
+//! time zone, offline and throttling (not in a dedicated worker, whose
+//! requests are its frame's), and the frozen clock, run with
+//! `Runtime.evaluate` (before its own script in a new worker, late in a
+//! running one).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -19,20 +27,20 @@ use cdp::domains::emulation::{
     SetLocaleOverrideParams, SetTimezoneOverrideParams, SetTouchEmulationEnabledParams,
     SetUserAgentOverrideParams,
 };
-use cdp::domains::{browser, network, page};
+use cdp::domains::{browser, network, page, runtime};
 use futures_util::future::join_all;
 use protocol::schema::{Emulation, Viewport};
 
 use super::features::Feature;
 use super::targets::TargetKind;
 use super::{Shared, Step, lock, step};
-use crate::emulate::{Aspects, clock_script};
+use crate::emulate::{Aspects, agent_script, clock_script};
 
-/// The setup steps of a new page (`main`) or iframe session.
+/// The setup steps of a new page, iframe or worker session (of `kind`).
 pub(super) fn setup_steps(
     shared: &Arc<Shared>,
     session: &Session,
-    main: bool,
+    kind: TargetKind,
     steps: &mut Vec<(&str, Step)>,
 ) {
     let scope = session.id().and_then(|id| {
@@ -44,8 +52,15 @@ pub(super) fn setup_steps(
     let state = shared.settings.emulation.get_in(scope.as_deref());
     let default = shared.default_viewport.as_ref();
     let aspects = Aspects::set(&state, default.is_some());
-    steps.extend(calls(&state, default, aspects, main, session));
-    if let Some(time) = &state.time {
+    steps.extend(calls(&state, default, aspects, kind, session));
+    if let Some(time) = &state.time
+        && kind.worker().is_some()
+    {
+        steps.push((
+            "the frozen clock",
+            evaluate(session, clock_script(Some(time.epoch_ms))),
+        ));
+    } else if let Some(time) = &state.time {
         let shared = shared.clone();
         let add = add_clock(session, Some(time.epoch_ms));
         let session_id = session.id().unwrap_or_default().to_owned();
@@ -72,22 +87,22 @@ pub(super) async fn apply(
 ) -> Vec<String> {
     let state = shared.settings.emulation.get_in(scope);
     let default = shared.default_viewport.as_ref();
-    let hosts: Vec<(String, Session, bool, Option<String>)> = lock(&shared.state)
+    let targets: Vec<(String, Session, TargetKind, Option<String>)> = lock(&shared.state)
         .applies(Feature::Emulation)
         .filter(|(_, t)| t.scope.as_deref() == scope)
         .map(|(id, t)| {
             (
                 id.clone(),
                 t.session.with_timeout(timeout),
-                t.kind == TargetKind::Page,
+                t.kind,
                 t.clock.clone(),
             )
         })
         .collect();
     let mut calls_sent: Vec<Step> = Vec::new();
-    for (_, session, main, _) in &hosts {
+    for (_, session, kind, _) in &targets {
         calls_sent.extend(
-            calls(&state, default, aspects, *main, session)
+            calls(&state, default, aspects, *kind, session)
                 .into_iter()
                 .map(|(_, call)| call),
         );
@@ -100,9 +115,17 @@ pub(super) async fn apply(
         .collect();
     if aspects.clock {
         let at = state.time.as_ref().map(|t| t.epoch_ms);
-        let clocks = hosts.into_iter().map(|(id, session, _, old)| async move {
-            (id, replace_clock(&session, old, at).await)
-        });
+        let clocks = targets
+            .into_iter()
+            .map(|(id, session, kind, old)| async move {
+                if kind.worker().is_some() {
+                    // A worker has no documents to come: the script sets the
+                    // time, or takes the clock out, where it runs.
+                    let set = evaluate(&session, clock_script(at)).await;
+                    return (id, set.map(|()| None));
+                }
+                (id, replace_clock(&session, old, at).await)
+            });
         for (id, result) in join_all(clocks).await {
             match result {
                 Ok(identifier) => {
@@ -161,17 +184,26 @@ fn add_clock(
     async move { Ok(call.await?.identifier) }
 }
 
-/// The calls that bring one session in line with `state` for `aspects`
-/// (the clock aside). Each sends the setting whether on or off.
+/// Runs `source` in `session` (a worker's), for its effect.
+fn evaluate(session: &Session, source: String) -> Step {
+    let mut params = runtime::EvaluateParams::new(source);
+    params.silent = Some(true);
+    step(session.call(params))
+}
+
+/// The calls that bring one session (of `kind`) in line with `state` for
+/// `aspects` (the clock aside). Each sends the setting whether on or off.
 fn calls(
     state: &Emulation,
     default: Option<&Viewport>,
     aspects: Aspects,
-    main: bool,
+    kind: TargetKind,
     session: &Session,
 ) -> Vec<(&'static str, Step)> {
+    let main = kind == TargetKind::Page;
+    let worker = kind.worker().is_some();
     let mut calls: Vec<(&'static str, Step)> = Vec::new();
-    if aspects.viewport {
+    if aspects.viewport && !worker {
         let viewport = state.viewport.as_ref().or(default);
         if main
             && default.is_some()
@@ -207,18 +239,34 @@ fn calls(
             SetUserAgentOverrideParams::new(state.user_agent.clone().unwrap_or_default());
         params.accept_language.clone_from(&state.locale);
         calls.push(("Emulation.setUserAgentOverride", step(session.call(params))));
+        if worker {
+            let agent = agent_script(state.user_agent.as_deref());
+            calls.push(("navigator.userAgent", evaluate(session, agent)));
+        }
     }
     if aspects.locale {
         let params = SetLocaleOverrideParams {
             locale: state.locale.clone(),
         };
-        calls.push(("Emulation.setLocaleOverride", step(session.call(params))));
+        let call = session.call(params);
+        calls.push((
+            "Emulation.setLocaleOverride",
+            Box::pin(async move {
+                match call.await {
+                    // The locale is the renderer's: a worker that runs in
+                    // its page's renderer has it from the page's session
+                    // (`emulate` checks that it took).
+                    Err(e) if worker && e.to_string().contains("Another locale override") => Ok(()),
+                    result => result.map(drop),
+                }
+            }),
+        ));
     }
     if aspects.timezone {
         let params = SetTimezoneOverrideParams::new(state.timezone.clone().unwrap_or_default());
         calls.push(("Emulation.setTimezoneOverride", step(session.call(params))));
     }
-    if aspects.geolocation {
+    if aspects.geolocation && !worker {
         match &state.geolocation {
             Some(geo) => {
                 let params = SetGeolocationOverrideParams {
@@ -238,7 +286,7 @@ fn calls(
             )),
         }
     }
-    if aspects.media {
+    if aspects.media && !worker {
         let media = &state.media;
         let feature = |name: &str, value: &Option<String>| MediaFeature {
             name: name.to_owned(),
@@ -254,7 +302,7 @@ fn calls(
         };
         calls.push(("Emulation.setEmulatedMedia", step(session.call(params))));
     }
-    if aspects.network {
+    if aspects.network && kind != TargetKind::DedicatedWorker {
         let throttle = state.throttle.as_ref();
         let bytes = |kbps: Option<f64>| kbps.map_or(-1.0, |k| k * 1000.0 / 8.0);
         let params = network::EmulateNetworkConditionsParams::new(
@@ -268,7 +316,7 @@ fn calls(
             step(session.call(params)),
         ));
     }
-    if aspects.cpu {
+    if aspects.cpu && !worker {
         let params = SetCpuThrottlingRateParams::new(state.cpu_throttle.unwrap_or(1.0));
         calls.push(("Emulation.setCPUThrottlingRate", step(session.call(params))));
     }

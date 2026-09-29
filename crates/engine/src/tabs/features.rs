@@ -44,7 +44,8 @@ pub(crate) enum Feature {
     /// [`fetch`]).
     Fetch,
     /// Devices, viewport, locale, the frozen clock, … (see
-    /// [`emulation`]).
+    /// [`emulation`]); workers get the user agent, locale, time zone and
+    /// clock.
     Emulation,
 }
 
@@ -86,7 +87,11 @@ impl Feature {
         match self {
             // A worker's console and requests go to its tabs' logs; it
             // gets the mock shim.
-            Self::Runtime | Self::Network | Self::Inject => KindSet::HOSTS_AND_WORKERS,
+            // Emulation: what means something in a worker (see
+            // `emulation`).
+            Self::Runtime | Self::Network | Self::Inject | Self::Emulation => {
+                KindSet::HOSTS_AND_WORKERS
+            }
             // Chrome has no `Fetch` in a dedicated worker: its requests
             // are paused in the session of the frame that started it.
             Self::Fetch => KindSet::of(&[
@@ -95,7 +100,7 @@ impl Feature {
                 TargetKind::SharedWorker,
                 TargetKind::ServiceWorker,
             ]),
-            Self::Base | Self::World | Self::Emulation => KindSet::HOSTS,
+            Self::Base | Self::World => KindSet::HOSTS,
         }
     }
 
@@ -143,14 +148,11 @@ impl Feature {
             Self::Network => network_steps(shared, session, steps),
             Self::World => world_steps(shared, target, steps),
             // `init-script` and `expose` (see `inject`).
-            Self::Inject => inject::setup_steps(shared, session, steps),
+            Self::Inject => inject::setup_steps(shared, session, target.kind, steps),
             // Routes and HTTP authentication (see `fetch`).
             Self::Fetch => fetch::setup_steps(shared, session, target.kind, steps),
             // Devices, viewport, locale, … (see `emulation`).
-            Self::Emulation => {
-                let main = target.kind == TargetKind::Page;
-                emulation::setup_steps(shared, session, main, steps);
-            }
+            Self::Emulation => emulation::setup_steps(shared, session, target.kind, steps),
         }
     }
 }
@@ -282,7 +284,7 @@ mod tests {
                 "world     xx....",
                 "inject    xxxxx.",
                 "fetch     xx.xx.",
-                "emulation xx....",
+                "emulation xxxxx.",
             ]
         );
     }

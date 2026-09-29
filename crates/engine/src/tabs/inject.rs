@@ -19,7 +19,9 @@
 //! A worker has no `Page` domain and no documents to come: its items run
 //! once with `Runtime.evaluate`. A new worker gets them while paused,
 //! before its own script (see `super::setup`); one that runs already gets
-//! them late.
+//! the mock shim late, and an init script late only with `--now` (as a
+//! document that exists does). Taking an init script away cannot undo
+//! what it did in a running worker, as in a document.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -29,6 +31,7 @@ use cdp::domains::{page, runtime};
 use futures_util::future::join_all;
 
 use super::features::Feature;
+use super::targets::TargetKind;
 use super::{Shared, Step};
 use crate::frames::WORLD_NAME;
 use crate::inject::{
@@ -37,9 +40,16 @@ use crate::inject::{
 use crate::request::EvalWorld;
 
 /// The setup steps of a new page, iframe or worker session.
-pub(super) fn setup_steps(shared: &Arc<Shared>, session: &Session, steps: &mut Vec<(&str, Step)>) {
+pub(super) fn setup_steps(
+    shared: &Arc<Shared>,
+    session: &Session,
+    kind: TargetKind,
+    steps: &mut Vec<(&str, Step)>,
+) {
     let session_id = session.id().unwrap_or_default().to_owned();
-    for call in sync(shared, &session_id, session, false) {
+    // A new worker is paused: what runs now runs before its own script.
+    let now = kind.worker().is_some();
+    for call in sync(shared, &session_id, session, now) {
         steps.push(("an init script or exposed function", call));
     }
 }
@@ -112,7 +122,7 @@ fn sync(shared: &Arc<Shared>, session_id: &str, session: &Session, now: bool) ->
         }
         host.injected.insert(key.clone(), None);
         calls.push(if worker {
-            add_to_worker(shared, session_id, session, key, &what)
+            add_to_worker(shared, session_id, session, key, &what, now)
         } else {
             add(shared, session_id, session, key, &what, now)
         });
@@ -122,29 +132,41 @@ fn sync(shared: &Arc<Shared>, session_id: &str, session: &Session, now: bool) ->
 
 /// Sends the calls that add `what` (one of [`Wanted::in_workers`]) to
 /// worker `session`; the step records it as added (it has no script id).
+/// An init script runs only with `now` (a new, paused worker, or
+/// `--now`).
 fn add_to_worker(
     shared: &Arc<Shared>,
     session_id: &str,
     session: &Session,
     key: Key,
     what: &Wanted,
+    now: bool,
 ) -> Step {
     let (binding, source) = match what {
-        Wanted::MockShim => (MOCK_BINDING, mock_shim()),
-        Wanted::Script(_) | Wanted::Binding(_) | Wanted::SeedBinding => {
+        Wanted::MockShim => (Some(MOCK_BINDING), Some(mock_shim())),
+        Wanted::Script(script) => (None, now.then(|| script.source.clone())),
+        Wanted::Binding(_) | Wanted::SeedBinding => {
             return Box::pin(async { Ok(()) });
         }
     };
-    let binding = session.call(runtime::AddBindingParams::new(binding.to_owned()));
-    let mut params = runtime::EvaluateParams::new(source);
-    params.silent = Some(true);
-    let script = session.call(params);
+    let binding = binding.map(|name| session.call(runtime::AddBindingParams::new(name.to_owned())));
+    let script = source.map(|source| {
+        let mut params = runtime::EvaluateParams::new(source);
+        params.silent = Some(true);
+        session.call(params)
+    });
     let shared = shared.clone();
     let session = session.clone();
     let session_id = session_id.to_owned();
     Box::pin(async move {
-        binding.await?;
-        script.await?;
+        if let Some(binding) = binding {
+            binding.await?;
+        }
+        if let Some(script) = script {
+            // An init script that throws (it expects a document) is its
+            // own business, as in a page.
+            script.await?;
+        }
         let kept = {
             let mut state = shared.lock();
             match state

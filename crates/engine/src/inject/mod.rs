@@ -131,9 +131,16 @@ pub(crate) enum Wanted {
 
 impl Wanted {
     /// Whether workers get it too, not only pages and iframes: the mock
-    /// shim does (a worker's sockets are mocked like a page's).
+    /// shim does (a worker's sockets are mocked like a page's), and so do
+    /// init scripts of the page's world (plan 13.3: the test runner's
+    /// seeded `Math.random` and frozen clock reach workers that way). A
+    /// worker has no isolated world, and no exposed functions yet.
     pub(crate) fn in_workers(&self) -> bool {
-        matches!(self, Self::MockShim)
+        match self {
+            Self::MockShim => true,
+            Self::Script(script) => script.world == EvalWorld::Main,
+            Self::Binding(_) | Self::SeedBinding => false,
+        }
     }
 }
 
