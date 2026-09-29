@@ -1,0 +1,11 @@
+$ chrome-cdp upload '#inert' <files>/hello.txt --drop
+exit: 1
+--- stderr
+error: e1 region "Not a drop zone" took no drop: the page did not accept files dropped there
+  hint: chrome-cdp upload 'css=input[type=file]' <file>   (the page's file input, even a hidden one)
+
+$ chrome-cdp upload '#inert' <files>/hello.txt --drop --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotEnabled","message":"e1 region \"Not a drop zone\" took no drop: the page did not accept files dropped there","hint":"chrome-cdp upload 'css=input[type=file]' <file>   (the page's file input, even a hidden one)","details":{"check":"drop","locator":"#inert"}}}
+

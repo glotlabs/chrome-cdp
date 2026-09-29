@@ -8,7 +8,7 @@ warning: the input accepts image/*; the page may refuse hello.txt
 $ chrome-cdp upload '#avatar' <files>/hello.txt --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"chooser":false,"element":{"name":"Avatar","ref":"e1","role":"button","tag":"input"},"files":[{"name":"hello.txt","path":"<files>/hello.txt","size":6}],"locator":"#avatar","tab":"t1"},"warnings":["the input accepts image/*; the page may refuse hello.txt"]}
+{"ok":true,"data":{"chooser":false,"drop":false,"element":{"name":"Avatar","ref":"e1","role":"button","tag":"input"},"files":[{"name":"hello.txt","path":"<files>/hello.txt","size":6}],"locator":"#avatar","tab":"t1"},"warnings":["the input accepts image/*; the page may refuse hello.txt"]}
 
 $ chrome-cdp upload '#avatar' <files>/hello.txt -q
 exit: 0

@@ -1,0 +1,15 @@
+$ chrome-cdp upload '#zone' <files>/hello.txt <files>/notes.md --drop
+exit: 0
+--- stdout
+dropped 2 files on e1 region "Drop files here": hello.txt (6B), notes.md (31B)
+
+$ chrome-cdp upload '#zone' <files>/hello.txt <files>/notes.md --drop --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"chooser":false,"drop":true,"element":{"name":"Drop files here","ref":"e1","role":"region","tag":"div"},"files":[{"name":"hello.txt","path":"<files>/hello.txt","size":6},{"name":"notes.md","path":"<files>/notes.md","size":31}],"locator":"#zone","tab":"t1"}}
+
+$ chrome-cdp upload '#zone' <files>/hello.txt <files>/notes.md --drop -q
+exit: 0
+--- stdout
+e1
+

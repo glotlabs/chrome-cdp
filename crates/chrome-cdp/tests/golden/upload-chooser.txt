@@ -6,7 +6,7 @@ uploaded 2 files through the file chooser of e1 button "Choose files": hello.txt
 $ chrome-cdp upload '#choose' <files>/hello.txt <files>/notes.md --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"chooser":true,"element":{"name":"Choose files","ref":"e1","role":"button","tag":"button"},"files":[{"name":"hello.txt","path":"<files>/hello.txt","size":6},{"name":"notes.md","path":"<files>/notes.md","size":31}],"locator":"#choose","tab":"t1"}}
+{"ok":true,"data":{"chooser":true,"drop":false,"element":{"name":"Choose files","ref":"e1","role":"button","tag":"button"},"files":[{"name":"hello.txt","path":"<files>/hello.txt","size":6},{"name":"notes.md","path":"<files>/notes.md","size":31}],"locator":"#choose","tab":"t1"}}
 
 $ chrome-cdp upload '#choose' <files>/hello.txt <files>/notes.md -q
 exit: 0

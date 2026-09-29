@@ -2198,6 +2198,24 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/actions/files.html"),
     },
     Case {
+        name: "upload-drop",
+        args: &[
+            "upload",
+            "#zone",
+            "{files}/hello.txt",
+            "{files}/notes.md",
+            "--drop",
+        ],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/actions/drop.html"),
+    },
+    Case {
+        name: "upload-drop-refused",
+        args: &["upload", "#inert", "{files}/hello.txt", "--drop"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/actions/drop.html"),
+    },
+    Case {
         name: "upload-missing-file",
         args: &["upload", "#avatar", "{files}/missing.txt"],
         modes: ERR,

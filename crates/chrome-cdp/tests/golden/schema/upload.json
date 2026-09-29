@@ -7,6 +7,11 @@
           "description": "Whether the files went through a file chooser that clicking\n`element` opened (else straight into the input).",
           "type": "boolean"
         },
+        "drop": {
+          "default": false,
+          "description": "Whether the files were dropped on `element` (`--drop`), as a user\ndrags them from the desktop, instead of going into a file input.",
+          "type": "boolean"
+        },
         "element": {
           "$ref": "#/$defs/ActedElement",
           "description": "The file input, or what was clicked to open a file chooser."
