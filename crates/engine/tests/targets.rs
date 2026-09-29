@@ -158,14 +158,7 @@ const ROWS: &[Row] = &[
     Row {
         feature: "mocked WebSocket",
         probe: Probe::MockWebSocket,
-        cells: [
-            Check,
-            Check,
-            Check,
-            Todo("13.2"),
-            Todo("13.2"),
-            Todo("13.2"),
-        ],
+        cells: [Check, Check, Check, Check, Check, Check],
     },
     Row {
         feature: "init-script",
@@ -650,6 +643,36 @@ async fn every_feature_in_every_target() {
     eprintln!("{table}\n{}\n{todo} cells to do", reasons.join("\n"));
     engine.close().await;
     assert!(failed.is_empty(), "{}", failed.join("\n"));
+}
+
+/// A dedicated or shared worker started while mock sets are in use has
+/// the mock shim before its own script runs: a socket it opens first
+/// thing is mocked.
+#[tokio::test]
+async fn a_new_worker_has_the_mock_shim_first() {
+    let Some(path) = chrome_path() else { return };
+    let engine = matrix(&path, "engine-targets-shim").await;
+    let (dedicated, shared) = with_mocks(&engine, async || {
+        let dedicated = eval(
+            &engine,
+            "new Promise((resolve) => { \
+               const w = new Worker('/targets/ws-first.js'); \
+               w.onmessage = (e) => resolve(e.data); })",
+        )
+        .await;
+        let shared = eval(
+            &engine,
+            "new Promise((resolve) => { \
+               const w = new SharedWorker('/targets/ws-first.js'); \
+               w.port.onmessage = (e) => resolve(e.data); })",
+        )
+        .await;
+        (dedicated, shared)
+    })
+    .await;
+    assert_eq!(dedicated, json!("hello"));
+    assert_eq!(shared, json!("hello"));
+    engine.close().await;
 }
 
 /// The matrix page loads with every target attached (Chrome says so)

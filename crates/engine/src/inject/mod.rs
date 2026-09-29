@@ -129,6 +129,14 @@ pub(crate) enum Wanted {
     MockShim,
 }
 
+impl Wanted {
+    /// Whether workers get it too, not only pages and iframes: the mock
+    /// shim does (a worker's sockets are mocked like a page's).
+    pub(crate) fn in_workers(&self) -> bool {
+        matches!(self, Self::MockShim)
+    }
+}
+
 fn lock(m: &Mutex<Table>) -> MutexGuard<'_, Table> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
 }

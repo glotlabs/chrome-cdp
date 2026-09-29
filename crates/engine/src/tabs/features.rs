@@ -38,7 +38,7 @@ pub(crate) enum Feature {
     /// observer.
     World,
     /// Init scripts, exposed functions, storage seeds and the mock shim
-    /// (see [`inject`]).
+    /// (see [`inject`]); workers get the mock shim.
     Inject,
     /// Routes, mocks and HTTP authentication, in frames and workers (see
     /// [`fetch`]).
@@ -90,8 +90,9 @@ impl Feature {
                 TargetKind::Iframe,
                 TargetKind::DedicatedWorker,
             ]),
-            // A worker's requests go to its tabs' network logs.
-            Self::Network => KindSet::HOSTS_AND_WORKERS,
+            // A worker's requests go to its tabs' network logs; it gets
+            // the mock shim.
+            Self::Network | Self::Inject => KindSet::HOSTS_AND_WORKERS,
             // Chrome has no `Fetch` in a dedicated worker: its requests
             // are paused in the session of the frame that started it.
             Self::Fetch => KindSet::of(&[
@@ -100,7 +101,7 @@ impl Feature {
                 TargetKind::SharedWorker,
                 TargetKind::ServiceWorker,
             ]),
-            Self::Base | Self::World | Self::Inject | Self::Emulation => KindSet::HOSTS,
+            Self::Base | Self::World | Self::Emulation => KindSet::HOSTS,
         }
     }
 
@@ -285,7 +286,7 @@ mod tests {
                 "runtime   xxx...",
                 "network   xxxxx.",
                 "world     xx....",
-                "inject    xx....",
+                "inject    xxxxx.",
                 "fetch     xx.xx.",
                 "emulation xx....",
             ]

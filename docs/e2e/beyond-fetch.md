@@ -81,14 +81,15 @@ Chrome's request interception sees neither WebSocket traffic nor a stream
 it could answer bit by bit. So while a context has mock sets, chrome-cdp
 replaces the page's `WebSocket` and `EventSource` with stand-ins, in every
 document loaded (or reloaded) after `mock use`, and in the documents
-already open for sockets they open later. Each stand-in asks the daemon
+already open for sockets they open later. Its dedicated, shared and
+service workers get them too: a worker started later before its own
+script runs, one running already for sockets it opens later. Each stand-in asks the daemon
 what it gets (a mock, a failure, or the real thing, which it then wraps),
 so real sockets take one more round trip to start. `mock off` gives
 sockets opened later the browser's own classes back.
 
-Limits: workers and service workers keep the real classes, binary
-messages the page sends get no answer (rules match text), and
-`mock ws send` only reaches sockets a `[[websocket]]` answers.
+Limits: binary messages the page sends get no answer (rules match
+text), and `mock ws send` only reaches sockets a `[[websocket]]` answers.
 
 ## `mock serve`: the mocks as an HTTP server
 

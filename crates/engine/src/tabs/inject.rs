@@ -1,5 +1,7 @@
 //! Init scripts and exposed functions in page and iframe sessions (plan
-//! 07, milestone 7.3; the session's list is [`crate::inject`]'s).
+//! 07, milestone 7.3; the session's list is [`crate::inject`]'s), and the
+//! items workers get too (plan 13.2: the mock shim; see
+//! [`Wanted::in_workers`]).
 //!
 //! Each session records what it was given ([`super::Target::injected`]), by
 //! a key that is never reused, with the script id Chrome gave back. A new
@@ -13,6 +15,11 @@
 //!
 //! Storage seeds (`state load`, milestone 7.4) are isolated-world scripts
 //! like the others, plus one binding in that world they report on.
+//!
+//! A worker has no `Page` domain and no documents to come: its items run
+//! once with `Runtime.evaluate`. A new worker gets them while paused,
+//! before its own script (see `super::setup`); one that runs already gets
+//! them late.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -29,7 +36,7 @@ use crate::inject::{
 };
 use crate::request::EvalWorld;
 
-/// The setup steps of a new page or iframe session.
+/// The setup steps of a new page, iframe or worker session.
 pub(super) fn setup_steps(shared: &Arc<Shared>, session: &Session, steps: &mut Vec<(&str, Step)>) {
     let session_id = session.id().unwrap_or_default().to_owned();
     for call in sync(shared, &session_id, session, false) {
@@ -72,8 +79,15 @@ fn sync(shared: &Arc<Shared>, session_id: &str, session: &Session, now: bool) ->
     let Some(host) = state.targets.get_mut(session_id) else {
         return Vec::new();
     };
+    let worker = host.kind.worker().is_some();
     // Each session gets its own context's items (see `crate::context`).
-    let wanted = shared.settings.injections.wanted(host.scope.as_deref());
+    let wanted: Vec<(Key, Wanted)> = shared
+        .settings
+        .injections
+        .wanted(host.scope.as_deref())
+        .into_iter()
+        .filter(|(_, what)| !worker || what.in_workers())
+        .collect();
     let mut calls = Vec::new();
     let gone: Vec<Key> = host
         .injected
@@ -85,7 +99,11 @@ fn sync(shared: &Arc<Shared>, session_id: &str, session: &Session, now: bool) ->
         let identifier = host.injected.remove(&key).flatten();
         // A script still being added is removed when its id comes.
         if let Some(identifier) = identifier {
-            calls.push(remove(session, &key, identifier));
+            calls.push(if worker {
+                remove_from_worker(session, &key)
+            } else {
+                remove(session, &key, identifier)
+            });
         }
     }
     for (key, what) in wanted {
@@ -93,9 +111,79 @@ fn sync(shared: &Arc<Shared>, session_id: &str, session: &Session, now: bool) ->
             continue;
         }
         host.injected.insert(key.clone(), None);
-        calls.push(add(shared, session_id, session, key, &what, now));
+        calls.push(if worker {
+            add_to_worker(shared, session_id, session, key, &what)
+        } else {
+            add(shared, session_id, session, key, &what, now)
+        });
     }
     calls
+}
+
+/// Sends the calls that add `what` (one of [`Wanted::in_workers`]) to
+/// worker `session`; the step records it as added (it has no script id).
+fn add_to_worker(
+    shared: &Arc<Shared>,
+    session_id: &str,
+    session: &Session,
+    key: Key,
+    what: &Wanted,
+) -> Step {
+    let (binding, source) = match what {
+        Wanted::MockShim => (MOCK_BINDING, mock_shim()),
+        Wanted::Script(_) | Wanted::Binding(_) | Wanted::SeedBinding => {
+            return Box::pin(async { Ok(()) });
+        }
+    };
+    let binding = session.call(runtime::AddBindingParams::new(binding.to_owned()));
+    let mut params = runtime::EvaluateParams::new(source);
+    params.silent = Some(true);
+    let script = session.call(params);
+    let shared = shared.clone();
+    let session = session.clone();
+    let session_id = session_id.to_owned();
+    Box::pin(async move {
+        binding.await?;
+        script.await?;
+        let kept = {
+            let mut state = shared.lock();
+            match state
+                .targets
+                .get_mut(&session_id)
+                .and_then(|t| t.injected.get_mut(&key))
+            {
+                Some(slot) => {
+                    *slot = Some(String::new());
+                    true
+                }
+                None => false,
+            }
+        };
+        if kept {
+            Ok(())
+        } else {
+            // Taken away meanwhile.
+            remove_from_worker(&session, &key).await
+        }
+    })
+}
+
+/// Takes `key` out of worker `session`: sockets it opens later are real
+/// again.
+fn remove_from_worker(session: &Session, key: &Key) -> Step {
+    if !matches!(key, Key::MockShim(_)) {
+        return Box::pin(async { Ok(()) });
+    }
+    let binding = session.call(runtime::RemoveBindingParams::new(MOCK_BINDING.to_owned()));
+    let mut params = runtime::EvaluateParams::new(
+        "globalThis[Symbol.for('chrome-cdp.mock')]?.({ off: true });".to_owned(),
+    );
+    params.silent = Some(true);
+    let off = session.call(params);
+    Box::pin(async move {
+        binding.await?;
+        off.await.map(drop)
+    })
 }
 
 /// Sends the calls that add `what` to `session`; the step records the
