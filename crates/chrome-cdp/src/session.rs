@@ -180,7 +180,7 @@ pub(crate) fn open(args: &OpenArgs, global: &GlobalArgs) -> Result<Output, Error
     let state = args
         .state
         .as_deref()
-        .map(|p| read_state(p, &global.session))
+        .map(|p| read_state(p, global))
         .transpose()?;
     let ctx = Ctx::new(global)?;
     let mut session = ctx.start()?;
@@ -625,7 +625,12 @@ pub(crate) fn tab(args: &TabArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
         None => {
             let Some(id) = &args.id else {
                 return Err(bad_args("tab needs a tab id or a subcommand").hint(
-                    Hint::run(Cmd::new("tabs").session(&global.session)).why("lists the ids"),
+                    Hint::run(
+                        Cmd::new("tabs")
+                            .session(&global.session)
+                            .context(global.context.as_deref()),
+                    )
+                    .why("lists the ids"),
                 ));
             };
             check_tab(Some(id))?;
@@ -1542,7 +1547,7 @@ pub(crate) fn state(args: &StateArgs, global: &GlobalArgs) -> Result<Output, Err
             }),
         ),
         StateCommand::Load(load) => {
-            let mut request = read_state(&load.file, &global.session)?;
+            let mut request = read_state(&load.file, global)?;
             request.timeout_ms = timeout_ms;
             (rpc::STATE_LOAD, json!(request))
         }
@@ -1556,7 +1561,12 @@ pub(crate) fn state(args: &StateArgs, global: &GlobalArgs) -> Result<Output, Err
 
 /// Reads a storage state file (`-`: stdin) into `state load`'s request,
 /// without its timeout.
-fn read_state(path: &Path, session: &str) -> Result<StateLoadRequest, ErrorInfo> {
+fn read_state(path: &Path, global: &GlobalArgs) -> Result<StateLoadRequest, ErrorInfo> {
+    let save = Cmd::new("state")
+        .arg("save")
+        .raw("<file>")
+        .session(&global.session)
+        .context(global.context.as_deref());
     let (text, file) = if path.as_os_str() == "-" {
         (input::text_arg("-", "the storage state")?, None)
     } else {
@@ -1566,10 +1576,7 @@ fn read_state(path: &Path, session: &str) -> Result<StateLoadRequest, ErrorInfo>
                 ErrorKind::BadArgs,
                 format!("cannot read {}: {e}", absolute.display()),
             )
-            .hint(
-                Hint::run(Cmd::new("state").arg("save").raw("<file>").session(session))
-                    .why("writes one"),
-            )
+            .hint(Hint::run(save.clone()).why("writes one"))
         })?;
         (text, Some(absolute))
     };
@@ -1581,10 +1588,7 @@ fn read_state(path: &Path, session: &str) -> Result<StateLoadRequest, ErrorInfo>
             ErrorKind::BadArgs,
             format!("{where_} is not a storage state file: {e}"),
         )
-        .hint(
-            Hint::run(Cmd::new("state").arg("save").raw("<file>").session(session))
-                .why("writes one, as does Playwright's storageState()"),
-        )
+        .hint(Hint::run(save).why("writes one, as does Playwright's storageState()"))
     })?;
     Ok(StateLoadRequest {
         state,

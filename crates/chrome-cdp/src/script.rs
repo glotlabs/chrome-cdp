@@ -38,7 +38,9 @@ pub(crate) fn batch(args: &BatchArgs, global: &GlobalArgs) -> u8 {
         Err(info) => return output::print(mode, Err(info)),
     };
     let base = std::env::current_dir().unwrap_or_default();
-    let usage = Cmd::new("batch").session(&global.session);
+    let usage = Cmd::new("batch")
+        .session(&global.session)
+        .context(global.context.as_deref());
     execute("<stdin>", &src, &base, usage, &args.script, global)
 }
 
@@ -59,7 +61,10 @@ pub(crate) fn run(args: &RunArgs, global: &GlobalArgs) -> u8 {
         .file
         .parent()
         .map_or_else(PathBuf::new, Path::to_path_buf);
-    let usage = Cmd::new("run").arg(&name).session(&global.session);
+    let usage = Cmd::new("run")
+        .arg(&name)
+        .session(&global.session)
+        .context(global.context.as_deref());
     execute(&name, &src, &base, usage, &args.script, global)
 }
 
