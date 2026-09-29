@@ -2,8 +2,8 @@ name: Nightly
 
 # Installs Chrome for Testing for real on every OS and architecture
 # (plan 02, milestone 2.2), so a change in the index or the zips shows up.
-# Runs the flakiness gate and the soak tests (plan 10, milestone 10.1): a
-# failure of either opens an issue.
+# Runs the flakiness gate and the soak tests (plan 10, milestone 10.1) and
+# the benchmarks' regression gates (10.4): a failure of any opens an issue.
 
 on:
   schedule:
@@ -145,3 +145,42 @@ jobs:
         if: failure()
         with:
           title: "Nightly: the soak tests failed on ${{ matrix.os }}"
+
+  # Plan 10.4: the token and micro benchmarks, each failing on a metric
+  # more than 15% worse than its committed baseline (bench/baselines/; a
+  # runner without a micro baseline only warns). The plans' ignored timing
+  # tests are left to `cargo xtask bench micro` by hand (--no-tests): shared
+  # runners are too noisy for their absolute budgets.
+  bench:
+    name: bench (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: bench/playwright
+      - name: Chrome stable
+        run: cargo xtask chrome stable --with-deps
+      - run: cargo xtask bench tokens -- --check --no-publish
+      - run: cargo xtask bench micro --no-tests -- --check --no-publish
+        if: success() || failure()
+      - uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: bench-${{ matrix.os }}
+          path: target/bench/
+      - uses: ./.github/actions/nightly-issue
+        if: failure()
+        with:
+          title: "Nightly: a benchmark regressed on ${{ matrix.os }}"

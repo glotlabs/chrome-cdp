@@ -30,6 +30,12 @@ tasks:
                       or a session dir still holds a socket file
   soak                run the ignored soak tests (release build; needs CHROME_PATH),
                       then check for leaks
+  bench <micro|tokens|agent> [--no-tests] [-- <args>]
+                      build the release binaries and run a benchmark suite
+                      (crates/bench; needs CHROME_PATH, and bench/playwright's
+                      node_modules for the Playwright side); see docs/benchmarks.md.
+                      micro also runs the plans' ignored timing tests (--no-tests
+                      skips them); `-- --help` lists the suite's own options
   dist [--target T] [--update-size]
                       build the release binary into dist/ and check its size: at most
                       20% over the target's baseline in xtask/binary-sizes.txt
@@ -60,6 +66,7 @@ fn main() -> ExitCode {
         "e2e" => e2e(rest),
         "leaks" => leaks(rest),
         "soak" => soak(rest),
+        "bench" => bench(rest),
         "dist" => dist(rest),
         "chrome" => chrome(rest),
         "gen-cdp" => gen_cdp(rest),
@@ -303,6 +310,88 @@ fn soak(args: &[String]) -> Result {
         "1",
     ])?;
     leaks(&[])
+}
+
+/// The ignored tests that time a plan's budget inside a crate, run by
+/// `bench micro` in a release build: (package, test target, test name).
+const TIMING_TESTS: [(&str, &str, &str); 4] = [
+    ("cdp", "chrome", "sequential_evaluate_latency"),
+    ("engine", "snapshot", "snapshot_latency_benchmark"),
+    ("engine", "route", "overhead_with_20_rules"),
+    (
+        "chrome-cdp",
+        "bench",
+        "e2e_runner_overhead_and_the_shop_suite",
+    ),
+];
+
+/// Builds the release binaries the benchmarks time, then runs a suite of
+/// the `bench` harness (plan 10.4; see docs/benchmarks.md). `micro` also
+/// runs [`TIMING_TESTS`], after the suite, and fails if one does.
+fn bench(args: &[String]) -> Result {
+    let usage =
+        || "usage: cargo xtask bench <micro|tokens|agent> [--no-tests] [-- <args>]".to_owned();
+    let (own, extra) = match args.iter().position(|a| a == "--") {
+        Some(i) => (&args[..i], &args[i + 1..]),
+        None => (args, &[][..]),
+    };
+    let (suite, no_tests) = match own {
+        [suite] => (suite.as_str(), false),
+        [suite, flag] if flag == "--no-tests" => (suite.as_str(), true),
+        _ => return Err(usage()),
+    };
+    if !matches!(suite, "micro" | "tokens" | "agent") {
+        return Err(usage());
+    }
+    cargo([
+        "build",
+        "--release",
+        "--locked",
+        "--package",
+        "chrome-cdp",
+        "--package",
+        "fixtures",
+    ])?;
+    let mut run = vec![
+        "run",
+        "--quiet",
+        "--locked",
+        "--package",
+        "bench",
+        "--",
+        suite,
+        "--bin-dir",
+        "target/release",
+    ];
+    run.extend(extra.iter().map(String::as_str));
+    let suite_result = cargo(run);
+    if suite != "micro" || no_tests || extra.iter().any(|a| a == "--help" || a == "-h") {
+        return suite_result;
+    }
+    let mut failed: Vec<String> = suite_result.err().into_iter().collect();
+    for (package, target, test) in TIMING_TESTS {
+        if let Err(e) = cargo([
+            "test",
+            "--release",
+            "--locked",
+            "--package",
+            package,
+            "--test",
+            target,
+            "--",
+            "--ignored",
+            "--exact",
+            test,
+            "--nocapture",
+        ]) {
+            failed.push(e);
+        }
+    }
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(failed.join("\n"))
+    }
 }
 
 fn dist(args: &[String]) -> Result {

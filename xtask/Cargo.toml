@@ -1,6 +1,6 @@
 [package]
 name = "xtask"
-description = "Development tasks: gen-cdp, fixtures, ci, dist"
+description = "Development tasks: gen-cdp, fixtures, ci, dist, bench"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
