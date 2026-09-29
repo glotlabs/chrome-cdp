@@ -1,0 +1,51 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Vue todos</title>
+<link rel="stylesheet" href="todos.css">
+<!-- The todo app of react.html and svelte.html, in Vue 3 (see
+     /vendor/README.md), with an in-DOM template. -->
+<div id="vue-app" v-cloak>
+  <h1>Vue todos</h1>
+  <form @submit.prevent="add">
+    <label for="new-todo">New todo</label>
+    <input id="new-todo" autocomplete="off" v-model="draft">
+    <button type="submit">Add</button>
+  </form>
+  <p v-if="todos === null" role="status">Loading…</p>
+  <template v-else>
+    <ul>
+      <li v-for="t in shown" :key="t.id" :class="{ done: t.done }">
+        <label><input type="checkbox" v-model="t.done"> {{ t.name }}</label>
+        <button :aria-label="'Delete ' + t.name" @click="remove(t)">×</button>
+      </li>
+    </ul>
+    <p id="left">{{ left }} {{ left === 1 ? 'item' : 'items' }} left</p>
+    <nav aria-label="Filter">
+      <button v-for="f in filters" :aria-pressed="String(filter === f)" @click="filter = f">{{ f[0].toUpperCase() + f.slice(1) }}</button>
+    </nav>
+  </template>
+</div>
+<script src="/vendor/vue.global.prod.js"></script>
+<script>
+  let next = 100;
+  Vue.createApp({
+    data: () => ({ todos: null, draft: '', filter: 'all', filters: ['all', 'active', 'done'] }),
+    computed: {
+      shown() { return this.todos.filter((t) => this.filter === 'all' || (this.filter === 'done') === t.done); },
+      left() { return this.todos.filter((t) => !t.done).length; },
+    },
+    methods: {
+      add() {
+        const name = this.draft.trim();
+        if (!name) return;
+        this.todos.push({ id: next++, name, done: false });
+        this.draft = '';
+      },
+      remove(todo) { this.todos = this.todos.filter((t) => t !== todo); },
+    },
+    mounted() {
+      fetch('/items?n=3&delay=300').then((r) => r.json())
+        .then((items) => { this.todos = items.map(({ id, name, done }) => ({ id, name, done })); });
+    },
+  }).mount('#vue-app');
+</script>

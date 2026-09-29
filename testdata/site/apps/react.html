@@ -1,0 +1,53 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>React todos</title>
+<link rel="stylesheet" href="todos.css">
+<!-- The todo app of vue.html and svelte.html, in React 18 (see
+     /vendor/README.md): initial todos from /items after 300ms, a form
+     that adds one, checkboxes, delete buttons and filters. -->
+<div id="react-app"></div>
+<script src="/vendor/react.production.min.js"></script>
+<script src="/vendor/react-dom.production.min.js"></script>
+<script>
+  const e = React.createElement;
+  const FILTERS = ['all', 'active', 'done'];
+  let next = 100;
+  function App() {
+    const [todos, setTodos] = React.useState(null);
+    const [draft, setDraft] = React.useState('');
+    const [filter, setFilter] = React.useState('all');
+    React.useEffect(() => {
+      fetch('/items?n=3&delay=300').then((r) => r.json())
+        .then((items) => setTodos(items.map(({ id, name, done }) => ({ id, name, done }))));
+    }, []);
+    const add = (ev) => {
+      ev.preventDefault();
+      const name = draft.trim();
+      if (!name) return;
+      setTodos([...todos, { id: next++, name, done: false }]);
+      setDraft('');
+    };
+    const toggle = (id) => setTodos(todos.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+    const remove = (id) => setTodos(todos.filter((t) => t.id !== id));
+    const form = e('form', { onSubmit: add },
+      e('label', { htmlFor: 'new-todo' }, 'New todo'),
+      e('input', { id: 'new-todo', autoComplete: 'off', value: draft, onChange: (ev) => setDraft(ev.target.value) }),
+      e('button', { type: 'submit' }, 'Add'));
+    if (todos === null) {
+      return e(React.Fragment, null, e('h1', null, 'React todos'), form, e('p', { role: 'status' }, 'Loading…'));
+    }
+    const shown = todos.filter((t) => filter === 'all' || (filter === 'done') === t.done);
+    const left = todos.filter((t) => !t.done).length;
+    return e(React.Fragment, null,
+      e('h1', null, 'React todos'),
+      form,
+      e('ul', null, shown.map((t) => e('li', { key: t.id, className: t.done ? 'done' : '' },
+        e('label', null, e('input', { type: 'checkbox', checked: t.done, onChange: () => toggle(t.id) }), ' ' + t.name),
+        e('button', { 'aria-label': 'Delete ' + t.name, onClick: () => remove(t.id) }, '×')))),
+      e('p', { id: 'left' }, `${left} ${left === 1 ? 'item' : 'items'} left`),
+      e('nav', { 'aria-label': 'Filter' }, FILTERS.map((f) => e('button', {
+        key: f, 'aria-pressed': filter === f, onClick: () => setFilter(f),
+      }, f[0].toUpperCase() + f.slice(1)))));
+  }
+  ReactDOM.createRoot(document.getElementById('react-app')).render(e(App));
+</script>

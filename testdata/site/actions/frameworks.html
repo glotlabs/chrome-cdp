@@ -3,7 +3,7 @@
 <title>Frameworks</title>
 <style>body { margin: 0; font: 16px sans-serif; } label, input { display: block; margin: 4px 8px; }</style>
 <!-- Controlled inputs of real React, Vue and Svelte builds (see
-     vendor/README.md). Each echoes its state below it, so a test can
+     /vendor/README.md). Each echoes its state below it, so a test can
      tell that fill updated the framework's state, not only the DOM. -->
 <div id="react-app"></div>
 <div id="vue-app">
@@ -12,10 +12,10 @@
   <p id="vue-echo">{{ name }}</p>
 </div>
 <div id="svelte-app"></div>
-<script src="vendor/react.production.min.js"></script>
-<script src="vendor/react-dom.production.min.js"></script>
-<script src="vendor/vue.global.prod.js"></script>
-<script src="vendor/svelte-echo.js"></script>
+<script src="/vendor/react.production.min.js"></script>
+<script src="/vendor/react-dom.production.min.js"></script>
+<script src="/vendor/vue.global.prod.js"></script>
+<script src="/vendor/svelte-echo.js"></script>
 <script>
   const e = React.createElement;
   function App() {

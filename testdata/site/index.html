@@ -18,6 +18,27 @@
   <li><a href="/downloads/">downloads/</a>: links to files served as attachments</li>
   <li><a href="/auth/">auth/</a>: needs HTTP basic auth (ada / s3cret)</li>
   <li><a href="/actions/obscured.html">actions/</a>: actionability (obscured, moving, states, scroll, shadow, frames); every page logs clicks in #log. Mouse and pointer: mouse (event log), dnd (HTML5), sortable (pointer events), feed (infinite scroll), touch</li>
+  <li><a href="/apps/">apps/</a>: the same todo app in React, Vue and Svelte, prebuilt (<a href="/vendor/README.md">vendor/</a> holds the framework builds)</li>
   <li><a href="/snapshot/login.html">snapshot/</a>: the snapshot corpus (simple, login, forms, hidden, clickable, lists-tables, widgets, modal, shadow, frames, article, big-app, huge), each with an <code>.expected</code> tree</li>
+  <li><a href="/refs/rerender.html">refs/</a>: elements that re-render or move, for ref stability</li>
+  <li><a href="/locators/">locators/</a>: every locator kind, ambiguous matches, frames</li>
+  <li><a href="/read/">read/</a>: text, markdown and html reading</li>
+  <li><a href="/wait/slow-request.html">wait/</a>: slow requests and scripts, lazy content, animations, beacons</li>
+  <li><a href="/eval/">eval/</a>: eval, with source-mapped bundles</li>
+  <li><a href="/console/">console/</a>: console calls, exceptions, CSP reports, a worker, source maps; soak.html logs 100 messages a second</li>
+  <li><a href="/network/">network/</a>: requests of every kind, for the network log</li>
+  <li><a href="/har/">har/</a>: a page to record as HAR</li>
+  <li><a href="/perf/">perf/</a>: load timing and Web Vitals</li>
+  <li><a href="/coverage/">coverage/</a>: partly unused JavaScript and CSS</li>
+  <li><a href="/shots/">shots/</a>: screenshots: tall pages, frames, annotations, page sizes</li>
+  <li><a href="/route/">route/</a>: requests to mock or block, from frames and a service worker</li>
+  <li><a href="/mock/">mock/</a>: pages whose requests mock files answer</li>
+  <li><a href="/record/shop.html">record/</a>: a shop whose API calls are recorded as mocks</li>
+  <li><a href="/emulate/first.html">emulate/</a>: devices, permissions and frames under emulation</li>
+  <li><a href="/inject/first.html">inject/</a>: init scripts and exposed functions</li>
+  <li><a href="/state/login.html">state/</a>: a login kept in cookies and storage</li>
+  <li><a href="/expect/">expect/</a>: assertions: errors, accessibility, baselines, moving elements</li>
+  <li><a href="/script/login.html">script/</a>: a login for .cdp scripts</li>
+  <li><a href="/e2e/shop.html">e2e/</a>: the test runner's shop (its API is <code>/e2e/api/</code>) and determinism checks</li>
 </ul>
 <p>Any path takes <code>?delay=&lt;ms&gt;</code>, <code>?status=&lt;code&gt;</code> and <code>?download=&lt;name&gt;</code>.</p>
