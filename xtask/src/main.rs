@@ -12,6 +12,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
+mod release;
+
 /// Each target's release binary size, in bytes: `dist` fails when a build
 /// is more than 20% over it (plan 10, milestone 10.2; it replaced plan 01's
 /// fixed 15MB budget).
@@ -40,6 +42,9 @@ tasks:
                       build the release binary into dist/ and check its size: at most
                       20% over the target's baseline in xtask/binary-sizes.txt
                       (--update-size records the new size there)
+  release <step>      the release artifacts from dist/ (plan 10.5): archive --target T,
+                      manifest, notes [--tag vX.Y.Z], formula, npm [--out DIR],
+                      check [--tag vX.Y.Z]; `cargo xtask release` lists them
   chrome <which> [--with-deps]
                       get the Chrome the tests run against and print its path; in
                       GitHub Actions, also set CHROME_PATH and CHROME_CDP_REQUIRE_CHROME.
@@ -68,6 +73,7 @@ fn main() -> ExitCode {
         "soak" => soak(rest),
         "bench" => bench(rest),
         "dist" => dist(rest),
+        "release" => release::run(rest),
         "chrome" => chrome(rest),
         "gen-cdp" => gen_cdp(rest),
         "build-js" => build_js(rest),
