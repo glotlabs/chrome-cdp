@@ -23,6 +23,7 @@ use tokio::time::Instant;
 use super::console::Console;
 use super::format::{self, frame_text};
 use super::sourcemaps::{RESOLVE_LIMIT, is_local};
+use crate::context::Scoped as _;
 use crate::input::origin;
 use crate::request::{ConsoleRequest, Since, millis};
 use crate::tabs::commands::path_of;
@@ -218,7 +219,7 @@ impl Engine {
         if let Some(grep) = &req.grep {
             cmd = cmd.flag("grep", grep);
         }
-        cmd.session(&self.session)
+        cmd.scoped(&self.session)
     }
 }
 
@@ -270,7 +271,7 @@ impl Engine {
         if running.tabs.active() != Some(id) {
             cmd = cmd.flag("tab", tab_name(id));
         }
-        Some((unread, cmd.session(&self.session)))
+        Some((unread, cmd.scoped(&self.session)))
     }
 }
 

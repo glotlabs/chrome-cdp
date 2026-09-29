@@ -6,6 +6,8 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 use serde_json::json;
 use url::Url;
 
+use crate::context::Scoped as _;
+
 /// Schemes (and scheme-like prefixes) that are complete without `//`.
 const OPAQUE: &[&str] = &[
     "about:",
@@ -80,7 +82,7 @@ pub(crate) fn resolve(
             Hint::run(
                 Cmd::new("goto")
                     .arg(format!("http://localhost:3000{}", example_path(input)))
-                    .session(session),
+                    .scoped(session),
             )
             .why("a full URL")
             .or("set base_url in .chrome-cdp.toml"),

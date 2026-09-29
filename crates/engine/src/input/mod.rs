@@ -43,6 +43,7 @@ pub use actionability::{ActionPoint, Checks};
 pub(crate) use mouse::Pointer;
 pub use mouse::parse_modifiers;
 
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::injected::{self, GUARD};
 use crate::locator::{LocateOptions, Locator};
@@ -361,7 +362,7 @@ impl Actor<'_> {
                 if *clear { cmd.switch("clear") } else { cmd }
             }
         }
-        .session(self.session())
+        .scoped(self.session())
     }
 
     fn parse(&self, locator: &str) -> Result<Locator, ErrorInfo> {

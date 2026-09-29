@@ -24,6 +24,7 @@ use super::{
     LIBRARY, OriginState, StorageState, cookie_info, cookie_param, expired, in_domain, origin_of,
     parse_same_site, state_cookie,
 };
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::inject::SEED_BINDING;
@@ -145,7 +146,7 @@ impl Engine {
                 Cmd::new("cookies")
                     .arg("set")
                     .raw("<name>=<value>")
-                    .session(&self.session)
+                    .scoped(&self.session)
             )
         } else {
             let rows: Vec<Vec<String>> = infos.iter().map(cookie_row).collect();
@@ -175,7 +176,7 @@ impl Engine {
                     Cmd::new("cookies")
                         .arg("set")
                         .arg("theme=dark")
-                        .session(&self.session),
+                        .scoped(&self.session),
                 )),
             );
         }
@@ -203,7 +204,7 @@ impl Engine {
                     Cmd::new("cookies")
                         .arg("clear")
                         .flag("name", &spec.name)
-                        .session(&self.session),
+                        .scoped(&self.session),
                 )
                 .why("removes a cookie"),
             ));
@@ -412,7 +413,7 @@ impl Engine {
                 ),
             )
             .hint(
-                Hint::run(Cmd::new("goto").raw("<url>").session(&self.session))
+                Hint::run(Cmd::new("goto").raw("<url>").scoped(&self.session))
                     .why("storage belongs to the page's origin"),
             ));
         }
@@ -530,7 +531,7 @@ impl Engine {
             info = info.note("origins", open.join(", "));
         }
         Err(info.hint(
-            Hint::run(Cmd::new("goto").arg(&wanted).session(&self.session))
+            Hint::run(Cmd::new("goto").arg(&wanted).scoped(&self.session))
                 .why("storage is read in a page of its origin"),
         ))
     }
@@ -909,7 +910,7 @@ fn storage_cmd(area: StorageArea, req: &StorageRequest, session: &str) -> Cmd {
     if let Some(origin) = &req.origin {
         cmd = cmd.flag("origin", origin);
     }
-    cmd.session(session)
+    cmd.scoped(session)
 }
 
 fn check_url(url: &str, flag: &str) -> Result<(), ErrorInfo> {

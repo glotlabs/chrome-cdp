@@ -23,6 +23,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde_json::{Map, Value, json};
 use tokio::time::Instant;
 
+use crate::context::Scoped as _;
 use crate::downloads;
 use crate::locator::{LocateOptions, Locator, parse_locator};
 use crate::navigate::describe;
@@ -677,10 +678,10 @@ impl Engine {
         let longer = format::duration(timeout * 2);
         let again = retry(&req.condition, req.tab.as_deref())
             .flag("timeout", &longer)
-            .session(&self.session);
+            .scoped(&self.session);
         let hint = match condition {
             Condition::Idle | Condition::Settle => {
-                Hint::run(retry(&WaitFor::Load, req.tab.as_deref()).session(&self.session))
+                Hint::run(retry(&WaitFor::Load, req.tab.as_deref()).scoped(&self.session))
                     .why("does not wait for the requests still open")
                     .or(format!("a longer --timeout, e.g. --timeout {longer}"))
             }

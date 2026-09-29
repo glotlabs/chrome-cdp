@@ -21,6 +21,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::context::Scoped as _;
 use crate::locator::{Called, FrameOnly, LocateOptions, Locator, Want};
 use crate::request::{Read, ReadRequest, millis};
 use crate::tabs::{Page, tab_name};
@@ -376,7 +377,7 @@ impl Reader<'_> {
                 format!("{locator} has no value: {error}"),
             )
             .hint(
-                Hint::run(Cmd::new("text").arg(&locator).session(&self.engine.session))
+                Hint::run(Cmd::new("text").arg(&locator).scoped(&self.engine.session))
                     .why("its text")
                     .or("name an input, textarea, select or editable element"),
             ));

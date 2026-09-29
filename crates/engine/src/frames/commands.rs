@@ -11,6 +11,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, format};
 use serde_json::{Value, json};
 
 use super::{FindError, FrameInfo, World};
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::tabs::{FrameContext, FrameError, Page, tab_name};
 use crate::{Engine, Running};
@@ -129,7 +130,7 @@ impl Engine {
                     ErrorKind::NotFound,
                     format!("tab {} went away", tab_name(page.id)),
                 )
-                .hint(Hint::run(Cmd::new("tabs").session(&self.session)))
+                .hint(Hint::run(Cmd::new("tabs").scoped(&self.session)))
             })?
         };
         running

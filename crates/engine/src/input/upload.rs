@@ -23,6 +23,7 @@ use serde_json::json;
 use tokio::time::Instant;
 
 use super::{Actor, Checks, describe};
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::locator::release;
 use crate::request::{Action, Button};
@@ -170,7 +171,7 @@ impl Actor<'_> {
                 )
                 .note("waited", protocol::format::duration(self.timeout))
                 .hint(
-                    Hint::run(Cmd::new("snapshot").session(self.session()))
+                    Hint::run(Cmd::new("snapshot").scoped(self.session()))
                         .why("a control is often disabled until the form is complete"),
                 )
                 .details(json!({ "locator": locator, "check": "enabled" })));
@@ -307,7 +308,7 @@ impl Actor<'_> {
                         Cmd::new("upload")
                             .arg("css=input[type=file]")
                             .raw("<file>")
-                            .session(self.session()),
+                            .scoped(self.session()),
                     )
                     .why("the page's file input, if it has one"),
                 ));
@@ -413,7 +414,7 @@ impl Actor<'_> {
             Cmd::new("upload")
                 .arg(locator)
                 .raw("<file>")
-                .session(self.session()),
+                .scoped(self.session()),
         ))
         .details(json!({ "locator": locator, "files": count }))
     }
@@ -436,7 +437,7 @@ impl Actor<'_> {
                 Cmd::new("upload")
                     .arg("css=input[type=file]")
                     .raw("<file>")
-                    .session(self.session()),
+                    .scoped(self.session()),
             )
             .why("the page's file input, even a hidden one"),
         )

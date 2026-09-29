@@ -44,6 +44,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::time::Instant;
 
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::injected::{self, GUARD};
@@ -410,7 +411,7 @@ impl Engine {
                         format!("{locator} cannot take text: {}", failed.why),
                     )
                     .hint(
-                        Hint::run(Cmd::new("snapshot").raw("-i").session(&self.session))
+                        Hint::run(Cmd::new("snapshot").raw("-i").scoped(&self.session))
                             .why("lists the page's text fields"),
                     )
                     .details(json!({

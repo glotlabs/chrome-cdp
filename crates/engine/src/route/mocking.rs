@@ -20,6 +20,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, suggest};
 use serde_json::Value;
 
 use super::{Request, Router, Socket, Tag, lock, route_name};
+use crate::context::Scoped as _;
 use crate::request::{
     MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest, MockSeedRequest,
     MockStateRequest, MockUseRequest, MockWsSendRequest, millis,
@@ -172,7 +173,7 @@ impl Engine {
                     format!("mock set {missing} is not in use"),
                 )
                 .hint(
-                    Hint::run(Cmd::new("mock").arg("list").session(&self.session))
+                    Hint::run(Cmd::new("mock").arg("list").scoped(&self.session))
                         .why("lists the sets in use"),
                 )
             })?;
@@ -309,7 +310,7 @@ impl Engine {
             };
             info = info.note("sockets", wants);
             info.hint(
-                Hint::run(Cmd::new("mock").arg("list").session(&self.session))
+                Hint::run(Cmd::new("mock").arg("list").scoped(&self.session))
                     .why("shows the [[websocket]] mocks in use"),
             )
         } else {
@@ -321,7 +322,7 @@ impl Engine {
                         .arg("send")
                         .arg("*")
                         .arg(&req.message)
-                        .session(&self.session),
+                        .scoped(&self.session),
                 )
                 .why("sends to every mocked socket"),
             )
@@ -338,7 +339,7 @@ impl Engine {
                 Cmd::new("mock")
                     .arg("use")
                     .raw("<set>")
-                    .session(&self.session)
+                    .scoped(&self.session)
             )
         } else {
             mock::text::sets(&sets)
@@ -390,7 +391,7 @@ impl Engine {
                 "… {skip} earlier {} not shown; {} shows them",
                 if skip == 1 { "request" } else { "requests" },
                 cmd.flag("limit", (skip + req.limit).to_string())
-                    .session(&self.session)
+                    .scoped(&self.session)
             );
         }
         for entry in &log {
@@ -619,7 +620,7 @@ fn no_sets(session: &str, command: &str) -> ErrorInfo {
         format!("no mock sets in use, so there is no mock {command}"),
     )
     .hint(Hint::run(
-        Cmd::new("mock").arg("use").raw("<set>").session(session),
+        Cmd::new("mock").arg("use").raw("<set>").scoped(session),
     ))
 }
 
@@ -634,12 +635,12 @@ pub(crate) fn unknown_state(session: &str, name: &str, names: &[String]) -> Erro
     }
     match suggest::similar(name, names.iter().map(String::as_str), 1).first() {
         Some(close) => info.hint(
-            Hint::run(Cmd::new("mock").arg("state").arg(*close).session(session))
+            Hint::run(Cmd::new("mock").arg("state").arg(*close).scoped(session))
                 .why("did you mean this?"),
         ),
         None => info.hint(format!(
             "declare it in a mock file's [state], or run {}",
-            Cmd::new("mock").arg("state").session(session)
+            Cmd::new("mock").arg("state").scoped(session)
         )),
     }
 }
@@ -654,7 +655,7 @@ fn unknown_collection(session: &str, name: &str, names: &[String]) -> ErrorInfo 
     }
     match suggest::similar(name, names.iter().map(String::as_str), 1).first() {
         Some(close) => info.hint(
-            Hint::run(Cmd::new("mock").arg("seed").arg(*close).session(session))
+            Hint::run(Cmd::new("mock").arg("seed").arg(*close).scoped(session))
                 .why("did you mean this?"),
         ),
         None => info.hint("add a [[collection]] to a mock file (see `chrome-cdp mock --help`)"),

@@ -32,6 +32,7 @@ use tokio::time::Instant;
 
 pub use self::url::normalize_url;
 use self::watch::Watch;
+use crate::context::Scoped as _;
 use crate::downloads;
 use crate::errors::from_cdp;
 use crate::network::InFlight;
@@ -395,7 +396,7 @@ impl Engine {
                 }
                 return Err(info
                     .hint(
-                        Hint::run(Cmd::new("wait").switch("download").session(&self.session))
+                        Hint::run(Cmd::new("wait").switch("download").scoped(&self.session))
                             .why("it goes on in the background"),
                     )
                     .details(json!({ "url": url, "download": partial })));
@@ -473,7 +474,7 @@ impl Engine {
             Hint::run(
                 retry(navigation, None)
                     .flag("timeout", format::duration(timeout * 2))
-                    .session(&self.session),
+                    .scoped(&self.session),
             )
             .why("if the server is just slow"),
         );
@@ -525,7 +526,7 @@ impl Engine {
         let again = |flag: &str, value: &str| {
             retry(navigation, requested)
                 .flag(flag, value)
-                .session(&self.session)
+                .scoped(&self.session)
         };
         let hint = match wait {
             WaitUntil::Load | WaitUntil::Settle if watch.committed() => {

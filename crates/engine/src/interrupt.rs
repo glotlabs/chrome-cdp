@@ -9,6 +9,7 @@ use protocol::schema::DialogInfo;
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 use serde_json::json;
 
+use crate::context::Scoped as _;
 use crate::tabs::dialogs::Blocker;
 use crate::tabs::{Page, tab_name};
 use crate::{Engine, Running};
@@ -75,7 +76,7 @@ impl Engine {
                     format!("the page in tab {} crashed", tab_name(id)),
                 )
                 .note("page", url.clone())
-                .hint(Hint::run(reload.session(&self.session)).why("loads it again"))
+                .hint(Hint::run(reload.scoped(&self.session)).why("loads it again"))
                 .details(json!({ "tab": tab_name(id), "url": url }))
             }
         }
@@ -98,7 +99,7 @@ pub(crate) fn dialog_open(
         if let Some(tab) = tab {
             cmd = cmd.flag("tab", tab);
         }
-        cmd.session(session).to_string()
+        cmd.scoped(session).to_string()
     };
     let hint = if dialog.kind == "beforeunload" {
         Hint::text(format!(

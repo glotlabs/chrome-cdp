@@ -18,6 +18,7 @@ use protocol::schema::{
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 
 use super::{Aspects, DEVICES, check_permission, device_viewport, find_device};
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::observe::iso8601;
 use crate::request::{EmulateRequest, EmulationChange, PermissionsOp, PermissionsRequest, millis};
@@ -152,7 +153,7 @@ impl Engine {
         } else {
             format!("Chrome does not know the {what} `{value}`: {reason}")
         };
-        ErrorInfo::new(ErrorKind::BadArgs, message).hint(Hint::run(example.session(&self.session)))
+        ErrorInfo::new(ErrorKind::BadArgs, message).hint(Hint::run(example.scoped(&self.session)))
     }
 
     /// `permissions`: lists, grants, denies or resets permissions.
@@ -181,7 +182,7 @@ impl Engine {
                             Cmd::new("permissions")
                                 .arg("grant")
                                 .arg("geolocation")
-                                .session(&self.session),
+                                .scoped(&self.session),
                         )));
                 }
                 let (setting, word, verb) = if req.op == PermissionsOp::Grant {
@@ -264,7 +265,7 @@ impl Engine {
                     .arg("grant")
                     .arg(name)
                     .flag("origin", "https://example.com")
-                    .session(&self.session),
+                    .scoped(&self.session),
             ));
         }
         from_cdp(e, &self.session)
@@ -344,7 +345,7 @@ fn change(state: &mut Emulation, change: &EmulationChange, session: &str) -> Res
                     "the time is not frozen, so it cannot advance",
                 )
                 .hint(
-                    Hint::run(Cmd::new("time").arg("freeze").session(session))
+                    Hint::run(Cmd::new("time").arg("freeze").scoped(session))
                         .why("freezes it at the current time"),
                 ));
             };
@@ -581,7 +582,7 @@ fn list_text(permissions: &[PermissionInfo], session: &str) -> String {
             Cmd::new("permissions")
                 .arg("grant")
                 .raw("<name>")
-                .session(session)
+                .scoped(session)
         );
     }
     let rows: Vec<Vec<String>> = permissions

@@ -29,6 +29,7 @@ use protocol::schema::{Emulation, PermissionInfo, Throttle, Viewport};
 use protocol::suggest::{self, squash};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 
+use crate::context::Scoped as _;
 use crate::request::PermissionsOp;
 
 pub use devices::{DEVICES, Device};
@@ -86,9 +87,9 @@ pub fn find_device(name: &str, session: &str) -> Result<&'static Device, ErrorIn
         info = info.note("did you mean", close.join(", "));
     }
     let hint = match close.first() {
-        Some(first) => Hint::run(Cmd::new("emulate").arg(first).session(session)),
+        Some(first) => Hint::run(Cmd::new("emulate").arg(first).scoped(session)),
         None => {
-            Hint::run(Cmd::new("emulate").switch("list").session(session)).why("lists the devices")
+            Hint::run(Cmd::new("emulate").switch("list").scoped(session)).why("lists the devices")
         }
     };
     Err(info.hint(hint))
@@ -163,7 +164,7 @@ pub fn check_permission(name: &str, op: PermissionsOp, session: &str) -> Result<
             Cmd::new("permissions")
                 .arg(op.name())
                 .arg(closest)
-                .session(session),
+                .scoped(session),
         ));
     }
     Err(info)

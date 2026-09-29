@@ -23,6 +23,7 @@ use serde_json::{Value, json};
 use tokio::time::Instant;
 
 use super::{assertion_text, expected};
+use crate::context::Scoped as _;
 use crate::observe::netlog::Record;
 use crate::request::{ExpectRequest, RequestCheck, millis};
 use crate::tabs::tab_name;
@@ -480,7 +481,7 @@ impl Engine {
                 if only.is_some() || self.running().is_ok_and(|r| r.tabs.active() != Some(s.tab)) {
                     cmd = cmd.flag("tab", tab_name(s.tab));
                 }
-                Hint::run(cmd.session(&self.session)).why(if check.none {
+                Hint::run(cmd.scoped(&self.session)).why(if check.none {
                     "shows the request in full"
                 } else if matching.is_empty() {
                     "shows the closest request in full, body and headers"
@@ -488,8 +489,9 @@ impl Engine {
                     "shows a matching request in full"
                 })
             }
-            None => Hint::run(Cmd::new("network").session(&self.session))
-                .why("lists what the page sent"),
+            None => {
+                Hint::run(Cmd::new("network").scoped(&self.session)).why("lists what the page sent")
+            }
         };
         let mut details = json!({
             "assertion": assertion_text(req),

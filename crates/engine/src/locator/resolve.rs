@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::parse::{Locator, Step, parse_locator};
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::frames::commands::find_error;
@@ -574,7 +575,7 @@ impl Engine {
             )
             .details(json!({ "tab": tab_name(page.id), "frame": frame }))
             .hint(
-                Hint::run(Cmd::new("snapshot").session(&self.session))
+                Hint::run(Cmd::new("snapshot").scoped(&self.session))
                     .why("shows the page's iframes"),
             )
         };
@@ -616,7 +617,7 @@ impl Engine {
     pub(crate) fn not_found(&self, page: &Page, locator: &Locator) -> ErrorInfo {
         let mut info = ErrorInfo::new(ErrorKind::NotFound, format!("no element matches {locator}"))
             .hint(
-                Hint::run(Cmd::new("snapshot").session(&self.session))
+                Hint::run(Cmd::new("snapshot").scoped(&self.session))
                     .why("shows the page; use a ref from it"),
             )
             .details(
@@ -682,7 +683,7 @@ impl Engine {
             ErrorKind::NotFound,
             format!("tab {} went away", tab_name(page.id)),
         )
-        .hint(Hint::run(Cmd::new("tabs").session(&self.session)))
+        .hint(Hint::run(Cmd::new("tabs").scoped(&self.session)))
     }
 }
 
@@ -750,7 +751,7 @@ fn ambiguous(
     }
     let narrow = format!("add >> nth=<index> to {locator}");
     let hint = match (retry, shown.first()) {
-        (Some(retry), Some(first)) => Hint::run(retry(first).session(session))
+        (Some(retry), Some(first)) => Hint::run(retry(first).scoped(session))
             .why("the first one")
             .or(narrow),
         _ if shown.is_empty() => Hint::text(narrow),

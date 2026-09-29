@@ -7,6 +7,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, format};
 use serde_json::{Value, json};
 
 use super::{Failure, Listed, Obscured};
+use crate::context::Scoped as _;
 use crate::locator::Locator;
 use crate::request::SnapshotEngine;
 use crate::tabs::Page;
@@ -26,7 +27,7 @@ impl Engine {
     ) -> ErrorInfo {
         let waited_text = format::duration(timeout);
         let force = retry.map(|r| r(&locator.to_string()).switch("force"));
-        let snapshot = || Hint::run(Cmd::new("snapshot").session(&self.session));
+        let snapshot = || Hint::run(Cmd::new("snapshot").scoped(&self.session));
         let mut details = json!({
             "locator": locator.to_string(),
             "timeout_ms": u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
@@ -182,17 +183,17 @@ impl Engine {
             .and_then(|d| Some((d, reference(d)?)));
         let hint = if let Some((dismiss, dismiss_ref)) = dismiss {
             details["dismiss"] = json_of(dismiss, Some(&dismiss_ref));
-            Hint::run(Cmd::new("click").arg(&dismiss_ref).session(&self.session))
+            Hint::run(Cmd::new("click").arg(&dismiss_ref).scoped(&self.session))
                 .why(format!("{} inside it", describe(dismiss, None)))
         } else if let Some(covering_ref) = &covering_ref {
             Hint::run(
                 Cmd::new("snapshot")
                     .flag("scope", covering_ref)
-                    .session(&self.session),
+                    .scoped(&self.session),
             )
             .why("shows what covers it; close it first")
         } else {
-            Hint::run(Cmd::new("snapshot").session(&self.session))
+            Hint::run(Cmd::new("snapshot").scoped(&self.session))
                 .why("shows what covers it; close it first")
         };
         let hint = match force {

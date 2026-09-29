@@ -29,6 +29,7 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use tokio::time::Instant;
 
+use crate::context::Scoped as _;
 use crate::injected::{self, GUARD};
 use crate::locator::{FrameOnly, LocateOptions, Locator, read_listed};
 use crate::pattern::UrlPattern;
@@ -797,7 +798,7 @@ impl Engine {
             Cmd::new("expect")
                 .switch("no-errors")
                 .flag("since", name)
-                .session(&self.session)
+                .scoped(&self.session)
         );
         let data = MarkData {
             tab,
@@ -1053,11 +1054,11 @@ impl Engine {
     /// Try again with a longer timeout, or look at the page.
     fn retry_hint(&self, req: &ExpectRequest, timeout: Duration) -> Hint {
         let longer = format::duration(timeout * 2);
-        Hint::run(command(req).flag("timeout", &longer).session(&self.session))
+        Hint::run(command(req).flag("timeout", &longer).scoped(&self.session))
             .why("if the page needs longer to get there")
             .or(format!(
                 "{} shows the page as it is",
-                Cmd::new("snapshot").session(&self.session)
+                Cmd::new("snapshot").scoped(&self.session)
             ))
     }
 
@@ -1087,7 +1088,7 @@ impl Engine {
                 if let Expectation::Element { locator, .. } = &mut again.expectation {
                     reference.clone_into(locator);
                 }
-                return Hint::run(command(&again).session(&self.session)).why(format!(
+                return Hint::run(command(&again).scoped(&self.session)).why(format!(
                     "the first of {count} matches; or add >> nth=<index> to the locator"
                 ));
             }
@@ -1097,7 +1098,7 @@ impl Engine {
         }
         if observed["ref"] == json!("gone") {
             let what = locator.map(ToString::to_string).unwrap_or_default();
-            return Hint::run(Cmd::new("snapshot").session(&self.session))
+            return Hint::run(Cmd::new("snapshot").scoped(&self.session))
                 .why(format!("{what}'s element is gone; find it again there"));
         }
         if count == 0
@@ -1107,7 +1108,7 @@ impl Engine {
             )
         {
             let what = locator.map(ToString::to_string).unwrap_or_default();
-            return Hint::run(Cmd::new("snapshot").session(&self.session))
+            return Hint::run(Cmd::new("snapshot").scoped(&self.session))
                 .why(format!("no element matches {what}; find it there"));
         }
         let timeout = millis(req.timeout_ms);
@@ -1119,7 +1120,7 @@ impl Engine {
             _ => None,
         };
         match read {
-            Some(cmd) if !invalid.contains("not a") => Hint::run(cmd.session(&self.session))
+            Some(cmd) if !invalid.contains("not a") => Hint::run(cmd.scoped(&self.session))
                 .why("shows all of it")
                 .or(format!(
                     "--timeout {} to wait longer",

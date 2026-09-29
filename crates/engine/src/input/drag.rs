@@ -21,6 +21,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use serde_json::Value;
 
 use super::{Actor, Checks, Ready, describe, point_text};
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::request::{Action, Button};
 
@@ -57,7 +58,7 @@ impl Actor<'_> {
             if *steps != DEFAULT_STEPS {
                 cmd = cmd.flag("steps", steps.to_string());
             }
-            cmd.session(self.session())
+            cmd.scoped(self.session())
         };
         // Aiming at one may scroll the other away: aim at both twice, and
         // they must stay put the second time.

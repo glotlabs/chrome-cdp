@@ -20,6 +20,7 @@ use protocol::schema::{TraceStartData, TraceStopData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 
 use super::save::{create_private, failed};
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::request::{TraceStartRequest, TraceStopRequest, millis};
 use crate::tabs::tab_name;
@@ -162,7 +163,7 @@ impl Engine {
                 format!("session {} is not recording a trace", self.session),
             )
             .hint(
-                Hint::run(Cmd::new("trace start").session(&self.session))
+                Hint::run(Cmd::new("trace start").scoped(&self.session))
                     .why("then act, then trace stop"),
             ));
         };
@@ -207,7 +208,7 @@ impl Engine {
                     Hint::run(
                         Cmd::new("trace stop")
                             .flag("timeout", "2m")
-                            .session(&self.session),
+                            .scoped(&self.session),
                     )
                     .why("a long trace takes a while to collect"),
                 )
@@ -282,7 +283,7 @@ impl Engine {
                 ErrorKind::NotFound,
                 format!("{tab} closed while it recorded a trace; the trace is gone"),
             )
-            .hint(Hint::run(Cmd::new("trace start").session(&self.session)));
+            .hint(Hint::run(Cmd::new("trace start").scoped(&self.session)));
         }
         from_cdp(err, &self.session)
     }
@@ -324,7 +325,7 @@ fn stop_cmd(session: &str) -> Cmd {
     Cmd::new("trace stop")
         .raw("-o")
         .arg("trace.json")
-        .session(session)
+        .scoped(session)
 }
 
 fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {

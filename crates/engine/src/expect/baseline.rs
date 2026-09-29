@@ -23,6 +23,7 @@ use similar::{ChangeTag, TextDiff};
 use tokio::time::Instant;
 
 use super::pixels::{self, Image};
+use crate::context::Scoped as _;
 use crate::locator::{LocateOptions, Locator};
 use crate::observe::save;
 use crate::request::{
@@ -411,7 +412,7 @@ impl Engine {
         let retry = |r: &str| {
             let mut again = req.clone();
             again.scope = Some(r.to_owned());
-            snapshot_command(&again).session(&self.session)
+            snapshot_command(&again).scoped(&self.session)
         };
         let mut last: Option<String> = None;
         let mut count = 0;
@@ -471,7 +472,7 @@ impl Engine {
             "CI is set, so a missing baseline fails instead of being stored",
         )
         .hint(
-            Hint::run(command.switch("update").session(&self.session))
+            Hint::run(command.switch("update").scoped(&self.session))
                 .why("stores the page as the baseline; commit the file"),
         )
         .details(json!({ "baseline": path.display().to_string() }))
@@ -492,12 +493,8 @@ impl Engine {
                 "{unread} console {} not shown yet; the page may have failed",
                 if unread == 1 { "error" } else { "errors" }
             )),
-            None => Hint::run(
-                snapshot_command(req)
-                    .switch("update")
-                    .session(&self.session),
-            )
-            .why("if the page is right and the baseline is out of date"),
+            None => Hint::run(snapshot_command(req).switch("update").scoped(&self.session))
+                .why("if the page is right and the baseline is out of date"),
         };
         ErrorInfo::new(
             ErrorKind::ExpectFailed,
@@ -545,7 +542,7 @@ impl Engine {
                     Hint::run(
                         screenshot_command(&req)
                             .switch("update")
-                            .session(&self.session),
+                            .scoped(&self.session),
                     )
                     .why("stores the page as the baseline again"),
                 )
@@ -794,7 +791,7 @@ impl Engine {
             None => Hint::run(
                 screenshot_command(req)
                     .switch("update")
-                    .session(&self.session),
+                    .scoped(&self.session),
             )
             .why("if the page is right and the baseline is out of date"),
         };

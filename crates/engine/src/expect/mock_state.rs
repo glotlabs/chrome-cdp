@@ -14,6 +14,7 @@ use tokio::time::Instant;
 
 use super::{assertion_text, expected};
 use crate::Engine;
+use crate::context::Scoped as _;
 use crate::request::{ExpectRequest, MockStateCheck, millis};
 use crate::route::unknown_state;
 
@@ -136,7 +137,7 @@ impl Engine {
                         Cmd::new("mock")
                             .arg("use")
                             .raw("<set>")
-                            .session(&self.session),
+                            .scoped(&self.session),
                     )));
                 }
                 mocks
@@ -189,12 +190,12 @@ impl Engine {
                         Cmd::new("mock")
                             .arg("state")
                             .arg(name)
-                            .session(&self.session),
+                            .scoped(&self.session),
                     )
                     .why("shows it all")
                     .or(format!(
                         "{} shows which mock answered each request",
-                        Cmd::new("mock").arg("log").session(&self.session)
+                        Cmd::new("mock").arg("log").scoped(&self.session)
                     )),
                 )
                 .details(json!({

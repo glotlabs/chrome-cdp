@@ -27,6 +27,7 @@ use serde_json::json;
 
 use super::netlog::Record;
 use super::save::save_private;
+use crate::context::Scoped as _;
 use crate::request::{HarContent, HarExportRequest, HarStartRequest, HarStopRequest, millis};
 use crate::tabs::{parse_tab_id, tab_name};
 use crate::{Engine, Running};
@@ -100,7 +101,7 @@ impl Engine {
         let stop = Cmd::new("har stop")
             .raw("-o")
             .arg("requests.har")
-            .session(&self.session);
+            .scoped(&self.session);
         let text = if already {
             format!("still recording a HAR of {which}, {bodies}; {stop} saves it")
         } else {
@@ -130,7 +131,7 @@ impl Engine {
                 format!("session {} is not recording a HAR", self.session),
             )
             .hint(
-                Hint::run(Cmd::new("har").arg("start").session(&self.session))
+                Hint::run(Cmd::new("har").arg("start").scoped(&self.session))
                     .why("then act, then har stop"),
             ));
         };

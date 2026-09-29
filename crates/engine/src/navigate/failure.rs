@@ -7,6 +7,8 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 use serde_json::json;
 use url::Url;
 
+use crate::context::Scoped as _;
+
 /// Why a navigation failed, from Chrome's `net::ERR_*` code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Reason {
@@ -129,7 +131,7 @@ pub(crate) fn navigation_failed(
         Some(port) => format!("{host}:{port}"),
         None => host.clone(),
     };
-    let retry = Cmd::new("goto").arg(url).session(session);
+    let retry = Cmd::new("goto").arg(url).scoped(session);
     let (message, hint) = match reason {
         Reason::Dns => (
             format!("cannot resolve the host {host}"),
@@ -166,7 +168,7 @@ pub(crate) fn navigation_failed(
                 .filter(|u| u.scheme() == "https")
                 .map(|_| url.replacen("https://", "http://", 1));
             let hint = match http {
-                Some(http) => Hint::run(Cmd::new("goto").arg(http).session(session))
+                Some(http) => Hint::run(Cmd::new("goto").arg(http).scoped(session))
                     .why("if the server speaks plain HTTP"),
                 None => Hint::text("check that the server speaks HTTPS on this port"),
             };
@@ -209,7 +211,7 @@ pub(crate) fn navigation_failed(
         ),
         Reason::InvalidUrl => (
             format!("Chrome cannot open {url} ({error})"),
-            Hint::run(Cmd::new("goto").arg("https://example.com").session(session))
+            Hint::run(Cmd::new("goto").arg("https://example.com").scoped(session))
                 .why("URLs need a scheme Chrome knows"),
         ),
         Reason::BadResponse => (
@@ -236,7 +238,7 @@ pub(crate) fn navigation_failed(
         ),
         Reason::Aborted => (
             format!("the navigation to {url} was cancelled ({error})"),
-            Hint::run(Cmd::new("tabs").session(session)).why(
+            Hint::run(Cmd::new("tabs").scoped(session)).why(
                 "the server sent no page (204?), or something else navigated the tab; look at where it is",
             ),
         ),

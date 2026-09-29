@@ -17,6 +17,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::request::{ClipboardOp, ClipboardRequest, millis};
@@ -217,7 +218,7 @@ impl Engine {
         )
         .note("page", origin.url.clone())
         .hint(
-            Hint::run(Cmd::new("goto").raw("<https-url>").session(&self.session))
+            Hint::run(Cmd::new("goto").raw("<https-url>").scoped(&self.session))
                 .why("the clipboard works through the page"),
         )
         .details(json!({ "url": origin.url, "origin": origin.origin }))

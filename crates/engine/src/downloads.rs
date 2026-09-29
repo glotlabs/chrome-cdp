@@ -5,6 +5,7 @@ use protocol::schema::{DownloadInfo, DownloadsData};
 use protocol::{Cmd, ErrorInfo, Output, format};
 
 use crate::Engine;
+use crate::context::Scoped as _;
 use crate::request::DownloadsRequest;
 
 impl Engine {
@@ -68,7 +69,7 @@ pub(crate) fn line(download: &DownloadInfo, session: &str) -> String {
             "downloading: {} ({} so far); {} waits for it",
             download.file,
             size(download),
-            Cmd::new("wait").switch("download").session(session)
+            Cmd::new("wait").switch("download").scoped(session)
         ),
     }
 }

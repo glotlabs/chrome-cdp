@@ -14,6 +14,7 @@ use protocol::schema::PdfData;
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 
 use super::save::save;
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::request::{PdfRequest, millis};
 use crate::tabs::tab_name;
@@ -116,12 +117,8 @@ impl Engine {
             "is not a list of pages and ranges"
         };
         ErrorInfo::new(ErrorKind::BadArgs, format!("--pages {pages} {why}")).hint(
-            Hint::run(
-                Cmd::new("pdf")
-                    .flag("pages", "1-3,5")
-                    .session(&self.session),
-            )
-            .why("pages 1 to 3, and 5; 3- runs to the end"),
+            Hint::run(Cmd::new("pdf").flag("pages", "1-3,5").scoped(&self.session))
+                .why("pages 1 to 3, and 5; 3- runs to the end"),
         )
     }
 

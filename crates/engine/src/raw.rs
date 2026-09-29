@@ -18,6 +18,7 @@ use serde_json::{Map, Value, json};
 use tokio::time::Instant;
 
 use crate::Engine;
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::request::{CdpRequest, Target, millis};
@@ -135,7 +136,7 @@ impl Engine {
             )
             .hint(Hint::run(
                 Cmd::new("cdp")
-                    .session(&self.session)
+                    .scoped(&self.session)
                     .flag("target", "page")
                     .raw("--frame … Runtime.evaluate …"),
             )));
@@ -232,7 +233,7 @@ impl Engine {
             .hint(
                 Hint::run(
                     Cmd::new("cdp")
-                        .session(&self.session)
+                        .scoped(&self.session)
                         .flag("target", "page")
                         .flag("listen", "Animation.*")
                         .arg("Animation.enable"),
@@ -296,7 +297,7 @@ impl Engine {
                     "if {m} is a page method, send it to a page: {cmd}",
                     m = method,
                     cmd = Cmd::new("cdp")
-                        .session(&self.session)
+                        .scoped(&self.session)
                         .flag("target", "page")
                         .arg(method)
                         .raw("…")

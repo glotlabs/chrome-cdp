@@ -23,6 +23,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use tokio::task::AbortHandle;
 
 use crate::Engine;
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::request::{CoverageStartRequest, CoverageStopRequest, millis};
 use crate::tabs::tab_name;
@@ -77,7 +78,7 @@ impl Engine {
             let text = format!(
                 "still measuring the coverage of {}; {} shows it",
                 tab_name(tab),
-                Cmd::new("coverage stop").session(&self.session)
+                Cmd::new("coverage stop").scoped(&self.session)
             );
             return Ok(Output::typed(&data, text).quiet(tab_name(tab)));
         }
@@ -141,7 +142,7 @@ impl Engine {
         let text = format!(
             "measuring the JavaScript and CSS coverage of {tab}; act, then {} shows what was \
              not used",
-            Cmd::new("coverage stop").session(&self.session)
+            Cmd::new("coverage stop").scoped(&self.session)
         );
         let data = CoverageStartData {
             tab: tab.clone(),
@@ -159,7 +160,7 @@ impl Engine {
                 format!("session {} is not measuring coverage", self.session),
             )
             .hint(
-                Hint::run(Cmd::new("coverage start").session(&self.session))
+                Hint::run(Cmd::new("coverage start").scoped(&self.session))
                     .why("then act, then coverage stop"),
             ));
         };

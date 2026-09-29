@@ -16,6 +16,7 @@ use protocol::schema::{MouseData, Point, PointerData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 
 use super::{Actor, Checks, describe, modifier_bits, point_text, round};
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::request::{Action, Button, Modifier, MouseOp};
 
@@ -323,11 +324,11 @@ impl Actor<'_> {
             "tap needs touch emulation, which is off in this tab",
         )
         .hint(
-            Hint::run(Cmd::new("click").arg(locator).session(self.session()))
+            Hint::run(Cmd::new("click").arg(locator).scoped(self.session()))
                 .why("a mouse click")
                 .or(format!(
                     "{}   (a phone with touch)",
-                    Cmd::new("emulate").arg("iPhone 15").session(self.session())
+                    Cmd::new("emulate").arg("iPhone 15").scoped(self.session())
                 )),
         )
     }

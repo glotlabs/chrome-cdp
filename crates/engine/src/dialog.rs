@@ -15,6 +15,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use serde_json::json;
 
 use crate::Engine;
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::interrupt::describe;
 use crate::request::{DialogRequest, millis};
@@ -44,7 +45,7 @@ impl Engine {
             .hint(Hint::run(
                 Cmd::new("dialog")
                     .arg(if req.accept { "accept" } else { "dismiss" })
-                    .session(&self.session),
+                    .scoped(&self.session),
             )));
         }
         let mark = running.tabs.mark();
@@ -98,16 +99,16 @@ impl Engine {
                 Cmd::new("dialog")
                     .arg("accept")
                     .flag("tab", tab_name(*other))
-                    .session(&self.session),
+                    .scoped(&self.session),
             )
             .or(format!(
                 "{}",
                 Cmd::new("dialog")
                     .arg("dismiss")
                     .flag("tab", tab_name(*other))
-                    .session(&self.session)
+                    .scoped(&self.session)
             )),
-            None => Hint::run(Cmd::new("tabs").session(&self.session))
+            None => Hint::run(Cmd::new("tabs").scoped(&self.session))
                 .why("shows each tab's open dialog, if any"),
         };
         let open: Vec<String> = others.iter().map(|(id, _)| tab_name(*id)).collect();

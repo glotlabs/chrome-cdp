@@ -10,6 +10,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde_json::json;
 
 use super::{BLANK, Page, TabError, parse_tab_id, tab_name};
+use crate::context::Scoped as _;
 use crate::downloads;
 use crate::errors::from_cdp;
 use crate::interrupt::{describe, describe_kind};
@@ -68,7 +69,7 @@ impl Engine {
                         open.join(", ")
                     },
                 )
-                .hint(Hint::run(Cmd::new("tabs").session(&self.session)).why("lists them"))
+                .hint(Hint::run(Cmd::new("tabs").scoped(&self.session)).why("lists them"))
                 .details(json!({ "tab": tab_name(id), "open": open }))
             }
             TabError::OtherContext(id) => {
@@ -84,12 +85,12 @@ impl Engine {
                         Cmd::new("tab")
                             .arg(tab_name(id))
                             .flag("context", c)
-                            .session(&self.session),
+                            .scoped(&self.session),
                     ),
                     None => Hint::text(format!(
                         "leave out --context to use {}; {} lists the tabs of this context",
                         tab_name(id),
-                        Cmd::new("tabs").session(&self.session)
+                        Cmd::new("tabs").scoped(&self.session)
                     )),
                 };
                 ErrorInfo::new(
@@ -103,7 +104,7 @@ impl Engine {
                 ErrorKind::ProtocolError,
                 "Chrome opened a tab but never reported it",
             )
-            .hint(Hint::run(Cmd::new("tabs").session(&self.session))),
+            .hint(Hint::run(Cmd::new("tabs").scoped(&self.session))),
             TabError::Cdp(e) => from_cdp(&e, &self.session),
         }
     }
@@ -181,7 +182,7 @@ impl Engine {
                 } else {
                     format!(
                         "opened tab {tab} ({url}); switch to it: {}",
-                        Cmd::new("tab").arg(tab).session(&self.session)
+                        Cmd::new("tab").arg(tab).scoped(&self.session)
                     )
                 }
             }
@@ -275,7 +276,7 @@ impl Engine {
         let text = if tabs.is_empty() {
             format!(
                 "no tabs; open one: {}",
-                Cmd::new("tab").arg("new").session(&self.session)
+                Cmd::new("tab").arg("new").scoped(&self.session)
             )
         } else {
             let rows: Vec<Vec<String>> = tabs
@@ -313,7 +314,7 @@ impl Engine {
                     } else {
                         cmd.flag("tab", &t.id)
                     };
-                    cmd.session(&self.session)
+                    cmd.scoped(&self.session)
                 };
                 if t.crashed {
                     let _ = write!(text, "\n{} crashed: {}", t.id, on_tab(Cmd::new("reload")));
@@ -470,7 +471,7 @@ impl Engine {
                 Cmd::new("tab")
                     .arg("close")
                     .switch("close-browser")
-                    .session(&self.session)
+                    .scoped(&self.session)
             );
         }
         if let Some(active) = &active {

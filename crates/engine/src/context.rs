@@ -55,6 +55,22 @@ fn current() -> Option<String> {
     CURRENT.try_with(Clone::clone).ok().flatten()
 }
 
+/// Adds the call's `--session` and `--context` to a hint's command, so it
+/// acts where the call did. Session-wide commands (`open`, `close`,
+/// `status`, `context …`) take [`Cmd::session`] instead.
+pub(crate) trait Scoped {
+    fn scoped(self, session: &str) -> Cmd;
+}
+
+impl Scoped for Cmd {
+    fn scoped(self, session: &str) -> Cmd {
+        let context = current()
+            .and_then(|text| parse_context_id(&text).ok())
+            .map(context_name);
+        self.session(session).context(context.as_deref())
+    }
+}
+
 /// `c3`.
 pub(crate) fn context_name(id: u32) -> String {
     format!("c{id}")
@@ -296,7 +312,7 @@ impl Engine {
             crate::tabs::commands::shown_url(&tab.url),
             Cmd::new("snapshot")
                 .flag("context", &context.id)
-                .session(&self.session)
+                .scoped(&self.session)
         );
         let quiet = context.id.clone();
         let data = ContextNewData { context, tab };
@@ -470,7 +486,9 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::{Contexts, context_name, parse_context_id};
+    use protocol::Cmd;
+
+    use super::{Contexts, Scoped as _, context_name, in_context, parse_context_id};
 
     #[test]
     fn context_ids_parse_with_or_without_the_c() {
@@ -480,6 +498,22 @@ mod tests {
             assert!(parse_context_id(bad).is_err(), "{bad}");
         }
         assert_eq!(context_name(7), "c7");
+    }
+
+    #[tokio::test]
+    async fn hints_name_the_calls_context() {
+        let hint = || Cmd::new("snapshot").scoped("shop").to_string();
+        assert_eq!(hint(), "chrome-cdp snapshot --session shop");
+        assert_eq!(
+            in_context(Some("c2".to_owned()), async { hint() }).await,
+            "chrome-cdp snapshot --session shop --context c2"
+        );
+        // As typed (`2`), then as the id it names.
+        assert_eq!(
+            in_context(Some("2".to_owned()), async { hint() }).await,
+            "chrome-cdp snapshot --session shop --context c2"
+        );
+        assert_eq!(in_context(None, async { hint() }).await, hint());
     }
 
     #[test]

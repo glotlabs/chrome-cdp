@@ -22,6 +22,7 @@ use tokio::time::Instant;
 
 use super::keys;
 use super::{Actor, Checks, Described, Ready, describe, returned};
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::injected::{self, GUARD};
 use crate::locator::{Locator, read_listed, release};
@@ -184,15 +185,15 @@ impl Actor<'_> {
                     Cmd::new("select")
                         .arg(locator)
                         .arg(text)
-                        .session(self.session()),
+                        .scoped(self.session()),
                 ),
                 Some(example) => Hint::run(
                     Cmd::new("fill")
                         .arg(locator)
                         .arg(example)
-                        .session(self.session()),
+                        .scoped(self.session()),
                 ),
-                None => Hint::run(Cmd::new("snapshot").raw("-i").session(self.session()))
+                None => Hint::run(Cmd::new("snapshot").raw("-i").scoped(self.session()))
                     .why("lists the page's text fields"),
             };
             return Err(ErrorInfo::new(
@@ -305,7 +306,7 @@ impl Actor<'_> {
                     Cmd::new("select")
                         .arg(locator)
                         .arg(&values[0])
-                        .session(self.session()),
+                        .scoped(self.session()),
                 )));
             }
             // A missing or disabled option may come: the page may still be
@@ -340,14 +341,14 @@ impl Actor<'_> {
                     "role=option[name=\"{}\"]",
                     value.replace('"', "\\\"")
                 ))
-                .session(self.session());
+                .scoped(self.session());
             error.hint(
-                Hint::run(Cmd::new("click").arg(target).session(self.session()))
+                Hint::run(Cmd::new("click").arg(target).scoped(self.session()))
                     .why(format!("opens the list; then {option}")),
             )
         } else {
             error.hint(
-                Hint::run(Cmd::new("snapshot").raw("-i").session(self.session()))
+                Hint::run(Cmd::new("snapshot").raw("-i").scoped(self.session()))
                     .why("lists the page's controls"),
             )
         }
@@ -363,7 +364,7 @@ impl Actor<'_> {
             )
             .note("waited", protocol::format::duration(self.timeout))
             .hint(
-                Hint::run(Cmd::new("snapshot").session(self.session()))
+                Hint::run(Cmd::new("snapshot").scoped(self.session()))
                     .why("an option is often disabled until the form allows it"),
             )
             .details(json!({ "locator": locator, "option": value, "check": "enabled" }));
@@ -407,7 +408,7 @@ impl Actor<'_> {
                 Cmd::new("select")
                     .arg(locator)
                     .arg(&first.label)
-                    .session(self.session()),
+                    .scoped(self.session()),
             ));
         }
         error
@@ -452,7 +453,7 @@ impl Actor<'_> {
                 Hint::run(
                     Cmd::new("click")
                         .arg(element.reference.as_deref().unwrap_or(locator))
-                        .session(self.session()),
+                        .scoped(self.session()),
                 )
                 .why("to click it anyway"),
             )
@@ -484,7 +485,7 @@ impl Actor<'_> {
                 ),
             )
             .hint(
-                Hint::run(Cmd::new("snapshot").raw("-i").session(self.session()))
+                Hint::run(Cmd::new("snapshot").raw("-i").scoped(self.session()))
                     .why("lists its group"),
             ));
         }
@@ -539,7 +540,7 @@ impl Actor<'_> {
             }
             return Err(ErrorInfo::new(ErrorKind::NotEnabled, why)
                 .hint(
-                    Hint::run(Cmd::new("snapshot").session(self.session()))
+                    Hint::run(Cmd::new("snapshot").scoped(self.session()))
                         .why("the page may ignore or undo the click"),
                 )
                 .details(json!({ "locator": locator, "check": "checked" })));

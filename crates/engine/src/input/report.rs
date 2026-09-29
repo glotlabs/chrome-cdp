@@ -25,6 +25,7 @@ use serde_json::Value;
 use tokio::time::Instant;
 
 use super::Actor;
+use crate::context::Scoped as _;
 use crate::frames::World;
 use crate::injected::{self, GUARD};
 use crate::navigate::watch::{Loaded, Watch};
@@ -258,7 +259,7 @@ impl Actor<'_> {
                 "the page the action navigated to {wait}; {} waits for it",
                 protocol::Cmd::new("wait")
                     .switch("load")
-                    .session(self.session())
+                    .scoped(self.session())
             )
         });
         let event = self.navigated(url, title, status, watch, loaded);
@@ -391,7 +392,7 @@ impl Actor<'_> {
                 } else {
                     Cmd::new("network").switch("failed")
                 };
-                let cmd = cmd.session(&self.engine.session);
+                let cmd = cmd.scoped(&self.engine.session);
                 lines.push(format!("! … and {more} more {what} ({cmd} shows them)"));
             }
         }

@@ -20,6 +20,7 @@ use super::prune::{self, View};
 use super::refs::{Lookup, RefEntry, parse_ref};
 use super::tree::{Node, NodeKey};
 use super::{Capture, ax, dom as walker};
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::locator::LocateOptions;
@@ -282,7 +283,7 @@ impl Engine {
             format!("tab {} has no ref e{number}", tab_name(page.id)),
         )
         .hint(
-            Hint::run(Cmd::new("snapshot").session(&self.session))
+            Hint::run(Cmd::new("snapshot").scoped(&self.session))
                 .why("shows the refs the page has now"),
         )
         .details(json!({ "ref": format!("e{number}") }))
@@ -291,7 +292,7 @@ impl Engine {
     fn stale_ref(&self, number: u32, message: String) -> ErrorInfo {
         ErrorInfo::new(ErrorKind::RefStale, message)
             .hint(
-                Hint::run(Cmd::new("snapshot").session(&self.session))
+                Hint::run(Cmd::new("snapshot").scoped(&self.session))
                     .why("gives the new document's refs"),
             )
             .details(json!({ "ref": format!("e{number}") }))
@@ -330,7 +331,7 @@ impl Engine {
             }
         }
         info.hint(
-            Hint::run(Cmd::new("snapshot").session(&self.session))
+            Hint::run(Cmd::new("snapshot").scoped(&self.session))
                 .why("shows the refs the page has now"),
         )
         .details(details)

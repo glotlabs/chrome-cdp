@@ -17,6 +17,7 @@ use protocol::schema::{
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 
 use super::{MAX_SCRIPT, check_binding_name, parse_script_id, script_name};
+use crate::context::Scoped as _;
 use crate::request::{
     ExposeRequest, InitScriptAddRequest, InitScriptListRequest, InitScriptRemoveRequest, millis,
 };
@@ -33,7 +34,7 @@ impl Engine {
                     Cmd::new("init-script")
                         .arg("add")
                         .flag("code", "window.__test = true")
-                        .session(&self.session),
+                        .scoped(&self.session),
                 )),
             );
         }
@@ -72,7 +73,7 @@ impl Engine {
             let _ = write!(
                 text,
                 "runs in every new document before its scripts; {} runs it in the current page",
-                Cmd::new("reload").session(&self.session)
+                Cmd::new("reload").scoped(&self.session)
             );
         }
         let quiet = added.id.clone();
@@ -152,7 +153,7 @@ impl Engine {
                 Cmd::new("init-script")
                     .arg("add")
                     .raw("<file>")
-                    .session(&self.session)
+                    .scoped(&self.session)
             );
         }
         let quiet: Vec<&str> = scripts.iter().map(|s| s.id.as_str()).collect();
@@ -182,13 +183,13 @@ impl Engine {
                             Cmd::new("init-script")
                                 .arg("remove")
                                 .arg("s1")
-                                .session(&self.session),
+                                .scoped(&self.session),
                         ))
                         .hint(Hint::run(
                             Cmd::new("init-script")
                                 .arg("remove")
                                 .switch("all")
-                                .session(&self.session),
+                                .scoped(&self.session),
                         )),
                 );
             }
@@ -203,7 +204,7 @@ impl Engine {
                     format!("there is no init script {}", script_name(missing)),
                 )
                 .hint(
-                    Hint::run(Cmd::new("init-script").arg("list").session(&self.session))
+                    Hint::run(Cmd::new("init-script").arg("list").scoped(&self.session))
                         .why("lists them"),
                 )
             })?
@@ -250,7 +251,7 @@ impl Engine {
                         ErrorKind::NotFound,
                         format!("no function called `{missing}` is exposed"),
                     )
-                    .hint(Hint::run(Cmd::new("expose").session(&self.session)).why("lists them"))
+                    .hint(Hint::run(Cmd::new("expose").scoped(&self.session)).why("lists them"))
                 })?
             }
         } else {
@@ -324,7 +325,7 @@ fn expose_text(
             let _ = write!(
                 text,
                 "no functions exposed; {} adds one",
-                Cmd::new("expose").arg("<name>").session(session)
+                Cmd::new("expose").arg("<name>").scoped(session)
             );
         } else {
             text = bindings.join("\n");
@@ -343,7 +344,7 @@ fn expose_text(
             "exposed {}; each call is logged as binding {}(args) in {}",
             changed.join(", "),
             changed[0],
-            Cmd::new("console").session(session)
+            Cmd::new("console").scoped(session)
         );
     }
     if !already.is_empty() {

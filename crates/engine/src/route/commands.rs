@@ -11,6 +11,7 @@ use protocol::schema::{RouteData, RouteInfo, RoutedRequest, RoutesData, UnrouteD
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 
 use super::{parse_route_id, route_name};
+use crate::context::Scoped as _;
 use crate::request::{RouteRequest, RoutesRequest, UnrouteRequest, millis};
 use crate::{Engine, State};
 
@@ -61,7 +62,7 @@ impl Engine {
                     "no routes; {} adds one",
                     Cmd::new("route")
                         .raw("<url-pattern> --json-body '…'")
-                        .session(&self.session)
+                        .scoped(&self.session)
                 );
             }
             let quiet: Vec<&str> = routes.iter().map(|r| r.id.as_str()).collect();
@@ -86,7 +87,7 @@ impl Engine {
                 Cmd::new("routes")
                     .switch("log")
                     .flag("limit", more.to_string())
-                    .session(&self.session)
+                    .scoped(&self.session)
             );
         }
         for entry in &log {
@@ -124,10 +125,10 @@ impl Engine {
             if req.ids.is_empty() {
                 return Err(ErrorInfo::new(ErrorKind::BadArgs, "no route to remove")
                     .hint(Hint::run(
-                        Cmd::new("unroute").arg("r1").session(&self.session),
+                        Cmd::new("unroute").arg("r1").scoped(&self.session),
                     ))
                     .hint(Hint::run(
-                        Cmd::new("unroute").switch("all").session(&self.session),
+                        Cmd::new("unroute").switch("all").scoped(&self.session),
                     )));
             }
             let ids = req
@@ -144,8 +145,7 @@ impl Engine {
                         format!("there is no route {}", route_name(missing)),
                     )
                     .hint(
-                        Hint::run(Cmd::new("routes").session(&self.session))
-                            .why("lists the routes"),
+                        Hint::run(Cmd::new("routes").scoped(&self.session)).why("lists the routes"),
                     )
                 })?
         };

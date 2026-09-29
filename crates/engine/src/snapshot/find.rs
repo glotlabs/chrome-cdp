@@ -19,6 +19,7 @@ use super::render;
 use super::tree::{IFRAME, Node};
 use super::{AxReader, READ_ATTEMPTS, Reader, scope_locator, scoped};
 use crate::Engine;
+use crate::context::Scoped as _;
 use crate::locator::LocateOptions;
 use crate::request::{FindRequest, millis};
 use crate::tabs::tab_name;
@@ -309,10 +310,10 @@ impl Engine {
                     Some(scope) => Cmd::new("snapshot")
                         .switch("interactive")
                         .flag("scope", scope)
-                        .session(&self.session),
+                        .scoped(&self.session),
                     None => Cmd::new("snapshot")
                         .switch("interactive")
-                        .session(&self.session),
+                        .scoped(&self.session),
                 })
                 .why("shows what can be acted on"),
             )

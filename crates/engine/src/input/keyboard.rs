@@ -17,6 +17,7 @@ use tokio::time::Instant;
 
 use super::keys::{self, Key, KeyEvent};
 use super::{Actor, Checks, Ready, describe};
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::injected::{self, GUARD};
@@ -193,9 +194,9 @@ impl Actor<'_> {
     fn cannot_focus(&self, element: &ActedElement) -> ErrorInfo {
         let described = describe(element);
         let hint = match &element.reference {
-            Some(reference) => Hint::run(Cmd::new("click").arg(reference).session(self.session()))
+            Some(reference) => Hint::run(Cmd::new("click").arg(reference).scoped(self.session()))
                 .why("its page may take keys after a click"),
-            None => Hint::run(Cmd::new("snapshot").raw("-i").session(self.session()))
+            None => Hint::run(Cmd::new("snapshot").raw("-i").scoped(self.session()))
                 .why("lists what can take focus"),
         };
         ErrorInfo::new(
@@ -420,7 +421,7 @@ impl Actor<'_> {
                     "delay",
                     protocol::format::duration(Duration::from_millis(*delay_ms)),
                 )
-                .session(self.session()),
+                .scoped(self.session()),
             _ => Cmd::new("type"),
         };
         let wanted = needs + Duration::from_secs(5);

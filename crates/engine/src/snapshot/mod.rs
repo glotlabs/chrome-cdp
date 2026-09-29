@@ -29,6 +29,7 @@ use cdp::Session;
 use protocol::schema::{SnapshotData, SnapshotNode};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::frames::FrameInfo;
 use crate::locator::{LocateOptions, Locator};
@@ -495,7 +496,7 @@ impl Engine {
             ),
         )
         .hint(
-            Hint::run(Cmd::new("snapshot").session(&self.session))
+            Hint::run(Cmd::new("snapshot").scoped(&self.session))
                 .why("shows what the page has now"),
         )
     }

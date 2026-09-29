@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use tokio::time::Instant;
 
 use super::{Failed, GROUP, Named, Passed, assertion_text, expected};
+use crate::context::Scoped as _;
 use crate::frames::World;
 use crate::injected::{self, GUARD};
 use crate::input::origin;
@@ -89,7 +90,7 @@ impl Engine {
             info = info.note("marks", names.join(", "));
         }
         info.hint(
-            Hint::run(Cmd::new("mark").arg(name).session(&self.session))
+            Hint::run(Cmd::new("mark").arg(name).scoped(&self.session))
                 .why("sets it; then act, then look at what happened --since it"),
         )
     }
@@ -147,7 +148,7 @@ impl Engine {
             cmd = cmd.flag("tab", &tab);
         }
         failed.hint =
-            Some(Hint::run(cmd.session(&self.session)).why("shows them with their stacks"));
+            Some(Hint::run(cmd.scoped(&self.session)).why("shows them with their stacks"));
         Err(self.one_shot_failure(page, req, failed))
     }
 
@@ -223,7 +224,7 @@ impl Engine {
             cmd = cmd.flag("tab", &first);
         }
         Err(info
-            .hint(Hint::run(cmd.session(&self.session)).why("shows them with their stacks"))
+            .hint(Hint::run(cmd.scoped(&self.session)).why("shows them with their stacks"))
             .details(json!({
                 "assertion": assertion,
                 "expected": expected,
@@ -313,14 +314,13 @@ impl Engine {
                 if running.tabs.active() != Some(page.id) {
                     cmd = cmd.flag("tab", &tab);
                 }
-                Hint::run(cmd.session(&self.session))
-                    .why("the first one, with its headers and body")
+                Hint::run(cmd.scoped(&self.session)).why("the first one, with its headers and body")
             }
             None => Hint::run(
                 Cmd::new("network")
                     .switch("failed")
                     .flag("since", "0")
-                    .session(&self.session),
+                    .scoped(&self.session),
             ),
         });
         Err(self.one_shot_failure(page, req, failed))
@@ -517,11 +517,11 @@ impl Engine {
                 Cmd::new("html")
                     .arg(&reference)
                     .switch("outer")
-                    .session(&self.session),
+                    .scoped(&self.session),
             )
             .why("the first one's markup, to fix"),
             None => {
-                Hint::run(Cmd::new("html").session(&self.session)).why("the page's markup, to fix")
+                Hint::run(Cmd::new("html").scoped(&self.session)).why("the page's markup, to fix")
             }
         });
         Err(self.one_shot_failure(page, req, failed))

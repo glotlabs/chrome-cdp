@@ -29,6 +29,7 @@ use serde_json::{Value, json};
 use tokio::time::Instant;
 
 use super::format::{arg_text, error_message, parse_stack, stack_frames};
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::input::origin;
@@ -406,7 +407,7 @@ impl Run<'_> {
                         Cmd::new("eval")
                             .flag("timeout", format::duration(timeout * 2))
                             .raw("…")
-                            .session(session),
+                            .scoped(session),
                     )
                     .why("waits longer"),
                 )
@@ -421,7 +422,7 @@ impl Run<'_> {
                     "the page navigated away while the script ran, so it has no value",
                 )
                 .hint(
-                    Hint::run(Cmd::new("wait").switch("load").session(session))
+                    Hint::run(Cmd::new("wait").switch("load").scoped(session))
                         .why("waits for the new page; then run eval again"),
                 )
             }
@@ -517,13 +518,13 @@ impl Run<'_> {
         }
         if message.contains("el is not defined") && self.req.locator.is_none() {
             return info.hint(
-                Hint::run(Cmd::new("eval").flag("in", "e12").raw("…").session(session))
+                Hint::run(Cmd::new("eval").flag("in", "e12").raw("…").scoped(session))
                     .why("binds el to an element: a ref such as e12, or any locator"),
             );
         }
         if compile {
             return info.hint(
-                Hint::run(Cmd::new("eval").arg("-").session(session))
+                Hint::run(Cmd::new("eval").arg("-").scoped(session))
                     .why("reads the script from stdin, with no shell quoting to get wrong"),
             );
         }

@@ -28,6 +28,7 @@ use super::netlog::{NetLog, Record};
 use super::save;
 use crate::Engine;
 use crate::Running;
+use crate::context::Scoped as _;
 use crate::input::origin;
 use crate::pattern::UrlPattern;
 use crate::request::{NetworkClearRequest, NetworkRequest, NetworkShowRequest, Since, millis};
@@ -265,7 +266,7 @@ impl Engine {
                 .collect();
             cmd = cmd.flag("status", ranges.join(","));
         }
-        cmd.session(&self.session)
+        cmd.scoped(&self.session)
     }
 
     /// `network show <id>` on `page` (naming it unless it is active).
@@ -276,7 +277,7 @@ impl Engine {
         {
             cmd = cmd.flag("tab", tab_name(page.id));
         }
-        cmd.session(&self.session)
+        cmd.scoped(&self.session)
     }
 
     /// `network show`: one request in full, its bodies fetched from Chrome
@@ -401,7 +402,7 @@ impl Engine {
             list = list.flag("tab", &tab);
         }
         let mut info = ErrorInfo::new(ErrorKind::NotFound, why)
-            .hint(Hint::run(list.session(&self.session)).why("lists the requests it has"));
+            .hint(Hint::run(list.scoped(&self.session)).why("lists the requests it has"));
         info.details = Some(serde_json::json!({ "id": id, "oldest": oldest, "latest": latest }));
         info
     }

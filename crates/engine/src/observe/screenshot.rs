@@ -34,6 +34,7 @@ use serde_json::json;
 use tokio::time::Instant;
 
 use super::save::save;
+use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::input::waits_for;
@@ -445,7 +446,7 @@ impl Shot<'_> {
                             Hint::run(
                                 Cmd::new("wait")
                                     .arg(locator.to_string())
-                                    .session(self.session()),
+                                    .scoped(self.session()),
                             )
                             .why("waits until it is visible"),
                         )
@@ -1010,7 +1011,7 @@ impl Shot<'_> {
             output = output.warning(format!(
                 "the {w}x{h} area was shrunk to {width}x{height}, too small to read; {} keeps \
                  its size, or a locator captures one part",
-                cmd.flag("max-size", "0").session(self.session())
+                cmd.flag("max-size", "0").scoped(self.session())
             ));
         }
         Ok(output)
