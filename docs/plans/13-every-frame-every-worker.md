@@ -1,6 +1,6 @@
 # Plan 13 — Every frame, every worker
 
-Status: IN PROGRESS (13.1-13.2 done)
+Status: IN PROGRESS (13.1-13.3 done)
 Depends on: v1 (plans 01-11). Track 1 of [plan 12](12-after-v1.md).
 
 ## Goal
@@ -326,17 +326,17 @@ marked `todo`; the plan is done when no `todo` is left.
       an unmatched worker request fails a test like a page's does
       (a shared worker's only as far as Chrome allows: see the decisions
       log, 13.2).
-- [ ] Console output and errors of every worker reach the right tabs;
+- [x] Console output and errors of every worker reach the right tabs;
       `--all-tabs` counts each once.
-- [ ] Emulation, the frozen clock and the determinism script reach
+- [x] Emulation, the frozen clock and the determinism script reach
       workers; the no-animations sheet reaches open shadow roots.
-- [ ] `permissions` applies per context.
+- [x] `permissions` applies per context.
 - [ ] `frames` lists frames (stable order) and workers; frame errors
       point at it.
 - [ ] `cdp --listen`, coverage, `text`, `markdown`, `wait --text`, the
       focus report, `expect --a11y`, `drag` and `history --as-scenario`
       cover iframes, OOPIFs included.
-- [ ] The table test has no `todo` cell.
+- [x] The table test has no `todo` cell.
 - [ ] Every `--json` change only adds (`cargo xtask release check`
       passes).
 
@@ -412,3 +412,48 @@ marked `todo`; the plan is done when no `todo` is left.
   rules without `match`, with its base64 as `{{body}}`; `mock ws send
   --base64` pushes one. Also fixed: the shim did not turn back on in a
   document after `mock use`, `mock off`, `mock use`.
+- 13.3: What Chrome 154 takes on worker sessions (checked on the matrix
+  page, every kind of worker, paused and running):
+  `Emulation.setUserAgentOverride` is accepted and changes the worker's
+  requests' `User-Agent` and `Accept-Language` and its
+  `navigator.language`, but not `navigator.userAgent`, which a script
+  (`emulate/agent.js`, `Runtime.evaluate`) overrides (`appVersion` too).
+  `Network.setUserAgentOverride` does the same as the `Emulation` one, so
+  it is not used. `setTimezoneOverride` works in every worker, running
+  ones too. `setLocaleOverride` works, but fails with "Another locale
+  override is already in effect" in a worker whose renderer has one (a
+  dedicated worker, a service worker in its page's process); the locale
+  is the renderer's, so that error is ignored for workers and `tz` and
+  `locale` compare each worker's value with the page's and warn about one
+  that kept another. `setGeolocationOverride` does not exist there,
+  `setCPUThrottlingRate` is for pages only, and
+  `Network.emulateNetworkConditions` works in shared and service workers
+  only ("Not supported" in a dedicated one, whose requests are its
+  frame's and follow the page's). A page's user agent reaches the
+  dedicated workers it starts later by itself.
+- 13.3: Console entries keep `worker` (the script, a string since v1) and
+  gain `worker_kind`; text shows `[dedicated worker w.js]` (was
+  `[worker]`) like the network log. `Event::ConsoleError` gains `worker`,
+  so the action report and `expect --no-errors` name it. A shared or
+  service worker's entry goes to each tab of its origin with the same
+  key (the worker's target id and its own event number), which `--all-tabs`
+  counts once. Console entries and requests of a shared or service worker
+  of no tab are counted in `status` (`worker_events_dropped`, shown only
+  when not 0).
+- 13.3: Init scripts of the page's world run in workers (`Wanted::in_workers`):
+  in a new worker before its script, in a running one only with `--now`
+  (as in a document); isolated-world scripts, storage seeds and exposed
+  functions do not (a worker has no isolated world; `expose` in workers
+  is not planned). So the test runner's determinism script, an init
+  script, reaches workers with no change of its own but skipping the
+  sheet where there is no `document`.
+- 13.3: The no-animations sheet reaches shadow roots by wrapping
+  `attachShadow` (open and closed roots made from then on) and walking
+  the open roots when the document is parsed (declarative shadow DOM);
+  a closed declarative root is out of reach.
+- 13.3: The first `time freeze` warns how many workers were already
+  running (they get the clock late: timers set there before keep real
+  time); a later freeze or `time advance` does not, as those workers have
+  the clock by then.
+- 13.3: `clipboard`'s own permission grant also goes to the call's
+  context, like `permissions` and `geo`.
