@@ -40,7 +40,8 @@ pub(crate) enum Feature {
     /// Init scripts, exposed functions, storage seeds and the mock shim
     /// (see [`inject`]).
     Inject,
-    /// Routes, mocks and HTTP authentication (see [`fetch`]).
+    /// Routes, mocks and HTTP authentication, in frames and workers (see
+    /// [`fetch`]).
     Fetch,
     /// Devices, viewport, locale, the frozen clock, … (see
     /// [`emulation`]).
@@ -91,9 +92,15 @@ impl Feature {
             ]),
             // A worker's requests go to its tabs' network logs.
             Self::Network => KindSet::HOSTS_AND_WORKERS,
-            Self::Base | Self::World | Self::Inject | Self::Fetch | Self::Emulation => {
-                KindSet::HOSTS
-            }
+            // Chrome has no `Fetch` in a dedicated worker: its requests
+            // are paused in the session of the frame that started it.
+            Self::Fetch => KindSet::of(&[
+                TargetKind::Page,
+                TargetKind::Iframe,
+                TargetKind::SharedWorker,
+                TargetKind::ServiceWorker,
+            ]),
+            Self::Base | Self::World | Self::Inject | Self::Emulation => KindSet::HOSTS,
         }
     }
 
@@ -143,7 +150,7 @@ impl Feature {
             // `init-script` and `expose` (see `inject`).
             Self::Inject => inject::setup_steps(shared, session, steps),
             // Routes and HTTP authentication (see `fetch`).
-            Self::Fetch => fetch::setup_steps(shared, session, steps),
+            Self::Fetch => fetch::setup_steps(shared, session, target.kind, steps),
             // Devices, viewport, locale, … (see `emulation`).
             Self::Emulation => {
                 let main = target.kind == TargetKind::Page;
@@ -279,7 +286,7 @@ mod tests {
                 "network   xxxxx.",
                 "world     xx....",
                 "inject    xx....",
-                "fetch     xx....",
+                "fetch     xx.xx.",
                 "emulation xx....",
             ]
         );

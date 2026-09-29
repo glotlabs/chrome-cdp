@@ -4,8 +4,9 @@
 //! `targets/matrix.html` has every kind of target: the main frame, a
 //! same-site iframe, a cross-site one (an OOPIF), and a dedicated, a
 //! shared and a service worker. [`ROWS`] is the table of features by
-//! target kind: each cell is checked, not applicable (with why), or still
-//! to do (with the milestone that does it). A feature that reaches a new
+//! target kind: each cell is checked, not applicable (with why), possible
+//! only in part in Chrome (with why; checked, a miss noted), or still to
+//! do (with the milestone that does it). A feature that reaches a new
 //! kind of target turns its `Todo` into `Check`; plan 13 is done when no
 //! `Todo` is left.
 
@@ -19,11 +20,13 @@ use std::time::{Duration, Instant};
 use browser::Host;
 use engine::{
     CdpRequest, ConsoleRequest, EmulateRequest, EmulationChange, Engine, EvalRequest, EvalWorld,
-    InitScriptAddRequest, NavigateRequest, Navigation, NetworkRequest, OpenRequest, Since, Target,
+    ExpectRequest, Expectation, HttpCredentials, InitScriptAddRequest, MockLogRequest,
+    MockOffRequest, MockUseRequest, NavigateRequest, Navigation, NetworkRequest, OpenRequest,
+    RequestCheck, RouteAction, RouteBody, RouteRequest, RouteSpec, Since, Target, UnrouteRequest,
     WaitUntil,
 };
 use fixtures::Fixtures;
-use protocol::schema::{ConsoleData, EvalData, Level, NetworkData, WorkerKind};
+use protocol::schema::{ConsoleData, EvalData, Level, MockLogData, NetworkData, WorkerKind};
 use serde_json::{Value, json};
 
 const TIMEOUT_MS: u64 = 30_000;
@@ -48,9 +51,12 @@ enum Cell {
     Na(&'static str),
     /// It should work there but does not yet; the milestone that does it.
     Todo(&'static str),
+    /// Chrome lets it work there only in part; why. The probe runs, and
+    /// a miss is a note, not a failure.
+    Partly(&'static str),
 }
 
-use Cell::{Check, Na, Todo};
+use Cell::{Check, Na, Partly, Todo};
 
 /// How a row checks a target.
 #[derive(Debug, Clone, Copy)]
@@ -65,6 +71,19 @@ enum Probe {
     Errors,
     /// Its `fetch` is in the tab's network log.
     Network,
+    /// A `route` answers its `fetch`.
+    Route,
+    /// A mock set (`mock use`) answers its `fetch`.
+    Mock,
+    /// `expect request` finds its `fetch`.
+    ExpectRequest,
+    /// Its request that no mock of a set's scope answers is unmatched
+    /// (`mock log --unmatched`, as the test runner checks).
+    Unmatched,
+    /// A `[[websocket]]` mock answers its `WebSocket`.
+    MockWebSocket,
+    /// `open --http-credentials` answers the challenge of its `fetch`.
+    HttpAuth,
     /// An `init-script --now` ran in it.
     InitScript,
     /// `ua` reaches its `navigator.userAgent`.
@@ -78,6 +97,9 @@ struct Row {
 }
 
 const NO_DOCUMENT: &str = "a worker has no document";
+
+const SHARED_FETCH: &str = "Chrome 154 takes Fetch.enable in a shared worker only before it \
+     starts, so its requests are intercepted only if that call wins a race with its start";
 
 /// Features by target kind (see [`COLUMNS`]).
 const ROWS: &[Row] = &[
@@ -114,6 +136,38 @@ const ROWS: &[Row] = &[
         cells: [Check, Check, Check, Check, Check, Check],
     },
     Row {
+        feature: "route",
+        probe: Probe::Route,
+        cells: [Check, Check, Check, Check, Partly(SHARED_FETCH), Check],
+    },
+    Row {
+        feature: "mock use (HTTP)",
+        probe: Probe::Mock,
+        cells: [Check, Check, Check, Check, Partly(SHARED_FETCH), Check],
+    },
+    Row {
+        feature: "expect request",
+        probe: Probe::ExpectRequest,
+        cells: [Check, Check, Check, Check, Check, Check],
+    },
+    Row {
+        feature: "unmatched check",
+        probe: Probe::Unmatched,
+        cells: [Check, Check, Check, Check, Partly(SHARED_FETCH), Check],
+    },
+    Row {
+        feature: "mocked WebSocket",
+        probe: Probe::MockWebSocket,
+        cells: [
+            Check,
+            Check,
+            Check,
+            Todo("13.2"),
+            Todo("13.2"),
+            Todo("13.2"),
+        ],
+    },
+    Row {
         feature: "init-script",
         probe: Probe::InitScript,
         cells: [
@@ -124,6 +178,12 @@ const ROWS: &[Row] = &[
             Todo("13.3"),
             Todo("13.3"),
         ],
+    },
+    // Last: the credentials stay.
+    Row {
+        feature: "HTTP auth",
+        probe: Probe::HttpAuth,
+        cells: [Check, Check, Check, Check, Partly(SHARED_FETCH), Check],
     },
     Row {
         feature: "ua",
@@ -284,6 +344,34 @@ async fn network(engine: &Engine) -> NetworkData {
     serde_json::from_value(out.data).unwrap()
 }
 
+/// `f`'s value, run with the matrix's mock set in use.
+async fn with_mocks<T>(engine: &Engine, f: impl AsyncFnOnce() -> T) -> T {
+    let dir = fixtures::site_dir().join("targets/mocks");
+    engine
+        .mock_use(MockUseRequest {
+            sets: vec![mock::Source {
+                name: "matrix".into(),
+                file: dir.join("matrix.toml"),
+                base: dir.clone(),
+            }],
+            add: false,
+            seed: 0,
+            test: None,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("mock use: {}", e.to_text()));
+    let value = f().await;
+    engine
+        .mock_off(MockOffRequest {
+            sets: Vec::new(),
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("mock off: {}", e.to_text()));
+    value
+}
+
 /// The kind of worker target `who` of the matrix is, if it is one.
 fn worker_kind(who: &str) -> Option<WorkerKind> {
     match who {
@@ -295,7 +383,7 @@ fn worker_kind(who: &str) -> Option<WorkerKind> {
 }
 
 /// Runs `probe` on target `who`; what went wrong, if anything.
-async fn probe(engine: &Engine, probe: Probe, who: &str) -> Result<(), String> {
+async fn probe(engine: &Arc<Engine>, probe: Probe, who: &str) -> Result<(), String> {
     match probe {
         Probe::Answers => {
             let answer = ask(engine, who, "ping").await;
@@ -356,6 +444,121 @@ async fn probe(engine: &Engine, probe: Probe, who: &str) -> Result<(), String> {
             (kind == worker_kind(who))
                 .then_some(())
                 .ok_or_else(|| format!("{url} is marked {kind:?}"))
+        }
+        Probe::Route => {
+            engine
+                .route(RouteRequest {
+                    rules: vec![RouteSpec {
+                        pattern: "/targets/api?from=".into(),
+                        label: None,
+                        methods: Vec::new(),
+                        resource_types: Vec::new(),
+                        times: None,
+                        delay_ms: 0,
+                        context: None,
+                        action: RouteAction::Fulfill {
+                            status: 200,
+                            headers: Vec::new(),
+                            body: RouteBody::Text {
+                                text: r#"{"from":"routed"}"#.into(),
+                            },
+                        },
+                    }],
+                    timeout_ms: TIMEOUT_MS,
+                })
+                .await
+                .unwrap_or_else(|e| panic!("route: {}", e.to_text()));
+            let answer = ask(engine, who, "fetch").await;
+            engine
+                .unroute(UnrouteRequest {
+                    ids: Vec::new(),
+                    all: true,
+                    timeout_ms: TIMEOUT_MS,
+                })
+                .await
+                .unwrap_or_else(|e| panic!("unroute: {}", e.to_text()));
+            (answer == json!("routed"))
+                .then_some(())
+                .ok_or_else(|| format!("fetch answered {answer}"))
+        }
+        Probe::Mock => {
+            let answer = with_mocks(engine, async || ask(engine, who, "fetch").await).await;
+            (answer == json!(format!("mocked {who}")))
+                .then_some(())
+                .ok_or_else(|| format!("fetch answered {answer}"))
+        }
+        Probe::ExpectRequest => {
+            ask(engine, who, "fetch").await;
+            let check = RequestCheck {
+                method: "GET".into(),
+                target: "/targets/api".into(),
+                query: vec![("from".into(), who.into())],
+                headers: Vec::new(),
+                json: None,
+                count: None,
+                min: None,
+                max: None,
+                since: None,
+                none: false,
+            };
+            Box::pin(engine.expect(ExpectRequest {
+                expectation: Expectation::Request(check),
+                not: false,
+                tab: None,
+                strict_refs: false,
+                testid_attribute: None,
+                timeout_ms: 5_000,
+                max_chars: 0,
+            }))
+            .await
+            .map(drop)
+            .map_err(|e| e.to_text())
+        }
+        Probe::Unmatched => {
+            let answer = with_mocks(engine, async || {
+                let answer = ask(engine, who, "unmatched").await;
+                let log = engine
+                    .mock_log(&MockLogRequest {
+                        unmatched: true,
+                        all: false,
+                        limit: 0,
+                        max_chars: 0,
+                    })
+                    .unwrap();
+                let log: MockLogData = serde_json::from_value(log.data).unwrap();
+                let url = format!("/targets/unmatched?from={who}");
+                let seen = log.log.iter().any(|r| r.url.ends_with(&url));
+                (answer, seen)
+            })
+            .await;
+            match answer {
+                (_, true) => Ok(()),
+                (answer, false) => Err(format!("not unmatched (answered {answer})")),
+            }
+        }
+        Probe::MockWebSocket => {
+            let answer = with_mocks(engine, async || ask(engine, who, "ws").await).await;
+            (answer == json!("pong"))
+                .then_some(())
+                .ok_or_else(|| format!("the socket answered {answer}"))
+        }
+        Probe::HttpAuth => {
+            engine
+                .open(OpenRequest {
+                    http_credentials: Some(HttpCredentials {
+                        username: fixtures::AUTH_USER.into(),
+                        password: fixtures::AUTH_PASSWORD.into(),
+                        origin: None,
+                    }),
+                    timeout_ms: TIMEOUT_MS,
+                    ..OpenRequest::default()
+                })
+                .await
+                .unwrap_or_else(|e| panic!("open --http-credentials: {}", e.to_text()));
+            let answer = ask(engine, who, "auth").await;
+            (answer == json!(200))
+                .then_some(())
+                .ok_or_else(|| format!("fetch answered {answer}"))
         }
         Probe::InitScript => {
             engine
@@ -422,6 +625,19 @@ async fn every_feature_in_every_target() {
                         reasons.push(reason);
                     }
                     "n/a".to_owned()
+                }
+                Partly(why) => {
+                    let reason = format!("partly in the {title}: {why}");
+                    if !reasons.contains(&reason) {
+                        reasons.push(reason);
+                    }
+                    match probe(&engine, row.probe, who).await {
+                        Ok(()) => "ok (partly)".to_owned(),
+                        Err(e) => {
+                            reasons.push(format!("missed {} in the {title}: {e}", row.feature));
+                            "missed (partly)".to_owned()
+                        }
+                    }
                 }
                 Todo(milestone) => {
                     todo += 1;

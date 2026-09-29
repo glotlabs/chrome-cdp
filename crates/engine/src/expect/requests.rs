@@ -340,12 +340,13 @@ impl Engine {
     ) -> Vec<Sent> {
         let mut sent = Vec::new();
         let mut pending = Vec::new();
+        // A redirect's hops share the request id: one request. So does a
+        // shared or service worker's request in each tab of its origin.
+        let mut seen: HashSet<(String, String)> = HashSet::new();
         for &tab in tabs {
             running.tabs.netlog(tab, |log| {
-                let mut seen: HashSet<(&str, &str)> = HashSet::new();
                 for record in log.records() {
-                    // A redirect's hops share the request id: one request.
-                    if !seen.insert((record.session.as_str(), record.request_id.as_str())) {
+                    if !seen.insert((record.session.clone(), record.request_id.clone())) {
                         continue;
                     }
                     let after = since.is_none_or(|s| {

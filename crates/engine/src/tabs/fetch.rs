@@ -1,5 +1,5 @@
-//! Request interception in page and iframe sessions: plan 07's routes
-//! (see [`crate::route`]) and plan 03's HTTP authentication (see
+//! Request interception in page, iframe and worker sessions: plan 07's
+//! routes (see [`crate::route`]) and plan 03's HTTP authentication (see
 //! [`super::auth`]) share the `Fetch` domain.
 //!
 //! `Fetch` is on in a session while the session has routes or HTTP
@@ -9,8 +9,20 @@
 //! sees them) and the HTTP cache (whose hits `Fetch` never sees), as
 //! Playwright does. Without routes or credentials, nothing is paused.
 //!
-//! Each host session's `Fetch` events come through a lossless stream and
-//! are handled in their own task ([`watch_fetch`]): a paused request whose
+//! Chrome 154 has no `Fetch` domain in a dedicated worker: its requests
+//! are paused in the session of the frame that started it, with the
+//! frame's tab. A shared or service worker's are intercepted in its own
+//! session (plan 13.2), with its scope and no tab, which is all routes and
+//! mock sets need. Page requests skip
+//! service workers while routes exist, so they still reach the routes;
+//! what a service worker fetches itself is routed in its session. Chrome
+//! takes `Fetch.enable` in a shared worker only while it waits to start
+//! (later it answers "'Fetch.enable' wasn't found"), so a shared worker
+//! intercepts every request from its start, auth challenges too, and
+//! whatever needs no route or credentials goes on at once.
+//!
+//! Each session's `Fetch` events come through a lossless stream and are
+//! handled in their own task ([`watch_fetch`]): a paused request whose
 //! event were dropped would hang its page.
 
 use std::sync::Arc;
@@ -24,10 +36,11 @@ use futures_util::future::join_all;
 
 use super::auth::Auth;
 use super::features::Feature;
+use super::targets::TargetKind;
 use super::{Shared, Step, lock, step};
 use crate::route::{self, Decision, PendingPatches};
 
-/// What a page or iframe session intercepts.
+/// What a page, iframe or worker session intercepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Interception {
     /// `Fetch` is on.
@@ -38,40 +51,73 @@ pub(crate) struct Interception {
     no_cache: bool,
 }
 
-/// What the session's settings ask for now.
-fn wanted(shared: &Shared) -> Interception {
+/// Whether `Fetch` can be turned on and off in a running target of
+/// `kind`: not in a shared worker (see the module documentation).
+fn switchable(kind: TargetKind) -> bool {
+    kind != TargetKind::SharedWorker
+}
+
+/// What the session's settings ask of a target of `kind` now.
+fn wanted(shared: &Shared, kind: TargetKind) -> Interception {
     let settings = &shared.settings;
     let routes = settings.routes.is_active();
     Interception {
-        fetch: routes || settings.http_credentials().is_some(),
+        fetch: routes || settings.http_credentials().is_some() || !switchable(kind),
         bypass: routes || settings.bypass_service_worker(),
         no_cache: routes,
     }
 }
 
-/// `Fetch.enable`: every request, paused before it is sent; challenges too
-/// with credentials.
-fn enable(shared: &Shared) -> fetch::EnableParams {
+/// `Fetch.enable` for a target of `kind`: every request, paused before it
+/// is sent; challenges too with credentials (always in a shared worker,
+/// which cannot be told later).
+fn enable(shared: &Shared, kind: TargetKind) -> fetch::EnableParams {
     fetch::EnableParams {
         patterns: Some(vec![fetch::RequestPattern {
             url_pattern: Some("*".into()),
             resource_type: None,
             request_stage: Some(fetch::RequestStage::Request),
         }]),
-        handle_auth_requests: Some(shared.settings.http_credentials().is_some()),
+        handle_auth_requests: Some(
+            shared.settings.http_credentials().is_some() || !switchable(kind),
+        ),
     }
 }
 
-/// The setup steps of a new page or iframe session (see `super::setup`).
-pub(super) fn setup_steps(shared: &Shared, session: &Session, steps: &mut Vec<(&str, Step)>) {
-    let wanted = wanted(shared);
+/// Turns `Fetch` on in a new shared worker, as soon as it attached:
+/// Chrome makes the worker's loader once it has its script, paused or
+/// not, and requests of a loader made before `Fetch.enable` are never
+/// paused (see the module documentation). The sooner, the likelier it
+/// comes first; nothing makes it certain.
+pub(super) fn enable_early(shared: &Arc<Shared>, session: &Session, kind: TargetKind) {
+    if switchable(kind) {
+        return;
+    }
+    let call = session.call(enable(shared, kind));
+    shared.spawn(async move {
+        if let Err(e) = call.await {
+            tracing::debug!("cannot intercept a shared worker's requests: {e}");
+        }
+    });
+}
+
+/// The setup steps of a new page, iframe or worker session of `kind`
+/// (see `super::setup`).
+pub(super) fn setup_steps(
+    shared: &Shared,
+    session: &Session,
+    kind: TargetKind,
+    steps: &mut Vec<(&str, Step)>,
+) {
+    let wanted = wanted(shared, kind);
     if let Some(id) = session.id()
         && let Some(target) = lock(&shared.state).targets.get_mut(id)
     {
         target.interception = Some(wanted);
     }
-    if wanted.fetch {
-        steps.push(("Fetch.enable", step(session.call(enable(shared)))));
+    // A shared worker's was sent as it attached (see `enable_early`).
+    if wanted.fetch && switchable(kind) {
+        steps.push(("Fetch.enable", step(session.call(enable(shared, kind)))));
     }
     if wanted.bypass {
         let params = network::SetBypassServiceWorkerParams::new(true);
@@ -91,41 +137,47 @@ pub(super) fn setup_steps(shared: &Shared, session: &Session, steps: &mut Vec<(&
 /// navigation, say). With `force` (new credentials), every session gets
 /// every setting.
 pub(super) async fn apply(shared: &Shared, timeout: Duration, force: bool) {
-    let now = wanted(shared);
-    let hosts: Vec<Session> = lock(&shared.state)
+    let targets: Vec<(Session, TargetKind, Interception)> = lock(&shared.state)
         .applies_mut(Feature::Fetch)
         .map(|(_, t)| t)
-        .filter(|t| force || t.interception != Some(now))
-        .map(|t| {
+        .filter_map(|t| {
+            let now = wanted(shared, t.kind);
+            if !force && t.interception == Some(now) {
+                return None;
+            }
             t.interception = Some(now);
-            t.session.with_timeout(timeout)
+            Some((t.session.with_timeout(timeout), t.kind, now))
         })
         .collect();
-    let mut calls: Vec<Step> = Vec::new();
-    for host in &hosts {
-        if now.fetch {
+    let mut calls: Vec<(TargetKind, Step)> = Vec::new();
+    for (host, kind, now) in &targets {
+        let kind = *kind;
+        if !switchable(kind) {
+            // Intercepting since it started.
+        } else if now.fetch {
             // Sent again when already on: the credentials may be new.
-            calls.push(step(host.call(enable(shared))));
+            calls.push((kind, step(host.call(enable(shared, kind)))));
         } else {
-            calls.push(step(host.call(fetch::DisableParams::default())));
+            calls.push((kind, step(host.call(fetch::DisableParams::default()))));
         }
         let params = network::SetBypassServiceWorkerParams::new(now.bypass);
-        calls.push(step(host.call(params)));
+        calls.push((kind, step(host.call(params))));
         let params = network::SetCacheDisabledParams::new(now.no_cache);
-        calls.push(step(host.call(params)));
+        calls.push((kind, step(host.call(params))));
     }
-    for result in join_all(calls).await {
+    let (kinds, calls): (Vec<TargetKind>, Vec<Step>) = calls.into_iter().unzip();
+    for (kind, result) in kinds.into_iter().zip(join_all(calls).await) {
         if let Err(e) = result {
             // Usually a target that closed meanwhile.
-            tracing::debug!("cannot change a target's request interception: {e}");
+            tracing::debug!("cannot change the request interception of a {kind:?}: {e}");
         }
     }
 }
 
-/// Handles a page or iframe session's `Fetch` events: paused requests go
-/// through the session's routes, authentication challenges get its
-/// credentials. `tab` is the tab whose frames the session has, `context`
-/// its browser context.
+/// Handles a page, iframe or worker session's `Fetch` events: paused
+/// requests go through the session's routes, authentication challenges
+/// get its credentials. `tab` is the tab the session belongs to (none for
+/// a shared or service worker), `context` its browser context.
 pub(super) async fn watch_fetch(
     shared: Arc<Shared>,
     mut events: LosslessEventStream,
@@ -165,6 +217,7 @@ fn paused(
 ) {
     let params = &event.params;
     let request_id = params["requestId"].as_str().unwrap_or_default();
+    tracing::trace!(session = ?session.id(), url = %params["request"]["url"], "paused");
     let response_stage =
         params.get("responseStatusCode").is_some() || params.get("responseErrorReason").is_some();
     if response_stage {

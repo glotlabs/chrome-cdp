@@ -60,7 +60,7 @@ use protocol::schema::{Event, TabInfo, Viewport};
 
 use self::dialogs::OpenDialog;
 use self::downloads::Download;
-use self::features::{NewTarget, REGISTRY};
+use self::features::{Feature, NewTarget, REGISTRY};
 use self::targets::{Owner, Target, TargetKind};
 use crate::emulate::{Aspects, Emulator};
 use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
@@ -2036,7 +2036,10 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent<'_>) {
     // Before auto-attach and the domains are turned on for it, so no
     // child and no frame event is missed.
     let events = (kind.is_host() || kind.worker().is_some()).then(|| session.events_lossless(""));
-    let fetch_events = kind.is_host().then(|| session.events_lossless("Fetch."));
+    let fetch_events = Feature::Fetch
+        .kinds()
+        .contains(kind)
+        .then(|| session.events_lossless("Fetch."));
     shared.lock().targets.insert(
         session_id.clone(),
         Target::new(
@@ -2050,6 +2053,7 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent<'_>) {
         ),
     );
     if let Some(fetch_events) = fetch_events {
+        fetch::enable_early(shared, &session, kind);
         shared.spawn(fetch::watch_fetch(
             shared.clone(),
             fetch_events,

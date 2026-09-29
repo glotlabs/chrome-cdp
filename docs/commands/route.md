@@ -32,10 +32,11 @@ Options:
 Adds a rule for requests whose URL matches PATTERN: a glob (`**/api/*`,
 where * stops at / and ** does not), a /regex/, or a part of the URL. Rules
 belong to the browser context (the session's own, unless --context): they
-apply to every tab, popup and frame in it, the ones opened later too,
-before the page's first script runs. The first matching
-rule, in the order they were added, handles a request; the rest go on
-untouched. `routes` lists them, `unroute` removes them.
+apply to every tab, popup, frame and worker in it, the ones opened later
+too, before the page's first script runs (Chrome lets a shared worker be
+intercepted only as it starts, and under load may start it first). The
+first matching rule, in the order they were added, handles a request; the
+rest go on untouched. `routes` lists them, `unroute` removes them.
 
 One action per rule:
   answer it:      --json-body, --body, --body-file, --status, --header
