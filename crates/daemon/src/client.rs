@@ -210,7 +210,12 @@ pub fn daemon_alive(paths: &SessionPaths) -> bool {
 
 /// Connects to the session's daemon if one runs. Never starts one, and
 /// does not check its build (`status` and `close` work across builds).
+/// A session dir that is not the user's own and private has no daemon of
+/// theirs: its socket could be another user's, listening for commands.
 pub async fn connect(paths: &SessionPaths, build: &str) -> Result<Option<Client>, ErrorInfo> {
+    if crate::paths::check_private(&paths.dir, browser::launch::effective_uid()).is_err() {
+        return Ok(None);
+    }
     let deadline = Instant::now() + START_WAIT;
     let mut pause = Duration::from_millis(5);
     loop {
@@ -474,6 +479,11 @@ fn open_log(path: &Path) -> std::io::Result<File> {
 pub fn live_sessions(env: &Env) -> Vec<SessionPaths> {
     let mut found = Vec::new();
     for base in env.bases() {
+        // A base another user made (`/tmp/ccdp-<uid>` before we did) holds
+        // no session of ours: `close --all` must not trust its pids.
+        if crate::paths::check_private(&base, env.uid).is_err() {
+            continue;
+        }
         let Ok(entries) = std::fs::read_dir(&base) else {
             continue;
         };
