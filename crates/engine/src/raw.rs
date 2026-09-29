@@ -11,7 +11,7 @@
 //! for after the call without the tab's lock, so other commands on the
 //! tab run meanwhile (and can be what makes them fire).
 
-use cdp::{CdpError, RawEventStream, Session};
+use cdp::{CdpError, LosslessEventStream, Session};
 use protocol::schema::{CdpEvent, CdpListenData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde_json::{Map, Value, json};
@@ -68,14 +68,15 @@ fn wanted(listen: &[String], method: &str) -> bool {
 }
 
 /// Makes the call (if any) on `session`, subscribed to its events first
-/// when `listen` is set, so none that the call causes is missed.
+/// when `listen` is set, so none that the call causes is missed, however
+/// many it causes before the call returns.
 async fn call_listening(
     session: &Session,
     method: Option<&str>,
     params: Value,
     listen: bool,
-) -> cdp::Result<(Option<Value>, Option<RawEventStream>)> {
-    let events = listen.then(|| session.events());
+) -> cdp::Result<(Option<Value>, Option<LosslessEventStream>)> {
+    let events = listen.then(|| session.events_lossless(""));
     let result = match method {
         Some(method) => Some(session.call_raw(method, params).await?),
         None => None,
@@ -90,7 +91,7 @@ const MAX_EVENTS: usize = 10_000;
 /// (0: until the deadline, at most [`MAX_EVENTS`]), the deadline passed,
 /// or the session went away.
 async fn collect(
-    mut stream: RawEventStream,
+    mut stream: LosslessEventStream,
     listen: &[String],
     count: usize,
     deadline: Instant,
