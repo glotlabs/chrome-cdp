@@ -12,6 +12,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
+mod compat;
+mod json;
 mod release;
 
 /// Each target's release binary size, in bytes: `dist` fails when a build

@@ -14,7 +14,9 @@
 //! - `npm [--out DIR]`: the npm wrapper package and one package per
 //!   platform (`npm/README.md`);
 //! - `check [--tag vX.Y.Z]`: the versions agree (workspace, internal
-//!   dependencies, the tag) and the CHANGELOG has the tag's section.
+//!   dependencies, the tag), the CHANGELOG has the tag's section, and the
+//!   `--json` schemas and command line only add to the previous tag's
+//!   (`crate::compat`).
 //!
 //! Archive names carry no version, so `releases/latest/download/…` URLs
 //! (install.sh) always name the newest build.
@@ -28,7 +30,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use crate::{Result, output, warn, workspace_root};
+use crate::{Result, compat, output, warn, workspace_root};
 
 /// The release targets: (Rust triple, npm `os`, npm `cpu`, Homebrew
 /// `on_*` blocks).
@@ -108,8 +110,10 @@ steps:
                        the commits since the previous tag, grouped by type
   formula              print the Homebrew formula for the archives in dist/
   npm [--out DIR]      write the npm packages (default target/npm) from dist/
-  check [--tag vX.Y.Z] check that the versions agree and CHANGELOG.md has the
-                       tag's section";
+  check [--tag vX.Y.Z] check that the versions agree, CHANGELOG.md has the
+                       tag's section, and the --json schemas and command line
+                       only add to the previous tag's (unless the major version
+                       went up)";
 
 pub(crate) fn run(args: &[String]) -> Result {
     let (step, rest) = args.split_first().ok_or_else(|| USAGE.to_owned())?;
@@ -460,19 +464,8 @@ fn notes(root: &Path, tag: Option<&String>) -> Result<String> {
     };
     let version = tag.trim_start_matches('v');
     let changelog = read(&root.join("CHANGELOG.md")).unwrap_or_default();
-    let head = if git_ok(root, &["rev-parse", "--verify", "--quiet", &tag]) {
-        tag.clone()
-    } else {
-        "HEAD".to_owned()
-    };
-    let previous = Command::new("git")
-        .current_dir(root)
-        .args(["describe", "--tags", "--abbrev=0", "--match", "v*"])
-        .arg(format!("{head}^"))
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned());
+    let head = release_head(root, &tag);
+    let previous = previous_tag(root, &head);
     // The first release lists no commits: that would be the whole history.
     let commits = match &previous {
         Some(previous) => parse_log(&output(
@@ -500,6 +493,28 @@ fn notes(root: &Path, tag: Option<&String>) -> Result<String> {
         );
     }
     Ok(text)
+}
+
+/// The commit a release of `tag` is made from: the tag when it exists,
+/// else HEAD (before tagging).
+fn release_head(root: &Path, tag: &str) -> String {
+    if git_ok(root, &["rev-parse", "--verify", "--quiet", tag]) {
+        tag.to_owned()
+    } else {
+        "HEAD".to_owned()
+    }
+}
+
+/// The newest `v*` tag before `head`.
+fn previous_tag(root: &Path, head: &str) -> Option<String> {
+    Command::new("git")
+        .current_dir(root)
+        .args(["describe", "--tags", "--abbrev=0", "--match", "v*"])
+        .arg(format!("{head}^"))
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
 }
 
 fn git_ok(root: &Path, args: &[&str]) -> bool {
@@ -615,9 +630,11 @@ fn group_commits(commits: &[Commit]) -> String {
 }
 
 /// Checks what a release needs: every internal dependency's `version`
-/// equals the workspace version, and with `tag`, the tag is `v<version>`
-/// and CHANGELOG.md has its section. A missing license only warns: the
-/// GitHub release does not need one, crates.io and npm refuse without.
+/// equals the workspace version, with `tag`, the tag is `v<version>` and
+/// CHANGELOG.md has its section, and the golden schemas and command line
+/// only add to the previous release tag's unless the major version went
+/// up (`compat`). A missing license only warns: the GitHub release does
+/// not need one, crates.io and npm refuse without.
 fn check(root: &Path, tag: Option<&String>) -> Result {
     let version = version(root)?;
     let manifest = read(&root.join("Cargo.toml"))?;
@@ -643,11 +660,53 @@ fn check(root: &Path, tag: Option<&String>) -> Result {
     if crates_publish_off(&manifest) {
         warn("`publish = false` in [workspace.package]: the crates.io job will skip publishing");
     }
+    // Without a tag (CI), what HEAD would release: after a release and
+    // before the version bump, a break then fails until the bump.
+    let head = tag.map_or_else(|| "HEAD".to_owned(), |t| release_head(root, t));
+    match previous_tag(root, &head) {
+        None => eprintln!(
+            "release check: no previous release tag: the --json schemas and the \
+             command line are not compared"
+        ),
+        Some(previous) => {
+            let report = compat::compare_with(root, &previous)?;
+            for note in &report.notes {
+                eprintln!("release check: {note}");
+            }
+            if report.breaks.is_empty() {
+                eprintln!(
+                    "release check: {} schemas and the command line only add to {previous}'s",
+                    report.schemas
+                );
+            } else if compat::breaking_allowed(&previous, &version) {
+                warn(&format!(
+                    "{} since {previous}, allowed by the new version {version}:\n  {}",
+                    breaking_changes(report.breaks.len()),
+                    report.breaks.join("\n  ")
+                ));
+            } else {
+                problems.push(format!(
+                    "{} since {previous} (a minor or patch release may only add; \
+                     undo them or raise the major version, the minor one before 1.0):\n  {}",
+                    breaking_changes(report.breaks.len()),
+                    report.breaks.join("\n  ")
+                ));
+            }
+        }
+    }
     if problems.is_empty() {
         eprintln!("release check: {version} ok");
         Ok(())
     } else {
         Err(problems.join("\n"))
+    }
+}
+
+fn breaking_changes(count: usize) -> String {
+    if count == 1 {
+        "1 breaking change".into()
+    } else {
+        format!("{count} breaking changes")
     }
 }
 
