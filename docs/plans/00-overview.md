@@ -180,7 +180,7 @@ conventions early: **read 08 §2–§4 before implementing any command.**
 - [ ] Install works with one command (brew, curl script, `cargo install`/`cargo binstall`, `npx`), and `chrome-cdp install` works on both OSes.
 - [ ] `examples/e2e-shop` (plan 11) passes with `--backend mock` and against its real fixture backend on every CI runner.
 - [ ] `chrome-cdp skill` prints an agent skill/instructions file that has been validated with Claude Code.
-- [ ] The CLI output and JSON schemas are versioned and documented as stable.
+- [x] The CLI output and JSON schemas are versioned and documented as stable ([docs/output.md](../output.md)).
 
 ## 8. Non-goals for v1
 

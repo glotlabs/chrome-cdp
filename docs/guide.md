@@ -534,6 +534,7 @@ failed, 2 usage, 3 timeout, 4 browser/daemon, 5 dialog. `--timeout` defaults
 to 10 s for `wait` and 30 s for everything else. Defaults for
 `--session`, `--timeout`, `base_url` and `testid_attribute` can live in
 `~/.config/chrome-cdp/config.toml` or a project's `.chrome-cdp.toml`.
+[output.md](output.md) has the whole contract and what stays stable.
 
 ## Scripts
 

@@ -111,4 +111,5 @@ API is the command line (commands, arguments, flags, environment variables,
 exit codes, error kinds) and the `--json` output, whose schemas
 `chrome-cdp schema <command>` prints: from 1.0 a minor release only adds to
 them. The plain text output is for reading and may change in any release.
-[CHANGELOG.md](../CHANGELOG.md) lists the changes of each release.
+[CHANGELOG.md](../CHANGELOG.md) lists the changes of each release, and
+[output.md](output.md#versions-and-stability) spells out what is stable.

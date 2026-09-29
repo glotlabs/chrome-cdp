@@ -229,7 +229,8 @@ fn help_examples_parse() {
         .iter()
         .filter(|p| !script_only(p))
         .map(|p| {
-            let (page, command) = &examples[p["line"].as_u64().unwrap() as usize - 1];
+            let line = usize::try_from(p["line"].as_u64().unwrap()).unwrap();
+            let (page, command) = &examples[line - 1];
             format!(
                 "{}: chrome-cdp {command}\n  {}",
                 page.display(),

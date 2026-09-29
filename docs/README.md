@@ -33,6 +33,8 @@ mocked backend, and the same scenarios against a real one. Start with the
 
 ## Reference
 
+- [output.md](output.md): the output contract, the `--json` envelope,
+  exit codes, and what stays stable across releases.
 - [scenario-syntax.md](scenario-syntax.md): the `.cdp` grammar.
 - [e2e/mocks.md](e2e/mocks.md): every key of a mock file.
 - [chrome-flags.md](chrome-flags.md): the flags Chrome is launched with,
