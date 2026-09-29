@@ -2,7 +2,7 @@
 //!
 //! A hint names the concrete next command. [`Cmd`] builds that command so it
 //! can be pasted as is: arguments are shell-quoted and a non-default session
-//! is carried over. [`Hint`] adds the reason and alternatives:
+//! and a `--context` are carried over. [`Hint`] adds the reason and alternatives:
 //!
 //! ```
 //! use protocol::{Cmd, Hint};
@@ -74,6 +74,19 @@ impl Cmd {
             self
         } else {
             self.flag("session", name)
+        }
+    }
+
+    /// Adds `--context <name>` when the failing command acted in a context
+    /// (`None` for the session's default one), so the hint acts there too.
+    /// A command that already names a context keeps it.
+    #[must_use]
+    pub fn context(self, name: Option<&str>) -> Self {
+        match name {
+            Some(name) if !self.words.iter().any(|w| w == "--context") => {
+                self.flag("context", name)
+            }
+            _ => self,
         }
     }
 }
@@ -171,6 +184,29 @@ mod tests {
         assert_eq!(
             Cmd::new("snapshot").session("my shop").to_string(),
             "chrome-cdp snapshot --session 'my shop'"
+        );
+    }
+
+    #[test]
+    fn a_context_is_carried_over() {
+        assert_eq!(
+            Cmd::new("snapshot")
+                .session("shop")
+                .context(Some("c2"))
+                .to_string(),
+            "chrome-cdp snapshot --session shop --context c2"
+        );
+        assert_eq!(
+            Cmd::new("snapshot").context(None).to_string(),
+            "chrome-cdp snapshot"
+        );
+        assert_eq!(
+            Cmd::new("tab")
+                .arg("t3")
+                .flag("context", "c1")
+                .context(Some("c2"))
+                .to_string(),
+            "chrome-cdp tab t3 --context c1"
         );
     }
 
