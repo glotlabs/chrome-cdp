@@ -12,6 +12,8 @@ Arguments:
 - `<NAME>`: The value, or `reset` for the browser's own
 
 ```text
+Frames and workers see it too; a worker that kept another is a warning.
+
 Examples:
   chrome-cdp locale de-DE
   chrome-cdp locale ja-JP

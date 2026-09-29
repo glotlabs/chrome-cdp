@@ -129,7 +129,7 @@ Today: 128 rows; 105 ✅, 15 🟡, 3 ❌, 5 ➖. No agent-critical row is ❌.
 
 | Playwright | chrome-cdp | Status | Agent-critical |
 |---|---|---|---|
-| `page.on('console')` | `console` (`--level warn`, `--grep`, `--follow`), recorded from the tab's start | ✅ | yes |
+| `page.on('console')`, `worker.on('console')` | `console` (`--level warn`, `--grep`, `--follow`), recorded from the tab's start, its frames' and workers' too (shared and service workers in each tab of their origin) | ✅ | yes |
 | `page.on('pageerror')` | `errors` (uncaught exceptions, `console.error`, failed loads; `--sourcemaps`) | ✅ | yes |
 | `page.on('request' \| 'response' \| 'requestfailed')` | `network` (`--failed`, `--url`, `--type`, `--status 4xx`, `--follow`) | ✅ | yes |
 | `response.body()`, `json()` | `network show ID --body` | ✅ | yes |

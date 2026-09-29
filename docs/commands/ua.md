@@ -12,7 +12,8 @@ Arguments:
 - `<USER-AGENT>`: The user agent (`-` reads stdin), or `reset`
 
 ```text
-`emulate <device>` sets a device's user agent with its viewport.
+`emulate <device>` sets a device's user agent with its viewport. Workers
+get it too: their navigator.userAgent and their requests.
 
 Examples:
   chrome-cdp ua 'Mozilla/5.0 (compatible; MyBot/1.0)'

@@ -9,7 +9,9 @@ chrome-cdp time [OPTIONS] <COMMAND>
 
 ```text
 While frozen, `Date` (and `Intl.DateTimeFormat` without a date) gives the
-frozen time in every tab and frame, from each page's first script on.
+frozen time in every tab, frame and worker, from each page's (or worker's)
+first script on; a warning says how many workers already running got it
+late.
 Timers and animations keep running in real time. `time advance` also moves
 performance.now() on and runs the setTimeout and setInterval callbacks due
 by then (each once), so expiry, polling and debounce can be tested without

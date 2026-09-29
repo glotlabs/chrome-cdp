@@ -1305,6 +1305,8 @@ Examples:
 
     /// Set the time zone pages see (an IANA name).
     #[command(after_help = "\
+Frames and workers see it too; a worker that kept another is a warning.
+
 Examples:
   chrome-cdp tz Europe/Berlin
   chrome-cdp tz America/New_York
@@ -1313,6 +1315,8 @@ Examples:
 
     /// Set the locale: Intl formats, navigator.language, Accept-Language.
     #[command(after_help = "\
+Frames and workers see it too; a worker that kept another is a warning.
+
 Examples:
   chrome-cdp locale de-DE
   chrome-cdp locale ja-JP
@@ -1321,7 +1325,8 @@ Examples:
 
     /// Set the user agent pages and servers see.
     #[command(after_help = "\
-`emulate <device>` sets a device's user agent with its viewport.
+`emulate <device>` sets a device's user agent with its viewport. Workers
+get it too: their navigator.userAgent and their requests.
 
 Examples:
   chrome-cdp ua 'Mozilla/5.0 (compatible; MyBot/1.0)'
@@ -1445,7 +1450,9 @@ Examples:
         arg_required_else_help = true,
         after_help = "\
 While frozen, `Date` (and `Intl.DateTimeFormat` without a date) gives the
-frozen time in every tab and frame, from each page's first script on.
+frozen time in every tab, frame and worker, from each page's (or worker's)
+first script on; a warning says how many workers already running got it
+late.
 Timers and animations keep running in real time. `time advance` also moves
 performance.now() on and runs the setTimeout and setInterval callbacks due
 by then (each once), so expiry, polling and debounce can be tested without
