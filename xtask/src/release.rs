@@ -186,6 +186,8 @@ fn archive(root: &Path, dist: &Path, target: Target) -> Result {
     let tarball = dist.join(target.archive());
     crate::run(
         Command::new("tar")
+            // macOS's tar would add `._*` files for extended attributes.
+            .env("COPYFILE_DISABLE", "1")
             .arg("-czf")
             .arg(&tarball)
             .arg("-C")

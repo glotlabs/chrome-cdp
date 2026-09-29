@@ -56,6 +56,10 @@ jobs:
       - name: Chrome ${{ matrix.chrome }}
         run: cargo xtask chrome ${{ matrix.chrome }} --with-deps
       - run: cargo xtask ci
+      # Plan 10.5 (v1 checklist): doctor passes on every runner, with a real
+      # launch of the Chrome under test.
+      - name: chrome-cdp doctor
+        run: target/debug/chrome-cdp doctor --chrome "$CHROME_PATH"
       # Plans 02 and 10.1: no test may leave a Chrome it launched, its
       # watchdog, a session daemon, or a socket file in a session dir.
       - name: No leftover processes or sockets

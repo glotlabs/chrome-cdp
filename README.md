@@ -5,6 +5,20 @@ built first for AI agents working from a shell. It aims to replace Playwright
 for agents: one command per step, compact output, refs instead of selectors,
 and errors that say what to run next.
 
+## Install
+
+```sh
+curl -fsSL https://github.com/glotlabs/chrome-cdp/releases/latest/download/install.sh | sh
+brew install glotlabs/tap/chrome-cdp
+npx chrome-cdp --help                 # or npm install -g chrome-cdp
+cargo binstall chrome-cdp             # or cargo install chrome-cdp
+chrome-cdp doctor                     # checks Chrome, its sandbox and the setup
+```
+
+Linux and macOS, x86_64 and arm64. [docs/install.md](docs/install.md) has
+the details: the install script's options, macOS Gatekeeper, `doctor`,
+`upgrade` (`chrome-cdp upgrade` updates a script install) and versioning.
+
 **Status:** early development. Sessions (`open`, `connect`, `status`,
 `sessions`, `close`), tabs (`tabs`, `tab`), navigation (`goto`, `back`,
 `forward`, `reload`), `wait`, `snapshot`, reading the page (`find`, `text`,
@@ -23,8 +37,8 @@ for every page (`init-script`, `expose`, `unexpose`), cookies, storage and
 saved logins (`cookies`, `storage`, `state`), raw CDP calls, scripts
 (`batch`, `run`, `convert`), E2E project setup (`init e2e`), mock files
 (`mock`),
-`install`/`uninstall`, and help for people and agents
-(`help`, `skill`, `completions`, `schema`) work so far:
+`install`/`uninstall`, `doctor` and `upgrade`, and help for people and
+agents (`help`, `skill`, `completions`, `schema`) work so far:
 
 ```sh
 chrome-cdp install                    # Chrome for Testing, if there is no Chrome
@@ -594,6 +608,8 @@ cargo xtask build-js # rebuild the injected helper from TypeScript (needs npx)
 cargo xtask dist --target x86_64-unknown-linux-musl  # release binary in dist/;
                     # fails at +20% over its size in xtask/binary-sizes.txt
 cargo xtask chrome stable  # install CfT stable (or beta, min, 150, system), print its path
+cargo xtask release archive --target x86_64-unknown-linux-musl  # dist/*.tar.gz + .sha256;
+                    # also manifest, notes, formula, npm, check (docs/releasing.md)
 cargo xtask fixtures # serve testdata/site on two local origins
 cargo deny check    # licenses and advisories
 cargo +nightly fuzz run parse_script  # fuzz the .cdp parser (needs cargo-fuzz)
@@ -632,6 +648,9 @@ is older than its sources.
 ## Docs
 
 The design and roadmap live in [docs/plans/](docs/plans/00-overview.md).
+[docs/install.md](docs/install.md) covers installing, `doctor` and
+`upgrade`; [docs/releasing.md](docs/releasing.md) is how a release is cut,
+and [CHANGELOG.md](CHANGELOG.md) what each one changed.
 [docs/migrating-from-playwright.md](docs/migrating-from-playwright.md)
 maps Playwright's API to chrome-cdp commands.
 [docs/playwright-parity.md](docs/playwright-parity.md) sums it up: each
