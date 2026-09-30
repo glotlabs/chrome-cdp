@@ -745,9 +745,9 @@ fn frames_of(
     record: &Record,
     wanted: &impl Fn(&WebSocketFrame) -> bool,
     req: &NetworkFramesRequest,
-) -> Result<NetworkFramesData, NetworkEntry> {
+) -> Result<NetworkFramesData, Box<NetworkEntry>> {
     if record.entry.websocket.is_none() {
-        return Err(record.entry.clone());
+        return Err(Box::new(record.entry.clone()));
     }
     let mut frames: Vec<WebSocketFrame> = record
         .frames

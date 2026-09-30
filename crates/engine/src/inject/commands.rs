@@ -391,9 +391,12 @@ fn expose_text(
         } else {
             let lines: Vec<String> = exposed
                 .iter()
-                .map(|(name, values)| match values.is_empty() {
-                    true => name.clone(),
-                    false => format!("{name} {}", returns_text(values)),
+                .map(|(name, values)| {
+                    if values.is_empty() {
+                        name.clone()
+                    } else {
+                        format!("{name} {}", returns_text(values))
+                    }
                 })
                 .collect();
             text = lines.join("\n");
@@ -407,9 +410,10 @@ fn expose_text(
         .map(String::as_str)
         .collect();
     if !changed.is_empty() {
-        let returns = match req.returns.is_empty() {
-            true => String::new(),
-            false => format!(" ({})", returns_text(&req.returns)),
+        let returns = if req.returns.is_empty() {
+            String::new()
+        } else {
+            format!(" ({})", returns_text(&req.returns))
         };
         let _ = writeln!(
             text,
