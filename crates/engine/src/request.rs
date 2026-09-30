@@ -1015,6 +1015,62 @@ pub struct IssuesRequest {
     pub max_chars: usize,
 }
 
+/// `audit`, and `expect --audit` (with `expect`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditRequest {
+    /// `--tab`: the tab to audit; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// `--all-tabs`: every tab of the session (or context).
+    #[serde(default)]
+    pub all_tabs: bool,
+    /// `audit LOCATOR`: check inside this element, where a category can
+    /// be scoped (`a11y`, `layout`, the forms of `security`).
+    #[serde(default)]
+    pub locator: Option<String>,
+    /// `--category`: the categories to check, as typed; empty for the
+    /// default (all, or those that can be scoped with a LOCATOR).
+    #[serde(default)]
+    pub categories: Vec<String>,
+    /// `--min-severity`: the least severe shown (and failing `expect`).
+    pub min_severity: Severity,
+    /// `--baseline`: the accepted findings.
+    #[serde(default)]
+    pub baseline: Option<AuditBaseline>,
+    /// `--show-accepted`: list the findings the baseline accepts too.
+    #[serde(default)]
+    pub show_accepted: bool,
+    /// `expect --audit`: wait for `load`, and fail on new findings.
+    #[serde(default)]
+    pub expect: bool,
+    #[serde(default)]
+    pub strict_refs: bool,
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    #[serde(default)]
+    pub max_chars: usize,
+}
+
+/// The baseline of `audit` and `expect --audit`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AuditBaseline {
+    /// The name or file as typed, for hints.
+    pub name: String,
+    /// The file, absolute.
+    pub path: PathBuf,
+    /// `--update`: write the findings into it (keeping notes).
+    #[serde(default)]
+    pub update: bool,
+    /// `expect --audit`: write it when it does not exist yet (not in CI).
+    #[serde(default)]
+    pub create: bool,
+    /// `--dir` as typed, for hints that repeat the command.
+    #[serde(default)]
+    pub dir: Option<String>,
+}
+
 /// `console` and `errors`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConsoleRequest {

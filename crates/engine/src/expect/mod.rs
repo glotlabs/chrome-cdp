@@ -802,17 +802,17 @@ fn assertion_text(req: &ExpectRequest) -> String {
 
 /// An element a failure names, as the bundle describes it, with a ref.
 #[derive(Debug, Clone, Default, Deserialize)]
-struct Named {
-    role: String,
-    name: String,
-    tag: String,
+pub(crate) struct Named {
+    pub(crate) role: String,
+    pub(crate) name: String,
+    pub(crate) tag: String,
     #[serde(skip)]
-    reference: Option<String>,
+    pub(crate) reference: Option<String>,
 }
 
 impl Named {
     /// `alert "Error: email is required" [e31]`.
-    fn line(&self) -> String {
+    pub(crate) fn line(&self) -> String {
         let mut text = if self.role == "generic" || self.role.is_empty() {
             self.tag.clone()
         } else {
@@ -962,6 +962,7 @@ impl Engine {
             retries: passed.retries,
             layout: None,
             perf: passed.perf,
+            audit: None,
         };
         let mut text = format!("passed: {assertion_text} ({})", format::duration(elapsed));
         if let Some(perf) = &data.perf {

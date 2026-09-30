@@ -324,28 +324,52 @@ impl Engine {
         testid_attribute: Option<String>,
         timeout: Duration,
     ) -> Result<Vec<LayoutFinding>, ErrorInfo> {
+        let options = LocateOptions {
+            strict_refs: false,
+            testid_attribute,
+        };
+        let (findings, _) = self
+            .layout_findings(running, page, None, &options, timeout)
+            .await?;
+        Ok(findings
+            .into_iter()
+            .filter(|f| f.severity == LayoutSeverity::Error)
+            .collect())
+    }
+
+    /// Every finding of `layout` on `page` (inside `locator`'s element, if
+    /// given) at its viewport, and its warnings (`audit`). The caller
+    /// holds the tab's lock.
+    pub(crate) async fn layout_findings(
+        &self,
+        running: &Running,
+        page: &Page,
+        locator: Option<String>,
+        options: &LocateOptions,
+        timeout: Duration,
+    ) -> Result<(Vec<LayoutFinding>, Vec<String>), ErrorInfo> {
         let req = LayoutRequest {
             tab: None,
-            locator: None,
+            locator,
             viewports: Vec::new(),
             only: Vec::new(),
-            all: false,
+            all: true,
             full: false,
             min_target: None,
             stretch_text: None,
-            strict_refs: false,
-            testid_attribute,
+            strict_refs: options.strict_refs,
+            testid_attribute: options.testid_attribute.clone(),
             timeout_ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
             max_chars: 0,
             baseline: None,
         };
         let linted = self.lint(running, page, &req, timeout).await?;
-        Ok(linted
+        let findings = linted
             .runs
             .into_iter()
             .flat_map(|run| run.findings)
-            .filter(|f| f.severity == LayoutSeverity::Error)
-            .collect())
+            .collect();
+        Ok((findings, linted.warnings))
     }
 
     /// Runs the check at each viewport asked for, and gives the tab its

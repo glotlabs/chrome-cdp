@@ -37,36 +37,37 @@ const ELEMENTS: usize = 200;
 
 /// What `a11y.ts` found.
 #[derive(Debug, Default, Deserialize)]
-struct Audit {
+pub(crate) struct Audit {
     rules: usize,
-    violations: Vec<Violation>,
+    pub(crate) violations: Vec<Violation>,
 }
 
 #[derive(Debug, Default, Deserialize)]
-struct Violation {
-    rule: String,
-    wcag: String,
-    level: String,
-    help: String,
-    count: usize,
+pub(crate) struct Violation {
+    pub(crate) rule: String,
+    pub(crate) wcag: String,
+    pub(crate) level: String,
+    pub(crate) help: String,
+    pub(crate) count: usize,
+    /// A page rule's finding: what is wrong with the document.
     #[serde(default)]
-    page: Option<String>,
+    pub(crate) page: Option<String>,
     /// What Chrome's accessibility tree must say of a listed element for
     /// it to stay a violation (`a11y.ts`' `Rule.ax`).
     #[serde(default)]
     ax: Option<String>,
-    nodes: Vec<Node>,
+    pub(crate) nodes: Vec<Node>,
 }
 
 #[derive(Debug, Default, Deserialize)]
-struct Node {
-    candidate: Named,
+pub(crate) struct Node {
+    pub(crate) candidate: Named,
     #[serde(default)]
-    why: Option<String>,
+    pub(crate) why: Option<String>,
     index: usize,
     /// The iframe it is in (its id and label), unless the main frame.
     #[serde(skip)]
-    frame: Option<(String, String)>,
+    pub(crate) frame: Option<(String, String)>,
 }
 
 impl Audit {
@@ -305,6 +306,7 @@ impl Engine {
                 retries: 0,
                 layout: None,
                 perf: None,
+                audit: None,
             };
             let text = format!("passed: {assertion} ({})", format::duration(elapsed));
             return Ok(Output::typed(&data, text)
@@ -431,66 +433,9 @@ impl Engine {
         options: &LocateOptions,
         timeout: Duration,
     ) -> Result<Passed, ErrorInfo> {
-        let audit = match scope {
-            Some(scope) => {
-                let target = self
-                    .locate_one(running, page, scope, options, None, timeout)
-                    .await?;
-                let audit = self
-                    .audit(
-                        running,
-                        page,
-                        (&target.context, &target.key.frame),
-                        Some(&target.object_id),
-                        level,
-                        timeout,
-                    )
-                    .await;
-                target.release();
-                audit?
-            }
-            None => {
-                let (main, context) = self
-                    .frame_and_context(running, page, None, World::Isolated, timeout)
-                    .await?;
-                let mut audit = self
-                    .audit(running, page, (&context, &main), None, level, timeout)
-                    .await?;
-                let mut checked_frames = false;
-                for frame in running.tabs.frames(page.id).into_iter().skip(1) {
-                    let Ok(context) = running
-                        .tabs
-                        .context(page.id, &frame.id, World::Isolated, A11Y_FRAME_WAIT)
-                        .await
-                    else {
-                        continue;
-                    };
-                    // A frame that goes away meanwhile has nothing to check.
-                    let Ok(mut found) = self
-                        .audit(running, page, (&context, &frame.id), None, level, timeout)
-                        .await
-                    else {
-                        continue;
-                    };
-                    let label = iframe_label(&frame);
-                    for node in found.violations.iter_mut().flat_map(|v| v.nodes.iter_mut()) {
-                        node.frame = Some((frame.id.clone(), label.clone()));
-                    }
-                    audit.merge(found);
-                    checked_frames = true;
-                }
-                // Checking an iframe's `focus-visible` moved the page's
-                // focus into it.
-                if checked_frames && level == A11yLevel::AA {
-                    let params = runtime::CallFunctionOnParams::new(format!(
-                        "function () {{ {GUARD} globalThis.__ccdp.a11yRefocus(); }}"
-                    ));
-                    let session = context.session.with_timeout(timeout);
-                    let _ = injected::call(&session, context.context_id, params).await;
-                }
-                audit
-            }
-        };
+        let audit = self
+            .a11y_violations(running, page, scope, level, options, PER_RULE, timeout)
+            .await?;
         if audit.violations.is_empty() {
             return Ok(Passed {
                 actual: json!(0),
@@ -600,17 +545,109 @@ impl Engine {
         Err(self.one_shot_failure(page, req, failed))
     }
 
+    /// The built-in accessibility rules of `level` in the page and each of
+    /// its iframes (out-of-process ones too), or in the one element `scope`
+    /// matches: each rule's violations, listing up to `per_rule` elements
+    /// with refs.
+    #[allow(clippy::too_many_arguments, clippy::single_match_else)]
+    pub(crate) async fn a11y_violations(
+        &self,
+        running: &Running,
+        page: &Page,
+        scope: Option<&Locator>,
+        level: A11yLevel,
+        options: &LocateOptions,
+        per_rule: usize,
+        timeout: Duration,
+    ) -> Result<Audit, ErrorInfo> {
+        let audit = match scope {
+            Some(scope) => {
+                let target = self
+                    .locate_one(running, page, scope, options, None, timeout)
+                    .await?;
+                let audit = self
+                    .a11y_frame(
+                        running,
+                        page,
+                        (&target.context, &target.key.frame),
+                        Some(&target.object_id),
+                        (level, per_rule),
+                        timeout,
+                    )
+                    .await;
+                target.release();
+                audit?
+            }
+            None => {
+                let (main, context) = self
+                    .frame_and_context(running, page, None, World::Isolated, timeout)
+                    .await?;
+                let mut audit = self
+                    .a11y_frame(
+                        running,
+                        page,
+                        (&context, &main),
+                        None,
+                        (level, per_rule),
+                        timeout,
+                    )
+                    .await?;
+                let mut checked_frames = false;
+                for frame in running.tabs.frames(page.id).into_iter().skip(1) {
+                    let Ok(context) = running
+                        .tabs
+                        .context(page.id, &frame.id, World::Isolated, A11Y_FRAME_WAIT)
+                        .await
+                    else {
+                        continue;
+                    };
+                    // A frame that goes away meanwhile has nothing to check.
+                    let Ok(mut found) = self
+                        .a11y_frame(
+                            running,
+                            page,
+                            (&context, &frame.id),
+                            None,
+                            (level, per_rule),
+                            timeout,
+                        )
+                        .await
+                    else {
+                        continue;
+                    };
+                    let label = iframe_label(&frame);
+                    for node in found.violations.iter_mut().flat_map(|v| v.nodes.iter_mut()) {
+                        node.frame = Some((frame.id.clone(), label.clone()));
+                    }
+                    audit.merge(found);
+                    checked_frames = true;
+                }
+                // Checking an iframe's `focus-visible` moved the page's
+                // focus into it.
+                if checked_frames && level == A11yLevel::AA {
+                    let params = runtime::CallFunctionOnParams::new(format!(
+                        "function () {{ {GUARD} globalThis.__ccdp.a11yRefocus(); }}"
+                    ));
+                    let session = context.session.with_timeout(timeout);
+                    let _ = injected::call(&session, context.context_id, params).await;
+                }
+                audit
+            }
+        };
+        Ok(audit)
+    }
+
     /// Runs the rules of `level` in a frame's isolated world (`at`: its
     /// context and id), on the element `object` or the document; page
     /// rules only in the main frame's document. The listed elements get
     /// refs (unless a frame loaded a new document meanwhile).
-    async fn audit(
+    async fn a11y_frame(
         &self,
         running: &Running,
         page: &Page,
         at: (&FrameContext, &str),
         object: Option<&str>,
-        level: A11yLevel,
+        (level, per_rule): (A11yLevel, usize),
         timeout: Duration,
     ) -> Result<Audit, ErrorInfo> {
         let (context, frame) = at;
@@ -623,12 +660,13 @@ impl Engine {
             .first()
             .is_some_and(|f| f.id == frame);
         let declaration = format!(
-            "function (level, page) {{ {GUARD} \
-             return globalThis.__ccdp.a11y(this === globalThis ? null : this, level, page); }}"
+            "function (level, page, perRule) {{ {GUARD} \
+             return globalThis.__ccdp.a11y(this === globalThis ? null : this, level, page, \
+             perRule); }}"
         );
         let mut params = runtime::CallFunctionOnParams::new(declaration);
         params.arguments = Some(
-            [json!(level.as_str()), json!(main)]
+            [json!(level.as_str()), json!(main), json!(per_rule)]
                 .into_iter()
                 .map(|value| runtime::CallArgument {
                     value: Some(value),
@@ -682,7 +720,7 @@ impl Engine {
             .await;
         let (json, keys) = listed?;
         let mut audit: Audit = serde_json::from_str(&json).unwrap_or_default();
-        confirm(&session, &mut audit, &keys).await;
+        confirm(&session, &mut audit, &keys, per_rule).await;
         running.tabs.snapshot_memory(page.id, |m| {
             if Some(m.refs.generation()) != generation {
                 return;
@@ -717,8 +755,13 @@ impl Engine {
 /// confirm: a table Chrome takes for a layout table (`data-table`), a
 /// heading Chrome finds a name for (`no-name`). Elements without a key,
 /// or that Chrome has no node for, stay. Then each rule lists at most
-/// `PER_RULE`.
-async fn confirm(session: &cdp::Session, audit: &mut Audit, keys: &[Option<NodeKey>]) {
+/// `per_rule`.
+async fn confirm(
+    session: &cdp::Session,
+    audit: &mut Audit,
+    keys: &[Option<NodeKey>],
+    per_rule: usize,
+) {
     for v in &mut audit.violations {
         let Some(ax) = v.ax.clone() else { continue };
         let mut kept = Vec::with_capacity(v.nodes.len());
@@ -762,7 +805,7 @@ async fn confirm(session: &cdp::Session, audit: &mut Audit, keys: &[Option<NodeK
                 v.count -= 1;
             }
         }
-        kept.truncate(PER_RULE);
+        kept.truncate(per_rule);
         v.nodes = kept;
     }
     audit.violations.retain(|v| v.count > 0);

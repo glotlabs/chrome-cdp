@@ -9,7 +9,7 @@
 //! Each tab records into its buffers from the moment it exists (see
 //! `tabs::watch_host`), so these commands work retroactively.
 
-mod commands;
+pub(crate) mod commands;
 pub(crate) mod console;
 mod coverage;
 mod devtools;
@@ -17,7 +17,7 @@ mod eval;
 pub(crate) mod format;
 mod har;
 pub(crate) mod hmr;
-mod issue_commands;
+pub(crate) mod issue_commands;
 pub(crate) mod issues;
 pub(crate) mod netlog;
 mod network;

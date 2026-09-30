@@ -558,6 +558,16 @@ pub(crate) fn issue_line(
         let _ = write!(line, "{} ", worker.label());
     }
     line.push_str(&issue.message);
+    if let Some(about) = issue_about(issue, page_origin) {
+        let _ = write!(line, "  ({about})");
+    }
+    let _ = write!(line, "  ×{}", issue.count);
+    line
+}
+
+/// What an issue is about, as its line shows it: `e4 textbox "Email",
+/// /app.js:12, request #7`.
+pub(crate) fn issue_about(issue: &Issue, page_origin: Option<&str>) -> Option<String> {
     let mut about = Vec::new();
     if let Some(element) = &issue.target.element {
         about.push(match &issue.target.reference {
@@ -575,11 +585,7 @@ pub(crate) fn issue_line(
     if let Some(id) = issue.target.request_id {
         about.push(format!("request #{id}"));
     }
-    if !about.is_empty() {
-        let _ = write!(line, "  ({})", about.join(", "));
-    }
-    let _ = write!(line, "  ×{}", issue.count);
-    line
+    (!about.is_empty()).then(|| about.join(", "))
 }
 
 #[cfg(test)]

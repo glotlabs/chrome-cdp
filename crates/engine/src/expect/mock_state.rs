@@ -167,6 +167,7 @@ impl Engine {
                     retries: tries - 1,
                     layout: None,
                     perf: None,
+                    audit: None,
                 };
                 return Ok(Output::typed(&data, text)
                     .quiet(seen.text)

@@ -309,6 +309,7 @@ impl Engine {
                 stale,
             }),
             perf: None,
+            audit: None,
         };
         Ok(warnings
             .into_iter()
