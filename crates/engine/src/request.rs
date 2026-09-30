@@ -2066,13 +2066,56 @@ pub struct ReadRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ClipboardOp {
-    /// `clipboard read`: the clipboard's text.
-    Read,
-    /// `clipboard write <text>`: puts text on the clipboard.
-    Write { text: String },
+    /// `clipboard read [--type T] [-o FILE]`: what the clipboard holds of
+    /// one type.
+    Read {
+        /// `--type`: `text/plain` (the default), `text/html` or
+        /// `image/png`.
+        #[serde(default)]
+        mime: Option<String>,
+        /// `-o`: where an image is saved (an absolute path); a numbered
+        /// file in the session's `clipboard/` directory if `None`.
+        #[serde(default)]
+        path: Option<PathBuf>,
+    },
+    /// `clipboard write [TEXT] [--html HTML] [--file IMAGE.png]`: puts
+    /// one item on the clipboard with every type given.
+    Write {
+        /// The text (`text/plain`); with `html` and no text, the HTML's
+        /// text.
+        #[serde(default)]
+        text: Option<String>,
+        /// `--html`: the `text/html` part.
+        #[serde(default)]
+        html: Option<String>,
+        /// `--file`: a PNG image (an absolute path), the `image/png` part.
+        #[serde(default)]
+        image: Option<PathBuf>,
+    },
 }
 
-/// `clipboard read` and `clipboard write <text>`.
+impl ClipboardOp {
+    /// `clipboard read`: the clipboard's text.
+    #[must_use]
+    pub fn read_text() -> Self {
+        ClipboardOp::Read {
+            mime: None,
+            path: None,
+        }
+    }
+
+    /// `clipboard write <text>`: puts text on the clipboard.
+    #[must_use]
+    pub fn write_text(text: impl Into<String>) -> Self {
+        ClipboardOp::Write {
+            text: Some(text.into()),
+            html: None,
+            image: None,
+        }
+    }
+}
+
+/// `clipboard read` and `clipboard write`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClipboardRequest {
     pub op: ClipboardOp,

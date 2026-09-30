@@ -1,0 +1,11 @@
+$ chrome-cdp clipboard read --type image/png
+exit: 2
+--- stderr
+error: an image needs -o: image/png is not text
+  hint: chrome-cdp clipboard read --type image/png -o <file.png>
+
+$ chrome-cdp clipboard read --type image/png --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"an image needs -o: image/png is not text","hint":"chrome-cdp clipboard read --type image/png -o <file.png>"}}
+

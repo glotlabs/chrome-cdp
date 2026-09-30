@@ -1,0 +1,15 @@
+$ chrome-cdp clipboard read --type text/html
+exit: 0
+--- stdout
+<b>Bold</b> move
+
+$ chrome-cdp clipboard read --type text/html --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"tab":"t1","text":"<b>Bold</b> move","type":"text/html"}}
+
+$ chrome-cdp clipboard read --type text/html -q
+exit: 0
+--- stdout
+<b>Bold</b> move
+

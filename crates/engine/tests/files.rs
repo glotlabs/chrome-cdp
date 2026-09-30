@@ -472,7 +472,9 @@ async fn reads_and_writes_the_clipboard() {
     let engine = start(&path, "clipboard").await;
 
     // about:blank has no origin to grant the clipboard to.
-    let err = clipboard(&engine, ClipboardOp::Read).await.unwrap_err();
+    let err = clipboard(&engine, ClipboardOp::read_text())
+        .await
+        .unwrap_err();
     assert_eq!(err.kind, ErrorKind::NotEnabled);
     assert_eq!(
         err.message,
@@ -480,14 +482,9 @@ async fn reads_and_writes_the_clipboard() {
     );
 
     goto(&engine, &site.url("/actions/clipboard.html")).await;
-    let out = clipboard(
-        &engine,
-        ClipboardOp::Write {
-            text: "pasted ✓\nline 2".to_owned(),
-        },
-    )
-    .await
-    .unwrap();
+    let out = clipboard(&engine, ClipboardOp::write_text("pasted ✓\nline 2"))
+        .await
+        .unwrap();
     assert_eq!(out.text, "wrote 15 characters to the clipboard");
     assert_eq!(out.data["chars"], json!(15));
 
@@ -504,7 +501,7 @@ async fn reads_and_writes_the_clipboard() {
         text(&engine, "#paste-log").await,
         "paste \"pasted ✓\\nline 2\"\n"
     );
-    let out = clipboard(&engine, ClipboardOp::Read).await.unwrap();
+    let out = clipboard(&engine, ClipboardOp::read_text()).await.unwrap();
     assert_eq!(out.text, "pasted ✓\nline 2");
 
     // What the page's own Copy button copied can be read back.
@@ -523,7 +520,10 @@ async fn reads_and_writes_the_clipboard() {
     .await;
     let mut read = String::new();
     for _ in 0..40 {
-        read = clipboard(&engine, ClipboardOp::Read).await.unwrap().text;
+        read = clipboard(&engine, ClipboardOp::read_text())
+            .await
+            .unwrap()
+            .text;
         if read == "INVITE-4821" {
             break;
         }
@@ -556,15 +556,170 @@ async fn reads_and_writes_the_clipboard() {
     assert_eq!(pasted, "INVITE-4821");
 
     // An empty clipboard reads as nothing, with a warning.
-    clipboard(
+    clipboard(&engine, ClipboardOp::write_text(""))
+        .await
+        .unwrap();
+    let out = clipboard(&engine, ClipboardOp::read_text()).await.unwrap();
+    assert_eq!(out.text, "");
+    assert_eq!(out.warnings, ["the clipboard holds no text"]);
+}
+
+/// Clicks `locator` with the left button.
+async fn click(engine: &Engine, locator: &str) {
+    act(
+        engine,
+        Action::Click {
+            locator: locator.to_owned(),
+            button: engine::Button::Left,
+            count: 1,
+            modifiers: Vec::new(),
+            position: None,
+            force: false,
+            dblclick: false,
+        },
+    )
+    .await;
+}
+
+fn read_type(mime: &str, path: Option<PathBuf>) -> ClipboardOp {
+    ClipboardOp::Read {
+        mime: Some(mime.to_owned()),
+        path,
+    }
+}
+
+#[tokio::test]
+async fn reads_and_writes_html_and_images() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "clipboard-rich").await;
+    goto(&engine, &site.url("/actions/clipboard.html")).await;
+    let dir = tempfile::tempdir().unwrap();
+
+    // HTML goes with its text, which pastes as a user's rich copy does.
+    let out = clipboard(
         &engine,
         ClipboardOp::Write {
-            text: String::new(),
+            text: None,
+            html: Some("<p>Hello <b>world</b></p>".to_owned()),
+            image: None,
         },
     )
     .await
     .unwrap();
-    let out = clipboard(&engine, ClipboardOp::Read).await.unwrap();
-    assert_eq!(out.text, "");
-    assert_eq!(out.warnings, ["the clipboard holds no text"]);
+    assert_eq!(
+        out.text,
+        "wrote text/html (25B), text/plain (11 characters) to the clipboard"
+    );
+    assert_eq!(out.data["types"], json!(["text/html", "text/plain"]));
+    assert_eq!(out.data["chars"], json!(11));
+    let out = clipboard(&engine, read_type("text/html", None))
+        .await
+        .unwrap();
+    assert!(
+        out.text.contains("<p>Hello <b>world</b></p>"),
+        "{}",
+        out.text
+    );
+    assert_eq!(out.data["type"], json!("text/html"));
+    let out = clipboard(&engine, ClipboardOp::read_text()).await.unwrap();
+    assert_eq!(out.text, "Hello world");
+    act(
+        &engine,
+        Action::Press {
+            keys: "Mod+V".to_owned(),
+            locator: Some("#field".to_owned()),
+        },
+    )
+    .await;
+    assert!(
+        text(&engine, "#html-log")
+            .await
+            .contains("<p>Hello <b>world</b></p>")
+    );
+
+    // No image on it: the error lists what there is.
+    let err = clipboard(&engine, read_type("image/png", None))
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::NotFound);
+    assert_eq!(
+        err.message,
+        "the clipboard holds no image/png: the clipboard has text/plain, text/html"
+    );
+
+    // A PNG goes on as image/png, and comes back as a file.
+    let out = clipboard(
+        &engine,
+        ClipboardOp::Write {
+            text: None,
+            html: None,
+            image: Some(PathBuf::from(file("dot.png"))),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(out.text, "wrote image/png (2x2, 74B) to the clipboard");
+    let saved = dir.path().join("dot.png");
+    let out = clipboard(&engine, read_type("image/png", Some(saved.clone())))
+        .await
+        .unwrap();
+    let bytes = std::fs::read(&saved).unwrap();
+    assert!(bytes.starts_with(b"\x89PNG"));
+    assert_eq!(out.data["path"], json!(saved.display().to_string()));
+    assert_eq!(out.data["bytes"], json!(bytes.len()));
+    assert!(out.text.contains(": image/png 2x2, "), "{}", out.text);
+
+    // Only PNG goes on the clipboard.
+    let err = clipboard(
+        &engine,
+        ClipboardOp::Write {
+            text: None,
+            html: None,
+            image: Some(PathBuf::from(file("hello.txt"))),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::BadArgs);
+    assert!(
+        err.message
+            .ends_with("is not a PNG: the clipboard takes image/png only")
+    );
+
+    // What the page copies as a ClipboardItem reads back by type.
+    click(&engine, "#copy-rich").await;
+    let mut read = String::new();
+    for _ in 0..40 {
+        read = clipboard(&engine, ClipboardOp::read_text())
+            .await
+            .unwrap()
+            .text;
+        if read == "Bold move" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(read, "Bold move");
+    let out = clipboard(&engine, read_type("text/html", None))
+        .await
+        .unwrap();
+    assert!(out.text.contains("<b>Bold</b> move"), "{}", out.text);
+
+    click(&engine, "#copy-image").await;
+    let mut out = None;
+    for _ in 0..40 {
+        if let Ok(read) = clipboard(&engine, read_type("image/png", None)).await {
+            out = Some(read);
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let out = out.expect("the page's image reached the clipboard");
+    // Without -o, it is saved in the session's clipboard/ directory.
+    let path = out.data["path"].as_str().unwrap();
+    assert!(path.contains("/clipboard/"), "{path}");
+    assert!(out.text.contains(": image/png 3x1, "), "{}", out.text);
+    std::fs::remove_file(path).unwrap();
+    engine.close().await;
 }

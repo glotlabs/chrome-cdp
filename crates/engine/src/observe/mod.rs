@@ -21,7 +21,7 @@ mod network;
 mod pdf;
 mod perf;
 pub(crate) mod save;
-mod screenshot;
+pub(crate) mod screenshot;
 mod sourcemaps;
 mod trace;
 

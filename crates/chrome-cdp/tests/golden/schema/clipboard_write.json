@@ -34,7 +34,7 @@
       "description": "`data` of `chrome-cdp clipboard write --json`.",
       "properties": {
         "chars": {
-          "description": "How many characters were written.",
+          "description": "How many characters of text were written (`text/plain`).",
           "format": "uint",
           "minimum": 0,
           "type": "integer"
@@ -42,6 +42,13 @@
         "tab": {
           "description": "The tab whose page wrote it, e.g. `t1`.",
           "type": "string"
+        },
+        "types": {
+          "description": "The types of the item written, e.g. `[\"text/html\", \"text/plain\"]`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [

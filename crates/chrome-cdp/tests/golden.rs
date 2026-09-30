@@ -2377,6 +2377,65 @@ const CASES: &[Case] = &[
         ]),
     },
     Case {
+        name: "clipboard-write-html",
+        args: &["clipboard", "write", "--html", "<p>Hello <b>world</b></p>"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/actions/clipboard.html"),
+    },
+    Case {
+        name: "clipboard-read-html",
+        args: &["clipboard", "read", "--type", "text/html"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/actions/clipboard.html"],
+            &["click", "#copy-rich"],
+        ]),
+    },
+    Case {
+        name: "clipboard-write-image",
+        args: &["clipboard", "write", "--file", "{files}/dot.png"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/actions/clipboard.html"),
+    },
+    Case {
+        name: "clipboard-read-image",
+        args: &[
+            "clipboard",
+            "read",
+            "--type",
+            "image/png",
+            "-o",
+            "{sandbox}/copied.png",
+        ],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/actions/clipboard.html"],
+            &["click", "#copy-image"],
+        ]),
+    },
+    Case {
+        name: "clipboard-read-missing-type",
+        args: &[
+            "clipboard",
+            "read",
+            "--type",
+            "image/png",
+            "-o",
+            "{sandbox}/copied.png",
+        ],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/actions/clipboard.html"],
+            &["click", "#copy-rich"],
+        ]),
+    },
+    Case {
+        name: "clipboard-read-image-needs-o",
+        args: &["clipboard", "read", "--type", "image/png"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
         name: "clipboard-no-origin",
         args: &["clipboard", "read"],
         modes: ERR,

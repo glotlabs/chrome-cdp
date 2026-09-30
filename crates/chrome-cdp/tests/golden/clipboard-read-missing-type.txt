@@ -1,0 +1,11 @@
+$ chrome-cdp clipboard read --type image/png -o <sandbox>/copied.png
+exit: 1
+--- stderr
+error: the clipboard holds no image/png: the clipboard has text/plain, text/html
+  hint: chrome-cdp clipboard read --type text/plain
+
+$ chrome-cdp clipboard read --type image/png -o <sandbox>/copied.png --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"the clipboard holds no image/png: the clipboard has text/plain, text/html","hint":"chrome-cdp clipboard read --type text/plain","details":{"type":"image/png","types":["text/plain","text/html"]}}}
+

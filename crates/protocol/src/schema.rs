@@ -3067,8 +3067,18 @@ pub struct UploadData {
 pub struct ClipboardReadData {
     /// The tab whose page read it, e.g. `t1`.
     pub tab: String,
-    /// The clipboard's text (empty when it holds none).
+    /// The clipboard's text (empty when it holds none); the HTML with
+    /// `--type text/html`; empty for an image.
     pub text: String,
+    /// The type read: `text/plain`, `text/html` or `image/png`.
+    #[serde(default, rename = "type", skip_serializing_if = "Option::is_none")]
+    pub mime: Option<String>,
+    /// Where an image was saved (absolute).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// The image's size in bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<u64>,
 }
 
 /// `data` of `chrome-cdp clipboard write --json`.
@@ -3076,8 +3086,11 @@ pub struct ClipboardReadData {
 pub struct ClipboardWriteData {
     /// The tab whose page wrote it, e.g. `t1`.
     pub tab: String,
-    /// How many characters were written.
+    /// How many characters of text were written (`text/plain`).
     pub chars: usize,
+    /// The types of the item written, e.g. `["text/html", "text/plain"]`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub types: Vec<String>,
 }
 
 /// `data` of `chrome-cdp tabs --json`.

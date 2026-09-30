@@ -7,14 +7,19 @@
 </style>
 <!-- "Copy code" puts #code's text on the clipboard with the async
      clipboard API; "Paste" reads it back into #pasted. The paste event of
-     #field is logged into #paste-log (what the page got to paste). -->
+     #field is logged into #paste-log (what the page got to paste), and
+     its HTML, if any, into #html-log. "Copy rich" copies a ClipboardItem
+     with text/html and text/plain; "Copy image" a 3x1 PNG from a canvas. -->
 <code id="code">INVITE-4821</code>
 <button id="copy">Copy code</button>
 <button id="paste">Paste</button>
+<button id="copy-rich">Copy rich</button>
+<button id="copy-image">Copy image</button>
 <p id="pasted"></p>
 <label>Field <input id="field"></label>
 <p id="log"></p>
 <pre id="paste-log"></pre>
+<pre id="html-log"></pre>
 <script src="log.js"></script>
 <script>
   document.getElementById('copy').addEventListener('click', async () => {
@@ -35,5 +40,27 @@
   document.getElementById('field').addEventListener('paste', (e) => {
     document.getElementById('paste-log').textContent +=
       `paste ${JSON.stringify(e.clipboardData.getData('text/plain'))}\n`;
+    const html = e.clipboardData.getData('text/html');
+    if (html) document.getElementById('html-log').textContent += `${html}\n`;
+  });
+  const copied = (what) => (e) => {
+    document.getElementById('pasted').textContent = e ? `copy failed: ${e.message}` : what;
+  };
+  document.getElementById('copy-rich').addEventListener('click', () => {
+    navigator.clipboard.write([new ClipboardItem({
+      'text/html': new Blob(['<b>Bold</b> move'], { type: 'text/html' }),
+      'text/plain': new Blob(['Bold move'], { type: 'text/plain' }),
+    })]).then(() => copied('copied rich')(), (e) => copied()(e));
+  });
+  document.getElementById('copy-image').addEventListener('click', () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 3;
+    canvas.height = 1;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#f00';
+    ctx.fillRect(0, 0, 3, 1);
+    const png = new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+      .then(() => copied('copied image')(), (e) => copied()(e));
   });
 </script>

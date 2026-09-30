@@ -1017,7 +1017,7 @@ Examples:
   chrome-cdp upload e5 --clear")]
     Upload(UploadArgs),
 
-    /// Read or write the clipboard's text, through the page.
+    /// Read or write the clipboard (text, HTML or a PNG), through the page.
     #[command(
         subcommand_required = true,
         arg_required_else_help = true,
@@ -1031,6 +1031,8 @@ and what is written pastes with press Mod+V.
 Examples:
   chrome-cdp clipboard read
   chrome-cdp clipboard write 'hello'
+  chrome-cdp clipboard write --html '<b>Bold</b> move'
+  chrome-cdp clipboard read --type image/png -o copied.png
   chrome-cdp press Mod+V --in e5"
     )]
     Clipboard(ClipboardArgs),
@@ -2351,23 +2353,48 @@ pub(crate) struct ClipboardArgs {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum ClipboardCommand {
-    /// Print the text on the clipboard.
+    /// Print the text on the clipboard, its HTML, or save its image.
     #[command(after_help = "\
+A type the clipboard does not hold is an error that lists the types it
+has. An image needs -o: a file, or - for stdout.
+
 Examples:
   chrome-cdp clipboard read
-  chrome-cdp click e7 && chrome-cdp clipboard read -q   # what a Copy button copied")]
+  chrome-cdp click e7 && chrome-cdp clipboard read -q   # what a Copy button copied
+  chrome-cdp clipboard read --type text/html
+  chrome-cdp clipboard read --type image/png -o copied.png")]
     Read(ClipboardReadArgs),
 
-    /// Put text on the clipboard.
+    /// Put text, HTML or a PNG image on the clipboard.
     #[command(after_help = "\
+With --html or --file, the clipboard gets one item with every part given;
+--html without TEXT adds the HTML's text as text/plain, so a plain field
+pastes it too.
+
 Examples:
   chrome-cdp clipboard write 'hello'
-  chrome-cdp clipboard write - < notes.txt")]
+  chrome-cdp clipboard write - < notes.txt
+  chrome-cdp clipboard write --html '<p>Hello <b>world</b></p>'
+  chrome-cdp clipboard write --file chart.png")]
     Write(ClipboardWriteArgs),
 }
 
 #[derive(Debug, Args)]
 pub(crate) struct ClipboardReadArgs {
+    /// The type to read.
+    #[arg(
+        long = "type",
+        value_name = "TYPE",
+        default_value = "text/plain",
+        value_parser = ["text/plain", "text/html", "image/png"]
+    )]
+    pub(crate) mime: String,
+
+    /// Where to save an image (`-` for stdout); needed with
+    /// `--type image/png`.
+    #[arg(short, long, value_name = "PATH")]
+    pub(crate) output: Option<PathBuf>,
+
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
@@ -2376,8 +2403,20 @@ pub(crate) struct ClipboardReadArgs {
 #[derive(Debug, Args)]
 pub(crate) struct ClipboardWriteArgs {
     /// The text; `-` reads it from stdin.
-    #[arg(value_name = "TEXT", allow_hyphen_values = true)]
-    pub(crate) text: String,
+    #[arg(
+        value_name = "TEXT",
+        allow_hyphen_values = true,
+        required_unless_present_any = ["html", "file"]
+    )]
+    pub(crate) text: Option<String>,
+
+    /// HTML to put on the clipboard as text/html; `-` reads it from stdin.
+    #[arg(long, value_name = "HTML", allow_hyphen_values = true)]
+    pub(crate) html: Option<String>,
+
+    /// A PNG image to put on the clipboard as image/png.
+    #[arg(long, value_name = "IMAGE.png")]
+    pub(crate) file: Option<PathBuf>,
 }
 
 #[derive(Debug, Args)]

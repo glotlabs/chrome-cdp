@@ -33,13 +33,36 @@
     "ClipboardReadData": {
       "description": "`data` of `chrome-cdp clipboard read --json`.",
       "properties": {
+        "bytes": {
+          "description": "The image's size in bytes.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "Where an image was saved (absolute).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "tab": {
           "description": "The tab whose page read it, e.g. `t1`.",
           "type": "string"
         },
         "text": {
-          "description": "The clipboard's text (empty when it holds none).",
+          "description": "The clipboard's text (empty when it holds none); the HTML with\n`--type text/html`; empty for an image.",
           "type": "string"
+        },
+        "type": {
+          "description": "The type read: `text/plain`, `text/html` or `image/png`.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [

@@ -1475,7 +1475,7 @@ fn path_mismatch(path: Option<&Path>, format: ImageFormat) -> Option<String> {
 }
 
 /// An image's width and height, read from its header.
-fn dimensions(format: ImageFormat, bytes: &[u8]) -> Option<(u32, u32)> {
+pub(crate) fn dimensions(format: ImageFormat, bytes: &[u8]) -> Option<(u32, u32)> {
     let be32 = |at: usize| -> Option<u32> {
         Some(u32::from_be_bytes(bytes.get(at..at + 4)?.try_into().ok()?))
     };

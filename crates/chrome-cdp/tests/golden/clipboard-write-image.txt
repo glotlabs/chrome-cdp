@@ -1,0 +1,13 @@
+$ chrome-cdp clipboard write --file <files>/dot.png
+exit: 0
+--- stdout
+wrote image/png (2x2, 74B) to the clipboard
+
+$ chrome-cdp clipboard write --file <files>/dot.png --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"chars":0,"tab":"t1","types":["image/png"]}}
+
+$ chrome-cdp clipboard write --file <files>/dot.png -q
+exit: 0
+

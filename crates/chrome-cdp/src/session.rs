@@ -46,16 +46,16 @@ use serde_json::{Map, Value, json};
 use tokio::runtime::Runtime;
 
 use crate::cli::{
-    AfterArgs, BlockArgs, CdpArgs, CloseArgs, ConnectArgs, ContextArgs, ContextCommand,
-    CookieFilterArgs, CookieSetArgs, CookiesArgs, CookiesCommand, CoverageArgs, CoverageCommand,
-    DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, FindArgs,
-    FramesArgs, GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs,
-    ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs, LocatorArgs,
-    LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs,
-    PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs,
-    SnapshotArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg, StorageAreaArg,
-    StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs, TraceCommand,
-    UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    AfterArgs, BlockArgs, CdpArgs, ClipboardReadArgs, CloseArgs, ConnectArgs, ContextArgs,
+    ContextCommand, CookieFilterArgs, CookieSetArgs, CookiesArgs, CookiesCommand, CoverageArgs,
+    CoverageCommand, DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg,
+    EvalArgs, FindArgs, FramesArgs, GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs,
+    HistoryArgs, IdleArgs, ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand,
+    InspectArgs, LocatorArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs,
+    PermissionsArgs, PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs,
+    SessionsArgs, SnapshotArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg,
+    StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs,
+    TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -971,7 +971,48 @@ pub(crate) fn act(
         .block_on(client.call_output(rpc::ACT, &request, ctx.timeout + QUICK))
 }
 
-/// `clipboard read` and `clipboard write <text>`: need a running session.
+/// `clipboard read`: needs a running session. An image needs `-o`; with
+/// `-o -`, it goes to stdout and nothing else does.
+pub(crate) fn clipboard_read(
+    args: &ClipboardReadArgs,
+    global: &GlobalArgs,
+) -> Result<Output, ErrorInfo> {
+    let image = !args.mime.starts_with("text/");
+    if image && args.output.is_none() {
+        return Err(
+            bad_args(format!("an image needs -o: {} is not text", args.mime)).hint(Hint::run(
+                Cmd::new("clipboard read")
+                    .flag("type", &args.mime)
+                    .raw("-o <file.png>")
+                    .session(&global.session),
+            )),
+        );
+    }
+    let (path, stdout) = if image {
+        output_path(args.output.as_deref(), global, "clipboard read")?
+    } else {
+        if args.output.is_some() {
+            return Err(
+                bad_args("-o saves an image; text is printed").hint(Hint::text(
+                    "redirect it: chrome-cdp clipboard read > file.txt",
+                )),
+            );
+        }
+        (None, false)
+    };
+    let op = ClipboardOp::Read {
+        mime: Some(args.mime.clone()),
+        path,
+    };
+    let output = clipboard(op, args.max_chars, global)?;
+    if stdout {
+        to_stdout(output)
+    } else {
+        Ok(output)
+    }
+}
+
+/// `clipboard read` and `clipboard write`: need a running session.
 pub(crate) fn clipboard(
     op: ClipboardOp,
     max_chars: usize,

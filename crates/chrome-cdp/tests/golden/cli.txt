@@ -330,9 +330,13 @@ command chrome-cdp upload
   flag --strict-refs env=CHROME_CDP_STRICT_REFS
 command chrome-cdp clipboard
 command chrome-cdp clipboard read
+  flag --type value=TYPE values=text/plain|text/html|image/png
+  flag --output -o value=PATH
   flag --max-chars value=N
 command chrome-cdp clipboard write
-  arg TEXT required
+  arg TEXT
+  flag --html value=HTML
+  flag --file value=IMAGE.png
 command chrome-cdp dialog
 command chrome-cdp dialog accept
   arg TEXT

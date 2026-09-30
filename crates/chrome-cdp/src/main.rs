@@ -194,19 +194,36 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Coverage(args)) => session::coverage(&args, &cli.global),
         Some(Command::Highlight(args)) => session::highlight(&args, &cli.global),
         Some(Command::Inspect(args)) => session::inspect(&args, &cli.global),
-        Some(Command::Clipboard(args)) => {
-            let op = match &args.command {
-                ClipboardCommand::Read(_) => engine::ClipboardOp::Read,
-                ClipboardCommand::Write(write) => engine::ClipboardOp::Write {
-                    text: line_arg(&write.text, "TEXT")?,
-                },
-            };
-            let max_chars = match &args.command {
-                ClipboardCommand::Read(read) => read.max_chars,
-                ClipboardCommand::Write(_) => 0,
-            };
-            session::clipboard(op, max_chars, &cli.global)
-        }
+        Some(Command::Clipboard(args)) => match &args.command {
+            ClipboardCommand::Read(read) => session::clipboard_read(read, &cli.global),
+            ClipboardCommand::Write(write) => {
+                if write.text.as_deref() == Some("-") && write.html.as_deref() == Some("-") {
+                    return Err(ErrorInfo::new(
+                        ErrorKind::BadArgs,
+                        "TEXT and --html cannot both come from stdin",
+                    ));
+                }
+                let op = engine::ClipboardOp::Write {
+                    text: write
+                        .text
+                        .as_deref()
+                        .map(|text| line_arg(text, "TEXT"))
+                        .transpose()?,
+                    html: write
+                        .html
+                        .as_deref()
+                        .map(|html| input::text_arg(html, "the HTML"))
+                        .transpose()?,
+                    image: write
+                        .file
+                        .as_deref()
+                        .map(input::absolute_path)
+                        .transpose()?
+                        .map(std::path::PathBuf::from),
+                };
+                session::clipboard(op, 0, &cli.global)
+            }
+        },
         Some(Command::Snapshot(args)) => session::snapshot(&args, &cli.global),
         Some(Command::Find(args)) => session::find(&args, &cli.global),
         Some(Command::Locator(args)) => session::locator(&args, &cli.global),

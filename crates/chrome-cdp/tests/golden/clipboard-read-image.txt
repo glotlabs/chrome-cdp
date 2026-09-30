@@ -1,0 +1,15 @@
+$ chrome-cdp clipboard read --type image/png -o <sandbox>/copied.png
+exit: 0
+--- stdout
+<sandbox>/copied.png: image/png 3x1, 89B
+
+$ chrome-cdp clipboard read --type image/png -o <sandbox>/copied.png --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"bytes":89,"path":"<sandbox>/copied.png","tab":"t1","text":"","type":"image/png"}}
+
+$ chrome-cdp clipboard read --type image/png -o <sandbox>/copied.png -q
+exit: 0
+--- stdout
+<sandbox>/copied.png
+

@@ -231,6 +231,10 @@ no drop there. `--clear` empties the input. `clipboard read`
 and `clipboard write <text>` use the page's clipboard API (the page must be
 on https or localhost, and keeps the clipboard permission): read what a
 page's Copy button copied, or write text and `press Mod+V` to paste it.
+`clipboard write --html '<b>Bold</b>'` puts rich text there (with its
+plain text), `--file chart.png` an image; `clipboard read --type
+text/html` prints the HTML and `--type image/png -o copied.png` saves the
+image.
 
 ## What an action reports
 

@@ -1,0 +1,13 @@
+$ chrome-cdp clipboard write --html '<p>Hello <b>world</b></p>'
+exit: 0
+--- stdout
+wrote text/html (25B), text/plain (11 characters) to the clipboard
+
+$ chrome-cdp clipboard write --html '<p>Hello <b>world</b></p>' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"chars":11,"tab":"t1","types":["text/html","text/plain"]}}
+
+$ chrome-cdp clipboard write --html '<p>Hello <b>world</b></p>' -q
+exit: 0
+
