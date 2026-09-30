@@ -332,7 +332,10 @@ impl Engine {
             .filter(|(_, found)| *found)
             .map(|(label, _)| label.as_str())
             .collect();
-        let observed = json!({ "found": !found.is_empty(), "frames": frames });
+        let mut observed = json!({ "found": !found.is_empty() });
+        if read.len() > 1 {
+            observed["frames"] = json!(frames);
+        }
         let mut unmet = unmet(condition, &observed);
         if read.len() > 1 {
             let labels: Vec<&str> = read.iter().map(|(label, _)| label.as_str()).collect();
