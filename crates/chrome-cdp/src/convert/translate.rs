@@ -1045,6 +1045,7 @@ impl<'s> Converter<'s> {
                 // The templates print only with `displayHeaderFooter`.
                 let mut header_footer = false;
                 let mut templates = Vec::new();
+                let mut margin = None;
                 for (k, v) in options(
                     arg(0),
                     &[
@@ -1055,6 +1056,7 @@ impl<'s> Converter<'s> {
                         "scale",
                         "pageRanges",
                         "preferCSSPageSize",
+                        "margin",
                         "displayHeaderFooter",
                         "headerTemplate",
                         "footerTemplate",
@@ -1067,6 +1069,10 @@ impl<'s> Converter<'s> {
                         "scale" => c.flag("--scale", number(v)?),
                         "pageRanges" => c.flag("--pages", plain(env, v)?.replace(' ', "")),
                         "preferCSSPageSize" => bool_switch(c, v, "--css-page-size")?,
+                        "margin" => {
+                            margin = Some(pdf_margin(v)?);
+                            c
+                        }
                         "displayHeaderFooter" => {
                             header_footer = boolean(v, "displayHeaderFooter")?;
                             c
@@ -1082,6 +1088,8 @@ impl<'s> Converter<'s> {
                         _ => bool_switch(c, v, "--background")?,
                     };
                 }
+                // Playwright's margins are 0 unless given; pdf's are 1cm.
+                c = c.flag("--margin", margin.unwrap_or_else(|| "0".to_owned()));
                 if header_footer {
                     if templates.is_empty() {
                         return why(
@@ -1891,6 +1899,32 @@ fn options<'e>(e: Option<&'e Expr>, allowed: &[&str]) -> Result<Vec<(&'e str, &'
         }
     }
     Ok(out)
+}
+
+/// `page.pdf`'s `margin: { top, right, bottom, left }` as `--margin`'s
+/// four lengths: a number is pixels, a side not given is 0.
+fn pdf_margin(v: &Expr) -> Result<String, Why> {
+    let props = object(v)?;
+    let mut sides = Vec::new();
+    for side in ["top", "right", "bottom", "left"] {
+        let length = match props.iter().find_map(|p| match p {
+            Prop::Pair(k, v) if k == side => Some(v),
+            _ => None,
+        }) {
+            None => "0".to_owned(),
+            Some(Expr::Str(s)) => s.trim().to_owned(),
+            Some(n @ Expr::Num(_)) => format!("{}px", number(n)?),
+            Some(_) => return why("a margin computed at run time"),
+        };
+        sides.push(length);
+    }
+    if props
+        .iter()
+        .any(|p| !matches!(p, Prop::Pair(k, _) if ["top", "right", "bottom", "left"].contains(&k.as_str())))
+    {
+        return why("a margin other than top, right, bottom and left");
+    }
+    Ok(sides.join(","))
 }
 
 fn bool_switch(c: Cmd, v: &Expr, flag: &str) -> Result<Cmd, Why> {

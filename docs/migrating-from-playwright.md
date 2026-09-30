@@ -307,7 +307,7 @@ what it saw and what to run next. `--not` inverts element matchers,
 | `screenshot({ type: 'jpeg', quality, omitBackground })` | `screenshot --format jpeg --quality 70 --omit-background` | ✅ |
 | `screenshot({ scale: 'device' })` | `screenshot --scale device` | ✅ |
 | — | `screenshot --annotate` labels each element with its ref | |
-| `page.pdf({ path, format, landscape, margin })` | `pdf -o PATH --format A4 --landscape --margin 1cm` | ✅ |
+| `page.pdf({ path, format, landscape, margin })` | `pdf -o PATH --format A4 --landscape --margin 1cm`; Playwright's margins are 0 unless given and `pdf`'s 1cm, so `convert` adds `--margin 0` | ✅ |
 | `page.pdf({ displayHeaderFooter, headerTemplate, footerTemplate, scale })` | `pdf --header HTML --footer HTML --scale 0.8` (or `--footer @footer.html`); give the templates a font size, Chrome's default is tiny | ✅ |
 | `recordVideo` | frames: `cdp Page.startScreencast`; a video is not recorded | ❌ |
 

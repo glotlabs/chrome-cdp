@@ -259,13 +259,20 @@ const CASES: &[(&str, &str)] = &[
     ),
     (
         "await page.pdf({ path: 'a.pdf', format: 'A4' });",
-        "pdf -o a.pdf --format A4",
+        "pdf -o a.pdf --format A4 --margin 0",
+    ),
+    (
+        "await page.pdf({ margin: { top: '1cm', bottom: 20 } });",
+        "pdf --margin 1cm,0,20px,0",
     ),
     (
         "await page.pdf({ path: 'a.pdf', scale: 0.8, pageRanges: '1-2, 4', displayHeaderFooter: true, footerTemplate: '<span class=\"pageNumber\"></span>' });",
-        "pdf -o a.pdf --scale 0.8 --pages 1-2,4 --footer '<span class=\"pageNumber\"></span>'",
+        "pdf -o a.pdf --scale 0.8 --pages 1-2,4 --margin 0 --footer '<span class=\"pageNumber\"></span>'",
     ),
-    ("await page.pdf({ headerTemplate: '<b>x</b>' });", "pdf"),
+    (
+        "await page.pdf({ headerTemplate: '<b>x</b>' });",
+        "pdf --margin 0",
+    ),
     (
         "await page.evaluate(() => localStorage.clear());",
         "eval '() => localStorage.clear()'",
