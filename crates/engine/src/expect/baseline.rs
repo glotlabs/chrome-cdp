@@ -8,7 +8,8 @@
 //! image and a diff image when they differ. Both read the page again until
 //! it matches or the timeout passes. `--update` stores the page instead,
 //! once it is steady (two reads in a row alike); so does a first run with
-//! no baseline, unless the CLI says not to (in CI).
+//! no baseline, unless the CLI says not to (in CI). A snapshot baseline
+//! may be a template ([`super::template`]): open values and `...` lines.
 
 use std::fmt::Write as _;
 use std::fs;
@@ -23,6 +24,7 @@ use similar::{ChangeTag, TextDiff};
 use tokio::time::Instant;
 
 use super::pixels::{self, Image};
+use super::template::Template;
 use crate::context::Scoped as _;
 use crate::locator::{LocateOptions, Locator};
 use crate::observe::save;
@@ -33,6 +35,30 @@ use crate::request::{
 use crate::snapshot::scope_locator;
 use crate::tabs::{Page, tab_name};
 use crate::{Engine, Running};
+
+/// A snapshot baseline: its text, and the template in it if it has one.
+struct SnapshotBaseline {
+    text: String,
+    template: Option<Template>,
+}
+
+impl SnapshotBaseline {
+    fn matches(&self, actual: &str) -> bool {
+        match &self.template {
+            Some(template) => template.matches(actual),
+            None => self.text == actual,
+        }
+    }
+
+    /// The page's text as the baseline would have it: see
+    /// [`Template::project`].
+    fn project(&self, actual: &str) -> String {
+        match &self.template {
+            Some(template) => template.project(actual),
+            None => actual.to_owned(),
+        }
+    }
+}
 
 /// How long to wait between reads of the page.
 const RETRY_DELAY: Duration = Duration::from_millis(100);
@@ -303,8 +329,22 @@ impl Engine {
         check_expect_snapshot(&req)?;
         let options = snapshot_options(&req);
         let scope = scope_locator(req.scope.as_deref(), &options)?;
-        let baseline =
-            read_file(&req.path)?.map(|bytes| normalize(&String::from_utf8_lossy(&bytes)));
+        let baseline = match read_file(&req.path)? {
+            Some(bytes) => {
+                let text = normalize(&String::from_utf8_lossy(&bytes));
+                let template = Template::parse(&text).map_err(|why| {
+                    ErrorInfo::new(
+                        ErrorKind::BadArgs,
+                        format!("the baseline {} is not a valid template: {why}", req.path.display()),
+                    )
+                    .hint(Hint::text(
+                        "escape the regex's special characters with \\, or quote the value: button \"Save\"",
+                    ))
+                })?;
+                Some(SnapshotBaseline { text, template })
+            }
+            None => None,
+        };
         if baseline.is_none() && !req.update && !req.create {
             let what = format!("expect-snapshot {}", req.name);
             return Err(self.no_baseline(&what, &req.path, snapshot_command(&req)));
@@ -324,7 +364,7 @@ impl Engine {
                 &req,
                 scope.as_ref(),
                 &options,
-                (!store).then_some(baseline.as_deref()).flatten(),
+                (!store).then_some(baseline.as_ref()).flatten(),
                 mark,
                 start + timeout,
             );
@@ -340,8 +380,9 @@ impl Engine {
             Outcome::Matched(text) => (text, true),
             Outcome::Read { last, steady } if store => (last, steady),
             Outcome::Read { last, .. } => {
-                let baseline = baseline.unwrap_or_default();
-                return Err(self.snapshot_differs(&page, &req, &baseline, &last, &reads));
+                let baseline = baseline.map(|b| (b.text.clone(), b.project(&last)));
+                let (expected, actual) = baseline.unwrap_or_default();
+                return Err(self.snapshot_differs(&page, &req, &expected, &actual, &reads));
             }
         };
         let lines = count_lines(&text);
@@ -362,13 +403,15 @@ impl Engine {
                 req.name,
                 format::duration(reads.elapsed)
             ),
-            Some(old) if *old == text => {
+            // A template keeps its lines that still match.
+            Some(old) if old.project(&text) == old.text => {
                 data.result = BaselineResult::Unchanged;
                 format!("baseline {path} is up to date ({lines} lines)")
             }
             Some(old) => {
-                write_file(&req.path, format!("{text}\n").as_bytes())?;
-                let (diff, added, removed) = unified_diff(old, &text, "baseline", "page");
+                let new = old.project(&text);
+                write_file(&req.path, format!("{new}\n").as_bytes())?;
+                let (diff, added, removed) = unified_diff(&old.text, &new, "baseline", "page");
                 data.result = BaselineResult::Updated;
                 let shown = format!(
                     "updated baseline {path} ({}):\n{}",
@@ -408,7 +451,7 @@ impl Engine {
         req: &ExpectSnapshotRequest,
         scope: Option<&Locator>,
         options: &LocateOptions,
-        baseline: Option<&str>,
+        baseline: Option<&SnapshotBaseline>,
         mark: u64,
         deadline: Instant,
     ) -> Result<(Outcome<String>, u64), ErrorInfo> {
@@ -437,7 +480,9 @@ impl Engine {
             };
             count += 1;
             match baseline {
-                Some(baseline) if baseline == text => return Ok((Outcome::Matched(text), count)),
+                Some(baseline) if baseline.matches(&text) => {
+                    return Ok((Outcome::Matched(text), count));
+                }
                 None if last.as_deref() == Some(text.as_str()) => {
                     return Ok((
                         Outcome::Read {
@@ -481,7 +526,8 @@ impl Engine {
         .details(json!({ "baseline": path.display().to_string() }))
     }
 
-    /// `ExpectFailed` with the diff from the baseline to the page.
+    /// `ExpectFailed` with the diff from the baseline to the page (`actual`
+    /// in the baseline's terms, for a template).
     fn snapshot_differs(
         &self,
         page: &Page,

@@ -618,3 +618,105 @@ async fn expect_screenshot_stills_the_page() {
         .unwrap();
     assert_eq!(state, serde_json::json!([1, 1]));
 }
+
+/// A baseline may be a template: `"*"` and `/regex/` values and `...`
+/// lines match changing text; a missing button still fails, with a diff
+/// of the template's lines; `--update` keeps the template lines that
+/// still match.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn expect_snapshot_templates() {
+    let Some(chrome) = chrome_path() else { return };
+    let out = tempfile::tempdir().unwrap();
+    let engine = start(&chrome, "engine-baseline-template", out.path()).await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("login.txt");
+    goto(&engine, "/expect/baseline.html").await;
+    let (_, data) = snapshot_ok(&engine, snapshot_request(&path)).await;
+    let template = data
+        .snapshot
+        .replace("- button \"Sign in\"", "- button /^(Sign in|Continue)$/")
+        .replace("- link \"Help\"", "- link \"*\"");
+    // The form's text boxes, whatever they are.
+    let mut lines: Vec<&str> = template.lines().collect();
+    let first = lines.iter().position(|l| l.contains("- textbox")).unwrap();
+    let last = lines.iter().rposition(|l| l.contains("- textbox")).unwrap();
+    let dots = format!("{}...", " ".repeat(lines[first].find('-').unwrap()));
+    lines.splice(first..=last, [dots.as_str()]);
+    let template = lines.join("\n") + "\n";
+    std::fs::write(&path, &template).unwrap();
+
+    // Changed text still matches.
+    eval(
+        &engine,
+        "document.getElementById('go').textContent = 'Continue'; \
+         document.querySelector('nav a').textContent = 'Support'; \
+         document.getElementById('email').remove()",
+    )
+    .await;
+    let (output, data) = snapshot_ok(&engine, snapshot_request(&path)).await;
+    assert_eq!(data.result, BaselineResult::Passed, "{}", output.text);
+
+    // A missing button fails; the diff shows the template's lines.
+    eval(&engine, "document.getElementById('go').remove()").await;
+    let err = snapshot(
+        &engine,
+        ExpectSnapshotRequest {
+            timeout_ms: SHORT_MS,
+            ..snapshot_request(&path)
+        },
+    )
+    .await
+    .unwrap_err();
+    let text = err.to_text();
+    assert_eq!(err.kind, ErrorKind::ExpectFailed, "{text}");
+    assert!(
+        text.contains("-    - button /^(Sign in|Continue)$/\n"),
+        "{text}"
+    );
+    assert!(text.contains(&format!("\n     {dots}\n")), "{text}");
+    assert!(
+        !text
+            .lines()
+            .any(|l| l.starts_with("    +") && !l.starts_with("    +++")),
+        "only the button is missing: {text}"
+    );
+
+    // --update keeps the template lines that still match, and rewrites
+    // the rest.
+    let (output, data) = snapshot_ok(
+        &engine,
+        ExpectSnapshotRequest {
+            update: true,
+            ..snapshot_request(&path)
+        },
+    )
+    .await;
+    assert_eq!(data.result, BaselineResult::Updated, "{}", output.text);
+    let stored = std::fs::read_to_string(&path).unwrap();
+    assert!(stored.contains(&dots), "{stored}");
+    assert!(stored.contains("- link \"*\""), "{stored}");
+    assert!(!stored.contains("button"), "{stored}");
+    let (_, data) = snapshot_ok(
+        &engine,
+        ExpectSnapshotRequest {
+            update: true,
+            ..snapshot_request(&path)
+        },
+    )
+    .await;
+    assert_eq!(data.result, BaselineResult::Unchanged);
+
+    // A regex that does not compile is the baseline's fault.
+    std::fs::write(&path, "- main\n  - button /(/\n").unwrap();
+    let err = snapshot(&engine, snapshot_request(&path))
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::BadArgs, "{}", err.to_text());
+    assert!(
+        err.message
+            .contains("line 2: /(/ is not a regular expression"),
+        "{}",
+        err.message
+    );
+    engine.close().await;
+}

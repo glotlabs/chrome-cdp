@@ -18,7 +18,7 @@ around it. **The v1 gate: no ❌ in an agent-critical row.** A test
 (`crates/chrome-cdp/tests/parity.rs`) holds the tables to that, checks the
 counts below, and checks that every command a row names exists.
 
-Today: 130 rows; 114 ✅, 11 🟡, 0 ❌, 5 ➖. No row is ❌.
+Today: 130 rows; 115 ✅, 10 🟡, 0 ❌, 5 ➖. No row is ❌.
 
 ## Navigation
 
@@ -181,7 +181,7 @@ Today: 130 rows; 114 ✅, 11 🟡, 0 ❌, 5 ➖. No row is ❌.
 | `toHaveAttribute`, `toHaveClass`, `toContainClass`, `toHaveCSS`, `toHaveId` | `expect LOC attr NAME [V]`, `expect LOC class C`, `expect LOC css color red` | ✅ | no |
 | `toHaveURL`, `toHaveTitle` | `expect --url /dashboard/`, `expect --title Home` | ✅ | yes |
 | `toHaveScreenshot` | `expect-screenshot NAME` (experimental) | ✅ | no |
-| `toMatchAriaSnapshot` | `expect-snapshot NAME`: a stored text baseline, not a template | 🟡 | no |
+| `toMatchAriaSnapshot` | `expect-snapshot NAME`: a stored baseline of `snapshot -i` lines, which may be a template (`"*"`, `/regex/` values and `...` lines) | ✅ | no |
 | `toHaveRole`, `toHaveAccessibleName`, `toHaveAccessibleDescription` | `expect 'role=button[name="Save"]' count 1`, or `snapshot --scope LOC` | 🟡 | no |
 | `expect.soft`, `expect.poll` | `run --continue`; `wait --fn` | 🟡 | no |
 | `toPass`, plain-value `expect` | the shell compares `-q` output | ➖ | no |

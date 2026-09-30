@@ -274,7 +274,7 @@ what it saw and what to run next. `--not` inverts element matchers,
 | `expect(page).toHaveURL(/dashboard/)` | `expect --url /dashboard/` (a string is a part of the URL or a glob) | ✅ |
 | `expect(page).toHaveTitle('Home')` | `expect --title Home --exact` (without `--exact`: contains) | ✅ |
 | `toHaveScreenshot('home.png')` | `expect-screenshot home` (`--full`, `--mask LOC`, `--threshold`, `--max-diff-pixels`; the caret is hidden and animations stopped, like `animations: 'disabled'`; experimental) | ✅ |
-| `toMatchAriaSnapshot(template)` | `expect-snapshot NAME [--scope LOC]`: a stored text baseline of `snapshot -i`, a diff on failure | 🟡 |
+| `toMatchAriaSnapshot(template)` | `expect-snapshot NAME [--scope LOC]`: a stored baseline of `snapshot -i` lines, a diff on failure. Edit it into a template: `button "*"` for any name, `heading /Order #\d+/` for a regex, a line `...` for any number of siblings. `snapshot -i` writes roles and states its own way (`(h1)`, not `[level=1]`), so write the template from a stored baseline, not Playwright's YAML | ✅ |
 | `--update-snapshots` | `expect-snapshot NAME --update`, `expect-screenshot NAME --update` | ✅ |
 | `expect(response).toBeOK()` | `wait --response URL --status 200`; `goto` warns on a 4xx/5xx | 🟡 |
 | `expect.soft(…)` | `run script.cdp --continue` (or `batch --continue`) | 🟡 |

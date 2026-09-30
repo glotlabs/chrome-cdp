@@ -1567,7 +1567,7 @@ impl<'s> Converter<'s> {
             }
             "toMatchAriaSnapshot" => {
                 return why(
-                    "an ARIA template: expect-snapshot NAME --scope LOC keeps a snapshot baseline instead",
+                    "an ARIA template: expect-snapshot NAME --scope LOC stores a baseline; edit it into a template (\"*\", /regex/, ...)",
                 );
             }
             other => return why(format!("the {other} matcher")),

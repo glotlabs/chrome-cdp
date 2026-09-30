@@ -16,6 +16,7 @@ mod mock_state;
 mod page;
 mod pixels;
 mod requests;
+mod template;
 
 pub use baseline::{check_expect_screenshot, check_expect_snapshot};
 

@@ -122,6 +122,27 @@ the nodes were compared by place). The same page gives the same
 output. It reads Chrome's own accessibility tree; `--engine dom` uses
 chrome-cdp's DOM walker instead.
 
+`expect-snapshot NAME` compares the `snapshot -i` text (without refs) with a
+baseline file, `.chrome-cdp/snapshots/NAME.txt`, stored on the first run
+or with `--update`, and fails with a diff. Edit a baseline into a template
+where the page changes from run to run:
+
+```
+- main
+  - heading /Order #\d+/ (h1)
+  - text "*"
+  - list
+    ...
+  - button "Pay"
+```
+
+`"*"` is any name or text, `/regex/` (or `/regex/i`) one it finds a match
+in, the rest of the line as it is, and a line `...` stands for any number
+of lines at its depth (with those below them). A failure's diff shows the
+template's lines where they match, so a missing `button "Pay"` is the only
+`-` line. `--update` keeps the template lines that still match and
+rewrites the rest; it never writes a template of its own.
+
 ## Refs
 
 A node keeps its ref while it stays in the page, also when the page

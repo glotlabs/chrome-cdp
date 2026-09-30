@@ -613,11 +613,22 @@ files. They live in .chrome-cdp/ of the nearest directory up with
 .chrome-cdp.toml, .chrome-cdp/ or .git (else the current one); --dir puts
 them elsewhere. Needs a running session.
 
+Edit a baseline into a template for what changes from run to run:
+  button \"*\"                 any name (or text, for a text line)
+  heading /Order #\\d+/ (h1)  a name the regex finds a match in (/…/i:
+                             any case); the rest of the line as it is
+  ...                        any number of lines at its depth, with the
+                             lines below them
+A failure's diff shows the template's lines where they match. --update
+keeps the template lines that still match and rewrites the rest; it
+never writes a template itself.
+
 Examples:
   chrome-cdp expect-snapshot login
   chrome-cdp expect-snapshot checkout/cart --scope 'role=main'
   chrome-cdp expect-snapshot login --update
-  chrome-cdp expect-snapshot home --full --timeout 10s")]
+  chrome-cdp expect-snapshot home --full --timeout 10s
+  chrome-cdp expect-snapshot orders    # a baseline with /…/, \"*\" and ...")]
     ExpectSnapshot(ExpectSnapshotArgs),
 
     /// Compare a screenshot with a stored PNG baseline, pixel by pixel (experimental).
