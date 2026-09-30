@@ -18,6 +18,7 @@ use tokio::time::Instant;
 
 use super::rules::{self, LinkKind};
 use crate::errors::from_cdp;
+use crate::expect::is_favicon;
 use crate::frames::World;
 use crate::injected::{self, GUARD};
 use crate::locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions};
@@ -253,15 +254,27 @@ impl<'a> Walk<'a> {
     }
 
     /// Why the walk must stop before another action, if it must.
-    fn over_budget(&self) -> Option<Stop> {
+    /// Why the walk must stop before `cost` more actions, if it must.
+    fn over_budget(&self, cost: u64) -> Option<Stop> {
         if Instant::now() >= self.deadline {
             Some(Stop::Time)
-        } else if self.actions >= self.req.max_actions {
+        } else if self.actions + cost > self.req.max_actions {
             Some(Stop::MaxActions)
         } else if self.known.len() as u64 >= self.req.max_states {
             Some(Stop::MaxStates)
         } else {
             None
+        }
+    }
+
+    /// How many actions getting back to state `i` takes: none when the
+    /// tab is there, one load when its URL gets there (or may), else a
+    /// load and its path.
+    fn back_cost(&self, i: usize) -> u64 {
+        match (self.at == Some(i), self.known[i].direct) {
+            (true, _) => 0,
+            (false, None | Some(true)) => 1,
+            (false, Some(false)) => 1 + self.known[i].data.path.len() as u64,
         }
     }
 
@@ -287,16 +300,22 @@ impl<'a> Walk<'a> {
             });
             return Ok(Flow::Go);
         }
-        if let Some(stop) = self.over_budget() {
+        if let Some(stop) = self.over_budget(self.back_cost(i) + 1) {
             return Ok(Flow::Stop(stop));
         }
-        if let Err(e) = self.back_to(i).await {
-            self.failed.push(ExploreFailed {
-                from: from.clone(),
-                step: None,
-                error: format!("could not get back to {from}: {}", e.message),
-            });
-            return Ok(Flow::Lost);
+        match self.back_to(i).await {
+            Ok(true) => {}
+            // Loading its URL did not get there, and the budget has no
+            // room to replay its path.
+            Ok(false) => return Ok(Flow::Stop(Stop::MaxActions)),
+            Err(e) => {
+                self.failed.push(ExploreFailed {
+                    from: from.clone(),
+                    step: None,
+                    error: format!("could not get back to {from}: {}", e.message),
+                });
+                return Ok(Flow::Lost);
+            }
         }
         let marks = self.running.tabs.log_marks(self.page.id);
         let events = match self.click(&item.step).await {
@@ -446,7 +465,7 @@ impl<'a> Walk<'a> {
             }
             return Ok(Flow::Go);
         }
-        if let Some(stop) = self.over_budget() {
+        if let Some(stop) = self.over_budget(1) {
             self.unvisited.push(ExploreLeft { from, step });
             return Ok(Flow::Stop(stop));
         }
@@ -526,9 +545,10 @@ impl<'a> Walk<'a> {
     /// Gets the tab back to state `i`: by loading its URL when that gives
     /// the same skeleton (checked the first time), else by replaying its
     /// path from the start.
-    async fn back_to(&mut self, i: usize) -> Result<(), ErrorInfo> {
+    /// `false` when the budget leaves no room to replay the path.
+    async fn back_to(&mut self, i: usize) -> Result<bool, ErrorInfo> {
         if self.at == Some(i) {
-            return Ok(());
+            return Ok(true);
         }
         self.at = None;
         let url = self.known[i].data.url.clone();
@@ -539,9 +559,12 @@ impl<'a> Walk<'a> {
             if look.key == key {
                 self.known[i].direct = Some(true);
                 self.at = Some(i);
-                return Ok(());
+                return Ok(true);
             }
             self.known[i].direct = Some(false);
+            if self.over_budget(self.back_cost(i) + 1).is_some() {
+                return Ok(false);
+            }
         }
         let start = self.start.clone();
         self.goto(&start).await?;
@@ -559,7 +582,7 @@ impl<'a> Walk<'a> {
         let look = self.look().await?;
         if look.key == key {
             self.at = Some(i);
-            Ok(())
+            Ok(true)
         } else {
             Err(ErrorInfo::new(
                 ErrorKind::NotFound,
@@ -769,7 +792,7 @@ impl<'a> Walk<'a> {
             .tabs
             .failures_since(self.page.id, marks.0)
             .into_iter()
-            .filter(|f| self.allowed_origin(&f.url))
+            .filter(|f| self.allowed_origin(&f.url) && !is_favicon(&f.url))
             .map(|f| Event::RequestFailed {
                 tab: tab.clone(),
                 id: None,

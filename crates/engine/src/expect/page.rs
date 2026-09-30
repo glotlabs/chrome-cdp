@@ -672,7 +672,7 @@ impl Engine {
 
 /// Whether `url` is a site's `/favicon.ico`, which Chrome asks for by
 /// itself: a missing one is not the page's failure.
-fn is_favicon(url: &str) -> bool {
+pub(crate) fn is_favicon(url: &str) -> bool {
     let path = url.split(['?', '#']).next().unwrap_or_default();
     path.ends_with("/favicon.ico")
 }

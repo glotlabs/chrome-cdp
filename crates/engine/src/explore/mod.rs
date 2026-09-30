@@ -74,7 +74,12 @@ pub fn check_explore(req: &ExploreRequest) -> Result<(), ErrorInfo> {
     if req.screenshots && req.dir.is_none() {
         return Err(
             ErrorInfo::new(ErrorKind::BadArgs, "--screenshots saves them in -o DIR").hint(
-                Hint::run(Cmd::new("explore").switch("screenshots").flag("o", "map")),
+                Hint::run(
+                    Cmd::new("explore")
+                        .switch("screenshots")
+                        .raw("-o")
+                        .arg("map"),
+                ),
             ),
         );
     }

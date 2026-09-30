@@ -14,6 +14,8 @@
 pub(crate) mod baseline;
 mod mock_state;
 mod page;
+
+pub(crate) use page::is_favicon;
 pub(crate) mod pixels;
 mod requests;
 mod template;
