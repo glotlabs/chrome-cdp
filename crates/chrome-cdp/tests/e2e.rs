@@ -1145,6 +1145,35 @@ fn watch_runs_the_affected_tests_again_until_ctrl_c() {
     let run = until("watching ");
     assert!(run.contains("running 3 tests from 1 file"), "{run}");
 
+    // A new scenario runs; then its ${data:…} and `state load` files are
+    // watched with it.
+    std::fs::create_dir_all(project.root.join("data")).unwrap();
+    std::fs::write(project.root.join("data/todo.json"), r#"{"title": "Milk"}"#).unwrap();
+    std::fs::write(
+        project.root.join("data/state.json"),
+        r#"{"cookies": [], "origins": []}"#,
+    )
+    .unwrap();
+    std::fs::write(
+        project.root.join("scenarios/pass/data.cdp"),
+        "@test \"reads data files\"\n  state load data/state.json\n  goto /e2e/shop.html\n  fill 'label=New todo' ${data:../../data/todo.json#/title}\n  expect 'label=New todo' value Milk\n",
+    )
+    .unwrap();
+    let run = until("watching ");
+    assert!(run.contains("running 1 test from 1 file"), "{run}");
+    assert!(run.contains("reads data files"), "{run}");
+    for file in ["data/todo.json", "data/state.json"] {
+        let path = project.root.join(file);
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(&path, format!("{text}\n")).unwrap();
+        let run = until("watching ");
+        assert!(
+            run.contains(&format!("{file} changed\nrunning 1 test from 1 file")),
+            "{run}"
+        );
+        assert!(run.contains("reads data files"), "{run}");
+    }
+
     // Ctrl-C ends it; the run's session is closed.
     let status = std::process::Command::new("kill")
         .args(["-INT", &child.id().to_string()])

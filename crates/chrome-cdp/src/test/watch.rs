@@ -7,7 +7,8 @@
 //! Files are polled (every 250 ms, by modification time and size), so no
 //! file-system events are needed and every platform behaves the same.
 //! What a change affects:
-//! - a scenario file, or a step file one includes: that file's tests;
+//! - a scenario file, a step file one includes, or a data file a step
+//!   reads (`${data:…}`, `state load`): that file's tests;
 //! - a mock file: the tests that use its set; a mock data file: every test
 //!   with mock sets;
 //! - anything else (the config, a `watch` glob's files): every test.
@@ -199,8 +200,11 @@ fn wait(
     }
 }
 
-/// The files each scenario (by index) reads: itself and its `@include`d
-/// step files.
+/// The files each scenario (by index) reads: itself, its `@include`d
+/// step files, the `${data:…}` files of its steps (relative to the file
+/// the line is in) and the files its `state load` steps name (relative to
+/// the current directory; not those an earlier step writes into the
+/// artifacts, see [`super::outputs`]).
 fn dependencies(plan: &Plan) -> BTreeMap<usize, BTreeSet<PathBuf>> {
     let mut deps: BTreeMap<usize, BTreeSet<PathBuf>> = BTreeMap::new();
     for (index, scenario) in plan.scenarios.iter().enumerate() {
@@ -208,6 +212,7 @@ fn dependencies(plan: &Plan) -> BTreeMap<usize, BTreeSet<PathBuf>> {
             .or_default()
             .insert(absolute(&scenario.path));
     }
+    let artifacts = absolute(&plan.config.artifacts);
     let mut add = |file: usize, steps: &[super::plan::Prepared]| {
         let set = deps.entry(file).or_default();
         for step in steps {
@@ -215,6 +220,7 @@ fn dependencies(plan: &Plan) -> BTreeMap<usize, BTreeSet<PathBuf>> {
             for via in &step.via {
                 set.insert(absolute(Path::new(via.file.as_ref())));
             }
+            set.extend(data_files(step, &artifacts));
         }
     };
     for test in &plan.tests {
@@ -231,6 +237,33 @@ fn dependencies(plan: &Plan) -> BTreeMap<usize, BTreeSet<PathBuf>> {
         }
     }
     deps
+}
+
+/// The data files `step` reads: its `${data:file…}` files, and the file
+/// of a `state load FILE` step (unless it is in `artifacts`).
+fn data_files(step: &super::plan::Prepared, artifacts: &Path) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = step
+        .line
+        .words
+        .iter()
+        .flat_map(|w| w.vars())
+        .filter_map(|v| match &v.var {
+            protocol::script::Var::Data { file, .. } => Some(absolute(&step.vars.dir.join(file))),
+            _ => None,
+        })
+        .collect();
+    let words: Vec<Option<String>> = step.line.words.iter().map(|w| w.literal()).collect();
+    if let [Some(state), Some(load), Some(file), ..] = words.as_slice()
+        && state == "state"
+        && load == "load"
+        && file != "-"
+    {
+        let path = absolute(Path::new(file));
+        if !path.starts_with(artifacts) {
+            files.push(path);
+        }
+    }
+    files
 }
 
 /// `path` made absolute, with `.` and `..` taken out (without reading

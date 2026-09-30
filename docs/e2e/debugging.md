@@ -87,7 +87,9 @@ start the app yourself (`reuse_existing` uses it) when the page needs it.
 and runs the tests they affect again, in the same browser and with the web
 servers still up, until Ctrl-C:
 
-- a scenario, or a step file one `@include`s: that file's tests;
+- a scenario, a step file one `@include`s, or a file one of its steps
+  reads (`${data:users.json#/0}`, `state load state/user.json`): that
+  file's tests;
 - a mock file: the tests that use its set; a mock data file: every test
   with mock sets;
 - the config, or a file of `watch = ["dist/**"]` in `[e2e]` (a build's
