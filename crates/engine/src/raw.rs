@@ -72,6 +72,27 @@ pub fn check_cdp(req: &CdpRequest) -> Result<(), ErrorInfo> {
     Ok(())
 }
 
+/// The names of `listen` that are no event of the protocol and came in no
+/// event, each with the event it most likely meant. Only warned about: a
+/// newer Chrome may have events the pinned protocol lacks.
+fn unknown_events<'a>(
+    listen: &'a [String],
+    events: &[CdpEvent],
+) -> Vec<(&'a str, Option<&'static str>)> {
+    let known = cdp::domains::names::EVENTS;
+    listen
+        .iter()
+        .filter(|name| !name.ends_with(".*") && !known.contains(&name.as_str()))
+        .filter(|name| !events.iter().any(|e| &e.method == *name))
+        .map(|name| {
+            let meant = suggest::similar(name, known.iter().copied(), 1)
+                .first()
+                .copied();
+            (name.as_str(), meant)
+        })
+        .collect()
+}
+
 /// Whether event `method` is one of `listen`'s.
 fn wanted(listen: &[String], method: &str) -> bool {
     listen.iter().any(|name| match name.strip_suffix(".*") {
@@ -325,6 +346,18 @@ impl Engine {
             if let Some(value) = &value {
                 info = info.details(json!({ "result": value }));
             }
+            for (name, meant) in unknown_events(listen, &events) {
+                info = match meant {
+                    Some(meant) => info.note(
+                        "did you mean",
+                        format!("{meant} ({name} is no event of the protocol)"),
+                    ),
+                    None => info.note(
+                        "unknown event",
+                        format!("{name} is no event of the protocol"),
+                    ),
+                };
+            }
             return Err(info);
         }
         let mut text = String::new();
@@ -344,6 +377,7 @@ impl Engine {
             quiet.push_str(&line);
         }
         let shown = events.len();
+        let unknown = unknown_events(listen, &events);
         let result = value.and_then(|v| match v {
             Value::Object(map) => Some(map),
             _ => None::<Map<String, Value>>,
@@ -361,6 +395,12 @@ impl Engine {
                 "only {shown} of {count} {names} events within {waited}; a longer --timeout \
                  waits for more"
             ));
+        }
+        for (name, meant) in unknown {
+            output = output.warning(match meant {
+                Some(meant) => format!("{name} is no event of the protocol; did you mean {meant}?"),
+                None => format!("{name} is no event of the protocol"),
+            });
         }
         Ok(output)
     }
@@ -459,7 +499,24 @@ fn in_context(method: &str, mut params: Value, context_id: i64) -> Value {
 mod tests {
     use serde_json::json;
 
-    use super::in_context;
+    use super::{in_context, unknown_events};
+
+    #[test]
+    fn unknown_events_get_a_suggestion() {
+        let listen = [
+            "Page.loadEventFird".to_owned(),
+            "Page.loadEventFired".to_owned(),
+            "Page.*".to_owned(),
+            "Zzz.qqqqqqqqqqqqqqq".to_owned(),
+        ];
+        assert_eq!(
+            unknown_events(&listen, &[]),
+            [
+                ("Page.loadEventFird", Some("Page.loadEventFired")),
+                ("Zzz.qqqqqqqqqqqqqqq", None)
+            ]
+        );
+    }
 
     #[test]
     fn frame_calls_get_its_context_unless_they_name_one() {

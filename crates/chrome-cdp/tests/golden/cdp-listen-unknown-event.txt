@@ -1,0 +1,12 @@
+$ chrome-cdp cdp --target page --listen Page.loadEventFird --timeout 300ms Runtime.evaluate '{"expression":"1"}'
+exit: 3
+--- stderr
+error: no Page.loadEventFird event within 300ms
+  did you mean: Page.loadEventFired (Page.loadEventFird is no event of the protocol)
+  hint: chrome-cdp cdp --target page --listen 'Animation.*' Animation.enable   (a domain that is off sends no events; its enable call turns them on), or a longer --timeout, e.g. --timeout 600ms
+
+$ chrome-cdp cdp --target page --listen Page.loadEventFird --timeout 300ms Runtime.evaluate '{"expression":"1"}' --json
+exit: 3
+--- stdout
+{"ok":false,"error":{"kind":"Timeout","message":"no Page.loadEventFird event within 300ms","hint":"chrome-cdp cdp --target page --listen 'Animation.*' Animation.enable   (a domain that is off sends no events; its enable call turns them on), or a longer --timeout, e.g. --timeout 600ms","notes":[{"label":"did you mean","text":"Page.loadEventFired (Page.loadEventFird is no event of the protocol)"}],"details":{"result":{"result":{"description":"1","type":"number","value":1}}}}}
+

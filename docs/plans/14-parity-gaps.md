@@ -638,6 +638,10 @@ match with changed dynamic text, fail on a missing button, and survive
   command of the protocol files. The hint adds `--target page` unless the
   suggestion is a `Browser.` or `Target.` method, and `…` when params were
   given.
+- **14.5, `cdp --listen` did you mean (close-out).** `names.rs` also
+  lists every event; a `--listen` name that is none and got no event is
+  a warning (a `did you mean` note on a timeout), not an error: a newer
+  Chrome may send events the pinned protocol lacks.
 - **14.6, HAR page ids.** A tab with one page keeps `t1`, even when a
   navigation started it (`har start`, `goto`, `har stop`), so files of a
   single load look as before; `t1_1`, `t1_2`, … only when there are

@@ -2202,6 +2202,22 @@ const CASES: &[Case] = &[
         fixture: Fixture::Session,
     },
     Case {
+        name: "cdp-listen-unknown-event",
+        args: &[
+            "cdp",
+            "--target",
+            "page",
+            "--listen",
+            "Page.loadEventFird",
+            "--timeout",
+            "300ms",
+            "Runtime.evaluate",
+            r#"{"expression":"1"}"#,
+        ],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
         name: "cdp-listen-bad-event",
         args: &["cdp", "--listen", "loadEventFired"],
         modes: ERR,
