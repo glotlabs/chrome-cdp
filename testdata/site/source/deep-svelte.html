@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Deep Svelte</title>
+<!-- A page that claims Svelte made 40 components, each inside the one
+     before: `components` shows the tree it says, bounded by --depth and
+     --max-chars. -->
+<div id="root"></div>
+<script>
+  window.__svelte = { v: new Set(["5"]) };
+  let parent = null;
+  let at = document.getElementById("root");
+  for (let i = 0; i <= 40; i++) {
+    const file = i === 0 ? "src/App.svelte" : `src/Level${i}.svelte`;
+    const el = document.createElement("div");
+    el.textContent = `level ${i}`;
+    el.__svelte_meta = { loc: { file, line: 3, column: 0 }, parent };
+    at.appendChild(el);
+    at = el;
+    parent = {
+      type: "component",
+      componentTag: `Level${i + 1}`,
+      file,
+      line: 4,
+      column: 2,
+      parent,
+    };
+  }
+</script>
