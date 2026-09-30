@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fake Svelte</title>
+<!-- A page that claims Svelte made its button: `source` shows what the
+     page says, as the page's debug info, and nothing more. -->
+<h1>Checkout</h1>
+<button id="pay">Pay</button>
+<script>
+  document.getElementById("pay").__svelte_meta = {
+    loc: { file: "src/Nowhere.svelte", line: 7, column: 2 },
+    parent: null,
+  };
+</script>
