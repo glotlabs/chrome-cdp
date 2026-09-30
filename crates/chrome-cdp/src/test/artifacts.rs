@@ -69,6 +69,15 @@ pub(super) struct StepRecord {
     /// `--trace`: the page after it, relative to the test's directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) screenshot: Option<String>,
+    /// How many fields holding a `${secret:…}` value its screenshot
+    /// paints over ([`secret_fields`]).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub(super) masked: usize,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 impl StepRecord {
@@ -102,6 +111,7 @@ impl StepRecord {
             warnings,
             error,
             screenshot: None,
+            masked: 0,
         }
     }
 }
@@ -196,6 +206,8 @@ pub(super) type Invoke<'a> = dyn Fn(&[&str]) -> Result<Output, ErrorInfo> + 'a;
 pub(super) struct Capture {
     /// `failure.png`, or why there is none.
     pub(super) screenshot: Result<PathBuf, String>,
+    /// How many fields holding a secret it paints over.
+    pub(super) masked: usize,
     /// `snapshot -i`'s text, or why there is none.
     pub(super) snapshot: Result<String, String>,
 }
@@ -204,9 +216,8 @@ pub(super) struct Capture {
 pub(super) fn capture(dir: &Path, invoke: &Invoke<'_>) -> Capture {
     let png = dir.join(SCREENSHOT);
     let path = png.to_string_lossy().into_owned();
-    let screenshot = invoke(&["screenshot", "-o", &path, "--timeout", READ_TIMEOUT])
-        .map(|_| png)
-        .map_err(|e| e.message);
+    let (screenshot, masked) = screenshot(&path, READ_TIMEOUT, invoke);
+    let screenshot = screenshot.map(|()| png);
     let snapshot = invoke(&[
         "snapshot",
         "-i",
@@ -222,8 +233,84 @@ pub(super) fn capture(dir: &Path, invoke: &Invoke<'_>) -> Capture {
     }
     Capture {
         screenshot,
+        masked,
         snapshot,
     }
+}
+
+/// Takes a screenshot of the page to `path`, painting over the fields
+/// whose value is a `${secret:…}` (password fields draw dots anyway);
+/// how many it painted over.
+pub(super) fn screenshot(
+    path: &str,
+    timeout: &str,
+    invoke: &Invoke<'_>,
+) -> (Result<(), String>, usize) {
+    let masked = secret_fields(invoke);
+    let mask = format!("css=[{SECRET_FIELD}]");
+    let mut words = vec!["screenshot", "-o", path, "--timeout", timeout];
+    if masked > 0 {
+        words.extend(["--mask", &mask]);
+    }
+    let taken = invoke(&words).map(drop).map_err(|e| e.message);
+    (taken, masked)
+}
+
+/// The attribute [`secret_fields`] puts on the fields that hold a secret.
+const SECRET_FIELD: &str = "data-chrome-cdp-secret";
+
+/// Marks the inputs and text areas (in shadow roots too, not in iframes)
+/// whose value is one of the secrets with [`SECRET_FIELD`], and unmarks
+/// the others; how many it marked. The page script compares hashes, so
+/// no secret is written into it.
+fn secret_fields(invoke: &Invoke<'_>) -> usize {
+    let secrets = crate::output::secret_values();
+    if secrets.is_empty() {
+        return 0;
+    }
+    let keys: Vec<String> = secrets.iter().map(|s| secret_key(s)).collect();
+    let script = format!(
+        r#"(() => {{
+  const keys = new Set({keys});
+  const key = (v) => {{
+    let h = 0x811c9dc5;
+    for (let i = 0; i < v.length; i++) h = Math.imul(h ^ v.charCodeAt(i), 0x01000193);
+    return v.length + ':' + (h >>> 0);
+  }};
+  let n = 0;
+  const walk = (root) => {{
+    for (const el of root.querySelectorAll('*')) {{
+      if (el.shadowRoot) walk(el.shadowRoot);
+      el.removeAttribute('{SECRET_FIELD}');
+      const field = el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement;
+      if (field && el.type !== 'password' && el.value && keys.has(key(el.value))) {{
+        el.setAttribute('{SECRET_FIELD}', '');
+        n++;
+      }}
+    }}
+  }};
+  walk(document);
+  return n;
+}})()"#,
+        keys = serde_json::to_string(&keys).unwrap_or_else(|_| "[]".to_owned()),
+    );
+    invoke(&["eval", "--world", "isolated", &script])
+        .ok()
+        .and_then(|out| out.data["value"].as_u64())
+        .and_then(|n| usize::try_from(n).ok())
+        .unwrap_or(0)
+}
+
+/// `<length>:<FNV-1a hash>` of `value`'s UTF-16 code units, as the page
+/// script of [`secret_fields`] computes it.
+fn secret_key(value: &str) -> String {
+    let mut hash: u32 = 0x811c_9dc5;
+    let mut len = 0;
+    for unit in value.encode_utf16() {
+        hash = (hash ^ u32::from(unit)).wrapping_mul(0x0100_0193);
+        len += 1;
+    }
+    format!("{len}:{hash}")
 }
 
 /// What the report takes from the test's logs.
@@ -464,6 +551,15 @@ pub(super) fn slug(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn secret_keys_are_fnv_1a_of_utf16() {
+        // FNV-1a's published values (ASCII's UTF-16 units are its bytes).
+        assert_eq!(secret_key("a"), "1:3826002220");
+        assert_eq!(secret_key("foobar"), "6:3214735720");
+        // Lengths count UTF-16 units, as JavaScript's do.
+        assert!(secret_key("pä😀").starts_with("4:"));
+    }
 
     #[test]
     fn slugs_are_short_and_plain() {

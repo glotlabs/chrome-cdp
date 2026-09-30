@@ -1544,7 +1544,7 @@ fn secrets_never_reach_the_output_or_the_artifacts() {
             .env("E2E_TODO_SECRET", secret)
             .args(["test", "scenarios/backends/secret.cdp"]);
         if json {
-            cmd.arg("--json");
+            cmd.args(["--json", "--trace"]);
         }
         let out = common::run(&mut cmd);
         assert_eq!(out.status.code(), Some(1));
@@ -1559,11 +1559,19 @@ fn secrets_never_reach_the_output_or_the_artifacts() {
         );
     }
     let results = project.root.join("e2e/.results");
+    let dir = results.join("scenarios/backends/secret.cdp/types-a-secret");
+    // The text field holding the secret is painted over in the
+    // screenshots, and the report says so.
+    let report = std::fs::read_to_string(dir.join("report.md")).unwrap();
     assert!(
-        results
-            .join("scenarios/backends/secret.cdp/types-a-secret/report.md")
-            .is_file()
+        report.contains(
+            "\nPainted over because they hold a `${secret:…}` value: 1 field in failure.png, and in "
+        ),
+        "{report}"
     );
+    assert!(dir.join("failure.png").is_file());
+    let steps = std::fs::read_to_string(dir.join("steps.jsonl")).unwrap();
+    assert!(steps.contains("\"masked\":1"), "{steps}");
     assert_eq!(files_containing(&results, secret), Vec::<PathBuf>::new());
 
     // Without the variable, the run does not start.

@@ -59,6 +59,12 @@ pub(crate) fn add_secret(name: &str, value: &str) {
     }
 }
 
+/// The values of the secrets masked so far.
+pub(crate) fn secret_values() -> Vec<String> {
+    let secrets = SECRETS.lock().unwrap_or_else(PoisonError::into_inner);
+    secrets.iter().map(|(_, v)| v.clone()).collect()
+}
+
 /// `text` with every secret's value replaced by `<secret:name>`.
 pub(crate) fn mask(text: &str) -> Cow<'_, str> {
     let secrets = SECRETS.lock().unwrap_or_else(PoisonError::into_inner);

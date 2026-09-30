@@ -127,6 +127,37 @@ pub(super) fn render(
             }
         }
     }
+    // Secrets typed into ordinary fields are painted over in screenshots.
+    let masked = capture.map_or(0, |c| c.masked);
+    let traced = steps.iter().filter(|s| s.masked > 0).count();
+    if masked > 0 || traced > 0 {
+        let plural = |n: usize, one: &str, many: &str| {
+            if n == 1 {
+                format!("1 {one}")
+            } else {
+                format!("{n} {many}")
+            }
+        };
+        let mut shots = Vec::new();
+        if masked > 0 {
+            shots.push(format!(
+                "{} in {}",
+                plural(masked, "field", "fields"),
+                artifacts::SCREENSHOT
+            ));
+        }
+        if traced > 0 {
+            shots.push(format!(
+                "in {}",
+                plural(traced, "`--trace` screenshot", "`--trace` screenshots")
+            ));
+        }
+        let _ = writeln!(
+            md,
+            "\nPainted over because they hold a `${{secret:…}}` value: {}.",
+            shots.join(", and ")
+        );
+    }
 
     list(&mut md, "Console errors", &logs.errors);
     list(&mut md, "Failed and unmatched requests", &logs.bad_requests);
@@ -350,6 +381,7 @@ mod tests {
             warnings: Vec::new(),
             error: None,
             screenshot: None,
+            masked: 0,
         }
     }
 
@@ -417,6 +449,7 @@ mod tests {
             .collect();
         let capture = Capture {
             screenshot: Err("a dialog is open".into()),
+            masked: 0,
             snapshot: Ok(
                 "page t1 \"Shop\" http://x/\n  - button \"Buy now\" [e50]\n  - dialog [e88]".into(),
             ),
@@ -471,5 +504,53 @@ mod tests {
             md.ends_with("Run it again: `chrome-cdp test a.cdp:4`\n"),
             "{md}"
         );
+    }
+
+    #[test]
+    fn a_report_says_which_screenshots_hide_secrets() {
+        let dir = tempfile::tempdir().unwrap();
+        let failure = TestFailure {
+            at: "a.cdp:3:3".into(),
+            step: "click text=Go".into(),
+            hook: None,
+            via: Vec::new(),
+            error: ErrorInfo::new(ErrorKind::NotFound, "nothing matches text=Go"),
+            report: None,
+        };
+        let mut steps: Vec<StepRecord> = (1..=3).map(|n| step(n, n < 3, "x")).collect();
+        steps[1].masked = 1;
+        steps[2].masked = 1;
+        let capture = Capture {
+            screenshot: Ok(dir.path().join(artifacts::SCREENSHOT)),
+            masked: 1,
+            snapshot: Err("gone".into()),
+        };
+        let subject = Subject {
+            title: "t",
+            place: "a.cdp:1",
+            attempt: None,
+            rerun: "chrome-cdp test a.cdp:1".into(),
+        };
+        let md = render(
+            &subject,
+            &failure,
+            &steps,
+            Some(&capture),
+            &Logs::default(),
+            dir.path(),
+        );
+        assert!(
+            md.contains("\nPainted over because they hold a `${secret:…}` value: 1 field in failure.png, and in 2 `--trace` screenshots.\n"),
+            "{md}"
+        );
+        let md = render(
+            &subject,
+            &failure,
+            &steps[..1],
+            None,
+            &Logs::default(),
+            dir.path(),
+        );
+        assert!(!md.contains("Painted over"), "{md}");
     }
 }

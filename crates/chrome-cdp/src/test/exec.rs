@@ -603,15 +603,12 @@ impl Runner<'_> {
         if let Some(((path, name), context)) = shot {
             let _ = std::fs::create_dir_all(path.parent().unwrap_or(&path));
             let file = path.display().to_string();
-            if self
-                .invoke(
-                    &["screenshot", "-o", &file, "--timeout", "5s"],
-                    Some(context),
-                    None,
-                )
-                .is_ok()
-            {
+            let (taken, masked) = artifacts::screenshot(&file, "5s", &|words| {
+                self.invoke(words, Some(context), None)
+            });
+            if taken.is_ok() {
                 step.screenshot = Some(name);
+                step.masked = masked;
             }
         }
         if let Some(recorder) = self.recorder.borrow_mut().as_mut() {

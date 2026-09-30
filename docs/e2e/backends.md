@@ -106,7 +106,10 @@ hint to add `@backend mock`.
 - `${secret:NAME}` is the environment variable `NAME`. Its value is masked
   as `<secret:NAME>` in stdout, stderr, `steps.jsonl`, `report.md`, every
   other artifact and the reporters' files. Password fields show dots in
-  screenshots; other fields show what was typed.
+  screenshots; an input or text area whose whole value is a secret is
+  painted over in `failure.png` and the `--trace` screenshots, and
+  `report.md` says so. A secret that is only part of a field's value, or
+  in an iframe, still shows.
 - `${test.id}` is unique per test try (`${run.id}-<n>`, then `-<try>`),
   so parallel tests and repeated runs against a shared server do not
   collide. `${backend}` is the backend's name.
