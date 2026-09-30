@@ -182,7 +182,12 @@ message says which of these it is (`details.reason` in `--json`):
 - `library_only`: only library code (`node_modules/`) made it; ask about
   the element around it that the app renders.
 
+`components` fails with the same kind: `not_dev_build` for a production
+build, `no_framework` when the page has no React, Vue or Svelte app, and
+`no_component` when no component of a dev build rendered the element
+(`source` still finds where it came from).
 
+## Exit 2: the command line
 
 ### BadArgs
 
