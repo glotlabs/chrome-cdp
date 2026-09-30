@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use browser::Host;
+use engine::{A11yLevel, Read, ReadRequest, WaitFor, WaitRequest};
 use engine::{
     CdpRequest, ConsoleRequest, CoverageStartRequest, CoverageStopRequest, EmulateRequest,
     EmulationChange, Engine, EvalRequest, EvalWorld, ExpectRequest, Expectation, HttpCredentials,
@@ -114,6 +115,12 @@ enum Probe {
     /// `coverage` counts the script its `fetch` ran, marked with where it
     /// ran.
     Coverage,
+    /// `text` without a locator shows its document's text.
+    Text,
+    /// `wait --text` without `--in` sees text that appears in it.
+    WaitText,
+    /// `expect --a11y` finds a violation in it, marked with its frame.
+    A11y,
 }
 
 struct Row {
@@ -251,6 +258,42 @@ const ROWS: &[Row] = &[
         feature: "coverage",
         probe: Probe::Coverage,
         cells: [Check, Check, Check, Check, Check, Check],
+    },
+    Row {
+        feature: "text",
+        probe: Probe::Text,
+        cells: [
+            Check,
+            Check,
+            Check,
+            Na(NO_DOCUMENT),
+            Na(NO_DOCUMENT),
+            Na(NO_DOCUMENT),
+        ],
+    },
+    Row {
+        feature: "wait --text",
+        probe: Probe::WaitText,
+        cells: [
+            Check,
+            Check,
+            Check,
+            Na(NO_DOCUMENT),
+            Na(NO_DOCUMENT),
+            Na(NO_DOCUMENT),
+        ],
+    },
+    Row {
+        feature: "expect --a11y",
+        probe: Probe::A11y,
+        cells: [
+            Check,
+            Check,
+            Check,
+            Na(NO_DOCUMENT),
+            Na(NO_DOCUMENT),
+            Na(NO_DOCUMENT),
+        ],
     },
 ];
 
@@ -825,6 +868,107 @@ async fn probe(engine: &Arc<Engine>, probe: Probe, who: &str) -> Result<(), Stri
                 Some(file) => Err(format!("{ops} did not run: {file:?}")),
                 None => Err(format!("no {ops} of it in {:?}", data.files)),
             }
+        }
+        Probe::Text => {
+            let frame = (who != "main").then_some(who);
+            let marker = format!("Text shown in {who}");
+            eval_in(
+                engine,
+                frame,
+                &format!("document.body.append(Object.assign(document.createElement('p'), {{ textContent: {marker:?} }})); 1"),
+            )
+            .await;
+            let out = engine
+                .read(ReadRequest {
+                    read: Read::Text,
+                    locator: None,
+                    tab: None,
+                    strict_refs: false,
+                    testid_attribute: None,
+                    timeout_ms: TIMEOUT_MS,
+                    max_chars: 0,
+                })
+                .await
+                .map_err(|e| e.to_text())?;
+            out.text
+                .contains(&marker)
+                .then_some(())
+                .ok_or_else(|| format!("no `{marker}` in {}", out.text))
+        }
+        Probe::WaitText => {
+            let frame = (who != "main").then_some(who);
+            let marker = format!("Text that came later in {who}");
+            eval_in(
+                engine,
+                frame,
+                &format!("setTimeout(() => document.body.append(Object.assign(document.createElement('p'), {{ textContent: {marker:?} }})), 300); 1"),
+            )
+            .await;
+            engine
+                .wait(WaitRequest {
+                    condition: WaitFor::Text {
+                        text: marker,
+                        within: None,
+                        gone: false,
+                    },
+                    tab: None,
+                    strict_refs: false,
+                    testid_attribute: None,
+                    timeout_ms: 5_000,
+                    max_chars: 0,
+                })
+                .await
+                .map(drop)
+                .map_err(|e| e.to_text())
+        }
+        Probe::A11y => {
+            let frame = (who != "main").then_some(who);
+            let a11y = async || {
+                let err = Box::pin(engine.expect(ExpectRequest {
+                    expectation: Expectation::A11y {
+                        scope: None,
+                        level: A11yLevel::A,
+                    },
+                    not: false,
+                    tab: None,
+                    strict_refs: false,
+                    testid_attribute: None,
+                    timeout_ms: 5_000,
+                    max_chars: 0,
+                }))
+                .await
+                .err();
+                // The unnamed buttons, and whether each is in an iframe.
+                let details = err.and_then(|e| e.details).unwrap_or_default();
+                details["violations"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|v| v["rule"] == "button-name")
+                    .flat_map(|v| v["elements"].as_array().cloned().unwrap_or_default())
+                    .map(|e| e["frame"].is_string())
+                    .collect::<Vec<bool>>()
+            };
+            let before = a11y().await;
+            eval_in(
+                engine,
+                frame,
+                "document.body.append(Object.assign(document.createElement('button'), { id: 'a11y-probe' })); 1",
+            )
+            .await;
+            let after = a11y().await;
+            eval_in(
+                engine,
+                frame,
+                "document.getElementById('a11y-probe').remove(); 1",
+            )
+            .await;
+            let framed = |found: &[bool]| found.iter().filter(|f| **f == frame.is_some()).count();
+            (framed(&after) == framed(&before) + 1)
+                .then_some(())
+                .ok_or_else(|| {
+                    format!("unnamed buttons (in an iframe?) {before:?}, then {after:?}")
+                })
         }
         Probe::Offline => {
             emulate(engine, EmulationChange::Offline { offline: true }).await;
