@@ -311,7 +311,8 @@ impl Daemon {
                     Some(words) if kept => self.stable_locators(words).await,
                     _ => Vec::new(),
                 };
-                (refs, self.call(req, &mut exit).await)
+                let (result, notices) = Box::pin(engine::noting(self.call(req, &mut exit))).await;
+                (refs, with_notices(result, notices))
             })),
         )
         .await;
@@ -809,6 +810,59 @@ fn params<T: DeserializeOwned>(params: Value) -> Result<T, RpcError> {
 }
 
 /// A command's result as an RPC result.
+/// Adds what a call noted besides its output (the hot updates that
+/// reached its tab since the tab's previous command) to its result: as
+/// warnings and events of an output, as notes of an error.
+fn with_notices(
+    result: Result<Value, RpcError>,
+    notices: engine::Notices,
+) -> Result<Value, RpcError> {
+    if notices.is_empty() {
+        return result;
+    }
+    match result {
+        Ok(mut value) => {
+            if let Some(output) = value.as_object_mut()
+                && output.contains_key("data")
+                && output.contains_key("text")
+            {
+                let mut push = |key: &str, items: Vec<Value>| {
+                    if let Some(list) = output
+                        .entry(key)
+                        .or_insert_with(|| Value::Array(Vec::new()))
+                        .as_array_mut()
+                    {
+                        list.extend(items);
+                    }
+                };
+                push(
+                    "warnings",
+                    notices.warnings.into_iter().map(Value::String).collect(),
+                );
+                push(
+                    "events",
+                    notices
+                        .events
+                        .iter()
+                        .filter_map(|e| serde_json::to_value(e).ok())
+                        .collect(),
+                );
+            }
+            Ok(value)
+        }
+        Err(mut error) => {
+            if let Some(info) = error.data.take() {
+                let info = notices
+                    .warnings
+                    .into_iter()
+                    .fold(*info, |info, line| info.note("meanwhile", line));
+                error.data = Some(Box::new(info));
+            }
+            Err(error)
+        }
+    }
+}
+
 fn output(result: Result<Output, ErrorInfo>) -> Result<Value, RpcError> {
     match result {
         Ok(output) => serde_json::to_value(output)

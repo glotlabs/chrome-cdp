@@ -508,6 +508,12 @@ Give exactly one condition. It is checked against the active tab (or
                       since the previous command began
   --ws <PATTERN> [--frame <REGEX>]  a frame sent or received on a WebSocket
                       whose URL matches, since the previous command began
+  --hmr               the dev server's hot update (Vite, webpack, Next.js)
+                      since the previous command began, or the next one:
+                      after an edit, whether the page has it. Applied or a
+                      full reload (once loaded) succeed; a compile error
+                      fails with HotUpdateFailed and its place; a page with
+                      no hot-reload client fails at once
   <MS>                a fixed sleep, e.g. 500 or 2s (prefer a condition)
 
 Examples:
@@ -524,7 +530,8 @@ Examples:
   chrome-cdp wait --download
   chrome-cdp wait --console 'checkout (done|failed)'
   chrome-cdp wait --binding onCheckout      # after expose onCheckout
-  chrome-cdp wait --ws /live --frame '\"type\":\"price\"'")]
+  chrome-cdp wait --ws /live --frame '\"type\":\"price\"'
+  chrome-cdp wait --hmr                     # after saving src/cart.ts")]
     Wait(WaitCmdArgs),
 
     /// Assert something about the page, retrying until it holds: an element's state, text, value, count, …
@@ -6067,7 +6074,7 @@ impl Wait {
             .args([
                 "target", "load", "domcontentloaded", "idle", "settle", "text", "text_gone",
                 "url", "function", "request", "response", "download", "console",
-                "binding", "ws",
+                "binding", "ws", "hmr",
             ])
     )
 )]
@@ -6168,6 +6175,11 @@ pub(crate) struct WaitCmdArgs {
     /// hex): a regular expression.
     #[arg(long, value_name = "REGEX")]
     pub(crate) frame: Option<String>,
+
+    /// The dev server's hot update since the previous command began (the
+    /// latest), or the next one.
+    #[arg(long)]
+    pub(crate) hmr: bool,
 
     /// Bound the output (--fn's value) to this many characters (0 = no
     /// limit).

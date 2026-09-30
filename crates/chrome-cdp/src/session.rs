@@ -2492,6 +2492,8 @@ fn wait_condition(args: &WaitCmdArgs) -> Result<WaitFor, ErrorInfo> {
             pattern: pattern.clone(),
             frame: args.frame.clone(),
         }
+    } else if args.hmr {
+        WaitFor::Hmr
     } else {
         return Err(
             bad_args("wait needs a condition").hint(Cmd::new("wait").switch("help").to_string())
