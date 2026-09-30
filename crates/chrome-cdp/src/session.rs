@@ -1188,7 +1188,12 @@ pub(crate) fn network(args: &NetworkArgs, global: &GlobalArgs) -> Result<Output,
 /// stdout and nothing else does.
 pub(crate) fn screenshot(args: &ScreenshotArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     check_tab(global.tab.as_deref())?;
-    let ctx = Ctx::new(global)?;
+    // An element is waited for as actions and reads wait for theirs.
+    let ctx = if args.locator.is_some() {
+        Ctx::with_default(global, WAIT_TIMEOUT)?
+    } else {
+        Ctx::new(global)?
+    };
     let (path, stdout) = output_path(args.output.as_deref(), global, "screenshot")?;
     let format = args
         .format

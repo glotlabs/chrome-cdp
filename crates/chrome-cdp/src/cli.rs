@@ -73,8 +73,9 @@ pub(crate) struct GlobalArgs {
     pub(crate) session: String,
 
     /// Give up after this long, e.g. 500ms, 30s, 2m. Default: 5s for
-    /// `expect`; 10s for `wait`, actions and the read commands (`text`,
-    /// `attr`, …); 30s for navigation and everything else.
+    /// `expect`; 10s for `wait`, actions, the read commands (`text`,
+    /// `attr`, …) and `screenshot LOC`; 30s for navigation and everything
+    /// else.
     #[arg(
         long,
         global = true,
@@ -1586,14 +1587,15 @@ session's shots/ directory (1.png, 2.png, …) unless -o names a file, or
 Images are in CSS pixels (--scale css) and at most --max-size pixels on
 their longest side (scaled down to fit; 0 for no limit), so a point in the
 image is a point on the page. An element is scrolled into view (and waited
-for) first, and the image is its box. --full captures the whole page; when
-the page does not scroll itself but inside a container (html, body
-{ height: 100% } and a scrolling <main>), the viewport grows for the
-capture until that container's content fits, and is put back afterwards.
---full LOC names the container. --annotate labels the elements
-`snapshot -i` gives refs with those refs; --mask paints over elements.
-Both are drawn only for the screenshot, above an open modal dialog or
-popover too. Needs a running session.
+for, up to --timeout, 10s by default) first, and the image is its box.
+--full captures the whole page; when the page does not scroll itself but
+inside a container (html, body { height: 100% } and a scrolling <main>),
+the viewport grows for the capture until that container's content fits,
+and is put back afterwards. --full LOC names the container.
+
+--annotate labels the elements `snapshot -i` gives refs with those refs;
+--mask paints over elements. Both are drawn only for the screenshot, above
+an open modal dialog or popover too. Needs a running session.
 
 Examples:
   chrome-cdp screenshot
