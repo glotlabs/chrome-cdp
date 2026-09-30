@@ -1456,6 +1456,30 @@ Examples:
   chrome-cdp errors --sourcemaps --tab t2")]
     Errors(ErrorsArgs),
 
+    /// Show Chrome's own findings about the page, as in DevTools' Issues
+    /// panel: mixed content, CORS and CSP blocks, cookie problems,
+    /// deprecations, form problems.
+    #[command(after_help = "\
+Every tab records Chrome's issues from the moment it opens, from its
+frames (iframes of other sites too) and its workers. Chrome raises one per
+occurrence; the same rule about the same thing is one issue with a count
+(×4), within one page load. Like `console`, only issues this command has
+not shown before are printed, and one raised again is shown again. Form
+issues (labels, autocomplete) are checked when this runs.
+
+Each line has a severity (E error, W warning, I info), a stable rule id
+(`mixed-content-blocked`, `cookie-exclude-same-site-unspecified-treated-as-lax`),
+a message, and what it is about: an element's ref, a script's line, or the
+request's id in the network log (`network show <id>`). --json has each
+issue's `key`, which stays the same across runs, ports and reloads.
+
+Examples:
+  chrome-cdp issues
+  chrome-cdp issues --since 0 --min-severity info   # all of them, info too
+  chrome-cdp issues --grep cookie --all-tabs
+  chrome-cdp issues --follow --timeout 1m           # keep printing new ones")]
+    Issues(IssuesArgs),
+
     /// Show the page's requests, or one in full, or clear the log.
     #[command(
         args_conflicts_with_subcommands = true,
@@ -4040,6 +4064,63 @@ pub(crate) struct ConsoleArgs {
 pub(crate) struct ErrorsArgs {
     #[command(flatten)]
     pub(crate) read: LogReadArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct IssuesArgs {
+    /// Where to start: `last` (what this command has not shown yet), an
+    /// issue number such as 12 (0 for all), a duration such as 30s
+    /// (raised in the last 30 seconds), or a mark (see `mark`).
+    #[arg(long, default_value = "last", value_parser = parse_since, value_name = "WHEN")]
+    pub(crate) since: engine::Since,
+
+    /// Only issues whose rule, message or URL matches this regular
+    /// expression.
+    #[arg(long, value_name = "REGEX")]
+    pub(crate) grep: Option<String>,
+
+    /// Show at most this many issues, the newest (0 = all); with
+    /// --all-tabs, per tab.
+    #[arg(long, default_value_t = 50, value_name = "N")]
+    pub(crate) limit: usize,
+
+    /// Keep printing new issues as they come, until Ctrl-C (or
+    /// --timeout, if given).
+    #[arg(short, long, conflicts_with = "all_tabs")]
+    pub(crate) follow: bool,
+
+    /// The least severe issues shown.
+    #[arg(long, value_enum, default_value_t = SeverityArg::Warning, value_name = "SEVERITY")]
+    pub(crate) min_severity: SeverityArg,
+
+    /// Every tab of the session (or context), each from its own cursor.
+    #[arg(long)]
+    pub(crate) all_tabs: bool,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+/// `--min-severity`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum SeverityArg {
+    /// Errors only: things that break for some users or leak data.
+    Error,
+    /// Warnings and errors: things that will break or degrade too.
+    Warning,
+    /// Everything.
+    Info,
+}
+
+impl SeverityArg {
+    pub(crate) fn to_severity(self) -> protocol::schema::Severity {
+        match self {
+            Self::Error => protocol::schema::Severity::Error,
+            Self::Warning => protocol::schema::Severity::Warning,
+            Self::Info => protocol::schema::Severity::Info,
+        }
+    }
 }
 
 /// What `console` and `errors` share.

@@ -469,6 +469,10 @@ impl Daemon {
                 Ok(p) => output(self.engine.console(p).await),
                 Err(e) => Err(e),
             },
+            rpc::ISSUES => match params(req.params) {
+                Ok(p) => output(self.engine.issues(p).await),
+                Err(e) => Err(e),
+            },
             rpc::NETWORK => match params(req.params) {
                 Ok(p) => output(self.engine.network(p).await),
                 Err(e) => Err(e),

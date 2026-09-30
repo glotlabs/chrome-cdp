@@ -29,8 +29,8 @@ use engine::{
     CoverageStartRequest, CoverageStopRequest, DebugClearRequest, DebugListRequest,
     DebugLocalsRequest, DebugLogRequest, DialogRequest, DownloadsRequest, ElementState,
     EvalRequest, FillFormRequest, FindRequest, FormsRequest, FramesRequest, HarStartRequest,
-    HarStopRequest, HighlightRequest, HttpCredentials, ImageFormat, InspectRequest, LayoutRequest,
-    LocalsMode, LocatorRequest, NavigateRequest, Navigation, NetworkClearRequest,
+    HarStopRequest, HighlightRequest, HttpCredentials, ImageFormat, InspectRequest, IssuesRequest,
+    LayoutRequest, LocalsMode, LocatorRequest, NavigateRequest, Navigation, NetworkClearRequest,
     NetworkFramesRequest, NetworkRequest, NetworkShowRequest, OpenInitScript, OpenRequest,
     PdfRequest, PerfRequest, Read, ReadRequest, RouteRequest, RoutesRequest, ScreenshotRequest,
     SnapshotRequest, SourceRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
@@ -62,7 +62,7 @@ use crate::cli::{
     ExtensionStorageAreaArg, ExtensionStorageCommand, ExtensionsArgs, ExtensionsCommand,
     FillFormArgs, FindArgs, FormsArgs, FrameDirArg, FramesArgs, GlobalArgs, GotoArgs, HarArgs,
     HarCommand, HighlightArgs, HistoryArgs, IdleArgs, ImageFormatArg, InitScriptAddArgs,
-    InitScriptArgs, InitScriptCommand, InspectArgs, LayoutArgs, LocalsArg, LocatorArgs,
+    InitScriptArgs, InitScriptCommand, InspectArgs, IssuesArgs, LayoutArgs, LocalsArg, LocatorArgs,
     LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs,
     PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs,
     SnapshotArgs, SourceArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg,
@@ -2855,6 +2855,49 @@ pub(crate) fn console(
             }
             ctx.runtime.block_on(client.call_output(
                 rpc::CONSOLE,
+                &request,
+                wait + ctx.timeout + QUICK,
+            ))
+        },
+    )
+}
+
+/// `issues`: needs a running session. With `--follow`, prints each
+/// batch of new issues as it comes and returns the last (empty) one.
+pub(crate) fn issues(args: &IssuesArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let mut request = IssuesRequest {
+        tab: ctx.tab.clone(),
+        all_tabs: args.all_tabs,
+        since: args.since.clone(),
+        grep: args.grep.clone(),
+        limit: args.limit,
+        min_severity: args.min_severity.to_severity(),
+        wait_ms: 0,
+        timeout_ms: millis(ctx.timeout),
+        max_chars: args.max_chars,
+    };
+    if !args.follow {
+        return ctx.runtime.block_on(client.call_output(
+            rpc::ISSUES,
+            &request,
+            ctx.timeout + QUICK,
+        ));
+    }
+    follow(
+        global,
+        "issues",
+        "issues",
+        |_| false,
+        |wait, first| {
+            request.wait_ms = millis(wait);
+            if !first {
+                request.since = engine::Since::Last;
+            }
+            ctx.runtime.block_on(client.call_output(
+                rpc::ISSUES,
                 &request,
                 wait + ctx.timeout + QUICK,
             ))
