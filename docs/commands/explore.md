@@ -64,8 +64,8 @@ failed requests and, with --layout, layout's errors.
 states/<id>.cdp, a scenario that gets to each state (chrome-cdp run
 DIR/states/s4.cdp), and with --screenshots states/<id>.png. It exits 0
 whatever it finds; --exit-code exits 1 when a state had an error, a
-failed request, a broken link or a layout error. -q prints how many
-problems. Needs a running session.
+failed request, a broken link or a layout error (in run, batch and test,
+the step fails). -q prints how many problems. Needs a running session.
 
 Examples:
   chrome-cdp explore http://localhost:5173/

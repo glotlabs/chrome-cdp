@@ -966,7 +966,16 @@ impl Runner<'_> {
             _ => {}
         }
         let screenshot = matches!(cli.command, Some(Command::ExpectScreenshot(_)));
+        let exit_on_finding = crate::exits_on_finding(&cli);
         let out = crate::run(cli)?;
+        if exit_on_finding && crate::found(&out) {
+            let message = if out.data["differs"] == true {
+                "the pages differ (--exit-code)"
+            } else {
+                "explore found a problem (--exit-code)"
+            };
+            return Err(ErrorInfo::new(ErrorKind::ExpectFailed, message).details(out.data));
+        }
         if let Some(name) = save {
             self.saved
                 .borrow_mut()

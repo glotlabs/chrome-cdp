@@ -948,9 +948,9 @@ share, with a warning) and groups the pixels that differ past
 listed, each named by the smallest element of B at its centre (with a
 ref when B is a tab or session). The diff image (B faded, changes red,
 regions boxed) is saved in the session's shots directory. It exits 0
-whatever differs; --exit-code exits 1 when anything does. -q prints how
-many differences (changes and regions) there are. Needs a running
-session.
+whatever differs; --exit-code exits 1 when anything does (in run, batch
+and test, the step fails). -q prints how many differences (changes and
+regions) there are. Needs a running session.
 
 Examples:
   chrome-cdp compare http://localhost:5173/cart https://shop.example.com/cart
@@ -997,8 +997,8 @@ failed requests and, with --layout, layout's errors.
 states/<id>.cdp, a scenario that gets to each state (chrome-cdp run
 DIR/states/s4.cdp), and with --screenshots states/<id>.png. It exits 0
 whatever it finds; --exit-code exits 1 when a state had an error, a
-failed request, a broken link or a layout error. -q prints how many
-problems. Needs a running session.
+failed request, a broken link or a layout error (in run, batch and test,
+the step fails). -q prints how many problems. Needs a running session.
 
 Examples:
   chrome-cdp explore http://localhost:5173/

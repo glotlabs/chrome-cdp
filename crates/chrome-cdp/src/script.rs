@@ -475,12 +475,17 @@ fn run_steps(steps: Vec<Step>, keep_going: bool, mode: Mode) -> u8 {
             cli.global.mode()
         };
         daemon::client::set_history_line(Some(words));
+        let exit_on_finding = crate::exits_on_finding(&cli);
         let result = crate::run(cli).map_err(|mut info| {
             info.message = format!("{span}: {}", info.message);
             info
         });
         daemon::client::set_history_line(None);
-        let code = result.as_ref().map_or_else(ErrorInfo::exit_code, |_| 0);
+        let code = match &result {
+            Ok(out) if exit_on_finding && crate::found(out) => 1,
+            Ok(_) => 0,
+            Err(info) => info.exit_code(),
+        };
         if code != 0 {
             failed.push(n);
             if exit == 0 {

@@ -99,23 +99,31 @@ fn main() -> ExitCode {
             .map(|a| a.to_string_lossy().into_owned())
             .collect(),
     ));
-    // `compare --exit-code` exits 1 when the pages differ, like `git diff
-    // --exit-code`; `explore --exit-code` when it found a problem.
-    let exit_on_difference = match &cli.command {
-        Some(Command::Compare(args)) => args.exit_code,
-        Some(Command::Explore(args)) => args.exit_code,
-        _ => false,
-    };
+    let exit_on_finding = exits_on_finding(&cli);
     let result = run(cli);
-    let differs = exit_on_difference
-        && result.as_ref().is_ok_and(|o| {
-            o.data["differs"] == serde_json::Value::Bool(true)
-                || o.data["problems"].as_u64().is_some_and(|n| n > 0)
-        });
+    let differs = exit_on_finding && result.as_ref().is_ok_and(found);
     match output::print(mode, result) {
         0 if differs => ExitCode::from(1),
         code => ExitCode::from(code),
     }
+}
+
+/// Whether the command was given `--exit-code`: `compare` then exits 1
+/// when the pages differ, like `git diff --exit-code`, and `explore` when
+/// it found a problem. A step of `run`, `batch` or `test` fails the same
+/// way.
+pub(crate) fn exits_on_finding(cli: &Cli) -> bool {
+    match &cli.command {
+        Some(Command::Compare(args)) => args.exit_code,
+        Some(Command::Explore(args)) => args.exit_code,
+        _ => false,
+    }
+}
+
+/// Whether `compare` found a difference or `explore` a problem.
+pub(crate) fn found(out: &Output) -> bool {
+    out.data["differs"] == serde_json::Value::Bool(true)
+        || out.data["problems"].as_u64().is_some_and(|n| n > 0)
 }
 
 fn run(cli: Cli) -> Result<Output, ErrorInfo> {

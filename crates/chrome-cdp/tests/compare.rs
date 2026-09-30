@@ -105,6 +105,29 @@ fn urls_on_two_origins_differ_in_exactly_the_known_ways() {
         "{}",
         stdout(&out)
     );
+
+    // As a script's step, --exit-code fails the step and stops the script.
+    let script = sandbox.tmp().join("compare.cdp");
+    std::fs::write(
+        &script,
+        format!(
+            "compare {} {same}\ncompare {} {} --exit-code\ncompare {} {same}\n",
+            a_url(),
+            a_url(),
+            b_url(),
+            a_url()
+        ),
+    )
+    .unwrap();
+    let out = session.run(&["run", script.to_str().unwrap()]);
+    assert_eq!(code(&out), 1, "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(
+        text.contains("[1/3] compare") && text.contains(" ✓"),
+        "{text}"
+    );
+    assert!(text.contains("--exit-code ✗"), "{text}");
+    assert!(!text.contains("[3/3]"), "{text}");
 }
 
 #[test]
