@@ -84,6 +84,9 @@ impl Name {
     }
 }
 
+/// What comes before a link's href.
+const ARROW: &str = " → ";
+
 /// The pieces of a line's content, or `None` when it opens no value.
 fn pieces(content: &str) -> Result<Option<Vec<Piece>>, String> {
     let Some((role, mut rest)) = content.split_once(' ') else {
@@ -110,7 +113,6 @@ fn pieces(content: &str) -> Result<Option<Vec<Piece>>, String> {
         rest = &rest[end..];
         value(&mut rest, &mut text, &mut pieces)?;
     }
-    const ARROW: &str = " → ";
     if let Some(i) = rest.find(ARROW)
         && &rest[i + ARROW.len()..] == "\"*\""
     {
