@@ -90,6 +90,7 @@ log entry saying why not.
 ### Track 1 — Every frame, every worker
 
 Plan: [13-every-frame-every-worker](13-every-frame-every-worker.md).
+Status: DONE (plan 13, 13.1-13.5).
 
 **Why.** Seventeen backlog notes are the same bug: a feature attached
 to the page's own session and missed out-of-process iframes (OOPIFs),

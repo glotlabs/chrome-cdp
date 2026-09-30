@@ -21,7 +21,7 @@ browser, tabs and refs between commands. Output is compact text; add
    - button "Sign in" [e8]
    ```
    Drop `-i` for the whole tree with text. `find <words>` searches for
-   elements; `text` and `markdown` read the content.
+   elements; `text` and `markdown` read the content, iframes included.
 3. **Act by ref**: `chrome-cdp fill e6 ada@example.com`, `chrome-cdp click e8`.
    Actions wait until the element is visible, enabled and not covered,
    scroll it into view, and act like a real user.

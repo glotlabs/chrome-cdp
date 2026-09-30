@@ -1,6 +1,6 @@
 # Plan 13 — Every frame, every worker
 
-Status: IN PROGRESS (13.1-13.4 done)
+Status: DONE (13.1-13.5)
 Depends on: v1 (plans 01-11). Track 1 of [plan 12](12-after-v1.md).
 
 ## Goal
@@ -333,7 +333,7 @@ marked `todo`; the plan is done when no `todo` is left.
 - [x] `permissions` applies per context.
 - [x] `frames` lists frames (stable order) and workers; frame errors
       point at it.
-- [ ] `cdp --listen`, coverage, `text`, `markdown`, `wait --text`, the
+- [x] `cdp --listen`, coverage, `text`, `markdown`, `wait --text`, the
       focus report, `expect --a11y`, `drag` and `history --as-scenario`
       cover iframes, OOPIFs included.
 - [x] The table test has no `todo` cell.
@@ -495,3 +495,47 @@ marked `todo`; the plan is done when no `todo` is left.
 - 13.4: The target table gains `cdp --all-sessions` and `coverage` rows
   (every cell checked). Golden tests mask Chrome's 32-hex ids (`<id>`)
   and the second fixture origin (`<site-b>`).
+- 13.5: `text` and `markdown` without a locator put each shown iframe's
+  content between `[iframe "pay"]` (the name, else the URL without its
+  query) and `[/iframe]` lines where its `<iframe>` sits (`read/frames.rs`:
+  each child frame's `<iframe>` is passed to the bundle as a handle, which
+  leaves a mark there, and the engine reads the child in its own world and
+  session). A frame with no text is left out, as is one whose document has
+  no context within 1s (still loading). `markdown` reads only the iframes
+  inside the main content it picked. A locator's reads (`text frame=…`,
+  `text '#x'`) are as before.
+- 13.5: `wait --text`/`--text-gone` without `--in` probe every frame in
+  rounds of 250ms (frames that attach meanwhile join the next round):
+  met when one frame has the text (`text "x" is visible in iframe "pay"`),
+  gone when none has it in one round. The timeout adds `read:` (and, for
+  `--text-gone`, `still in:`) and `observed.frames` when more than one
+  frame was read; a page of one frame reads as before.
+- 13.5: The focus report marks every frame (as not holding focus), then
+  follows the focused `<iframe>` down from the main frame, marking the
+  frame that holds focus; afterwards `focusMoved` is asked of the main
+  frame and down the focused `<iframe>`s. Focus that came from another
+  frame is reported unless the action acted in the same form of that
+  frame. `Event::FocusMoved` gains `frame` (the frame's id), and the line
+  ends with ` in iframe "pay"`.
+- 13.5: `expect --a11y` runs the element rules in every frame and merges
+  them by rule; page rules (title, `lang`, viewport) stay the main
+  document's, since an iframe's title and `lang` are not the page's. A
+  finding in an iframe reads `textbox [e4] in iframe "pay" is …`, and its
+  element in `details` gains `frame` (the id). A locator's scope is as
+  before (its element only).
+- 13.5: `drag` needed no change: Chrome 154 intercepts an HTML5 drag an
+  out-of-process iframe starts on the tab's session (checked by a test on
+  an OOPIF board and list). The scroll half of `drag-scroll-edge-cases`
+  was done before this milestone (29ac692, with the fixed `#inbox` in the
+  viewport's middle as its test).
+- 13.5: `frame=` takes a frame's name, a part of its URL or its id, not
+  a CSS selector, so `history --as-scenario` writes `frame=pay >> …`
+  rather than the plan's `frame=#pay >> …`: the frame's name if only it
+  has it, else its URL's path and query, else its path, checked against
+  the tab's frames as `frame=` looks them up. `frame=` searches the whole
+  tab, so the innermost frame is enough. A frame with none of those keeps
+  the ref, with a comment, as before. The element's own locator is found
+  in the frame's document.
+- 13.5: The target table gains `text`, `wait --text` and `expect --a11y`
+  rows (frames checked, workers n/a). The focus report and `history`
+  have tests of their own (`report.rs`, the CLI's `authoring.rs`).
