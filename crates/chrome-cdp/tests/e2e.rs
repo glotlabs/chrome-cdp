@@ -1542,6 +1542,7 @@ fn secrets_never_reach_the_output_or_the_artifacts() {
         let mut cmd = project.sandbox.cli();
         cmd.current_dir(&project.root)
             .env("E2E_TODO_SECRET", secret)
+            .env_remove("CI")
             .args(["test", "scenarios/backends/secret.cdp"]);
         if json {
             cmd.args(["--json", "--trace"]);
@@ -1573,6 +1574,15 @@ fn secrets_never_reach_the_output_or_the_artifacts() {
     let steps = std::fs::read_to_string(dir.join("steps.jsonl")).unwrap();
     assert!(steps.contains("\"masked\":1"), "{steps}");
     assert_eq!(files_containing(&results, secret), Vec::<PathBuf>::new());
+    // The test that passed left fingerprints, without the value.
+    let fingerprints = project.root.join("e2e/fingerprints");
+    let written =
+        std::fs::read_to_string(fingerprints.join("scenarios/backends/secret.json")).unwrap();
+    assert!(written.contains("\"shows a secret\""), "{written}");
+    assert_eq!(
+        files_containing(&fingerprints, secret),
+        Vec::<PathBuf>::new()
+    );
 
     // Without the variable, the run does not start.
     let out = project.test(&["scenarios/backends/secret.cdp"]);
