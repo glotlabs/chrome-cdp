@@ -654,8 +654,11 @@ impl Record {
                         bytes
                             .iter()
                             .take(FRAME_HEX)
-                            .map(|b| format!("{b:02x}"))
-                            .collect::<String>()
+                            .fold(String::new(), |mut hex, b| {
+                                let _ =
+                                    std::fmt::Write::write_fmt(&mut hex, format_args!("{b:02x}"));
+                                hex
+                            })
                     });
                 ("binary", base64_len(payload), None)
             }
