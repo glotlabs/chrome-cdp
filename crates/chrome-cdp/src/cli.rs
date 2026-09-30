@@ -6920,6 +6920,7 @@ mod tests {
         "debug log",
         "debug list",
         "debug clear",
+        "debug locals",
         "highlight",
         "inspect",
         "network clear",

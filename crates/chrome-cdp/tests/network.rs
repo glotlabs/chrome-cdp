@@ -48,11 +48,12 @@ fn list_show_and_clear() {
     assert_eq!(code(&out), 0, "{}", stderr(&out));
     let body: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
     assert_eq!(body.as_array().unwrap().len(), 300);
-    let out = sandbox.run(&["network", "show", "4", "--body", "--max-chars", "300"]);
+    let out = sandbox.run(&["network", "show", "4", "--body", "--max-chars", "500"]);
     let text = stdout(&out);
     assert!(text.starts_with("#4 GET 200 OK "), "{text}");
+    // A local page's initiator has its stack, the click's handler too.
     assert!(
-        text.contains("\ninitiator: script /network/app.js:6 (loadItems)\n"),
+        text.contains("\ninitiator: script\n  loadItems  /network/app.js:6:3\n  onclick "),
         "{text}"
     );
     assert!(text.contains("\nresponse body ("), "{text}");
