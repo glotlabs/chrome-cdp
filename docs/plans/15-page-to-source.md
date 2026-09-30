@@ -1,6 +1,6 @@
 # Plan 15 — From page to source
 
-Status: IN PROGRESS (15.1-15.6 done)
+Status: IN PROGRESS (15.1-15.7 done)
 Depends on: v1 (plans 01-11), mainly 04 (refs), 05 (the action report)
 and 06 (console, network, source maps). Uses plan 13's target graph where
 it exists. Track 4 of [plan 12](12-after-v1.md).
@@ -550,7 +550,7 @@ test that needs Node is the gated real-Vite test.
 - [ ] Every place printed by this plan's commands, and by `errors` and
       `console`, is a project-relative disk path when the file exists.
 - [ ] `--json` schemas only grew; `cargo xtask release check` passes.
-- [ ] The agent benchmark has the four "fix the bug behind this
+- [x] The agent benchmark has the four "fix the bug behind this
       element" tasks and records files read. (Running it is deferred:
       benchmarks run after all plans.)
 
@@ -884,3 +884,37 @@ _(append here)_
   runs `node node_modules/vite/bin/vite.js`; it passes here. There is no
   CI workflow any more (removed in `c5659a3`), so nothing sets
   `CHROME_CDP_NODE_TESTS=1` yet.
+- 15.7: `[setup] dev` is a shell command run in the working dir that must
+  listen on `{port}`; `{dev}` is `http://127.0.0.1:{port}`, and the
+  command's process group is killed after the checks. `[setup] link`
+  symlinks repository paths in (the apps' `node_modules`, with a hint to
+  run `cargo xtask apps` when missing) instead of copying 100 MB a run.
+  The tasks copy an app to `./app` with `shared/public` as its `public/`
+  and a plain `vite.config.js` (`files/`), so the agent sees an ordinary
+  Vite project, not the fixtures' shared build.
+- 15.7: The four tasks (`find-code-*`): React 19, "Remove does nothing"
+  (the handler reads a `data-id` the button does not have); React 18,
+  "Add shows the wrong total" (`CartItem` also changes its `item` prop in
+  place); Vue, "Remove removes the wrong item" (`CartList` emits the
+  list index for the id); Svelte, "Add does nothing" (`CartItem` takes
+  `onAdd`, `CartList` passes `onadd`). The bugs are planted by the
+  task's `replace`, so no history shows them. Both arms run them (files
+  read is the comparison). `--check` passes for all four here.
+- 15.7: Files read is the number of Read, Grep and Glob tool calls in the
+  transcript, as planned; a `cat` or `grep` through Bash is not counted.
+  The runner switched Claude Code to `--output-format stream-json
+  --verbose` (the log is now `<task>.<arm>.<rep>.jsonl`, the result its
+  last line), and the table gains "Files read (median)".
+- 15.7: Writing the tasks showed places printing as URLs when the app is
+  in a directory of the project root (`app/`, a monorepo's
+  `packages/web/`): `to_disk` looked only under the root. It now also
+  looks one and two directory levels down (not hidden ones,
+  `node_modules` or `target`), longest rest first; two directories with
+  the same rest are no match. The directory list is cached for 2 s per
+  root.
+- 15.7: The skill's section is four lines (`source`/`components`, `debug
+  log`, `errors --locals`, `wait --hmr`); the skill is now about 1,980 of
+  its 2,000 tokens. Running the agent benchmark is deferred: benchmarks
+  run after all plans.
+- 15.7: The AGENTS.md section gains one line for `source` and `wait
+  --hmr`, the two an agent on a dev server reaches for first.
