@@ -5,7 +5,8 @@
 <p id="state">connecting</p>
 <p>Keeps a WebSocket to <code>/ws</code> (which echoes) open.
 <code>send(n)</code> sends n messages, a price every third one;
-<code>later(text, ms)</code> sends one after a delay.</p>
+<code>later(text, ms)</code> sends one after a delay;
+<code>sendBytes([…])</code> sends a binary one.</p>
 <script>
   const ws = new WebSocket(`ws://${location.host}/ws`);
   let echoes = 0;
@@ -17,6 +18,7 @@
     }
     return n;
   };
+  window.sendBytes = (bytes) => { ws.send(new Uint8Array(bytes)); return bytes.length; };
   window.later = (text, ms) => { setTimeout(() => ws.send(text), ms); return ms; };
   window.echoed = (n) => new Promise((resolve) => {
     const check = () => (echoes >= n ? resolve(echoes) : setTimeout(check, 20));

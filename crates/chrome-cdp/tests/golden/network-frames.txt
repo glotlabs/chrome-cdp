@@ -8,7 +8,7 @@ exit: 0
 $ chrome-cdp network frames 2 --grep price --limit 1 --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"frames":[{"n":12,"opcode":"text","sent":false,"size":22,"text":"{\"type\":\"price\",\"i\":6}","time_ms":<ms>}],"last":12,"request":{"id":2,"initiator":{"line":10,"type":"script","url":"<site>/network/frames.html"},"method":"GET","size":264,"state":"pending","status":101,"status_text":"Switching Protocols","time_ms":<ms>,"type":"websocket","url":"<ws-site>/ws","websocket":{"closed":false,"received":6,"received_bytes":132,"sent":6,"sent_bytes":132}},"skipped":3,"tab":"t1"}}
+{"ok":true,"data":{"frames":[{"n":12,"opcode":"text","sent":false,"size":22,"text":"{\"type\":\"price\",\"i\":6}","time_ms":<ms>}],"last":12,"request":{"id":2,"initiator":{"line":11,"type":"script","url":"<site>/network/frames.html"},"method":"GET","size":264,"state":"pending","status":101,"status_text":"Switching Protocols","time_ms":<ms>,"type":"websocket","url":"<ws-site>/ws","websocket":{"closed":false,"received":6,"received_bytes":132,"sent":6,"sent_bytes":132}},"skipped":3,"tab":"t1"}}
 
 $ chrome-cdp network frames 2 --grep price --limit 1 -q
 exit: 0

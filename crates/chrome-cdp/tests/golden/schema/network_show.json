@@ -1086,6 +1086,13 @@
     "WebSocketFrame": {
       "description": "One WebSocket frame.",
       "properties": {
+        "hex": {
+          "description": "The start of a binary payload in hex (at most 32 bytes).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "n": {
           "default": 0,
           "description": "Its number on the socket: 1 for the first frame sent or received.",

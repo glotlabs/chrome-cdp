@@ -498,7 +498,7 @@ impl Engine {
                     websocket: Some(ws),
                     ..
                 },
-            ) => ws.frame.text.clone().unwrap_or_default(),
+            ) => ws.frame.payload().unwrap_or_default().to_owned(),
             (_, Met { value: Some(v), .. }) => v.to_string(),
             (_, Met { count: Some(n), .. }) => n.to_string(),
             _ => String::new(),

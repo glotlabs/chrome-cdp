@@ -700,6 +700,11 @@ match with changed dynamic text, fail on a missing button, and survive
   --ws` timeout that saw no matching socket. `--frame` without `--ws` is
   BadArgs, as `--status` without `--response` is. HAR exports now carry
   up to 500 messages per socket.
+- **14.7, binary frames (close-out).** A binary frame keeps its first 32
+  bytes in hex (`hex`, a new optional field of `WebSocketFrame`), shown
+  where a text frame's text is and matched by `network frames --grep` and
+  `wait --ws --frame`. HAR exports still write binary messages with no
+  data: 32 bytes are not the message.
 - **14.7, templates.** A regex value is `/…/` or `/…/i` in place of the
   quoted value, found anywhere in it (as Playwright's are); `"*"` must
   still be a value (a line without a name does not match). One

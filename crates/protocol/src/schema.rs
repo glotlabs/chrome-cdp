@@ -1879,6 +1879,18 @@ pub struct WebSocketFrame {
     /// The start of a text payload (at most 200 characters).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    /// The start of a binary payload in hex (at most 32 bytes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hex: Option<String>,
+}
+
+impl WebSocketFrame {
+    /// What `network frames --grep` and `wait --ws --frame` match, and
+    /// the text output shows: the text, or a binary payload's hex.
+    #[must_use]
+    pub fn payload(&self) -> Option<&str> {
+        self.text.as_deref().or(self.hex.as_deref())
+    }
 }
 
 /// `data` of `chrome-cdp network clear --json`.

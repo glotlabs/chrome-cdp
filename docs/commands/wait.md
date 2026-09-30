@@ -31,7 +31,7 @@ Options:
 - `--console <REGEX>`: A console entry whose text or URL matches this regular expression, logged since the previous command began
 - `--binding <NAME>`: A call of the function `expose NAME` put in the page, since the previous command began
 - `--ws <PATTERN>`: A frame, sent or received since the previous command began, on a WebSocket whose URL matches (a part, a glob or /regex/)
-- `--frame <REGEX>`: The text the --ws frame must match: a regular expression
+- `--frame <REGEX>`: The text the --ws frame must match (a binary frame's first bytes in hex): a regular expression
 - `--max-chars <N>`: Bound the output (--fn's value) to this many characters (0 = no limit) (default `20000`)
 
 ```text

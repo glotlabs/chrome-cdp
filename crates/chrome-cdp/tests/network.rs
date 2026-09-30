@@ -207,6 +207,21 @@ fn websocket_frames_and_wait_ws() {
     let out = sandbox.run(&["wait", "--ws", "/ws", "--frame", "price", "-q"]);
     assert_eq!(code(&out), 0, "{}", stderr(&out));
     assert_eq!(stdout(&out), "{\"type\":\"price\",\"i\":9}\n");
+    // A binary frame shows (and matches) its first bytes in hex.
+    let out = sandbox.run(&["eval", "sendBytes([222, 173, 190, 239])"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["wait", "--ws", "/ws", "--frame", "^deadbeef$", "-q"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert_eq!(stdout(&out), "deadbeef\n");
+    let out = sandbox.run(&["network", "frames", &id, "--dir", "sent", "--grep", "beef"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert!(
+        stdout(&out)
+            .trim_end()
+            .ends_with(" sent binary 4B deadbeef"),
+        "{}",
+        stdout(&out)
+    );
     let out = sandbox.run(&["wait", "--load", "--frame", "price"]);
     assert_eq!(code(&out), 2, "{}", stderr(&out));
     assert!(

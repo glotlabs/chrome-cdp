@@ -57,9 +57,11 @@ const POST_DATA_LEN: usize = 8 * 1024;
 const PENDING: usize = 256;
 const RAW_SEARCH: usize = 200;
 
-/// How many WebSocket frames a record keeps, and how much of each text.
+/// How many WebSocket frames a record keeps, how much of each text, and
+/// how many bytes of each binary payload (in hex).
 const FRAMES: usize = 500;
 const FRAME_TEXT: usize = 200;
+const FRAME_HEX: usize = 32;
 
 /// One request as the log keeps it.
 #[derive(Debug, Clone)]
@@ -641,9 +643,22 @@ impl Record {
     fn frame(&mut self, sent: bool, frame: &Value, change: u64) {
         let payload = frame["payloadData"].as_str().unwrap_or_default();
         let opcode = whole(&frame["opcode"]).unwrap_or(1);
+        let mut hex = None;
         let (opcode, size, text) = match opcode {
             1 => ("text", payload.len(), Some(payload)),
-            2 => ("binary", base64_len(payload), None),
+            2 => {
+                hex = base64::engine::general_purpose::STANDARD
+                    .decode(payload)
+                    .ok()
+                    .map(|bytes| {
+                        bytes
+                            .iter()
+                            .take(FRAME_HEX)
+                            .map(|b| format!("{b:02x}"))
+                            .collect::<String>()
+                    });
+                ("binary", base64_len(payload), None)
+            }
             8 => ("close", payload.len(), None),
             9 => ("ping", payload.len(), None),
             10 => ("pong", payload.len(), None),
@@ -672,6 +687,7 @@ impl Record {
             opcode: opcode.to_owned(),
             size,
             text: text.map(|t| cut(t.to_owned(), FRAME_TEXT)),
+            hex: hex.filter(|h| !h.is_empty()),
         };
         self.frames.push_back((change, frame));
     }
@@ -1053,6 +1069,8 @@ mod tests {
         assert_eq!((ws.sent, ws.received, ws.received_bytes), (1, 2, 8));
         assert_eq!(record.frames[2].1.opcode, "binary");
         assert_eq!(record.frames[2].1.size, 3);
+        assert_eq!(record.frames[2].1.hex.as_deref(), Some("000102"));
+        assert_eq!(record.frames[2].1.payload(), Some("000102"));
         assert_eq!(record.frames[2].1.n, 3);
         assert!(record.frames[0].0 < record.frames[1].0);
         event(

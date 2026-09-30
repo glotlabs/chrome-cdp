@@ -31,9 +31,8 @@ impl Engine {
         frame: Option<&Regex>,
         deadline: Instant,
     ) -> Result<Result<Met, Unmet>, protocol::ErrorInfo> {
-        let wanted = |f: &WebSocketFrame| {
-            frame.is_none_or(|re| f.text.as_deref().is_some_and(|t| re.is_match(t)))
-        };
+        let wanted =
+            |f: &WebSocketFrame| frame.is_none_or(|re| f.payload().is_some_and(|t| re.is_match(t)));
         let mut checked = running.tabs.previous_netlog_mark(page.id);
         let mut sockets = 0;
         let mut seen: VecDeque<String> = VecDeque::new();
@@ -99,7 +98,7 @@ fn frame_line(frame: &WebSocketFrame) -> String {
         frame.opcode,
         protocol::format::size(frame.size)
     );
-    if let Some(text) = &frame.text {
+    if let Some(text) = frame.payload() {
         line.push(' ');
         line.push_str(&text.replace('\n', " "));
     }

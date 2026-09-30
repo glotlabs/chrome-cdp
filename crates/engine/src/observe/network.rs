@@ -382,7 +382,7 @@ impl Engine {
                 && req.sent.is_none_or(|sent| f.sent == sent)
                 && grep
                     .as_ref()
-                    .is_none_or(|re| f.text.as_deref().is_some_and(|t| re.is_match(t)))
+                    .is_none_or(|re| f.payload().is_some_and(|t| re.is_match(t)))
         };
         let deadline = Instant::now() + Duration::from_millis(req.wait_ms);
         let data = loop {
@@ -418,7 +418,7 @@ impl Engine {
         let quiet = data
             .frames
             .iter()
-            .filter_map(|f| f.text.as_deref())
+            .filter_map(WebSocketFrame::payload)
             .collect::<Vec<_>>()
             .join("\n");
         Ok(Output::typed(&data, text)
@@ -844,7 +844,7 @@ fn frame_text(text: &mut String, frame: &WebSocketFrame) {
         frame.opcode,
         units::size(frame.size),
     );
-    if let Some(payload) = &frame.text {
+    if let Some(payload) = frame.payload() {
         let _ = write!(text, " {}", payload.replace('\n', " "));
     }
 }

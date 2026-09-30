@@ -3420,9 +3420,10 @@ Examples:
     /// List a WebSocket's frames, and with --follow new ones as they come.
     #[command(after_help = "\
 ID is the socket's request id (`network --type websocket` lists them).
-The log keeps each socket's last 500 frames, and up to 200 characters of
-each text frame; binary frames show their size. Each line reads: N
-DIRECTION KIND SIZE TEXT, N counting the socket's frames from 1. With
+The log keeps each socket's last 500 frames, up to 200 characters of each
+text frame, and the first 32 bytes of a binary one, in hex (what --grep
+matches for it). Each line reads: N DIRECTION KIND SIZE TEXT, N counting
+the socket's frames from 1. With
 --follow, new frames print as they come until the socket closes, Ctrl-C,
 or --timeout. `wait --ws` waits for one frame.
 
@@ -3519,7 +3520,8 @@ pub(crate) struct NetworkFramesArgs {
     #[arg(value_parser = parse_request_id, value_name = "ID")]
     pub(crate) id: u64,
 
-    /// Only text frames whose text matches this regular expression.
+    /// Only frames whose text (a binary frame's hex) matches this regular
+    /// expression.
     #[arg(long, value_name = "REGEX")]
     pub(crate) grep: Option<String>,
 
@@ -5841,7 +5843,8 @@ pub(crate) struct WaitCmdArgs {
     #[arg(long, value_name = "PATTERN")]
     pub(crate) ws: Option<String>,
 
-    /// The text the --ws frame must match: a regular expression.
+    /// The text the --ws frame must match (a binary frame's first bytes in
+    /// hex): a regular expression.
     #[arg(long, value_name = "REGEX")]
     pub(crate) frame: Option<String>,
 

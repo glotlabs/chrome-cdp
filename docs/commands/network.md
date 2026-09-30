@@ -84,7 +84,7 @@ Arguments:
 
 Options:
 
-- `--grep <REGEX>`: Only text frames whose text matches this regular expression
+- `--grep <REGEX>`: Only frames whose text (a binary frame's hex) matches this regular expression
 - `--dir <DIR>`: Only frames the page sent, or only those it received (one of `sent`, `received`)
 - `--limit <N>`: Show at most this many frames, the newest (0 = all) (default `100`)
 - `-f, --follow`: Keep printing new frames as they come, until the socket closes, Ctrl-C, or --timeout if given
@@ -92,9 +92,10 @@ Options:
 
 ```text
 ID is the socket's request id (`network --type websocket` lists them).
-The log keeps each socket's last 500 frames, and up to 200 characters of
-each text frame; binary frames show their size. Each line reads: N
-DIRECTION KIND SIZE TEXT, N counting the socket's frames from 1. With
+The log keeps each socket's last 500 frames, up to 200 characters of each
+text frame, and the first 32 bytes of a binary one, in hex (what --grep
+matches for it). Each line reads: N DIRECTION KIND SIZE TEXT, N counting
+the socket's frames from 1. With
 --follow, new frames print as they come until the socket closes, Ctrl-C,
 or --timeout. `wait --ws` waits for one frame.
 
