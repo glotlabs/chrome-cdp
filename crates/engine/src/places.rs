@@ -86,6 +86,50 @@ pub(crate) fn shown(file: &Path, root: Option<&Path>) -> String {
     }
 }
 
+/// Whether `source` (a URL, a path) and `place` (a path or URL an agent
+/// gave, `src/cart.ts`) name the same file: `source` is on disk as
+/// `file` (the file `place` names, when it is one), or one's path
+/// segments end with all of the other's. `place` may be a file name
+/// alone (the agent chose it); `source` must have two segments to be the
+/// end of `place` (too many `index.ts`).
+pub(crate) fn same_file(
+    source: &str,
+    place: &str,
+    file: Option<&Path>,
+    root: Option<&Path>,
+) -> bool {
+    if let Some(file) = file
+        && to_disk(source, root).is_some_and(|found| found == file)
+    {
+        return true;
+    }
+    let (Some(source), Some(place)) = (segments(source), segments(place)) else {
+        return false;
+    };
+    if source.is_empty() || place.is_empty() {
+        return false;
+    }
+    source.ends_with(&place) || (source.len() >= 2 && place.ends_with(&source))
+}
+
+/// The segments of `source`'s path, without `.`: `webpack://app/./src/x.ts`
+/// is `["src", "x.ts"]`.
+fn segments(source: &str) -> Option<Vec<String>> {
+    let path = path_of(source)?;
+    Some(
+        path.split('/')
+            .filter(|s| !s.is_empty() && *s != ".")
+            .map(str::to_owned)
+            .collect(),
+    )
+}
+
+/// `source` without its query and fragment: the same file across a hot
+/// update's `?t=123`.
+pub(crate) fn without_query(source: &str) -> &str {
+    source.split(['?', '#']).next().unwrap_or_default()
+}
+
 /// `source`'s path: a URL's (decoded, without query and fragment), or
 /// `source` itself when it is a path (Svelte's `src/App.svelte` is
 /// relative).
@@ -140,7 +184,7 @@ fn percent_decode(text: &str) -> String {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use super::{shown, to_disk};
+    use super::{same_file, shown, to_disk, without_query};
 
     /// A project: `app/src/cart.ts`, `app/src/index.ts`,
     /// `app/src/components/index.ts` and `app/index.ts`, and a file
@@ -242,5 +286,40 @@ mod tests {
         assert_eq!(disk("src/cart.ts", &root).as_deref(), Some("src/cart.ts"));
         assert_eq!(disk("cart.ts", &root), None);
         assert_eq!(to_disk("http://x/src/cart.ts", None), None);
+    }
+
+    #[test]
+    fn places_name_sources() {
+        let (_dir, root) = project();
+        let source = "http://localhost:1/apps-src/plain/src/cart.ts?t=5";
+        let same = |place: &str| same_file(source, place, None, Some(&root));
+        assert!(same("src/cart.ts"));
+        assert!(same("cart.ts"));
+        assert!(same("plain/src/cart.ts"));
+        assert!(same("/home/me/apps-src/plain/src/cart.ts"));
+        assert!(same("http://localhost:5173/src/cart.ts"));
+        assert!(!same("lib/cart.ts"));
+        assert!(!same("src/cart.tsx"));
+        assert!(!same(""));
+        // A source that is a file name alone is not the end of a path.
+        assert!(!same_file(
+            "http://x/cart.ts",
+            "src/cart.ts",
+            None,
+            Some(&root)
+        ));
+        assert!(same_file("http://x/cart.ts", "cart.ts", None, Some(&root)));
+        // The file the place names, found on disk from the source.
+        let cart = root.join("src/cart.ts");
+        assert!(same_file(
+            "webpack://app/./src/cart.ts",
+            "../app/src/cart.ts",
+            Some(&cart),
+            Some(&root)
+        ));
+        assert_eq!(
+            without_query(source),
+            "http://localhost:1/apps-src/plain/src/cart.ts"
+        );
     }
 }
