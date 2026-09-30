@@ -2416,15 +2416,27 @@ fn check_method(method: &str) -> Result<(), ErrorInfo> {
                 .all(|part| part.chars().all(|c| c.is_ascii_alphanumeric()))
     });
     if ok {
-        Ok(())
-    } else {
-        Err(
-            bad_args(format!("`{method}` is not a CDP method name")).hint(
-                Hint::run(Cmd::new("cdp").arg("Browser.getVersion"))
-                    .why("methods are Domain.method"),
-            ),
-        )
+        return Ok(());
     }
+    // `page.navigate`, or `navigate` when only one domain has it.
+    let methods = cdp::domains::names::METHODS;
+    let named: Vec<&str> = methods
+        .iter()
+        .copied()
+        .filter(|m| m.split_once('.').is_some_and(|(_, name)| name == method))
+        .collect();
+    let meant = methods
+        .iter()
+        .copied()
+        .find(|m| m.eq_ignore_ascii_case(method))
+        .or(if named.len() == 1 {
+            named.first().copied()
+        } else {
+            None
+        })
+        .unwrap_or("Browser.getVersion");
+    Err(bad_args(format!("`{method}` is not a CDP method name"))
+        .hint(Hint::run(Cmd::new("cdp").arg(meant)).why("methods are Domain.method")))
 }
 
 fn bad_args(message: impl Into<String>) -> ErrorInfo {
@@ -2576,6 +2588,12 @@ mod tests {
             let err = check_method(bad).unwrap_err();
             assert_eq!(err.kind, ErrorKind::BadArgs, "{bad}");
         }
+        // The hint names the method meant, when it is clear.
+        let hint = |bad: &str| check_method(bad).unwrap_err().hint.unwrap_or_default();
+        assert!(hint("page.navigate").starts_with("chrome-cdp cdp Page.navigate "));
+        assert!(hint("getFullAXTree").starts_with("chrome-cdp cdp Accessibility.getFullAXTree "));
+        // `enable` is in most domains, `captureSnapshot` in two.
+        assert!(hint("enable").starts_with("chrome-cdp cdp Browser.getVersion "));
     }
 
     #[test]
