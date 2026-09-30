@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Many rules</title>
+</head>
+<body>
+<!-- Seven rules broken three times each (the checkboxes break
+     target-size too): more than the failure's text lists, so each rule
+     gets a line before any gets more. -->
+<main>
+<h1>Many rules</h1>
+<div role="nav">A</div><div role="nav">B</div><div role="nav">C</div>
+<div aria-lable="A">A</div><div aria-lable="B">B</div><div aria-lable="C">C</div>
+<ul><div>A</div></ul><ul><div>B</div></ul><ul><div>C</div></ul>
+<h2></h2><h2></h2><h2></h2>
+<p><input aria-label="A" autocomplete="nmae"></p>
+<p><input aria-label="B" autocomplete="nmae"></p>
+<p><input aria-label="C" autocomplete="nmae"></p>
+<div role="checkbox">A</div><div role="checkbox">B</div><div role="checkbox">C</div>
+</main>
+</body>
+</html>

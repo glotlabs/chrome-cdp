@@ -510,22 +510,24 @@ impl Engine {
             ),
             ..Failed::default()
         };
-        let mut lines = 0;
+        // Every rule that failed gets a line, then the first rules more,
+        // up to `PER_RULE` each and `LISTED * 2` lines in all.
+        let mut spare = (LISTED * 2).saturating_sub(audit.violations.len());
+        let mut cut = false;
         for v in &audit.violations {
             let wcag = format!("WCAG {} {}", v.wcag, v.level);
             if let Some(page_why) = &v.page {
-                if lines < LISTED * 2 {
-                    failed
-                        .notes
-                        .push((v.rule.clone(), format!("{page_why} ({wcag})")));
-                    lines += 1;
-                }
+                failed
+                    .notes
+                    .push((v.rule.clone(), format!("{page_why} ({wcag})")));
                 continue;
             }
-            for node in v.nodes.iter().take(PER_RULE) {
-                if lines >= LISTED * 2 {
-                    break;
-                }
+            let listed = v.nodes.len().min(PER_RULE);
+            let extra = listed.saturating_sub(1).min(spare);
+            spare -= extra;
+            let shown = listed.min(1 + extra);
+            cut |= shown < listed;
+            for node in v.nodes.iter().take(shown) {
                 let why = node
                     .why
                     .as_deref()
@@ -540,18 +542,14 @@ impl Engine {
                     v.rule.clone(),
                     format!("{}{place} {}{why} ({wcag})", node.candidate.line(), v.help),
                 ));
-                lines += 1;
             }
-            if v.count > v.nodes.len().min(PER_RULE) && lines < LISTED * 2 {
-                failed.notes.push((
-                    v.rule.clone(),
-                    format!("… and {} more", v.count - v.nodes.len().min(PER_RULE)),
-                ));
-                lines += 1;
+            if v.count > shown {
+                failed
+                    .notes
+                    .push((v.rule.clone(), format!("… and {} more", v.count - shown)));
             }
         }
-        let shown: usize = failed.notes.len();
-        if shown >= LISTED * 2 {
+        if cut {
             failed
                 .notes
                 .push(("more".into(), "the rest are in --json's details".into()));

@@ -482,3 +482,6 @@ _(append here)_
   `--a11y-engine axe` could fill the same `Audit`.
 - 17.3: The rule table is `docs/accessibility.md` (hand-written: the rules
   live in the injected TypeScript, which Rust cannot read to generate it).
+- 17.3: With 26 rules, the failure's 10 text lines could fill with the
+  first rules' elements: every failing rule now gets a line first, then
+  the first rules more (up to 5 each), each with `… and N more`.

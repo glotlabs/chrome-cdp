@@ -166,6 +166,42 @@ async fn each_rule_flags_exactly_its_failing_elements() {
 }
 
 #[tokio::test]
+async fn every_failing_rule_gets_a_line() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "a11y-many").await;
+    goto(&engine, &site.url("/a11y/many.html")).await;
+    let err = a11y(&engine, A11yLevel::AA).await.unwrap_err();
+    let text = err.to_text();
+    let rules = [
+        "aria-valid-role",
+        "aria-valid-attr",
+        "aria-required-attr",
+        "list",
+        "empty-heading",
+        "autocomplete-valid",
+        "target-size",
+    ];
+    for rule in rules {
+        assert!(text.contains(&format!("  {rule}: ")), "{rule}: {text}");
+    }
+    // 10 lines of elements: one per rule, and the first rules' next ones.
+    let elements = err
+        .notes
+        .iter()
+        .filter(|n| rules.contains(&n.label.as_str()) && !n.text.starts_with('…'))
+        .count();
+    assert_eq!(elements, 10, "{text}");
+    assert!(text.contains("  aria-valid-attr: … and 1 more\n"), "{text}");
+    assert!(text.contains("  list: … and 2 more\n"), "{text}");
+    assert!(
+        text.contains("  more: the rest are in --json's details\n"),
+        "{text}"
+    );
+    engine.close().await;
+}
+
+#[tokio::test]
 async fn one_main_landmark() {
     let Some(path) = chrome_path() else { return };
     let site = Fixtures::shared();
