@@ -1,0 +1,190 @@
+page t3 "Products – Acme" {{ORIGIN_A}}/snapshot/cards.html
+- banner
+  - link "Acme" [e1] → /
+  - navigation "Main"
+    - link "Pricing" [e2] → /pricing
+    - link "Docs" [e3] → /docs
+- main
+  - heading "Products" (h1)
+  - status "Cart: empty"
+  - form "Filters"
+    - checkbox "In stock" [e4] unchecked
+    - checkbox "On sale" [e5] unchecked
+    - combobox "Sort" [e6] value="Price" collapsed
+      - option "Price" [e7] selected
+      - option "Name" [e8]
+  - list "Products"
+    - listitem
+      - img "Mug 1"
+      - link "Mug 1" [e10] → /products/1
+      - text "Stoneware, 250 ml, dishwasher safe"
+      - text "15 €"
+      - text "★ 3.5 · 13 reviews"
+      - button "Add to cart" [e11]
+    - listitem
+      - img "Teapot 2"
+      - link "Teapot 2" [e12] → /products/2
+      - text "Stoneware, 300 ml, dishwasher safe"
+      - text "22 €"
+      - text "★ 4 · 16 reviews"
+      - button "Add to cart" [e13]
+    - listitem
+      - img "Bowl 3"
+      - link "Bowl 3" [e14] → /products/3
+      - text "Stoneware, 350 ml, dishwasher safe"
+      - text "29 €"
+      - text "★ 3 · 19 reviews"
+      - button "Add to cart" [e15]
+    - listitem
+      - img "Plate 4"
+      - link "Plate 4" [e16] → /products/4
+      - text "Stoneware, 200 ml, dishwasher safe"
+      - text "36 €"
+      - text "★ 3.5 · 22 reviews"
+      - button "Add to cart" [e17]
+    - listitem
+      - img "Cup 5"
+      - link "Cup 5" [e18] → /products/5
+      - text "Stoneware, 250 ml, dishwasher safe"
+      - text "13 €"
+      - text "★ 4 · 25 reviews"
+      - button "Add to cart" [e19]
+    - listitem
+      - img "Jug 6"
+      - link "Jug 6" [e20] → /products/6
+      - text "Stoneware, 300 ml, dishwasher safe"
+      - text "20 €"
+      - text "★ 3 · 28 reviews"
+      - button "Add to cart" [e21]
+    - listitem
+      - img "Mug 7"
+      - link "Mug 7" [e22] → /products/7
+      - text "Stoneware, 350 ml, dishwasher safe"
+      - text "27 €"
+      - text "★ 3.5 · 31 reviews"
+      - button "Add to cart" [e23]
+    - listitem
+      - img "Teapot 8"
+      - link "Teapot 8" [e24] → /products/8
+      - text "Stoneware, 200 ml, dishwasher safe"
+      - text "34 €"
+      - text "★ 4 · 34 reviews"
+      - button "Add to cart" [e25]
+    - listitem
+      - img "Bowl 9"
+      - link "Bowl 9" [e26] → /products/9
+      - text "Stoneware, 250 ml, dishwasher safe"
+      - text "11 €"
+      - text "★ 3 · 37 reviews"
+      - button "Add to cart" [e27]
+    - listitem
+      - img "Plate 10"
+      - link "Plate 10" [e28] → /products/10
+      - text "Stoneware, 300 ml, dishwasher safe"
+      - text "18 €"
+      - text "★ 3.5 · 40 reviews"
+      - button "Add to cart" [e29]
+    - listitem
+      - img "Cup 11"
+      - link "Cup 11" [e30] → /products/11
+      - text "Stoneware, 350 ml, dishwasher safe"
+      - text "25 €"
+      - text "★ 4 · 43 reviews"
+      - button "Add to cart" [e31]
+    - listitem
+      - img "Jug 12"
+      - link "Jug 12" [e32] → /products/12
+      - text "Stoneware, 200 ml, dishwasher safe"
+      - text "32 €"
+      - text "★ 3 · 46 reviews"
+      - button "Add to cart" [e33]
+    - listitem
+      - img "Mug 13"
+      - link "Mug 13" [e34] → /products/13
+      - text "Stoneware, 250 ml, dishwasher safe"
+      - text "9 €"
+      - text "★ 3.5 · 49 reviews"
+      - button "Add to cart" [e35]
+    - listitem
+      - img "Teapot 14"
+      - link "Teapot 14" [e36] → /products/14
+      - text "Stoneware, 300 ml, dishwasher safe"
+      - text "16 €"
+      - text "★ 4 · 52 reviews"
+      - button "Add to cart" [e37]
+    - listitem
+      - img "Bowl 15"
+      - link "Bowl 15" [e38] → /products/15
+      - text "Stoneware, 350 ml, dishwasher safe"
+      - text "23 €"
+      - text "★ 3 · 55 reviews"
+      - button "Add to cart" [e39]
+    - listitem
+      - img "Plate 16"
+      - link "Plate 16" [e40] → /products/16
+      - text "Stoneware, 200 ml, dishwasher safe"
+      - text "30 €"
+      - text "★ 3.5 · 58 reviews"
+      - button "Add to cart" [e41]
+    - listitem
+      - img "Cup 17"
+      - link "Cup 17" [e42] → /products/17
+      - text "Stoneware, 250 ml, dishwasher safe"
+      - text "37 €"
+      - text "★ 4 · 61 reviews"
+      - button "Add to cart" [e43]
+    - listitem
+      - img "Jug 18"
+      - link "Jug 18" [e44] → /products/18
+      - text "Stoneware, 300 ml, dishwasher safe"
+      - text "14 €"
+      - text "★ 3 · 64 reviews"
+      - button "Add to cart" [e45]
+    - listitem
+      - img "Mug 19"
+      - link "Mug 19" [e46] → /products/19
+      - text "Stoneware, 350 ml, dishwasher safe"
+      - text "21 €"
+      - text "★ 3.5 · 67 reviews"
+      - button "Add to cart" [e47]
+    - listitem
+      - img "Teapot 20"
+      - link "Teapot 20" [e48] → /products/20
+      - text "Stoneware, 200 ml, dishwasher safe"
+      - text "28 €"
+      - text "★ 4 · 70 reviews"
+      - button "Add to cart" [e49]
+    - listitem
+      - img "Bowl 21"
+      - link "Bowl 21" [e50] → /products/21
+      - text "Stoneware, 250 ml, dishwasher safe"
+      - text "35 €"
+      - text "★ 3 · 73 reviews"
+      - button "Add to cart" [e51]
+    - listitem
+      - img "Plate 22"
+      - link "Plate 22" [e52] → /products/22
+      - text "Stoneware, 300 ml, dishwasher safe"
+      - text "12 €"
+      - text "★ 3.5 · 76 reviews"
+      - button "Add to cart" [e53]
+    - listitem
+      - img "Cup 23"
+      - link "Cup 23" [e54] → /products/23
+      - text "Stoneware, 350 ml, dishwasher safe"
+      - text "19 €"
+      - text "★ 4 · 79 reviews"
+      - button "Add to cart" [e55]
+    - listitem
+      - img "Jug 24"
+      - link "Jug 24" [e56] → /products/24
+      - text "Stoneware, 200 ml, dishwasher safe"
+      - text "26 €"
+      - text "★ 3 · 82 reviews"
+      - button "Add to cart" [e57]
+    - … 36 more listitem like the one above [region r2]
+  - navigation "Pages"
+    - link "1" [e70] → /snapshot/cards.html?page=1
+    - link "2" [e71] → /snapshot/cards.html?page=2
+    - button "Next" [e72]
+- contentinfo "© 2026 Acme"

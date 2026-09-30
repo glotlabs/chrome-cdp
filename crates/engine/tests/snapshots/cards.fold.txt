@@ -1,0 +1,29 @@
+page t2 "Products – Acme" {{ORIGIN_A}}/snapshot/cards.html
+- banner
+  - link "Acme" [e1] → /
+  - navigation "Main"
+    - link "Pricing" [e2] → /pricing
+    - link "Docs" [e3] → /docs
+- main
+  - heading "Products" (h1)
+  - status "Cart: empty"
+  - form "Filters"
+    - checkbox "In stock" [e4] unchecked
+    - checkbox "On sale" [e5] unchecked
+    - combobox "Sort" [e6] value="Price" collapsed
+      - option "Price" [e7] selected
+      - option "Name" [e8]
+  - list "Products"
+    - listitem
+      - img "Mug 1"
+      - link "Mug 1" [e9] → /products/1
+      - text "Stoneware, 250 ml, dishwasher safe"
+      - text "15 €"
+      - text "★ 3.5 · 13 reviews"
+      - button "Add to cart" [e10]
+    - … 59 more listitem like the one above [region r1]
+  - navigation "Pages"
+    - link "1" [e129] → /snapshot/cards.html?page=1
+    - link "2" [e130] → /snapshot/cards.html?page=2
+    - button "Next" [e131]
+- contentinfo "© 2026 Acme"

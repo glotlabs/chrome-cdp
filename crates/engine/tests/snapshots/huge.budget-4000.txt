@@ -1,0 +1,556 @@
+page t4 "Huge page" {{ORIGIN_A}}/snapshot/huge.html
+- heading "Huge page" (h1)
+- main
+  - region "Section 1"
+    - heading "Section 1" (h2)
+    - list
+      - listitem
+        - text "Item 1.1"
+        - link "open" [e2] → /item/1/1
+      - listitem
+        - text "Item 1.2"
+        - link "open" [e3] → /item/1/2
+      - listitem
+        - text "Item 1.3"
+        - link "open" [e4] → /item/1/3
+      - listitem
+        - text "Item 1.4"
+        - link "open" [e5] → /item/1/4
+      - listitem
+        - text "Item 1.5"
+        - link "open" [e6] → /item/1/5
+      - listitem
+        - text "Item 1.6"
+        - link "open" [e7] → /item/1/6
+      - listitem
+        - text "Item 1.7"
+        - link "open" [e8] → /item/1/7
+      - listitem
+        - text "Item 1.8"
+        - link "open" [e9] → /item/1/8
+      - listitem
+        - text "Item 1.9"
+        - link "open" [e10] → /item/1/9
+      - listitem
+        - text "Item 1.10"
+        - link "open" [e11] → /item/1/10
+      - listitem
+        - text "Item 1.11"
+        - link "open" [e12] → /item/1/11
+      - listitem
+        - text "Item 1.12"
+        - link "open" [e13] → /item/1/12
+    - text "Section 1 footer text"
+  - region "Section 2"
+    - heading "Section 2" (h2)
+    - list
+      - listitem
+        - text "Item 2.1"
+        - link "open" [e14] → /item/2/1
+      - listitem
+        - text "Item 2.2"
+        - link "open" [e15] → /item/2/2
+      - listitem
+        - text "Item 2.3"
+        - link "open" [e16] → /item/2/3
+      - listitem
+        - text "Item 2.4"
+        - link "open" [e17] → /item/2/4
+      - listitem
+        - text "Item 2.5"
+        - link "open" [e18] → /item/2/5
+      - listitem
+        - text "Item 2.6"
+        - link "open" [e19] → /item/2/6
+      - listitem
+        - text "Item 2.7"
+        - link "open" [e20] → /item/2/7
+      - listitem
+        - text "Item 2.8"
+        - link "open" [e21] → /item/2/8
+      - listitem
+        - text "Item 2.9"
+        - link "open" [e22] → /item/2/9
+      - listitem
+        - text "Item 2.10"
+        - link "open" [e23] → /item/2/10
+      - listitem
+        - text "Item 2.11"
+        - link "open" [e24] → /item/2/11
+      - listitem
+        - text "Item 2.12"
+        - link "open" [e25] → /item/2/12
+    - text "Section 2 footer text"
+  - region "Section 3"
+    - heading "Section 3" (h2)
+    - list
+      - listitem
+        - text "Item 3.1"
+        - link "open" [e26] → /item/3/1
+      - listitem
+        - text "Item 3.2"
+        - link "open" [e27] → /item/3/2
+      - listitem
+        - text "Item 3.3"
+        - link "open" [e28] → /item/3/3
+      - listitem
+        - text "Item 3.4"
+        - link "open" [e29] → /item/3/4
+      - listitem
+        - text "Item 3.5"
+        - link "open" [e30] → /item/3/5
+      - listitem
+        - text "Item 3.6"
+        - link "open" [e31] → /item/3/6
+      - listitem
+        - text "Item 3.7"
+        - link "open" [e32] → /item/3/7
+      - listitem
+        - text "Item 3.8"
+        - link "open" [e33] → /item/3/8
+      - listitem
+        - text "Item 3.9"
+        - link "open" [e34] → /item/3/9
+      - listitem
+        - text "Item 3.10"
+        - link "open" [e35] → /item/3/10
+      - listitem
+        - text "Item 3.11"
+        - link "open" [e36] → /item/3/11
+      - listitem
+        - text "Item 3.12"
+        - link "open" [e37] → /item/3/12
+    - text "Section 3 footer text"
+  - region "Section 4"
+    - heading "Section 4" (h2)
+    - list
+      - listitem
+        - text "Item 4.1"
+        - link "open" [e38] → /item/4/1
+      - listitem
+        - text "Item 4.2"
+        - link "open" [e39] → /item/4/2
+      - listitem
+        - text "Item 4.3"
+        - link "open" [e40] → /item/4/3
+      - listitem
+        - text "Item 4.4"
+        - link "open" [e41] → /item/4/4
+      - listitem
+        - text "Item 4.5"
+        - link "open" [e42] → /item/4/5
+      - listitem
+        - text "Item 4.6"
+        - link "open" [e43] → /item/4/6
+      - listitem
+        - text "Item 4.7"
+        - link "open" [e44] → /item/4/7
+      - listitem
+        - text "Item 4.8"
+        - link "open" [e45] → /item/4/8
+      - listitem
+        - text "Item 4.9"
+        - link "open" [e46] → /item/4/9
+      - listitem
+        - text "Item 4.10"
+        - link "open" [e47] → /item/4/10
+      - listitem
+        - text "Item 4.11"
+        - link "open" [e48] → /item/4/11
+      - listitem
+        - text "Item 4.12"
+        - link "open" [e49] → /item/4/12
+    - text "Section 4 footer text"
+  - region "Section 5"
+    - heading "Section 5" (h2)
+    - list
+      - listitem
+        - text "Item 5.1"
+        - link "open" [e50] → /item/5/1
+      - listitem
+        - text "Item 5.2"
+        - link "open" [e51] → /item/5/2
+      - listitem
+        - text "Item 5.3"
+        - link "open" [e52] → /item/5/3
+      - listitem
+        - text "Item 5.4"
+        - link "open" [e53] → /item/5/4
+      - listitem
+        - text "Item 5.5"
+        - link "open" [e54] → /item/5/5
+      - listitem
+        - text "Item 5.6"
+        - link "open" [e55] → /item/5/6
+      - listitem
+        - text "Item 5.7"
+        - link "open" [e56] → /item/5/7
+      - listitem
+        - text "Item 5.8"
+        - link "open" [e57] → /item/5/8
+      - listitem
+        - text "Item 5.9"
+        - link "open" [e58] → /item/5/9
+      - listitem
+        - text "Item 5.10"
+        - link "open" [e59] → /item/5/10
+      - listitem
+        - text "Item 5.11"
+        - link "open" [e60] → /item/5/11
+      - listitem
+        - text "Item 5.12"
+        - link "open" [e61] → /item/5/12
+    - text "Section 5 footer text"
+  - region "Section 6"
+    - heading "Section 6" (h2)
+    - list
+      - listitem
+        - text "Item 6.1"
+        - link "open" [e62] → /item/6/1
+      - listitem
+        - text "Item 6.2"
+        - link "open" [e63] → /item/6/2
+      - listitem
+        - text "Item 6.3"
+        - link "open" [e64] → /item/6/3
+      - listitem
+        - text "Item 6.4"
+        - link "open" [e65] → /item/6/4
+      - listitem
+        - text "Item 6.5"
+        - link "open" [e66] → /item/6/5
+      - listitem
+        - text "Item 6.6"
+        - link "open" [e67] → /item/6/6
+      - listitem
+        - text "Item 6.7"
+        - link "open" [e68] → /item/6/7
+      - listitem
+        - text "Item 6.8"
+        - link "open" [e69] → /item/6/8
+      - listitem
+        - text "Item 6.9"
+        - link "open" [e70] → /item/6/9
+      - listitem
+        - text "Item 6.10"
+        - link "open" [e71] → /item/6/10
+      - listitem
+        - text "Item 6.11"
+        - link "open" [e72] → /item/6/11
+      - listitem
+        - text "Item 6.12"
+        - link "open" [e73] → /item/6/12
+    - text "Section 6 footer text"
+  - region "Section 7"
+    - heading "Section 7" (h2)
+    - list
+      - listitem
+        - text "Item 7.1"
+        - link "open" [e74] → /item/7/1
+      - listitem
+        - text "Item 7.2"
+        - link "open" [e75] → /item/7/2
+      - listitem
+        - text "Item 7.3"
+        - link "open" [e76] → /item/7/3
+      - listitem
+        - text "Item 7.4"
+        - link "open" [e77] → /item/7/4
+      - listitem
+        - text "Item 7.5"
+        - link "open" [e78] → /item/7/5
+      - listitem
+        - text "Item 7.6"
+        - link "open" [e79] → /item/7/6
+      - listitem
+        - text "Item 7.7"
+        - link "open" [e80] → /item/7/7
+      - listitem
+        - text "Item 7.8"
+        - link "open" [e81] → /item/7/8
+      - listitem
+        - text "Item 7.9"
+        - link "open" [e82] → /item/7/9
+      - listitem
+        - text "Item 7.10"
+        - link "open" [e83] → /item/7/10
+      - listitem
+        - text "Item 7.11"
+        - link "open" [e84] → /item/7/11
+      - listitem
+        - text "Item 7.12"
+        - link "open" [e85] → /item/7/12
+    - text "Section 7 footer text"
+  - region "Section 8"
+    - heading "Section 8" (h2)
+    - list
+      - listitem
+        - text "Item 8.1"
+        - link "open" [e86] → /item/8/1
+      - listitem
+        - text "Item 8.2"
+        - link "open" [e87] → /item/8/2
+      - listitem
+        - text "Item 8.3"
+        - link "open" [e88] → /item/8/3
+      - listitem
+        - text "Item 8.4"
+        - link "open" [e89] → /item/8/4
+      - listitem
+        - text "Item 8.5"
+        - link "open" [e90] → /item/8/5
+      - listitem
+        - text "Item 8.6"
+        - link "open" [e91] → /item/8/6
+      - listitem
+        - text "Item 8.7"
+        - link "open" [e92] → /item/8/7
+      - listitem
+        - text "Item 8.8"
+        - link "open" [e93] → /item/8/8
+      - listitem
+        - text "Item 8.9"
+        - link "open" [e94] → /item/8/9
+      - listitem
+        - text "Item 8.10"
+        - link "open" [e95] → /item/8/10
+      - listitem
+        - text "Item 8.11"
+        - link "open" [e96] → /item/8/11
+      - listitem
+        - text "Item 8.12"
+        - link "open" [e97] → /item/8/12
+    - text "Section 8 footer text"
+  - region "Section 9"
+    - heading "Section 9" (h2)
+    - list
+      - listitem
+        - text "Item 9.1"
+        - link "open" [e98] → /item/9/1
+      - listitem
+        - text "Item 9.2"
+        - link "open" [e99] → /item/9/2
+      - listitem
+        - text "Item 9.3"
+        - link "open" [e100] → /item/9/3
+      - listitem
+        - text "Item 9.4"
+        - link "open" [e101] → /item/9/4
+      - listitem
+        - text "Item 9.5"
+        - link "open" [e102] → /item/9/5
+      - listitem
+        - text "Item 9.6"
+        - link "open" [e103] → /item/9/6
+      - listitem
+        - text "Item 9.7"
+        - link "open" [e104] → /item/9/7
+      - listitem
+        - text "Item 9.8"
+        - link "open" [e105] → /item/9/8
+      - listitem
+        - text "Item 9.9"
+        - link "open" [e106] → /item/9/9
+      - listitem
+        - text "Item 9.10"
+        - link "open" [e107] → /item/9/10
+      - listitem
+        - text "Item 9.11"
+        - link "open" [e108] → /item/9/11
+      - listitem
+        - text "Item 9.12"
+        - link "open" [e109] → /item/9/12
+    - text "Section 9 footer text"
+  - region "Section 10"
+    - heading "Section 10" (h2)
+    - list
+      - listitem
+        - text "Item 10.1"
+        - link "open" [e110] → /item/10/1
+      - listitem
+        - text "Item 10.2"
+        - link "open" [e111] → /item/10/2
+      - listitem
+        - text "Item 10.3"
+        - link "open" [e112] → /item/10/3
+      - listitem
+        - text "Item 10.4"
+        - link "open" [e113] → /item/10/4
+      - listitem
+        - text "Item 10.5"
+        - link "open" [e114] → /item/10/5
+      - listitem
+        - text "Item 10.6"
+        - link "open" [e115] → /item/10/6
+      - listitem
+        - text "Item 10.7"
+        - link "open" [e116] → /item/10/7
+      - listitem
+        - text "Item 10.8"
+        - link "open" [e117] → /item/10/8
+      - listitem
+        - text "Item 10.9"
+        - link "open" [e118] → /item/10/9
+      - … 3 more listitem like the one above [region r32]
+    - text "Section 10 footer text"
+  - region "Section 11"
+    - heading "Section 11" (h2)
+    - list
+      - listitem
+        - text "Item 11.1"
+        - link "open" [e122] → /item/11/1
+      - … 11 more listitem like the one above [region r12]
+    - text "Section 11 footer text"
+  - region "Section 12"
+    - heading "Section 12" (h2)
+    - list
+      - listitem
+        - text "Item 12.1"
+        - link "open" [e134] → /item/12/1
+      - … 11 more listitem like the one above [region r13]
+    - text "Section 12 footer text"
+  - region "Section 13"
+    - heading "Section 13" (h2)
+    - list
+      - listitem
+        - text "Item 13.1"
+        - link "open" [e146] → /item/13/1
+      - … 11 more listitem like the one above [region r14]
+    - text "Section 13 footer text"
+  - region "Section 14"
+    - heading "Section 14" (h2)
+    - list
+      - listitem
+        - text "Item 14.1"
+        - link "open" [e158] → /item/14/1
+      - … 11 more listitem like the one above [region r15]
+    - text "Section 14 footer text"
+  - region "Section 15"
+    - heading "Section 15" (h2)
+    - list
+      - listitem
+        - text "Item 15.1"
+        - link "open" [e170] → /item/15/1
+      - … 11 more listitem like the one above [region r16]
+    - text "Section 15 footer text"
+  - region "Section 16"
+    - heading "Section 16" (h2)
+    - list
+      - listitem
+        - text "Item 16.1"
+        - link "open" [e182] → /item/16/1
+      - … 11 more listitem like the one above [region r17]
+    - text "Section 16 footer text"
+  - region "Section 17"
+    - heading "Section 17" (h2)
+    - list
+      - listitem
+        - text "Item 17.1"
+        - link "open" [e194] → /item/17/1
+      - … 11 more listitem like the one above [region r18]
+    - text "Section 17 footer text"
+  - region "Section 18"
+    - heading "Section 18" (h2)
+    - list
+      - listitem
+        - text "Item 18.1"
+        - link "open" [e206] → /item/18/1
+      - … 11 more listitem like the one above [region r19]
+    - text "Section 18 footer text"
+  - region "Section 19"
+    - heading "Section 19" (h2)
+    - list
+      - listitem
+        - text "Item 19.1"
+        - link "open" [e218] → /item/19/1
+      - … 11 more listitem like the one above [region r20]
+    - text "Section 19 footer text"
+  - region "Section 20"
+    - heading "Section 20" (h2)
+    - list
+      - listitem
+        - text "Item 20.1"
+        - link "open" [e230] → /item/20/1
+      - … 11 more listitem like the one above [region r21]
+    - text "Section 20 footer text"
+  - region "Section 21"
+    - heading "Section 21" (h2)
+    - list
+      - listitem
+        - text "Item 21.1"
+        - link "open" [e242] → /item/21/1
+      - … 11 more listitem like the one above [region r22]
+    - text "Section 21 footer text"
+  - region "Section 22"
+    - heading "Section 22" (h2)
+    - list
+      - listitem
+        - text "Item 22.1"
+        - link "open" [e254] → /item/22/1
+      - … 11 more listitem like the one above [region r23]
+    - text "Section 22 footer text"
+  - region "Section 23"
+    - heading "Section 23" (h2)
+    - list
+      - listitem
+        - text "Item 23.1"
+        - link "open" [e266] → /item/23/1
+      - … 11 more listitem like the one above [region r24]
+    - text "Section 23 footer text"
+  - region "Section 24"
+    - heading "Section 24" (h2)
+    - list
+      - listitem
+        - text "Item 24.1"
+        - link "open" [e278] → /item/24/1
+      - … 11 more listitem like the one above [region r25]
+    - text "Section 24 footer text"
+  - region "Section 25"
+    - heading "Section 25" (h2)
+    - list
+      - listitem
+        - text "Item 25.1"
+        - link "open" [e290] → /item/25/1
+      - … 11 more listitem like the one above [region r26]
+    - text "Section 25 footer text"
+  - region "Section 26"
+    - heading "Section 26" (h2)
+    - list
+      - listitem
+        - text "Item 26.1"
+        - link "open" [e302] → /item/26/1
+      - … 11 more listitem like the one above [region r27]
+    - text "Section 26 footer text"
+  - region "Section 27"
+    - heading "Section 27" (h2)
+    - list
+      - listitem
+        - text "Item 27.1"
+        - link "open" [e314] → /item/27/1
+      - … 11 more listitem like the one above [region r28]
+    - text "Section 27 footer text"
+  - region "Section 28"
+    - heading "Section 28" (h2)
+    - list
+      - listitem
+        - text "Item 28.1"
+        - link "open" [e326] → /item/28/1
+      - … 11 more listitem like the one above [region r29]
+    - text "Section 28 footer text"
+  - region "Section 29"
+    - heading "Section 29" (h2)
+    - list
+      - listitem
+        - text "Item 29.1"
+        - link "open" [e338] → /item/29/1
+      - … 11 more listitem like the one above [region r30]
+    - text "Section 29 footer text"
+  - region "Section 30"
+    - heading "Section 30" (h2)
+    - list
+      - listitem
+        - text "Item 30.1"
+        - link "open" [e350] → /item/30/1
+      - … 11 more listitem like the one above [region r31]
+    - text "Section 30 footer text"
+  - … 470 more region like the one above [region r33]

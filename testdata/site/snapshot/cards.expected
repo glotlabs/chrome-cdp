@@ -1,0 +1,28 @@
+# Expected snapshot of cards.html (plan 16, 16.3: a big page of 60 alike
+# cards). Lines must appear in this order and at this depth (other lines
+# may come between); [ref] stands for any ref. A line starting with ! is
+# text no line may contain. Without --fold or --budget nothing folds, and
+# the list collapses after 30 cards as in v1.
+- main
+  - heading "Products" (h1)
+  - status "Cart: empty"
+  - form "Filters"
+  - list "Products" [ref]
+    - listitem
+      - img "Mug 1"
+      - link "Mug 1" [ref] → /products/1
+      - text "Stoneware, 250 ml, dishwasher safe"
+      - text "15 €"
+      - text "★ 3.5 · 13 reviews"
+      - button "Add to cart" [ref]
+    - listitem
+      - link "Teapot 2" [ref] → /products/2
+    - listitem
+      - link "Jug 30" [ref] → /products/30
+    - … 30 more listitem (use --scope [ref] --all)
+  - navigation "Pages"
+    - button "Next" [ref]
+- contentinfo "© 2026 Acme"
+!like the one above
+!region r
+!Mug 31

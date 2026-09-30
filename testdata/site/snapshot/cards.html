@@ -1,0 +1,52 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Products – Acme</title>
+<style>
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; list-style: none; padding: 0; }
+  .card { border: 1px solid #ccc; padding: .5rem; }
+</style>
+<header>
+  <a href="/">Acme</a>
+  <nav aria-label="Main">
+    <a href="/pricing">Pricing</a>
+    <a href="/docs">Docs</a>
+  </nav>
+</header>
+<main>
+  <h1>Products</h1>
+  <p id="cart" role="status">Cart: empty</p>
+  <form aria-label="Filters">
+    <label><input type="checkbox" name="stock"> In stock</label>
+    <label><input type="checkbox" name="sale"> On sale</label>
+    <label>Sort <select name="sort"><option>Price</option><option>Name</option></select></label>
+  </form>
+  <!-- 60 cards of one shape: a photo, a link, a description, a price, a rating and a button (plan 16, 16.3). -->
+  <ul class="grid" aria-label="Products" id="grid"></ul>
+  <nav aria-label="Pages">
+    <a href="?page=1" aria-current="page">1</a>
+    <a href="?page=2">2</a>
+    <button type="button">Next</button>
+  </nav>
+</main>
+<footer>© 2026 Acme</footer>
+<script>
+  const kinds = ['Mug', 'Teapot', 'Bowl', 'Plate', 'Cup', 'Jug'];
+  const grid = document.getElementById('grid');
+  const photo = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="60"><rect width="80" height="60" fill="#ddd"/></svg>');
+  const cart = document.getElementById('cart');
+  for (let i = 1; i <= 60; i++) {
+    const name = kinds[(i - 1) % kinds.length] + ' ' + i;
+    const li = document.createElement('li');
+    li.className = 'card';
+    li.innerHTML = '<img alt="' + name + '" width="80" height="60" src="' + photo + '">' +
+      '<a href="/products/' + i + '">' + name + '</a>' +
+      '<p>Stoneware, ' + (200 + (i % 4) * 50) + ' ml, dishwasher safe</p>' +
+      '<p>' + (8 + (i * 7) % 30) + ' €</p>' +
+      '<p>★ ' + (3 + (i % 3) / 2) + ' · ' + (10 + i * 3) + ' reviews</p>' +
+      '<button type="button">Add to cart</button>';
+    li.querySelector('button').addEventListener('click', () => {
+      cart.textContent = 'Cart: ' + name;
+    });
+    grid.append(li);
+  }
+</script>

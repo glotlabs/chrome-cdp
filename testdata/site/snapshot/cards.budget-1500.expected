@@ -1,0 +1,19 @@
+# Expected `snapshot --budget 1500` of cards.html (plan 16, 16.3): the
+# cards that fit in 1,500 tokens (characters ÷ 4), then one line for the
+# rest; the rest of the page as it is.
+- main
+  - heading "Products" (h1)
+  - form "Filters"
+    - checkbox "In stock" [ref] unchecked
+  - list "Products"
+    - listitem
+      - link "Mug 1" [ref] → /products/1
+    - listitem
+      - link "Teapot 2" [ref] → /products/2
+    - listitem
+      - link "Jug 24" [ref] → /products/24
+    - … 36 more listitem like the one above [region r2]
+  - navigation "Pages"
+    - button "Next" [ref]
+- contentinfo "© 2026 Acme"
+!Mug 25

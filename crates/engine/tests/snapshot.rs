@@ -20,8 +20,8 @@ use std::time::{Duration, Instant};
 
 use browser::Host;
 use engine::{
-    DEFAULT_ENGINE, Engine, NavigateRequest, Navigation, OpenRequest, SnapshotEngine,
-    SnapshotRequest, TabCloseRequest, TabNewRequest, WaitUntil, World,
+    Action, ActionRequest, Button, DEFAULT_ENGINE, Engine, NavigateRequest, Navigation,
+    OpenRequest, SnapshotEngine, SnapshotRequest, TabCloseRequest, TabNewRequest, WaitUntil, World,
 };
 use fixtures::Fixtures;
 use protocol::schema::{SnapshotData, SnapshotNode};
@@ -44,6 +44,8 @@ const CORPUS: &[&str] = &[
     "article",
     "big-app",
     "huge",
+    // Plan 16's; last, so the tabs of plan 04's goldens stay as they were.
+    "cards",
 ];
 
 /// The `-i` snapshot of the big app fixture must stay under this many
@@ -840,6 +842,315 @@ async fn snapshot_latency_benchmark() {
                 at(95)
             );
         }
+    }
+}
+
+/// `snapshot --fold` or `--budget N` (plan 16, 16.3).
+fn folded(fold: bool, budget: Option<usize>) -> SnapshotRequest {
+    SnapshotRequest {
+        fold,
+        budget,
+        ..request()
+    }
+}
+
+/// Estimated tokens, as `--budget` counts them: characters ÷ 4.
+fn estimated(text: &str) -> usize {
+    text.chars().count().div_ceil(4)
+}
+
+/// The refs (`e12`) and regions (`r4`) a snapshot's text shows.
+fn refs_and_regions(text: &str) -> (Vec<String>, Vec<String>) {
+    let refs = regex::Regex::new(r"\[(e\d+)\]").unwrap();
+    let regions = regex::Regex::new(r"\[region (r\d+)[:\]]").unwrap();
+    let all = |re: &regex::Regex| {
+        let mut found: Vec<String> = re.captures_iter(text).map(|c| c[1].to_owned()).collect();
+        found.dedup();
+        found
+    };
+    (all(&refs), all(&regions))
+}
+
+/// The folded snapshots of the corpus match their golden files and
+/// `.expected` files, and a budget is kept.
+#[tokio::test(flavor = "multi_thread")]
+async fn folds_and_budgets_meet_their_goldens() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path).await;
+    let cases: &[(&str, &str, bool, Option<usize>)] = &[
+        ("cards", "cards.fold", true, None),
+        ("cards", "cards.budget-1500", false, Some(1500)),
+        ("huge", "huge.budget-4000", false, Some(4000)),
+    ];
+    let mut problems = Vec::new();
+    for &(page, name, fold, budget) in cases {
+        new_tab(&engine, &site.url(&format!("/snapshot/{page}.html"))).await;
+        let output = snapshot(&engine, folded(fold, budget)).await;
+        let text = normalize(&output.text, site);
+        problems.extend(check_golden(name, &text));
+        if let Ok(expected) = std::fs::read_to_string(corpus_dir().join(format!("{name}.expected")))
+        {
+            let (score, misses) = score(&expected, &comparable(&text));
+            if !score.perfect() {
+                problems.push(format!("{name}: {}", misses.join("\n  ")));
+            }
+        }
+        if let Some(budget) = budget {
+            let tokens = estimated(&output.text);
+            if tokens > budget {
+                problems.push(format!("{name}: {tokens} tokens over {budget}"));
+            }
+        }
+        eprintln!(
+            "{name}: {} tokens (the snapshot without folding: see {page}.txt)",
+            estimated(&output.text)
+        );
+        close_tab(&engine).await;
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n\n"));
+}
+
+/// `--budget 2000` on every corpus page: at most 2,000 estimated tokens
+/// where the stubs fit, and every ref and region it shows works.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_budget_fits_every_corpus_page_and_all_it_shows_works() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path).await;
+    let mut problems = Vec::new();
+    for page in CORPUS {
+        new_tab(&engine, &site.url(&format!("/snapshot/{page}.html"))).await;
+        let output = snapshot(&engine, folded(false, Some(2000))).await;
+        let tokens = estimated(&output.text);
+        if tokens > 2000 {
+            problems.push(format!("{page}: {tokens} tokens:\n{}", output.text));
+        }
+        let (refs, regions) = refs_and_regions(&output.text);
+        for reference in &refs {
+            if let Err(e) = engine
+                .call_on_ref(
+                    None,
+                    reference,
+                    true,
+                    "function () { return this.nodeType; }",
+                    Duration::from_millis(TIMEOUT_MS),
+                )
+                .await
+            {
+                problems.push(format!("{page}: {reference}: {}", e.to_text()));
+            }
+        }
+        if !regions.is_empty() {
+            let expanded = engine
+                .snapshot(SnapshotRequest {
+                    expand: regions.clone(),
+                    ..folded(false, Some(2000))
+                })
+                .await;
+            match expanded {
+                Ok(out) => {
+                    for region in &regions {
+                        if !out.text.contains(&format!("\nregion {region}\n")) {
+                            problems.push(format!("{page}: --expand {region} shows nothing"));
+                        }
+                    }
+                }
+                Err(e) => problems.push(format!("{page}: --expand: {}", e.to_text())),
+            }
+        }
+        eprintln!(
+            "{page:<13} {tokens:>5} tokens, {} refs, {} regions",
+            refs.len(),
+            regions.len()
+        );
+        close_tab(&engine).await;
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n\n"));
+}
+
+/// The lines of `text` after the header, without indentation, `region`
+/// labels or stubs; the regions of its stubs.
+fn content(text: &str) -> (Vec<String>, Vec<String>) {
+    let stub = regex::Regex::new(r"\[region (r\d+)[:\]]").unwrap();
+    let mut lines = Vec::new();
+    let mut regions = Vec::new();
+    for line in text.lines().skip(1) {
+        if line.starts_with("region r") {
+            continue;
+        }
+        match stub.captures(line) {
+            // A region's own line comes back with it.
+            Some(c) => regions.push(c[1].to_owned()),
+            None => lines.push(line.trim_start().to_owned()),
+        }
+    }
+    (lines, regions)
+}
+
+/// Every stub, expanded and put together with what is shown, gives the
+/// whole page; regions keep their ids and die with the page; the ref of a
+/// folded card still clicks it.
+#[tokio::test(flavor = "multi_thread")]
+async fn expanding_every_stub_gives_the_whole_page() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path).await;
+    let url = site.url("/snapshot/cards.html");
+    new_tab(&engine, &url).await;
+    let all = |fold, budget| SnapshotRequest {
+        all: true,
+        ..folded(fold, budget)
+    };
+    let full = snapshot(&engine, all(false, None)).await;
+    let (mut want, none) = content(&full.text);
+    assert!(none.is_empty());
+    want.sort();
+
+    for (fold, budget) in [(true, None), (false, Some(1500)), (false, Some(300))] {
+        let first = snapshot(&engine, all(fold, budget)).await;
+        let again = snapshot(&engine, all(fold, budget)).await;
+        assert_eq!(first.text, again.text, "regions keep their ids");
+        let (mut got, mut queue) = content(&first.text);
+        assert!(!queue.is_empty(), "{fold} {budget:?}: nothing folded");
+        while let Some(region) = queue.pop() {
+            let out = snapshot(
+                &engine,
+                SnapshotRequest {
+                    expand: vec![region],
+                    ..all(fold, budget)
+                },
+            )
+            .await;
+            let (lines, regions) = content(&out.text);
+            got.extend(lines);
+            queue.extend(regions);
+        }
+        got.sort();
+        assert_eq!(got, want, "--fold {fold}, --budget {budget:?}");
+    }
+
+    // A folded card's ref, from the snapshot before, still clicks it.
+    let data: SnapshotData = serde_json::from_value(full.data.clone()).unwrap();
+    let button = find_card_button(&data.nodes, "Bowl 45").expect("card 45's button");
+    let fold = snapshot(&engine, folded(true, None)).await;
+    assert!(!fold.text.contains("Bowl 45"), "{}", fold.text);
+    engine
+        .act(ActionRequest {
+            action: Action::Click {
+                locator: button.clone(),
+                button: Button::Left,
+                count: 1,
+                modifiers: Vec::new(),
+                position: None,
+                force: false,
+                dblclick: false,
+            },
+            tab: None,
+            strict_refs: true,
+            testid_attribute: None,
+            timeout_ms: TIMEOUT_MS,
+            no_wait_after: false,
+            snap: false,
+            max_chars: 20_000,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("click {button}: {}", e.to_text()));
+    let cart = eval(&engine, "document.getElementById('cart').textContent").await;
+    assert_eq!(cart, "Cart: Bowl 45");
+
+    // Regions are the tab's, and a new document clears them.
+    let (_, regions) = refs_and_regions(&fold.text);
+    let region = regions.first().unwrap().clone();
+    let expand = |region: &str| SnapshotRequest {
+        expand: vec![region.to_owned()],
+        ..request()
+    };
+    snapshot(&engine, expand(&region)).await;
+    let err = engine.snapshot(expand("r999")).await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::RefStale, "{}", err.to_text());
+    assert_eq!(err.message, "tab t2 has no region r999");
+    goto(&engine, &url).await;
+    let err = engine.snapshot(expand(&region)).await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::RefStale, "{}", err.to_text());
+    assert!(
+        err.message.contains("from an earlier page"),
+        "{}",
+        err.message
+    );
+    let err = engine
+        .snapshot(SnapshotRequest {
+            scope: Some("css=main".into()),
+            ..expand(&region)
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::BadArgs, "{}", err.to_text());
+}
+
+/// The ref of the button in the card whose link is `name`.
+fn find_card_button(nodes: &[SnapshotNode], name: &str) -> Option<String> {
+    for node in nodes {
+        if node.role == "listitem" && node.children.iter().any(|c| c.name == name) {
+            return node
+                .children
+                .iter()
+                .find(|c| c.role == "button")
+                .and_then(|c| c.reference.clone());
+        }
+        if let Some(found) = find_card_button(&node.children, name) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// `--diff` does not fold; `-i` folds what it kept.
+#[tokio::test(flavor = "multi_thread")]
+async fn diff_and_interactive_with_folding() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path).await;
+    goto(&engine, &site.url("/snapshot/cards.html")).await;
+    let diff = |fold, budget| SnapshotRequest {
+        diff: true,
+        ..folded(fold, budget)
+    };
+    let plain = snapshot(&engine, diff(false, None)).await;
+    let first = snapshot(&engine, diff(true, Some(100))).await;
+    assert!(!plain.text.contains("region r"), "{}", plain.text);
+    assert!(!first.text.contains("region r"), "{}", first.text);
+    assert_eq!(
+        first.text.lines().nth(1),
+        Some("(no changes since the last snapshot)")
+    );
+    eval(
+        &engine,
+        "document.querySelector('#grid li:nth-child(20) a').textContent = 'Renamed'; true",
+    )
+    .await;
+    let changed = snapshot(&engine, diff(true, Some(100))).await;
+    assert!(
+        changed.text.contains("link \"Renamed\""),
+        "{}",
+        changed.text
+    );
+
+    let interactive = |budget| SnapshotRequest {
+        interactive: true,
+        ..folded(false, budget)
+    };
+    let full = snapshot(&engine, interactive(None)).await;
+    let small = snapshot(&engine, interactive(Some(300))).await;
+    assert!(estimated(&small.text) <= 300, "{}", small.text);
+    assert!(small.text.contains("[region r"), "{}", small.text);
+    // What -i keeps, shown or folded; nothing else.
+    for line in small.text.lines().skip(1) {
+        let line = line.split(" [region r").next().unwrap();
+        assert!(
+            line.contains("like the one above") || full.text.contains(line.trim_start()),
+            "{line}"
+        );
     }
 }
 

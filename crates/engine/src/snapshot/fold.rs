@@ -114,7 +114,7 @@ pub(crate) fn arrange(
         fit(groups, budget, frame, reg.regions);
         if !folding.repeats {
             // Runs folded to fit; show what still fits of them.
-            fill(groups, budget, frame, reg.regions);
+            fill(groups, budget, frame, collapse_lists, reg.regions);
             for group in groups.iter_mut() {
                 number(group, 0, reg.regions);
             }
@@ -160,9 +160,15 @@ fn siblings<'a>(groups: &'a mut [Vec<Node>], group: usize, path: &[usize]) -> &'
 }
 
 /// `--budget` without `--fold`: shows the siblings of each run again, one
-/// at a time, while the text fits `budget` and the list stays within
-/// [`LIST_LIMIT`]: outer runs first, then in page order.
-fn fill(groups: &mut [Vec<Node>], budget: usize, frame: Frame<'_>, regions: &mut Regions) {
+/// at a time, while the text fits `budget` and (unless `--all`) the list
+/// stays within [`LIST_LIMIT`]: outer runs first, then in page order.
+fn fill(
+    groups: &mut [Vec<Node>],
+    budget: usize,
+    frame: Frame<'_>,
+    limit: bool,
+    regions: &mut Regions,
+) {
     let mut full: HashSet<u32> = HashSet::new();
     loop {
         let mut stubs = Vec::new();
@@ -192,7 +198,7 @@ fn fill(groups: &mut [Vec<Node>], budget: usize, frame: Frame<'_>, regions: &mut
             .iter()
             .filter(|n| n.role == role && n.fold.is_none())
             .count();
-        let fits = shown <= LIST_LIMIT && estimate(groups, frame) <= budget;
+        let fits = (!limit || shown <= LIST_LIMIT) && estimate(groups, frame) <= budget;
         let list = siblings(groups, stub.group, &stub.path);
         if fits {
             number(std::slice::from_mut(&mut list[at]), depth, regions);
