@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Locator filters</title>
+</head>
+<body>
+<h1>Invoices</h1>
+<table id="invoices" aria-label="Invoices">
+  <thead>
+    <tr id="head"><th>Invoice</th><th>Status</th><th>Actions</th></tr>
+  </thead>
+  <tbody>
+    <tr id="row-1"><td>Invoice 1</td><td>Due</td>
+      <td><a id="open-1" href="#1">Open</a> <button id="del-1">Delete</button></td></tr>
+    <tr id="row-2"><td>Invoice 2</td><td>Paid</td>
+      <td><a id="open-2" href="#2">Open</a></td></tr>
+    <tr id="row-3"><td>Invoice 3</td><td>Due</td>
+      <td><a id="open-3" href="#3">Open</a> <button id="del-3">Delete</button></td></tr>
+    <tr id="row-4"><td>Invoice 4</td><td>Paid</td>
+      <td><a id="open-4" href="#4">Open</a> <button id="del-4">Delete</button>
+        <button id="archive-4">Archive</button></td></tr>
+  </tbody>
+</table>
+
+<div id="toolbar" role="toolbar" aria-label="Tools">
+  <button id="save" class="primary">Save</button>
+  <a id="help" href="#help">Help</a>
+  <button id="cancel">Cancel</button>
+  <a id="docs" href="#docs" class="primary">Docs</a>
+</div>
+
+<ul id="tree">
+  <li id="fruit">Fruit
+    <ul>
+      <li id="apple">Apple</li>
+      <li id="banana">Banana</li>
+    </ul>
+  </li>
+  <li id="veg">Vegetables
+    <ul>
+      <li id="carrot">Carrot</li>
+    </ul>
+  </li>
+</ul>
+</body>
+</html>

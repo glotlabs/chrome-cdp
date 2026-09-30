@@ -1,7 +1,8 @@
 // Evaluates a locator's steps in one frame (plan 04, milestone 4.4). The
 // engine resolves refs and `frame=` itself and sends the rest: each step
 // either finds elements inside the current ones (`A >> B`: B inside A) or
-// filters them (`nth=`, `visible=`, `has-text=`).
+// filters them (`nth=`, `visible=`, `has-text=`, `has-not-text=`, and,
+// with an inner locator, `has=`, `has-not=`, `and=`; `or=` adds to them).
 
 import { INTERACTIVE, activeElement, hiddenForAria, labelsOf, level, nameOf, roleOf, shownName, statesOf, textOf } from './aria';
 import { css } from './css';
@@ -27,7 +28,9 @@ export type Step =
   | { kind: 'testid'; value: string; attribute: string }
   | { kind: 'nth'; index: number }
   | { kind: 'visible'; visible: boolean }
-  | { kind: 'has-text'; text: TextMatch };
+  | { kind: 'has-text'; text: TextMatch }
+  | { kind: 'has-not-text'; text: TextMatch }
+  | { kind: 'has' | 'has-not' | 'and' | 'or'; steps: Step[] };
 
 type Scope = Document | Element;
 
@@ -117,9 +120,20 @@ function find(step: Step, scope: Scope, texts: Texts): Element[] {
  * document order. With no steps, `root` itself. */
 export function query(steps: Step[], root: Element | null): Element[] {
   if (root && !root.isConnected) return [];
-  const top: Scope = root || document;
-  const texts = new Texts();
+  return run(steps, root || document, new Texts());
+}
+
+/** The elements an inner locator matches in each of `scopes`, as a set. */
+function inScopes(steps: Step[], scopes: Scope[], texts: Texts): Set<Element> {
+  const out = new Set<Element>();
+  for (const scope of scopes) for (const el of run(steps, scope, texts)) out.add(el);
+  return out;
+}
+
+function run(steps: Step[], top: Scope, texts: Texts): Element[] {
   let current: Scope[] = [top];
+  // Where the last finder step looked: `and=` and `or=` look there too.
+  let scopes: Scope[] = [top];
   for (const step of steps) {
     const els = current.filter((s): s is Element => s instanceof Element);
     switch (step.kind) {
@@ -131,14 +145,31 @@ export function query(steps: Step[], root: Element | null): Element[] {
       case 'visible':
         current = els.filter((el) => visible(el) === step.visible);
         break;
-      case 'has-text': {
+      case 'has-text':
+      case 'has-not-text': {
         const test = matcher(step.text);
-        current = els.filter((el) => test(texts.of(el)));
+        const want = step.kind === 'has-text';
+        current = els.filter((el) => test(texts.of(el)) === want);
         break;
       }
+      case 'has':
+      case 'has-not': {
+        const want = step.kind === 'has';
+        current = els.filter((el) => (run(step.steps, el, texts).length > 0) === want);
+        break;
+      }
+      case 'and': {
+        const also = inScopes(step.steps, scopes, texts);
+        current = els.filter((el) => also.has(el));
+        break;
+      }
+      case 'or':
+        current = inOrder([...els, ...inScopes(step.steps, scopes, texts)], top);
+        break;
       default: {
         const found: Element[] = [];
         for (const scope of current) found.push(...find(step, scope, texts));
+        scopes = current;
         current = current.length > 1 ? inOrder(found, top) : found;
       }
     }
@@ -188,5 +219,12 @@ export function one(steps: Step[], root: Element | null): Element | { json: stri
   const found = query(steps, root);
   if (found.length === 1) return found[0];
   const els = found.slice(0, LISTED);
-  return { json: JSON.stringify({ count: found.length, candidates: els.map(describe) }), els };
+  const out: { count: number; candidates: Candidate[]; beforeHas?: number } = {
+    count: found.length, candidates: els.map(describe),
+  };
+  // None found by a last `has=`: how many it had to choose from.
+  if (found.length === 0 && steps.length > 1 && steps[steps.length - 1].kind === 'has') {
+    out.beforeHas = query(steps.slice(0, -1), root).length;
+  }
+  return { json: JSON.stringify(out), els };
 }

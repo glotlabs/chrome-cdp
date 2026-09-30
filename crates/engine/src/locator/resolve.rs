@@ -125,6 +125,10 @@ struct Candidate {
 struct NotOne {
     count: usize,
     candidates: Vec<Candidate>,
+    /// None matched a last `has=`: how many elements the steps before
+    /// it found.
+    #[serde(default, rename = "beforeHas")]
+    before_has: Option<usize>,
 }
 
 /// How many elements [`Engine::call_on`] wants.
@@ -608,19 +612,38 @@ impl Engine {
 
     /// No element matches.
     pub(crate) fn not_found(&self, page: &Page, locator: &Locator) -> ErrorInfo {
-        let mut info = ErrorInfo::new(ErrorKind::NotFound, format!("no element matches {locator}"))
+        self.none_found(page, locator, None)
+    }
+
+    /// No element matches; `before_has` is how many the steps before a
+    /// last `has=` found, when the bundle said.
+    fn none_found(&self, page: &Page, locator: &Locator, before_has: Option<usize>) -> ErrorInfo {
+        let message = match (before_has, locator.without_last(), locator.steps.last()) {
+            (Some(n), Some(before), Some(Step::Has(inner))) if n > 0 => {
+                let inner = &inner.source;
+                if n == 1 {
+                    format!("`{before}` matched 1 element; it has no `{inner}`")
+                } else {
+                    format!(
+                        "`{before}` matched {} elements; none has `{inner}`",
+                        protocol::format::thousands(n)
+                    )
+                }
+            }
+            _ => format!("no element matches {locator}"),
+        };
+        let mut details =
+            json!({ "locator": locator.to_string(), "count": 0, "tab": tab_name(page.id) });
+        if let Some(n) = before_has {
+            details["before_has"] = json!(n);
+        }
+        let mut info = ErrorInfo::new(ErrorKind::NotFound, message)
             .hint(
                 Hint::run(Cmd::new("snapshot").scoped(&self.session))
                     .why("shows the page; use a ref from it"),
             )
-            .details(
-                json!({ "locator": locator.to_string(), "count": 0, "tab": tab_name(page.id) }),
-            );
-        if locator
-            .in_frame_steps()
-            .iter()
-            .any(|s| matches!(s, Step::Text { .. }))
-        {
+            .details(details);
+        if has_text_step(locator.in_frame_steps()) {
             info = info.note("note", "text= matches visible elements only");
         }
         info
@@ -647,7 +670,7 @@ impl Engine {
         };
         let not_one: NotOne = serde_json::from_str(&json).unwrap_or_default();
         if not_one.count == 0 {
-            return self.not_found(page, locator);
+            return self.none_found(page, locator, not_one.before_has);
         }
         let refs: Vec<Option<String>> = running
             .tabs
@@ -805,6 +828,13 @@ pub(crate) async fn read_listed(
     Ok((json, keys))
 }
 
+/// Whether `steps`, or an inner locator of theirs, have a `text=` step.
+fn has_text_step(steps: &[Step]) -> bool {
+    steps.iter().any(|s| {
+        matches!(s, Step::Text { .. }) || s.inner().is_some_and(|i| has_text_step(&i.steps))
+    })
+}
+
 fn steps_argument(locator: &Locator) -> runtime::CallArgument {
     value(serde_json::to_value(locator.in_frame_steps()).unwrap_or(Value::Null))
 }
@@ -907,6 +937,7 @@ mod tests {
         NotOne {
             count: 2,
             candidates: vec![item("Apples"), item("Bananas")],
+            before_has: None,
         }
     }
 

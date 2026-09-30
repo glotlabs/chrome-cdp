@@ -108,11 +108,13 @@ commands you ran into the most robust locator that found each element.
 | `text=Sign in`, `text="Sign in"`, `text=/sign.?in/i` | the innermost visible element with that text: a case-insensitive part, the whole text when quoted, or a regex |
 | `role=button[name="Save"]` | an ARIA role and accessible name (quoted: exact), with `[checked]`, `[disabled]`, `[expanded]`, `[level=2]`, `[pressed]`, `[selected]`, `[include-hidden]` |
 | `label=Email`, `placeholder=…`, `alt=…`, `title=…`, `testid=…` | by label, attribute, or test id (`data-testid`; `testid_attribute` in the config changes it) |
-| `A >> B` | B inside A; `>> nth=0` (`-1` is the last), `>> visible=true`, `>> has-text=…` filter |
+| `A >> B` | B inside A; `>> nth=0` (`-1` is the last), `>> visible=true`, `>> has-text=…`, `>> has-not-text=…` filter |
+| `A >> has=B`, `A >> has-not=B` | the elements of A with (without) a descendant B finds, searched inside each |
+| `A >> and=B`, `A >> or=B` | the elements of A that B also finds; A's plus B's, in page order |
 | `frame=payment >> #card` | inside an iframe, named by its name, a part of its URL, or its ref (`e8 >> #card` also works) |
 
 Text values (`text=`, `name=`, `label=`, `placeholder=`, `alt=`,
-`title=`, `has-text=`) match a case-insensitive part of the text;
+`title=`, `has-text=`, `has-not-text=`) match a case-insensitive part of the text;
 `"quoted"` matches the whole text, case-sensitive; `/regex/i` is a regex.
 Whitespace is collapsed. A bare word is not a locator: `h1` is an error
 that suggests `css=h1` or `text=h1`.
@@ -127,6 +129,35 @@ chrome-cdp click '#list >> text=Delete >> nth=-1'
 chrome-cdp fill 'frame=payment >> placeholder=Card number' 4242424242424242
 chrome-cdp click 'role=row >> has-text=Invoice 12 >> role=button[name="Delete"]'
 ```
+
+### Inner locators: `has=`, `has-not=`, `and=`, `or=`
+
+These four take a whole locator, as Playwright's `filter({ has })`,
+`filter({ hasNot })`, `and()` and `or()` do. Like the other filters, they
+never come first.
+
+```sh
+# The rows that have a Delete button, and those that have none.
+chrome-cdp count 'role=row >> has=role=button[name=Delete]'
+chrome-cdp count 'role=row >> has-not=role=button[name=Delete]'
+# The Save button, however it is marked up.
+chrome-cdp click 'role=button >> and=testid=save'
+# Whichever of the two the page shows.
+chrome-cdp click 'role=button[name="Accept"] >> or=role=link[name="Accept"]'
+```
+
+- The inner locator runs to the next `>>`. Quote it when it has a `>>`
+  of its own: `has="role=button >> visible=true"`; inside the quotes,
+  `\"` and `\\` escape.
+- `has=` and `has-not=` search inside each element, as if it were the
+  start of the chain. `and=` and `or=` search where the last finder step
+  searched: in `role=row >> role=button >> or=role=link`, the links of
+  the same rows. With no finder before them (`e12 >> or=…`), they search
+  the chain's start.
+- An inner locator cannot start with a ref or `frame=` (put those first),
+  and they nest at most 4 deep.
+- When a last `has=` keeps nothing, the error says so: `` `role=row`
+  matched 12 elements; none has `role=button[name=Delete]` ``.
 
 ### One match, or an error that lists them
 

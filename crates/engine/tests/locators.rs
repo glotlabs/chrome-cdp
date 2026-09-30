@@ -90,6 +90,11 @@ async fn one(engine: &Engine, locator: &str) -> Result<Value, ErrorInfo> {
 }
 
 async fn snapshot(engine: &Engine) -> SnapshotData {
+    snapshot_with(engine, false).await
+}
+
+/// A snapshot; with `all_refs`, every node has a ref.
+async fn snapshot_with(engine: &Engine, all_refs: bool) -> SnapshotData {
     let output = engine
         .snapshot(SnapshotRequest {
             tab: None,
@@ -97,7 +102,7 @@ async fn snapshot(engine: &Engine) -> SnapshotData {
             scope: None,
             depth: None,
             diff: false,
-            all_refs: false,
+            all_refs,
             all: false,
             text_limit: 200,
             no_text: false,
@@ -431,6 +436,122 @@ async fn mistakes_in_locators_are_bad_locator_errors() {
         "{}",
         err.message
     );
+    engine.close().await;
+}
+
+/// `has=`, `has-not=`, `has-not-text=`, `and=` and `or=` (plan 14,
+/// milestone 14.1) on `locators/filters.html`: a table whose rows have
+/// Delete buttons or not, a toolbar of buttons and links, nested lists.
+#[tokio::test]
+async fn filters_and_combinators_find_their_elements() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "engine-locators-filters").await;
+    goto(&engine, &site.url("/locators/filters.html")).await;
+    let table: &[(&str, &[&str])] = &[
+        // has=: a descendant the inner locator finds, from the element.
+        (
+            "role=row >> has=role=button[name=Delete]",
+            &["row-1", "row-3", "row-4"],
+        ),
+        ("role=row >> has=\"role=button >> nth=1\"", &["row-4"]),
+        ("role=row >> has=#toolbar", &[]),
+        ("#tree li >> has=css=li", &["fruit", "veg"]),
+        ("#tree li >> has=text=Apple", &["fruit"]),
+        (
+            "#tree > li >> has=\"css=ul >> has=\\\"text=Banana\\\"\"",
+            &["fruit"],
+        ),
+        // has-not= and has-not-text=.
+        (
+            "role=row >> has-not=role=button[name=Delete]",
+            &["head", "row-2"],
+        ),
+        ("#tree li >> has-not=css=li", &["apple", "banana", "carrot"]),
+        ("role=row >> has-not-text=Paid", &["head", "row-1", "row-3"]),
+        ("role=row >> has-not-text=/invoice \\d/i", &["head"]),
+        // and=: in the scopes of the last finder step.
+        ("#toolbar >> css=button >> and=.primary", &["save"]),
+        ("role=link >> and=.primary", &["docs"]),
+        (
+            "role=row >> has-text=Invoice 4 >> role=button >> and=text=Archive",
+            &["archive-4"],
+        ),
+        ("#toolbar >> role=button >> and=#del-1", &[]),
+        // or=: added in document order, once each.
+        (
+            "#toolbar >> role=button >> or=role=link",
+            &["save", "help", "cancel", "docs"],
+        ),
+        (
+            "#toolbar >> role=button >> or=role=link >> nth=1",
+            &["help"],
+        ),
+        ("#save >> or=#save", &["save"]),
+        ("#docs >> or=#nope", &["docs"]),
+        // Inside each row: the toolbar's buttons and links stay out.
+        (
+            "role=row >> role=button >> or=role=link",
+            &[
+                "open-1",
+                "del-1",
+                "open-2",
+                "open-3",
+                "del-3",
+                "open-4",
+                "del-4",
+                "archive-4",
+            ],
+        ),
+        (
+            "role=row >> has-text=Invoice 2 >> role=button >> or=role=link",
+            &["open-2"],
+        ),
+    ];
+    let options = LocateOptions::default();
+    let mut failures = Vec::new();
+    for (locator, want) in table {
+        match all(&engine, locator, &options).await {
+            Ok(got) if got == json!(want) => {}
+            Ok(got) => failures.push(format!("{locator}: got {got}, want {want:?}")),
+            Err(e) => failures.push(format!("{locator}: {}", e.to_text())),
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+
+    // With no finder before it, or= looks in the chain's root.
+    let snap = snapshot_with(&engine, true).await;
+    let invoices = find_ref(&snap.nodes, "table", "Invoices").unwrap();
+    assert_eq!(
+        all(&engine, &format!("{invoices} >> or=role=link"), &options)
+            .await
+            .unwrap(),
+        json!(["invoices", "open-1", "open-2", "open-3", "open-4"])
+    );
+
+    // A last has= that keeps nothing says what it had to choose from.
+    let err = one(&engine, "role=row >> has=role=button[name=Remove]")
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::NotFound, "{}", err.to_text());
+    assert_eq!(
+        err.message,
+        "`role=row` matched 5 elements; none has `role=button[name=Remove]`"
+    );
+    let err = one(&engine, "#row-2 >> has=\"role=button >> visible=true\"")
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err.message,
+        "`#row-2` matched 1 element; it has no `role=button >> visible=true`"
+    );
+    let err = one(&engine, "#nope >> has=role=button").await.unwrap_err();
+    assert_eq!(err.message, "no element matches #nope >> has=role=button");
+    // An inner locator's own mistakes are BadLocator errors too.
+    let err = all(&engine, "role=row >> has=css=a[", &options)
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::BadLocator, "{}", err.to_text());
     engine.close().await;
 }
 

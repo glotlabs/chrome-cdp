@@ -6,8 +6,16 @@
 //! only), `frame=…` (leading only), a finder (`css=`, `xpath=`, `text=`,
 //! `role=`, `label=`, `placeholder=`, `alt=`, `title=`, `testid=`) or a
 //! filter of what the steps before it found (`nth=`, `visible=`,
-//! `has-text=`). Bare forms: `#id`, `.cls` and `[attr]` are CSS, `//…` is
-//! XPath, and a quoted string is exact text.
+//! `has-text=`, `has-not-text=`, and, taking a whole inner locator,
+//! `has=`, `has-not=`, `and=`, `or=`). Bare forms: `#id`, `.cls` and
+//! `[attr]` are CSS, `//…` is XPath, and a quoted string is exact text.
+//!
+//! An inner locator (plan 14, milestone 14.1) runs to the next `>>`, or is
+//! quoted when it holds one: `.row >> has="role=button >> visible=true"`;
+//! inside the quotes, `\"` and `\\` escape. It cannot start with a ref
+//! or `frame=`, and nests at most [`MAX_DEPTH`] deep. `has=` looks inside
+//! each element; `and=` and `or=` look in the scopes the last finder step
+//! searched (the chain's root if none did).
 //!
 //! Text values (`text=`, `name=`, `label=`, …) match a case-insensitive
 //! substring, the whole text when quoted (`"Sign in"`), or a regex
@@ -104,16 +112,52 @@ pub(crate) enum Step {
     Nth { index: i64 },
     Visible { visible: bool },
     HasText { text: TextMatch },
+    HasNotText { text: TextMatch },
+    Has(Inner),
+    HasNot(Inner),
+    And(Inner),
+    Or(Inner),
+}
+
+/// The inner locator of `has=`, `has-not=`, `and=` and `or=`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct Inner {
+    pub(crate) steps: Vec<Step>,
+    /// As typed, without its quotes (what messages show).
+    #[serde(skip)]
+    pub(crate) source: String,
 }
 
 impl Step {
-    /// Whether the step narrows down what came before instead of finding
-    /// elements.
+    /// Whether the step narrows down (or, for `or=`, adds to) what came
+    /// before instead of finding elements inside it.
     pub(crate) fn is_filter(&self) -> bool {
         matches!(
             self,
-            Self::Nth { .. } | Self::Visible { .. } | Self::HasText { .. }
+            Self::Nth { .. }
+                | Self::Visible { .. }
+                | Self::HasText { .. }
+                | Self::HasNotText { .. }
+                | Self::Has(_)
+                | Self::HasNot(_)
+                | Self::And(_)
+                | Self::Or(_)
         )
+    }
+
+    /// The inner locator's, if it has one.
+    pub(crate) fn inner(&self) -> Option<&Inner> {
+        match self {
+            Self::Has(i) | Self::HasNot(i) | Self::And(i) | Self::Or(i) => Some(i),
+            _ => None,
+        }
+    }
+
+    fn inner_mut(&mut self) -> Option<&mut Inner> {
+        match self {
+            Self::Has(i) | Self::HasNot(i) | Self::And(i) | Self::Or(i) => Some(i),
+            _ => None,
+        }
     }
 }
 
@@ -152,19 +196,36 @@ impl Locator {
     #[must_use]
     pub fn with_testid_attribute(mut self, attribute: Option<&str>) -> Self {
         if let Some(attribute) = attribute.map(str::trim).filter(|a| !a.is_empty()) {
-            for step in &mut self.steps {
-                if let Step::Testid { attribute: a, .. } = step {
-                    attribute.clone_into(a);
-                }
-            }
+            set_testid_attribute(&mut self.steps, attribute);
         }
         self
+    }
+
+    /// The locator without its last step, as typed (`.row` of
+    /// `.row >> has=…`), if it has more than one.
+    pub(crate) fn without_last(&self) -> Option<String> {
+        let parts = split_chain(&self.source).ok()?;
+        (parts.len() > 1 && parts.len() == self.steps.len())
+            .then(|| parts[..parts.len() - 1].join(" >> "))
+    }
+}
+
+fn set_testid_attribute(steps: &mut [Step], attribute: &str) {
+    for step in steps {
+        if let Step::Testid { attribute: a, .. } = step {
+            attribute.clone_into(a);
+        } else if let Some(inner) = step.inner_mut() {
+            set_testid_attribute(&mut inner.steps, attribute);
+        }
     }
 }
 
 /// The kinds a step may name before `=`.
-const KINDS: &str =
-    "css, xpath, text, role, label, placeholder, alt, title, testid, frame, nth, visible, has-text";
+const KINDS: &str = "css, xpath, text, role, label, placeholder, alt, title, testid, frame, nth, \
+                     visible, has-text, has-not-text, has, has-not, and, or";
+
+/// How deep inner locators (`has=`, `and=`, …) may nest.
+pub(crate) const MAX_DEPTH: usize = 4;
 
 /// What every "not a locator" error suggests.
 const FORMS: &str =
@@ -172,6 +233,11 @@ const FORMS: &str =
 
 /// Parses a locator as typed.
 pub fn parse_locator(text: &str) -> Result<Locator, ErrorInfo> {
+    parse_at(text, 0)
+}
+
+/// Parses a locator `depth` inner locators deep.
+fn parse_at(text: &str, depth: usize) -> Result<Locator, ErrorInfo> {
     let source = text.trim();
     if source.is_empty() {
         return Err(bad("the locator is empty", FORMS));
@@ -185,7 +251,7 @@ pub fn parse_locator(text: &str) -> Result<Locator, ErrorInfo> {
                 "join steps with >>, e.g. #list >> text=Delete",
             ));
         }
-        let step = parse_step(part, i)?;
+        let step = parse_step(part, i, depth)?;
         match (&step, steps.last()) {
             (Step::Ref { .. }, Some(_)) => {
                 return Err(bad(
@@ -266,7 +332,7 @@ fn split_chain(text: &str) -> Result<Vec<String>, String> {
     Ok(parts)
 }
 
-fn parse_step(part: &str, index: usize) -> Result<Step, ErrorInfo> {
+fn parse_step(part: &str, index: usize, depth: usize) -> Result<Step, ErrorInfo> {
     if let Some(number) = parse_ref(part) {
         return Ok(Step::Ref { number });
     }
@@ -313,6 +379,13 @@ fn parse_step(part: &str, index: usize) -> Result<Step, ErrorInfo> {
         "has-text" => Step::HasText {
             text: text_value(value, part)?,
         },
+        "has-not-text" => Step::HasNotText {
+            text: text_value(value, part)?,
+        },
+        "has" => Step::Has(inner(value, part, depth)?),
+        "has-not" => Step::HasNot(inner(value, part, depth)?),
+        "and" => Step::And(inner(value, part, depth)?),
+        "or" => Step::Or(inner(value, part, depth)?),
         "label" => Step::Label {
             text: text_value(value, part)?,
         },
@@ -356,6 +429,63 @@ fn parse_step(part: &str, index: usize) -> Result<Step, ErrorInfo> {
             ));
         }
     })
+}
+
+/// The inner locator of `part` (`has=<value>`), `depth` deep.
+fn inner(value: &str, part: &str, depth: usize) -> Result<Inner, ErrorInfo> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(bad(
+            format!("`{part}` has no locator"),
+            "e.g. .row >> has=\"role=button[name=Delete]\"",
+        ));
+    }
+    if depth + 1 > MAX_DEPTH {
+        return Err(bad(
+            format!("`{part}`: inner locators nest at most {MAX_DEPTH} deep"),
+            "split it into steps joined by >>",
+        ));
+    }
+    let source = unquote_inner(value);
+    let locator = parse_at(&source, depth + 1)?;
+    let first = match locator.steps.first() {
+        Some(Step::Ref { number }) => Some(("ref", format!("e{number}"))),
+        Some(Step::Frame { query }) => Some(("frame", format!("frame={query}"))),
+        _ => None,
+    };
+    if let Some((what, first)) = first {
+        return Err(bad(
+            format!("`{part}`: an inner locator cannot be a ref or frame="),
+            format!("put the {what} first: {first} >> …"),
+        ));
+    }
+    Ok(Inner {
+        steps: locator.steps,
+        source: locator.source,
+    })
+}
+
+/// Strips one pair of matching quotes, unescaping only `\\` and the
+/// quote: the inner locator's own escapes (`/a\s+b/`, `\'`) stay.
+fn unquote_inner(value: &str) -> String {
+    for q in ['"', '\''] {
+        if value.len() >= 2 && value.starts_with(q) && value.ends_with(q) {
+            let inner = &value[1..value.len() - 1];
+            let mut out = String::with_capacity(inner.len());
+            let mut chars = inner.chars().peekable();
+            while let Some(c) = chars.next() {
+                match chars.peek() {
+                    Some(&next) if c == '\\' && (next == q || next == '\\') => {
+                        out.push(next);
+                        chars.next();
+                    }
+                    _ => out.push(c),
+                }
+            }
+            return out;
+        }
+    }
+    value.to_owned()
 }
 
 fn example(kind: &str) -> &'static str {
@@ -707,6 +837,82 @@ mod tests {
                 "[data-x=\"a>>b\"] >> nth=0",
                 json!([{"kind": "css", "value": "[data-x=\"a>>b\"]"}, {"kind": "nth", "index": 0}]),
             ),
+            (
+                ".row >> has-not-text=/paid/i",
+                json!([
+                    {"kind": "css", "value": ".row"},
+                    {"kind": "has-not-text", "text": {"mode": "regex", "value": "paid", "flags": "i"}}
+                ]),
+            ),
+            // An inner locator runs to the next `>>`, or is quoted.
+            (
+                ".row >> has=role=button[name=\"Delete\"] >> nth=0",
+                json!([
+                    {"kind": "css", "value": ".row"},
+                    {"kind": "has", "steps": [
+                        {"kind": "role", "role": "button", "name": {"mode": "exact", "value": "Delete"}}
+                    ]},
+                    {"kind": "nth", "index": 0}
+                ]),
+            ),
+            (
+                ".row >> has-not=\"role=button >> visible=true\"",
+                json!([
+                    {"kind": "css", "value": ".row"},
+                    {"kind": "has-not", "steps": [
+                        {"kind": "role", "role": "button"},
+                        {"kind": "visible", "visible": true}
+                    ]}
+                ]),
+            ),
+            (
+                "role=button >> or='role=link >> has-text=\"Home\"'",
+                json!([
+                    {"kind": "role", "role": "button"},
+                    {"kind": "or", "steps": [
+                        {"kind": "role", "role": "link"},
+                        {"kind": "has-text", "text": {"mode": "exact", "value": "Home"}}
+                    ]}
+                ]),
+            ),
+            // `\"` and `\\` unescape; the inner locator's own escapes stay.
+            (
+                "css=li >> and=\"text=\\\"Say \\\\\\\"hi\\\\\\\"\\\" >> nth=0\"",
+                json!([
+                    {"kind": "css", "value": "li"},
+                    {"kind": "and", "steps": [
+                        {"kind": "text", "text": {"mode": "exact", "value": "Say \"hi\""}},
+                        {"kind": "nth", "index": 0}
+                    ]}
+                ]),
+            ),
+            (
+                ".item >> and=\"text=/a\\s+b/ >> text=\\\"x y\\\"\"",
+                json!([
+                    {"kind": "css", "value": ".item"},
+                    {"kind": "and", "steps": [
+                        {"kind": "text", "text": {"mode": "regex", "value": "a\\s+b"}},
+                        {"kind": "text", "text": {"mode": "exact", "value": "x y"}}
+                    ]}
+                ]),
+            ),
+            (
+                "e4 >> or=#other",
+                json!([{"kind": "ref", "number": 4}, {"kind": "or", "steps": [{"kind": "css", "value": "#other"}]}]),
+            ),
+            (
+                ".a >> has=\".b >> has=\\\".c >> has=.d\\\"\"",
+                json!([
+                    {"kind": "css", "value": ".a"},
+                    {"kind": "has", "steps": [
+                        {"kind": "css", "value": ".b"},
+                        {"kind": "has", "steps": [
+                            {"kind": "css", "value": ".c"},
+                            {"kind": "has", "steps": [{"kind": "css", "value": ".d"}]}
+                        ]}
+                    ]}
+                ]),
+            ),
         ];
         for (typed, want) in table {
             if want.is_null() {
@@ -715,6 +921,78 @@ mod tests {
             }
             assert_eq!(steps(typed), want, "{typed}");
         }
+    }
+
+    #[test]
+    fn inner_locators() {
+        let locator = parse_locator(".row >> has=\"testid=del >> nth=0\"")
+            .unwrap()
+            .with_testid_attribute(Some("data-qa"));
+        let inner = locator.steps[1].inner().unwrap();
+        assert_eq!(inner.source, "testid=del >> nth=0");
+        assert_eq!(
+            inner.steps[0],
+            Step::Testid {
+                value: "del".into(),
+                attribute: "data-qa".into()
+            }
+        );
+        assert_eq!(locator.without_last().as_deref(), Some(".row"));
+        assert_eq!(parse_locator(".row").unwrap().without_last(), None);
+
+        // Four deep is the limit.
+        let mut text = ".d".to_owned();
+        for depth in 0..4 {
+            text = format!(
+                ".x{depth} >> has=\"{}\"",
+                text.replace('\\', "\\\\").replace('"', "\\\"")
+            );
+        }
+        assert!(parse_locator(&text).is_ok(), "{text}");
+        let deeper = format!(
+            ".top >> has=\"{}\"",
+            text.replace('\\', "\\\\").replace('"', "\\\"")
+        );
+        let (message, _) = error(&deeper);
+        assert!(
+            message.ends_with(": inner locators nest at most 4 deep"),
+            "{message}"
+        );
+        assert!(message.starts_with("`has=\".d\"`"), "{message}");
+
+        assert_eq!(
+            error(".row >> has=e12"),
+            (
+                "`has=e12`: an inner locator cannot be a ref or frame=".to_owned(),
+                "put the ref first: e12 >> …".to_owned()
+            )
+        );
+        assert_eq!(
+            error(".row >> and=\"frame=pay >> #card\""),
+            (
+                "`and=\"frame=pay >> #card\"`: an inner locator cannot be a ref or frame="
+                    .to_owned(),
+                "put the frame first: frame=pay >> …".to_owned()
+            )
+        );
+        assert_eq!(
+            error("has=.b").0,
+            "`has=.b`: has=.b filters what comes before it, but nothing does"
+        );
+        assert_eq!(
+            error("or=\"#a\" >> #b").0,
+            "`or=\"#a\" >> #b`: or=\"#a\" filters what comes before it, but nothing does"
+        );
+        assert_eq!(error(".row >> has=").0, "`has=` has no locator");
+        assert_eq!(
+            error(".row >> has-not-text=").0,
+            "`has-not-text=` has no text"
+        );
+        assert_eq!(
+            error(".row >> has=\"nth=0\"").0,
+            "`nth=0`: nth=0 filters what comes before it, but nothing does"
+        );
+        assert_eq!(error(".row >> has=Delete").0, "`Delete` is not a locator");
     }
 
     #[test]

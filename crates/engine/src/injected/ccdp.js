@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: dc19a3360288fae9
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 54b2d23bd5c0b23b
 "use strict";
 (() => {
   // src/dom.ts
@@ -717,9 +717,16 @@
   }
   function query(steps, root) {
     if (root && !root.isConnected) return [];
-    const top = root || document;
-    const texts = new Texts();
+    return run(steps, root || document, new Texts());
+  }
+  function inScopes(steps, scopes, texts) {
+    const out = /* @__PURE__ */ new Set();
+    for (const scope of scopes) for (const el of run(steps, scope, texts)) out.add(el);
+    return out;
+  }
+  function run(steps, top, texts) {
     let current = [top];
+    let scopes = [top];
     for (const step of steps) {
       const els = current.filter((s) => s instanceof Element);
       switch (step.kind) {
@@ -731,14 +738,31 @@
         case "visible":
           current = els.filter((el) => visible(el) === step.visible);
           break;
-        case "has-text": {
+        case "has-text":
+        case "has-not-text": {
           const test2 = matcher(step.text);
-          current = els.filter((el) => test2(texts.of(el)));
+          const want = step.kind === "has-text";
+          current = els.filter((el) => test2(texts.of(el)) === want);
           break;
         }
+        case "has":
+        case "has-not": {
+          const want = step.kind === "has";
+          current = els.filter((el) => run(step.steps, el, texts).length > 0 === want);
+          break;
+        }
+        case "and": {
+          const also = inScopes(step.steps, scopes, texts);
+          current = els.filter((el) => also.has(el));
+          break;
+        }
+        case "or":
+          current = inOrder([...els, ...inScopes(step.steps, scopes, texts)], top);
+          break;
         default: {
           const found = [];
           for (const scope of current) found.push(...find(step, scope, texts));
+          scopes = current;
           current = current.length > 1 ? inOrder(found, top) : found;
         }
       }
@@ -789,7 +813,14 @@
     const found = query(steps, root);
     if (found.length === 1) return found[0];
     const els = found.slice(0, LISTED);
-    return { json: JSON.stringify({ count: found.length, candidates: els.map(describe) }), els };
+    const out = {
+      count: found.length,
+      candidates: els.map(describe)
+    };
+    if (found.length === 0 && steps.length > 1 && steps[steps.length - 1].kind === "has") {
+      out.beforeHas = query(steps.slice(0, -1), root).length;
+    }
+    return { json: JSON.stringify(out), els };
   }
 
   // src/read.ts
@@ -1083,15 +1114,15 @@ ${frameMark(frame2)}
     }
     /** Appends `el`'s content as Markdown blocks to `out`. */
     blocks(el, out) {
-      let run = "";
+      let run2 = "";
       const flush = () => {
-        const paragraph = tidyInline(run);
+        const paragraph = tidyInline(run2);
         if (paragraph) out.push(paragraph);
-        run = "";
+        run2 = "";
       };
       for (const child of childrenOf(el)) {
         if (child.nodeType === Node.TEXT_NODE) {
-          run += collapse(child.data);
+          run2 += collapse(child.data);
           continue;
         }
         if (!(child instanceof Element)) continue;
@@ -1108,7 +1139,7 @@ ${frameMark(frame2)}
           continue;
         }
         if (!this.isBlock(child) && tag(child) !== "table") {
-          run += this.inline(child);
+          run2 += this.inline(child);
           continue;
         }
         flush();

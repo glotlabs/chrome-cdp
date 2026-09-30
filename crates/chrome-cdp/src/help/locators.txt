@@ -18,12 +18,19 @@ name exactly one element.
   alt=Logo  title=Help  by alt text or title
   testid=submit         by data-testid (testid_attribute in the config)
 
-Text values (text=, name=, label=, placeholder=, alt=, title=, has-text=)
-match a case-insensitive part of the text; "quoted" matches the whole
-text, case-sensitive; /regex/i is a regex. Whitespace is collapsed.
+Text values (text=, name=, label=, placeholder=, alt=, title=, has-text=,
+has-not-text=) match a case-insensitive part of the text; "quoted" matches
+the whole text, case-sensitive; /regex/i is a regex. Whitespace is collapsed.
 
 Chains: A >> B finds B inside what A found. Filters narrow the list:
   >> nth=0 (first), nth=-1 (last)   >> visible=true   >> has-text=Total
+  >> has-not-text=Paid
+Filters that take a locator (quote it when it holds >>):
+  >> has=B  >> has-not=B   keep elements with (without) a B inside them
+  >> and=B                 keep elements B also finds
+  >> or=B                  add what B finds, in page order
+  and= and or= search where the step before them searched (inside the same
+  rows in `role=row >> role=button >> or=role=link`).
 Frames: frame=<name, URL part or id> >> … looks inside an iframe; an
 iframe's ref works too (e30 >> text=Pay).
 
@@ -38,3 +45,4 @@ Examples:
   chrome-cdp click '#list >> text=Delete >> nth=-1'
   chrome-cdp fill 'frame=payment >> placeholder=Card number' 4242424242424242
   chrome-cdp count 'role=row'
+  chrome-cdp count 'role=row >> has=role=button[name=Delete]'
