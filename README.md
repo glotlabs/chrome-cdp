@@ -81,6 +81,7 @@ running the suite against a real backend.
 | Errors | a kind, an exit code, and the next command to run | Playwright's error message | — |
 | E2E tests | built in: `.cdp` scenarios, mock files, `chrome-cdp test` | no | no (`@playwright/test` is separate) |
 | Raw CDP | `chrome-cdp cdp Domain.method` | no | — |
+| From the page to the source | `source` (an element's file, line and components), `components` (props, state), logpoints (`debug log`), locals at errors, `wait --hmr` (did the page get my edit?) | no | no |
 | Browsers | Chrome and Chromium | Chromium, Firefox, WebKit | Chromium, Firefox, WebKit |
 | Agent task success, tokens and time ([agent benchmark](docs/benchmarks.md#agent-task-benchmark)) | pending | pending | not measured |
 | Warm command latency ([micro benchmark](docs/benchmarks.md#micro-suite)) | pending | pending | not measured |

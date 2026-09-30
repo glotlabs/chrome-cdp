@@ -44,23 +44,91 @@ clicked e14 button "Update cart"
 
 ## 3. Find out why
 
-**JavaScript errors.** `errors` lists the uncaught exceptions,
-`console.error`s and failed loads the page has not shown yet. On
-`localhost`, stack frames point at your source files through the dev
-server's source maps:
+On `localhost`, chrome-cdp reads the dev server's source maps and the
+framework's dev build, so the page can tell you which file to open.
+Places print as paths relative to the project root (the directory with
+`.git` or `chrome-cdp.toml`) when the file is on disk, so an editor takes
+them as they are. Ask the page before grepping the code.
+
+**Which file renders it.** `source` names the line that made an element
+and the components around it (React 18 and 19, Vue 3, Svelte 5, and
+plain JavaScript through Chrome's record of the script that created the
+node):
 
 ```
-#7 error uncaught TypeError: Cannot read properties of undefined (reading 'price')
-    at lineTotal (/src/cart/total.ts:14:22)
-    at /src/cart/Cart.tsx:31:9
+$ chrome-cdp source e3
+e3 button "Add"
+  at src/components/CartItem.tsx:15:7
+  in <CartItem>  src/components/CartItem.tsx:15
+  in <CartList>  src/components/CartList.tsx:14
+  in <App>       src/App.tsx:34
+via react 19 (the page's debug info)
 ```
 
+`source -q e3` prints the place alone. `snapshot -i --source` adds the
+innermost component to every ref. `components e3` shows the component's
+props and state; `components` alone the whole tree:
+
+```
+$ chrome-cdp components e3
+<CartItem> src/components/CartItem.tsx:12  (holds e3)
+  props: item={id: 2, name: "Tea", price: 5, qty: 1}, onAdd=ƒ, onRemove=ƒ
+  state: none
+  owners: <CartList> ← <App>
+```
+
+**JavaScript errors.** The action's report names the source line of a
+console error. `errors` lists the uncaught exceptions, `console.error`s
+and failed loads the page has not shown yet, and `--locals` adds the
+variables of the top frames where the error was thrown:
+
+```
+$ chrome-cdp errors --locals
+#4 error uncaught TypeError: Cannot read properties of undefined (reading 'price')
+    at lineTotal (src/cart.ts:21:15)
+      item = undefined, qty = 1
+    at total (src/cart.ts:28:12)
+      item = undefined, line = {id: 99, qty: 1}, items = [{id: 1, name: "Mug", …}, …], sum = 41
+```
+
+Locals are read when the debugger stops at the throw. A framework that
+catches a handler's error first (React 19 does) leaves them out and
+says so, with the `debug log` command that gets the values instead.
 `console` shows every message (`--level warn`, `--grep cart`, `--since
 0` for all, `--follow` to stream), and works after the fact: the tab has
 logged since it opened.
 
+**Values while it runs.** A logpoint is `console.log` without editing
+the code: it logs its expressions each time a source line runs, and the
+page never stops. The next action's report shows the hits:
+
+```
+$ chrome-cdp debug log src/cart.ts:28 sum line.qty
+logpoint 1 at src/cart.ts:28 (bound in /src/cart.ts)
+$ chrome-cdp click e3
+clicked e3 button "Add"
+! logpoint 1 src/cart.ts:28: sum=0, line.qty=2
+! logpoint 1 src/cart.ts:28: sum=24, line.qty=2
+! logpoint 1 src/cart.ts:28: sum=34, line.qty=4
+$ chrome-cdp debug clear --all
+```
+
+A line with no code moves to the next one and says so; a logpoint
+survives reloads and binds to modules loaded later. `debug list` shows
+them and their hits.
+
 **Requests.** `network --failed` lists the requests that got no response
-or a status of 400 or more; `network show 42` prints one in full:
+or a status of 400 or more; `network show 42` prints one in full, with
+the stack that sent it, across `await`s and timers:
+
+```
+$ chrome-cdp network show 17
+#17 GET 200 OK http://localhost:3000/cart.json
+…
+initiator: script
+  fetchCart                               src/api.ts:13:26
+  (anonymous)                             src/App.tsx:11:5
+```
 
 ```sh
 chrome-cdp network --failed
@@ -109,13 +177,35 @@ For a whole fake backend, the project's mock sets work in the session too
 
 ## 5. Fix, reload, check
 
-After editing the code, the dev server's hot reload usually updates the
-page by itself; otherwise `chrome-cdp reload`. A full reload drops the
-old refs, so take a new `snapshot -i` (or use locators, which do not go
-stale). Then repeat the steps and check the result:
+After you save a file, the dev server's hot reload (Vite, webpack,
+Next.js) updates the page. `wait --hmr` tells you whether it did:
+
+```
+$ chrome-cdp wait --hmr
+hot update applied (src/components/CartItem.tsx) (201ms)
+```
+
+A compile error fails it (exit 1) with the error's place, so you know the
+page still runs the old code:
+
+```
+$ chrome-cdp wait --hmr
+error: hot update failed: [PARSE_ERROR] Unexpected token (src/components/CartItem.tsx:23)
+  client: vite
+  at: src/components/CartItem.tsx:23:8
+  hint: chrome-cdp wait --hmr   (after you fix it and save, waits for the next update)
+```
+
+It answers with the latest update since the previous command began, so
+it may run after the save. Any other command also notes an update that
+came since the last one (`warning: hot update applied (…)`), and an
+action's report lists one that came while it ran. A full reload (`!
+full reload`) drops the refs: take a new `snapshot -i`, or use locators,
+which do not go stale. Without hot reload, `chrome-cdp reload`.
+
+Then repeat the steps and check the result:
 
 ```sh
-chrome-cdp reload
 chrome-cdp fill label=Quantity 3
 chrome-cdp click 'role=button[name="Update cart"]'
 chrome-cdp expect 'role=status' text 'Cart updated'
@@ -124,7 +214,8 @@ chrome-cdp expect --no-errors
 
 `expect --no-errors` fails if the page logged an uncaught exception or a
 console error since it loaded (or since a `mark`), so a fix that moves
-the crash elsewhere does not pass.
+the crash elsewhere does not pass. Remove your logpoints with `debug
+clear --all` when done.
 
 ## 6. Keep the check
 
