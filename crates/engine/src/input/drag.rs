@@ -54,6 +54,12 @@ impl Actor<'_> {
             force: *force,
             ..Checks::default()
         };
+        // What is dragged must be enabled, as a click's element; where it
+        // is dropped need not be.
+        let from_checks = Checks {
+            enabled: true,
+            ..checks
+        };
         let retry_from = |l: &str| self.retry(l);
         let retry_to = |l: &str| {
             let mut cmd = Cmd::new("drag").arg(from).arg(l);
@@ -64,7 +70,7 @@ impl Actor<'_> {
         };
         // Aiming at one may scroll the other away: aim at both twice, and
         // they must stay put the second time.
-        let source = self.ready(&from_loc, checks, &retry_from).await?;
+        let source = self.ready(&from_loc, from_checks, &retry_from).await?;
         let target = match self.ready(&to_loc, checks, &retry_to).await {
             Ok(target) => target,
             Err(err) => {
@@ -73,7 +79,7 @@ impl Actor<'_> {
             }
         };
         let again = async {
-            let source2 = self.aim(&from_loc, checks, &retry_from).await?;
+            let source2 = self.aim(&from_loc, from_checks, &retry_from).await?;
             let moved = far(&source, source2.x, source2.y);
             source2.target.release();
             let target2 = self.aim(&to_loc, checks, &retry_to).await?;

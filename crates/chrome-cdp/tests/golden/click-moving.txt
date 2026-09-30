@@ -3,10 +3,11 @@ exit: 3
 --- stderr
 error: #forever did not stop moving: it is still moving
   waited: 1s
+  why: chrome-cdp why '#forever' --for click
   hint: chrome-cdp click '#forever' --force   (an endless animation never stops; act on it anyway)
 
 $ chrome-cdp click '#forever' --timeout 1s --json
 exit: 3
 --- stdout
-{"ok":false,"error":{"kind":"Timeout","message":"#forever did not stop moving: it is still moving","hint":"chrome-cdp click '#forever' --force   (an endless animation never stops; act on it anyway)","notes":[{"label":"waited","text":"1s"}],"details":{"check":"stable","locator":"#forever","timeout_ms":1000,"why":"it is still moving"}}}
+{"ok":false,"error":{"kind":"Timeout","message":"#forever did not stop moving: it is still moving","hint":"chrome-cdp click '#forever' --force   (an endless animation never stops; act on it anyway)","notes":[{"label":"waited","text":"1s"},{"label":"why","text":"chrome-cdp why '#forever' --for click"}],"details":{"check":"stable","locator":"#forever","timeout_ms":1000,"why":"it is still moving"}}}
 

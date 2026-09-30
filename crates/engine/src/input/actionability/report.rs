@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use super::{Failure, Listed, Obscured};
 use crate::context::Scoped as _;
 use crate::locator::Locator;
-use crate::request::SnapshotEngine;
+use crate::request::{SnapshotEngine, WhyFor};
 use crate::tabs::Page;
 use crate::{Engine, Running};
 
@@ -27,6 +27,27 @@ impl Engine {
     ) -> ErrorInfo {
         let waited_text = format::duration(timeout);
         let force = retry.map(|r| r(&locator.to_string()).switch("force"));
+        // `why` explains every check at once; the hint stays the fix.
+        let why = retry
+            .and_then(|r| WhyFor::of_command(r(&locator.to_string()).name()?))
+            .map(|action| {
+                Cmd::new("why")
+                    .arg(locator.to_string())
+                    .flag("for", action.name())
+                    .scoped(&self.session)
+                    .to_string()
+            });
+        let with_why = |info: ErrorInfo| match &why {
+            Some(why)
+                if matches!(
+                    info.kind,
+                    ErrorKind::Timeout | ErrorKind::Obscured | ErrorKind::NotEnabled
+                ) =>
+            {
+                info.note("why", why)
+            }
+            _ => info,
+        };
         let snapshot = || Hint::run(Cmd::new("snapshot").scoped(&self.session));
         let mut details = json!({
             "locator": locator.to_string(),
@@ -88,12 +109,13 @@ impl Engine {
                 .hint(snapshot().why("it may be inside a closed or clipped container"))
             }
             Failure::Obscured(obscured) => {
-                return self
-                    .obscured_error(running, page, locator, &obscured, details, force)
-                    .note("waited", waited_text);
+                return with_why(
+                    self.obscured_error(running, page, locator, &obscured, details, force)
+                        .note("waited", waited_text),
+                );
             }
         };
-        info.note("waited", waited_text).details(details)
+        with_why(info.note("waited", waited_text)).details(details)
     }
 
     /// `Obscured`: what covers the element, with a ref, and the button

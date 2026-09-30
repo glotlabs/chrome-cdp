@@ -329,6 +329,14 @@ impl Actor<'_> {
                     format!("{} is disabled", describe(&element)),
                 )
                 .note("waited", protocol::format::duration(self.timeout))
+                .note(
+                    "why",
+                    Cmd::new("why")
+                        .arg(locator)
+                        .flag("for", "upload")
+                        .scoped(self.session())
+                        .to_string(),
+                )
                 .hint(
                     Hint::run(Cmd::new("snapshot").scoped(self.session()))
                         .why("a control is often disabled until the form is complete"),

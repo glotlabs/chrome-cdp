@@ -3,10 +3,11 @@ exit: 3
 --- stderr
 error: #hidden is not visible: it has display: none on <div class="modal">
   waited: 1s
+  why: chrome-cdp why '#hidden' --for click
   hint: chrome-cdp snapshot   (shows what is on the page; it may need a click to open), or chrome-cdp click '#hidden' --force
 
 $ chrome-cdp click '#hidden' --timeout 1s --json
 exit: 3
 --- stdout
-{"ok":false,"error":{"kind":"Timeout","message":"#hidden is not visible: it has display: none on <div class=\"modal\">","hint":"chrome-cdp snapshot   (shows what is on the page; it may need a click to open), or chrome-cdp click '#hidden' --force","notes":[{"label":"waited","text":"1s"}],"details":{"check":"visible","locator":"#hidden","timeout_ms":1000,"why":"it has display: none on <div class=\"modal\">"}}}
+{"ok":false,"error":{"kind":"Timeout","message":"#hidden is not visible: it has display: none on <div class=\"modal\">","hint":"chrome-cdp snapshot   (shows what is on the page; it may need a click to open), or chrome-cdp click '#hidden' --force","notes":[{"label":"waited","text":"1s"},{"label":"why","text":"chrome-cdp why '#hidden' --for click"}],"details":{"check":"visible","locator":"#hidden","timeout_ms":1000,"why":"it has display: none on <div class=\"modal\">"}}}
 

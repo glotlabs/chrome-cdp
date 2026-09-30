@@ -40,6 +40,11 @@ impl Cmd {
         }
     }
 
+    /// The command's first word (`click`), if any.
+    pub fn name(&self) -> Option<&str> {
+        self.words.first().map(String::as_str)
+    }
+
     /// Adds an argument, quoted for the shell when needed.
     #[must_use]
     pub fn arg(mut self, arg: impl AsRef<str>) -> Self {
