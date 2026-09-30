@@ -670,6 +670,48 @@ async fn annotate_labels_refs() {
     engine.close().await;
 }
 
+#[tokio::test(flavor = "multi_thread")]
+async fn annotate_draws_above_the_top_layer() {
+    let Some(chrome) = chrome_path() else { return };
+    let out = tempfile::tempdir().unwrap();
+    let engine = start(&chrome, "engine-shot-annotate-modal", out.path()).await;
+    goto(
+        &engine,
+        &Fixtures::shared().url("/shots/annotate-modal.html"),
+    )
+    .await;
+    viewport(&engine, 400, 300, 1.0).await;
+
+    let (data, output) = shoot(
+        &engine,
+        ScreenshotRequest {
+            annotate: true,
+            ..request()
+        },
+    )
+    .await;
+    // The dialog's buttons; the page under it is inert.
+    assert_eq!(data.annotated, ["e1", "e2", "e3"], "{}", output.text);
+    let image = Image::load(&data.path);
+    let label = [0xe0, 0x11, 0x5f];
+    // Above the modal: OK's label (its padding, left of the text), and
+    // its outline.
+    assert!(near(image.pixel(41, 50), label));
+    assert!(near(image.pixel(100, 61), label));
+    // #one's label (at 142-158) is in place; #two's (at 152-168) would
+    // cover it, and moved down a label's height (168-184).
+    assert!(near(image.pixel(201, 145), label));
+    assert!(near(image.pixel(201, 176), label));
+
+    // The overlay is gone afterwards, and the dialog still open.
+    let (data, _) = shoot(&engine, request()).await;
+    let image = Image::load(&data.path);
+    assert!(near(image.pixel(41, 50), [255, 255, 255]));
+    assert!(near(image.pixel(201, 176), [0xcc, 0xcc, 0xcc]));
+    assert!(near(image.pixel(100, 80), [0xcc, 0xcc, 0xcc]));
+    engine.close().await;
+}
+
 /// The text of each page of a PDF Chrome printed: its content streams'
 /// `Tj` strings (glyph ids in hex), through the fonts' `ToUnicode` maps.
 /// The maps are merged, which holds while the text is in one font.

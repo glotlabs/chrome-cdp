@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Annotate a modal</title>
+<style>
+  /* A modal dialog covering the page, in the top layer: labels drawn
+     under it would not show. */
+  html, body { margin: 0; background: #fff; width: 400px; height: 300px; overflow: hidden; }
+  dialog { position: fixed; inset: 0; margin: 0; padding: 0; border: 0; width: 400px;
+    height: 300px; max-width: none; max-height: none; background: #fff; }
+  dialog::backdrop { background: transparent; }
+  * { outline: none !important; }
+  button { position: absolute; display: block; box-sizing: border-box; border: 0; padding: 0;
+    background: #ccc; color: transparent; font-size: 1px; }
+  #ok { left: 40px; top: 60px; width: 120px; height: 40px; }
+  /* Close together: the second label moves off the first. */
+  #one { left: 200px; top: 160px; width: 120px; height: 30px; }
+  #two { left: 200px; top: 170px; width: 120px; height: 30px; }
+</style>
+</head>
+<body>
+<button id="under">Under the dialog</button>
+<dialog>
+  <button id="ok">OK</button>
+  <button id="one">One</button>
+  <button id="two">Two</button>
+</dialog>
+<script>
+  document.querySelector('dialog').showModal();
+</script>
+</body>
+</html>

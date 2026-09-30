@@ -18,9 +18,12 @@
 //! `--mask` and `--annotate` draw into the page just before the capture
 //! and remove it right after: a zero-size element (`<chrome-cdp-overlay>`,
 //! its content in a closed shadow root) placed at the top of each frame's
-//! document, with boxes positioned in document coordinates. Masks paint
-//! over every match; labels name the refs `snapshot -i` would give, so a
-//! vision agent can map what it sees to refs (Set-of-Marks).
+//! document, with boxes positioned in document coordinates; when the
+//! document has top-layer content (a modal dialog, a popover, a
+//! fullscreen element) the element is a manual popover, so it is drawn
+//! above that too. Masks paint over every match; labels name the refs
+//! `snapshot -i` would give, so a vision agent can map what it sees to
+//! refs (Set-of-Marks), and move off each other when they would overlap.
 //!
 //! `expect-screenshot` (plan 09) captures a still page: each frame's
 //! caret is hidden, finite animations and transitions are finished and
@@ -61,16 +64,30 @@ const LISTED_REFS: usize = 30;
 /// Draws boxes over the elements `els` in their document: filled for a
 /// mask, outlined with a label for `labels`. Returns each element's box
 /// in its frame's viewport (`null` when it has none).
+///
+/// A modal `<dialog>`, a popover or a fullscreen element is in the top
+/// layer, above any z-index: then the overlay goes there too, as a manual
+/// popover shown after them. A label that would cover one drawn before it
+/// moves down, or right, by at most its own size.
 const OVERLAY_JS: &str = r"function (els, labels) {
   const host = document.createElement('chrome-cdp-overlay');
   host.style.cssText = 'all: initial !important; position: absolute !important; left: 0 !important;'
     + ' top: 0 !important; width: 0 !important; height: 0 !important; overflow: visible !important;'
     + ' z-index: 2147483647 !important; pointer-events: none !important; display: block !important;';
   const root = host.attachShadow({ mode: 'closed' });
+  let topLayer = false;
+  try {
+    topLayer = !!document.querySelector(':modal, :popover-open, :fullscreen');
+  } catch (e) {}
+  if (topLayer) host.popover = 'manual';
   document.documentElement.append(host);
+  if (topLayer) {
+    try { host.showPopover(); } catch (e) {}
+  }
   // Where the host's containing block starts, whatever styles the page
   // gives <html>.
   const origin = host.getBoundingClientRect();
+  const tags = [];
   const boxes = els.map((el, i) => {
     const r = el.getBoundingClientRect();
     if (!r.width || !r.height) return null;
@@ -86,12 +103,24 @@ const OVERLAY_JS: &str = r"function (els, labels) {
         + ' color: #fff; font: bold 12px/16px monospace; white-space: nowrap;'
         + (r.top >= 16 ? ' top: -18px;' : ' top: -2px;');
       box.append(tag);
+      tags.push(tag);
     } else {
       box.style.background = '#ff00ff';
     }
     root.append(box);
     return [r.left, r.top, r.width, r.height];
   });
+  const placed = [];
+  const hit = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+  for (const tag of tags) {
+    const r = tag.getBoundingClientRect();
+    const tries = [[0, 0], [0, r.height], [r.width, 0], [r.width, r.height]].map(([dx, dy]) => ({
+      dx, dy, left: r.left + dx, right: r.right + dx, top: r.top + dy, bottom: r.bottom + dy,
+    }));
+    const at = tries.find((t) => !placed.some((p) => hit(t, p))) || tries[0];
+    if (at.dx || at.dy) tag.style.transform = `translate(${at.dx}px, ${at.dy}px)`;
+    placed.push(at);
+  }
   return boxes;
 }";
 

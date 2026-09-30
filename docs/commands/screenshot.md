@@ -38,7 +38,8 @@ the page does not scroll itself but inside a container (html, body
 capture until that container's content fits, and is put back afterwards.
 --full LOC names the container. --annotate labels the elements
 `snapshot -i` gives refs with those refs; --mask paints over elements.
-Both are drawn only for the screenshot. Needs a running session.
+Both are drawn only for the screenshot, above an open modal dialog or
+popover too. Needs a running session.
 
 Examples:
   chrome-cdp screenshot
