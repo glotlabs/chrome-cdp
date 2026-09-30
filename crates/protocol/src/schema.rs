@@ -239,6 +239,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<IssuesData>),
     },
     CommandSchema {
+        name: "audit",
+        summary: "one report over the page: Chrome's issues, accessibility, layout, errors, failed requests, security and metadata",
+        schema: || schema_for!(Envelope<AuditData>),
+    },
+    CommandSchema {
         name: "network",
         summary: "the tab's requests the agent has not seen yet (or --since), oldest first",
         schema: || schema_for!(Envelope<NetworkData>),
@@ -1760,6 +1765,136 @@ pub struct FindingTarget {
     /// The worker it came from, if a worker's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worker: Option<Worker>,
+}
+
+/// `data` of `chrome-cdp audit --json` (plan 17): one report over the
+/// page, from every category checked.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AuditData {
+    /// The tab audited, e.g. `t1`; empty with `--all-tabs`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub tab: String,
+    /// The page's URL; empty with `--all-tabs`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub url: String,
+    /// `audit LOCATOR`: the element the `a11y`, `layout` and `security`
+    /// forms checks were limited to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locator: Option<String>,
+    /// The categories checked, in the report's order: `issues`, `a11y`,
+    /// `layout`, `console`, `network`, `security`, `meta`.
+    pub categories: Vec<String>,
+    /// The least severe findings shown (`--min-severity`).
+    pub min_severity: Severity,
+    /// The findings shown, most severe first, then by category, rule and
+    /// key: at `min_severity` or above, and not accepted by the baseline
+    /// (with `--show-accepted`, those too, marked `accepted`).
+    pub findings: Vec<Finding>,
+    /// How many of the findings shown are new (not accepted), by
+    /// severity.
+    pub errors: usize,
+    pub warnings: usize,
+    pub info: usize,
+    /// Findings below `min_severity`, not shown.
+    pub hidden: usize,
+    /// Findings at `min_severity` or above that the baseline accepts.
+    pub accepted: usize,
+    /// `--baseline`: the file, and how it compared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline: Option<AuditBaselineState>,
+}
+
+/// One finding of `audit`, in the shape every page finding has (plan 17):
+/// same `key`, same finding, across runs, ports and reloads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Finding {
+    /// `issues`, `a11y`, `layout`, `console`, `network`, `security` or
+    /// `meta`.
+    pub category: String,
+    /// A stable id within the category: `no-csp`, `image-alt`,
+    /// `mixed-content-blocked`.
+    pub rule: String,
+    pub severity: Severity,
+    /// What is wrong, in one line.
+    pub message: String,
+    /// What it is about.
+    pub target: FindingTarget,
+    /// Its identity for baselines: `<category>/<rule>/<where>`, where is
+    /// the element's stable locator (else its role and name), a URL
+    /// without query (`self/…` on the page's origin), a cookie's name and
+    /// domain, or the page's path. No refs, request ids or ports.
+    pub key: String,
+    /// How many times it happened (the same key folded into one).
+    pub count: u32,
+    /// A page that explains it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docs: Option<String>,
+    /// The WCAG success criterion and level of an `a11y` finding:
+    /// `4.1.2 A`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wcag: Option<String>,
+    /// The tab, with `--all-tabs`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab: Option<String>,
+    /// The baseline accepts it (shown only with `--show-accepted`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub accepted: bool,
+}
+
+/// An audit baseline as `audit` and `expect --audit` used it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AuditBaselineState {
+    /// The file, absolute.
+    pub path: String,
+    pub result: AuditBaselineResult,
+    /// Keys the baseline accepts that no finding has any more (of the
+    /// categories checked): `--update` drops them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stale: Vec<String>,
+}
+
+/// What happened to an audit baseline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum AuditBaselineResult {
+    /// The findings were compared with it.
+    Compared,
+    /// There is none yet: every finding is new.
+    Missing,
+    /// There was none; the findings were written as one.
+    Created,
+    /// `--update` wrote the findings into it.
+    Updated,
+    /// `--update` found it holding the findings already.
+    Unchanged,
+}
+
+/// An audit baseline file (`schema audit-baseline`): the findings a
+/// project accepts, committed with it (`e2e/audit/<name>.json`, or
+/// `.chrome-cdp/audit/<name>.json`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AuditBaselineFile {
+    /// The format's version: 1.
+    pub version: u32,
+    /// The accepted findings, by key.
+    #[serde(default)]
+    pub accepted: Vec<AcceptedFinding>,
+}
+
+/// A finding a baseline accepts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AcceptedFinding {
+    /// The finding's key, as `audit --json` gives it.
+    pub key: String,
+    /// At most this many occurrences are accepted (more is a new
+    /// finding); any number without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count: Option<u32>,
+    /// Why it is accepted; `--update` keeps it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// A cookie a finding is about.
@@ -4097,6 +4232,20 @@ pub struct ExploreFailed {
     pub error: String,
 }
 
+/// `expect --audit`: the findings, and the baseline they were compared
+/// with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExpectAudit {
+    /// The baseline, if one was given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline: Option<AuditBaselineState>,
+    /// The keys of the findings at `--min-severity` or above, accepted
+    /// ones included.
+    pub findings: Vec<String>,
+    /// How many of them the baseline accepts.
+    pub accepted: usize,
+}
+
 /// `expect --layout`: the baseline and what differed from it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ExpectLayout {
@@ -4829,6 +4978,9 @@ pub struct ExpectData {
     /// `expect --perf`: every budget with what was measured.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub perf: Option<ExpectPerf>,
+    /// `expect --audit`: the findings and the baseline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audit: Option<ExpectAudit>,
 }
 
 /// `expect --perf`: every budget with what was measured, and the
