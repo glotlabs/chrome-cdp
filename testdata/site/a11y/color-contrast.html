@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>color-contrast</title>
+<style>
+  body { font: 16px sans-serif; }
+  .faded { opacity: 0.3; }
+  .half { opacity: 0.9; }
+  .pale { color: #bbb; }
+  .shadowed { color: #fff; text-shadow: 0 0 3px #000; }
+  .card { background: #fff; opacity: 0.4; }
+</style>
+</head>
+<body>
+<!-- Text too faint for its size, with opacity and text-shadow (the
+     rules of plan 09 test the rest). Failing elements have data-fail;
+     the rest pass. -->
+<main>
+<h1>color-contrast</h1>
+<p class="half">Slightly faded black text</p>
+<p class="shadowed">White text with a dark shadow</p>
+<div class="card"><p data-fail>Black on a white card faded to 40%</p></div>
+<p data-fail class="faded">Black text faded to 30%</p>
+<div class="faded"><p data-fail>Inside a faded box</p></div>
+<p data-fail class="pale">Pale grey text</p>
+</main>
+</body>
+</html>

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aria-valid-role</title>
+<style>
+  body { font: 16px sans-serif; }
+  p { margin: 16px 0; }
+  .t { display: block; min-width: 24px; min-height: 24px; margin: 16px 0; }
+
+</style>
+</head>
+<body>
+<!-- role values that are not ARIA roles. Failing elements have data-fail; the rest pass. -->
+<main>
+<h1>aria-valid-role</h1>
+<div role="note">A note</div>
+<div role="doc-tip">A tip</div>
+<div role="presentation">Layout</div>
+<span role="img" aria-label="Star">★</span>
+<div data-fail role="nav">Misspelt navigation</div>
+<div data-fail role="landmark">Abstract role</div>
+<span data-fail role="buton">Misspelt button</span>
+</main>
+</body>
+</html>

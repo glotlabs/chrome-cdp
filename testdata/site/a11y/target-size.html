@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>target-size</title>
+<style>
+  body { font: 16px sans-serif; }
+  p { margin: 16px 0; }
+  .t { display: block; min-width: 24px; min-height: 24px; margin: 16px 0; }
+  .big { width: 32px; height: 32px; padding: 0; font: inherit; }
+  .small { width: 16px; height: 16px; padding: 0; font: inherit; }
+  .tiny { display: inline-block; width: 12px; height: 12px; font-size: 10px; line-height: 12px; }
+  .apart { margin: 40px 0; }
+</style>
+</head>
+<body>
+<!-- pointer targets under 24x24 px close to another. Failing elements have data-fail; the rest pass. -->
+<main>
+<h1>target-size</h1>
+<p><button class="big" aria-label="Big">B</button> <button class="big" aria-label="Big too">B</button></p>
+<p class="apart"><button class="small" aria-label="Alone">x</button></p>
+<p>Read the <a href="#terms">terms</a> first.</p>
+<p><input type="checkbox" aria-label="One"><input type="checkbox" aria-label="Two"></p>
+<p><button data-fail class="small" aria-label="Previous">‹</button><button data-fail class="small" aria-label="Next">›</button></p>
+<p><button class="big" aria-label="Save">S</button><span data-fail class="tiny" role="button" tabindex="0" aria-label="Close">×</span></p>
+</main>
+</body>
+</html>

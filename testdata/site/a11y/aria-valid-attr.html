@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aria-valid-attr</title>
+<style>
+  body { font: 16px sans-serif; }
+  p { margin: 16px 0; }
+  .t { display: block; min-width: 24px; min-height: 24px; margin: 16px 0; }
+
+</style>
+</head>
+<body>
+<!-- aria-* attributes that do not exist. Failing elements have data-fail; the rest pass. -->
+<main>
+<h1>aria-valid-attr</h1>
+<p aria-describedby="more">Described</p>
+<p id="more">More words</p>
+<p><button aria-pressed="false">Bold</button></p>
+<div data-fail aria-lable="Card">Misspelt label</div>
+<p><button data-fail aria-hiden="true">Go</button></p>
+</main>
+</body>
+</html>

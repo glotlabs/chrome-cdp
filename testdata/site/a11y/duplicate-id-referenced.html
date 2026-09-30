@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>duplicate-id-referenced</title>
+<style>
+  body { font: 16px sans-serif; }
+  p { margin: 16px 0; }
+  .t { display: block; min-width: 24px; min-height: 24px; margin: 16px 0; }
+
+</style>
+</head>
+<body>
+<!-- ids used twice that something refers to. Failing elements have data-fail; the rest pass. -->
+<main>
+<h1>duplicate-id-referenced</h1>
+<p id="plain">Unreferenced</p>
+<p id="plain">Unreferenced again</p>
+<p><label for="email">Email</label> <input id="email"></p>
+<p><label for="name">Name</label> <input id="name"></p>
+<div data-fail id="name">Second name</div>
+<p><button aria-describedby="help">Go</button></p>
+<p id="help">Help</p>
+<p data-fail id="help">Other help</p>
+</main>
+</body>
+</html>

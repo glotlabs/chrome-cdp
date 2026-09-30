@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aria-required-attr</title>
+<style>
+  body { font: 16px sans-serif; }
+  p { margin: 16px 0; }
+  .t { display: block; min-width: 24px; min-height: 24px; margin: 16px 0; }
+
+</style>
+</head>
+<body>
+<!-- roles without the attributes they need. Failing elements have data-fail; the rest pass. -->
+<main>
+<h1>aria-required-attr</h1>
+<div class="t" role="checkbox" aria-checked="false" tabindex="0">Agree</div>
+<p><input type="checkbox" role="switch" aria-label="Dark mode"></p>
+<div class="t" role="slider" aria-label="Volume" aria-valuenow="5" tabindex="0"></div>
+<p><input role="combobox" aria-expanded="false" aria-label="City"></p>
+<h2 role="heading">Native level</h2>
+<div class="t" data-fail role="checkbox" tabindex="0">Subscribe</div>
+<div class="t" data-fail role="slider" aria-label="Balance" tabindex="0"></div>
+<p><input data-fail role="combobox" aria-label="Town"></p>
+<div data-fail role="heading">No level</div>
+</main>
+</body>
+</html>

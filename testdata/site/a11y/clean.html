@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Every rule passes</title>
+<style>
+  body { font: 16px sans-serif; }
+  p { margin: 16px 0; }
+  .t { display: block; min-width: 24px; min-height: 24px; margin: 16px 0; }
+  nav li { margin: 8px 0; }
+  .ring:focus { outline: none; box-shadow: 0 0 0 3px #36c; }
+</style>
+</head>
+<body>
+<!-- What each rule of expect --a11y passes: none of them may flag
+     anything here. -->
+<main>
+<h1>Shop</h1>
+<nav aria-label="Sections"><ul><li><a href="#tea">Tea</a></li><li><a href="#cups">Cups</a></li></ul></nav>
+<h2 id="tea">Tea</h2>
+<table><caption>Prices</caption><tr><th>Name</th><th>Price</th></tr><tr><td>Green</td><td>2</td></tr></table>
+<table><tr><td>Layout</td><td>cells</td></tr></table>
+<div role="tablist" aria-label="Views"><button role="tab" aria-selected="true" aria-controls="grid">Grid</button> <button role="tab" aria-selected="false" aria-controls="rows" aria-expanded="false">Rows</button></div>
+<div id="grid" role="tabpanel" aria-labelledby="grid-label"><p id="grid-label">Grid view</p></div>
+<div class="t" role="checkbox" aria-checked="false" tabindex="0">Gift wrap</div>
+<h3>Order</h3>
+<form>
+  <p><label for="email">Email</label> <input id="email" type="email" autocomplete="shipping email"></p>
+  <p><label>Card <input autocomplete="cc-number" aria-describedby="card-help"></label></p>
+  <p id="card-help">Sixteen digits</p>
+  <p><label><input type="checkbox"> Keep me posted</label></p>
+  <p><button class="ring">Pay</button></p>
+</form>
+<h2 id="cups">Cups</h2>
+<ol><li>Small</li><li>Large</li></ol>
+<p>Read the <a href="#terms">terms</a> first.</p>
+<main hidden><p>A hidden second main does not count.</p></main>
+</main>
+</body>
+</html>

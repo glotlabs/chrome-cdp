@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>focus-visible</title>
+<style>
+  body { font: 16px sans-serif; }
+  p { margin: 16px 0; }
+  .t { display: block; min-width: 24px; min-height: 24px; margin: 16px 0; }
+  .nofocus:focus { outline: none; }
+  .ring:focus { outline: none; box-shadow: 0 0 0 3px #36c; }
+  .fill:focus { outline: none; background: #ffc; }
+  .child:focus { outline: none; }
+  .child:focus span { text-decoration: underline; }
+  .within:focus-within { box-shadow: 0 0 0 2px #36c; }
+</style>
+</head>
+<body>
+<!-- elements that look the same with keyboard focus. Failing elements have data-fail; the rest pass. -->
+<main>
+<h1>focus-visible</h1>
+<p><button>Default ring</button></p>
+<p><button class="ring">Shadow</button></p>
+<p><button class="fill">Background</button></p>
+<p><a class="child" href="#a"><span>Underlined inside</span></a></p>
+<div class="within"><p><button class="nofocus">In a card</button></p></div>
+<p><input aria-label="Field"></p>
+<p><button data-fail class="nofocus">Save</button></p>
+<p><a data-fail class="nofocus" href="#top">Top</a></p>
+<div class="t nofocus" data-fail tabindex="0">Card</div>
+</main>
+</body>
+</html>

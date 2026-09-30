@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>list</title>
+<style>
+  body { font: 16px sans-serif; }
+  p { margin: 16px 0; }
+  .t { display: block; min-width: 24px; min-height: 24px; margin: 16px 0; }
+
+</style>
+</head>
+<body>
+<!-- lists with children that are not <li>. Failing elements have data-fail; the rest pass. -->
+<main>
+<h1>list</h1>
+<ul><li>One</li><script></script><template><p>x</p></template></ul>
+<ol><li>First</li></ol>
+<ul data-fail><li>One</li><div>Not an item</div></ul>
+<ol data-fail><p>Not an item</p></ol>
+</main>
+</body>
+</html>

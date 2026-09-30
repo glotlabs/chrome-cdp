@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aria-valid-attr-value</title>
+<style>
+  body { font: 16px sans-serif; }
+  p { margin: 16px 0; }
+  .t { display: block; min-width: 24px; min-height: 24px; margin: 16px 0; }
+
+</style>
+</head>
+<body>
+<!-- aria-* attributes with wrong values. Failing elements have data-fail; the rest pass. -->
+<main>
+<h1>aria-valid-attr-value</h1>
+<p><button aria-expanded="false" aria-controls="menu-later">Menu</button></p>
+<p><button aria-pressed="mixed">Italic</button></p>
+<div aria-live="polite">Status</div>
+<p aria-describedby="hint">Described</p>
+<p id="hint">A hint</p>
+<p><input aria-label="Quantity" aria-invalid="spelling" aria-required=""></p>
+<p><button data-fail aria-pressed="yes">Bold</button></p>
+<div data-fail aria-live="loud">Status</div>
+<p><input data-fail aria-label="Email" aria-describedby="nope"></p>
+<div data-fail aria-busy="maybe">Loading</div>
+<p><button data-fail aria-controls="gone" aria-expanded="true">Open</button></p>
+</main>
+</body>
+</html>

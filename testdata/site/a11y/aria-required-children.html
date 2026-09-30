@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aria-required-children</title>
+<style>
+  body { font: 16px sans-serif; }
+  p { margin: 16px 0; }
+  .t { display: block; min-width: 24px; min-height: 24px; margin: 16px 0; }
+
+</style>
+</head>
+<body>
+<!-- roles that own elements they do not allow. Failing elements have data-fail; the rest pass. -->
+<main>
+<h1>aria-required-children</h1>
+<div role="tablist"><button role="tab" aria-selected="true">One</button> <button role="tab">Two</button></div>
+<div role="list"><div role="listitem">An item</div></div>
+<div role="menu"><div role="none"><div class="t" role="menuitem" tabindex="-1">Cut</div></div></div>
+<div role="list"></div>
+<div data-fail role="tablist"><button role="tab">One</button> <button>Close</button></div>
+<div data-fail role="list"><div role="listitem">An item</div><p>Not an item</p></div>
+</main>
+</body>
+</html>

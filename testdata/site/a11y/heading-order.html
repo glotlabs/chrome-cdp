@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>heading-order</title>
+<style>
+  body { font: 16px sans-serif; }
+  p { margin: 16px 0; }
+  .t { display: block; min-width: 24px; min-height: 24px; margin: 16px 0; }
+
+</style>
+</head>
+<body>
+<!-- heading levels skipped going down. Failing elements have data-fail; the rest pass. -->
+<main>
+<h1>heading-order</h1>
+<h2>Two</h2>
+<h3>Three</h3>
+<h5 data-fail>Five</h5>
+<h2>Two again</h2>
+<h6 hidden>Hidden</h6>
+<h4 data-fail>Four</h4>
+<h3>Three again</h3>
+<div role="heading" aria-level="4">Four by ARIA</div>
+<h2>Back up</h2>
+</main>
+</body>
+</html>

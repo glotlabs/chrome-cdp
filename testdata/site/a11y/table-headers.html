@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>table-headers</title>
+<style>
+  body { font: 16px sans-serif; }
+  p { margin: 16px 0; }
+  .t { display: block; min-width: 24px; min-height: 24px; margin: 16px 0; }
+
+</style>
+</head>
+<body>
+<!-- data tables with no header cells. Failing elements have data-fail; the rest pass. -->
+<main>
+<h1>table-headers</h1>
+<table><tr><td>Layout</td><td>cells</td></tr></table>
+<table><tr><th>Name</th></tr><tr><td>Tea</td></tr></table>
+<table role="presentation"><tr><td>x</td></tr></table>
+<table data-fail><caption>Prices</caption><tr><td>Tea</td><td>2</td></tr></table>
+<table data-fail><thead><tr><td>Name</td><td>Price</td></tr></thead><tr><td>Tea</td><td>2</td></tr></table>
+</main>
+</body>
+</html>

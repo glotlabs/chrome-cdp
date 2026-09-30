@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aria-required-parent</title>
+<style>
+  body { font: 16px sans-serif; }
+  p { margin: 16px 0; }
+  .t { display: block; min-width: 24px; min-height: 24px; margin: 16px 0; }
+
+</style>
+</head>
+<body>
+<!-- roles outside the role they need. Failing elements have data-fail; the rest pass. -->
+<main>
+<h1>aria-required-parent</h1>
+<div role="tablist"><div class="t" role="tab" tabindex="0" aria-selected="true">Inside</div></div>
+<ul><li>Native item</li></ul>
+<div role="list"><div role="none"><div role="listitem">Through none</div></div></div>
+<div class="t" data-fail role="tab" tabindex="0">Lonely tab</div>
+<div class="t" data-fail role="option" tabindex="-1" aria-selected="false">Apple</div>
+<div role="group"><div data-fail role="listitem">In a group</div></div>
+<div><li data-fail>Stray item</li></div>
+</main>
+</body>
+</html>

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>empty-heading</title>
+<style>
+  body { font: 16px sans-serif; }
+  p { margin: 16px 0; }
+  .t { display: block; min-width: 24px; min-height: 24px; margin: 16px 0; }
+
+</style>
+</head>
+<body>
+<!-- headings with no text. Failing elements have data-fail; the rest pass. -->
+<main>
+<h1>empty-heading</h1>
+<h2>Text</h2>
+<h2><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="Logo" width="20" height="20"></h2>
+<h2 aria-label="Named"></h2>
+<h2 hidden></h2>
+<h2 data-fail></h2>
+<h2 data-fail><span> </span></h2>
+<div data-fail role="heading" aria-level="2"> </div>
+</main>
+</body>
+</html>

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>autocomplete-valid</title>
+<style>
+  body { font: 16px sans-serif; }
+  p { margin: 16px 0; }
+  .t { display: block; min-width: 24px; min-height: 24px; margin: 16px 0; }
+
+</style>
+</head>
+<body>
+<!-- autocomplete values browsers do not know. Failing elements have data-fail; the rest pass. -->
+<main>
+<h1>autocomplete-valid</h1>
+<p><input aria-label="A" autocomplete="email"></p>
+<p><input aria-label="B" autocomplete="shipping postal-code"></p>
+<p><input aria-label="C" autocomplete="section-a billing work tel"></p>
+<p><input aria-label="D" autocomplete="off"></p>
+<p><input aria-label="E" autocomplete="username webauthn"></p>
+<p><input data-fail aria-label="F" autocomplete="nmae"></p>
+<p><input data-fail aria-label="G" autocomplete="work name"></p>
+<p><input data-fail aria-label="H" autocomplete="email tel"></p>
+<p><select data-fail aria-label="I" autocomplete="shipping"><option>x</option></select></p>
+</main>
+</body>
+</html>
