@@ -493,3 +493,40 @@ fn expect_perf_is_a_step_like_any_other() {
     assert!(err.contains("  elements: 9 > 5 ✗\n"), "{err}");
     assert!(err.contains("  throttling: none\n"), "{err}");
 }
+
+/// `run file.cdp` of a file inside a project with an `[e2e]` section
+/// keeps its baselines in the project's `e2e/snapshots`, as `test` does,
+/// wherever it is run from; `--dir` still wins.
+#[test]
+fn run_in_a_project_keeps_baselines_in_e2e_snapshots() {
+    let Some(chrome) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let root = sandbox.dir.path().join("app");
+    std::fs::create_dir_all(root.join("scripts")).unwrap();
+    std::fs::write(root.join("chrome-cdp.toml"), "[e2e]\n").unwrap();
+    let script = root.join("scripts/snap.cdp");
+    std::fs::write(
+        &script,
+        format!(
+            "goto {}\nexpect-snapshot home\nexpect-snapshot own --dir {}\n",
+            site.url("/"),
+            sandbox.dir.path().join("own").display()
+        ),
+    )
+    .unwrap();
+    for _ in 0..2 {
+        let out = common::run(
+            sandbox
+                .cli()
+                .current_dir(sandbox.dir.path())
+                .env_remove("CI")
+                .args(["run", script.to_str().unwrap()]),
+        );
+        assert_eq!(code(&out), 0, "{}", stderr(&out));
+    }
+    assert!(root.join("e2e/snapshots/home.txt").is_file());
+    assert!(sandbox.dir.path().join("own/own.txt").is_file());
+    assert!(!root.join(".chrome-cdp").exists());
+    assert!(!sandbox.dir.path().join(".chrome-cdp/snapshots").exists());
+}

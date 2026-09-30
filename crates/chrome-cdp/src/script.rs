@@ -41,7 +41,7 @@ pub(crate) fn batch(args: &BatchArgs, global: &GlobalArgs) -> u8 {
     let usage = Cmd::new("batch")
         .session(&global.session)
         .context(global.context.as_deref());
-    execute("<stdin>", &src, &base, usage, &args.script, global)
+    execute("<stdin>", &src, &base, usage, &args.script, None, global)
 }
 
 /// `run <file>`.
@@ -65,17 +65,33 @@ pub(crate) fn run(args: &RunArgs, global: &GlobalArgs) -> u8 {
         .arg(&name)
         .session(&global.session)
         .context(global.context.as_deref());
-    execute(&name, &src, &base, usage, &args.script, global)
+    // A script inside a project with an [e2e] section keeps its baselines
+    // where `test` keeps them.
+    let project = std::path::absolute(&base)
+        .ok()
+        .and_then(|dir| e2e::Config::find(&dir).ok())
+        .map(|config| config.root);
+    execute(
+        &name,
+        &src,
+        &base,
+        usage,
+        &args.script,
+        project.as_deref(),
+        global,
+    )
 }
 
 /// Checks the script, then runs it. `usage` is the command that ran it,
-/// for hints (`chrome-cdp run login.cdp`).
+/// for hints (`chrome-cdp run login.cdp`); `project` is the root of the
+/// E2E project the script is in, whose `e2e/snapshots` hold its baselines.
 fn execute(
     file: &str,
     src: &str,
     base: &Path,
     usage: Cmd,
     args: &ScriptArgs,
+    project: Option<&Path>,
     global: &GlobalArgs,
 ) -> u8 {
     let mode = global.mode();
@@ -85,7 +101,14 @@ fn execute(
         usage,
     };
     match prepare(file, src, &vars, global) {
-        Ok(steps) => run_steps(steps, args.keep_going, mode),
+        Ok(mut steps) => {
+            if let Some(root) = project {
+                for step in &mut steps {
+                    crate::test::project_baselines(&mut step.cli, root, false);
+                }
+            }
+            run_steps(steps, args.keep_going, mode)
+        }
         Err(problems) => output::print(mode, Err(invalid(problems))),
     }
 }

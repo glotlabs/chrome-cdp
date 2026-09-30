@@ -173,6 +173,7 @@ chrome-cdp test [PATH…] [--grep RE] [--tags smoke,!slow] [--jobs N]
   Its timeout is cut to what is left of the test's time limit.
 - `expect-snapshot` and `expect-screenshot` baselines are in
   `e2e/snapshots` of the project; `--update-snapshots` rewrites them.
+  `run file.cdp` of a file inside the project uses them too.
 - A test that fails, then passes on a retry, is **flaky**: it counts as
   passing and is always reported. `--bail` stops after the first failed
   test; the rest are "not run".

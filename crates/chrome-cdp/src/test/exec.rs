@@ -950,25 +950,11 @@ impl Runner<'_> {
             )),
             _ => None,
         };
-        match &mut cli.command {
-            Some(Command::ExpectSnapshot(args)) => {
-                args.update |= self.options.update_snapshots;
-                args.dir.get_or_insert_with(|| self.plan.snapshots.clone());
-            }
-            Some(Command::ExpectScreenshot(args)) => {
-                args.update |= self.options.update_snapshots;
-                args.dir.get_or_insert_with(|| self.plan.snapshots.clone());
-            }
-            Some(Command::Expect(args)) if args.layout => {
-                args.update |= self.options.update_snapshots;
-                args.dir.get_or_insert_with(|| self.plan.snapshots.clone());
-            }
-            Some(Command::Expect(args)) if args.audit && args.baseline.is_some() => {
-                args.update |= self.options.update_snapshots;
-                args.dir.get_or_insert_with(|| self.plan.audits.clone());
-            }
-            _ => {}
-        }
+        super::project_baselines(
+            &mut cli,
+            &self.plan.config.root,
+            self.options.update_snapshots,
+        );
         let screenshot = matches!(cli.command, Some(Command::ExpectScreenshot(_)));
         let exit_on_finding = crate::exits_on_finding(&cli);
         let out = crate::run(cli)?;

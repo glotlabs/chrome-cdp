@@ -663,7 +663,8 @@ Examples:
     #[command(after_help = "\
 Reads the active tab (or --tab) as `snapshot -i` shows it, without refs
 (and long lists in full), and compares it with the baseline
-.chrome-cdp/snapshots/<NAME>.txt, reading again until they match or
+.chrome-cdp/snapshots/<NAME>.txt (in `test`, and in `run` of a file of an
+E2E project, e2e/snapshots/<NAME>.txt), reading again until they match or
 --timeout (default 5s) passes. A failure exits 1 (ExpectFailed) with a
 unified diff: - lines are the baseline's, + lines the page's.
 
@@ -698,8 +699,9 @@ Examples:
     #[command(after_help = "\
 Takes a screenshot of the active tab's viewport (or the --full page, or the
 element LOCATOR names) in CSS pixels and compares it with the baseline
-.chrome-cdp/screenshots/<NAME>-<os>.png, taking it again until it matches
-or --timeout (default 5s) passes. A pixel has changed when its colour moved
+.chrome-cdp/screenshots/<NAME>-<os>.png (in `test`, and in `run` of a file
+of an E2E project, e2e/snapshots/<NAME>-<os>.png), taking it again until it
+matches or --timeout (default 5s) passes. A pixel has changed when its colour moved
 more than --threshold (0 to 1); up to --max-diff-pixels may change. A
 failure exits 1 (ExpectFailed) and saves the screenshot and a diff image
 (changes in red) where `screenshot` saves its files.

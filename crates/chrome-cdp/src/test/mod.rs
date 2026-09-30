@@ -59,6 +59,35 @@ pub(crate) fn mock_only(cli: &crate::cli::Cli) -> Option<&'static str> {
     }
 }
 
+/// Points the baseline commands of a step of project `root` at the
+/// project's E2E folders (`e2e/snapshots`, and `e2e/audit` for `expect
+/// --audit NAME`) unless the step gives `--dir`; `update` is `test
+/// --update-snapshots`. `test` and `run file.cdp` (of a file inside a
+/// project with an `[e2e]` section) share them.
+pub(crate) fn project_baselines(cli: &mut crate::cli::Cli, root: &std::path::Path, update: bool) {
+    use crate::cli::Command;
+    let snapshots = || root.join(plan::SNAPSHOTS);
+    match &mut cli.command {
+        Some(Command::ExpectSnapshot(args)) => {
+            args.update |= update;
+            args.dir.get_or_insert_with(snapshots);
+        }
+        Some(Command::ExpectScreenshot(args)) => {
+            args.update |= update;
+            args.dir.get_or_insert_with(snapshots);
+        }
+        Some(Command::Expect(args)) if args.layout => {
+            args.update |= update;
+            args.dir.get_or_insert_with(snapshots);
+        }
+        Some(Command::Expect(args)) if args.audit && args.baseline.is_some() => {
+            args.update |= update;
+            args.dir.get_or_insert_with(|| root.join(plan::AUDITS));
+        }
+        _ => {}
+    }
+}
+
 /// Runs `test` and returns the exit code; `explicit_session` says whether
 /// `--session` (or its env var) named the session to use.
 pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) -> u8 {

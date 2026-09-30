@@ -25,8 +25,9 @@ Options:
 ```text
 Takes a screenshot of the active tab's viewport (or the --full page, or the
 element LOCATOR names) in CSS pixels and compares it with the baseline
-.chrome-cdp/screenshots/<NAME>-<os>.png, taking it again until it matches
-or --timeout (default 5s) passes. A pixel has changed when its colour moved
+.chrome-cdp/screenshots/<NAME>-<os>.png (in `test`, and in `run` of a file
+of an E2E project, e2e/snapshots/<NAME>-<os>.png), taking it again until it
+matches or --timeout (default 5s) passes. A pixel has changed when its colour moved
 more than --threshold (0 to 1); up to --max-diff-pixels may change. A
 failure exits 1 (ExpectFailed) and saves the screenshot and a diff image
 (changes in red) where `screenshot` saves its files.

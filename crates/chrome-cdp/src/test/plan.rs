@@ -87,11 +87,6 @@ pub(super) struct Plan {
     pub(super) repeat: u32,
     /// `--debug`: a failure stops the run, so retries are off.
     pub(super) debug: bool,
-    /// `expect-snapshot` baselines' directory.
-    pub(super) snapshots: PathBuf,
-    /// What `expect --audit`'s `--dir` is: its baselines are in its
-    /// `audit/`.
-    pub(super) audits: PathBuf,
     /// What every test's context gets before its steps (11.6).
     pub(super) determinism: Fixed,
     /// The backend the run uses (11.11).
@@ -273,8 +268,6 @@ impl Plan {
         let jobs = args.jobs.unwrap_or_else(|| backend.jobs.count()).max(1);
         let retries = args.retries.unwrap_or(backend.retries);
         let repeat = args.repeat.unwrap_or(1);
-        let snapshots = config.root.join(SNAPSHOTS);
-        let audits = config.root.join(AUDITS);
         let determinism = backend.determinism.resolve();
         Ok(Self {
             config,
@@ -285,8 +278,6 @@ impl Plan {
             retries,
             repeat,
             debug: args.debug,
-            snapshots,
-            audits,
             determinism,
             backend,
             run,
