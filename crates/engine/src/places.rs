@@ -15,6 +15,8 @@
 
 use std::future::Future;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 tokio::task_local! {
     /// The project root of the call being handled.
@@ -43,7 +45,10 @@ pub(crate) fn root() -> Option<PathBuf> {
 ///   `<root>/<rest>` is a file: the longest such rest wins. A rest of the
 ///   file name alone does not count (too many `index.ts`). An absolute
 ///   path that does not exist (a build made elsewhere, in a container)
-///   is matched the same way.
+///   is matched the same way. With no rest under the root, a directory
+///   one or two levels down may hold it (the app in `app/` or
+///   `packages/web/` of the project): the longest rest wins, and a tie
+///   between two directories is no match.
 pub(crate) fn to_disk(source: &str, root: Option<&Path>) -> Option<PathBuf> {
     let path = path_of(source)?;
     if let Some(fs) = path.strip_prefix("/@fs/") {
@@ -63,12 +68,82 @@ pub(crate) fn to_disk(source: &str, root: Option<&Path>) -> Option<PathBuf> {
     if segments.contains(&"..") {
         return None;
     }
-    (0..segments.len().saturating_sub(1)).find_map(|start| {
-        let file = segments[start..]
-            .iter()
-            .fold(root.to_path_buf(), |dir, s| dir.join(s));
-        file.is_file().then_some(file)
-    })
+    // The longest rest under `base`, and where it starts.
+    let under = |base: &Path| {
+        (0..segments.len().saturating_sub(1)).find_map(|start| {
+            let file = segments[start..]
+                .iter()
+                .fold(base.to_path_buf(), |dir, s| dir.join(s));
+            file.is_file().then_some((start, file))
+        })
+    };
+    if let Some((_, file)) = under(root) {
+        return Some(file);
+    }
+    // The app in a directory of the project (`app/`, `packages/web/`):
+    // the longest rest under one of them, when no other has one as long.
+    let mut best: Option<(usize, PathBuf)> = None;
+    let mut tied = false;
+    for base in bases(root) {
+        let Some((start, file)) = under(&base) else {
+            continue;
+        };
+        match &best {
+            Some((b, _)) if *b < start => {}
+            Some((b, _)) if *b == start => tied = true,
+            _ => {
+                best = Some((start, file));
+                tied = false;
+            }
+        }
+    }
+    best.filter(|_| !tied).map(|(_, file)| file)
+}
+
+/// [`bases`] of the last root asked, and when.
+#[allow(clippy::type_complexity)]
+static BASES: Mutex<Option<(PathBuf, Instant, Vec<PathBuf>)>> = Mutex::new(None);
+
+/// The directories one and two levels below `root` that an app's sources
+/// may be in: not hidden, not `node_modules` or `target`, not through a
+/// symlink. Kept for a few seconds per root, since every frame of a
+/// stack asks.
+fn bases(root: &Path) -> Vec<PathBuf> {
+    const FRESH: Duration = Duration::from_secs(2);
+    const MAX: usize = 2_000;
+
+    let mut cache = BASES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((r, at, dirs)) = cache.as_ref()
+        && r == root
+        && at.elapsed() < FRESH
+    {
+        return dirs.clone();
+    }
+    let children = |dir: &Path| -> Vec<PathBuf> {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
+        let mut dirs: Vec<PathBuf> = entries
+            .flatten()
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+            .filter(|e| {
+                let name = e.file_name();
+                let name = name.to_string_lossy();
+                !name.starts_with('.') && name != "node_modules" && name != "target"
+            })
+            .map(|e| e.path())
+            .collect();
+        dirs.sort();
+        dirs
+    };
+    let mut dirs = children(root);
+    let second: Vec<PathBuf> = dirs.iter().flat_map(|d| children(d)).collect();
+    dirs.extend(second);
+    dirs.truncate(MAX);
+    *cache = Some((root.to_path_buf(), Instant::now(), dirs.clone()));
+    dirs
 }
 
 /// How a file on disk prints: relative to `root` when inside it
@@ -184,7 +259,7 @@ fn percent_decode(text: &str) -> String {
 mod tests {
     use std::path::{Path, PathBuf};
 
-    use super::{same_file, shown, to_disk, without_query};
+    use super::{BASES, same_file, shown, to_disk, without_query};
 
     /// A project: `app/src/cart.ts`, `app/src/index.ts`,
     /// `app/src/components/index.ts` and `app/index.ts`, and a file
@@ -271,6 +346,49 @@ mod tests {
             disk("http://x/app/src/index.ts", &root).as_deref(),
             Some("src/index.ts")
         );
+    }
+
+    #[test]
+    fn an_app_in_a_directory_of_the_project() {
+        let (dir, _) = project();
+        let root = dir.path();
+        assert_eq!(
+            disk("http://localhost:5173/src/cart.ts?t=1", root).as_deref(),
+            Some("app/src/cart.ts")
+        );
+        assert_eq!(
+            disk("http://x/src/components/index.ts", root).as_deref(),
+            Some("app/src/components/index.ts")
+        );
+        let changed = || BASES.lock().unwrap().take();
+        // Under the root itself first: `lib/util.ts`, not a deeper one.
+        std::fs::create_dir_all(root.join("app/lib")).unwrap();
+        std::fs::write(root.join("app/lib/util.ts"), "").unwrap();
+        assert_eq!(
+            disk("http://x/lib/util.ts", root).as_deref(),
+            Some("lib/util.ts")
+        );
+        // Two levels down.
+        let web = root.join("packages/web/src/pages");
+        std::fs::create_dir_all(&web).unwrap();
+        std::fs::write(web.join("home.tsx"), "").unwrap();
+        changed();
+        assert_eq!(
+            disk("http://x/src/pages/home.tsx", root).as_deref(),
+            Some("packages/web/src/pages/home.tsx")
+        );
+        // Two apps with the file: which one is not known.
+        let admin = root.join("packages/admin/src/pages");
+        std::fs::create_dir_all(&admin).unwrap();
+        std::fs::write(admin.join("home.tsx"), "").unwrap();
+        changed();
+        assert_eq!(disk("http://x/src/pages/home.tsx", root), None);
+        // Not in hidden directories or node_modules.
+        let hidden = root.join(".cache/src");
+        std::fs::create_dir_all(&hidden).unwrap();
+        std::fs::write(hidden.join("only.ts"), "").unwrap();
+        changed();
+        assert_eq!(disk("http://x/src/only.ts", root), None);
     }
 
     #[test]
