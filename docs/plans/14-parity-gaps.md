@@ -1,6 +1,6 @@
 # Plan 14 — Parity gaps and small commands
 
-Status: IN PROGRESS (14.1-14.3 done)
+Status: IN PROGRESS (14.1-14.4 done)
 Depends on: v1 (plans 01–11). Track 3 of [plan 12](12-after-v1.md). Plan 13
 (every frame, every worker) is not required, but where it has landed, use its
 target graph instead of adding per-session code.
@@ -450,7 +450,7 @@ match with changed dynamic text, fail on a missing button, and survive
 | `locator` command, `convert` | `crates/chrome-cdp/tests/cli.rs`, `convert/tests.rs`, golden |
 | Paused timers | engine test with a countdown, debounce and rAF fixture |
 | Clipboard, keyboard, upload, downloads | engine tests; CLI tests for `open --downloads-dir` and `downloads --clear` |
-| Extensions | engine tests; `testdata/extensions/` fixture extension |
+| Extensions | `crates/chrome-cdp/tests/extensions.rs`, golden; `testdata/extensions/` fixture extension; tab routing unit tests |
 | Sessions and waits | `crates/chrome-cdp/tests/wait.rs`, `session.rs`, `cli.rs` |
 | HAR, PDF, annotate | `crates/chrome-cdp/tests/network.rs`, `screenshot.rs` |
 | 🟡 rows | engine and CLI tests per item; `tests/parity.rs` for the counts |
@@ -555,3 +555,50 @@ match with changed dynamic text, fail on a missing button, and survive
   body open.
 - **14.3, golden runs.** `GOLDEN_CASES=word,word` runs only the golden
   cases whose names hold one of the words, for iterating on a few.
+- **14.4, reload.** `reload` calls `Extensions.loadUnpacked` on the
+  extension's directory again instead of uninstall + load: Chrome reloads
+  it with the same id and keeps its `chrome.storage`, as the Reload button
+  does, where uninstalling deletes the storage.
+- **14.4, extension debugging.** Chrome for Testing 154 answers
+  `Extensions.*` without `--enable-unsafe-extension-debugging`, over the
+  pipe and over a WebSocket, so `extensions load` works in any session,
+  `--extension` or not. The planned "started without extension
+  debugging" error (hint `open --restart --extension DIR`, or for
+  `connect` the flag) is kept for a Chrome that refuses (method not found
+  or "not available"); no Chrome at hand refuses, so it is not tested.
+- **14.4, popup.** `Extensions.triggerAction` wants the tab's `tab`
+  target, which Chrome does not link to its page target: `popup` attaches
+  to each tab target in turn (the page's URL first) and auto-attaches to
+  find the page. An extension id Chrome does not know crashes Chrome 154
+  there, so the id always comes from `getExtensions`. The popup attaches
+  as an `other` target that becomes a page; the tab manager attaches to
+  such a target again, so it becomes a tab (what its scripts logged
+  before that is lost). It is not made active: the output names it and
+  `tab t2` switches. `popup` waits the whole `--timeout` for a manifest
+  with a `default_popup`, 300ms without one, and 2s when the manifest
+  cannot be read (a connected browser's files).
+- **14.4, storage.** Chrome answers the storage commands only in a
+  session of one of the extension's own targets ("Extension not found" on
+  a page, "No associated browser context" on the browser). `storage` uses
+  its service worker (kept running while chrome-cdp is attached), else a
+  tab showing one of its pages, else a tab opened on its `manifest.json`
+  for the call and closed after (it uses up a tab number). Every
+  subcommand's JSON has the area's items after it (`get KEY…` only
+  those); `set`, `remove` and `clear` print a line, `get` the JSON.
+- **14.4, console.** Plan 13's graph attached extension service workers
+  but, having no web origin, their console reached no tab. An extension's
+  worker now belongs to `chrome-extension://<id>`: its console goes to
+  every tab of its scope (an extension works on every page) and its
+  requests only to the tabs of its own pages, so they hold no web page's
+  `--idle` wait. Its pages (popup, options) are tabs with their own
+  console.
+- **14.4, status.** `open` and `status` keep listing what `--extension`
+  loaded (`browser.extensions`), and a daemon upgrade relaunches with
+  those only; `extensions` lists what the browser has loaded now.
+- **14.4, `--tab`** is used by `popup` only; the other subcommands warn
+  that it is ignored, as `permissions` does. `chrome-cdp skill` gets no
+  line: extensions matter only to agents testing one.
+- **14.4, tests** are CLI tests (`tests/extensions.rs`) and golden cases
+  rather than engine tests: they go through the argument parsing (JSON,
+  `--area`) and the session sandbox the extension fixture already uses.
+  Golden ids depend on the fixture's path, so they read `<ext-id>`.
