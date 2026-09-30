@@ -1,6 +1,6 @@
 # Plan 16 — Seeing more of the page
 
-Status: IN PROGRESS (16.1-16.2 done)
+Status: IN PROGRESS (16.1-16.3 done)
 Depends on: 04 (snapshot, refs, locators), 05 (actionability pipeline, action report), 06 (screenshots), 07 (viewport emulation), 09 (`expect`, baselines), 11 (contexts, stable locators), 13 (the target graph, for out-of-process iframes)
 
 ## Goal
@@ -570,9 +570,9 @@ on its state.
       passes.
 - [x] `expect --layout` passes with an up-to-date baseline and fails on a
       new finding; finding keys survive a reload and a re-render.
-- [ ] `snapshot` without the new flags prints exactly what v1 printed on
+- [x] `snapshot` without the new flags prints exactly what v1 printed on
       every corpus page (the plan 04 `.expected` files are unchanged).
-- [ ] `--budget N` output is at most N estimated tokens on every corpus
+- [x] `--budget N` output is at most N estimated tokens on every corpus
       page where the stubs fit, and every ref and region in it works.
 - [ ] `fill-form` fills `forms/checkout.html` in one call, including the
       field that appears after the country, and the page's own state
@@ -704,3 +704,34 @@ _(append here)_
 - 16.2: no line for `layout` in `chrome-cdp skill`: it is at its 2,000
   token budget, and the lines this plan asks for (`forms`, `snapshot
   --budget`) need the room. `docs/playwright-parity.md` has a row.
+- 16.3: with `--budget` (and no `--fold`) nothing folds while the page
+  fits; over it, runs fold first, then regions, and then as many of each
+  run's siblings as still fit are shown again (outer runs first, then in
+  page order, and no more than the 30 a list shows). Folding every run
+  "always" left `huge.html` at 100 of its 4,000 tokens, and a small page
+  with `snapshot_budget` set would have changed. `--fold` folds every run.
+- 16.3: a run is of siblings with something below them: a leaf's line
+  (a link, a button) is all there is to it, so folding four links would
+  hide their names and save little. A shape is the node and three levels
+  below it. A sibling with focus in it breaks the run.
+- 16.3: `--budget` folds in three passes: regions (20 or more nodes
+  below; the plan's roles first, then the largest; of the same size the
+  last, so the top of the page stays), then any node with something
+  below it, then the top-level landmarks. A folded node keeps its own
+  line (name, ref, states) with `[region r4: N nodes, N refs, ~N
+  tokens]` after it; the tokens are those of its lines were it shown.
+  The budget counts the whole text, header included; a warning names
+  `snapshot --expand` when something folded.
+- 16.3: `--expand` prints `region r4` before each region's nodes (in
+  `--json`, its top-level nodes carry `region`); an expanded run's
+  siblings are not folded again among themselves, nor is an expanded
+  region's root. It cannot be used with `--scope` or `--diff`
+  (`BadArgs`). A region whose nodes left the page is `RefStale`, like an
+  unknown or stale one.
+- 16.3: a budget above the default `--max-chars` (20,000 characters)
+  raises it to the budget's characters, so the budget bounds the output.
+- 16.3: only nodes with a DOM key fold. The DOM engine keys only what it
+  addresses (controls, iframes), so with `--engine dom` little folds.
+- 16.3: `cards` is the corpus's last page, so the plan 04 goldens keep
+  their tab ids. Under `-i`, cards flatten to their links and buttons
+  (leaves), which do not fold as runs; `--budget` folds regions there.
