@@ -368,7 +368,11 @@ async fn security_of_the_scheme_forms_cookies_and_headers() {
         "{}",
         out.text
     );
-    assert!(data.findings.iter().all(|f| f.severity == Severity::Warning));
+    assert!(
+        data.findings
+            .iter()
+            .all(|f| f.severity == Severity::Warning)
+    );
     // https: no HSTS (info), the cookie there without Secure.
     let https = format!("https://audit.test:{}", port(site.https()));
     goto(

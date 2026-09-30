@@ -418,6 +418,73 @@ fn layout_baselines_in_the_project() {
 }
 
 #[test]
+fn audit_baselines_in_the_project() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    // expect --audit baselines go to e2e/audit of the project.
+    std::fs::write(
+        project.root.join("scenarios/pass/audit.cdp"),
+        "@test \"no new findings\"\n  goto /audit/a11y.html\n  expect --audit --baseline a11y\n",
+    )
+    .unwrap();
+    let run = |ci: bool| {
+        let mut cmd = project.sandbox.cli();
+        cmd.current_dir(&project.root)
+            .args(["test", "scenarios/pass/audit.cdp"]);
+        if ci {
+            cmd.env("CI", "1");
+        } else {
+            cmd.env_remove("CI");
+        }
+        common::run(&mut cmd)
+    };
+    let baseline = project.root.join("e2e/audit/a11y.json");
+    // In CI, a missing baseline fails; a local run writes it.
+    let out = run(true);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("there is no baseline yet"),
+        "{}",
+        stdout(&out)
+    );
+    assert!(!baseline.exists());
+    let out = run(false);
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+    let written = std::fs::read_to_string(&baseline).unwrap();
+    assert!(written.contains("\"a11y/image-alt/img\""), "{written}");
+    // Compared now, in CI too.
+    let out = run(true);
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+    std::fs::write(&baseline, "{\"version\": 1, \"accepted\": []}\n").unwrap();
+    let out = run(true);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("the baseline does not accept"),
+        "{}",
+        stdout(&out)
+    );
+    // lint checks baseline files.
+    std::fs::write(
+        &baseline,
+        "{\"version\": 1, \"accepted\": [{\"key\": \"a11y/image-alt/img\", \"why\": \"x\"}]}\n",
+    )
+    .unwrap();
+    let out = common::run(
+        project
+            .sandbox
+            .cli()
+            .current_dir(&project.root)
+            .args(["lint", "e2e/audit/a11y.json"]),
+    );
+    assert_eq!(out.status.code(), Some(1), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("unknown field `why`"),
+        "{}",
+        stderr(&out)
+    );
+}
+
+#[test]
 fn a_chrome_per_job_and_snapshot_baselines_in_the_project() {
     let Some(chrome) = chrome_path() else { return };
     let project = Project::new(&chrome);

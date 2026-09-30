@@ -7109,8 +7109,7 @@ pub(crate) struct ExpectArgs {
         long = "category",
         value_enum,
         value_delimiter = ',',
-        value_name = "CATEGORY",
-        requires = "audit"
+        value_name = "CATEGORY"
     )]
     pub(crate) categories: Vec<AuditCategoryArg>,
 

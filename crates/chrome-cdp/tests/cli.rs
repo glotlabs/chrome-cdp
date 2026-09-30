@@ -316,6 +316,41 @@ fn cdp_checks_arguments_before_starting_a_daemon() {
 }
 
 #[test]
+fn audit_checks_arguments_before_starting_a_daemon() {
+    let sandbox = Sandbox::new();
+    let usage = |args: &[&str], says: &str| {
+        let out = sandbox.run(args);
+        assert_eq!(code(&out), 2, "{args:?}: {}", stderr(&out));
+        assert!(stderr(&out).contains(says), "{args:?}: {}", stderr(&out));
+    };
+    usage(&["audit", "--category", "secruity"], "security");
+    usage(&["audit", "--update"], "--baseline");
+    usage(&["audit", "--baseline", "../up"], "cannot name a baseline");
+    usage(
+        &["audit", "--all-tabs", "--tab", "t2"],
+        "--all-tabs audits every tab",
+    );
+    usage(
+        &["expect", "--audit", "#a", "visible"],
+        "cannot be used with",
+    );
+    usage(
+        &["expect", "--audit", "--viewports", "mobile"],
+        "is for layout and expect --layout",
+    );
+    usage(
+        &["expect", "#a", "visible", "--baseline", "x"],
+        "--baseline is for expect --layout and expect --audit",
+    );
+    usage(
+        &["expect", "#a", "visible", "--min-severity", "error"],
+        "--min-severity is for expect --no-issues and expect --audit",
+    );
+    usage(&["expect", "--category", "meta", "--no-errors"], "--audit");
+    assert!(!sandbox.runtime_dir().join("chrome-cdp").exists());
+}
+
+#[test]
 fn a_missing_chrome_leaves_no_daemon_behind() {
     let sandbox = Sandbox::new();
     let out = sandbox.run(&["open", "--chrome", "/nonexistent/chrome"]);

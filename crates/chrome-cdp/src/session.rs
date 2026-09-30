@@ -817,6 +817,15 @@ pub(crate) fn expect(
                 .flag("baseline", "checkout"),
         )));
     }
+    if !args.categories.is_empty() {
+        return Err(
+            ErrorInfo::new(ErrorKind::BadArgs, "--category is for expect --audit").hint(Hint::run(
+                Cmd::new("expect")
+                    .switch("audit")
+                    .flag("category", "a11y,meta"),
+            )),
+        );
+    }
     if args.min_severity.is_some() && !args.no_issues {
         return Err(ErrorInfo::new(
             ErrorKind::BadArgs,
@@ -2462,17 +2471,7 @@ pub(crate) fn audit(
 
 /// `expect --audit`: needs a running session.
 fn expect_audit(args: &crate::cli::ExpectArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
-    if let Some(matcher) = &args.matcher {
-        return Err(ErrorInfo::new(
-            ErrorKind::BadArgs,
-            format!("--audit audits the page; it takes no matcher, got {matcher:?}"),
-        )
-        .hint(Hint::run(
-            Cmd::new("expect")
-                .switch("audit")
-                .flag("baseline", "checkout"),
-        )));
-    }
+    // clap turns down a matcher with --audit.
     if let Some(flag) = args.layout_flags.given() {
         return Err(ErrorInfo::new(
             ErrorKind::BadArgs,
