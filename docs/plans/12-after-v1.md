@@ -158,6 +158,7 @@ green for a month.
 ### Track 3 — Parity gaps and small commands
 
 Plan: [14-parity-gaps](14-parity-gaps.md).
+Status: DONE (plan 14, 14.1-14.7).
 
 **Why.** The last ❌ rows of `docs/playwright-parity.md`, the 🟡 rows
 agents or converted suites hit, and small commands the backlog asked

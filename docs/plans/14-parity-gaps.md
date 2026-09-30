@@ -1,6 +1,6 @@
 # Plan 14 — Parity gaps and small commands
 
-Status: IN PROGRESS (14.1-14.6 done)
+Status: DONE (14.1-14.7)
 Depends on: v1 (plans 01–11). Track 3 of [plan 12](12-after-v1.md). Plan 13
 (every frame, every worker) is not required, but where it has landed, use its
 target graph instead of adding per-session code.
@@ -430,16 +430,16 @@ match with changed dynamic text, fail on a missing button, and survive
 
 - [x] `docs/playwright-parity.md` has no ❌ row; its "Today:" line and
       `tests/parity.rs` agree.
-- [ ] The 🟡 rows for `keyboard.down`/`up`, `exposeFunction`, WebSocket
+- [x] The 🟡 rows for `keyboard.down`/`up`, `exposeFunction`, WebSocket
       frames, `toMatchAriaSnapshot` and `browser_generate_locator` are ✅,
       in both parity docs.
 - [x] `convert` translates `filter({ has, hasNot, hasNotText })`, `or()`
       and `and()` on the same-parent forms, and its tests load the output.
-- [ ] Every new command and flag has help with an example, a
+- [x] Every new command and flag has help with an example, a
       `docs/commands/` page, golden output and a `--json` form that only
       adds fields.
-- [ ] `cargo xtask release check` passes.
-- [ ] The track-3 backlog notes of plan 12 §6 are done and deleted from
+- [x] `cargo xtask release check` passes.
+- [x] The track-3 backlog notes of plan 12 §6 are done and deleted from
       `.looper/tasks/`.
 
 ## Tests
@@ -674,3 +674,39 @@ match with changed dynamic text, fail on a missing button, and survive
 - **14.6, `screenshot LOC` timeout.** The v1 backlog note: `screenshot`
   with a locator waits for its element, so it now defaults to the 10s of
   actions and reads; a whole-page capture keeps 30s.
+- **14.7, expose answers.** A function exposed with answers numbers its
+  calls in the page and sends `{"call":N,"args":[…]}`; the daemon
+  evaluates the answer in the calling context, which resolves that
+  call's promise. One without answers still resolves at once, so a
+  daemon that misses a call cannot leave a page waiting. `--returns X`
+  is the sequence `[X]`; the sequence is counted per function across the
+  session's tabs and reloads, and `expose NAME` with other answers (or
+  none) is a new binding that starts over. Workers still get no exposed
+  functions (backlog note `expose-in-workers`). `convert` turns an arrow
+  whose body is a JSON literal into `--returns`; other functions stay
+  `expose NAME`.
+- **14.7, frames.** Each frame has its number on the socket (`n`, a new
+  field of `WebSocketFrame`) and the log's change count when it came,
+  which `wait --ws` compares with a new per-command mark, as `--console`
+  does. `network frames` defaults to `--limit 100`; `network show` keeps
+  listing the last 20 frames (10 in text) and adds `earlier_frames` and
+  a line naming `network frames ID`. `--follow` ends when the socket
+  closes. A request that is no WebSocket is BadArgs with the hint
+  `network --type websocket --since 0`, and so is the hint of a `wait
+  --ws` timeout that saw no matching socket. `--frame` without `--ws` is
+  BadArgs, as `--status` without `--response` is. HAR exports now carry
+  up to 500 messages per socket.
+- **14.7, templates.** A regex value is `/…/` or `/…/i` in place of the
+  quoted value, found anywhere in it (as Playwright's are); `"*"` must
+  still be a value (a line without a name does not match). One
+  alignment (fewest template lines left out, page lines added, and lines
+  changed at the same depth) decides the match and writes the page in
+  the template's terms; the failure diff is from the template to that,
+  and `--update` stores it. A changed line counts as one change, so a
+  `...` does not swallow the page's version of a line the template no
+  longer matches. A regex that does not compile is BadArgs naming the
+  line. `convert` keeps `toMatchAriaSnapshot` a TODO: Playwright's YAML
+  (`[level=1]`, `- text: …`) is not the `snapshot -i` format.
+- **14.7, skill.** `chrome-cdp skill` gets no line for these: its list
+  is the hot path, and WebSocket frames, exposed answers and templates
+  are for tests that need them.
