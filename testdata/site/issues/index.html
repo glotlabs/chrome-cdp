@@ -15,7 +15,9 @@
     <input id="email" name="email" autocomplete="email">
   </form>
   <script>document.title = 'inline ran';</script>
-  <!-- A cross-site iframe raises its own. -->
+  <!-- Iframes raise their own: one of another site (its own process),
+       one of this site (this page's). -->
   <iframe id="frame" src="{{ORIGIN_B}}/issues/frame.html" title="other site"></iframe>
+  <iframe id="same" name="same" src="same.html" title="same site"></iframe>
 </body>
 </html>

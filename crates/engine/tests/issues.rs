@@ -138,7 +138,7 @@ async fn issues_of_a_page_its_frames_and_its_worker() {
             .filter(|i| i.rule == "content-security-policy-inline-violation")
             .count();
         cors == 3
-            && csp == 2
+            && csp == 3
             && issues.iter().any(|i| i.rule.starts_with("deprecation-"))
             && issues.iter().any(|i| i.rule.starts_with("form-"))
     })
@@ -168,6 +168,16 @@ async fn issues_of_a_page_its_frames_and_its_worker() {
     .unwrap();
     assert!(framed.target.frame.is_some(), "{framed:?}");
     assert!(framed.target.reference.is_some(), "{framed:?}");
+    // The same-site iframe's, in the page's process: found in its frame.
+    let same = find(
+        &issues,
+        "content-security-policy-inline-violation",
+        "/issues/same.html",
+    )
+    .unwrap();
+    assert!(same.target.frame.is_some(), "{same:?}");
+    assert!(same.target.reference.is_some(), "{same:?}");
+    assert_ne!(same.target.reference, csp.target.reference);
 
     // CORS: the page's, the frame's and the worker's requests, each with
     // its id in the network log.

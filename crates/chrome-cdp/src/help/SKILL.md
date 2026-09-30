@@ -35,8 +35,8 @@ browser, tabs and refs between commands. Output is compact text; add
 5. **After a navigation, refs are stale**: run `snapshot -i` again.
 6. **When stuck**: read the error's `hint:` line (it names the next
    command), then `chrome-cdp errors`, `console`, `network --failed`, or
-   `screenshot` (prints the PNG path; look at the image). `why e8` says
-   why an action on e8 would wait, without waiting.
+   `screenshot` (prints the PNG path; look at it). `why e8` says why an
+   action on e8 would wait.
 7. **Verify**: `chrome-cdp expect 'role=alert' text Saved`, `expect e6
    visible`, `expect '.row' count 3`, `expect --no-errors`. It retries
    for 5s, and a failure (exit 1) says what it saw instead. To guard a
@@ -141,10 +141,10 @@ fill-form --values '{"Email":"a@b"}'  fill a whole form; see forms
 upload <loc> <file...> [--drop] file inputs; --drop for drop zones
 wait <loc> | --text t | --url u | --idle
 expect <loc> visible|text t|value v|count n [--not]   assert, retrying
-expect --url u | --no-errors | --no-failed-requests | --a11y
+expect --url u | --no-errors | --no-issues | --no-failed-requests | --a11y
 expect-snapshot <name>         snapshot -i vs a stored baseline; a diff if not
 screenshot [loc] [--full [loc]] [-o f.png]   --full loc: all of a scrolling container
-errors | console | network [--failed]
+errors | console | issues | network [--failed]
 eval '<js>'                    run JavaScript, print the value (elements with refs)
 tabs | tab <id> | tab new <url> | tab close
 frames                         the tab's iframes (cross-site too) and workers

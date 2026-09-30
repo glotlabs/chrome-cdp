@@ -254,8 +254,9 @@ impl Engine {
     }
 
     /// Names the element of issue `stored` (node `backend` of `frame`,
-    /// else of its session's root frame): its ref, role and name, stable
-    /// locator and key, remembered in the tab's issues.
+    /// else of the frame of its session that has it): its ref, role and
+    /// name, frame, stable locator and key, remembered in the tab's
+    /// issues.
     async fn name_element(
         &self,
         running: &Running,
@@ -265,15 +266,25 @@ impl Engine {
         backend: i64,
     ) {
         stored.named = true;
-        let Some(frame) = frame.or_else(|| running.tabs.target_of(&stored.session)) else {
-            return;
+        // Chrome names the frame of few: a session's same-site iframes
+        // share its node ids, and only the node's own frame resolves it.
+        let frames = match frame {
+            Some(frame) => vec![frame],
+            None => running.tabs.frames_of_session(page.id, &stored.session),
         };
-        let key = NodeKey { frame, backend };
         let generation = running
             .tabs
             .snapshot_memory(page.id, |m| m.refs.generation());
-        let live = self.live_node(running, page, &key, NAME_WAIT).await;
-        if let Ok(Some((context, object_id))) = live {
+        let mut live = None;
+        for frame in frames {
+            let key = NodeKey { frame, backend };
+            if let Ok(Some(found)) = self.live_node(running, page, &key, NAME_WAIT).await {
+                live = Some((key, found));
+                break;
+            }
+        }
+        if let Some((key, (context, object_id))) = live {
+            stored.issue.target.frame = Some(key.frame.clone());
             let target = Target {
                 key,
                 context,

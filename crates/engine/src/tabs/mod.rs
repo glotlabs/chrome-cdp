@@ -1746,6 +1746,21 @@ impl Tabs {
         hosts
     }
 
+    /// The frames of tab `id` that session `session_id` owns, its root
+    /// first (the page's session owns its same-site iframes too).
+    pub(crate) fn frames_of_session(&self, id: u32, session_id: &str) -> Vec<String> {
+        let state = self.shared.lock();
+        let Some(tab) = state.tabs.get(&id) else {
+            return Vec::new();
+        };
+        tab.frames
+            .list()
+            .into_iter()
+            .filter(|f| tab.frames.owner(&f.id) == Some(session_id))
+            .map(|f| f.id)
+            .collect()
+    }
+
     /// The target id of session `session_id` (for a page or iframe
     /// session, its root frame's id).
     pub(crate) fn target_of(&self, session_id: &str) -> Option<String> {
