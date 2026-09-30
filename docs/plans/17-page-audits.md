@@ -1,6 +1,6 @@
 # Plan 17 — Page audits
 
-Status: IN PROGRESS (17.1-17.2 done)
+Status: IN PROGRESS (17.1-17.3 done)
 Depends on: 13 (the target graph: issues come from every target), 16
 §16.2 (`layout`, one of `audit`'s categories), 09 §9.1 (`expect`,
 `--a11y`), 06 (`perf`, `console`, `network`)
@@ -315,7 +315,7 @@ smoke scenario per page). Link it from `docs/README.md` and mention
 - [x] `expect --perf` parses every metric in the table with units, fails
       with every budget's measured value and the throttling, and treats a
       metric not measured yet as a failure with a hint.
-- [ ] The 14 new accessibility rules each flag exactly the failing
+- [x] The 14 new accessibility rules each flag exactly the failing
       elements of their fixture, and none on a clean page.
 - [ ] Fixture pages with one known finding per `audit` category: `audit`
       finds each, with the right severity, and finds nothing on a clean
@@ -432,3 +432,53 @@ _(append here)_
 - 17.2: On a page chrome-cdp attached to after it loaded, an `inp` budget
   passes or fails with `perf`'s warning (INP counts only interactions of
   104ms or more); `ExpectPerf.from_start` says so.
+- 17.3: `aria-required-children` and `aria-required-parent` are two rule
+  ids (axe's), so the table's 14 rows are 15 rules; `--a11y` has 26.
+- 17.3: Chrome's accessibility tree is asked only where the markup cannot
+  answer: `table-headers` (Chrome's `LayoutTable` role) and
+  `empty-heading` (Chrome's name). `a11y.ts` lists up to 20 candidates of
+  such a rule (`Rule.ax`), the engine asks `Accessibility.getPartialAXTree`
+  about each by backend node id and drops the ones Chrome does not
+  confirm, then lists 5. The ARIA structure rules read roles from the
+  markup (`aria.ts`, what `snapshot --engine dom` and `role=` use): they
+  are about what the author wrote.
+- 17.3: `focus-visible` focuses each element in the isolated world with
+  `focus({focusVisible: true})` under `Emulation.setFocusEmulationEnabled`
+  (for the call only; `:focus` matches only in a focused document, which
+  a headless tab is not), and gives focus back, also after iframes moved
+  it. `CSS.forcePseudoState` would fire no handlers, but needs the DOM
+  and CSS agents enabled on the session, which `coverage` turns on and off
+  too, and does not set `:focus-within` on ancestors. It compares outline,
+  box shadow, borders, colours, underline, opacity, transform,
+  `::before`/`::after`, 3 ancestors and 10 descendants; a transition that
+  starts counts as a change; an element that does not match
+  `:focus-visible` after focus is not judged; at most 300 elements.
+- 17.3: `target-size` exempts, as WCAG 2.5.8 does, targets in a line of
+  text (inline, with more text in the parent) and controls the browser
+  sizes. The latter is a heuristic: a native control drawn by the browser
+  (`appearance` not `none`) in the browser's font size for controls
+  (13.33px), which restyled controls nearly never keep. Without it, every
+  pair of unstyled buttons (21px tall) would fail.
+- 17.3: Less noise, on purpose: `aria-valid-role` checks the first token
+  (later ones are fallbacks) and accepts DPUB, Graphics and the ARIA 1.3
+  roles Chrome knows; `aria-valid-attr-value` lets `aria-controls` name a
+  missing id when `aria-expanded="false"` (the popup is rendered on
+  open) and takes any `aria-invalid`; `aria-required-children` passes an
+  empty container (filled later) and leaves native elements with their
+  own role (`<ul role=list>`) to `list` and Chrome; `aria-required-attr`
+  passes native elements that have the state (`<input type=checkbox
+  role=switch>`).
+- 17.3: `landmark-one-main` is a page rule: the page's document only, not
+  its iframes', and not with a LOCATOR.
+- 17.3: The backlog note `expect-a11y-more-rules` also asked for opacity
+  and `text-shadow` in `color-contrast`: the text's alpha is multiplied
+  by its and its ancestors' opacity (as axe does), and text with a shadow
+  is skipped (the shadow may be what makes it readable).
+- 17.3: Every frame was already checked (plan 09 did
+  `expect-a11y-iframes`); the new rules run there too.
+- 17.3: axe-core waits on `.looper/tasks/choose-license.md`. The rules
+  return engine-neutral violations (rule id, WCAG criterion, level, help,
+  elements), which is what the engine reads, so an axe runner behind
+  `--a11y-engine axe` could fill the same `Audit`.
+- 17.3: The rule table is `docs/accessibility.md` (hand-written: the rules
+  live in the injected TypeScript, which Rust cannot read to generate it).
