@@ -664,6 +664,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<CompareData>),
     },
     CommandSchema {
+        name: "explore",
+        summary: "an app's map: its states, how to reach each, and what was wrong on each",
+        schema: || schema_for!(Envelope<ExploreData>),
+    },
+    CommandSchema {
         name: "markdown",
         summary: "the page's readable content (or an element's) as Markdown",
         schema: || schema_for!(Envelope<MarkdownData>),
@@ -3754,6 +3759,188 @@ pub struct CompareRegion {
     /// (with a ref when `b` is a tab or session still open).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub element: Option<WhyElement>,
+}
+
+/// `data` of `chrome-cdp explore --json` (and `map.json` of `explore
+/// -o`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ExploreData {
+    /// The URL the walk started at, as loaded.
+    pub start: String,
+    /// What ended the walk: `done` (everything allowed was followed),
+    /// `depth` (all followed but what `--depth` left), `max-states`,
+    /// `max-actions` or `time`.
+    pub stopped_by: String,
+    pub budget: ExploreBudget,
+    /// The clicks and loads made, replayed ones included.
+    pub actions: u64,
+    /// How long the walk took, in milliseconds.
+    pub duration_ms: u64,
+    /// The states found, in the order found (`s1` is the start).
+    pub states: Vec<ExploreState>,
+    /// Each step that led from one state to another; the first to reach
+    /// a state is its path's last step.
+    pub edges: Vec<ExploreEdge>,
+    /// Links and clicks that led to an error page or no page.
+    pub broken: Vec<ExploreBroken>,
+    /// What the walk did not follow on purpose.
+    pub skipped: ExploreSkipped,
+    /// What the budget left unvisited.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unvisited: Vec<ExploreLeft>,
+    /// Steps that failed (the element could not be clicked), or states
+    /// the walk could not get back to.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub failed: Vec<ExploreFailed>,
+    /// How many problems were found: console errors, failed requests,
+    /// broken links and (with `--layout`) layout errors, over all
+    /// states. `--exit-code` exits 1 when it is not 0.
+    pub problems: u64,
+    /// `-o`: the directory written, absolute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dir: Option<String>,
+}
+
+/// The limits of an `explore` walk.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExploreBudget {
+    pub max_states: u64,
+    pub max_actions: u64,
+    /// The most steps from the start.
+    pub depth: u64,
+    /// In milliseconds.
+    pub time_ms: u64,
+}
+
+/// A state of the app: a URL (normalised) and the page's skeleton.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ExploreState {
+    /// `s1`, `s2`, … in the order found.
+    pub id: String,
+    /// The URL it was found at.
+    pub url: String,
+    pub title: String,
+    /// The HTTP status of its document, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<u16>,
+    /// Steps from the start.
+    pub depth: u64,
+    /// The names of the dialogs open in it (a modal is a state of its
+    /// own).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dialogs: Vec<String>,
+    /// How to get there from the start (after loading it).
+    pub path: Vec<ExploreStep>,
+    /// Console errors and uncaught exceptions logged while in it
+    /// (`console_error` events).
+    pub errors: Vec<Event>,
+    /// Requests to an allowed origin that failed while in it
+    /// (`request_failed` events).
+    pub failed_requests: Vec<Event>,
+    /// `--layout`: the error findings of `layout` at the viewport.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout: Option<Vec<LayoutFinding>>,
+    /// `-o`: its scenario, `states/<id>.cdp`, absolute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scenario: Option<String>,
+    /// `-o --screenshots`: `states/<id>.png`, absolute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screenshot: Option<String>,
+}
+
+/// One step of a walk: a click, or a load (of a URL a click opened in a
+/// new tab).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExploreStep {
+    /// `click` or `goto`.
+    pub action: String,
+    /// `click`: the stable locator of what was clicked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locator: Option<String>,
+    /// `click`: what was clicked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element: Option<ExploreElement>,
+    /// `goto`: the URL loaded; a link: its target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// `goto`: a click opened the URL in a new tab (closed again), and the
+    /// walk loaded it instead.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub new_tab: bool,
+}
+
+/// What a step clicked, as the snapshot names it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExploreElement {
+    pub role: String,
+    pub name: String,
+    pub tag: String,
+}
+
+/// A step from one state to another.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExploreEdge {
+    pub from: String,
+    pub to: String,
+    pub step: ExploreStep,
+}
+
+/// A step that led to an error page or no page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExploreBroken {
+    /// The state it was taken in.
+    pub from: String,
+    pub step: ExploreStep,
+    pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<u16>,
+    /// Chrome's error when there was no answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// What the walk did not follow, by why.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExploreSkipped {
+    /// Links to other origins (`--origin` allows one), and links
+    /// `--include` or `--exclude` rule out.
+    pub external: Vec<ExploreSkip>,
+    /// Controls whose name looks destructive (`--allow-destructive`).
+    pub destructive: Vec<ExploreSkip>,
+    /// Buttons that submit a form (`--submit-forms`).
+    pub forms: Vec<ExploreSkip>,
+    /// Links to files and downloads.
+    pub files: Vec<ExploreSkip>,
+    /// `mailto:`, `tel:` and `javascript:` links.
+    #[serde(default)]
+    pub other: Vec<ExploreSkip>,
+}
+
+/// One thing not followed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExploreSkip {
+    /// The state it is in.
+    pub from: String,
+    pub element: ExploreElement,
+    /// A link's target.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+/// A step the budget left.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExploreLeft {
+    pub from: String,
+    pub step: ExploreStep,
+}
+
+/// A step that failed, or a state the walk could not get back to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExploreFailed {
+    pub from: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<ExploreStep>,
+    pub error: String,
 }
 
 /// `expect --layout`: the baseline and what differed from it.

@@ -2234,6 +2234,60 @@ pub struct CompareNameRequest {
     pub timeout_ms: u64,
 }
 
+/// `explore [URL]`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExploreRequest {
+    /// Where to start; the active tab's URL if `None`.
+    #[serde(default)]
+    pub url: Option<String>,
+    /// `base_url`, for a relative `url`.
+    #[serde(default)]
+    pub base_url: Option<String>,
+    /// `--max-states`.
+    pub max_states: u64,
+    /// `--max-actions`: clicks and loads, replayed ones included.
+    pub max_actions: u64,
+    /// `--depth`: the most steps from the start.
+    pub depth: u64,
+    /// `--time`, in milliseconds.
+    pub time_ms: u64,
+    /// `--click-buttons`: click buttons, tabs, menu items and disclosure
+    /// controls too, not only links.
+    #[serde(default)]
+    pub click_buttons: bool,
+    /// `--submit-forms`: click buttons that submit a form.
+    #[serde(default)]
+    pub submit_forms: bool,
+    /// `--allow-destructive`: click controls with destructive names.
+    #[serde(default)]
+    pub allow_destructive: bool,
+    /// `--origin`: origins to follow links to, besides the start's.
+    #[serde(default)]
+    pub origins: Vec<String>,
+    /// `--include`: follow only links to URLs one of these matches.
+    #[serde(default)]
+    pub include: Vec<String>,
+    /// `--exclude`: never follow links to URLs one of these matches.
+    #[serde(default)]
+    pub exclude: Vec<String>,
+    /// `--layout`: record `layout`'s error findings in each state.
+    #[serde(default)]
+    pub layout: bool,
+    /// `--screenshots`: save a screenshot of each state in `dir`.
+    #[serde(default)]
+    pub screenshots: bool,
+    /// `-o DIR`, absolute: where `map.json` and `states/` go.
+    #[serde(default)]
+    pub dir: Option<PathBuf>,
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    /// Each action's timeout.
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    #[serde(default)]
+    pub max_chars: usize,
+}
+
 /// The baseline of `expect --layout`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LayoutBaseline {
