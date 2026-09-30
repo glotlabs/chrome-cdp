@@ -37,22 +37,27 @@ use engine::{
     TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WhyRequest,
 };
 use engine::{
+    CompareCapture, CompareCaptureRequest, CompareNameRequest, CompareRequest, CompareSide,
+};
+use engine::{
     CookieFilter, CookieSpec, CookiesOp, CookiesRequest, StateLoadRequest, StateSaveRequest,
     StorageArea, StorageOp, StorageRequest,
 };
 use engine::{EmulateRequest, EmulationChange, PermissionsOp, PermissionsRequest};
 use engine::{ExposeRequest, InitScriptAddRequest, InitScriptListRequest, InitScriptRemoveRequest};
 use engine::{ExtensionStorageArea, ExtensionStorageOp, ExtensionsOp, ExtensionsRequest};
-use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
+use protocol::schema::{
+    ClosedSession, CompareData, OpenData, SessionEntry, SessionState, StatusData,
+};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
 use serde_json::{Map, Value, json};
 use tokio::runtime::Runtime;
 
 use crate::cli::{
-    AfterArgs, BlockArgs, CdpArgs, ClipboardReadArgs, CloseArgs, ComponentsArgs, ConnectArgs,
-    ContextArgs, ContextCommand, CookieFilterArgs, CookieSetArgs, CookiesArgs, CookiesCommand,
-    CoverageArgs, CoverageCommand, DEFAULT_TIMEOUT, DebugArgs, DebugCommand, DialogArgs,
-    DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, ExtensionStorageAreaArg,
+    AfterArgs, BlockArgs, CdpArgs, ClipboardReadArgs, CloseArgs, CompareArgs, ComponentsArgs,
+    ConnectArgs, ContextArgs, ContextCommand, CookieFilterArgs, CookieSetArgs, CookiesArgs,
+    CookiesCommand, CoverageArgs, CoverageCommand, DEFAULT_TIMEOUT, DebugArgs, DebugCommand,
+    DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, ExtensionStorageAreaArg,
     ExtensionStorageCommand, ExtensionsArgs, ExtensionsCommand, FillFormArgs, FindArgs, FormsArgs,
     FrameDirArg, FramesArgs, GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs,
     IdleArgs, ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs,
@@ -2482,6 +2487,221 @@ fn inline_values(words: &mut Vec<String>, inline: &str) {
         out.push(inline.to_owned());
     }
     *words = out;
+}
+
+/// `compare A B`: needs a running session; a `session:NAME` side needs
+/// that session running too.
+pub(crate) fn compare(args: &CompareArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    if let Some(scope) = &args.scope {
+        engine::parse_locator(scope).map_err(|e| {
+            let message = format!("--scope: {}", e.message);
+            ErrorInfo { message, ..e }
+        })?;
+    }
+    let sides = [compare_side(&args.a)?, compare_side(&args.b)?];
+    let mut request = CompareRequest {
+        a: CompareSide::Tab(String::new()),
+        b: CompareSide::Tab(String::new()),
+        interactive: args.interactive,
+        scope: args.scope.clone(),
+        visual: args.visual,
+        threshold: args.threshold,
+        viewport: args.viewport,
+        base_url: ctx.base_url.clone(),
+        strict_refs: args.refs.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(ctx.timeout),
+        max_chars: args.max_chars,
+    };
+    let mut resolved = Vec::with_capacity(2);
+    for side in &sides {
+        resolved.push(match side {
+            Given::Side(side) => side.clone(),
+            Given::File(path) => CompareSide::Captured(snapshot_file(path, args.scope.as_deref())?),
+            Given::Session(name) => {
+                CompareSide::Captured(session_capture(&ctx, name, &request, global)?)
+            }
+        });
+    }
+    let mut resolved = resolved.into_iter();
+    request.a = resolved.next().unwrap_or(CompareSide::Tab(String::new()));
+    request.b = resolved.next().unwrap_or(CompareSide::Tab(String::new()));
+    engine::check_compare(&request)?;
+    // Each URL side may load for its timeout.
+    let wait = ctx.timeout.saturating_mul(3) + QUICK;
+    let mut client = running_session(&ctx)?;
+    let mut output = ctx
+        .runtime
+        .block_on(client.call_output(rpc::COMPARE, &request, wait))?;
+    if let Given::Session(name) = &sides[1] {
+        name_regions(&ctx, name, &mut output);
+    }
+    Ok(output)
+}
+
+/// A side of `compare` as typed.
+enum Given {
+    Side(CompareSide),
+    File(PathBuf),
+    Session(String),
+}
+
+/// `tab:<id>`, `session:<name>`, a `.json` file, else a URL.
+fn compare_side(text: &str) -> Result<Given, ErrorInfo> {
+    if let Some(tab) = text.strip_prefix("tab:") {
+        let id = engine::parse_tab_id(tab)?;
+        return Ok(Given::Side(CompareSide::Tab(format!("t{id}"))));
+    }
+    if let Some(name) = text.strip_prefix("session:") {
+        check_name(name)?;
+        return Ok(Given::Session(name.to_owned()));
+    }
+    let path = Path::new(text);
+    if !text.contains("://")
+        && (path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+            || path.is_file())
+    {
+        return Ok(Given::File(input::absolute_path(path)?.into()));
+    }
+    Ok(Given::Side(CompareSide::Url(text.to_owned())))
+}
+
+/// A `snapshot --json` file as a side: the envelope, or its `data`.
+fn snapshot_file(path: &Path, scope: Option<&str>) -> Result<CompareCapture, ErrorInfo> {
+    #[derive(serde::Deserialize)]
+    struct Snapshot {
+        #[serde(default)]
+        url: String,
+        #[serde(default)]
+        title: String,
+        nodes: Vec<protocol::schema::SnapshotNode>,
+    }
+    let hint = || {
+        Hint::text(format!(
+            "write one with: chrome-cdp snapshot --json > {}",
+            path.display()
+        ))
+    };
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| bad_args(format!("cannot read {}: {e}", path.display())).hint(hint()))?;
+    let value: Value = serde_json::from_str(&text)
+        .map_err(|e| bad_args(format!("{} is not JSON: {e}", path.display())).hint(hint()))?;
+    let data = value.get("data").cloned().unwrap_or(value);
+    let snapshot: Snapshot = serde_json::from_value(data).map_err(|e| {
+        bad_args(format!(
+            "{} is not what snapshot --json writes: {e}",
+            path.display()
+        ))
+        .hint(hint())
+    })?;
+    let side = path.display().to_string();
+    let warnings = scope
+        .map(|_| {
+            format!("--scope does not apply to {side}, a snapshot file: all of it is compared")
+        })
+        .into_iter()
+        .collect();
+    Ok(CompareCapture {
+        side,
+        url: snapshot.url,
+        title: snapshot.title,
+        nodes: snapshot.nodes,
+        shot: None,
+        warnings,
+    })
+}
+
+/// A connection to session `name`'s daemon, which must be running.
+fn other_session(ctx: &Ctx, name: &str) -> Result<daemon::client::Client, ErrorInfo> {
+    let paths = SessionPaths::new(&ctx.env, name);
+    ctx.runtime
+        .block_on(client::connect(&paths, &ctx.build))?
+        .ok_or_else(|| {
+            ErrorInfo::new(
+                ErrorKind::DaemonUnavailable,
+                format!("session {name} is not running"),
+            )
+            .hint(Hint::run(Cmd::new("open").session(name)))
+        })
+}
+
+/// The active tab of session `name`, read as `request` asks.
+fn session_capture(
+    ctx: &Ctx,
+    name: &str,
+    request: &CompareRequest,
+    global: &GlobalArgs,
+) -> Result<CompareCapture, ErrorInfo> {
+    let side = format!("session:{name}");
+    let capture = CompareCaptureRequest {
+        side: side.clone(),
+        interactive: request.interactive,
+        scope: request.scope.clone(),
+        visual: request.visual,
+        strict_refs: request.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: request.timeout_ms,
+    };
+    let mut client = other_session(ctx, name)?;
+    let output = ctx.runtime.block_on(client.call_output(
+        rpc::COMPARE_CAPTURE,
+        &capture,
+        ctx.timeout + QUICK,
+    ))?;
+    serde_json::from_value(output.data).map_err(|e| {
+        ErrorInfo::new(
+            ErrorKind::DaemonUnavailable,
+            format!("session {name} sent a bad page for {side}: {e}"),
+        )
+    })
+}
+
+/// Names `compare --visual`'s regions on B, the active tab of session
+/// `name`, and renders the output again. Left unnamed if that fails.
+fn name_regions(ctx: &Ctx, name: &str, output: &mut Output) {
+    let Ok(mut data) = serde_json::from_value::<CompareData>(output.data.clone()) else {
+        return;
+    };
+    let Some(visual) = data.visual.as_mut() else {
+        return;
+    };
+    if visual.regions.is_empty() {
+        return;
+    }
+    let points: Vec<(f64, f64)> = visual
+        .regions
+        .iter()
+        .map(|r| {
+            (
+                f64::from(r.x) + f64::from(r.width) / 2.0,
+                f64::from(r.y) + f64::from(r.height) / 2.0,
+            )
+        })
+        .collect();
+    let request = CompareNameRequest {
+        points,
+        timeout_ms: millis(ctx.timeout),
+    };
+    let Ok(mut client) = other_session(ctx, name) else {
+        return;
+    };
+    let Ok(named) =
+        ctx.runtime
+            .block_on(client.call_output(rpc::COMPARE_NAME, &request, ctx.timeout + QUICK))
+    else {
+        return;
+    };
+    let elements: Vec<Option<protocol::schema::WhyElement>> =
+        serde_json::from_value(named.data["elements"].clone()).unwrap_or_default();
+    for (region, element) in visual.regions.iter_mut().zip(elements) {
+        region.element = element;
+    }
+    output.text = engine::compare_text(&data);
+    output.data = serde_json::to_value(&data).unwrap_or(Value::Null);
 }
 
 /// `inspect`: needs a running session.

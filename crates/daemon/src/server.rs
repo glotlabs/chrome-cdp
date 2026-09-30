@@ -667,6 +667,18 @@ impl Daemon {
                 Ok(p) => output(Box::pin(self.engine.fill_form(p)).await),
                 Err(e) => Err(e),
             },
+            rpc::COMPARE => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.compare(p)).await),
+                Err(e) => Err(e),
+            },
+            rpc::COMPARE_CAPTURE => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.compare_capture(p)).await),
+                Err(e) => Err(e),
+            },
+            rpc::COMPARE_NAME => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.compare_name(p)).await),
+                Err(e) => Err(e),
+            },
             rpc::LAYOUT => match params(req.params) {
                 Ok(p) => output(Box::pin(self.engine.layout(p)).await),
                 Err(e) => Err(e),

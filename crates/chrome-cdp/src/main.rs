@@ -99,7 +99,18 @@ fn main() -> ExitCode {
             .map(|a| a.to_string_lossy().into_owned())
             .collect(),
     ));
-    ExitCode::from(output::print(mode, run(cli)))
+    // `compare --exit-code` exits 1 when the pages differ, like `git diff
+    // --exit-code`.
+    let exit_on_difference = matches!(&cli.command, Some(Command::Compare(args)) if args.exit_code);
+    let result = run(cli);
+    let differs = exit_on_difference
+        && result
+            .as_ref()
+            .is_ok_and(|o| o.data["differs"] == serde_json::Value::Bool(true));
+    match output::print(mode, result) {
+        0 if differs => ExitCode::from(1),
+        code => ExitCode::from(code),
+    }
 }
 
 fn run(cli: Cli) -> Result<Output, ErrorInfo> {
@@ -218,6 +229,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Forms(args)) => session::forms(&args, &cli.global),
         Some(Command::FillForm(args)) => session::fill_form(&args, &cli.global),
         Some(Command::Layout(args)) => session::layout(&args, &cli.global),
+        Some(Command::Compare(args)) => session::compare(&args, &cli.global),
         Some(Command::Components(args)) => session::components(&args, &cli.global),
         Some(Command::Inspect(args)) => session::inspect(&args, &cli.global),
         Some(Command::Clipboard(args)) => match &args.command {
