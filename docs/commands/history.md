@@ -24,8 +24,9 @@ usual commands, then save what worked.
 In the test, refs (e12) become the most robust locator that found their
 element alone when the command ran: role and name, then label, test id,
 placeholder or text, then one of those inside a named container (a list
-item, a row, a dialog), and `>> nth=` only as a last resort. Commands that
-only read (snapshot, console, text, network, …) and failed ones are left
+item, a row, a dialog), and `>> nth=` only as a last resort. An element
+in an iframe gets frame=NAME (or a part of its URL only it has) first:
+frame=pay >> role=button[name="Pay"]. Commands that only read (snapshot, console, text, network, …) and failed ones are left
 out; `expect` commands stay; `open URL` becomes `goto`; URLs under
 base_url become paths; `mock use SETS` becomes `@mocks SETS`. --from N
 starts at command N (see `history`), and --clear starts the history over

@@ -214,3 +214,39 @@ fn history_lists_commands_and_clears() {
     let listed = project.ok(&["history"]);
     assert!(listed.contains("   4 ✓ text css=h1"), "{listed}");
 }
+
+/// Refs inside iframes (a same-site and a cross-site one) are written as
+/// a `frame=` step, by the frame's name or URL, then the element's own
+/// locator; the scenario replays.
+#[test]
+fn refs_in_frames_become_frame_locators_that_replay() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let site = Fixtures::shared().a();
+
+    project.ok(&["open", &format!("{site}/read/framed.html")]);
+    let snapshot = project.ok(&["snapshot", "-i"]);
+    let same = nth_ref(&snapshot, "button \"Pay now\"", 0);
+    let other = nth_ref(&snapshot, "button \"Pay now\"", 1);
+    project.ok(&["click", &same]);
+    project.ok(&["click", &other]);
+
+    let out = project.run(&["history", "--as-scenario", "pays twice"]);
+    assert_eq!(out.status.code(), Some(0));
+    let scenario = stdout(&out);
+    assert_eq!(
+        scenario,
+        "@test \"pays twice\"\n  goto /read/framed.html\n  click 'frame=same >> role=button[name=\"Pay now\"]'\n  click 'frame=/read/frame.html?from=framed >> role=button[name=\"Pay now\"]'\n"
+    );
+    std::fs::write(project.root.join("scenarios/pay.cdp"), &scenario).unwrap();
+    project.ok(&["close"]);
+
+    let out = project.run(&["test"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}{}",
+        stdout(&out),
+        common::stderr(&out)
+    );
+}

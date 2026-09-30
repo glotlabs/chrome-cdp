@@ -104,11 +104,9 @@ function containers(a: Element, role: string): Candidate[] {
 }
 
 /** `{"locator": "…", "how": "role|label|…|scoped|nth"}`, or
- * `{"reason": "…"}` when there is none. */
+ * `{"reason": "…"}` when there is none. In an iframe, the locator is the
+ * frame's own; the engine puts the `frame=` step before it. */
 export function stable(el: Element, testid: string): string {
-  if (window !== window.top) {
-    return JSON.stringify({ reason: 'it is in a frame, and frame locators are not written yet' });
-  }
   const texts = new Texts();
   const own = candidates(el, testid || 'data-testid', texts);
   for (const c of own) {

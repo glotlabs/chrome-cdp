@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: a59eea2be74551f8
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 833e2f94ed57ea44
 "use strict";
 (() => {
   // src/dom.ts
@@ -2181,9 +2181,6 @@ ${inner}
     return out.filter((c) => only(c.steps, a));
   }
   function stable(el, testid) {
-    if (window !== window.top) {
-      return JSON.stringify({ reason: "it is in a frame, and frame locators are not written yet" });
-    }
     const texts = new Texts();
     const own = candidates(el, testid || "data-testid", texts);
     for (const c of own) {
