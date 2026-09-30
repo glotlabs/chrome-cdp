@@ -8,7 +8,8 @@
 // the post-action report (5.5), what `expect` checks (plan 09), and the
 // stable locators `history --as-scenario` writes for refs (plan 11), and
 // what `why` explains, what `layout` checks, the forms `forms` and
-// `fill-form` list and what `compare` names (plan 16).
+// `fill-form` list, what `compare` names and what `explore` follows
+// (plan 16).
 // Built into `ccdp.js` by `cargo xtask build-js`; the engine embeds that
 // file.
 
@@ -29,6 +30,7 @@ import {
 } from './layout';
 import { formsList, pickOption } from './forms';
 import { elementsAt } from './compare';
+import { exploreCandidates } from './explore';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -85,6 +87,7 @@ const api = {
   formsList,
   pickOption,
   elementsAt,
+  exploreCandidates,
 };
 
 if (!globalThis.__ccdp) globalThis.__ccdp = api;

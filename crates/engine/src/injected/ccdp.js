@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 851eab76cd4a44e7
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: aebf5376d60adfad
 "use strict";
 (() => {
   // src/dom.ts
@@ -3400,6 +3400,53 @@ ${inner}
     return { json: JSON.stringify({ names, at }), els };
   }
 
+  // src/explore.ts
+  var CONTROL_ROLES = /* @__PURE__ */ new Set(["button", "tab", "menuitem", "menuitemcheckbox", "menuitemradio", "switch"]);
+  function submits(el) {
+    if (el instanceof HTMLButtonElement) return el.type === "submit" && !!el.form;
+    if (el instanceof HTMLInputElement) return (el.type === "submit" || el.type === "image") && !!el.form;
+    return false;
+  }
+  function kindOf(el) {
+    const t = tag(el);
+    if ((t === "a" || t === "area") && el.hasAttribute("href") && !(el instanceof SVGElement)) return "link";
+    if (el instanceof HTMLButtonElement || el instanceof HTMLInputElement) {
+      if (el.disabled) return null;
+      if (el instanceof HTMLInputElement && !["button", "submit", "image", "reset"].includes(el.type)) return null;
+      if (el.type === "reset") return "reset";
+      return submits(el) ? "submit" : "button";
+    }
+    if (t === "summary") return "button";
+    const role = el.getAttribute("role") ? roleOf(el) : null;
+    if (el.getAttribute("aria-disabled") === "true") return null;
+    if (role && CONTROL_ROLES.has(role) || el.hasAttribute("aria-expanded") || el.hasAttribute("aria-haspopup")) {
+      return "button";
+    }
+    return null;
+  }
+  function exploreCandidates(testid, buttons) {
+    const out = [];
+    for (const el of descendants(document)) {
+      const kind = kindOf(el);
+      if (!kind) continue;
+      if (!buttons && kind === "button") continue;
+      if (!visible(el) || hiddenForAria(el) || el.closest("[inert]")) continue;
+      const described = describe(el);
+      const found = { kind, role: described.role, name: described.name, tag: described.tag };
+      if (kind === "link") {
+        const a = el;
+        found.href = a.href;
+        if (a.target) found.target = a.target;
+        if (a.hasAttribute("download")) found.download = true;
+      }
+      const located = JSON.parse(stable(el, testid));
+      if (located.locator) found.locator = located.locator;
+      else found.reason = located.reason;
+      out.push(found);
+    }
+    return JSON.stringify(out);
+  }
+
   // src/index.ts
   var api = {
     version: 1,
@@ -3450,7 +3497,8 @@ ${inner}
     contentBox,
     formsList,
     pickOption,
-    elementsAt
+    elementsAt,
+    exploreCandidates
   };
   if (!globalThis.__ccdp) globalThis.__ccdp = api;
 })();

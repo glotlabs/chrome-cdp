@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 851eab76cd4a44e7
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: aebf5376d60adfad
 "use strict";
 var __ccdpLogpoint = (() => {
   var __defProp = Object.defineProperty;
