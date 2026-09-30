@@ -216,6 +216,11 @@
           "type": "string"
         },
         {
+          "const": "NoSource",
+          "description": "Nothing in the page says where an element came from (`source`).",
+          "type": "string"
+        },
+        {
           "const": "BadArgs",
           "description": "Bad flags or arguments.",
           "type": "string"

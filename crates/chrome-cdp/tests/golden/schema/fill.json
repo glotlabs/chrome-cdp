@@ -241,6 +241,11 @@
           "type": "string"
         },
         {
+          "const": "NoSource",
+          "description": "Nothing in the page says where an element came from (`source`).",
+          "type": "string"
+        },
+        {
           "const": "BadArgs",
           "description": "Bad flags or arguments.",
           "type": "string"
@@ -605,6 +610,30 @@
         }
       ]
     },
+    "NodeSource": {
+      "description": "Where a snapshot node came from (`snapshot --source`).",
+      "properties": {
+        "component": {
+          "description": "The innermost component around it, when a framework's debug info\nnames one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "place": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourcePlace"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its own place, or the component's file when only that is known."
+        }
+      },
+      "type": "object"
+    },
     "Note": {
       "description": "One labelled line of an error's text form.",
       "properties": {
@@ -785,6 +814,17 @@
           "description": "The ARIA role (`button`, `link`, `heading`, …), `text` for text,\n`clickable` for an element that only looks and acts like a button,\nor `iframe`. With `more`, the role of the nodes left out.",
           "type": "string"
         },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NodeSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`--source`: the component the node is in and its place, for nodes\nwith a ref (see `chrome-cdp source`)."
+        },
         "states": {
           "description": "States that carry information, in this order: `checked`,\n`unchecked`, `mixed`, `expanded`, `collapsed`, `selected`,\n`disabled`, `readonly`, `required`, `invalid`, `focused`, `pressed`,\n`scrollable`.",
           "items": {
@@ -809,6 +849,48 @@
       },
       "required": [
         "role"
+      ],
+      "type": "object"
+    },
+    "SourcePlace": {
+      "description": "A place in the page's source: a file and line.",
+      "properties": {
+        "column": {
+          "description": "1-based.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "file": {
+          "description": "The file on disk (an absolute path), when chrome-cdp found it (see\n`SourcePosition::file`). Text output shows it relative to the\nproject root.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line": {
+          "description": "1-based.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "matched": {
+          "description": "The line was found by matching the element in the component's\ntemplate on disk (Vue keeps no lines), not given by the page.",
+          "type": "boolean"
+        },
+        "source": {
+          "description": "The source as the page or its source map names it: a path (as the\nframework gives it) or a URL.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
       ],
       "type": "object"
     },

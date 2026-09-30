@@ -17,6 +17,7 @@ Options:
 - `--all`: Do not collapse long lists
 - `--text-limit <N>`: Cut text and names after this many characters (0 = no limit) (default `200`)
 - `--no-text`: Leave text out: the page's skeleton
+- `--source`: After each node with a ref, the component it is in and its place in the source (`<CartItem src/components/CartItem.tsx:42>`), as `source` finds them
 - `--engine <ENGINE>`: How to read the page: ax (Chrome's accessibility tree, the default) or dom (chrome-cdp's DOM walker) (one of `ax`, `dom`)
 - `--strict-refs`: A --scope ref whose element is gone fails, instead of being re-resolved to the one element with its role and name (env `CHROME_CDP_STRICT_REFS`)
 - `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
@@ -36,5 +37,6 @@ Examples:
   chrome-cdp snapshot --scope '#results' --depth 3
   chrome-cdp snapshot --scope 'frame=payment'
   chrome-cdp snapshot --diff              # what changed since the last one
+  chrome-cdp snapshot -i --source         # and where each came from
 ```
 

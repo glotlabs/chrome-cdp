@@ -1,0 +1,11 @@
+$ chrome-cdp source 'role=button >> nth=0'
+exit: 1
+--- stderr
+error: e1 button "Add" was rendered by a production build of react: it keeps no debug info
+  hint: open the app from its dev server (a development build keeps where each element came from), then run source again
+
+$ chrome-cdp source 'role=button >> nth=0' --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NoSource","message":"e1 button \"Add\" was rendered by a production build of react: it keeps no debug info","hint":"open the app from its dev server (a development build keeps where each element came from), then run source again","details":{"reason":"not_dev_build"}}}
+

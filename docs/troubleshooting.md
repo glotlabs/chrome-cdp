@@ -8,7 +8,7 @@ for when it is not enough. Errors are grouped by exit code, as
 | Exit | Meaning | Kinds |
 |---|---|---|
 | 0 | success | |
-| 1 | the action or check failed on the page | [NotFound](#notfound), [Ambiguous](#ambiguous), [Obscured](#obscured), [NotEnabled](#notenabled), [RefStale](#refstale), [RefDetached](#refdetached), [ExpectFailed](#expectfailed), [EvalError](#evalerror), [NavigationFailed](#navigationfailed) |
+| 1 | the action or check failed on the page | [NotFound](#notfound), [Ambiguous](#ambiguous), [Obscured](#obscured), [NotEnabled](#notenabled), [RefStale](#refstale), [RefDetached](#refdetached), [ExpectFailed](#expectfailed), [EvalError](#evalerror), [NavigationFailed](#navigationfailed), [NoSource](#nosource) |
 | 2 | the command line is wrong | [BadArgs](#badargs), [BadLocator](#badlocator) |
 | 3 | something did not happen in time | [Timeout](#timeout) |
 | 4 | the browser, the daemon or the machine | [ChromeNotFound](#chromenotfound), [LaunchFailed](#launchfailed), [BrowserCrashed](#browsercrashed), [PageCrashed](#pagecrashed), [DaemonUnavailable](#daemonunavailable), [ProtocolError](#protocolerror), [InstallFailed](#installfailed) |
@@ -161,7 +161,28 @@ server, start it and check its port. For a self-signed certificate,
 --http-credentials user:password`. A 4xx or 5xx response is not this
 error, only a warning: the page loaded.
 
-## Exit 2: the command line
+### NoSource
+
+```
+error: e4 button "Add" was rendered by a production build of react: it keeps no debug info
+  hint: open the app from its dev server (a development build keeps where each element came from), then run source again
+```
+
+`source` found nothing that says where the element came from. The
+message says which of these it is (`details.reason` in `--json`):
+
+- `not_dev_build`: a framework rendered it, but its production build
+  keeps no debug info. Open the app from its dev server.
+- `before_stacks`: the element was made before chrome-cdp recorded node
+  creation stacks (they were turned on while the page was open).
+  `chrome-cdp reload`, then run `source` again.
+- `stacks_off`: node stacks are off for this page (by default they are
+  on for localhost pages only). `chrome-cdp open --node-stacks on`,
+  then `reload`.
+- `library_only`: only library code (`node_modules/`) made it; ask about
+  the element around it that the app renders.
+
+
 
 ### BadArgs
 

@@ -1,0 +1,18 @@
+$ chrome-cdp source '#pay'
+exit: 0
+--- stdout
+e1 button "Pay"
+  at src/Nowhere.svelte:7:3
+  in <Nowhere>  src/Nowhere.svelte:7
+via svelte (the page's debug info)
+
+$ chrome-cdp source '#pay' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"at":{"column":3,"line":7,"source":"src/Nowhere.svelte"},"components":[{"name":"Nowhere","place":{"column":3,"line":7,"source":"src/Nowhere.svelte"}}],"element":{"name":"Pay","ref":"e1","role":"button","tag":"button"},"tab":"t1","via":"svelte"}}
+
+$ chrome-cdp source '#pay' -q
+exit: 0
+--- stdout
+src/Nowhere.svelte:7:3
+

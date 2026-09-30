@@ -2306,6 +2306,24 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/shots/index.html"),
     },
     Case {
+        name: "source",
+        args: &["source", "#pay"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/source/fake-svelte.html"),
+    },
+    Case {
+        name: "source-production-build",
+        args: &["source", "role=button >> nth=0"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/apps/react.html"),
+    },
+    Case {
+        name: "snapshot-source",
+        args: &["snapshot", "-i", "--source"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/source/fake-svelte.html"),
+    },
+    Case {
         name: "inspect-headless",
         args: &["inspect", "--panel", "console"],
         modes: ERR,

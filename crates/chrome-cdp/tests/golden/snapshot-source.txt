@@ -1,0 +1,17 @@
+$ chrome-cdp snapshot -i --source
+exit: 0
+--- stdout
+page t1 "Fake Svelte" <site>/source/fake-svelte.html
+- button "Pay" [e1] <Nowhere src/Nowhere.svelte:7>
+
+$ chrome-cdp snapshot -i --source --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"engine":"ax","nodes":[{"name":"Pay","ref":"e1","role":"button","source":{"component":"Nowhere","place":{"column":3,"line":7,"source":"src/Nowhere.svelte"}}}],"tab":"t1","title":"Fake Svelte","url":"<site>/source/fake-svelte.html"}}
+
+$ chrome-cdp snapshot -i --source -q
+exit: 0
+--- stdout
+page t1 "Fake Svelte" <site>/source/fake-svelte.html
+- button "Pay" [e1] <Nowhere src/Nowhere.svelte:7>
+

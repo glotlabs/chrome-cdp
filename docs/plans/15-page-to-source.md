@@ -1,6 +1,6 @@
 # Plan 15 — From page to source
 
-Status: IN PROGRESS (15.1 done)
+Status: IN PROGRESS (15.1-15.2 done)
 Depends on: v1 (plans 01-11), mainly 04 (refs), 05 (the action report)
 and 06 (console, network, source maps). Uses plan 13's target graph where
 it exists. Track 4 of [plan 12](12-after-v1.md).
@@ -530,10 +530,10 @@ test that needs Node is the gated real-Vite test.
 
 - [x] The five fixture apps are committed as dev builds, a stale build
       fails a test, and each app's dev-only debug info is checked.
-- [ ] `source` names the right file, line and component chain for ten
+- [x] `source` names the right file, line and component chain for ten
       chosen elements in each of the React 18, React 19, Vue and Svelte
       apps, and the right line from node stacks in the plain app.
-- [ ] `source` says why when it cannot answer (not a dev build, node
+- [x] `source` says why when it cannot answer (not a dev build, node
       created before stacks, no source map), with the next command.
 - [ ] `components` shows each app's tree and a component's props and
       state, bounded by `--max-chars`.
@@ -630,3 +630,50 @@ _(append here)_
   name. The `console_error` event gains an optional `original`
   (`SourcePosition`). `expect --no-errors` uses the same events, and
   `wait --console` maps the entry it shows (and a timeout's list) too.
+- 15.2: Vue's node creation stacks hold only Vue's runtime (a template's
+  render function returns vnodes; `patch` makes the elements later), so
+  they give no Vue line, unlike the plan's step 2 says. Vue keeps no
+  lines either, so the element's line is found in its component's
+  `<template>` on disk: the only `<tag` there; else the n-th, when the
+  template has as many as the component rendered (no `v-for`/`v-if` in
+  between); else the only one whose line holds the element's text; else
+  no line (the file alone, with a warning). A component's line is its
+  child's tag (`<CartItem`, or `<cart-item`) in its template, the only
+  one. Only `.vue` files are read. JSON marks these places `matched`,
+  and the text's `via` line says `lines found in the templates`.
+- 15.2: A component's `in` line is its file at the line that renders the
+  next step towards the element (React's `<CartItem` JSX in
+  `CartList.tsx`, Svelte's component entries, Vue's template tag), not
+  the line where the component is defined, as the plan's example shows:
+  that is what the frameworks' debug info records, and a definition's
+  place needs `[[FunctionLocation]]` and the script's URL (`Debugger`).
+  So the innermost component's line is the element's own.
+- 15.2: React has no version on the page without the DevTools hook: the
+  adapter says `18` when fibers have `_debugSource` and `19` when they
+  have `_debugStack`. Vue's version is the app's (`3.5.43`), Svelte's
+  `window.__svelte.v` (`5`), and none when the page does not say.
+- 15.2: The adapters' bundle starts with `"use strict"`, which rules out
+  a rest parameter in the function it is wrapped in; it reads
+  `arguments`. React 19's debug stack is sent whole (12 frames at most)
+  and the engine takes the first frame that is not a JSX factory
+  (`jsxDEV`, `jsx`, `jsxs`, `createElement`, `cloneElement`) nor a
+  library's once source-mapped.
+- 15.2: Framework places are file names, not URLs, so they are matched
+  to the disk on any page (15.1 matches URLs only where source maps are
+  resolved).
+- 15.2: With a framework's production build, a node stack answers only
+  with a source-mapped frame of the app (in one bundle, nothing else
+  tells the app's frames from the framework's); else `NoSource` "not a
+  dev build". `NoSource`'s `details.reason` is `not_dev_build`,
+  `before_stacks`, `stacks_off` or `library_only`. "No source map" is
+  not an error: the place is the served script's, with a warning.
+- 15.2: Telling "parsed from the HTML" from "made before recording":
+  each page and iframe session records whether stacks have been on
+  since its document began to load (`node_stacks_since_load`, cleared
+  when `open --node-stacks` turns them on mid-document).
+- 15.2: `snapshot --source` resolves each ref'd node in its frame's main
+  world, runs the adapters on up to 100 nodes per call, reads the
+  stacks of the rest with one `DOM.getDocument` per frame (a second one
+  would drop the first's node ids), and maps all stacks in one pass. It
+  cannot be used with `--diff`. A node nothing answers for has no
+  suffix.
