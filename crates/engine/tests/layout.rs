@@ -296,12 +296,11 @@ async fn contrast_is_measured_on_pixels() {
         max_chars: 0,
     };
     for passes in ["#gradient", "#photo"] {
-        engine
-            .expect(a11y(passes))
+        Box::pin(engine.expect(a11y(passes)))
             .await
             .unwrap_or_else(|e| panic!("expect --a11y {passes}: {}", e.to_text()));
     }
-    let err = engine.expect(a11y("#on-dark")).await.unwrap_err();
+    let err = Box::pin(engine.expect(a11y("#on-dark"))).await.unwrap_err();
     assert_eq!(err.kind, ErrorKind::ExpectFailed, "{}", err.to_text());
     assert!(
         err.to_text().contains("color-contrast"),
@@ -355,13 +354,13 @@ async fn names_elements_with_refs_and_keys() {
 }
 
 /// Where a test's baselines go.
-fn baseline(dir: &Path, name: &str, update: bool) -> Option<LayoutBaseline> {
-    Some(LayoutBaseline {
+fn baseline(dir: &Path, name: &str, update: bool) -> LayoutBaseline {
+    LayoutBaseline {
         name: name.to_owned(),
         path: dir.join("layout").join(format!("{name}.txt")),
         update,
         dir: Some(dir.display().to_string()),
-    })
+    }
 }
 
 #[tokio::test]
@@ -372,7 +371,7 @@ async fn expect_layout_against_a_baseline() {
     let dir = tempfile::tempdir().unwrap();
     goto(&engine, &site.url("/layout/clipped.html")).await;
     let expect = |update: bool, timeout_ms: u64| LayoutRequest {
-        baseline: baseline(dir.path(), "clipped", update),
+        baseline: Some(baseline(dir.path(), "clipped", update)),
         timeout_ms,
         ..request()
     };
@@ -457,7 +456,7 @@ async fn expect_layout_retries_until_the_page_settles() {
     let dir = tempfile::tempdir().unwrap();
     goto(&engine, &site.url("/layout/clean.html")).await;
     let req = |update| LayoutRequest {
-        baseline: baseline(dir.path(), "clean", update),
+        baseline: Some(baseline(dir.path(), "clean", update)),
         ..request()
     };
     engine.layout(req(true)).await.unwrap();
