@@ -879,7 +879,8 @@ naming elements as the snapshot does, with refs:
 the page to settle each time, and gives the tab its viewport back after.
 --stretch-text 40 checks again with every text 40% longer, as a
 translation might make it, and reports what only that finds. The page,
-its scroll and its text are left as they were. It exits 0 whatever it
+its scroll and its text are left as they were (should the session die
+mid-run, a reload brings the text back). It exits 0 whatever it
 finds; expect --layout fails on new findings. -q prints the number of
 errors. Needs a running session.
 
