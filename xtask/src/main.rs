@@ -62,6 +62,8 @@ tasks:
                       into crates/engine/src/injected/ccdp.js
   docs [--check]      regenerate the command reference in docs/commands/ from the
                       CLI's clap definitions (--check fails if it is out of date)
+  apps [NAME...]      install and build the fixture apps of testdata/apps-src (all, or
+                      the named ones) into testdata/site/apps/dev/ (needs Node's npm)
   fixtures            serve testdata/site on two local origins (--port, --port-b)
                       and an HTTPS one with a self-signed certificate
 ";
@@ -87,6 +89,7 @@ fn main() -> ExitCode {
         "gen-cdp" => gen_cdp(rest),
         "build-js" => build_js(rest),
         "fixtures" => fixtures(rest),
+        "apps" => apps(rest),
         "docs" => docs(rest),
         "-h" | "--help" | "help" => {
             print!("{USAGE}");
@@ -796,6 +799,35 @@ fn gen_cdp(args: &[String]) -> Result {
         _ => return Err("usage: cargo xtask gen-cdp [--check]".into()),
     }
     cargo(run)
+}
+
+/// The fixture apps (plan 15): Vite projects whose dev builds are committed
+/// under `testdata/site/apps/dev/<name>/`.
+const APPS_DIR: &str = "testdata/apps-src";
+const APPS: [&str; 5] = ["plain", "react18", "react19", "vue", "svelte"];
+
+/// Runs `npm ci && npm run build` in each fixture app (or the named ones),
+/// so only people changing the apps need Node. Each build writes the hash
+/// of its sources to `sources.txt`, which the engine's `apps` test checks.
+fn apps(args: &[String]) -> Result {
+    for name in args {
+        if !APPS.contains(&name.as_str()) {
+            return Err(format!(
+                "no fixture app `{name}`; the apps are {}",
+                APPS.join(", ")
+            ));
+        }
+    }
+    let dir = workspace_root().join(APPS_DIR);
+    for name in APPS {
+        if !args.is_empty() && !args.iter().any(|a| a == name) {
+            continue;
+        }
+        let app = dir.join(name);
+        run(Command::new("npm").arg("ci").current_dir(&app))?;
+        run(Command::new("npm").args(["run", "build"]).current_dir(&app))?;
+    }
+    Ok(())
 }
 
 /// The injected helper bundle's TypeScript sources and built file.
