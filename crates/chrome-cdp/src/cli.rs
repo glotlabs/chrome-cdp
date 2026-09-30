@@ -867,6 +867,27 @@ Examples:
   chrome-cdp why 'role=button[name=\"Pay\"]' --no-scroll")]
     Why(WhyArgs),
 
+    /// List the page's forms: each field's name, kind, state, value and
+    /// validation message.
+    #[command(after_help = "\
+Lists every <form>, role=form and role=search, in every frame, and last
+the fields outside any form; with a LOCATOR, only the form it is or is
+inside (else the forms in it, else the fields in it). Each field is named
+as the snapshot names it, with its ref, then its kind (an input's type:
+email, password, date, submit), required, disabled, readonly, its value
+(never a password's; a file input's files), the first 10 options of a
+select, listbox or combobox, and why it is invalid: its validation
+message (not for a required field that is only empty), else the text
+aria-errormessage or aria-describedby points to. Radios are one line per
+group. A form's header says where it submits and how many required
+fields are empty; -q prints that count. Needs a running session.
+
+Examples:
+  chrome-cdp forms
+  chrome-cdp forms e10
+  chrome-cdp forms 'role=search' --json")]
+    Forms(FormsArgs),
+
     /// Lint what the page looks like: covered, overlapping, clipped,
     /// off-screen and too small elements, sideways scrolling, low
     /// contrast.
@@ -1145,6 +1166,35 @@ Examples:
   chrome-cdp fill '#birthday' 1990-05-17
   chrome-cdp fill e5 ''                      # clear")]
     Fill(FillArgs),
+
+    /// Fill a form from a JSON object in one step: keys name fields,
+    /// values pick the action.
+    #[command(after_help = "\
+Each key names a field by its label (ignoring case, spaces at the ends
+and a trailing * or :), else its name, id or placeholder, else a part of
+its label only it has. The value picks the action: a string or number
+fills a text field (or a date, colour, range), selects a <select>'s
+option (an array for several), or checks the radio of a group with that
+label or value; true or false checks or unchecks a checkbox or switch; a
+path, or an array of paths, uploads to a file input (relative to this
+directory); a custom combobox is filled, then the option with that name
+is clicked when its listbox shows one; a listbox's options with those
+names are clicked. Fields are filled in the page's order, each as its
+own command does (waiting until it can act), and a field that appears
+after an earlier choice (a region after a country) is matched too.
+A value of the wrong type fails with BadArgs before anything is filled;
+keys that match no field, or several, fail with NotFound after the others
+are filled, naming the fields. Without a LOCATOR the page must have one
+form (else Ambiguous, with the forms' refs). --submit then clicks the
+form's first submit button, or presses Enter in the last field filled.
+One action report covers the whole form. `forms` shows the names to use.
+Needs a running session.
+
+Examples:
+  chrome-cdp fill-form --values '{\"Email\": \"ada@example.com\", \"Password\": \"s3cret\"}' --submit
+  chrome-cdp fill-form e10 --file order.json
+  chrome-cdp fill-form 'role=form[name=\"Checkout\"]' --values - < order.json")]
+    FillForm(FillFormArgs),
 
     /// Choose options of a <select> by value or label.
     #[command(after_help = "\
@@ -3468,6 +3518,55 @@ pub(crate) struct ReadTextArgs {
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct FormsArgs {
+    /// The form: a ref (e12) or a locator that matches it or an element
+    /// in it; every form if left out.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: Option<String>,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct FillFormArgs {
+    /// The form: a ref (e12) or a locator that matches it or an element
+    /// in it; the page's only form if left out.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: Option<String>,
+
+    /// The values, a JSON object of field names to values; `-` reads it
+    /// from stdin.
+    #[arg(
+        long,
+        value_name = "JSON",
+        allow_hyphen_values = true,
+        required_unless_present = "file",
+        conflicts_with = "file"
+    )]
+    pub(crate) values: Option<String>,
+
+    /// Read the values from this JSON file.
+    #[arg(long, value_name = "FILE")]
+    pub(crate) file: Option<std::path::PathBuf>,
+
+    /// Then submit the form: click its first submit button, or press
+    /// Enter in the last field filled.
+    #[arg(long)]
+    pub(crate) submit: bool,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+
+    #[command(flatten)]
+    pub(crate) after: AfterArgs,
 }
 
 #[derive(Debug, Args)]

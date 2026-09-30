@@ -28,13 +28,13 @@ use engine::{
     ConnectRequest, ConsoleRequest, ContextCloseRequest, ContextListRequest, ContextNewRequest,
     CoverageStartRequest, CoverageStopRequest, DebugClearRequest, DebugListRequest,
     DebugLocalsRequest, DebugLogRequest, DialogRequest, DownloadsRequest, ElementState,
-    EvalRequest, FindRequest, FramesRequest, HarStartRequest, HarStopRequest, HighlightRequest,
-    HttpCredentials, ImageFormat, InspectRequest, LayoutRequest, LocalsMode, LocatorRequest,
-    NavigateRequest, Navigation, NetworkClearRequest, NetworkFramesRequest, NetworkRequest,
-    NetworkShowRequest, OpenInitScript, OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest,
-    RouteRequest, RoutesRequest, ScreenshotRequest, SnapshotRequest, SourceRequest,
-    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, TraceStartRequest,
-    TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WhyRequest,
+    EvalRequest, FillFormRequest, FindRequest, FormsRequest, FramesRequest, HarStartRequest,
+    HarStopRequest, HighlightRequest, HttpCredentials, ImageFormat, InspectRequest, LayoutRequest,
+    LocalsMode, LocatorRequest, NavigateRequest, Navigation, NetworkClearRequest,
+    NetworkFramesRequest, NetworkRequest, NetworkShowRequest, OpenInitScript, OpenRequest,
+    PdfRequest, PerfRequest, Read, ReadRequest, RouteRequest, RoutesRequest, ScreenshotRequest,
+    SnapshotRequest, SourceRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
+    TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WhyRequest,
 };
 use engine::{
     CookieFilter, CookieSpec, CookiesOp, CookiesRequest, StateLoadRequest, StateSaveRequest,
@@ -53,14 +53,14 @@ use crate::cli::{
     ContextArgs, ContextCommand, CookieFilterArgs, CookieSetArgs, CookiesArgs, CookiesCommand,
     CoverageArgs, CoverageCommand, DEFAULT_TIMEOUT, DebugArgs, DebugCommand, DialogArgs,
     DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, ExtensionStorageAreaArg,
-    ExtensionStorageCommand, ExtensionsArgs, ExtensionsCommand, FindArgs, FrameDirArg, FramesArgs,
-    GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs,
-    ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs, LayoutArgs,
-    LocalsArg, LocatorArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs,
-    PermissionsArgs, PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs,
-    SessionsArgs, SnapshotArgs, SourceArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg,
-    StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs,
-    TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, WhyArgs, parse_duration,
+    ExtensionStorageCommand, ExtensionsArgs, ExtensionsCommand, FillFormArgs, FindArgs, FormsArgs,
+    FrameDirArg, FramesArgs, GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs,
+    IdleArgs, ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs,
+    LayoutArgs, LocalsArg, LocatorArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs,
+    PdfArgs, PermissionsArgs, PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs,
+    ScreenshotArgs, SessionsArgs, SnapshotArgs, SourceArgs, StateArgs, StateCommand, StatusArgs,
+    StorageActionArg, StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs,
+    TraceArgs, TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, WhyArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -2345,6 +2345,143 @@ fn expect_layout(args: &crate::cli::ExpectArgs, global: &GlobalArgs) -> Result<O
     let mut client = running_session(&ctx)?;
     ctx.runtime
         .block_on(client.call_output(rpc::LAYOUT, &request, ctx.timeout + QUICK))
+}
+
+/// `forms`: needs a running session.
+pub(crate) fn forms(args: &FormsArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    if let Some(locator) = &args.locator {
+        engine::parse_locator(locator)?;
+    }
+    let request = FormsRequest {
+        tab: ctx.tab.clone(),
+        locator: args.locator.clone(),
+        strict_refs: args.refs.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(ctx.timeout),
+        max_chars: args.max_chars,
+    };
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::FORMS, &request, ctx.timeout + QUICK))
+}
+
+/// `fill-form`: needs a running session. Like an action, each field
+/// waits up to 10s by default.
+pub(crate) fn fill_form(args: &FillFormArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let (text, from) = match (&args.values, &args.file) {
+        (Some(values), _) => (input::text_arg(values, "values")?, values.as_str()),
+        (None, Some(file)) => (
+            std::fs::read_to_string(file).map_err(|e| {
+                bad_args(format!("cannot read {}: {e}", file.display())).hint(Hint::text(
+                    "--file names a JSON file of field names to values",
+                ))
+            })?,
+            "",
+        ),
+        (None, None) => return Err(bad_args("fill-form needs --values JSON or --file FILE")),
+    };
+    let values = form_values(&text)?;
+    if from == "-" || args.file.is_some() {
+        let inline = values_json(&values);
+        daemon::client::edit_history_line(|words| inline_values(words, &inline));
+    }
+    let ctx = Ctx::with_default(global, WAIT_TIMEOUT)?;
+    let cwd = std::env::current_dir()
+        .ok()
+        .and_then(|d| input::absolute_path(&d).ok());
+    let request = FillFormRequest {
+        tab: ctx.tab.clone(),
+        locator: args.locator.clone(),
+        values,
+        submit: args.submit,
+        cwd,
+        strict_refs: args.refs.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(ctx.timeout),
+        no_wait_after: args.after.no_wait_after,
+        snap: args.after.snap(global),
+        max_chars: args.after.max_chars,
+    };
+    engine::check_fill_form(&request)?;
+    // Each field may wait its timeout.
+    let fields = u32::try_from(request.values.len() + 1).unwrap_or(u32::MAX);
+    let wait = ctx.timeout.saturating_mul(fields) + QUICK;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::FILL_FORM, &request, wait))
+}
+
+/// `fill-form`'s values: a JSON object, its keys in the order given.
+fn form_values(text: &str) -> Result<Vec<(String, serde_json::Value)>, ErrorInfo> {
+    struct Ordered(Vec<(String, serde_json::Value)>);
+    impl<'de> serde::Deserialize<'de> for Ordered {
+        fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+            struct Visit;
+            impl<'de> serde::de::Visitor<'de> for Visit {
+                type Value = Ordered;
+                fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                    f.write_str("a JSON object of field names to values")
+                }
+                fn visit_map<A: serde::de::MapAccess<'de>>(
+                    self,
+                    mut map: A,
+                ) -> Result<Ordered, A::Error> {
+                    let mut out: Vec<(String, serde_json::Value)> = Vec::new();
+                    while let Some((key, value)) = map.next_entry()? {
+                        out.retain(|(k, _)| *k != key);
+                        out.push((key, value));
+                    }
+                    Ok(Ordered(out))
+                }
+            }
+            d.deserialize_map(Visit)
+        }
+    }
+    serde_json::from_str::<Ordered>(text)
+        .map(|o| o.0)
+        .map_err(|e| {
+            bad_args(format!(
+                "the values are not a JSON object of field names to values: {e}"
+            ))
+            .hint(Hint::run(Cmd::new("fill-form").flag(
+                "values",
+                r#"{"Email": "ada@example.com", "Remember me": true}"#,
+            )))
+        })
+}
+
+/// The values as one line of JSON, keys in their order.
+fn values_json(values: &[(String, serde_json::Value)]) -> String {
+    let pairs: Vec<String> = values
+        .iter()
+        .map(|(k, v)| format!("{}:{v}", serde_json::Value::String(k.clone())))
+        .collect();
+    format!("{{{}}}", pairs.join(","))
+}
+
+/// `words` with `--file F` and `--values -` replaced by `--values
+/// <inline>`.
+fn inline_values(words: &mut Vec<String>, inline: &str) {
+    let mut out = Vec::with_capacity(words.len());
+    let mut iter = std::mem::take(words).into_iter();
+    while let Some(word) = iter.next() {
+        match word.as_str() {
+            "--file" | "--values" => {
+                iter.next();
+            }
+            w if w.starts_with("--file=") || w.starts_with("--values=") => {}
+            _ => {
+                out.push(word);
+                continue;
+            }
+        }
+        out.push("--values".to_owned());
+        out.push(inline.to_owned());
+    }
+    *words = out;
 }
 
 /// `inspect`: needs a running session.

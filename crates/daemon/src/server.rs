@@ -300,7 +300,12 @@ impl Daemon {
         // Only the commands a scenario keeps need their refs' locators.
         let kept = matches!(
             req.method.as_str(),
-            rpc::ACT | rpc::EXPECT | rpc::WAIT | rpc::EXPECT_SNAPSHOT | rpc::EXPECT_SCREENSHOT
+            rpc::ACT
+                | rpc::FILL_FORM
+                | rpc::EXPECT
+                | rpc::WAIT
+                | rpc::EXPECT_SNAPSHOT
+                | rpc::EXPECT_SCREENSHOT
         );
         let root = req.root.clone().map(std::path::PathBuf::from);
         let (refs, result) = engine::in_context(
@@ -652,6 +657,14 @@ impl Daemon {
             },
             rpc::WHY => match params(req.params) {
                 Ok(p) => output(Box::pin(self.engine.why(p)).await),
+                Err(e) => Err(e),
+            },
+            rpc::FORMS => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.forms(p)).await),
+                Err(e) => Err(e),
+            },
+            rpc::FILL_FORM => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.fill_form(p)).await),
                 Err(e) => Err(e),
             },
             rpc::LAYOUT => match params(req.params) {

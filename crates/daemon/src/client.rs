@@ -64,6 +64,18 @@ pub fn set_history_line(words: Option<Vec<String>>) {
     LINE.with(|line| *line.borrow_mut() = words);
 }
 
+/// Changes the words of the command about to run on this thread, if it
+/// is kept in the history (`fill-form` puts the values it read from a
+/// file or stdin in place of `--file` and `-`, so its scenario line
+/// stands alone).
+pub fn edit_history_line(edit: impl FnOnce(&mut Vec<String>)) {
+    LINE.with(|line| {
+        if let Some(words) = line.borrow_mut().as_mut() {
+            edit(words);
+        }
+    });
+}
+
 /// The flags whose value is a secret, which `history` must not show.
 const SECRET_FLAGS: [&str; 1] = ["--http-credentials"];
 
