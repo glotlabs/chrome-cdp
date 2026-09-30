@@ -430,7 +430,7 @@ fn fmt_says_what_it_takes() {
     write(dir.path(), "notes.txt", "x");
     let out = run(cli().current_dir(dir.path()).args(["fmt", "notes.txt"]));
     assert_eq!(code(&out), 2);
-    assert!(stderr(&out).contains("is not a .cdp or mock (.toml) file"));
+    assert!(stderr(&out).contains("is not a .cdp, mock (.toml) or audit baseline (.json) file"));
     let out = run(cli().current_dir(dir.path()).args(["fmt"]));
     assert_eq!(code(&out), 1);
     assert!(
