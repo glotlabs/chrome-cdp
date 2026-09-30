@@ -12,7 +12,7 @@ its `tests` glob starts in, `<test>` its name as a slug):
 
 | File | What |
 |---|---|
-| `steps.jsonl` | One JSON object per step, the runner's setup included: `n`, `start_ms`, `duration_ms`, `at` (`file:line:col`), `command`, `hook`, `ok`, `output`, `warnings`, `error`, and with `--trace` a `screenshot` (and `masked`: how many fields holding a secret it paints over) |
+| `steps.jsonl` | One JSON object per step, the runner's setup included: `n`, `start_ms`, `duration_ms`, `at` (`file:line:col`), `command`, `hook`, `ok`, `output`, `warnings`, `error`, and with `--trace` a `screenshot` (and `masked`: how many fields holding a secret it paints over); with `--heal`, `healed` for a step that ran with another locator ([healing.md](healing.md)) |
 | `requests.txt` | Every request of every tab: method, status, URL, type, time, and the mock (or route) that answered it, or the set it went unmatched in |
 | `console.txt` | The console of every tab |
 | `failure.png` | A failed test: the page when it failed (before `@after`) |
@@ -24,7 +24,8 @@ A retry's files go to `try-2/`, `try-3/`, …; `--repeat`'s runs to
 `run-1/`, `run-2/`, …; a failed `@before-all` or `@after-all` to
 `<file>/@before-all/`. A run removes what an earlier run left for the tests
 it selects. `--json` names each test's `artifacts` directory and each
-failure's `report`.
+failure's `report`. `--heal` writes `<artifacts>/heal.patch`
+([healing.md](healing.md)).
 
 ## report.md
 
@@ -37,6 +38,9 @@ again at the end of the run. It holds:
   as `chrome-cdp snapshot`, points at the file that holds it instead, since
   the test's browser context is closed);
 - the last steps before it, with their durations;
+- when its locator found nothing, the element its fingerprint matches
+  now, how sure that is, and whether `--heal` would use it; and the
+  steps `--heal` healed before it failed ([healing.md](healing.md));
 - the part of `snapshot -i` around the step's target (the refs the error
   names, or the name in its locator);
 - console errors, and requests that failed, got a status of 400 or more,

@@ -11,8 +11,8 @@ browser, tabs and refs between commands. Output is compact text; add
 
 ## Workflow
 
-1. **Open**: `chrome-cdp open http://localhost:3000` starts headless Chrome
-   (if not running). Then `chrome-cdp goto <url>`.
+1. **Open**: `chrome-cdp open http://localhost:3000` starts headless
+   Chrome. Then `chrome-cdp goto <url>`.
 2. **Look**: `chrome-cdp snapshot -i` lists what you can act on, with refs:
    ```
    page t1 "Login" http://localhost:3000/login
@@ -20,8 +20,8 @@ browser, tabs and refs between commands. Output is compact text; add
    - textbox "Password" [e7] (password)
    - button "Sign in" [e8]
    ```
-   Drop `-i` for the whole tree. `find <words>` searches for elements;
-   `text` and `markdown` read the content, iframes included.
+   Drop `-i` for the whole tree; `text` and `markdown` read the content,
+   iframes included.
 3. **Act by ref**: `chrome-cdp fill e6 ada@example.com`, `chrome-cdp click e8`.
    Actions wait until the element is visible, enabled and not covered,
    scroll it into view, and act like a real user.
@@ -106,6 +106,7 @@ tests in `e2e/scenarios/*.cdp` and fake API answers in
    test). Each test gets a fresh context, frozen time and seeded random.
 5. A failure prints a `report.md` path: the step, the error, the page,
    console errors, requests. Read it, fix the app or the test, rerun.
+   Locators a redesign broke: `test --heal --write`.
 
 ```
 @mocks base checkout

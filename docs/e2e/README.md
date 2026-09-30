@@ -15,6 +15,7 @@ small React app.
 | [authoring.md](authoring.md) | `history --as-scenario`, `mock record`, `mock import`, `mock check`, `fmt`, `lint` |
 | [debugging.md](debugging.md) | artifacts, `report.md`, reporters, `--debug`, `--watch` |
 | [determinism.md](determinism.md) | frozen time, seeded random values, no animations, `--repeat`, fonts |
+| [healing.md](healing.md) | fingerprints, the likely element of a broken locator, `--heal`, `heal.patch` and `--write` |
 | [backends.md](backends.md) | the same scenarios against a real backend, hybrid mode, `--verify-mocks` |
 | [beyond-fetch.md](beyond-fetch.md) | WebSockets, Server-Sent Events, `mock serve` for server-side rendering |
 | [migrating.md](migrating.md) | from `@playwright/test` and `page.route` |
