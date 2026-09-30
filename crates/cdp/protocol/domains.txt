@@ -7,6 +7,7 @@ Browser
 CSS: enable, disable, getComputedStyleForNode, startRuleUsageTracking, stopRuleUsageTracking, takeCoverageDelta, styleSheetAdded
 DOM
 DOMSnapshot
+Debugger
 Emulation
 Extensions: loadUnpacked, getExtensions, uninstall, triggerAction, getStorageItems, setStorageItems, removeStorageItems, clearStorageItems
 Fetch
