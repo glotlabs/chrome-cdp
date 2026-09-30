@@ -1,6 +1,6 @@
 # Plan 13 — Every frame, every worker
 
-Status: IN PROGRESS (13.1-13.3 done)
+Status: IN PROGRESS (13.1-13.4 done)
 Depends on: v1 (plans 01-11). Track 1 of [plan 12](12-after-v1.md).
 
 ## Goal
@@ -318,7 +318,7 @@ marked `todo`; the plan is done when no `todo` is left.
 
 ## Acceptance criteria
 
-- [ ] One map of targets; every feature registers its target kinds, and
+- [x] One map of targets; every feature registers its target kinds, and
       no feature loops over sessions on its own.
 - [x] Shared and service workers are resumed and answer (no page can
       hang on a paused worker).
@@ -331,13 +331,13 @@ marked `todo`; the plan is done when no `todo` is left.
 - [x] Emulation, the frozen clock and the determinism script reach
       workers; the no-animations sheet reaches open shadow roots.
 - [x] `permissions` applies per context.
-- [ ] `frames` lists frames (stable order) and workers; frame errors
+- [x] `frames` lists frames (stable order) and workers; frame errors
       point at it.
 - [ ] `cdp --listen`, coverage, `text`, `markdown`, `wait --text`, the
       focus report, `expect --a11y`, `drag` and `history --as-scenario`
       cover iframes, OOPIFs included.
 - [x] The table test has no `todo` cell.
-- [ ] Every `--json` change only adds (`cargo xtask release check`
+- [x] Every `--json` change only adds (`cargo xtask release check`
       passes).
 
 ## Decisions log
@@ -457,3 +457,41 @@ marked `todo`; the plan is done when no `todo` is left.
   the clock by then.
 - 13.3: `clipboard`'s own permission grant also goes to the call's
   context, like `permissions` and `geo`.
+- 13.4: `frames` names workers as the console and network log do
+  (`dedicated worker …`, `shared worker …`, `service worker …`, not
+  `worker dedicated …`). A dedicated worker is listed under the frame
+  that started it (`Target.attachedToTarget`'s `parentFrameId`, kept on
+  `Target::frame`), after that frame's iframes; shared and service
+  workers come last, at the top level. `-q` prints the frame ids (what
+  `--frame` takes when names and URLs are not enough). `FrameInfo` moved
+  to `protocol::schema` (the engine re-exports it; its JSON is the same).
+- 13.4: Sibling order is looked up when it is shown, not kept current:
+  `frames`, `Engine::frames` and the frame errors ask each parent document
+  where its `<iframe>` elements are (`DOM.getFrameOwner`, then the
+  element's path of child indexes in the isolated world, a shadow root
+  counting as `-1` under its host) and store it in the `FrameTree`;
+  frames not placed yet follow the placed ones in arrival order.
+- 13.4: `cdp --listen` stays on the call's session by default; the new
+  `--all-sessions` (implies `--target page`) hears every session of the
+  tab, so `--listen`'s output and `--count` keep their meaning for
+  existing scripts. It is a tap on the tab (`tabs/tap.rs`): the sessions
+  there are, and each that attaches while it listens, subscribed in
+  `attached` before the target is set up, so a new worker's first
+  request is heard. Lines start with `[main]`, `[iframe "pay"]` (name, or
+  URL without the query) or `[dedicated worker w.js]`; `--json` events
+  gain `from` and `session`. A same-site iframe runs in the page's
+  session, so its events are `[main]`.
+- 13.4: Coverage (`Feature::Coverage`) also reaches workers (JavaScript
+  only; they have no `CSS`), since it costs one kind in the registry;
+  the plan named OOPIFs. Out-of-process iframes of one site share a
+  renderer, so one V8 isolate whose coverage each of their sessions
+  reports whole (checked: the first to take it got every script): `stop`
+  takes scripts once per isolate (`Runtime.getIsolateId`), every take
+  before any session is turned off, and gives a script to the iframe
+  whose document it is inline in, else to the first of them in document
+  order. `CoverageFile` gains `frame` (the OOPIF's id) and `worker`; text
+  rows end with `[iframe "pay"]` or `[dedicated worker w.js]`. The old
+  `Running::coverage` is gone; the state lives in `tabs::coverage`.
+- 13.4: The target table gains `cdp --all-sessions` and `coverage` rows
+  (every cell checked). Golden tests mask Chrome's 32-hex ids (`<id>`)
+  and the second fixture origin (`<site-b>`).
