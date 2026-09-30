@@ -1185,8 +1185,8 @@ async fn all_sessions_hears_a_worker_that_starts_meanwhile() {
 
 /// `coverage` measures a cross-site iframe that attaches while it runs,
 /// from its first script on. It shares the process (and V8 isolate) of the
-/// other iframe of its site: each script is counted once, an inline one
-/// under its own iframe.
+/// other iframe of its site, which ran code before it joined: each script
+/// is counted once, an inline one under its own iframe.
 #[tokio::test]
 async fn coverage_measures_an_iframe_that_attaches_meanwhile() {
     let Some(path) = chrome_path() else { return };
@@ -1199,6 +1199,8 @@ async fn coverage_measures_an_iframe_that_attaches_meanwhile() {
         })
         .await
         .unwrap_or_else(|e| panic!("coverage start: {}", e.to_text()));
+    // Before the late iframe joins its process.
+    ask(&engine, "oopif", "fetch").await;
     let src = site.url_b("/targets/frame.html?who=late");
     eval(
         &engine,
@@ -1210,7 +1212,6 @@ async fn coverage_measures_an_iframe_that_attaches_meanwhile() {
         ),
     )
     .await;
-    ask(&engine, "oopif", "fetch").await;
     let out = engine
         .coverage_stop(CoverageStopRequest {
             limit: 0,
