@@ -5,7 +5,9 @@
 // could be the same one, which the engine scores against the fingerprint
 // (`crate::fingerprint`), and `healStable` gives the winner's locator.
 // The engine filters the class names and turns the path into a template,
-// so both rules have unit tests.
+// so both rules have unit tests. Their locators run in the project's
+// `test`, where its `testid_attribute` holds, so a test id is always
+// written `testid=…`.
 
 import { labelsOf, nameOf, roleOf, textOf } from './aria';
 import { descendants, norm, parentOf, tag, visible } from './dom';
@@ -100,7 +102,7 @@ export function fingerprint(el: Element, testid: string): string {
   const attribute = testid || 'data-testid';
   const out: Features & { page?: string; candidates?: string[] } = features(el, attribute, new Texts());
   out.page = el.ownerDocument.location ? el.ownerDocument.location.pathname : '';
-  const found = JSON.parse(stable(el, attribute, true)) as { candidates?: { locator: string; count: number }[] };
+  const found = JSON.parse(stable(el, attribute, true, true)) as { candidates?: { locator: string; count: number }[] };
   const candidates = (found.candidates || []).filter((c) => c.count === 1).map((c) => c.locator).slice(0, 5);
   if (candidates.length) out.candidates = candidates;
   return JSON.stringify(out);
@@ -140,5 +142,5 @@ export function healCandidates(fp: Features, testid: string, steps: Step[] | nul
 export function healStable(i: number, testid: string): string {
   const el = read[i];
   if (!el || !el.isConnected) return JSON.stringify({ reason: 'it is gone' });
-  return stable(el, testid || 'data-testid');
+  return stable(el, testid || 'data-testid', false, true);
 }

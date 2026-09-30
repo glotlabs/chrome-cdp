@@ -27,7 +27,7 @@ const quoted = (s: string) => '"' + s.replace(/[\\"]/g, (m) => '\\' + m) + '"';
 /** Whether `s` can be an unquoted locator value (a substring). */
 const bare = (s: string) => !!s && !/^["'/]|>>|[\[\]]/.test(s);
 
-function candidates(el: Element, testid: string, texts: Texts): Candidate[] {
+function candidates(el: Element, testid: string, texts: Texts, own: boolean): Candidate[] {
   const out: Candidate[] = [];
   const role = roleOf(el);
   if (role) {
@@ -49,7 +49,7 @@ function candidates(el: Element, testid: string, texts: Texts): Candidate[] {
   }
   const id = el.getAttribute(testid);
   if (id && !/\s|>>|"|'/.test(id)) {
-    const locator = testid === 'data-testid' ? `testid=${id}` : `css=[${testid}=${quoted(id)}]`;
+    const locator = testid === 'data-testid' || own ? `testid=${id}` : `css=[${testid}=${quoted(id)}]`;
     out.push({ steps: [{ kind: 'testid', value: id, attribute: testid }], locator });
   }
   const placeholder = norm(el.getAttribute('placeholder'));
@@ -119,8 +119,8 @@ function leafText(a: Element, el: Element, texts: Texts): string {
 
 /** Every locator `stable` tries for `el`, best first; `how` says which
  * kind it is. Their own candidates first, then scoped ones, then `nth=`. */
-function* tried(el: Element, testid: string, texts: Texts): Generator<Candidate & { how: string }> {
-  const own = candidates(el, testid, texts);
+function* tried(el: Element, testid: string, texts: Texts, short: boolean): Generator<Candidate & { how: string }> {
+  const own = candidates(el, testid, texts, short);
   for (const c of own) yield { ...c, how: c.steps[0].kind };
   if (own.length === 0) return;
   const around: [Element, string][] = [];
@@ -165,15 +165,17 @@ function* tried(el: Element, testid: string, texts: Texts): Generator<Candidate 
  * (`1`: it finds `el` alone), the usable ones first: its own locators,
  * and the scoped ones only when none of those is usable. In an iframe,
  * the locators are the frame's own; the engine puts the `frame=` step
- * before them. */
-export function stable(el: Element, testid: string, all?: boolean): string {
+ * before them. With `short`, a test id of an attribute other than
+ * `data-testid` is written `testid=…` too: the locator runs where that
+ * attribute is configured (a project's `test`), else `css=[attr="…"]`. */
+export function stable(el: Element, testid: string, all?: boolean, short?: boolean): string {
   const texts = new Texts();
   const usable: { locator: string; count: number }[] = [];
   const others: { locator: string; count: number }[] = [];
   let best: { locator: string; how: string } | null = null;
   let any = false;
   const own = new Set(['role', 'label', 'testid', 'placeholder', 'text']);
-  for (const c of tried(el, testid || 'data-testid', texts)) {
+  for (const c of tried(el, testid || 'data-testid', texts, !!short)) {
     // Scoped forms are only tried when none of the element's own is usable.
     if (best && own.has(best.how) && !own.has(c.how)) break;
     any = true;

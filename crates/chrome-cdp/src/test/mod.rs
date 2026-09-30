@@ -96,6 +96,14 @@ pub(crate) fn project_baselines(cli: &mut crate::cli::Cli, root: &std::path::Pat
 pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) -> u8 {
     let mode = global.mode();
     if args.backend.as_deref() == Some(e2e::backend::ALL) {
+        if args.heal.is_some() {
+            let info = ErrorInfo::new(
+                ErrorKind::BadArgs,
+                "--heal heals one backend's run, not --backend all",
+            )
+            .hint(Cmd::new("test").flag("backend", "mock").switch("heal"));
+            return output::print(mode, Err(info));
+        }
         return all::run(args, global, explicit_session);
     }
     let plan = match Plan::make(args, global, None) {

@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 3d63949d0b4f9c72
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: cf255af9f0546daf
 "use strict";
 (() => {
   // src/dom.ts
@@ -3013,7 +3013,7 @@ ${inner}
   var LONGEST = 80;
   var quoted = (s) => '"' + s.replace(/[\\"]/g, (m) => "\\" + m) + '"';
   var bare = (s) => !!s && !/^["'/]|>>|[\[\]]/.test(s);
-  function candidates(el, testid, texts) {
+  function candidates(el, testid, texts, own) {
     const out = [];
     const role = roleOf(el);
     if (role) {
@@ -3035,7 +3035,7 @@ ${inner}
     }
     const id = el.getAttribute(testid);
     if (id && !/\s|>>|"|'/.test(id)) {
-      const locator = testid === "data-testid" ? `testid=${id}` : `css=[${testid}=${quoted(id)}]`;
+      const locator = testid === "data-testid" || own ? `testid=${id}` : `css=[${testid}=${quoted(id)}]`;
       out.push({ steps: [{ kind: "testid", value: id, attribute: testid }], locator });
     }
     const placeholder = norm(el.getAttribute("placeholder"));
@@ -3092,8 +3092,8 @@ ${inner}
     }
     return "";
   }
-  function* tried(el, testid, texts) {
-    const own = candidates(el, testid, texts);
+  function* tried(el, testid, texts, short) {
+    const own = candidates(el, testid, texts, short);
     for (const c of own) yield { ...c, how: c.steps[0].kind };
     if (own.length === 0) return;
     const around = [];
@@ -3131,14 +3131,14 @@ ${inner}
       yield { steps: [...first.steps, { kind: "nth", index }], locator: `${first.locator} >> nth=${index}`, how: "nth" };
     }
   }
-  function stable(el, testid, all) {
+  function stable(el, testid, all, short) {
     const texts = new Texts();
     const usable = [];
     const others = [];
     let best = null;
     let any = false;
     const own = /* @__PURE__ */ new Set(["role", "label", "testid", "placeholder", "text"]);
-    for (const c of tried(el, testid || "data-testid", texts)) {
+    for (const c of tried(el, testid || "data-testid", texts, !!short)) {
       if (best && own.has(best.how) && !own.has(c.how)) break;
       any = true;
       const found = query(c.steps, null);
@@ -4329,7 +4329,7 @@ ${inner}
     const attribute = testid || "data-testid";
     const out = features(el, attribute, new Texts());
     out.page = el.ownerDocument.location ? el.ownerDocument.location.pathname : "";
-    const found = JSON.parse(stable(el, attribute, true));
+    const found = JSON.parse(stable(el, attribute, true, true));
     const candidates2 = (found.candidates || []).filter((c) => c.count === 1).map((c) => c.locator).slice(0, 5);
     if (candidates2.length) out.candidates = candidates2;
     return JSON.stringify(out);
@@ -4357,7 +4357,7 @@ ${inner}
   function healStable(i, testid) {
     const el = read[i];
     if (!el || !el.isConnected) return JSON.stringify({ reason: "it is gone" });
-    return stable(el, testid || "data-testid");
+    return stable(el, testid || "data-testid", false, true);
   }
 
   // src/index.ts
