@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: cea84edc3568731f
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: a814a6427d9b2851
 "use strict";
 (() => {
   // src/dom.ts
