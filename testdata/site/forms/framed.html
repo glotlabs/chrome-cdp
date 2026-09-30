@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Forms: in iframes</title>
+<!-- A search form of its own, and the two-forms page in a same-site
+     iframe and in a cross-site (out-of-process) one (plan 16, 16.4). -->
+<style>body { margin: 8px; font: 16px sans-serif; } iframe { width: 600px; height: 320px; }</style>
+<search aria-label="Site"><label>Search <input type="search" name="q"></label></search>
+<iframe title="Local" src="/forms/two-forms.html"></iframe>
+<iframe title="Remote" src="{{ORIGIN_B}}/forms/two-forms.html"></iframe>
+</html>

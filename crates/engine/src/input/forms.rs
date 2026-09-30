@@ -269,6 +269,10 @@ impl Engine {
                 }
                 match &mut outside {
                     Some(all) => {
+                        // Of several frames: no one frame's.
+                        if all.frame != unit.frame {
+                            all.frame = None;
+                        }
                         all.count += unit.count;
                         all.required_empty += unit.required_empty;
                         all.fields.extend(unit.fields);

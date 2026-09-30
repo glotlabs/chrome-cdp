@@ -358,3 +358,45 @@ fn history_keeps_fill_form_as_one_line_that_replays() {
         "ada@example.com"
     );
 }
+
+#[test]
+fn forms_in_iframes_are_listed_and_filled() {
+    let Some(chrome) = chrome_path() else { return };
+    let forms = Forms::new(&chrome);
+    forms.open("framed.html");
+    forms.ok(&["wait", "--idle"]);
+    let b = Fixtures::shared().b();
+    let listing = forms.ok(&["forms"]);
+    assert!(
+        listing.starts_with("search \"Site\" [e1] (1 field)\n"),
+        "{listing}"
+    );
+    let remote = format!("form \"Log in\" [e11] in frame {b}/forms/two-forms.html");
+    assert!(listing.contains(&remote), "{listing}");
+    // The fields outside a form of both iframes, as one group.
+    assert!(
+        listing.contains("\nfields outside a form (2 fields)\n"),
+        "{listing}"
+    );
+    // Several forms in all: name one.
+    let out = forms.run(&["fill-form", "--values", r#"{"Email": "a@b.c"}"#]);
+    assert_eq!(code(&out), 1);
+    assert!(
+        stderr(&out).contains("the page has several forms (5)"),
+        "{}",
+        stderr(&out)
+    );
+    // The cross-site (out-of-process) one.
+    let reference = forms.reference(&remote);
+    forms.ok(&[
+        "fill-form",
+        &reference,
+        "--values",
+        r#"{"Email": "ada@example.com", "Password": "pw"}"#,
+        "--submit",
+    ]);
+    assert_eq!(
+        forms.ok(&["text", "frame=localhost >> #sent"]).trim(),
+        r#"login {"email":"ada@example.com","password":"pw"}"#
+    );
+}
