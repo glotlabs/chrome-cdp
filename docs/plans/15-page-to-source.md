@@ -628,4 +628,5 @@ _(append here)_
   first lookup) and the line shows the original place, as a project path
   when the file is there (`(src/cart.ts:21)`), else the source's file
   name. The `console_error` event gains an optional `original`
-  (`SourcePosition`). `expect --no-errors` uses the same events.
+  (`SourcePosition`). `expect --no-errors` uses the same events, and
+  `wait --console` maps the entry it shows (and a timeout's list) too.
