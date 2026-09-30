@@ -496,6 +496,37 @@ async fn drags_with_html5_events_or_the_mouse() {
     engine.close().await;
 }
 
+/// Drags inside a cross-site iframe: the page's session intercepts an
+/// HTML5 drag the iframe starts (Chrome runs drags for the whole tab), and
+/// a pointer drag works as in the page.
+#[tokio::test]
+async fn drags_inside_cross_site_iframes() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "pointer-drag-frames").await;
+    let drag = |from: &str, to: &str| Action::Drag {
+        from: from.to_owned(),
+        to: to.to_owned(),
+        steps: 10,
+        force: false,
+    };
+    goto(&engine, &site.url("/actions/dnd-frames.html")).await;
+    let out = act(
+        &engine,
+        drag("frame=board >> #card1", "frame=board >> #done"),
+    )
+    .await;
+    assert_eq!(out.data["method"], "html5", "{}", out.text);
+    assert_eq!(
+        text(&engine, "frame=board >> #log").await,
+        "dragstart:card1 dragenter drop:card1 dragend:card1"
+    );
+    let out = act(&engine, drag("frame=list >> #d", "frame=list >> #a")).await;
+    assert_eq!(out.data["method"], "pointer", "{}", out.text);
+    assert_eq!(text(&engine, "frame=list >> #order").await, "d a b c");
+    engine.close().await;
+}
+
 #[tokio::test]
 async fn scrolls_with_the_wheel() {
     let Some(path) = chrome_path() else { return };

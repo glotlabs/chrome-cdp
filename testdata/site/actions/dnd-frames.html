@@ -1,0 +1,11 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Drag and drop in frames</title>
+<style>
+  body { margin: 0; }
+  iframe { width: 560px; height: 360px; display: block; margin: 8px; border: 0; }
+</style>
+<!-- The HTML5 board and the sortable list, each in a cross-site iframe
+     (out of process). -->
+<iframe name="board" title="Board" src="{{ORIGIN_B}}/actions/dnd.html"></iframe>
+<iframe name="list" title="List" src="{{ORIGIN_B}}/actions/sortable.html"></iframe>

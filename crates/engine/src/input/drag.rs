@@ -8,7 +8,9 @@
 //! (`Input.setInterceptDrags`) while the mouse moves; if the page starts
 //! one, the browser hands over its data (`Input.dragIntercepted`) and the
 //! drag is finished with `Input.dispatchDragEvent` (enter, over, drop),
-//! and the mouse is released.
+//! and the mouse is released. The tab's session is enough for drags in
+//! out-of-process iframes too: Chrome 154 runs a drag for the whole tab
+//! and reports it there (checked in `tests/pointer.rs`).
 
 use std::time::Duration;
 
