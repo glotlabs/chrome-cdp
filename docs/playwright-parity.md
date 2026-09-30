@@ -61,7 +61,7 @@ Today: 130 rows; 115 ✅, 10 🟡, 0 ❌, 5 ➖. No row is ❌.
 | actionability: attached, visible, stable, enabled, not covered, scrolled into view | every action; a failure says what blocks it (`Obscured` names the covering element and the click that clears it) | ✅ | yes |
 | waiting for the navigation an action causes | `click` and the others wait for it and for the requests they sent, and report them; `--no-wait-after` | ✅ | yes |
 | `force: true` | `--force` | ✅ | no |
-| `trial: true` | `expect LOC visible`, `expect LOC enabled` | 🟡 | no |
+| `trial: true` | `why LOC --for click` runs the action's checks now without acting, and names each one's cause (what covers it, which ancestor hides or disables it); `expect LOC visible`, `expect LOC enabled` | ✅ | no |
 | `waitForSelector`, `locator.waitFor({ state })` | `wait LOC --state visible\|hidden\|attached\|detached\|enabled` | ✅ | yes |
 | `waitForURL`, `waitForLoadState` (incl. `networkidle`) | `wait --url`, `wait --load`, `wait --idle`, `wait --settle` | ✅ | yes |
 | `waitForFunction` | `wait --fn 'JS'` | ✅ | yes |

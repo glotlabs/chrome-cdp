@@ -35,7 +35,8 @@ browser, tabs and refs between commands. Output is compact text; add
 5. **After a navigation, refs are stale**: run `snapshot -i` again.
 6. **When stuck**: read the error's `hint:` line (it names the next
    command), then `chrome-cdp errors`, `console`, `network --failed`, or
-   `screenshot` (prints the PNG path; look at the image).
+   `screenshot` (prints the PNG path; look at the image). `why e8` says
+   why an action on e8 would wait, without waiting.
 7. **Verify**: `chrome-cdp expect 'role=alert' text Saved`, `expect e6
    visible`, `expect '.row' count 3`, `expect --no-errors`. It retries
    for 5s, and a failure (exit 1) says what it saw instead. To guard a
