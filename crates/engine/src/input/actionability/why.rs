@@ -98,6 +98,15 @@ struct Scrolled {
     el: Option<usize>,
 }
 
+/// `checkState()`'s answer, as `check` reads it.
+#[derive(Debug, Default, Deserialize)]
+struct CheckState {
+    kind: Option<String>,
+    #[serde(default)]
+    state: Value,
+    click: Option<Candidate>,
+}
+
 /// The file input probe of `upload`.
 #[derive(Debug, Default, Deserialize)]
 struct Probe {
@@ -263,7 +272,7 @@ impl Engine {
         timeout: std::time::Duration,
     ) -> Result<Report, Attempt> {
         let acted = self.name_target(running, page, target, generation).await;
-        let mut element = WhyElement {
+        let element = WhyElement {
             reference: acted.reference,
             role: acted.role,
             name: acted.name,
@@ -294,6 +303,95 @@ impl Engine {
                 });
             }
         }
+        // `check` does nothing to what is already checked, fails at once
+        // on what cannot be checked, and clicks the label of a box styled
+        // away behind it: the checks are then the label's.
+        let mut label = None;
+        if action == WhyFor::Check {
+            let function =
+                format!("function () {{ {GUARD} return globalThis.__ccdp.checkState(this); }}");
+            let (json, keys) = self
+                .call_listed(target, &function, Vec::new(), timeout)
+                .await?;
+            let state: CheckState = serde_json::from_str(&json).unwrap_or_default();
+            if state.kind.is_none() {
+                return Ok(Report {
+                    element: Some(element),
+                    checks,
+                    fails: Some("it is not a checkbox, radio button or switch".to_owned()),
+                    note: None,
+                });
+            }
+            if state.state == Value::Bool(true) {
+                checks[0].why = Some("1 match, already checked: check does nothing".to_owned());
+                return Ok(Report {
+                    element: Some(element),
+                    checks,
+                    fails: None,
+                    note: None,
+                });
+            }
+            let key = keys.get(1).cloned().flatten();
+            if let (Some(click), Some(key)) = (&state.click, key)
+                && key != target.key
+                && let Some((context, object_id)) =
+                    self.live_node(running, page, &key, timeout).await?
+            {
+                let named = refer_all(
+                    running,
+                    page,
+                    std::slice::from_ref(click),
+                    &[Some(key.clone())],
+                    generation,
+                );
+                if let Some(named) = named.first() {
+                    checks[0].why = Some(format!("1 match; check clicks {}", element_text(named)));
+                }
+                label = Some(Target {
+                    key,
+                    context,
+                    object_id,
+                    note: None,
+                });
+            }
+        }
+        let own = label.is_none();
+        let result = self
+            .run_checks(
+                running,
+                page,
+                label.as_ref().unwrap_or(target),
+                own,
+                action,
+                scroll,
+                generation,
+                timeout,
+                element,
+                checks,
+            )
+            .await;
+        if let Some(label) = label {
+            label.release();
+        }
+        result
+    }
+
+    /// The pipeline's checks on `target` (the element, or the label
+    /// `check` clicks: `own` is false), after `resolve`'s in `checks`.
+    #[allow(clippy::too_many_arguments)]
+    async fn run_checks(
+        &self,
+        running: &Running,
+        page: &Page,
+        target: &Target,
+        own: bool,
+        action: WhyFor,
+        scroll: bool,
+        generation: Option<u64>,
+        timeout: std::time::Duration,
+        mut element: WhyElement,
+        mut checks: Vec<WhyCheck>,
+    ) -> Result<Report, Attempt> {
         let needs = checks_for(action);
         let function = format!(
             "function (needs) {{ {GUARD} return globalThis.__ccdp.explainActionable(this, needs); }}"
@@ -305,8 +403,8 @@ impl Engine {
         let (json, keys) = self.call_listed(target, &function, args, timeout).await?;
         let explained: Explained = serde_json::from_str(&json).unwrap_or_default();
         let names = refer_all(running, page, &explained.names, &keys, generation);
-        if let Some(own) = &explained.own {
-            element.class.clone_from(&own.cls);
+        if let Some(named) = explained.own.as_ref().filter(|_| own) {
+            element.class.clone_from(&named.cls);
         }
         let mut fails = None;
         let mut failed_before_editable = false;

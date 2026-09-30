@@ -142,6 +142,11 @@ const CASES: &[(&str, &str, &str, WhyFor, bool)] = &[
     ("readonly", "cases", "#readonly", WhyFor::Fill, false),
     // A button can never take text.
     ("fine-fill", "cases", "#fine", WhyFor::Fill, false),
+    // Check clicks the label of a box styled away behind it, does
+    // nothing to a checked box, and fails at once on a button.
+    ("styled", "cases", "#styled", WhyFor::Check, false),
+    ("done", "cases", "#done", WhyFor::Check, false),
+    ("fine-check", "cases", "#fine", WhyFor::Check, false),
     ("far", "cases", "#far", WhyFor::Click, false),
     ("far-no-scroll", "cases", "#far", WhyFor::Click, true),
     ("frame", "cases", "frame=pay >> #pay", WhyFor::Click, false),

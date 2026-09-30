@@ -1,0 +1,3 @@
+why #fine button "Fine" [e27] (for check)
+✓ resolve    1 match
+→ check would fail at once: it is not a checkbox, radio button or switch

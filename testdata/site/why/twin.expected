@@ -1,5 +1,5 @@
 why role=button[name="Twin"] (for click)
-✗ resolve    2 elements match role=button[name="Twin"]: e28, e29
-    e28: button "Twin"
-    e29: button "Twin"
-→ click would fail at once: 2 elements match role=button[name="Twin"]: e28, e29
+✗ resolve    2 elements match role=button[name="Twin"]: e32, e33
+    e32: button "Twin"
+    e33: button "Twin"
+→ click would fail at once: 2 elements match role=button[name="Twin"]: e32, e33

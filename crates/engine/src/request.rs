@@ -2027,7 +2027,9 @@ impl WhyFor {
             "hover" => Self::Hover,
             "fill" => Self::Fill,
             "type" => Self::Type,
-            "check" | "uncheck" => Self::Check,
+            // `why --for check` on a checked box says check does nothing:
+            // no help for `uncheck`.
+            "check" => Self::Check,
             "select" => Self::Select,
             "upload" => Self::Upload,
             "drag" => Self::Drag,

@@ -1,0 +1,8 @@
+why #styled checkbox "Newsletter" [e24] (for check)
+✓ resolve    1 match; check clicks label "Newsletter" [e25]
+✓ visible    W×H at X,Y
+✓ stable
+✓ enabled
+✓ in view
+✓ hit test   reaches it at X,Y
+→ check would act now
