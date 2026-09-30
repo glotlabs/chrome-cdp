@@ -13,6 +13,7 @@ use super::{BLANK, Page, TabError, parse_tab_id, tab_name};
 use crate::context::Scoped as _;
 use crate::downloads;
 use crate::errors::from_cdp;
+use crate::frames::iframe_label;
 use crate::interrupt::{describe, describe_kind};
 use crate::request::{
     Navigation, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, WaitUntil, millis,
@@ -268,8 +269,21 @@ impl Engine {
                 let id = id.map(|id| format!("#{id} ")).unwrap_or_default();
                 format!("request failed: {id}{method} {} ({why})", path_of(url))
             }
-            Event::FocusMoved { element, .. } => {
-                format!("focus moved to {}", crate::input::describe(element))
+            Event::FocusMoved {
+                tab,
+                element,
+                frame,
+            } => {
+                let place = frame
+                    .as_deref()
+                    .and_then(|frame| {
+                        let tab = parse_tab_id(tab).ok()?;
+                        let frames = self.running().ok()?.tabs.frames(tab);
+                        let info = frames.iter().find(|f| f.id == frame)?;
+                        Some(format!(" in {}", iframe_label(info)))
+                    })
+                    .unwrap_or_default();
+                format!("focus moved to {}{place}", crate::input::describe(element))
             }
         }
     }

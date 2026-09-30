@@ -19,6 +19,7 @@
 use std::time::Duration;
 
 use cdp::domains::runtime;
+use futures_util::future::join_all;
 use protocol::schema::Event;
 use protocol::{Cmd, ErrorInfo, Output};
 use serde_json::Value;
@@ -50,6 +51,13 @@ const DOWNLOAD_WAIT: Duration = Duration::from_secs(2);
 /// How long marking focus may take before the action (skipped if the
 /// page has no context yet).
 const FOCUS_MARK_WAIT: Duration = Duration::from_secs(2);
+
+/// How long marking focus waits for a child frame's context (a frame
+/// still loading has nothing focused).
+const FOCUS_FRAME_WAIT: Duration = Duration::from_millis(200);
+
+/// How deep in iframes the report follows focus.
+const FOCUS_DEPTH: usize = 8;
 
 /// How many console errors and failed requests the report lists (each);
 /// a line counts the rest.
@@ -91,27 +99,60 @@ impl Actor<'_> {
         }
     }
 
-    /// Tells the page where focus is, for [`Actor::focus_moved`]. A page
-    /// without a context yet has nothing focused to report on.
+    /// Tells the page where focus is, for [`Actor::focus_moved`]: every
+    /// frame of the tab, and which holds focus, found by following the
+    /// focused `<iframe>` down from the main frame (the frames are marked
+    /// as not holding it first). A page without a context yet has nothing
+    /// focused to report on.
     async fn focus_mark(&self) {
         let wait = FOCUS_MARK_WAIT.min(self.timeout);
-        let Ok(context) = self
-            .engine
-            .frame_context(self.running, self.page, None, World::Isolated, wait)
-            .await
-        else {
-            return;
-        };
-        let mut params = runtime::CallFunctionOnParams::new(format!(
-            "function () {{ {GUARD} globalThis.__ccdp.focusMark(); }}"
-        ));
-        params.execution_context_id = Some(context.context_id);
-        let _ = injected::call(
-            &context.session.with_timeout(wait),
-            context.context_id,
-            params,
-        )
-        .await;
+        let children = self.running.tabs.frames(self.page.id);
+        let marks = children.iter().skip(1).map(|frame| async {
+            let Ok(context) = self
+                .running
+                .tabs
+                .context(self.page.id, &frame.id, World::Isolated, FOCUS_FRAME_WAIT)
+                .await
+            else {
+                return;
+            };
+            let mut params = runtime::CallFunctionOnParams::new(format!(
+                "function () {{ {GUARD} globalThis.__ccdp.focusMark(false); }}"
+            ));
+            params.execution_context_id = Some(context.context_id);
+            let _ = injected::call(
+                &context.session.with_timeout(wait),
+                context.context_id,
+                params,
+            )
+            .await;
+        });
+        join_all(marks).await;
+        let mut frame: Option<String> = None;
+        for _ in 0..FOCUS_DEPTH {
+            let inner = self
+                .frame_element(
+                    frame.as_deref(),
+                    "globalThis.__ccdp.focusMark(true)",
+                    if frame.is_some() {
+                        FOCUS_FRAME_WAIT
+                    } else {
+                        wait
+                    },
+                )
+                .await;
+            let Ok(Some(inner)) = inner else { return };
+            frame = self
+                .engine
+                .content_frame(&inner.context, &inner.object_id, wait)
+                .await
+                .ok()
+                .flatten();
+            inner.release();
+            if frame.is_none() {
+                return;
+            }
+        }
     }
 
     /// Waits for what the action caused (unless `--no-wait-after`) and
@@ -146,10 +187,11 @@ impl Actor<'_> {
         let origins = origins(&before, &events);
         events.extend(self.console_errors(&before));
         events.extend(self.failed_requests(&before, &origins, &events));
-        if !leaving && let Some(element) = self.focus_moved().await {
+        if !leaving && let Some((element, frame)) = self.focus_moved().await {
             events.push(Event::FocusMoved {
                 tab: self.tab(),
                 element,
+                frame,
             });
         }
         let lines = self.lines(&events);
@@ -350,13 +392,39 @@ impl Actor<'_> {
             .collect()
     }
 
-    /// The element focus moved to in another form (see `focusMoved` in
-    /// the injected `report.ts`), named.
-    async fn focus_moved(&self) -> Option<protocol::schema::ActedElement> {
-        self.page_element("globalThis.__ccdp.focusMoved()")
-            .await
-            .ok()
-            .flatten()
+    /// The element focus moved to in another form or frame (see
+    /// `focusMoved` in the injected `report.ts`), named: asked of the main
+    /// frame, then of the frame whose `<iframe>` has focus, and so on down;
+    /// with the frame's id when it is not the main frame.
+    async fn focus_moved(&self) -> Option<(protocol::schema::ActedElement, Option<String>)> {
+        let mut frame: Option<String> = None;
+        for _ in 0..FOCUS_DEPTH {
+            let wait = if frame.is_some() {
+                FOCUS_FRAME_WAIT
+            } else {
+                self.timeout
+            };
+            let target = self
+                .frame_element(frame.as_deref(), "globalThis.__ccdp.focusMoved()", wait)
+                .await
+                .ok()
+                .flatten()?;
+            let inner = self
+                .engine
+                .content_frame(&target.context, &target.object_id, self.timeout)
+                .await
+                .ok()
+                .flatten();
+            if inner.is_some() {
+                target.release();
+                frame = inner;
+                continue;
+            }
+            let named = self.name(&target).await;
+            target.release();
+            return Some((named.ok()?, frame));
+        }
+        None
     }
 
     /// The report's lines: `→ navigated …` first, then `! …` for the rest,

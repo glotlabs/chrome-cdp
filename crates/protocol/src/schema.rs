@@ -3415,12 +3415,16 @@ pub enum Event {
         error: Option<String>,
     },
     /// Focus moved to an element of another form than before (or into a
-    /// form, or out of one) that the action did not act on: a dialog or
-    /// the next step of a flow took it.
+    /// form, or out of one, or into another frame) that the action did not
+    /// act on: a dialog or the next step of a flow took it.
     FocusMoved {
         /// The tab, e.g. `t1`.
         tab: String,
         element: ActedElement,
+        /// The frame it is in, when that is not the tab's main frame: the
+        /// frame's id (what `--frame` takes; `frames` lists them).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        frame: Option<String>,
     },
 }
 

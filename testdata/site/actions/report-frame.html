@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Report: a frame's forms</title>
+<form id="card-form">
+  <label>Card <input id="card"></label>
+  <button type="button" id="next" onclick="document.getElementById('code').focus()">Next</button>
+</form>
+<form id="verify"><label>Code <input id="code"></label></form>
+<!-- Same-site only: focus goes back to the page's search field. -->
+<button id="back" onclick="parent.document.getElementById('search').focus()">Back</button>
+<script>
+  addEventListener('message', (e) => { if (e.data === 'focus') document.getElementById('card').focus(); });
+</script>

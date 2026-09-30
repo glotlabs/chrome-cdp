@@ -241,13 +241,28 @@ impl Actor<'_> {
         &self,
         expression: &str,
     ) -> Result<Option<ActedElement>, ErrorInfo> {
-        let context = self
-            .engine
-            .frame_context(self.running, self.page, None, World::Isolated, self.timeout)
-            .await?;
-        let Some(frame) = self.running.tabs.frames(self.page.id).into_iter().next() else {
+        let Some(target) = self.frame_element(None, expression, self.timeout).await? else {
             return Ok(None);
         };
+        let named = self.name(&target).await;
+        target.release();
+        named.map(Some)
+    }
+
+    /// The element `expression` (which may use `__ccdp`) gives in the
+    /// isolated world of frame `frame` (the main frame if `None`; its
+    /// context waited for at most `wait`), as a handle; `None` for
+    /// `null`.
+    pub(super) async fn frame_element(
+        &self,
+        frame: Option<&str>,
+        expression: &str,
+        wait: Duration,
+    ) -> Result<Option<Target>, ErrorInfo> {
+        let (frame, context) = self
+            .engine
+            .frame_and_context(self.running, self.page, frame, World::Isolated, wait)
+            .await?;
         let session = context.session.with_timeout(self.timeout);
         let mut params = runtime::CallFunctionOnParams::new(format!(
             "function () {{ {GUARD} return {expression}; }}"
@@ -265,9 +280,9 @@ impl Actor<'_> {
                 ..dom::DescribeNodeParams::default()
             })
             .await;
-        let target = Target {
+        Ok(Some(Target {
             key: NodeKey {
-                frame: frame.id,
+                frame,
                 backend: match node {
                     Ok(node) => node.node.backend_node_id,
                     Err(e) => {
@@ -279,10 +294,7 @@ impl Actor<'_> {
             context,
             object_id,
             note: None,
-        };
-        let named = self.name(&target).await;
-        target.release();
-        named.map(Some)
+        }))
     }
 
     /// `press <keys> [--in loc]`.

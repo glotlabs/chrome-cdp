@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Report: focus in frames</title>
+<!-- Focus moving into, inside and out of iframes, for the post-action
+     report. "Pay" asks the cross-site frame to focus its card field. -->
+<form id="find"><label>Search <input id="search"></label></form>
+<p><button id="pay" onclick="document.querySelector('iframe[name=pay]').contentWindow.postMessage('focus', '*')">Pay</button>
+<iframe name="pay" title="Pay" src="{{ORIGIN_B}}/actions/report-frame.html"></iframe>
+<iframe name="same" title="Same" src="/actions/report-frame.html"></iframe>

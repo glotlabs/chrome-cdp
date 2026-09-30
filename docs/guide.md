@@ -246,8 +246,8 @@ clicked e6 button "Sign in"
 ```
 
 Also reported: `pushState` navigations (`(same document)`), dialogs the
-session answered, downloads, and focus moving to another form (`! focus
-moved to e14 textbox "Code"`). Failed requests count only on the page's own
+session answered, downloads, and focus moving to another form or into
+another frame (`! focus moved to e14 textbox "Code"`, `… in iframe "pay"`). Failed requests count only on the page's own
 origin; `#42` is the request's id for `network show 42`. `--json` lists them all in `events`. `--no-wait-after` returns once
 the input is sent; `--snap` appends what changed on the page (`snapshot
 --diff -i`), and `snap_after_action = "diff"` in the config files makes that

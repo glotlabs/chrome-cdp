@@ -432,3 +432,53 @@ async fn no_wait_after_and_snap() {
     );
     assert_eq!(out.data["snapshot"]["diff"], true);
 }
+
+/// Focus is followed into iframes (a cross-site one too): moving into a
+/// frame, between its forms and back out is reported, with the frame;
+/// focus on what the action acted on is not.
+#[tokio::test]
+async fn focus_is_followed_into_frames() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "report-frames", None).await;
+    goto(&engine, &site.url("/actions/report-frames.html")).await;
+
+    let out = act(&engine, click("#pay")).await;
+    let lines = report(&out);
+    assert_eq!(lines.len(), 1, "{}", out.text);
+    assert!(
+        lines[0].starts_with("! focus moved to e")
+            && lines[0].ends_with(" textbox \"Card\" in iframe \"pay\""),
+        "{}",
+        out.text
+    );
+    let event = serde_json::to_value(out.events.last().unwrap()).unwrap();
+    assert_eq!(event["type"], "focus_moved", "{event}");
+    assert!(event["frame"].is_string(), "{event}");
+
+    let out = act(
+        &engine,
+        Action::Fill {
+            locator: "frame=pay >> #card".to_owned(),
+            text: "4242".to_owned(),
+            force: false,
+        },
+    )
+    .await;
+    assert_eq!(report(&out), Vec::<&str>::new(), "{}", out.text);
+
+    let out = act(&engine, click("frame=pay >> #next")).await;
+    let lines = report(&out);
+    assert_eq!(lines.len(), 1, "{}", out.text);
+    assert!(
+        lines[0].ends_with(" textbox \"Code\" in iframe \"pay\""),
+        "{}",
+        out.text
+    );
+
+    // Out of the frames, into the page's own form.
+    let out = act(&engine, click("frame=same >> #back")).await;
+    let lines = report(&out);
+    assert_eq!(lines.len(), 1, "{}", out.text);
+    assert!(lines[0].ends_with(" textbox \"Search\""), "{}", out.text);
+}

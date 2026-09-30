@@ -619,10 +619,17 @@
           "type": "object"
         },
         {
-          "description": "Focus moved to an element of another form than before (or into a\nform, or out of one) that the action did not act on: a dialog or\nthe next step of a flow took it.",
+          "description": "Focus moved to an element of another form than before (or into a\nform, or out of one, or into another frame) that the action did not\nact on: a dialog or the next step of a flow took it.",
           "properties": {
             "element": {
               "$ref": "#/$defs/ActedElement"
+            },
+            "frame": {
+              "description": "The frame it is in, when that is not the tab's main frame: the\nframe's id (what `--frame` takes; `frames` lists them).",
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "tab": {
               "description": "The tab, e.g. `t1`.",

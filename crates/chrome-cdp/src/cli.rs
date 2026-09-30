@@ -774,7 +774,7 @@ what, with a ref, and a click that likely dismisses it. Then it waits
 for what the click caused (a new page to load, the requests it sent) and
 adds a line for each thing that happened: a navigation, a new tab, a
 dialog, a download, a console error, a failed request, focus moving to
-another form. Every action does. Needs a running session.
+another form or frame. Every action does. Needs a running session.
 
 Examples:
   chrome-cdp click e6

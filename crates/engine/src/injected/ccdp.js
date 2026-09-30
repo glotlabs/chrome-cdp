@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: e7d481aa07ef8f0e
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 19b59857022e2fd6
 "use strict";
 (() => {
   // src/dom.ts
@@ -1700,15 +1700,18 @@ ${inner}
   // src/report.ts
   var before = null;
   var actedOn = [];
+  var isFrame = (el) => el instanceof HTMLIFrameElement || el instanceof HTMLFrameElement;
   function formOf(el) {
     if (!el) return null;
     const owner = el.form;
     return owner instanceof HTMLFormElement ? owner : el.closest("form");
   }
-  function focusMark() {
+  function focusMark(held = true) {
     const el = focused();
-    before = { el, form: formOf(el) };
+    const here = held && !isFrame(el);
+    before = { el: here ? el : null, form: here ? formOf(el) : null, away: !here };
     actedOn = [];
+    return held && isFrame(el) ? el : null;
   }
   function acted(el) {
     if (before) actedOn.push(el);
@@ -1718,10 +1721,12 @@ ${inner}
     const mark = before;
     before = null;
     const el = focused();
-    if (!mark || !el || el === mark.el || el instanceof HTMLIFrameElement) return null;
+    if (isFrame(el)) return el;
+    if (!mark || !el || el === mark.el) return null;
     for (const a of actedOn) {
       if (a === el || contains(a, el) || a instanceof HTMLLabelElement && a.control === el) return null;
     }
+    if (mark.away) return actedOn.some((a) => formOf(a) === formOf(el)) ? null : el;
     return formOf(el) === mark.form ? null : el;
   }
 

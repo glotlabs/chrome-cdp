@@ -534,7 +534,7 @@ impl Engine {
     }
 
     /// The frame an `<iframe>` element shows, or `None` if it is not one.
-    async fn content_frame(
+    pub(crate) async fn content_frame(
         &self,
         context: &FrameContext,
         object_id: &str,
