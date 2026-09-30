@@ -7,7 +7,8 @@
 // what keyboard and form actions ask it (5.3), where focus went for
 // the post-action report (5.5), what `expect` checks (plan 09), and the
 // stable locators `history --as-scenario` writes for refs (plan 11), and
-// what `why` explains and what `layout` checks (plan 16).
+// what `why` explains, what `layout` checks and the forms `forms` and
+// `fill-form` list (plan 16).
 // Built into `ccdp.js` by `cargo xtask build-js`; the engine embeds that
 // file.
 
@@ -26,6 +27,7 @@ import { clipped, explainActionable, scrolledSince, scrollMark } from './why';
 import {
   contentBox, hideText, layoutCheck, pageExtent, scrollPage, showText, stretchText, textNames, unstretchText,
 } from './layout';
+import { formsList, pickOption } from './forms';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -79,6 +81,8 @@ const api = {
   scrollPage,
   pageExtent,
   contentBox,
+  formsList,
+  pickOption,
 };
 
 if (!globalThis.__ccdp) globalThis.__ccdp = api;

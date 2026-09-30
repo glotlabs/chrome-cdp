@@ -183,7 +183,7 @@ function svgTitle(el: Element): string {
   return title ? title.textContent || '' : '';
 }
 
-function byIds(el: Element, ids: string): Element[] {
+export function byIds(el: Element, ids: string): Element[] {
   const root = el.getRootNode() as Document | ShadowRoot;
   return ids.split(/\s+/)
     .map((id) => (root.getElementById ? root.getElementById(id) : el.ownerDocument.getElementById(id)))

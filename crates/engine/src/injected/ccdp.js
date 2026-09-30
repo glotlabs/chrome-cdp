@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 18a6410583ef99f3
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 6a67cd390fb5d7a4
 "use strict";
 (() => {
   // src/dom.ts
@@ -1724,8 +1724,8 @@ ${inner}
       const wanted = norm(v);
       const found = options.find((o) => o.value === v) || options.find((o) => norm(o.label) === wanted) || options.find((o) => norm(o.label).toLowerCase() === wanted.toLowerCase());
       if (!found) {
-        const listed = options.slice(0, LISTED2).map((o) => ({ ...option(o), disabled: o.disabled || void 0 }));
-        return JSON.stringify({ missing: v, options: listed, more: Math.max(0, options.length - LISTED2) });
+        const listed2 = options.slice(0, LISTED2).map((o) => ({ ...option(o), disabled: o.disabled || void 0 }));
+        return JSON.stringify({ missing: v, options: listed2, more: Math.max(0, options.length - LISTED2) });
       }
       if (found.disabled || found.parentElement instanceof HTMLOptGroupElement && found.parentElement.disabled) {
         return JSON.stringify({ disabled: v });
@@ -1925,10 +1925,10 @@ ${inner}
     switch (m) {
       case "visible":
       case "hidden": {
-        const shown2 = visible(el);
-        const why = shown2 ? null : invisible(el);
-        const state = shown2 ? "visible" : `hidden${why ? ` (${why})` : ""}`;
-        return one2(m === "visible" ? shown2 : !shown2, state);
+        const shown3 = visible(el);
+        const why = shown3 ? null : invisible(el);
+        const state = shown3 ? "visible" : `hidden${why ? ` (${why})` : ""}`;
+        return one2(m === "visible" ? shown3 : !shown3, state);
       }
       case "enabled":
       case "disabled": {
@@ -2004,8 +2004,8 @@ ${inner}
     throw new ArgError(`unknown page check ${spec.matcher}`);
   }
   function expectNamed(els) {
-    const shown2 = els.slice(0, 3);
-    return { json: JSON.stringify(shown2.map(describe)), els: shown2 };
+    const shown3 = els.slice(0, 3);
+    return { json: JSON.stringify(shown3.map(describe)), els: shown3 };
   }
 
   // src/a11y.ts
@@ -2694,10 +2694,10 @@ ${inner}
       return x >= view[0] && y >= view[1] && x < view[0] + view[2] && y < view[1] + view[3];
     };
     const targets = seen.filter((s) => s.interactive && !visuallyHidden2(s.el, s.style));
-    const shown2 = /* @__PURE__ */ new Map();
+    const shown3 = /* @__PURE__ */ new Map();
     const shownOf = (s) => {
-      if (!shown2.has(s.el)) shown2.set(s.el, shownBoxes(s.el, s.style));
-      return shown2.get(s.el);
+      if (!shown3.has(s.el)) shown3.set(s.el, shownBoxes(s.el, s.style));
+      return shown3.get(s.el);
     };
     if (kinds.has("covered")) {
       for (const t of targets) {
@@ -3036,6 +3036,338 @@ ${inner}
     return [x, y, Math.max(w, 0), Math.max(h, 0)];
   }
 
+  // src/forms.ts
+  var UNITS = /* @__PURE__ */ new Set(["form", "search"]);
+  var WIDGETS = /* @__PURE__ */ new Set([
+    "combobox",
+    "listbox",
+    "checkbox",
+    "switch",
+    "radiogroup",
+    "textbox",
+    "searchbox",
+    "slider",
+    "spinbutton",
+    "radio"
+  ]);
+  var WRAPS_INPUT = /* @__PURE__ */ new Set(["combobox", "textbox", "searchbox"]);
+  var OPTIONS = 10;
+  var VALUE = 80;
+  var cut5 = (s, n) => s.length > n ? s.slice(0, n - 1) + "…" : s;
+  var isUnit = (el) => tag(el) === "form" || UNITS.has(roleOf(el) || "");
+  function unitAbove(el) {
+    for (let a = parentOf(el); a; a = parentOf(a)) if (isUnit(a)) return a;
+    return null;
+  }
+  function ownerOf(el) {
+    const owner = el.form;
+    if (owner && !contains(owner, el)) return owner;
+    return unitAbove(el);
+  }
+  function nativeKind(el) {
+    const t = tag(el);
+    if (el instanceof HTMLInputElement) {
+      const type = el.type.toLowerCase();
+      if (type === "hidden") return null;
+      return type === "image" ? "submit" : type;
+    }
+    if (t === "select") return "select";
+    if (t === "textarea") return "textarea";
+    if (el instanceof HTMLButtonElement) return el.type;
+    const html2 = el;
+    if (html2.isContentEditable && !(el.parentElement && el.parentElement.isContentEditable)) return "contenteditable";
+    return null;
+  }
+  function shown2(el) {
+    if (!hiddenForAria(el) && visible(el)) return true;
+    const labels = el.labels;
+    return !!labels && Array.from(labels).some((l) => !hiddenForAria(l) && visible(l));
+  }
+  var shownValue = (s) => cut5(norm(s), VALUE);
+  function problem(el) {
+    const native = el;
+    if (typeof native.willValidate === "boolean" && native.willValidate && !native.validity.valid) {
+      const v = native.validity;
+      const other = v.typeMismatch || v.patternMismatch || v.tooLong || v.tooShort || v.rangeUnderflow || v.rangeOverflow || v.stepMismatch || v.badInput || v.customError;
+      if (other) return { invalid: true, message: cut5(norm(native.validationMessage), 120) || void 0 };
+    }
+    const aria = attr(el, "aria-invalid");
+    if (!aria || aria === "false") return {};
+    for (const name of ["aria-errormessage", "aria-describedby"]) {
+      const ids = attr(el, name);
+      if (!ids) continue;
+      const text2 = norm(byIds(el, ids).map((e) => e.innerText || e.textContent || "").join(" "));
+      if (text2) return { invalid: true, message: cut5(text2, 120) };
+    }
+    return { invalid: true };
+  }
+  function customOptions(list) {
+    const out = [];
+    const owned = attr(list, "aria-owns");
+    const els = [...descendants(list), ...owned ? byIds(list, owned) : []];
+    for (const o of els) {
+      if (roleOf(o) !== "option" || hiddenForAria(o)) continue;
+      out.push([o, nameOf(o, "option")]);
+    }
+    return out;
+  }
+  function listsOf(el) {
+    const ids = [attr(el, "aria-controls"), attr(el, "aria-owns")].filter(Boolean).join(" ");
+    const lists = ids ? byIds(el, ids) : [];
+    const active = attr(el, "aria-activedescendant");
+    if (active) {
+      for (const o of byIds(el, active)) {
+        for (let a = parentOf(o); a; a = parentOf(a)) {
+          if (roleOf(a) === "listbox") {
+            lists.push(a);
+            break;
+          }
+        }
+      }
+    }
+    const list = el.list;
+    if (list) lists.push(list);
+    return Array.from(new Set(lists));
+  }
+  function listed(field2, names) {
+    if (!names.length) return;
+    field2.options = names.slice(0, OPTIONS).map((n) => cut5(n, 40));
+    if (names.length > OPTIONS) field2.more = names.length - OPTIONS;
+  }
+  function fill(field2, el, role) {
+    const input = el;
+    const aria = (name) => attr(el, name) === "true";
+    if (input.required && !(el instanceof HTMLButtonElement) || aria("aria-required")) field2.required = true;
+    if (el.matches(":disabled") || el.closest('[aria-disabled="true"]')) field2.disabled = true;
+    if (input.readOnly && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) || aria("aria-readonly")) {
+      field2.readonly = true;
+    }
+    if (attr(el, "name")) field2.html = attr(el, "name");
+    if (el.id) field2.id = el.id;
+    if (attr(el, "placeholder")) field2.placeholder = norm(attr(el, "placeholder"));
+    Object.assign(field2, problem(el));
+    const kind = field2.kind;
+    if (field2.button) {
+      if (kind === "submit") field2.submit = true;
+      return;
+    }
+    if (el instanceof HTMLInputElement && (kind === "checkbox" || kind === "radio")) {
+      field2.checked = el.indeterminate && kind === "checkbox" ? "mixed" : el.checked;
+      if (!el.checked) field2.empty = true;
+      return;
+    }
+    if (el instanceof HTMLInputElement && kind === "file") {
+      field2.files = Array.from(el.files || []).map((f) => f.name);
+      if (el.accept) field2.accept = el.accept;
+      if (el.multiple) field2.multiple = true;
+      if (!field2.files.length) field2.empty = true;
+      return;
+    }
+    if (el instanceof HTMLSelectElement) {
+      const options = Array.from(el.options);
+      listed(field2, options.map((o) => norm(o.label)));
+      const selected = options.filter((o) => o.selected).map((o) => norm(o.label));
+      if (el.multiple) {
+        field2.multiple = true;
+        field2.selected = selected;
+      }
+      field2.value = shownValue(selected[0] || "");
+      if (el.value === "") field2.empty = true;
+      return;
+    }
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+      if (input.type === "password") {
+        field2.secret = true;
+      } else {
+        field2.value = shownValue(input.value);
+      }
+      if (input.value === "") field2.empty = true;
+      if (role === "combobox") listed(field2, listsOf(el).flatMap((l) => l instanceof HTMLDataListElement ? Array.from(l.options).map((o) => norm(o.label || o.value)) : customOptions(l).map(([, n]) => n)));
+      return;
+    }
+    if (role === "checkbox" || role === "switch" || role === "radio") {
+      const c = attr(el, "aria-checked");
+      field2.checked = c === "mixed" ? "mixed" : c === "true";
+      if (c !== "true") field2.empty = true;
+      return;
+    }
+    if (role === "listbox") {
+      const options = customOptions(el);
+      listed(field2, options.map(([, n]) => n));
+      field2.selected = options.filter(([o]) => attr(o, "aria-selected") === "true").map(([, n]) => n);
+      if (aria("aria-multiselectable")) field2.multiple = true;
+      field2.value = shownValue(field2.selected[0] || "");
+      if (!field2.selected.length) field2.empty = true;
+      return;
+    }
+    if (role === "slider" || role === "spinbutton") {
+      field2.value = shownValue(attr(el, "aria-valuetext") || attr(el, "aria-valuenow") || "");
+      return;
+    }
+    if (role === "combobox") listed(field2, listsOf(el).flatMap((l) => customOptions(l).map(([, n]) => n)));
+    const text2 = el.innerText || "";
+    field2.value = shownValue(text2);
+    if (!norm(text2)) field2.empty = true;
+  }
+  function formsList(root) {
+    const doc = root ? root.ownerDocument : document;
+    const names = [];
+    const els = [];
+    const index = /* @__PURE__ */ new Map();
+    const ref = (el) => {
+      let i = index.get(el);
+      if (i === void 0) {
+        i = els.length;
+        index.set(el, i);
+        els.push(el);
+        names.push(named(el));
+      }
+      return i;
+    };
+    const all = descendants(doc);
+    let wanted = null;
+    let scope = null;
+    if (root) {
+      const up = isUnit(root) ? root : unitAbove(root);
+      if (up) wanted = [up];
+      else {
+        const inside = all.filter((e) => contains(root, e) && e !== root && isUnit(e));
+        if (inside.length) wanted = inside;
+        else scope = root;
+      }
+    }
+    const units = /* @__PURE__ */ new Map();
+    const unitOf = (owner) => {
+      if (scope) owner = scope;
+      else if (wanted && (!owner || !wanted.includes(owner))) return null;
+      let unit = units.get(owner);
+      if (!unit) {
+        unit = { fields: [] };
+        if (owner) unit.el = ref(owner);
+        else unit.outside = true;
+        if (scope) unit.scope = true;
+        if (owner instanceof HTMLFormElement && (owner.hasAttribute("action") || owner.hasAttribute("method"))) {
+          unit.method = owner.method.toUpperCase();
+          const action = new URL(owner.action, doc.baseURI);
+          const here = new URL(doc.URL);
+          unit.action = action.origin === here.origin ? action.pathname + action.search : action.href;
+        }
+        units.set(owner, unit);
+      }
+      return unit;
+    };
+    for (const e of all) {
+      if (!isUnit(e)) continue;
+      if (scope ? false : wanted ? wanted.includes(e) : true) unitOf(e);
+    }
+    if (scope) unitOf(scope);
+    const groups = /* @__PURE__ */ new Map();
+    const inputRole = /* @__PURE__ */ new Map();
+    const claimed = [];
+    const popups = new Set(all.filter((e) => roleOf(e) === "combobox").flatMap(listsOf));
+    for (const el of all) {
+      if (scope && !contains(scope, el)) continue;
+      while (claimed.length && !contains(claimed[claimed.length - 1], el)) claimed.pop();
+      if (claimed.length) continue;
+      let role = inputRole.get(el) || roleOf(el) || "";
+      const native = el instanceof HTMLButtonElement && WIDGETS.has(role) ? null : nativeKind(el);
+      if (!native && !WIDGETS.has(role)) continue;
+      if (popups.has(el)) {
+        claimed.push(el);
+        continue;
+      }
+      if (!native && WRAPS_INPUT.has(role) && el.querySelector("input:not([type=hidden]), textarea")) {
+        const inner = el.querySelector("input:not([type=hidden]), textarea");
+        inputRole.set(inner, role);
+        continue;
+      }
+      const unit = unitOf(ownerOf(el));
+      if (!unit) continue;
+      const isRadio = native === "radio" || !native && role === "radio";
+      if (role === "radiogroup" && !native) {
+        if (!shown2(el)) continue;
+        const group = { el: ref(el), kind: "radiogroup", role, custom: true, radios: [] };
+        fill(group, el, role);
+        delete group.empty;
+        groups.set(el, group);
+        unit.fields.push(group);
+        continue;
+      }
+      if (isRadio) {
+        if (!shown2(el)) continue;
+        let around = null;
+        for (let a = parentOf(el); a && a !== doc.body; a = parentOf(a)) {
+          if (roleOf(a) === "radiogroup") {
+            around = a;
+            break;
+          }
+        }
+        let key = around || el;
+        if (!around && native && attr(el, "name")) {
+          const owner = ownerOf(el);
+          key = `${owner ? ref(owner) : ""}|${attr(el, "name")}`;
+        }
+        let group = groups.get(key);
+        if (!group) {
+          const fieldset = el.closest("fieldset");
+          group = { el: ref(fieldset && !around ? fieldset : el), kind: "radiogroup", role: "radiogroup", radios: [] };
+          if (native && attr(el, "name")) group.html = attr(el, "name");
+          groups.set(key, group);
+          unit.fields.push(group);
+        }
+        const input = el;
+        const checked2 = native ? input.checked : attr(el, "aria-checked") === "true";
+        const radio = { el: ref(el), name: nameOf(el, "radio"), checked: checked2 };
+        if (native) radio.value = input.value;
+        if (el.matches(":disabled") || el.closest('[aria-disabled="true"]')) radio.disabled = true;
+        if (native && input.required || attr(el, "aria-required") === "true") group.required = true;
+        group.radios.push(radio);
+        if (!group.invalid) Object.assign(group, problem(el));
+        continue;
+      }
+      if (!shown2(el)) continue;
+      const button = !!native && (el instanceof HTMLButtonElement || ["submit", "reset", "button"].includes(native));
+      if (button && unit.outside) continue;
+      if (native === "file") role = "file";
+      const field2 = { el: ref(el), kind: native || role, role };
+      if (!native) field2.custom = true;
+      if (button) field2.button = true;
+      fill(field2, el, role);
+      unit.fields.push(field2);
+      claimed.push(el);
+    }
+    for (const group of groups.values()) {
+      if (group.radios && !group.radios.some((r) => r.checked)) group.empty = true;
+      if (group.radios) group.value = group.radios.find((r) => r.checked)?.name;
+    }
+    const out = Array.from(units.values()).filter((u) => !u.outside || u.fields.length);
+    out.sort((a, b) => Number(!!a.outside) - Number(!!b.outside));
+    return { json: JSON.stringify({ units: out, names }), els };
+  }
+  function pickOption(el, want) {
+    let lists = roleOf(el) === "listbox" ? [el] : listsOf(el).filter((l) => !(l instanceof HTMLDataListElement));
+    if (!lists.length && roleOf(el) !== "listbox") {
+      lists = descendants(el.ownerDocument).filter((l) => roleOf(l) === "listbox" && !hiddenForAria(l) && visible(l) && tag(l) !== "select");
+    }
+    const options = lists.flatMap(customOptions).filter(([o]) => visible(o));
+    const w = norm(want).toLowerCase();
+    const by = (test2) => options.filter(([, n]) => test2(norm(n).toLowerCase()));
+    let found = by((n) => n === w);
+    if (found.length !== 1) {
+      const starts = by((n) => n.startsWith(w));
+      found = found.length > 1 ? found : starts.length === 1 ? starts : by((n) => n.includes(w));
+    }
+    const pick = found.length === 1 || found.length > 1 && norm(found[0][1]).toLowerCase() === w ? found[0] : null;
+    const out = {
+      found: !!pick,
+      count: options.length,
+      options: options.slice(0, OPTIONS).map(([, n]) => cut5(n, 40)),
+      selected: pick ? attr(pick[0], "aria-selected") === "true" : false,
+      name: pick ? named(pick[0]) : null
+    };
+    return { json: JSON.stringify(out), els: pick ? [pick[0]] : [] };
+  }
+
   // src/index.ts
   var api = {
     version: 1,
@@ -3083,7 +3415,9 @@ ${inner}
     unstretchText,
     scrollPage,
     pageExtent,
-    contentBox
+    contentBox,
+    formsList,
+    pickOption
   };
   if (!globalThis.__ccdp) globalThis.__ccdp = api;
 })();
