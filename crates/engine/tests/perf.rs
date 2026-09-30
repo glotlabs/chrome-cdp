@@ -10,12 +10,12 @@ use std::time::{Duration, Instant};
 
 use browser::Host;
 use engine::{
-    Action, ActionRequest, Button, Engine, NavigateRequest, Navigation, OpenRequest, PerfRequest,
-    WaitUntil,
+    Action, ActionRequest, Button, EmulateRequest, EmulationChange, Engine, ExpectRequest,
+    Expectation, NavigateRequest, Navigation, OpenRequest, PerfRequest, WaitUntil,
 };
 use fixtures::Fixtures;
-use protocol::Output;
-use protocol::schema::PerfData;
+use protocol::schema::{ExpectData, ExpectPerf, PerfData};
+use protocol::{ErrorInfo, ErrorKind, Output};
 
 const TIMEOUT_MS: u64 = 30_000;
 
@@ -48,13 +48,17 @@ async fn start(path: &Path, name: &str) -> Arc<Engine> {
 }
 
 async fn goto(engine: &Engine, url: &str) {
+    goto_until(engine, url, WaitUntil::Settle).await;
+}
+
+async fn goto_until(engine: &Engine, url: &str, wait: WaitUntil) {
     engine
         .navigate(NavigateRequest {
             navigation: Navigation::Goto {
                 url: url.to_owned(),
                 base_url: None,
             },
-            wait: WaitUntil::Settle,
+            wait,
             tab: None,
             timeout_ms: TIMEOUT_MS,
         })
@@ -241,5 +245,164 @@ async fn perf_of_a_page_loaded_before_attaching() {
     click(&engine, "#slow").await;
     let (_, data) = perf(&engine).await;
     assert!(data.inp.as_ref().unwrap().ms >= 250, "{:?}", data.inp);
+    engine.close().await;
+}
+
+/// `expect --perf <budgets>` (with `--perf-missing ok` if `missing_ok`).
+async fn expect_perf(
+    engine: &Engine,
+    budgets: &str,
+    missing_ok: bool,
+) -> Result<Output, ErrorInfo> {
+    expect(
+        engine,
+        Expectation::Perf {
+            budgets: budgets.to_owned(),
+            missing_ok,
+        },
+    )
+    .await
+}
+
+async fn expect(engine: &Engine, expectation: Expectation) -> Result<Output, ErrorInfo> {
+    Box::pin(engine.expect(ExpectRequest {
+        expectation,
+        not: false,
+        tab: None,
+        strict_refs: false,
+        testid_attribute: None,
+        timeout_ms: TIMEOUT_MS,
+        max_chars: 20_000,
+    }))
+    .await
+}
+
+async fn perf_passes(engine: &Engine, budgets: &str, missing_ok: bool) -> (Output, ExpectPerf) {
+    let out = expect_perf(engine, budgets, missing_ok)
+        .await
+        .unwrap_or_else(|e| panic!("--perf {budgets:?}: {}", e.to_text()));
+    let data: ExpectData = serde_json::from_value(out.data.clone()).unwrap();
+    (out, data.perf.unwrap())
+}
+
+async fn perf_fails(engine: &Engine, budgets: &str) -> (ErrorInfo, ExpectPerf) {
+    let Err(err) = expect_perf(engine, budgets, false).await else {
+        panic!("--perf {budgets:?} passed");
+    };
+    eprintln!("{}", err.to_text());
+    assert_eq!(err.kind, ErrorKind::ExpectFailed, "{}", err.to_text());
+    let perf = serde_json::from_value(err.details.as_ref().unwrap()["perf"].clone()).unwrap();
+    (err, perf)
+}
+
+/// The text of the failure's note `label`.
+fn note<'a>(err: &'a ErrorInfo, label: &str) -> &'a str {
+    err.notes.iter().find(|n| n.label == label).map_or_else(
+        || panic!("no note {label}: {}", err.to_text()),
+        |n| n.text.as_str(),
+    )
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn expect_perf_waits_for_load_then_checks_every_budget() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "perf-expect-lcp").await;
+    // Back before the held-back image arrives: --perf waits for load.
+    goto_until(&engine, &site.url("/perf/slow-lcp.html"), WaitUntil::Commit).await;
+    let all = "ttfb<60s fcp<60s dcl<60s load<60s lcp<60s cls<1 tbt<60s requests<=50 \
+               transfer<10mb elements<5000 heap<1gb";
+    let (out, perf) = perf_passes(&engine, all, false).await;
+    assert!(out.text.starts_with("passed: --perf "), "{}", out.text);
+    assert!(out.text.contains("(throttling: none)"), "{}", out.text);
+    assert_eq!(perf.budgets.len(), 11);
+    assert!(
+        perf.budgets.iter().all(|b| b.held && b.value.is_some()),
+        "{perf:?}"
+    );
+    let lcp = perf.budgets.iter().find(|b| b.metric == "lcp").unwrap();
+    assert_eq!(lcp.element.as_deref(), Some("img#hero"));
+    assert_eq!(
+        (lcp.op.as_str(), lcp.limit, lcp.unit.as_str()),
+        ("<", 60_000.0, "ms")
+    );
+    assert!(
+        out.quiet.as_deref().unwrap().starts_with("ttfb="),
+        "{:?}",
+        out.quiet
+    );
+
+    // The image comes after 1.5s: far over a 100ms budget.
+    let (err, perf) = perf_fails(&engine, "lcp<100 tbt<60s").await;
+    assert_eq!(err.message, "expect failed: --perf 'lcp<100 tbt<60s'");
+    assert_eq!(note(&err, "actual"), "1 budget over (of 2)");
+    let lcp = note(&err, "lcp");
+    assert!(lcp.contains(" > 100ms ✗ (element: img#hero)"), "{lcp}");
+    assert!(
+        note(&err, "tbt").ends_with(" < 60000ms ✓"),
+        "{}",
+        note(&err, "tbt")
+    );
+    assert_eq!(note(&err, "throttling"), "none");
+    assert!(
+        err.hint.as_deref().unwrap().contains("chrome-cdp perf"),
+        "{:?}",
+        err.hint
+    );
+    assert_eq!(
+        perf.budgets.iter().map(|b| b.held).collect::<Vec<_>>(),
+        [false, true]
+    );
+
+    // INP before any interaction is not a pass, unless asked.
+    let (err, perf) = perf_fails(&engine, "good").await;
+    assert_eq!(
+        note(&err, "inp"),
+        "not measured ✗ (no interaction yet; interact first)"
+    );
+    assert!(
+        err.hint.as_deref().unwrap().contains("--perf-missing ok"),
+        "{:?}",
+        err.hint
+    );
+    assert_eq!(perf.budgets.len(), 3);
+    let (out, _) = perf_passes(&engine, "inp<200 cls<1", true).await;
+    assert!(out.text.contains("inp not measured"), "{}", out.text);
+    engine.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn expect_perf_counts_long_tasks_and_names_the_throttling() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "perf-expect-tbt").await;
+    goto(&engine, &site.url("/perf/long-tasks.html")).await;
+    expect(
+        &engine,
+        Expectation::Title {
+            text: "Busy done".into(),
+            exact: true,
+        },
+    )
+    .await
+    .unwrap_or_else(|e| panic!("{}", e.to_text()));
+    // Two tasks of 300ms: 500ms of blocking time.
+    perf_passes(&engine, "tbt<60s tbt>0", false).await;
+    engine
+        .emulate(EmulateRequest {
+            change: EmulationChange::CpuThrottle { rate: Some(2.0) },
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap();
+    let (err, perf) = perf_fails(&engine, "tbt<=100 cls<1").await;
+    assert!(
+        note(&err, "tbt").contains(" > 100ms ✗"),
+        "{}",
+        note(&err, "tbt")
+    );
+    assert_eq!(note(&err, "throttling"), "cpu 2x");
+    assert_eq!(perf.throttling.cpu, Some(2.0));
+    assert!(perf.budgets[0].value.unwrap() > 100.0, "{perf:?}");
     engine.close().await;
 }

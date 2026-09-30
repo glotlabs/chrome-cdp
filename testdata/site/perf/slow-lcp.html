@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Slow LCP</title>
+  <link rel="icon" href="data:,">
+  <style>body { font: 16px sans-serif; margin: 0; }</style>
+</head>
+<body>
+  <p>A caption.</p>
+  <!-- The largest paint: an image the fixture server holds back 1.5s, so
+       LCP (and load) come after it. -->
+  <img id="hero" src="../layout/dark-photo.png?delay=1500" width="480" height="180" alt="Hero">
+</body>
+</html>

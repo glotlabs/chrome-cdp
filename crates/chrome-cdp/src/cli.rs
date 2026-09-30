@@ -578,7 +578,7 @@ Page checks:
                        op <, <=, > or >=; ttfb, fcp, dcl, load, lcp, inp,
                        tbt in ms (or 2.5s), cls a score, requests and
                        elements counts, transfer and heap in bytes (or kb,
-                       mb); `good` is lcp<=2500 cls<=0.1 inp<=200. Waits
+                       mb, gb); `good` is lcp<=2500 cls<=0.1 inp<=200. Waits
                        for load, then reads once; the failure lists every
                        budget and the throttling. A metric not measured
                        yet (inp before an interaction) fails, unless

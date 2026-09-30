@@ -55,7 +55,12 @@ impl Unit {
     fn suffixes(self) -> &'static [(&'static str, f64)] {
         match self {
             Self::Ms => &[("ms", 1.0), ("s", 1000.0)],
-            Self::Bytes => &[("b", 1.0), ("kb", 1024.0), ("mb", 1024.0 * 1024.0)],
+            Self::Bytes => &[
+                ("b", 1.0),
+                ("kb", 1024.0),
+                ("mb", 1024.0 * 1024.0),
+                ("gb", 1024.0 * 1024.0 * 1024.0),
+            ],
             Self::Count | Self::Score => &[],
         }
     }
@@ -64,7 +69,7 @@ impl Unit {
     fn takes(self) -> &'static str {
         match self {
             Self::Ms => "ms or s (none means ms)",
-            Self::Bytes => "b, kb or mb (none means bytes)",
+            Self::Bytes => "b, kb, mb or gb (none means bytes)",
             Self::Count => "no unit: it is a count",
             Self::Score => "no unit: it is a score",
         }
@@ -516,7 +521,7 @@ impl Engine {
         let left = deadline
             .saturating_duration_since(Instant::now())
             .max(Duration::from_secs(1));
-        let data = self.read_perf(running, page, left).await?;
+        let data = self.read_perf(running, page, true, left).await?;
         let results = evaluate(budgets, &data, missing_ok);
         let perf = ExpectPerf {
             url: data.url.clone(),
@@ -644,6 +649,7 @@ mod tests {
             ("transfer<2048b", "transfer", "<", 2048.0),
             ("elements<1500", "elements", "<", 1500.0),
             ("heap<50mb", "heap", "<", 52_428_800.0),
+            ("heap<1gb", "heap", "<", 1_073_741_824.0),
         ];
         for &(text, metric, op, limit) in cases {
             let budget = one(text);
@@ -714,7 +720,7 @@ mod tests {
             ),
             (
                 "transfer<1s",
-                "--perf: `transfer<1s`: `s` is not a unit of it; transfer takes b, kb or mb (none means bytes)",
+                "--perf: `transfer<1s`: `s` is not a unit of it; transfer takes b, kb, mb or gb (none means bytes)",
             ),
         ];
         for &(text, message) in cases {

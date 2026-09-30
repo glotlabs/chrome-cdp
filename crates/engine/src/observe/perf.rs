@@ -35,6 +35,10 @@ pub(crate) const OBSERVER: &str = include_str!("perf.js");
 /// How often `Performance.getMetrics` is asked until it has the heap.
 const METRICS_ATTEMPTS: u32 = 5;
 
+/// How long `read_perf` waits for the next paint at most (a tab that
+/// does not render has no animation frames).
+const PAINT_WAIT_MS: u64 = 200;
+
 /// What `perf` evaluates after [`OBSERVER`].
 const READ: &str = include_str!("perf_read.js");
 
@@ -107,7 +111,7 @@ impl Engine {
             &running,
             &page,
             mark,
-            self.read_perf(&running, &page, timeout),
+            self.read_perf(&running, &page, false, timeout),
         ))
         .await?;
         let text = perf_text(&data);
@@ -126,19 +130,33 @@ impl Engine {
     }
 
     /// The page's numbers now, as `perf` shows them (and `expect --perf`
-    /// checks them).
+    /// checks them). With `after_paint`, after the next paint (at most
+    /// [`PAINT_WAIT_MS`] away): an image that arrived with `load` paints
+    /// a frame later, and only then is it the LCP.
     pub(crate) async fn read_perf(
         &self,
         running: &Running,
         page: &Page,
+        after_paint: bool,
         timeout: std::time::Duration,
     ) -> Result<PerfData, ErrorInfo> {
         let context = self
             .frame_context(running, page, None, World::Isolated, timeout)
             .await?;
-        let mut params = runtime::EvaluateParams::new(format!("{OBSERVER}\n{READ}"));
+        let expression = if after_paint {
+            format!(
+                "{OBSERVER}\nPromise.race([\
+                   new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r)))),\
+                   new Promise((r) => setTimeout(r, {PAINT_WAIT_MS})),\
+                 ]).then(() => (\n{READ}\n))"
+            )
+        } else {
+            format!("{OBSERVER}\n{READ}")
+        };
+        let mut params = runtime::EvaluateParams::new(expression);
         params.context_id = Some(context.context_id);
         params.return_by_value = Some(true);
+        params.await_promise = Some(after_paint);
         let result = context
             .session
             .with_timeout(timeout)

@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Long tasks</title>
+  <link rel="icon" href="data:,">
+  <style>body { font: 16px sans-serif; margin: 0; }</style>
+</head>
+<body>
+  <p id="hero">A page that keeps the main thread busy after its first paint.</p>
+  <script>
+    function busy(ms) {
+      const start = performance.now();
+      while (performance.now() - start < ms) {}
+    }
+    // After the first paint: two long tasks of 300ms (500ms of blocking
+    // time), then the title says they are done.
+    requestAnimationFrame(() => setTimeout(() => {
+      busy(300);
+      setTimeout(() => {
+        busy(300);
+        document.title = 'Busy done';
+      }, 0);
+    }, 100));
+  </script>
+</body>
+</html>
