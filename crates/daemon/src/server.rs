@@ -547,6 +547,10 @@ impl Daemon {
                 Ok(p) => output(self.engine.permissions(p).await),
                 Err(e) => Err(e),
             },
+            rpc::EXTENSIONS => match params(req.params) {
+                Ok(p) => output(self.engine.extensions(p).await),
+                Err(e) => Err(e),
+            },
             rpc::COOKIES => match params(req.params) {
                 Ok(p) => output(self.engine.cookies(p).await),
                 Err(e) => Err(e),

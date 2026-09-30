@@ -569,6 +569,15 @@ and `status` print its id, so `goto chrome-extension://<id>/popup.html`
 opens its pages. It works in Google Chrome as well as Chrome for Testing,
 but not in chrome-headless-shell.
 
+`extensions` lists the loaded extensions; `extensions load <dir>` loads one
+into a running browser, `extensions reload <name>` loads it again after an
+edit (same id, storage kept) and `extensions uninstall <name>` removes it.
+`extensions popup <name>` clicks its toolbar button for the active tab, and
+its popup opens as a new tab (`tab t2`). `extensions storage <name>` prints
+its `chrome.storage` (`--area local|sync|session|managed`); `set '{…}'`
+merges items in, `remove KEY…` and `clear` take them out. What its service
+worker logs shows in every tab's `console` and `errors`.
+
 ## Output, exit codes and config
 
 Every command prints its result on stdout and notes and errors on stderr,

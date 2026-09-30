@@ -650,7 +650,7 @@
       ]
     },
     "ExtensionInfo": {
-      "description": "An unpacked extension `open --extension` loaded.",
+      "description": "An unpacked extension (`open --extension`, `extensions load`).",
       "properties": {
         "id": {
           "description": "Its id, the host of its pages: `chrome-extension://<id>/…`.",

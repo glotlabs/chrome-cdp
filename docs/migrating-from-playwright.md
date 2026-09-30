@@ -387,7 +387,11 @@ every tab of it. `emulate reset` turns everything off.
 | `page.clock.setFixedTime(t)`, `clock.install({ time })` | `time freeze 2026-01-31T09:30:00Z` | ✅ |
 | `clock.fastForward('01:30')` | `time advance 90s` (moves `Date` and `performance.now()`, and runs the timers due by then, each once) | ✅ |
 | `clock.pauseAt(t)`, `clock.runFor(ms)`, `clock.resume()` | `time pause 2026-01-31T10:00:00Z`, `time run-for 1s`, `time resume` (paused, `setTimeout`, `setInterval` and `requestAnimationFrame` wait; `run-for` fires each interval tick and a frame every 16ms; `time pause-at T` runs a paused clock on to T) | ✅ |
-| extensions (`--load-extension` in a persistent context) | `open --extension DIR` | ✅ |
+| extensions (`--load-extension` in a persistent context) | `open --extension DIR`; on a running browser `extensions load DIR`, and `extensions` lists them | ✅ |
+| reloading an extension after editing it | `extensions reload NAME` (same id, storage kept) | ✅ |
+| an extension's popup (`page.goto('chrome-extension://<id>/popup.html')`) | `extensions popup NAME` clicks its toolbar button for the tab; the popup opens as a new tab (`tab t2`) | ✅ |
+| `chrome.storage` via `serviceWorker.evaluate(…)` | `extensions storage NAME [--area local\|sync\|session\|managed] get [KEY…]`, `set '{…}'`, `remove KEY…`, `clear` | ✅ |
+| `context.serviceWorkers()`, `worker.on('console')` for its background | its service worker's console and errors are in every tab's `console` and `errors` | ✅ |
 
 ## Tracing and debugging
 

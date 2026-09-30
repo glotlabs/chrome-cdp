@@ -1,0 +1,15 @@
+$ chrome-cdp extensions storage 'chrome-cdp fixture' remove count
+exit: 0
+--- stdout
+removed count from the local storage of chrome-cdp fixture; it holds 1 item
+
+$ chrome-cdp extensions storage 'chrome-cdp fixture' remove count --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"area":"local","extension":{"id":"<ext-id>","name":"chrome-cdp fixture","path":"<extensions>/basic","version":"1.2.3"},"items":{"theme":"dark"}}}
+
+$ chrome-cdp extensions storage 'chrome-cdp fixture' remove count -q
+exit: 0
+--- stdout
+{"theme":"dark"}
+

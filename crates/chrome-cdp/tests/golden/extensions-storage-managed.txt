@@ -1,0 +1,11 @@
+$ chrome-cdp extensions storage 'chrome-cdp fixture' set '{"theme": "dark"}' --area managed
+exit: 2
+--- stderr
+error: the managed storage area is read-only (policies set it)
+  hint: chrome-cdp extensions storage 'chrome-cdp fixture' --area managed   (reads it)
+
+$ chrome-cdp extensions storage 'chrome-cdp fixture' set '{"theme": "dark"}' --area managed --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"the managed storage area is read-only (policies set it)","hint":"chrome-cdp extensions storage 'chrome-cdp fixture' --area managed   (reads it)"}}
+

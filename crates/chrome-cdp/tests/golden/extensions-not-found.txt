@@ -1,0 +1,12 @@
+$ chrome-cdp extensions popup 'My Extension'
+exit: 1
+--- stderr
+error: no extension My Extension in session default
+  loaded: chrome-cdp fixture (<ext-id>)
+  hint: chrome-cdp extensions   (lists them with their ids)
+
+$ chrome-cdp extensions popup 'My Extension' --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"no extension My Extension in session default","hint":"chrome-cdp extensions   (lists them with their ids)","notes":[{"label":"loaded","text":"chrome-cdp fixture (<ext-id>)"}],"details":{"extension":"My Extension","loaded":[{"id":"<ext-id>","name":"chrome-cdp fixture","path":"<extensions>/basic","version":"1.2.3"}]}}}
+

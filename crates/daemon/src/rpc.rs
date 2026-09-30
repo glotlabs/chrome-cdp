@@ -60,6 +60,7 @@ pub const INIT_SCRIPT_REMOVE: &str = "init_script_remove";
 pub const EXPOSE: &str = "expose";
 pub const EMULATE: &str = "emulate";
 pub const PERMISSIONS: &str = "permissions";
+pub const EXTENSIONS: &str = "extensions";
 pub const COOKIES: &str = "cookies";
 pub const STORAGE: &str = "storage";
 pub const STATE_SAVE: &str = "state_save";

@@ -14,6 +14,7 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`close`](close.md) | Close the session: its daemon, and the browser it launched |
 | [`status`](status.md) | Show the session's state, browser, tabs and uptime |
 | [`sessions`](sessions.md) | List the running sessions |
+| [`extensions`](extensions.md) | List, load, reload or uninstall unpacked extensions; open an extension's popup; read or write its chrome.storage |
 | [`install`](install.md) | Download Chrome for Testing into chrome-cdp's cache |
 | [`uninstall`](uninstall.md) | Remove a browser installed by `chrome-cdp install` |
 

@@ -1,0 +1,5 @@
+$ chrome-cdp extensions uninstall 'chrome-cdp fixture' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"extension":{"id":"<ext-id>","name":"chrome-cdp fixture","path":"<extensions>/basic","version":"1.2.3"},"extensions":[]}}
+

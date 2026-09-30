@@ -2,7 +2,8 @@
   "manifest_version": 3,
   "name": "chrome-cdp fixture",
   "version": "1.2.3",
-  "description": "A trivial extension for chrome-cdp's tests (open --extension).",
+  "description": "A trivial extension for chrome-cdp's tests (open --extension, extensions).",
+  "permissions": ["storage"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [
     { "matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_start" }

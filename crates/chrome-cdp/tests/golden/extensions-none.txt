@@ -1,0 +1,5 @@
+$ chrome-cdp extensions
+exit: 0
+--- stdout
+no extensions loaded; load one: chrome-cdp extensions load DIR
+

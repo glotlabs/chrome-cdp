@@ -40,6 +40,7 @@ use engine::{
 };
 use engine::{EmulateRequest, EmulationChange, PermissionsOp, PermissionsRequest};
 use engine::{ExposeRequest, InitScriptAddRequest, InitScriptListRequest, InitScriptRemoveRequest};
+use engine::{ExtensionStorageArea, ExtensionStorageOp, ExtensionsOp, ExtensionsRequest};
 use protocol::schema::{ClosedSession, OpenData, SessionEntry, SessionState, StatusData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
 use serde_json::{Map, Value, json};
@@ -49,13 +50,14 @@ use crate::cli::{
     AfterArgs, BlockArgs, CdpArgs, ClipboardReadArgs, CloseArgs, ConnectArgs, ContextArgs,
     ContextCommand, CookieFilterArgs, CookieSetArgs, CookiesArgs, CookiesCommand, CoverageArgs,
     CoverageCommand, DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg,
-    EvalArgs, FindArgs, FramesArgs, GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs,
-    HistoryArgs, IdleArgs, ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand,
-    InspectArgs, LocatorArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs,
-    PermissionsArgs, PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs,
-    SessionsArgs, SnapshotArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg,
-    StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs,
-    TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    EvalArgs, ExtensionStorageAreaArg, ExtensionStorageCommand, ExtensionsArgs, ExtensionsCommand,
+    FindArgs, FramesArgs, GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs,
+    IdleArgs, ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs,
+    LocatorArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs,
+    PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs,
+    SnapshotArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg, StorageAreaArg,
+    StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs, TraceCommand,
+    UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -169,7 +171,7 @@ pub(crate) fn open(args: &OpenArgs, global: &GlobalArgs) -> Result<Output, Error
         .transpose()?;
     let launch = &args.launch;
     browser::launch::flags::check_extra(&launch.chrome_args)?;
-    let extensions = extension_dirs(&launch.extensions)?;
+    let extensions = extension_dirs(&launch.extensions, "--extension")?;
     if let Some(device) = &args.device {
         engine::find_device(device, &global.session)?;
     }
@@ -337,20 +339,20 @@ fn keep_previous_options(request: &mut OpenRequest, previous: &OpenRequest) {
 
 /// `--extension`s as absolute paths (the daemon has another working
 /// directory), each an unpacked extension's directory.
-fn extension_dirs(dirs: &[PathBuf]) -> Result<Vec<PathBuf>, ErrorInfo> {
+fn extension_dirs(dirs: &[PathBuf], what: &str) -> Result<Vec<PathBuf>, ErrorInfo> {
     let mut out: Vec<PathBuf> = Vec::with_capacity(dirs.len());
     for dir in dirs {
         let hint = || {
-            Hint::text(
-                "--extension takes an unpacked extension's directory, the one holding its manifest.json",
-            )
+            Hint::text(format!(
+                "{what} takes an unpacked extension's directory, the one holding its manifest.json"
+            ))
         };
         let abs = dir
             .canonicalize()
-            .map_err(|e| bad_args(format!("--extension {}: {e}", dir.display())).hint(hint()))?;
+            .map_err(|e| bad_args(format!("{what} {}: {e}", dir.display())).hint(hint()))?;
         if !abs.join("manifest.json").is_file() {
             return Err(bad_args(format!(
-                "--extension {}: no manifest.json in {}",
+                "{what} {}: no manifest.json in {}",
                 dir.display(),
                 abs.display()
             ))
@@ -1507,6 +1509,108 @@ pub(crate) fn permissions(
     } else {
         output
     })
+}
+
+/// `extensions` and its subcommands: need a running session.
+pub(crate) fn extensions(args: &ExtensionsArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let mut max_chars = args.max_chars;
+    let op = match &args.command {
+        None => ExtensionsOp::List,
+        Some(ExtensionsCommand::Load(load)) => {
+            let dir = extension_dirs(std::slice::from_ref(&load.dir), "extensions load")?;
+            ExtensionsOp::Load {
+                dir: dir.into_iter().next().unwrap_or_default(),
+            }
+        }
+        Some(ExtensionsCommand::Reload(a)) => ExtensionsOp::Reload {
+            extension: a.extension.clone(),
+        },
+        Some(ExtensionsCommand::Uninstall(a)) => ExtensionsOp::Uninstall {
+            extension: a.extension.clone(),
+        },
+        Some(ExtensionsCommand::Popup(a)) => ExtensionsOp::Popup {
+            extension: a.extension.clone(),
+        },
+        Some(ExtensionsCommand::Storage(storage)) => {
+            max_chars = storage.max_chars;
+            let op = match &storage.command {
+                None => ExtensionStorageOp::Get { keys: Vec::new() },
+                Some(ExtensionStorageCommand::Get(get)) => ExtensionStorageOp::Get {
+                    keys: get.keys.clone(),
+                },
+                Some(ExtensionStorageCommand::Set(set)) => ExtensionStorageOp::Set {
+                    values: storage_values(&input::text_arg(&set.items, "JSON")?, global)?,
+                },
+                Some(ExtensionStorageCommand::Remove(remove)) => ExtensionStorageOp::Remove {
+                    keys: remove.keys.clone(),
+                },
+                Some(ExtensionStorageCommand::Clear(_)) => ExtensionStorageOp::Clear,
+            };
+            ExtensionsOp::Storage {
+                extension: storage.extension.clone(),
+                area: match storage.area {
+                    ExtensionStorageAreaArg::Local => ExtensionStorageArea::Local,
+                    ExtensionStorageAreaArg::Sync => ExtensionStorageArea::Sync,
+                    ExtensionStorageAreaArg::Session => ExtensionStorageArea::Session,
+                    ExtensionStorageAreaArg::Managed => ExtensionStorageArea::Managed,
+                },
+                op,
+            }
+        }
+    };
+    let popup = matches!(op, ExtensionsOp::Popup { .. });
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let request = ExtensionsRequest {
+        op,
+        tab: ctx.tab.clone(),
+        timeout_ms: millis(ctx.timeout),
+        max_chars,
+    };
+    let output =
+        ctx.runtime
+            .block_on(client.call_output(rpc::EXTENSIONS, &request, ctx.timeout + QUICK))?;
+    Ok(if ctx.tab.is_some() && !popup {
+        output.warning("extensions belong to the browser, not a tab; --tab is ignored")
+    } else {
+        output
+    })
+}
+
+/// The JSON object `extensions storage set` merges in.
+fn storage_values(text: &str, global: &GlobalArgs) -> Result<Map<String, Value>, ErrorInfo> {
+    let example = || {
+        Hint::run(
+            Cmd::new("extensions")
+                .arg("storage")
+                .raw("NAME")
+                .arg("set")
+                .arg(r#"{"theme": "dark"}"#)
+                .session(&global.session),
+        )
+    };
+    match serde_json::from_str::<Value>(text) {
+        Ok(Value::Object(values)) => Ok(values),
+        Ok(other) => Err(bad_args(format!(
+            "set takes a JSON object of the items to set, not {}",
+            json_kind(&other)
+        ))
+        .hint(example())),
+        Err(e) => Err(bad_args(format!("set: the JSON is not valid: {e}")).hint(example())),
+    }
+}
+
+/// `an array`, `a string`, …: what a JSON value is, for errors.
+fn json_kind(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "a boolean",
+        Value::Number(_) => "a number",
+        Value::String(_) => "a string",
+        Value::Array(_) => "an array",
+        Value::Object(_) => "an object",
+    }
 }
 
 /// `cookies`, `cookies set` and `cookies clear`: need a running session.

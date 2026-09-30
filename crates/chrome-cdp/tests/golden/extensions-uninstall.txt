@@ -1,0 +1,5 @@
+$ chrome-cdp extensions uninstall 'chrome-cdp fixture'
+exit: 0
+--- stdout
+uninstalled chrome-cdp fixture (<ext-id>)
+

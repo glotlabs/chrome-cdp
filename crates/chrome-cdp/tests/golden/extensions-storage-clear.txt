@@ -1,0 +1,15 @@
+$ chrome-cdp extensions storage 'chrome-cdp fixture' clear
+exit: 0
+--- stdout
+cleared the local storage of chrome-cdp fixture; it holds 0 items
+
+$ chrome-cdp extensions storage 'chrome-cdp fixture' clear --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"area":"local","extension":{"id":"<ext-id>","name":"chrome-cdp fixture","path":"<extensions>/basic","version":"1.2.3"},"items":{}}}
+
+$ chrome-cdp extensions storage 'chrome-cdp fixture' clear -q
+exit: 0
+--- stdout
+{}
+

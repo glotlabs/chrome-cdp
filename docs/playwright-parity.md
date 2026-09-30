@@ -18,7 +18,7 @@ around it. **The v1 gate: no ❌ in an agent-critical row.** A test
 (`crates/chrome-cdp/tests/parity.rs`) holds the tables to that, checks the
 counts below, and checks that every command a row names exists.
 
-Today: 129 rows; 111 ✅, 13 🟡, 0 ❌, 5 ➖. No row is ❌.
+Today: 130 rows; 112 ✅, 13 🟡, 0 ❌, 5 ➖. No row is ❌.
 
 ## Navigation
 
@@ -167,6 +167,7 @@ Today: 129 rows; 111 ✅, 13 🟡, 0 ❌, 5 ➖. No row is ❌.
 | `httpCredentials`, `ignoreHTTPSErrors`, `serviceWorkers: 'block'` | `open --http-credentials user:pass --ignore-https-errors --bypass-service-worker` | ✅ | no |
 | `clock.setFixedTime`, `install`, `fastForward` | `time freeze 2026-01-31T09:30:00Z`, `time advance 90s` | ✅ | no |
 | `clock.runFor`, `pauseAt`, paused timers | `time pause`, `time run-for 1s` (every interval tick, a frame every 16ms), `time pause-at T`, `time resume` | ✅ | no |
+| extensions (`--load-extension` in a persistent context, `context.serviceWorkers()` for their background) | `open --extension DIR`, `extensions load\|reload\|uninstall`, `extensions popup NAME` (its popup opens as a tab), `extensions storage NAME get\|set\|clear`; its service worker's console is in `console` and `errors` | ✅ | no |
 
 ## Tracing, snapshots and assertions
 

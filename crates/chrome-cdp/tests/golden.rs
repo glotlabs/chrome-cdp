@@ -2690,6 +2690,161 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAfter(&[&["open"], &["permissions", "grant", "notifications"]]),
     },
     Case {
+        name: "extensions",
+        args: &["extensions"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[&["open", "--extension", "{extensions}/basic"]]),
+    },
+    Case {
+        name: "extensions-none",
+        args: &["extensions"],
+        modes: &[""],
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "extensions-load",
+        args: &["extensions", "load", "{extensions}/basic"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "extensions-load-no-manifest",
+        args: &["extensions", "load", "{extensions}"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "extensions-reload",
+        args: &["extensions", "reload", "chrome-cdp fixture"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[&["open", "--extension", "{extensions}/basic"]]),
+    },
+    // One mode per case: the first run uninstalls it.
+    Case {
+        name: "extensions-uninstall",
+        args: &["extensions", "uninstall", "chrome-cdp fixture"],
+        modes: &[""],
+        fixture: Fixture::SessionAfter(&[&["open", "--extension", "{extensions}/basic"]]),
+    },
+    Case {
+        name: "extensions-uninstall-json",
+        args: &["extensions", "uninstall", "chrome-cdp fixture"],
+        modes: &["--json"],
+        fixture: Fixture::SessionAfter(&[&["open", "--extension", "{extensions}/basic"]]),
+    },
+    Case {
+        name: "extensions-popup",
+        args: &["extensions", "popup", "chrome-cdp fixture"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[&["open", "--extension", "{extensions}/basic"]]),
+    },
+    Case {
+        name: "extensions-storage",
+        args: &["extensions", "storage", "chrome-cdp fixture"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "--extension", "{extensions}/basic"],
+            &[
+                "extensions",
+                "storage",
+                "chrome-cdp fixture",
+                "set",
+                r#"{"theme": "dark", "count": 3}"#,
+            ],
+        ]),
+    },
+    Case {
+        name: "extensions-storage-get",
+        args: &[
+            "extensions",
+            "storage",
+            "chrome-cdp fixture",
+            "get",
+            "theme",
+        ],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "--extension", "{extensions}/basic"],
+            &[
+                "extensions",
+                "storage",
+                "chrome-cdp fixture",
+                "set",
+                r#"{"theme": "dark", "count": 3}"#,
+            ],
+        ]),
+    },
+    Case {
+        name: "extensions-storage-set",
+        args: &[
+            "extensions",
+            "storage",
+            "chrome-cdp fixture",
+            "set",
+            r#"{"theme": "light"}"#,
+            "--area",
+            "session",
+        ],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[&["open", "--extension", "{extensions}/basic"]]),
+    },
+    Case {
+        name: "extensions-storage-remove",
+        args: &[
+            "extensions",
+            "storage",
+            "chrome-cdp fixture",
+            "remove",
+            "count",
+        ],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "--extension", "{extensions}/basic"],
+            &[
+                "extensions",
+                "storage",
+                "chrome-cdp fixture",
+                "set",
+                r#"{"theme": "dark", "count": 3}"#,
+            ],
+        ]),
+    },
+    Case {
+        name: "extensions-storage-clear",
+        args: &["extensions", "storage", "chrome-cdp fixture", "clear"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "--extension", "{extensions}/basic"],
+            &[
+                "extensions",
+                "storage",
+                "chrome-cdp fixture",
+                "set",
+                r#"{"theme": "dark"}"#,
+            ],
+        ]),
+    },
+    Case {
+        name: "extensions-storage-managed",
+        args: &[
+            "extensions",
+            "storage",
+            "chrome-cdp fixture",
+            "set",
+            r#"{"theme": "dark"}"#,
+            "--area",
+            "managed",
+        ],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(&[&["open", "--extension", "{extensions}/basic"]]),
+    },
+    Case {
+        name: "extensions-not-found",
+        args: &["extensions", "popup", "My Extension"],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(&[&["open", "--extension", "{extensions}/basic"]]),
+    },
+    Case {
         name: "permissions-bad-name",
         args: &["permissions", "grant", "notification"],
         modes: ERR,
@@ -3053,6 +3208,10 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
                             a.replace("{site}", site)
                                 .replace("{sandbox}", &dir)
                                 .replace("{mocks}", &mocks_dir().display().to_string())
+                                .replace(
+                                    "{extensions}",
+                                    &testdata("extensions").display().to_string(),
+                                )
                         })
                         .collect();
                     let out = sb.cli().args(&args).output().unwrap();
@@ -3135,6 +3294,24 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
     norm = norm.with(&scripts, "<scripts>");
     let mocks = mocks_dir();
     norm = norm.with(&mocks, "<mocks>");
+    let extensions = testdata("extensions");
+    norm = norm.with(&extensions, "<extensions>");
+    // Extension ids come from their directories' paths.
+    let mut extension_ids: Vec<String> = Vec::new();
+    let list_extensions = |ids: &mut Vec<String>| {
+        let Some(sb) = sandbox
+            .as_ref()
+            .filter(|_| case.args.first() == Some(&"extensions"))
+        else {
+            return;
+        };
+        let listed = sb.cli().args(["extensions", "-q"]).output().unwrap();
+        for id in String::from_utf8_lossy(&listed.stdout).lines() {
+            if !id.is_empty() && !ids.iter().any(|i| i == id) {
+                ids.push(id.to_owned());
+            }
+        }
+    };
     let mut out = String::new();
     for mode in case.modes {
         let mut args: Vec<String> = case
@@ -3148,6 +3325,7 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
             .map(|a| a.replace("{files}", &files.display().to_string()))
             .map(|a| a.replace("{scripts}", &scripts.display().to_string()))
             .map(|a| a.replace("{mocks}", &mocks.display().to_string()))
+            .map(|a| a.replace("{extensions}", &extensions.display().to_string()))
             .map(|a| match &sandbox {
                 Some(sb) => a.replace("{sandbox}", &sb.dir.path().display().to_string()),
                 None => a,
@@ -3170,6 +3348,7 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
                 std::fs::write(path, text).unwrap();
             }
         }
+        list_extensions(&mut extension_ids);
         let mut cmd: Command = sandbox.as_ref().map_or_else(cli, Sandbox::cli);
         cmd.args(&args);
         if let Some(cwd) = &cwd {
@@ -3189,6 +3368,7 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
             }
         }
         out.push('\n');
+        list_extensions(&mut extension_ids);
         if matches!(
             case.fixture,
             Fixture::FreshSession | Fixture::SessionPerMode
@@ -3197,6 +3377,9 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
             let closed = sb.cli().args(["close", "--all"]).output().unwrap();
             assert!(closed.status.success(), "{closed:?}");
         }
+    }
+    for id in &extension_ids {
+        norm = norm.with(Path::new(id), "<ext-id>");
     }
     Some(norm.apply(&out))
 }
@@ -3288,7 +3471,14 @@ fn every_command_has_a_golden_case() {
                         .filter(|a| !a.starts_with('-'))
                         .collect()
                 };
+                // Also with one argument between the words, as in
+                // `extensions storage NAME get`.
                 typed.starts_with(&words)
+                    || (1..typed.len()).any(|i| {
+                        let mut skipped = typed.clone();
+                        skipped.remove(i);
+                        skipped.starts_with(&words)
+                    })
             })
         })
         .collect();

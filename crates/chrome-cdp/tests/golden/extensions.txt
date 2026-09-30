@@ -1,0 +1,15 @@
+$ chrome-cdp extensions
+exit: 0
+--- stdout
+<ext-id>  chrome-cdp fixture  1.2.3  <extensions>/basic
+
+$ chrome-cdp extensions --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"extensions":[{"id":"<ext-id>","name":"chrome-cdp fixture","path":"<extensions>/basic","version":"1.2.3"}]}}
+
+$ chrome-cdp extensions -q
+exit: 0
+--- stdout
+<ext-id>
+

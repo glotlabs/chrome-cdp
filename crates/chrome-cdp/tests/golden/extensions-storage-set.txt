@@ -1,0 +1,15 @@
+$ chrome-cdp extensions storage 'chrome-cdp fixture' set '{"theme": "light"}' --area session
+exit: 0
+--- stdout
+set theme in the session storage of chrome-cdp fixture; it holds 1 item
+
+$ chrome-cdp extensions storage 'chrome-cdp fixture' set '{"theme": "light"}' --area session --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"area":"session","extension":{"id":"<ext-id>","name":"chrome-cdp fixture","path":"<extensions>/basic","version":"1.2.3"},"items":{"theme":"light"}}}
+
+$ chrome-cdp extensions storage 'chrome-cdp fixture' set '{"theme": "light"}' --area session -q
+exit: 0
+--- stdout
+{"theme":"light"}
+

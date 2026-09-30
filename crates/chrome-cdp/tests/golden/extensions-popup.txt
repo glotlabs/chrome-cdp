@@ -1,0 +1,15 @@
+$ chrome-cdp extensions popup 'chrome-cdp fixture'
+exit: 0
+--- stdout
+opened the popup of chrome-cdp fixture in tab t2 (chrome-extension://<ext-id>/popup.html); switch to it: chrome-cdp tab t2
+
+$ chrome-cdp extensions popup 'chrome-cdp fixture' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"extension":{"id":"<ext-id>","name":"chrome-cdp fixture","path":"<extensions>/basic","version":"1.2.3"},"popup":"t3","tab":"t1","url":"chrome-extension://<ext-id>/popup.html"},"events":[{"type":"tab_opened","tab":"t3","url":"chrome-extension://<ext-id>/popup.html","active":false}]}
+
+$ chrome-cdp extensions popup 'chrome-cdp fixture' -q
+exit: 0
+--- stdout
+t4
+

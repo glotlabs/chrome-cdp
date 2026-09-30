@@ -1,0 +1,18 @@
+$ chrome-cdp extensions storage 'chrome-cdp fixture'
+exit: 0
+--- stdout
+{
+  "count": 3,
+  "theme": "dark"
+}
+
+$ chrome-cdp extensions storage 'chrome-cdp fixture' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"area":"local","extension":{"id":"<ext-id>","name":"chrome-cdp fixture","path":"<extensions>/basic","version":"1.2.3"},"items":{"count":3,"theme":"dark"}}}
+
+$ chrome-cdp extensions storage 'chrome-cdp fixture' -q
+exit: 0
+--- stdout
+{"count":3,"theme":"dark"}
+

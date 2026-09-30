@@ -1461,6 +1461,21 @@ Examples:
   chrome-cdp permissions reset")]
     Permissions(PermissionsArgs),
 
+    /// List, load, reload or uninstall unpacked extensions; open an
+    /// extension's popup; read or write its chrome.storage.
+    #[command(after_help = "\
+Without a subcommand, lists the unpacked extensions the browser has
+loaded: id, name, version and directory. Start a browser with one with
+`open --extension DIR`. Name an extension by its id or its name.
+
+Examples:
+  chrome-cdp extensions
+  chrome-cdp extensions load ./my-extension
+  chrome-cdp extensions reload 'My Extension'
+  chrome-cdp extensions popup 'My Extension'
+  chrome-cdp extensions storage 'My Extension' get")]
+    Extensions(ExtensionsArgs),
+
     /// List, set or clear the browser's cookies.
     #[command(
         args_conflicts_with_subcommands = true,
@@ -4424,6 +4439,171 @@ Examples:
 }
 
 #[derive(Debug, Args)]
+pub(crate) struct ExtensionsArgs {
+    #[command(subcommand)]
+    pub(crate) command: Option<ExtensionsCommand>,
+
+    /// Cut the list at this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum ExtensionsCommand {
+    /// Load an unpacked extension into the running browser.
+    #[command(after_help = "\
+Its content scripts run in pages loaded after it, not in those already
+open: reload them. Loading the directory of a loaded extension reloads it.
+
+Examples:
+  chrome-cdp extensions load ./my-extension
+  chrome-cdp open --extension ./my-extension   # load it at launch instead")]
+    Load(ExtensionLoadArgs),
+
+    /// Load an extension again from its directory, after editing its files.
+    #[command(after_help = "\
+It keeps its id and its chrome.storage, as the Reload button of
+chrome://extensions does. Pages its content scripts ran in keep the old
+scripts until they load again; its popup and other pages close.
+
+Examples:
+  chrome-cdp extensions reload 'My Extension'
+  chrome-cdp extensions reload dealjoeccjhpbcmihadkoaebbihfdicd")]
+    Reload(ExtensionArgs),
+
+    /// Uninstall an unpacked extension (its storage goes with it).
+    #[command(after_help = "\
+Examples:
+  chrome-cdp extensions uninstall 'My Extension'")]
+    Uninstall(ExtensionArgs),
+
+    /// Run an extension's action on the tab, which opens its popup.
+    #[command(after_help = "\
+Clicks the extension's toolbar button for the active tab (or --tab). Its
+popup opens as a new tab, which `tabs` lists and `tab` switches to. An
+action without a popup runs its chrome.action.onClicked listener instead.
+
+Examples:
+  chrome-cdp extensions popup 'My Extension'
+  chrome-cdp extensions popup 'My Extension' --tab t2")]
+    Popup(ExtensionArgs),
+
+    /// Read or write an extension's chrome.storage.
+    #[command(
+        args_conflicts_with_subcommands = false,
+        subcommand_value_name = "OP",
+        after_help = "\
+Without a subcommand, prints what the area holds, as `get` does. --area
+picks the area: local (the default), sync, session, or managed (set by
+policy; read-only).
+
+Examples:
+  chrome-cdp extensions storage 'My Extension'
+  chrome-cdp extensions storage 'My Extension' get token --area session
+  chrome-cdp extensions storage 'My Extension' set '{\"onboarded\": true}'
+  chrome-cdp extensions storage 'My Extension' clear"
+    )]
+    Storage(ExtensionStorageArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ExtensionLoadArgs {
+    /// The unpacked extension's directory (the one holding its manifest.json).
+    #[arg(value_name = "DIR")]
+    pub(crate) dir: PathBuf,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ExtensionArgs {
+    /// The extension's id or name, as `extensions` lists them.
+    #[arg(value_name = "ID|NAME")]
+    pub(crate) extension: String,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ExtensionStorageArgs {
+    /// The extension's id or name, as `extensions` lists them.
+    #[arg(value_name = "ID|NAME")]
+    pub(crate) extension: String,
+
+    #[command(subcommand)]
+    pub(crate) command: Option<ExtensionStorageCommand>,
+
+    /// The storage area.
+    #[arg(long, value_enum, default_value_t = ExtensionStorageAreaArg::Local, global = true)]
+    pub(crate) area: ExtensionStorageAreaArg,
+
+    /// Cut the output at this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N", global = true)]
+    pub(crate) max_chars: usize,
+}
+
+/// A chrome.storage area.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum ExtensionStorageAreaArg {
+    Local,
+    Sync,
+    Session,
+    Managed,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum ExtensionStorageCommand {
+    /// Print the items of some keys, or all of them, as JSON.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp extensions storage 'My Extension' get
+  chrome-cdp extensions storage 'My Extension' get token user --area sync")]
+    Get(ExtensionStorageKeysArgs),
+
+    /// Merge the items of a JSON object into the area.
+    #[command(after_help = "\
+Keys not in the object keep their values; `remove` takes keys out.
+
+Examples:
+  chrome-cdp extensions storage 'My Extension' set '{\"theme\": \"dark\", \"count\": 3}'
+  chrome-cdp extensions storage 'My Extension' set - < seed.json")]
+    Set(ExtensionStorageSetArgs),
+
+    /// Remove some keys from the area.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp extensions storage 'My Extension' remove token")]
+    Remove(ExtensionStorageRemoveArgs),
+
+    /// Remove every item from the area.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp extensions storage 'My Extension' clear
+  chrome-cdp extensions storage 'My Extension' clear --area session")]
+    Clear(ExtensionStorageClearArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ExtensionStorageKeysArgs {
+    /// The keys to print; every item without.
+    #[arg(value_name = "KEY")]
+    pub(crate) keys: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ExtensionStorageSetArgs {
+    /// A JSON object of the items to set; `-` reads it from stdin.
+    #[arg(value_name = "JSON")]
+    pub(crate) items: String,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ExtensionStorageRemoveArgs {
+    /// The keys to remove.
+    #[arg(value_name = "KEY", required = true)]
+    pub(crate) keys: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ExtensionStorageClearArgs {}
+
+#[derive(Debug, Args)]
 pub(crate) struct PermissionNamesArgs {
     /// Permission names, as the Permissions API has them.
     #[arg(value_name = "NAME", required = true)]
@@ -6218,6 +6398,10 @@ mod tests {
         "box",
         "install",
         "uninstall",
+        "extensions load",
+        "extensions reload",
+        "extensions uninstall",
+        "extensions popup",
         // A line per check; a few lines.
         "doctor",
         "upgrade",

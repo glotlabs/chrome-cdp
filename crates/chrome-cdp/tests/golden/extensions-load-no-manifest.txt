@@ -1,0 +1,11 @@
+$ chrome-cdp extensions load <extensions>
+exit: 2
+--- stderr
+error: extensions load <extensions>: no manifest.json in <extensions>
+  hint: extensions load takes an unpacked extension's directory, the one holding its manifest.json
+
+$ chrome-cdp extensions load <extensions> --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"extensions load <extensions>: no manifest.json in <extensions>","hint":"extensions load takes an unpacked extension's directory, the one holding its manifest.json"}}
+

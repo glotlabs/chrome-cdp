@@ -75,6 +75,7 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
             "close",
             "status",
             "sessions",
+            "extensions",
             "install",
             "uninstall",
         ],

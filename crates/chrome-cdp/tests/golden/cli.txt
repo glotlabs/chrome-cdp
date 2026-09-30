@@ -545,6 +545,25 @@ command chrome-cdp permissions deny
 command chrome-cdp permissions reset
   arg NAME multiple
   flag --origin value=ORIGIN
+command chrome-cdp extensions
+  flag --max-chars value=N
+command chrome-cdp extensions load
+  arg DIR required
+command chrome-cdp extensions reload
+  arg ID|NAME required
+command chrome-cdp extensions uninstall
+  arg ID|NAME required
+command chrome-cdp extensions popup
+  arg ID|NAME required
+command chrome-cdp extensions storage
+  arg ID|NAME required
+command chrome-cdp extensions storage get
+  arg KEY multiple
+command chrome-cdp extensions storage set
+  arg JSON required
+command chrome-cdp extensions storage remove
+  arg KEY required multiple
+command chrome-cdp extensions storage clear
 command chrome-cdp cookies
   flag --url value=URL
   flag --domain value=DOMAIN
