@@ -24,6 +24,7 @@ pub mod fetch;
 pub mod input;
 pub mod io;
 pub mod log;
+pub mod names;
 pub mod network;
 pub mod overlay;
 pub mod page;

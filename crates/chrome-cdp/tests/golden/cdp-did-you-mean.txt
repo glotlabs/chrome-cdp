@@ -1,0 +1,12 @@
+$ chrome-cdp cdp --target page Page.navigte '{"url":"about:blank"}'
+exit: 4
+--- stderr
+error: Page.navigte: 'Page.navigte' wasn't found
+  did you mean: Page.navigate
+  hint: chrome-cdp cdp --target page Page.navigate …
+
+$ chrome-cdp cdp --target page Page.navigte '{"url":"about:blank"}' --json
+exit: 4
+--- stdout
+{"ok":false,"error":{"kind":"ProtocolError","message":"Page.navigte: 'Page.navigte' wasn't found","hint":"chrome-cdp cdp --target page Page.navigate …","notes":[{"label":"did you mean","text":"Page.navigate"}],"details":{"code":-32601,"data":null,"method":"Page.navigte"}}}
+

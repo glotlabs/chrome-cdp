@@ -1754,7 +1754,8 @@ keeps them all until --timeout); with no method, it only listens.
 --all-sessions listens on every session of the tab: its page, its
 cross-site iframes and its workers, each line marked with which. The page
 domains chrome-cdp uses (Page, Runtime, Network, Log, …) are on; send
-another's enable call to hear its events.
+another's enable call to hear its events. A method Chrome does not know
+gets the closest name of the protocol as a hint; it is never sent for you.
 Methods: https://chromedevtools.github.io/devtools-protocol/
 
 Examples:

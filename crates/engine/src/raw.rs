@@ -15,7 +15,7 @@
 
 use cdp::{CdpError, LosslessEventStream, Session};
 use protocol::schema::{CdpEvent, CdpListenData};
-use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format, suggest};
 use serde_json::{Map, Value, json};
 use tokio::time::Instant;
 
@@ -167,6 +167,7 @@ impl Engine {
         let running = self.running()?;
         let timeout = millis(req.timeout_ms);
         let deadline = Instant::now() + timeout;
+        let has_params = !req.params.is_empty();
         let CdpRequest {
             method,
             params,
@@ -250,7 +251,7 @@ impl Engine {
             }
         };
         let (value, events) = result.map_err(|e| {
-            let info = self.cdp_error(&e, method.unwrap_or_default(), target);
+            let info = self.cdp_error(&e, method.unwrap_or_default(), target, has_params);
             match &blocked {
                 Some(blocked) => info.note("page", blocked.clone()),
                 None => info,
@@ -364,11 +365,19 @@ impl Engine {
         Ok(output)
     }
 
-    fn cdp_error(&self, e: &CdpError, method: &str, target: Target) -> ErrorInfo {
+    fn cdp_error(&self, e: &CdpError, method: &str, target: Target, has_params: bool) -> ErrorInfo {
         let info = from_cdp(e, &self.session);
-        let browser_domain = ["Browser.", "Target."]
-            .iter()
-            .any(|d| method.starts_with(d));
+        let browser_domain = |method: &str| {
+            ["Browser.", "Target."]
+                .iter()
+                .any(|d| method.starts_with(d))
+        };
+        if let CdpError::Protocol { code: -32601, .. } = e
+            && let Some(info) = self.did_you_mean(&info, method, target, has_params)
+        {
+            return info;
+        }
+        let browser_domain = browser_domain(method);
         match e {
             CdpError::Protocol { code: -32601, .. }
                 if target == Target::Browser && !browser_domain =>
@@ -385,6 +394,40 @@ impl Engine {
             }
             _ => info,
         }
+    }
+}
+
+impl Engine {
+    /// For a method Chrome did not find: the one of the protocol it most
+    /// likely meant, as a note and a hint that sends it (never sent by
+    /// itself). `None` for a method the protocol has (a page method sent
+    /// to the browser) or nothing close.
+    fn did_you_mean(
+        &self,
+        info: &ErrorInfo,
+        method: &str,
+        target: Target,
+        has_params: bool,
+    ) -> Option<ErrorInfo> {
+        let methods = cdp::domains::names::METHODS;
+        if methods.contains(&method) {
+            return None;
+        }
+        let meant = *suggest::similar(method, methods.iter().copied(), 1).first()?;
+        let mut cmd = Cmd::new("cdp").scoped(&self.session);
+        let browser = ["Browser.", "Target."].iter().any(|d| meant.starts_with(d));
+        if target == Target::Page || !browser {
+            cmd = cmd.flag("target", "page");
+        }
+        cmd = cmd.arg(meant);
+        if has_params {
+            cmd = cmd.raw("…");
+        }
+        Some(
+            info.clone()
+                .note("did you mean", meant)
+                .hint(Hint::run(cmd)),
+        )
     }
 }
 

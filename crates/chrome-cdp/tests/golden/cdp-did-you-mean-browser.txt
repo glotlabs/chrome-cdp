@@ -1,0 +1,12 @@
+$ chrome-cdp cdp Browser.getVersoin
+exit: 4
+--- stderr
+error: Browser.getVersoin: 'Browser.getVersoin' wasn't found
+  did you mean: Browser.getVersion
+  hint: chrome-cdp cdp Browser.getVersion
+
+$ chrome-cdp cdp Browser.getVersoin --json
+exit: 4
+--- stdout
+{"ok":false,"error":{"kind":"ProtocolError","message":"Browser.getVersoin: 'Browser.getVersoin' wasn't found","hint":"chrome-cdp cdp Browser.getVersion","notes":[{"label":"did you mean","text":"Browser.getVersion"}],"details":{"code":-32601,"data":null,"method":"Browser.getVersoin"}}}
+

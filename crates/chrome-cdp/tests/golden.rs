@@ -551,6 +551,24 @@ const CASES: &[Case] = &[
         fixture: Fixture::Session,
     },
     Case {
+        name: "cdp-did-you-mean",
+        args: &[
+            "cdp",
+            "--target",
+            "page",
+            "Page.navigte",
+            r#"{"url":"about:blank"}"#,
+        ],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "cdp-did-you-mean-browser",
+        args: &["cdp", "Browser.getVersoin"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
         name: "cdp-page-method-on-browser",
         args: &["cdp", "Runtime.evaluate", r#"{"expression":"1"}"#],
         modes: ERR,
