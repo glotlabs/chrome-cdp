@@ -212,6 +212,7 @@ pub(super) fn execute(
                             saved: RefCell::new(BTreeMap::new()),
                             file_saved: RefCell::new(BTreeMap::new()),
                             http_log: RefCell::new(Vec::new()),
+                            reads: RefCell::new(Vec::new()),
                         };
                         let index = item / repeat;
                         let outcome = match runner.before_all(test, &before_all[test.file]) {
@@ -358,6 +359,9 @@ struct Runner<'a> {
     file_saved: RefCell<BTreeMap<String, Value>>,
     /// `--verify-mocks`: the try's `http` exchanges.
     http_log: RefCell<Vec<Seen>>,
+    /// Where a `state load` of the try looks for files earlier steps
+    /// wrote, after its own artifacts folder ([`super::outputs`]).
+    reads: RefCell<Vec<PathBuf>>,
 }
 
 /// A step's place in a test, for its failure.
@@ -447,6 +451,10 @@ impl Runner<'_> {
             rerun: Cmd::new("test").arg(&span).to_string(),
         };
         self.http_log.borrow_mut().clear();
+        // A failed try's `@after` may have left a file for the next, and
+        // `@before-all` hands state to the tests through files.
+        let file_dir = super::plan::file_dir(&self.plan.config, &self.plan.scenarios[test.file]);
+        *self.reads.borrow_mut() = vec![test.dir.clone(), file_dir.join("@before-all")];
         let verify = self
             .options
             .verify
@@ -955,6 +963,11 @@ impl Runner<'_> {
             &self.plan.config.root,
             self.options.update_snapshots,
         );
+        // Files the step writes go in the test's artifacts folder.
+        let dir = self.recorder.borrow().as_ref().map(|r| r.dir.clone());
+        if let Some(dir) = dir {
+            super::outputs::resolve(&mut cli, &dir, &self.reads.borrow());
+        }
         let screenshot = matches!(cli.command, Some(Command::ExpectScreenshot(_)));
         let exit_on_finding = crate::exits_on_finding(&cli);
         let out = crate::run(cli)?;
@@ -1232,7 +1245,9 @@ impl Runner<'_> {
             attempt: None,
             rerun: Cmd::new("test").arg(&file.name).to_string(),
         };
-        let dir = super::plan::file_dir(&self.plan.config, file).join(format!("@{name}"));
+        let file_dir = super::plan::file_dir(&self.plan.config, file);
+        let dir = file_dir.join(format!("@{name}"));
+        *self.reads.borrow_mut() = vec![file_dir.join("@before-all")];
         *self.test_id.borrow_mut() = format!("{}-f{}", self.plan.run.run_id, test.file + 1);
         self.in_context(
             &dir,

@@ -17,6 +17,7 @@ mod artifacts;
 mod backend;
 mod determinism;
 mod exec;
+mod outputs;
 pub(crate) mod plan;
 mod record;
 mod report;

@@ -49,6 +49,15 @@ error. A test with no steps is an error unless it is skipped. A failed
 `@before-all` hands state to the tests through files:
 `state save auth.json` there, `state load auth.json` in `@before`.
 
+A relative path a step writes (`state save`, `screenshot -o`, `pdf -o`,
+`har stop -o`, `trace stop -o`, `clipboard read -o`, `network show -o`)
+is in the test's artifacts folder (`e2e/.results/<file>/<test>/`), so
+parallel tests do not overwrite each other's files and a run leaves
+nothing in the project. A relative `state load` reads what an earlier
+step wrote: in the test's folder (an earlier try's or run's too), else in
+the file's `@before-all` folder; a file no step wrote is read from the
+current directory, as before.
+
 ## Settings
 
 Written at the top of the file they apply to every test; in a test's

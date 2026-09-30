@@ -203,8 +203,11 @@ fn failures_skips_and_flaky_tests_are_reported() {
         "{err}"
     );
 
+    // Files steps write go in the test's artifacts, not the project.
+    assert!(!project.root.join("flaky-marker.json").exists());
+    assert!(!project.root.join("hooks-state.json").exists());
+
     // The same in JSON, with the failed step.
-    std::fs::remove_file(project.root.join("flaky-marker.json")).unwrap();
     let (out, value) = project.json(&["scenarios/fail", "--jobs", "1"]);
     assert_eq!(out.status.code(), Some(1));
     assert_eq!(value["error"]["kind"], "ExpectFailed");
@@ -699,7 +702,6 @@ fn repeat_runs_each_test_and_fails_a_flaky_one() {
             .contains("chrome-cdp test scenarios/fail/flaky.cdp:6 --repeat 3"),
         "{value}"
     );
-    std::fs::remove_file(project.root.join("flaky-marker.json")).unwrap();
     let text = stdout(&project.test(&["scenarios/fail/flaky.cdp", "--repeat", "3", "--jobs", "1"]));
     assert!(
         text.contains(
