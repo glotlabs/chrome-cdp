@@ -315,6 +315,39 @@ impl Engine {
         ))
     }
 
+    /// The error findings of `layout` on `page` at its viewport
+    /// (`explore --layout`). The caller holds the tab's lock.
+    pub(crate) async fn layout_errors(
+        &self,
+        running: &Running,
+        page: &Page,
+        testid_attribute: Option<String>,
+        timeout: Duration,
+    ) -> Result<Vec<LayoutFinding>, ErrorInfo> {
+        let req = LayoutRequest {
+            tab: None,
+            locator: None,
+            viewports: Vec::new(),
+            only: Vec::new(),
+            all: false,
+            full: false,
+            min_target: None,
+            stretch_text: None,
+            strict_refs: false,
+            testid_attribute,
+            timeout_ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+            max_chars: 0,
+            baseline: None,
+        };
+        let linted = self.lint(running, page, &req, timeout).await?;
+        Ok(linted
+            .runs
+            .into_iter()
+            .flat_map(|run| run.findings)
+            .filter(|f| f.severity == LayoutSeverity::Error)
+            .collect())
+    }
+
     /// Runs the check at each viewport asked for, and gives the tab its
     /// own viewport back after.
     pub(crate) async fn lint(

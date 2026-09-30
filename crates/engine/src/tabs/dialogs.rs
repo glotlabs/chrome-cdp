@@ -80,7 +80,20 @@ pub(super) fn opening(shared: &Shared, session: &Session, tab: u32, event: &RawE
     };
     let policy = shared.settings.dialogs();
     let mut state = shared.lock();
-    if let Some(accept) = answer(policy, opening.r#type) {
+    let answering = state
+        .tabs
+        .get(&tab)
+        .and_then(|t| t.context.as_ref())
+        .is_some_and(|(browser_id, _)| shared.settings.answers_dialogs_in(browser_id));
+    let answer = if answering {
+        Some(matches!(
+            opening.r#type,
+            page::DialogType::Alert | page::DialogType::Beforeunload
+        ))
+    } else {
+        answer(policy, opening.r#type)
+    };
+    if let Some(accept) = answer {
         state.log(Event::Dialog {
             tab: tab_name(tab),
             kind: info.kind.clone(),

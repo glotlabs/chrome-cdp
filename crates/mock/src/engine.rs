@@ -69,8 +69,9 @@ pub enum Outcome {
     Pass,
 }
 
-/// The mock sets in use, in the order they were applied.
-#[derive(Debug)]
+/// The mock sets in use, in the order they were applied. A copy has
+/// their state as it is, and goes on alone (`explore`'s context).
+#[derive(Debug, Clone)]
 pub struct Mocks {
     pub(crate) sets: Vec<MockSet>,
     seed: u64,

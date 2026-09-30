@@ -545,11 +545,39 @@ impl Engine {
     pub async fn state_save(&self, req: StateSaveRequest) -> Result<Output, ErrorInfo> {
         let timeout = millis(req.timeout_ms);
         let running = self.running()?;
+        let (state, warnings) = self
+            .collect_state(&running, req.indexed_db, timeout)
+            .await?;
+        let mut json = serde_json::to_string_pretty(&state).unwrap_or_default();
+        json.push('\n');
+        write_private(&req.path, json.as_bytes())?;
+        let path = req.path.display().to_string();
+        let data = StateData {
+            path: Some(path.clone()),
+            cookies: state.cookies.len(),
+            origins: state.origins.iter().map(|o| origin_info(o, None)).collect(),
+        };
+        let text = format!("saved {path}: {}", summary(&data));
+        let output = Output::typed(&data, text).quiet(path.clone()).warning(format!(
+            "{path} holds the session's cookies and tokens; it is readable by you only, keep it out of version control"
+        ));
+        Ok(warnings.into_iter().fold(output, Output::warning))
+    }
+
+    /// The call's context's cookies, and the storage of every origin its
+    /// frames visited: what `state save` writes (and `explore` gives its
+    /// own context).
+    pub(crate) async fn collect_state(
+        &self,
+        running: &Running,
+        indexed_db: bool,
+        timeout: Duration,
+    ) -> Result<(StorageState, Vec<String>), ErrorInfo> {
         let scope = self.context_key()?;
-        let cookies = self.all_cookies(&running, timeout).await?;
+        let cookies = self.all_cookies(running, timeout).await?;
         let mut warnings = Vec::new();
         let mut origins = Vec::new();
-        let expression = format!("({LIBRARY}).collect({})", req.indexed_db);
+        let expression = format!("({LIBRARY}).collect({indexed_db})");
         let mut keep = |origin: &str, collected: Result<Value, String>| match collected
             .and_then(|v| serde_json::from_value::<OriginState>(v).map_err(|e| e.to_string()))
         {
@@ -561,7 +589,7 @@ impl Engine {
             }
             Err(e) => warnings.push(format!("cannot read the storage of {origin}: {e}")),
         };
-        let open = open_origins(&running, scope.as_deref());
+        let open = open_origins(running, scope.as_deref());
         for (tab, frame, origin) in &open {
             let collected = match running
                 .tabs
@@ -598,20 +626,7 @@ impl Engine {
             cookies: cookies.iter().map(state_cookie).collect(),
             origins,
         };
-        let mut json = serde_json::to_string_pretty(&state).unwrap_or_default();
-        json.push('\n');
-        write_private(&req.path, json.as_bytes())?;
-        let path = req.path.display().to_string();
-        let data = StateData {
-            path: Some(path.clone()),
-            cookies: state.cookies.len(),
-            origins: state.origins.iter().map(|o| origin_info(o, None)).collect(),
-        };
-        let text = format!("saved {path}: {}", summary(&data));
-        let output = Output::typed(&data, text).quiet(path.clone()).warning(format!(
-            "{path} holds the session's cookies and tokens; it is readable by you only, keep it out of version control"
-        ));
-        Ok(warnings.into_iter().fold(output, Output::warning))
+        Ok((state, warnings))
     }
 
     /// `state load`.

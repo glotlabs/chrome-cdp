@@ -112,7 +112,7 @@ struct Table {
 }
 
 /// A rule, checked and compiled.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Rule {
     id: u32,
     pattern: UrlPattern,
@@ -278,6 +278,32 @@ impl Router {
         table.journal.retain(|(s, _)| s.as_deref() != Some(scope));
         table.sockets.retain(|s| s.scope.as_deref() != Some(scope));
         table.tags.remove(scope);
+    }
+
+    /// Gives `to`, a context of ours, a copy of the rules and mock sets
+    /// of `from` (the mock sets with their state as it is now): its own,
+    /// which go on apart from `from`'s.
+    pub(crate) fn copy_scope(&self, from: Option<&str>, to: &str) {
+        let mut table = lock(&self.table);
+        let rules: Vec<Rule> = table
+            .rules
+            .iter()
+            .filter(|r| r.context.as_deref() == from)
+            .cloned()
+            .collect();
+        for mut rule in rules {
+            table.last_id += 1;
+            rule.id = table.last_id;
+            rule.hits = 0;
+            rule.context = Some(to.to_owned());
+            table.rules.push(rule);
+        }
+        if let Some(mocks) = table.mocks_of(from).cloned() {
+            table.scoped.insert(to.to_owned(), mocks);
+        }
+        if let Some(tag) = table.tags.get(from.unwrap_or_default()).cloned() {
+            table.tags.insert(to.to_owned(), tag);
+        }
     }
 
     /// Adds `specs` after the existing rules, all or none: the first bad

@@ -145,6 +145,10 @@ pub(crate) struct Settings {
     ignore_https_errors: AtomicBool,
     /// How JavaScript dialogs are answered.
     dialogs: Mutex<DialogPolicy>,
+    /// Contexts of ours whose dialogs are all answered at once, whatever
+    /// the policy: `alert` and `beforeunload` accepted, `confirm` and
+    /// `prompt` dismissed (`explore`'s).
+    answering: Mutex<std::collections::HashSet<String>>,
     /// What HTTP authentication challenges are answered with.
     http_credentials: Mutex<Option<HttpCredentials>>,
     /// Where downloads go; `None` leaves Chrome's download behaviour alone.
@@ -231,6 +235,22 @@ impl Settings {
 
     pub(crate) fn dialogs(&self) -> DialogPolicy {
         *lock(&self.dialogs)
+    }
+
+    /// Answers every dialog of context `browser_id` at once (see
+    /// [`Settings::answering`]), or stops.
+    pub(crate) fn answer_dialogs_in(&self, browser_id: &str, on: bool) {
+        let mut answering = lock(&self.answering);
+        if on {
+            answering.insert(browser_id.to_owned());
+        } else {
+            answering.remove(browser_id);
+        }
+    }
+
+    /// Whether every dialog of context `browser_id` is answered at once.
+    pub(crate) fn answers_dialogs_in(&self, browser_id: &str) -> bool {
+        lock(&self.answering).contains(browser_id)
     }
 
     pub(crate) fn set_http_credentials(&self, credentials: HttpCredentials) {

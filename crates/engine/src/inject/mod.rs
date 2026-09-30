@@ -457,6 +457,37 @@ impl Injector {
         true
     }
 
+    /// Gives `to`, a context of ours, copies of the init scripts of
+    /// `from` and its mock shim (not its exposed functions, whose calls
+    /// the agent answers, nor its storage seeds).
+    pub(crate) fn copy_scope(&self, from: Option<&str>, to: &str) {
+        let mut table = lock(&self.table);
+        let scripts: Vec<Arc<Script>> = table
+            .scripts
+            .iter()
+            .filter(|s| s.scope.as_deref() == from)
+            .cloned()
+            .collect();
+        for script in scripts {
+            table.last_id += 1;
+            let id = table.last_id;
+            table.scripts.push(Arc::new(Script {
+                id,
+                source: script.source.clone(),
+                world: script.world,
+                file: script.file.clone(),
+                preview: script.preview.clone(),
+                size: script.size,
+                scope: Some(to.to_owned()),
+            }));
+        }
+        if table.shims.iter().any(|(s, _)| s.as_deref() == from) {
+            table.last_serial += 1;
+            let serial = table.last_serial;
+            table.shims.push((Some(to.to_owned()), serial));
+        }
+    }
+
     /// Drops everything of `scope`, a context that closed.
     pub(crate) fn drop_scope(&self, scope: &str) {
         let mut table = lock(&self.table);

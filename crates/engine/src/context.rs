@@ -36,7 +36,7 @@ use crate::errors::from_cdp;
 use crate::request::{
     ContextCloseRequest, ContextListRequest, ContextNewRequest, Navigation, WaitUntil, millis,
 };
-use crate::tabs::{BLANK, tab_name};
+use crate::tabs::{BLANK, Settings, tab_name};
 use crate::{Engine, Running};
 
 tokio::task_local! {
@@ -129,7 +129,7 @@ impl Contexts {
     }
 
     /// Records Chrome's context `browser_id`; returns its id.
-    fn add(&self, browser_id: &str) -> u32 {
+    pub(crate) fn add(&self, browser_id: &str) -> u32 {
         let mut registry = self.lock();
         registry.last += 1;
         let id = registry.last;
@@ -180,6 +180,42 @@ impl Contexts {
             .find(|e| e.browser_id == browser_id)
             .map(Scope::name)
     }
+}
+
+/// Drops everything `settings` keeps for context `browser_id`.
+fn forget_scope(settings: &Settings, browser_id: &str) {
+    settings.routes.drop_scope(browser_id);
+    settings.injections.drop_scope(browser_id);
+    settings.emulation.drop_scope(browser_id);
+    settings.answer_dialogs_in(browser_id, false);
+}
+
+/// Disposes of context `id` in Chrome (closing its tabs) and forgets it
+/// and its settings. Needs no engine, so a context can be disposed of
+/// from a task of its own (`explore`'s, when its call is dropped).
+pub(crate) async fn dispose(
+    running: &Running,
+    settings: &Settings,
+    id: u32,
+    timeout: std::time::Duration,
+) {
+    let Some(scope) = settings.contexts.remove(id) else {
+        return;
+    };
+    let result = running
+        .conn
+        .browser()
+        .with_timeout(timeout)
+        .call(target::DisposeBrowserContextParams::new(
+            scope.browser_id.clone(),
+        ))
+        .await;
+    if let Err(e) = result {
+        tracing::debug!("cannot dispose of context {}: {e}", scope.name());
+    }
+    running.tabs.drop_context_tabs(&scope.browser_id);
+    forget_scope(settings, &scope.browser_id);
+    running.tabs.apply_interception(timeout, false).await;
 }
 
 impl Engine {
@@ -241,9 +277,7 @@ impl Engine {
     /// Drops everything the session keeps for context `browser_id`: its
     /// routes, mock sets, injections and emulation.
     pub(crate) fn forget_scope(&self, browser_id: &str) {
-        self.settings.routes.drop_scope(browser_id);
-        self.settings.injections.drop_scope(browser_id);
-        self.settings.emulation.drop_scope(browser_id);
+        forget_scope(&self.settings, browser_id);
     }
 
     /// `context new [url]`: makes a browser context with one tab (loading
@@ -452,23 +486,7 @@ impl Engine {
     /// Disposes of context `id` in Chrome (closing its tabs) and forgets
     /// it and its settings.
     async fn dispose(&self, running: &Running, id: u32, timeout: std::time::Duration) {
-        let Some(scope) = self.settings.contexts.remove(id) else {
-            return;
-        };
-        let result = running
-            .conn
-            .browser()
-            .with_timeout(timeout)
-            .call(target::DisposeBrowserContextParams::new(
-                scope.browser_id.clone(),
-            ))
-            .await;
-        if let Err(e) = result {
-            tracing::debug!("cannot dispose of context {}: {e}", scope.name());
-        }
-        running.tabs.drop_context_tabs(&scope.browser_id);
-        self.forget_scope(&scope.browser_id);
-        running.tabs.apply_interception(timeout, false).await;
+        dispose(running, &self.settings, id, timeout).await;
     }
 
     fn context_info(&self, running: &Running, scope: &Scope) -> ContextInfo {
