@@ -1,6 +1,6 @@
 # Plan 16 — Seeing more of the page
 
-Status: IN PROGRESS (16.1-16.3 done)
+Status: IN PROGRESS (16.1-16.4 done)
 Depends on: 04 (snapshot, refs, locators), 05 (actionability pipeline, action report), 06 (screenshots), 07 (viewport emulation), 09 (`expect`, baselines), 11 (contexts, stable locators), 13 (the target graph, for out-of-process iframes)
 
 ## Goal
@@ -574,7 +574,7 @@ on its state.
       every corpus page (the plan 04 `.expected` files are unchanged).
 - [x] `--budget N` output is at most N estimated tokens on every corpus
       page where the stubs fit, and every ref and region in it works.
-- [ ] `fill-form` fills `forms/checkout.html` in one call, including the
+- [x] `fill-form` fills `forms/checkout.html` in one call, including the
       field that appears after the country, and the page's own state
       shows every value.
 - [ ] `compare` reports exactly the known differences of `compare/a.html`
@@ -735,3 +735,47 @@ _(append here)_
 - 16.3: `cards` is the corpus's last page, so the plan 04 goldens keep
   their tab ids. Under `-i`, cards flatten to their links and buttons
   (leaves), which do not fold as runs; `--budget` folds regions there.
+- 16.4: `--json` is the global output flag, so `fill-form` takes its
+  object as `--values JSON` (`-` reads stdin) or `--file FILE`. History
+  records `--file` and `--values -` as `--values <the JSON inline>`, keys
+  in their order, so the scenario line stands alone; a form's ref becomes
+  its stable locator there, as for actions.
+- 16.4: without a LOCATOR, the fields outside any form are the form only
+  when the page has none (a formless app); one form plus stray fields is
+  that form. A LOCATOR that is no form and in none names the forms in it,
+  else its own fields as one unit (`kind: scope`), so a React "form" of
+  divs can be filled with `fill-form '#signup'`.
+- 16.4: a field that is required and only empty is not listed as invalid
+  (`validationMessage` would say "Please fill out this field" for every
+  one): `required value=""` and the header's count say it. Other
+  constraint failures and `aria-invalid` are.
+- 16.4: a key matches level by level (name, `name`, `id`, placeholder,
+  part of the name); several fields at the first level that finds any is
+  "matches N fields" (`NotFound`, listing them). Only fields not filled
+  yet are matched. A group of radios is named by its `radiogroup` or
+  `<fieldset>`; without one, only its `name` attribute matches it.
+- 16.4: a field that appears after one was filled is waited for (up to
+  2s after the last field, while keys are left) and filled when it
+  appears, so the region comes after the fields that were already there.
+  A value that does not fit such a late field is `BadArgs` after the
+  earlier ones were filled (a note lists them); every field there at the
+  start is checked before anything is filled.
+- 16.4: a custom listbox's options are clicked when not selected already
+  (others are left as they are); a custom combobox is filled, then the
+  option shown in its popup within 1.5s (by name, else the one name that
+  starts with or has the text) is clicked; if none shows, the text stays
+  and a warning says so. `pickOption` looks in the listboxes the
+  combobox controls or owns, else in any listbox shown.
+- 16.4: each field's action gets the whole `--timeout`, as the single
+  command would; the CLI waits `--timeout` × (keys + 1) for the answer.
+  `--submit` runs only when every key matched; with no submit button it
+  presses Enter in the last text field filled (Enter in a checkbox does
+  not submit), else the last field.
+- 16.4: forms of every frame are listed (an iframe's header ends `in
+  frame URL`), and the fields outside a form of all frames are one unit.
+  A widget role on a `<button>` (`role=switch`) makes it that widget; a
+  combobox's popup listbox is part of it, not a field. A file input's
+  line says `file`; its JSON element keeps the snapshot's role
+  (`button`). `forms -q` prints how many required fields are empty.
+- 16.4: `chrome-cdp skill` gets a cheat-sheet line for `fill-form` (and
+  `forms`); to stay under 2,000 tokens, `select` and `check` share a line.
