@@ -1,6 +1,6 @@
 # Plan 16 — Seeing more of the page
 
-Status: NOT STARTED
+Status: IN PROGRESS (16.1 done)
 Depends on: 04 (snapshot, refs, locators), 05 (actionability pipeline, action report), 06 (screenshots), 07 (viewport emulation), 09 (`expect`, baselines), 11 (contexts, stable locators), 13 (the target graph, for out-of-process iframes)
 
 ## Goal
@@ -558,10 +558,10 @@ on its state.
 
 ## Acceptance criteria
 
-- [ ] `why` and the actionability pipeline agree on every case of
+- [x] `why` and the actionability pipeline agree on every case of
       `why/cases.html`: `why` says "would act now" exactly when the
       action passes at once.
-- [ ] `why` names the cause (the element and the property) for every
+- [x] `why` names the cause (the element and the property) for every
       failed check on the fixture, not only the check.
 - [ ] `layout` finds each fixture's known findings and nothing on the
       clean page, at every viewport of `--viewports mobile,tablet,desktop`,
@@ -630,3 +630,32 @@ on its state.
 ## Decisions log
 
 _(append here)_
+- 16.1: `enabled` also fails on an inert element (`inert` on it or an
+  ancestor, or a modal `<dialog>` open elsewhere) in the pipeline itself,
+  not only in `why`: an inert element takes no clicks, focus or text, and
+  `fill` would otherwise pass the pipeline and `why` would disagree.
+  `expect enabled` keeps its ARIA meaning and does not count inertness.
+- 16.1: the plan's table says `drag` needs its element enabled; the code
+  did not check it. Now what `drag` drags must be enabled (as for
+  `click`); where it drops need not be.
+- 16.1: `--for upload` on a file input (or its label) checks only
+  `disabled`, which is all `upload` waits for; on another element, which
+  `upload` clicks to open the file chooser, it runs `click`'s checks.
+- 16.1: the pipeline fails at once on an element that can never take
+  text only when the checks before `editable` pass; so does `why`'s
+  verdict (a hidden checkbox with `--for fill` waits).
+- 16.1: `--no-scroll` with the element out of view marks `in view` and
+  `hit test` `skipped`; the verdict is then `click would act now, unless
+  in view or hit test fails`.
+- 16.1: `element` in the JSON (and each check's) is `{ref, role, name,
+  tag, class?}`: an element without a role is named by its tag and first
+  class. Checks also carry `dismiss` (hit test), `candidates`
+  (`Ambiguous`) and `notes` (the locator's notes on no match).
+- 16.1: the locator engine has no "did you mean" for a locator that
+  matches nothing; `why` shows the notes its `NotFound` error has (such as
+  `text=` matching visible elements only).
+- 16.1: the `why/*.expected` goldens mask box sizes and places, scroll
+  distances and how far an animation moved, which depend on fonts and
+  timing. The agreement test tells "fails at once" from "waits" by half
+  the action's timeout: the pipeline gives up one retry before its
+  deadline.
