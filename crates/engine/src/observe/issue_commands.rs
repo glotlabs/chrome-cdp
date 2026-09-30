@@ -290,12 +290,8 @@ impl Engine {
             issue.target.reference.clone_from(&named.reference);
             if let Some(reference) = &named.reference {
                 let tab = tab_name(page.id);
-                issue.target.locator = self
-                    .stable_locators(Some(&tab), std::slice::from_ref(reference), None, NAME_WAIT)
-                    .await
-                    .into_iter()
-                    .next()
-                    .and_then(|l| l.locator);
+                // `expect` and actions hold the tab's lock.
+                issue.target.locator = self.stable_locator_held(&tab, reference, NAME_WAIT).await;
             }
             let place = issue.target.locator.clone().or_else(|| {
                 stored

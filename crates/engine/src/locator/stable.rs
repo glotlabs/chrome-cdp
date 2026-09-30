@@ -70,7 +70,7 @@ impl Engine {
         let mut out = Vec::with_capacity(refs.len());
         for reference in refs {
             let found = self
-                .stable_locator(tab, reference, &options, false, None, timeout)
+                .stable_locator(tab, reference, &options, false, None, true, timeout)
                 .await
                 .unwrap_or_else(|e| Found::none(e.message));
             out.push(RefLocator {
@@ -107,6 +107,7 @@ impl Engine {
                     options,
                     request.all,
                     Some(retry),
+                    true,
                     timeout,
                 )
                 .await
@@ -154,9 +155,28 @@ impl Engine {
         Ok(Output::typed(&data, text).quiet(locator))
     }
 
+    /// The stable locator of ref `reference` in tab `tab`, or `None`,
+    /// for a caller that holds the tab's lock already (it only reads).
+    pub(crate) async fn stable_locator_held(
+        &self,
+        tab: &str,
+        reference: &str,
+        timeout: Duration,
+    ) -> Option<String> {
+        let options = LocateOptions {
+            strict_refs: true,
+            testid_attribute: None,
+        };
+        self.stable_locator(Some(tab), reference, &options, false, None, false, timeout)
+            .await
+            .ok()?
+            .locator
+    }
+
     /// The stable locator of the one element `text` names (with `all`,
     /// every candidate too), each with a `frame=` step first for an
-    /// element in an iframe.
+    /// element in an iframe. With `lock`, it takes the tab's lock.
+    #[allow(clippy::too_many_arguments)]
     async fn stable_locator(
         &self,
         tab: Option<&str>,
@@ -164,6 +184,7 @@ impl Engine {
         options: &LocateOptions,
         all: bool,
         retry: Option<&(dyn Fn(&str) -> Cmd + Sync)>,
+        lock: bool,
         timeout: Duration,
     ) -> Result<Found, ErrorInfo> {
         let locator = options.parse(text)?;
@@ -179,7 +200,11 @@ impl Engine {
         let running = self.running()?;
         let page = self.page(&running, tab, timeout).await?;
         self.check_not_blocked(&running, &page)?;
-        let _tab = self.tabs.lock(&page.target_id).await;
+        let _tab = if lock {
+            Some(self.tabs.lock(&page.target_id).await)
+        } else {
+            None
+        };
         let called = self
             .call_on(
                 &running,
