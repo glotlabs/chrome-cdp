@@ -1,0 +1,470 @@
+{
+  "version": 1,
+  "tests": {
+    "needs a signed-in user": {
+      "28:role=button[name=\"Sign out\"]": {
+        "role": "button",
+        "name": "Sign out",
+        "tag": "button",
+        "text": "Sign out",
+        "classes": [
+          "button"
+        ],
+        "container": {
+          "role": "banner"
+        },
+        "index": 1,
+        "page": "/checkout",
+        "candidates": [
+          "role=button[name=\"Sign out\"]",
+          "text=\"Sign out\""
+        ]
+      },
+      "29:text=Sign in to check out.": {
+        "role": "paragraph",
+        "tag": "p",
+        "text": "Sign in to check out.",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/checkout",
+        "candidates": [
+          "text=\"Sign in to check out.\""
+        ]
+      },
+      "6:role=button[name=\"Add to cart\"]": {
+        "role": "button",
+        "name": "Add to cart",
+        "tag": "button",
+        "testid": "add-to-cart",
+        "text": "Add to cart",
+        "classes": [
+          "button",
+          "button-primary"
+        ],
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "role=button[name=\"Add to cart\"]",
+          "testid=add-to-cart",
+          "text=\"Add to cart\""
+        ]
+      },
+      "7:role=status": {
+        "role": "status",
+        "tag": "p",
+        "text": "Added to cart",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "text=\"Added to cart\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:3:label=Email": {
+        "role": "textbox",
+        "name": "Email",
+        "tag": "input",
+        "type": "email",
+        "label": "Email",
+        "container": {
+          "role": "form"
+        },
+        "index": 0,
+        "page": "/login",
+        "candidates": [
+          "role=textbox[name=\"Email\"]",
+          "label=\"Email\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:4:label=Password": {
+        "role": "textbox",
+        "name": "Password",
+        "tag": "input",
+        "type": "password",
+        "label": "Password",
+        "container": {
+          "role": "form"
+        },
+        "index": 1,
+        "page": "/login",
+        "candidates": [
+          "role=textbox[name=\"Password\"]",
+          "label=\"Password\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:5:role=button[name=\"Sign in\"]": {
+        "role": "button",
+        "name": "Sign in",
+        "tag": "button",
+        "testid": "sign-in",
+        "text": "Sign in",
+        "classes": [
+          "button",
+          "button-primary"
+        ],
+        "container": {
+          "role": "form"
+        },
+        "index": 0,
+        "page": "/login",
+        "candidates": [
+          "role=button[name=\"Sign in\"]",
+          "testid=sign-in"
+        ]
+      },
+      "e2e/steps/sign-in.cdp:6:text=Signed in as ${email} [email=ada@example.com]": {
+        "role": "paragraph",
+        "tag": "p",
+        "text": "Signed in as ada@example.com Sign out",
+        "container": {
+          "role": "banner"
+        },
+        "index": 0,
+        "page": "/",
+        "candidates": [
+          "text=\"Signed in as ada@example.com Sign out\""
+        ]
+      }
+    },
+    "places an order": {
+      "11:text=1 item, total $89.00": {
+        "role": "paragraph",
+        "tag": "p",
+        "text": "1 item, total $89.00",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/checkout",
+        "candidates": [
+          "text=\"1 item, total $89.00\""
+        ]
+      },
+      "12:role=button[name=\"Place order\"]": {
+        "role": "button",
+        "name": "Place order",
+        "tag": "button",
+        "testid": "place-order",
+        "text": "Place order",
+        "classes": [
+          "button",
+          "button-primary"
+        ],
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/checkout",
+        "candidates": [
+          "role=button[name=\"Place order\"]",
+          "testid=place-order",
+          "text=\"Place order\""
+        ]
+      },
+      "13:role=heading[name=\"Thank you!\"]": {
+        "role": "heading",
+        "name": "Thank you!",
+        "tag": "h1",
+        "text": "Thank you!",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/orders/:id",
+        "candidates": [
+          "role=heading[name=\"Thank you!\"]",
+          "text=\"Thank you!\""
+        ]
+      },
+      "15:role=link[name=\"Cart (0)\"]": {
+        "role": "link",
+        "name": "Cart (0)",
+        "tag": "a",
+        "text": "Cart (0)",
+        "container": {
+          "role": "navigation"
+        },
+        "index": 1,
+        "page": "/orders/:id",
+        "candidates": [
+          "role=link[name=\"Cart (0)\"]",
+          "text=\"Cart (0)\""
+        ]
+      },
+      "6:role=button[name=\"Add to cart\"]": {
+        "role": "button",
+        "name": "Add to cart",
+        "tag": "button",
+        "testid": "add-to-cart",
+        "text": "Add to cart",
+        "classes": [
+          "button",
+          "button-primary"
+        ],
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "role=button[name=\"Add to cart\"]",
+          "testid=add-to-cart",
+          "text=\"Add to cart\""
+        ]
+      },
+      "7:role=status": {
+        "role": "status",
+        "tag": "p",
+        "text": "Added to cart",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "text=\"Added to cart\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:3:label=Email": {
+        "role": "textbox",
+        "name": "Email",
+        "tag": "input",
+        "type": "email",
+        "label": "Email",
+        "container": {
+          "role": "form"
+        },
+        "index": 0,
+        "page": "/login",
+        "candidates": [
+          "role=textbox[name=\"Email\"]",
+          "label=\"Email\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:4:label=Password": {
+        "role": "textbox",
+        "name": "Password",
+        "tag": "input",
+        "type": "password",
+        "label": "Password",
+        "container": {
+          "role": "form"
+        },
+        "index": 1,
+        "page": "/login",
+        "candidates": [
+          "role=textbox[name=\"Password\"]",
+          "label=\"Password\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:5:role=button[name=\"Sign in\"]": {
+        "role": "button",
+        "name": "Sign in",
+        "tag": "button",
+        "testid": "sign-in",
+        "text": "Sign in",
+        "classes": [
+          "button",
+          "button-primary"
+        ],
+        "container": {
+          "role": "form"
+        },
+        "index": 0,
+        "page": "/login",
+        "candidates": [
+          "role=button[name=\"Sign in\"]",
+          "testid=sign-in"
+        ]
+      },
+      "e2e/steps/sign-in.cdp:6:text=Signed in as ${email} [email=ada@example.com]": {
+        "role": "paragraph",
+        "tag": "p",
+        "text": "Signed in as ada@example.com Sign out",
+        "container": {
+          "role": "banner"
+        },
+        "index": 0,
+        "page": "/",
+        "candidates": [
+          "text=\"Signed in as ada@example.com Sign out\""
+        ]
+      }
+    },
+    "retries when the shop is busy": {
+      "21:role=button[name=\"Place order\"]": {
+        "role": "button",
+        "name": "Place order",
+        "tag": "button",
+        "testid": "place-order",
+        "text": "Place order",
+        "classes": [
+          "button",
+          "button-primary"
+        ],
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/checkout",
+        "candidates": [
+          "role=button[name=\"Place order\"]",
+          "testid=place-order",
+          "text=\"Place order\""
+        ]
+      },
+      "22:role=alert": {
+        "role": "alert",
+        "tag": "div",
+        "text": "The shop is busy. Please try again. Try again",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/checkout",
+        "candidates": [
+          "text=\"The shop is busy. Please try again. Try again\""
+        ]
+      },
+      "23:role=button[name=\"Try again\"]": {
+        "role": "button",
+        "name": "Try again",
+        "tag": "button",
+        "text": "Try again",
+        "classes": [
+          "button"
+        ],
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/checkout",
+        "candidates": [
+          "role=button[name=\"Try again\"]",
+          "text=\"Try again\""
+        ]
+      },
+      "24:role=heading[name=\"Thank you!\"]": {
+        "role": "heading",
+        "name": "Thank you!",
+        "tag": "h1",
+        "text": "Thank you!",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/orders/:id",
+        "candidates": [
+          "role=heading[name=\"Thank you!\"]",
+          "text=\"Thank you!\""
+        ]
+      },
+      "6:role=button[name=\"Add to cart\"]": {
+        "role": "button",
+        "name": "Add to cart",
+        "tag": "button",
+        "testid": "add-to-cart",
+        "text": "Add to cart",
+        "classes": [
+          "button",
+          "button-primary"
+        ],
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "role=button[name=\"Add to cart\"]",
+          "testid=add-to-cart",
+          "text=\"Add to cart\""
+        ]
+      },
+      "7:role=status": {
+        "role": "status",
+        "tag": "p",
+        "text": "Added to cart",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "text=\"Added to cart\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:3:label=Email": {
+        "role": "textbox",
+        "name": "Email",
+        "tag": "input",
+        "type": "email",
+        "label": "Email",
+        "container": {
+          "role": "form"
+        },
+        "index": 0,
+        "page": "/login",
+        "candidates": [
+          "role=textbox[name=\"Email\"]",
+          "label=\"Email\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:4:label=Password": {
+        "role": "textbox",
+        "name": "Password",
+        "tag": "input",
+        "type": "password",
+        "label": "Password",
+        "container": {
+          "role": "form"
+        },
+        "index": 1,
+        "page": "/login",
+        "candidates": [
+          "role=textbox[name=\"Password\"]",
+          "label=\"Password\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:5:role=button[name=\"Sign in\"]": {
+        "role": "button",
+        "name": "Sign in",
+        "tag": "button",
+        "testid": "sign-in",
+        "text": "Sign in",
+        "classes": [
+          "button",
+          "button-primary"
+        ],
+        "container": {
+          "role": "form"
+        },
+        "index": 0,
+        "page": "/login",
+        "candidates": [
+          "role=button[name=\"Sign in\"]",
+          "testid=sign-in"
+        ]
+      },
+      "e2e/steps/sign-in.cdp:6:text=Signed in as ${email} [email=ada@example.com]": {
+        "role": "paragraph",
+        "tag": "p",
+        "text": "Signed in as ada@example.com Sign out",
+        "container": {
+          "role": "banner"
+        },
+        "index": 0,
+        "page": "/",
+        "candidates": [
+          "text=\"Signed in as ada@example.com Sign out\""
+        ]
+      }
+    }
+  }
+}

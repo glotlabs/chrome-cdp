@@ -1,0 +1,252 @@
+{
+  "version": 1,
+  "tests": {
+    "a wrong password is refused": {
+      "18:label=Email": {
+        "role": "textbox",
+        "name": "Email",
+        "tag": "input",
+        "type": "email",
+        "label": "Email",
+        "container": {
+          "role": "form"
+        },
+        "index": 0,
+        "page": "/login",
+        "candidates": [
+          "role=textbox[name=\"Email\"]",
+          "label=\"Email\""
+        ]
+      },
+      "19:label=Password": {
+        "role": "textbox",
+        "name": "Password",
+        "tag": "input",
+        "type": "password",
+        "label": "Password",
+        "container": {
+          "role": "form"
+        },
+        "index": 1,
+        "page": "/login",
+        "candidates": [
+          "role=textbox[name=\"Password\"]",
+          "label=\"Password\""
+        ]
+      },
+      "20:role=button[name=\"Sign in\"]": {
+        "role": "button",
+        "name": "Sign in",
+        "tag": "button",
+        "testid": "sign-in",
+        "text": "Sign in",
+        "classes": [
+          "button",
+          "button-primary"
+        ],
+        "container": {
+          "role": "form"
+        },
+        "index": 0,
+        "page": "/login",
+        "candidates": [
+          "role=button[name=\"Sign in\"]",
+          "testid=sign-in"
+        ]
+      },
+      "21:role=alert": {
+        "role": "alert",
+        "tag": "p",
+        "text": "Wrong email or password",
+        "container": {
+          "role": "form"
+        },
+        "index": 0,
+        "page": "/login",
+        "candidates": [
+          "text=\"Wrong email or password\""
+        ]
+      }
+    },
+    "signs in and out": {
+      "6:role=button[name=\"Sign out\"]": {
+        "role": "button",
+        "name": "Sign out",
+        "tag": "button",
+        "text": "Sign out",
+        "classes": [
+          "button"
+        ],
+        "container": {
+          "role": "banner"
+        },
+        "index": 1,
+        "page": "/",
+        "candidates": [
+          "role=button[name=\"Sign out\"]",
+          "text=\"Sign out\""
+        ]
+      },
+      "7:role=link[name=\"Sign in\"]": {
+        "role": "link",
+        "name": "Sign in",
+        "tag": "a",
+        "text": "Sign in",
+        "container": {
+          "role": "banner"
+        },
+        "index": 2,
+        "page": "/",
+        "candidates": [
+          "role=link[name=\"Sign in\"]",
+          "text=\"Sign in\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:3:label=Email": {
+        "role": "textbox",
+        "name": "Email",
+        "tag": "input",
+        "type": "email",
+        "label": "Email",
+        "container": {
+          "role": "form"
+        },
+        "index": 0,
+        "page": "/login",
+        "candidates": [
+          "role=textbox[name=\"Email\"]",
+          "label=\"Email\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:4:label=Password": {
+        "role": "textbox",
+        "name": "Password",
+        "tag": "input",
+        "type": "password",
+        "label": "Password",
+        "container": {
+          "role": "form"
+        },
+        "index": 1,
+        "page": "/login",
+        "candidates": [
+          "role=textbox[name=\"Password\"]",
+          "label=\"Password\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:5:role=button[name=\"Sign in\"]": {
+        "role": "button",
+        "name": "Sign in",
+        "tag": "button",
+        "testid": "sign-in",
+        "text": "Sign in",
+        "classes": [
+          "button",
+          "button-primary"
+        ],
+        "container": {
+          "role": "form"
+        },
+        "index": 0,
+        "page": "/login",
+        "candidates": [
+          "role=button[name=\"Sign in\"]",
+          "testid=sign-in"
+        ]
+      },
+      "e2e/steps/sign-in.cdp:6:text=Signed in as ${email} [email=ada@example.com]": {
+        "role": "paragraph",
+        "tag": "p",
+        "text": "Signed in as ada@example.com Sign out",
+        "container": {
+          "role": "banner"
+        },
+        "index": 0,
+        "page": "/",
+        "candidates": [
+          "text=\"Signed in as ada@example.com Sign out\""
+        ]
+      }
+    },
+    "stays signed in after a reload": {
+      "13:text=Signed in as ada@example.com": {
+        "role": "paragraph",
+        "tag": "p",
+        "text": "Signed in as ada@example.com Sign out",
+        "container": {
+          "role": "banner"
+        },
+        "index": 0,
+        "page": "/",
+        "candidates": [
+          "text=\"Signed in as ada@example.com Sign out\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:3:label=Email": {
+        "role": "textbox",
+        "name": "Email",
+        "tag": "input",
+        "type": "email",
+        "label": "Email",
+        "container": {
+          "role": "form"
+        },
+        "index": 0,
+        "page": "/login",
+        "candidates": [
+          "role=textbox[name=\"Email\"]",
+          "label=\"Email\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:4:label=Password": {
+        "role": "textbox",
+        "name": "Password",
+        "tag": "input",
+        "type": "password",
+        "label": "Password",
+        "container": {
+          "role": "form"
+        },
+        "index": 1,
+        "page": "/login",
+        "candidates": [
+          "role=textbox[name=\"Password\"]",
+          "label=\"Password\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:5:role=button[name=\"Sign in\"]": {
+        "role": "button",
+        "name": "Sign in",
+        "tag": "button",
+        "testid": "sign-in",
+        "text": "Sign in",
+        "classes": [
+          "button",
+          "button-primary"
+        ],
+        "container": {
+          "role": "form"
+        },
+        "index": 0,
+        "page": "/login",
+        "candidates": [
+          "role=button[name=\"Sign in\"]",
+          "testid=sign-in"
+        ]
+      },
+      "e2e/steps/sign-in.cdp:6:text=Signed in as ${email} [email=ada@example.com]": {
+        "role": "paragraph",
+        "tag": "p",
+        "text": "Signed in as ada@example.com Sign out",
+        "container": {
+          "role": "banner"
+        },
+        "index": 0,
+        "page": "/",
+        "candidates": [
+          "text=\"Signed in as ada@example.com Sign out\""
+        ]
+      }
+    }
+  }
+}

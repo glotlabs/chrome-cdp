@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "tests": {
+    "adds a product to the cart": {
+      "10:text=Total: $25.00": {
+        "role": "paragraph",
+        "tag": "p",
+        "text": "Total: $25.00",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/cart",
+        "candidates": [
+          "text=\"Total: $25.00\""
+        ]
+      },
+      "5:role=button[name=\"Add to cart\"]": {
+        "role": "button",
+        "name": "Add to cart",
+        "tag": "button",
+        "testid": "add-to-cart",
+        "text": "Add to cart",
+        "classes": [
+          "button",
+          "button-primary"
+        ],
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "role=button[name=\"Add to cart\"]",
+          "testid=add-to-cart",
+          "text=\"Add to cart\""
+        ]
+      },
+      "6:role=status": {
+        "role": "status",
+        "tag": "p",
+        "text": "Added to cart",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "text=\"Added to cart\""
+        ]
+      },
+      "7:role=link[name=\"Cart (1)\"]": {
+        "role": "link",
+        "name": "Cart (1)",
+        "tag": "a",
+        "text": "Cart (1)",
+        "container": {
+          "role": "navigation"
+        },
+        "index": 1,
+        "page": "/products/:id",
+        "candidates": [
+          "role=link[name=\"Cart (1)\"]",
+          "text=\"Cart (1)\""
+        ]
+      },
+      "8:role=link[name=\"Cart (1)\"]": {
+        "role": "link",
+        "name": "Cart (1)",
+        "tag": "a",
+        "text": "Cart (1)",
+        "container": {
+          "role": "navigation"
+        },
+        "index": 1,
+        "page": "/products/:id",
+        "candidates": [
+          "role=link[name=\"Cart (1)\"]",
+          "text=\"Cart (1)\""
+        ]
+      }
+    },
+    "removes a product": {
+      "21:role=button[name=Remove ${var:keyboard}]": {
+        "role": "button",
+        "name": "Remove Mechanical keyboard",
+        "tag": "button",
+        "label": "Remove Mechanical keyboard",
+        "text": "Remove",
+        "classes": [
+          "button",
+          "button-small"
+        ],
+        "container": {
+          "role": "listitem",
+          "name": "Mechanical keyboard $89.00 Remove Mechan"
+        },
+        "index": 0,
+        "page": "/cart",
+        "candidates": [
+          "role=button[name=\"Remove Mechanical keyboard\"]",
+          "label=\"Remove Mechanical keyboard\"",
+          "text=\"Remove\""
+        ]
+      },
+      "22:text=Your cart is empty.": {
+        "role": "paragraph",
+        "tag": "p",
+        "text": "Your cart is empty.",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/cart",
+        "candidates": [
+          "text=\"Your cart is empty.\""
+        ]
+      }
+    },
+    "starts empty": {
+      "14:text=Your cart is empty.": {
+        "role": "paragraph",
+        "tag": "p",
+        "text": "Your cart is empty.",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/cart",
+        "candidates": [
+          "text=\"Your cart is empty.\""
+        ]
+      }
+    }
+  }
+}

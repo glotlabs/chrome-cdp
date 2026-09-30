@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "tests": {
+    "shows an error page when the API is down": {
+      "8:role=heading[name=\"Something went wrong\"]": {
+        "role": "heading",
+        "name": "Something went wrong",
+        "tag": "h1",
+        "text": "Something went wrong",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/",
+        "candidates": [
+          "role=heading[name=\"Something went wrong\"]",
+          "text=\"Something went wrong\""
+        ]
+      },
+      "9:role=alert": {
+        "role": "alert",
+        "tag": "p",
+        "text": "The shop is down for maintenance",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/",
+        "candidates": [
+          "text=\"The shop is down for maintenance\""
+        ]
+      }
+    }
+  }
+}

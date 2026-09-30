@@ -23,3 +23,21 @@ label {
 [role="alert"] {
   color: #b00020;
 }
+.button {
+  background: #fff;
+  border: 1px solid #888;
+  border-radius: 4px;
+  padding: 0.25rem 0.75rem;
+}
+.button-primary {
+  background: #1a56db;
+  border-color: #1a56db;
+  color: #fff;
+}
+.button-small {
+  font-size: 0.8rem;
+  padding: 0.1rem 0.4rem;
+}
+.product {
+  margin: 0.25rem 0;
+}

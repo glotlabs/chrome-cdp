@@ -53,11 +53,14 @@ function Header({ user, setUser, cart }) {
       </nav>
       <form role="search" onSubmit={search}>
         <input type="search" aria-label="Search" value={q} onChange={(e) => setQ(e.target.value)} />
-        <button>Search</button>
+        <button className="button">Search</button>
       </form>
       {user ? (
         <p>
-          Signed in as {user.email} <button onClick={signOut}>Sign out</button>
+          Signed in as {user.email}{" "}
+          <button className="button" onClick={signOut}>
+            Sign out
+          </button>
         </p>
       ) : (
         <Link to="/login">Sign in</Link>
@@ -90,7 +93,9 @@ function ErrorPage({ error, retry }) {
     <>
       <h1>Something went wrong</h1>
       <p role="alert">{error.message}</p>
-      <button onClick={retry}>Try again</button>
+      <button className="button" onClick={retry}>
+        Try again
+      </button>
     </>
   );
 }
@@ -104,7 +109,7 @@ function Products() {
       <h1>Products</h1>
       <ul aria-label="Products">
         {data.map((p) => (
-          <li key={p.id}>
+          <li key={p.id} className="product">
             <Link to={`/products/${p.id}`}>{p.name}</Link> {money(p.price)}
           </li>
         ))}
@@ -144,7 +149,9 @@ function Product({ id, refreshCart }) {
         Price: <strong data-testid="price">{money(live ?? product.price)}</strong>
         {live !== null && " (live)"}
       </p>
-      <button onClick={add}>Add to cart</button>
+      <button className="button button-primary" data-testid="add-to-cart" onClick={add}>
+        Add to cart
+      </button>
       {added && <p role="status">Added to cart</p>}
     </>
   );
@@ -198,7 +205,9 @@ function Login({ next, setUser }) {
         <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
       </label>
       {error && <p role="alert">{error}</p>}
-      <button>Sign in</button>
+      <button className="button button-primary" data-testid="sign-in">
+        Sign in
+      </button>
     </form>
   );
 }
@@ -221,7 +230,11 @@ function Cart({ cart, refreshCart }) {
             {cart.map((item) => (
               <li key={item.id}>
                 {item.name} {money(item.price)}{" "}
-                <button aria-label={`Remove ${item.name}`} onClick={() => remove(item)}>
+                <button
+                  className="button button-small"
+                  aria-label={`Remove ${item.name}`}
+                  onClick={() => remove(item)}
+                >
                   Remove
                 </button>
               </li>
@@ -268,10 +281,18 @@ function Checkout({ user, cart, refreshCart }) {
       </p>
       {error ? (
         <div role="alert">
-          {error} <button onClick={place}>Try again</button>
+          {error}{" "}
+          <button className="button" onClick={place}>
+            Try again
+          </button>
         </div>
       ) : (
-        <button onClick={place} disabled={placing || cart.length === 0}>
+        <button
+          className="button button-primary"
+          data-testid="place-order"
+          onClick={place}
+          disabled={placing || cart.length === 0}
+        >
           {placing ? "Placing order…" : "Place order"}
         </button>
       )}

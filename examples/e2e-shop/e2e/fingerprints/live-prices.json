@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "tests": {
+    "ignores other products' prices": {
+      "16:testid=price": {
+        "role": "strong",
+        "tag": "strong",
+        "testid": "price",
+        "text": "$85.00",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "testid=price",
+          "text=\"$85.00\""
+        ]
+      },
+      "6:testid=price": {
+        "role": "strong",
+        "tag": "strong",
+        "testid": "price",
+        "text": "$89.00",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "testid=price",
+          "text=\"$89.00\""
+        ]
+      }
+    },
+    "shows a pushed price": {
+      "10:testid=price": {
+        "role": "strong",
+        "tag": "strong",
+        "testid": "price",
+        "text": "$79.00",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "testid=price",
+          "text=\"$79.00\""
+        ]
+      },
+      "11:text=(live)": {
+        "role": "paragraph",
+        "tag": "p",
+        "text": "Price: $79.00 (live)",
+        "container": {
+          "role": "main"
+        },
+        "index": 1,
+        "page": "/products/:id",
+        "candidates": [
+          "text=\"Price: $79.00 (live)\""
+        ]
+      },
+      "6:testid=price": {
+        "role": "strong",
+        "tag": "strong",
+        "testid": "price",
+        "text": "$89.00",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "testid=price",
+          "text=\"$89.00\""
+        ]
+      }
+    }
+  }
+}

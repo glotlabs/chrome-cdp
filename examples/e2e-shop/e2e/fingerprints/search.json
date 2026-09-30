@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "tests": {
+    "finds a product": {
+      "11:text=${var:keyboard}": {
+        "role": "link",
+        "name": "Mechanical keyboard",
+        "tag": "a",
+        "text": "Mechanical keyboard",
+        "container": {
+          "role": "listitem",
+          "name": "Mechanical keyboard $89.00"
+        },
+        "index": 0,
+        "page": "/search",
+        "candidates": [
+          "role=link[name=\"Mechanical keyboard\"]",
+          "text=\"Mechanical keyboard\""
+        ]
+      },
+      "7:role=searchbox[name=\"Search\"]": {
+        "role": "searchbox",
+        "name": "Search",
+        "tag": "input",
+        "type": "search",
+        "label": "Search",
+        "container": {
+          "role": "search"
+        },
+        "index": 0,
+        "page": "/",
+        "candidates": [
+          "role=searchbox[name=\"Search\"]",
+          "label=\"Search\""
+        ]
+      }
+    },
+    "says when nothing matches": {
+      "16:text=No products match “zzz”.": {
+        "role": "paragraph",
+        "tag": "p",
+        "text": "No products match “zzz”.",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/search",
+        "candidates": [
+          "text=\"No products match “zzz”.\""
+        ]
+      }
+    }
+  }
+}

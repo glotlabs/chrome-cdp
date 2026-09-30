@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "tests": {
+    "an unknown product is not found": {
+      "21:role=heading[name=\"Product not found\"]": {
+        "role": "heading",
+        "name": "Product not found",
+        "tag": "h1",
+        "text": "Product not found",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "role=heading[name=\"Product not found\"]",
+          "text=\"Product not found\""
+        ]
+      },
+      "22:role=link[name=\"Back to products\"]": {
+        "role": "link",
+        "name": "Back to products",
+        "tag": "a",
+        "text": "Back to products",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "role=link[name=\"Back to products\"]",
+          "text=\"Back to products\""
+        ]
+      }
+    },
+    "lists the products": {
+      "10:text=${var:keyboard}": {
+        "role": "link",
+        "name": "Mechanical keyboard",
+        "tag": "a",
+        "text": "Mechanical keyboard",
+        "container": {
+          "role": "listitem",
+          "name": "Mechanical keyboard $89.00"
+        },
+        "index": 0,
+        "page": "/",
+        "candidates": [
+          "role=link[name=\"Mechanical keyboard\"]",
+          "text=\"Mechanical keyboard\""
+        ]
+      },
+      "8:role=heading[name=\"Products\"]": {
+        "role": "heading",
+        "name": "Products",
+        "tag": "h1",
+        "text": "Products",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/",
+        "candidates": [
+          "role=heading[name=\"Products\"]",
+          "text=\"Products\""
+        ]
+      }
+    },
+    "opens a product page": {
+      "13:role=link[name=${var:keyboard}]": {
+        "role": "link",
+        "name": "Mechanical keyboard",
+        "tag": "a",
+        "text": "Mechanical keyboard",
+        "container": {
+          "role": "listitem",
+          "name": "Mechanical keyboard $89.00"
+        },
+        "index": 0,
+        "page": "/",
+        "candidates": [
+          "role=link[name=\"Mechanical keyboard\"]",
+          "text=\"Mechanical keyboard\""
+        ]
+      },
+      "15:role=heading": {
+        "role": "heading",
+        "name": "Mechanical keyboard",
+        "tag": "h1",
+        "text": "Mechanical keyboard",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "role=heading[name=\"Mechanical keyboard\"]",
+          "text=\"Mechanical keyboard\""
+        ]
+      },
+      "16:testid=price": {
+        "role": "strong",
+        "tag": "strong",
+        "testid": "price",
+        "text": "$89.00",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "testid=price",
+          "text=\"$89.00\""
+        ]
+      }
+    }
+  }
+}
