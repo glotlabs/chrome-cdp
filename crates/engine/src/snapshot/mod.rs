@@ -49,7 +49,7 @@ pub(crate) use refs::parse_ref;
 use regions::{Region, Regions, parse_region};
 pub use resolve::RefCall;
 pub(crate) use resolve::Target;
-use tree::Node;
+pub(crate) use tree::Node;
 pub(crate) use tree::NodeKey;
 
 /// The engine `snapshot` uses unless `--engine` says otherwise; chosen by
@@ -659,6 +659,66 @@ impl Engine {
         let mut text = String::new();
         render::text(&tree.shown, &mut text);
         Ok(text.trim_start_matches('\n').to_owned())
+    }
+
+    /// `page` as `compare` reads it: the snapshot (`snapshot -i` with
+    /// `interactive`) of `scope`'s subtree or the whole page, long lists
+    /// not collapsed, with refs and folds taken off; and its URL and
+    /// title. Reading it counts as the tab's last snapshot (for `--diff`).
+    /// The caller holds the tab's lock.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn compare_tree(
+        &self,
+        running: &Running,
+        page: &Page,
+        scope: Option<&Locator>,
+        options: &LocateOptions,
+        interactive: bool,
+        retry: &(dyn Fn(&str) -> Cmd + Sync),
+        mark: u64,
+        timeout: Duration,
+    ) -> Result<(String, String, Vec<Node>), ErrorInfo> {
+        let view = View {
+            interactive,
+            collapse: false,
+            ..View::default()
+        };
+        let req = SnapshotRequest {
+            tab: None,
+            interactive,
+            scope: scope.map(ToString::to_string),
+            depth: None,
+            diff: false,
+            all_refs: false,
+            all: true,
+            text_limit: view.text_limit,
+            no_text: false,
+            engine: None,
+            strict_refs: options.strict_refs,
+            testid_attribute: options.testid_attribute.clone(),
+            source: false,
+            fold: false,
+            budget: None,
+            expand: Vec::new(),
+            timeout_ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+            max_chars: 0,
+        };
+        let (scope_key, _) = self
+            .scope_key(running, page, scope, options, retry, timeout)
+            .await?;
+        let mut tree = self
+            .read_tree(
+                running,
+                page,
+                &req,
+                &view,
+                Within::scope(scope_key.as_ref()),
+                &Folding::default(),
+                mark,
+            )
+            .await?;
+        compare::neutral(&mut tree.shown);
+        Ok((tree.capture.url, tree.capture.title, tree.shown))
     }
 
     /// The node a `--scope` locator names, and the note if its ref was

@@ -322,7 +322,7 @@ fn all_text(nodes: &[Node]) -> String {
 
 /// `--interactive`: reffed nodes, with the landmarks around them, and the
 /// tables and rows that keep a row's controls together.
-fn interactive(nodes: Vec<Node>) -> Vec<Node> {
+pub(crate) fn interactive(nodes: Vec<Node>) -> Vec<Node> {
     let mut out = Vec::new();
     for mut node in nodes {
         let children = interactive(std::mem::take(&mut node.children));

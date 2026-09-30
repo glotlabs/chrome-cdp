@@ -29,6 +29,7 @@
 //! (`state`, 7.4).
 
 mod clipboard;
+mod compare;
 mod components;
 mod context;
 mod debug;
@@ -76,6 +77,7 @@ use protocol::schema::{BrowserInfo, BrowserKind, HeldKeys, OpenData, ProfileInfo
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 use tokio::sync::Notify;
 
+pub use compare::{check_compare, compare_quiet, compare_text};
 pub use context::{in_context, parse_context_id};
 pub use emulate::commands::device_list;
 pub use emulate::{
@@ -101,6 +103,7 @@ pub use raw::check_cdp;
 pub use read::check_read;
 pub use request::{
     A11yLevel, Action, ActionRequest, Button, CdpRequest, ClipboardOp, ClipboardRequest,
+    CompareCapture, CompareCaptureRequest, CompareNameRequest, CompareRequest, CompareSide,
     ComponentsRequest, ConnectRequest, ConsoleRequest, ContextCloseRequest, ContextListRequest,
     ContextNewRequest, CookieFilter, CookieSpec, CookiesOp, CookiesRequest, CoverageStartRequest,
     CoverageStopRequest, DebugClearRequest, DebugListRequest, DebugLocalsRequest, DebugLogRequest,

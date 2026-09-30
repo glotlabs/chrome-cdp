@@ -659,6 +659,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<LayoutData>),
     },
     CommandSchema {
+        name: "compare",
+        summary: "how two pages differ: their snapshots, and with --visual their pixels",
+        schema: || schema_for!(Envelope<CompareData>),
+    },
+    CommandSchema {
         name: "markdown",
         summary: "the page's readable content (or an element's) as Markdown",
         schema: || schema_for!(Envelope<MarkdownData>),
@@ -3671,6 +3676,84 @@ pub struct LayoutBox {
     pub y: i64,
     pub width: i64,
     pub height: i64,
+}
+
+/// `data` of `chrome-cdp compare --json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CompareData {
+    /// The first page, the one compared against.
+    pub a: CompareSide,
+    /// The second page: the changes are what it has that `a` has not.
+    pub b: CompareSide,
+    /// Whether anything differs (what `--exit-code` exits 1 for).
+    pub differs: bool,
+    pub snapshot: CompareSnapshot,
+    /// `--visual`: what differs in the pixels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visual: Option<CompareVisual>,
+}
+
+/// One page `compare` compared.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CompareSide {
+    /// The side as given: a URL, `tab:t2`, `session:prod` or a file's
+    /// absolute path.
+    pub side: String,
+    /// The page's URL (a file's, when it has one).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub url: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub title: String,
+    /// The tab it was read from, for a tab of this session (a URL's tab
+    /// is closed afterwards).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab: Option<String>,
+}
+
+/// How the two snapshots differ.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CompareSnapshot {
+    /// How many nodes are marked: an added subtree counts once.
+    pub changes: u64,
+    /// The changes as `snapshot --diff` gives them (`change`: `added`,
+    /// `removed` or `changed` with `was`), with the unchanged ancestors
+    /// that place them; no refs.
+    pub diff: Vec<SnapshotNode>,
+}
+
+/// How the two screenshots differ (`compare --visual`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CompareVisual {
+    /// The area compared, in CSS pixels from the top left: the viewport,
+    /// or what two viewports of different sizes share.
+    pub width: u32,
+    pub height: u32,
+    /// The colour distance past which a pixel differs (0 to 1).
+    pub threshold: f64,
+    pub changed_pixels: u64,
+    /// How many regions differ; `regions` lists the 10 largest.
+    pub region_count: u64,
+    /// Boxes of changed pixels, largest first.
+    pub regions: Vec<CompareRegion>,
+    /// The diff image: `b` faded, changed pixels red, regions boxed
+    /// (absent when nothing differs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+}
+
+/// A box of changed pixels, in CSS pixels.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CompareRegion {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+    /// How many of its pixels changed.
+    pub changed: u64,
+    /// The smallest element of `b` whose box holds the region's centre
+    /// (with a ref when `b` is a tab or session still open).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element: Option<WhyElement>,
 }
 
 /// `expect --layout`: the baseline and what differed from it.

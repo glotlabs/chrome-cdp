@@ -492,7 +492,7 @@ impl Engine {
     }
 
     /// The main frame's viewport size, in CSS pixels.
-    async fn viewport_size(
+    pub(crate) async fn viewport_size(
         &self,
         running: &Running,
         page: &Page,
@@ -819,7 +819,7 @@ impl Engine {
     }
 
     /// A screenshot of the tab's viewport in CSS pixels.
-    async fn layout_shot(
+    pub(crate) async fn layout_shot(
         &self,
         running: &Running,
         page: &Page,

@@ -88,6 +88,45 @@ impl Image {
         }
     }
 
+    /// Its top left `width` x `height` pixels (at most its own size).
+    pub(crate) fn crop(&self, width: u32, height: u32) -> Self {
+        let (width, height) = (width.min(self.width), height.min(self.height));
+        if (width, height) == (self.width, self.height) {
+            return self.clone();
+        }
+        let row = self.width as usize * 4;
+        let rgba = self
+            .rgba
+            .chunks(row)
+            .take(height as usize)
+            .flat_map(|r| &r[..width as usize * 4])
+            .copied()
+            .collect();
+        Self {
+            width,
+            height,
+            rgba,
+        }
+    }
+
+    /// Draws the outline of a box, `thick` pixels wide inside it, in
+    /// `colour` (clipped to the image).
+    #[allow(clippy::many_single_char_names)]
+    pub(crate) fn outline(&mut self, [x, y, w, h]: [u32; 4], thick: u32, colour: [u8; 4]) {
+        let right = x.saturating_add(w).min(self.width);
+        let bottom = y.saturating_add(h).min(self.height);
+        for py in y..bottom {
+            for px in x..right {
+                let edge =
+                    px < x + thick || py < y + thick || px + thick >= right || py + thick >= bottom;
+                if edge {
+                    let i = (py as usize * self.width as usize + px as usize) * 4;
+                    self.rgba[i..i + 4].copy_from_slice(&colour);
+                }
+            }
+        }
+    }
+
     fn pixels(&self) -> impl Iterator<Item = [u8; 4]> + '_ {
         self.rgba.as_chunks::<4>().0.iter().copied()
     }
@@ -106,6 +145,16 @@ pub(crate) fn count_changed(a: &Image, b: &Image, threshold: f64) -> Option<u64>
             .filter(|(p, q)| delta(*p, *q) > max)
             .count() as u64,
     )
+}
+
+/// Which pixels of `a` and `b` (the same size) differ by more than
+/// `threshold`, row by row.
+pub(crate) fn changed(a: &Image, b: &Image, threshold: f64) -> Vec<bool> {
+    let max = MAX_DELTA * threshold * threshold;
+    a.pixels()
+        .zip(b.pixels())
+        .map(|(p, q)| delta(p, q) > max)
+        .collect()
 }
 
 /// An image of what changed from `a` to `b` (the same size): `b` faded to
@@ -202,6 +251,21 @@ mod tests {
         let b = image(2, 1, &[BLACK, WHITE]);
         let diff = diff_image(&a, &b, 0.1);
         assert_eq!(diff.rgba, [255, 0, 0, 255, 255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn crops_and_outlines() {
+        let a = image(3, 2, &[WHITE, BLACK, WHITE, BLACK, WHITE, BLACK]);
+        assert_eq!(a.crop(2, 5), image(2, 2, &[WHITE, BLACK, BLACK, WHITE]));
+        let mut b = image(3, 3, &[WHITE; 9]);
+        b.outline([0, 0, 3, 3], 1, BLACK);
+        let mut ring = [BLACK; 9];
+        ring[4] = WHITE;
+        assert_eq!(b, image(3, 3, &ring));
+        assert_eq!(
+            super::changed(&a, &image(3, 2, &[WHITE; 6]), 0.1),
+            [false, true, false, true, false, true]
+        );
     }
 
     #[test]

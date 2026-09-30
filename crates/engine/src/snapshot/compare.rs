@@ -10,7 +10,8 @@
 
 use protocol::schema::SnapshotNode;
 
-use super::render::{Change, DiffNode, all_added, line, prune_unchanged, was};
+use super::render::{Change, DiffNode, all_added, diff_text, line, prune_unchanged, was};
+pub(crate) use super::render::{diff_json, json};
 use super::tree::{Checked, Node};
 
 /// Siblings compared cell by cell at most: past it, the unaligned middle
@@ -34,6 +35,12 @@ pub(crate) fn count(diff: &[DiffNode]) -> usize {
             None => count(&node.children),
         })
         .sum()
+}
+
+/// `snapshot -i` of a tree read back with [`from_json`]: what had refs,
+/// with the landmarks around them.
+pub(crate) fn interactive(nodes: Vec<Node>) -> Vec<Node> {
+    super::prune::interactive(nodes)
 }
 
 /// Takes refs and folds off `nodes`: a fold's run stub goes, a region
@@ -194,6 +201,32 @@ fn matched(a: &Node, b: &Node, change: Option<Change>) -> DiffNode {
     }
 }
 
+/// Renders a diff given as `--json` nodes (with `change` and `was`), as
+/// [`diff_text`] does.
+pub(crate) fn diff_text_json(nodes: &[SnapshotNode], out: &mut String) {
+    fn back(node: &SnapshotNode) -> DiffNode {
+        DiffNode {
+            node: Node {
+                children: Vec::new(),
+                ..from_json(&SnapshotNode {
+                    children: Vec::new(),
+                    ..node.clone()
+                })
+            },
+            change: match node.change.as_deref() {
+                Some("added") => Some(Change::Added),
+                Some("removed") => Some(Change::Removed),
+                Some("changed") => Some(Change::Changed),
+                _ => None,
+            },
+            was: node.was.clone(),
+            children: node.children.iter().map(back).collect(),
+        }
+    }
+    let nodes: Vec<DiffNode> = nodes.iter().map(back).collect();
+    diff_text(&nodes, out);
+}
+
 /// A node of a `snapshot --json` tree as the snapshot pipeline holds it
 /// (without its DOM key).
 pub(crate) fn from_json(node: &SnapshotNode) -> Node {
@@ -211,6 +244,8 @@ pub(crate) fn from_json(node: &SnapshotNode) -> Node {
             .and_then(|r| r.strip_prefix('e')?.parse().ok()),
         more: node.more,
         below: node.below,
+        // What had a ref is what `-i` keeps.
+        reffable: node.reference.is_some(),
         children: node.children.iter().map(from_json).collect(),
         ..Node::default()
     };
@@ -317,6 +352,10 @@ mod tests {
         );
         assert_eq!(count(&changes), 5);
         assert!(diff(&a, &a).is_empty());
+        let nodes: Vec<_> = changes.iter().map(super::diff_json).collect();
+        let mut again = String::new();
+        super::diff_text_json(&nodes, &mut again);
+        assert_eq!(again, text(&changes));
     }
 
     #[test]
@@ -364,6 +403,7 @@ mod tests {
     fn json_round_trips_and_refs_are_not_compared() {
         let mut checkbox = node("checkbox", "Remember me", vec![]);
         checkbox.reference = Some(7);
+        checkbox.reffable = true;
         checkbox.states.checked = Some(super::Checked::True);
         checkbox.states.required = true;
         checkbox.scrollable = true;

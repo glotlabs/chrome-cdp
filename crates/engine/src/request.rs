@@ -2135,6 +2135,105 @@ pub struct LayoutRequest {
     pub baseline: Option<LayoutBaseline>,
 }
 
+/// `compare <A> <B>`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CompareRequest {
+    pub a: CompareSide,
+    pub b: CompareSide,
+    /// `-i`: compare only what `snapshot -i` shows.
+    #[serde(default)]
+    pub interactive: bool,
+    /// `--scope`: compare only this element's subtree, on each live page.
+    #[serde(default)]
+    pub scope: Option<String>,
+    /// `--visual`: compare screenshots too.
+    #[serde(default)]
+    pub visual: bool,
+    /// `--threshold`: the colour distance past which a pixel differs.
+    #[serde(default = "default_threshold")]
+    pub threshold: f64,
+    /// `--viewport WxH`: the viewport both pages are shot at; A's if
+    /// `None`.
+    #[serde(default)]
+    pub viewport: Option<(u32, u32)>,
+    /// `base_url`, for a relative URL side.
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub strict_refs: bool,
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    #[serde(default)]
+    pub max_chars: usize,
+}
+
+fn default_threshold() -> f64 {
+    0.1
+}
+
+/// One side of `compare`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompareSide {
+    /// Opened in a new tab of the current context, compared, closed.
+    Url(String),
+    /// An open tab of this session (`t2`), as it is.
+    Tab(String),
+    /// Read elsewhere: another session's active tab, or a `snapshot
+    /// --json` file.
+    Captured(CompareCapture),
+}
+
+/// A page `compare` read elsewhere: what `compare_capture` answers in
+/// another session, or a `snapshot --json` file.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CompareCapture {
+    /// The side as given (`session:prod`, a file's path).
+    pub side: String,
+    #[serde(default)]
+    pub url: String,
+    #[serde(default)]
+    pub title: String,
+    pub nodes: Vec<protocol::schema::SnapshotNode>,
+    /// A screenshot of the viewport (a PNG file), with `--visual`.
+    #[serde(default)]
+    pub shot: Option<PathBuf>,
+    /// Warnings from reading it.
+    #[serde(default)]
+    pub warnings: Vec<String>,
+}
+
+/// `compare`'s side `session:NAME`, asked of that session: its active
+/// tab's snapshot (shaped as `compare` asks) and, with `visual`, a
+/// screenshot of its viewport.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CompareCaptureRequest {
+    /// The side as given.
+    pub side: String,
+    #[serde(default)]
+    pub interactive: bool,
+    #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
+    pub visual: bool,
+    #[serde(default)]
+    pub strict_refs: bool,
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    pub timeout_ms: u64,
+}
+
+/// Names the smallest element at each point of the active tab (`compare
+/// --visual`'s regions on a `session:` side).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CompareNameRequest {
+    /// In CSS pixels of the viewport.
+    pub points: Vec<(f64, f64)>,
+    pub timeout_ms: u64,
+}
+
 /// The baseline of `expect --layout`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LayoutBaseline {
