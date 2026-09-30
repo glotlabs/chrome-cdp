@@ -28,3 +28,11 @@ fetchCart().then((loaded) => {
   items = loaded;
   render();
 });
+
+// A module the app loads only when the page is asked to (the `later`
+// event), in a chunk of its own: for logpoints set before their script
+// loads.
+window.addEventListener("later", async () => {
+  const { later } = await import("./later");
+  later("asked");
+});
