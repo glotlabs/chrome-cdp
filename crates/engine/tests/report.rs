@@ -501,4 +501,14 @@ async fn focus_is_followed_into_frames() {
     let lines = report(&out);
     assert_eq!(lines.len(), 1, "{}", out.text);
     assert!(lines[0].ends_with(" textbox \"Search\""), "{}", out.text);
+
+    // A frame the action adds that takes focus at once.
+    let out = act(&engine, click("#sign-in")).await;
+    let lines = report(&out);
+    assert_eq!(lines.len(), 1, "{}", out.text);
+    assert!(
+        lines[0].ends_with(" textbox \"Card\" in iframe \"login\""),
+        "{}",
+        out.text
+    );
 }

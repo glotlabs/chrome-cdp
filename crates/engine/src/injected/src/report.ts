@@ -49,11 +49,15 @@ export function acted(el: Element): Candidate {
  * control of a label it clicked); `null` otherwise.
  * When focus is in an iframe, that `<iframe>`: the engine asks its frame. */
 export function focusMoved(): Element | null {
-  const mark = before;
+  // A document with no mark (an iframe the action added) did not hold
+  // focus before.
+  const mark = before || { el: null, form: null, away: true };
+  const wasMarked = !!before;
   before = null;
   const el = focused();
   if (isFrame(el)) return el;
-  if (!mark || !el || el === mark.el) return null;
+  if (!wasMarked) actedOn = [];
+  if (!el || el === mark.el) return null;
   for (const a of actedOn) {
     if (a === el || contains(a, el) || (a instanceof HTMLLabelElement && a.control === el)) return null;
   }

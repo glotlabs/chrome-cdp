@@ -515,8 +515,10 @@ marked `todo`; the plan is done when no `todo` is left.
   frame that holds focus; afterwards `focusMoved` is asked of the main
   frame and down the focused `<iframe>`s. Focus that came from another
   frame is reported unless the action acted in the same form of that
-  frame. `Event::FocusMoved` gains `frame` (the frame's id), and the line
-  ends with ` in iframe "pay"`.
+  frame; a frame with no mark (one the action added) counts as not
+  having held it. `Event::FocusMoved` gains `frame` (the frame's id), and
+  the line ends with ` in iframe "pay"`. `press` without a locator names
+  the element focused inside an iframe, found the same way.
 - 13.5: `expect --a11y` runs the element rules in every frame and merges
   them by rule; page rules (title, `lang`, viewport) stay the main
   document's, since an iframe's title and `lang` are not the page's. A

@@ -2,8 +2,10 @@
 <meta charset="utf-8">
 <title>Report: focus in frames</title>
 <!-- Focus moving into, inside and out of iframes, for the post-action
-     report. "Pay" asks the cross-site frame to focus its card field. -->
+     report. "Pay" asks the cross-site frame to focus its card field; "Sign
+     in" adds a cross-site frame that focuses its own on load. -->
 <form id="find"><label>Search <input id="search"></label></form>
 <p><button id="pay" onclick="document.querySelector('iframe[name=pay]').contentWindow.postMessage('focus', '*')">Pay</button>
+<p><button id="sign-in" onclick="document.body.append(Object.assign(document.createElement('iframe'), { name: 'login', title: 'Login', src: '{{ORIGIN_B}}/actions/report-frame.html?autofocus' }))">Sign in</button>
 <iframe name="pay" title="Pay" src="{{ORIGIN_B}}/actions/report-frame.html"></iframe>
 <iframe name="same" title="Same" src="/actions/report-frame.html"></iframe>

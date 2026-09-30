@@ -9,5 +9,6 @@
 <!-- Same-site only: focus goes back to the page's search field. -->
 <button id="back" onclick="parent.document.getElementById('search').focus()">Back</button>
 <script>
+  if (location.search.includes('autofocus')) document.getElementById('card').focus();
   addEventListener('message', (e) => { if (e.data === 'focus') document.getElementById('card').focus(); });
 </script>

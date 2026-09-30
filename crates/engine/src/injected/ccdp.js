@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 833e2f94ed57ea44
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: dc19a3360288fae9
 "use strict";
 (() => {
   // src/dom.ts
@@ -1718,11 +1718,13 @@ ${inner}
     return describe(el);
   }
   function focusMoved() {
-    const mark = before;
+    const mark = before || { el: null, form: null, away: true };
+    const wasMarked = !!before;
     before = null;
     const el = focused();
     if (isFrame(el)) return el;
-    if (!mark || !el || el === mark.el) return null;
+    if (!wasMarked) actedOn = [];
+    if (!el || el === mark.el) return null;
     for (const a of actedOn) {
       if (a === el || contains(a, el) || a instanceof HTMLLabelElement && a.control === el) return null;
     }
