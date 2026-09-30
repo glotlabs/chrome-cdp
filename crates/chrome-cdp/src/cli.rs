@@ -959,6 +959,54 @@ Examples:
   chrome-cdp compare session:local session:prod --visual --exit-code")]
     Compare(CompareArgs),
 
+    /// Map an app: follow its links (and buttons) from a start page, and
+    /// list every page and state found, how to reach each, and what was
+    /// wrong on each.
+    #[command(after_help = "\
+Starts at URL (else the active tab's page) and walks breadth first:
+on each state it clicks, in page order, the links to the start's origin
+(and --origin's) that --include and --exclude (URL patterns, as wait
+--url takes) allow, and with --click-buttons the buttons, tabs, menu
+items and controls with aria-expanded or aria-haspopup. A state is the
+URL (no fragment, query keys sorted, utm_* dropped) plus the page's
+skeleton (its controls' roles and its headings', landmarks' and
+dialogs' names), so an open modal is a state and a list with other data
+is not. Clicks run the normal action code, so client-side routing runs;
+to get back to a state it loads its URL when that shows the same
+skeleton, else replays its path. A link to where another led already
+is not clicked again.
+
+It never submits a form (--submit-forms clicks submit buttons), types,
+uploads, clicks a control whose name looks destructive (delete, remove,
+log out, sign out, unsubscribe, pay, buy, checkout, confirm, reset, …;
+--allow-destructive), leaves the allowed origins (other links are
+listed as external), or follows mailto:, tel:, javascript:, download or
+file links. alert and beforeunload are accepted, confirm and prompt
+dismissed; a new tab a click opens is closed and its URL loaded
+instead.
+
+It runs in a context of its own with a copy of the current one's
+cookies, storage, routes, mocks, init scripts and emulation, and closes
+it at the end (also on Ctrl-C): your tabs are left alone. It stops at
+--max-states (30), --max-actions (200, replayed steps included),
+--depth (3 steps from the start) or --time (2m), and says which
+stopped it and what was left. Each state lists its console errors,
+failed requests and, with --layout, layout's errors.
+
+-o DIR (empty or new) writes map.json (the --json data) and
+states/<id>.cdp, a scenario that gets to each state (chrome-cdp run
+DIR/states/s4.cdp), and with --screenshots states/<id>.png. It exits 0
+whatever it finds; --exit-code exits 1 when a state had an error, a
+failed request, a broken link or a layout error. -q prints how many
+problems. Needs a running session.
+
+Examples:
+  chrome-cdp explore http://localhost:5173/
+  chrome-cdp explore --click-buttons --layout --exit-code
+  chrome-cdp explore /admin --include '**/admin/**' --max-states 50
+  chrome-cdp explore http://localhost:5173/ -o map --screenshots")]
+    Explore(ExploreArgs),
+
     /// Print the file and line an element came from, and its components.
     #[command(after_help = "\
 For the app's own dev build: the element's place (`at`) and the
@@ -3712,6 +3760,78 @@ pub(crate) struct CompareArgs {
 
     #[command(flatten)]
     pub(crate) refs: StrictRefsArgs,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ExploreArgs {
+    /// Where to start (relative to base_url); the active tab's page if
+    /// left out.
+    #[arg(value_name = "URL")]
+    pub(crate) url: Option<String>,
+
+    /// Stop after finding this many states.
+    #[arg(long, default_value_t = 30, value_name = "N")]
+    pub(crate) max_states: u64,
+
+    /// Stop after this many clicks and loads, replayed ones included.
+    #[arg(long, default_value_t = 200, value_name = "N")]
+    pub(crate) max_actions: u64,
+
+    /// Follow nothing more than this many steps from the start.
+    #[arg(long, default_value_t = 3, value_name = "N")]
+    pub(crate) depth: u64,
+
+    /// Stop after this long, e.g. 30s, 5m.
+    #[arg(long, default_value = "2m", value_parser = parse_duration, value_name = "DURATION")]
+    pub(crate) time: Duration,
+
+    /// Click buttons, tabs, menu items and disclosure controls too, not
+    /// only links.
+    #[arg(long)]
+    pub(crate) click_buttons: bool,
+
+    /// Click buttons that submit a form.
+    #[arg(long)]
+    pub(crate) submit_forms: bool,
+
+    /// Click controls whose name looks destructive (delete, log out,
+    /// pay, …).
+    #[arg(long)]
+    pub(crate) allow_destructive: bool,
+
+    /// Follow links to this origin too (repeatable).
+    #[arg(long = "origin", value_name = "ORIGIN")]
+    pub(crate) origins: Vec<String>,
+
+    /// Follow only links to URLs this pattern matches (repeatable).
+    #[arg(long, value_name = "PATTERN")]
+    pub(crate) include: Vec<String>,
+
+    /// Never follow links to URLs this pattern matches (repeatable).
+    #[arg(long, value_name = "PATTERN")]
+    pub(crate) exclude: Vec<String>,
+
+    /// Record layout's error findings in each state.
+    #[arg(long)]
+    pub(crate) layout: bool,
+
+    /// With -o: save a screenshot of each state.
+    #[arg(long)]
+    pub(crate) screenshots: bool,
+
+    /// Write map.json and states/<id>.cdp here (an empty or new
+    /// directory).
+    #[arg(short = 'o', long = "output", value_name = "DIR")]
+    pub(crate) output: Option<PathBuf>,
+
+    /// Exit 1 when a state had an error, a failed request, a broken link
+    /// or a layout error.
+    #[arg(long)]
+    pub(crate) exit_code: bool,
 
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]

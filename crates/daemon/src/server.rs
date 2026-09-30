@@ -679,6 +679,10 @@ impl Daemon {
                 Ok(p) => output(Box::pin(self.engine.compare_name(p)).await),
                 Err(e) => Err(e),
             },
+            rpc::EXPLORE => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.explore(p)).await),
+                Err(e) => Err(e),
+            },
             rpc::LAYOUT => match params(req.params) {
                 Ok(p) => output(Box::pin(self.engine.layout(p)).await),
                 Err(e) => Err(e),
@@ -904,6 +908,11 @@ fn output(result: Result<Output, ErrorInfo>) -> Result<Value, RpcError> {
     }
 }
 
+/// Whether the call on `line` is dropped when its client goes away.
+fn stops_with_client(line: &str) -> bool {
+    protocol::rpc::decode_request(line).is_ok_and(|req| req.method == rpc::EXPLORE)
+}
+
 /// Serves one client connection: one request per line, answered in order.
 async fn handle(daemon: Arc<Daemon>, stream: Stream) {
     daemon.connections.fetch_add(1, Ordering::SeqCst);
@@ -914,11 +923,39 @@ async fn handle(daemon: Arc<Daemon>, stream: Stream) {
 async fn serve_connection(daemon: &Daemon, stream: Stream) {
     let (read, mut write) = stream.into_split();
     let mut lines = BufReader::new(read).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
+    // Lines that came while a call that stops with its client ran.
+    let mut pending: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+    loop {
+        let line = match pending.pop_front() {
+            Some(line) => line,
+            None => match lines.next_line().await {
+                Ok(Some(line)) => line,
+                _ => break,
+            },
+        };
         if line.trim().is_empty() {
             continue;
         }
-        let (response, exit) = daemon.dispatch(&line).await;
+        let (response, exit) = if stops_with_client(&line) {
+            // `explore` runs for minutes: when its client goes away
+            // (Ctrl-C), the call is dropped, and its context closed.
+            let dispatch = daemon.dispatch(&line);
+            tokio::pin!(dispatch);
+            let gone = async {
+                loop {
+                    match lines.next_line().await {
+                        Ok(Some(next)) => pending.push_back(next),
+                        _ => return,
+                    }
+                }
+            };
+            tokio::select! {
+                answer = &mut dispatch => answer,
+                () = gone => break,
+            }
+        } else {
+            daemon.dispatch(&line).await
+        };
         let mut bytes = serde_json::to_vec(&response).unwrap_or_default();
         bytes.push(b'\n');
         let sent = write.write_all(&bytes).await.is_ok() && write.flush().await.is_ok();

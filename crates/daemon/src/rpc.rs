@@ -91,6 +91,7 @@ pub const LAYOUT: &str = "layout";
 pub const COMPARE: &str = "compare";
 pub const COMPARE_CAPTURE: &str = "compare_capture";
 pub const COMPARE_NAME: &str = "compare_name";
+pub const EXPLORE: &str = "explore";
 pub const COMPONENTS: &str = "components";
 pub const INSPECT: &str = "inspect";
 

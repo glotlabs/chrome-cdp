@@ -100,13 +100,18 @@ fn main() -> ExitCode {
             .collect(),
     ));
     // `compare --exit-code` exits 1 when the pages differ, like `git diff
-    // --exit-code`.
-    let exit_on_difference = matches!(&cli.command, Some(Command::Compare(args)) if args.exit_code);
+    // --exit-code`; `explore --exit-code` when it found a problem.
+    let exit_on_difference = match &cli.command {
+        Some(Command::Compare(args)) => args.exit_code,
+        Some(Command::Explore(args)) => args.exit_code,
+        _ => false,
+    };
     let result = run(cli);
     let differs = exit_on_difference
-        && result
-            .as_ref()
-            .is_ok_and(|o| o.data["differs"] == serde_json::Value::Bool(true));
+        && result.as_ref().is_ok_and(|o| {
+            o.data["differs"] == serde_json::Value::Bool(true)
+                || o.data["problems"].as_u64().is_some_and(|n| n > 0)
+        });
     match output::print(mode, result) {
         0 if differs => ExitCode::from(1),
         code => ExitCode::from(code),
@@ -230,6 +235,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::FillForm(args)) => session::fill_form(&args, &cli.global),
         Some(Command::Layout(args)) => session::layout(&args, &cli.global),
         Some(Command::Compare(args)) => session::compare(&args, &cli.global),
+        Some(Command::Explore(args)) => session::explore(&args, &cli.global),
         Some(Command::Components(args)) => session::components(&args, &cli.global),
         Some(Command::Inspect(args)) => session::inspect(&args, &cli.global),
         Some(Command::Clipboard(args)) => match &args.command {

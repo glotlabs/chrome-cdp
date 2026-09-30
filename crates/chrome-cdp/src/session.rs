@@ -38,6 +38,7 @@ use engine::{
 };
 use engine::{
     CompareCapture, CompareCaptureRequest, CompareNameRequest, CompareRequest, CompareSide,
+    ExploreRequest,
 };
 use engine::{
     CookieFilter, CookieSpec, CookiesOp, CookiesRequest, StateLoadRequest, StateSaveRequest,
@@ -57,15 +58,16 @@ use crate::cli::{
     AfterArgs, BlockArgs, CdpArgs, ClipboardReadArgs, CloseArgs, CompareArgs, ComponentsArgs,
     ConnectArgs, ContextArgs, ContextCommand, CookieFilterArgs, CookieSetArgs, CookiesArgs,
     CookiesCommand, CoverageArgs, CoverageCommand, DEFAULT_TIMEOUT, DebugArgs, DebugCommand,
-    DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, ExtensionStorageAreaArg,
-    ExtensionStorageCommand, ExtensionsArgs, ExtensionsCommand, FillFormArgs, FindArgs, FormsArgs,
-    FrameDirArg, FramesArgs, GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs,
-    IdleArgs, ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs,
-    LayoutArgs, LocalsArg, LocatorArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs,
-    PdfArgs, PermissionsArgs, PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs,
-    ScreenshotArgs, SessionsArgs, SnapshotArgs, SourceArgs, StateArgs, StateCommand, StatusArgs,
-    StorageActionArg, StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs,
-    TraceArgs, TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, WhyArgs, parse_duration,
+    DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, ExploreArgs,
+    ExtensionStorageAreaArg, ExtensionStorageCommand, ExtensionsArgs, ExtensionsCommand,
+    FillFormArgs, FindArgs, FormsArgs, FrameDirArg, FramesArgs, GlobalArgs, GotoArgs, HarArgs,
+    HarCommand, HighlightArgs, HistoryArgs, IdleArgs, ImageFormatArg, InitScriptAddArgs,
+    InitScriptArgs, InitScriptCommand, InspectArgs, LayoutArgs, LocalsArg, LocatorArgs,
+    LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs,
+    PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs,
+    SnapshotArgs, SourceArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg,
+    StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs,
+    TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, WhyArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -2539,6 +2541,43 @@ pub(crate) fn compare(args: &CompareArgs, global: &GlobalArgs) -> Result<Output,
         name_regions(&ctx, name, &mut output);
     }
     Ok(output)
+}
+
+pub(crate) fn explore(args: &ExploreArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::with_default(global, WAIT_TIMEOUT)?;
+    let dir = args
+        .output
+        .as_deref()
+        .map(|dir| input::absolute_path(dir).map(PathBuf::from))
+        .transpose()?;
+    let request = ExploreRequest {
+        url: args.url.clone(),
+        base_url: ctx.base_url.clone(),
+        max_states: args.max_states,
+        max_actions: args.max_actions,
+        depth: args.depth,
+        time_ms: millis(args.time),
+        click_buttons: args.click_buttons,
+        submit_forms: args.submit_forms,
+        allow_destructive: args.allow_destructive,
+        origins: args.origins.clone(),
+        include: args.include.clone(),
+        exclude: args.exclude.clone(),
+        layout: args.layout,
+        screenshots: args.screenshots,
+        dir,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(ctx.timeout),
+        max_chars: args.max_chars,
+    };
+    engine::check_explore(&request)?;
+    // The walk stops at --time; its last action, a replay and closing
+    // the context may run on.
+    let wait = args.time + ctx.timeout.saturating_mul(4) + QUICK;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::EXPLORE, &request, wait))
 }
 
 /// A side of `compare` as typed.
