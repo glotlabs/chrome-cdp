@@ -1,6 +1,6 @@
 # Plan 18 — Tests that maintain themselves
 
-Status: NOT STARTED
+Status: IN PROGRESS (18.1 done)
 Depends on: 11 (the test runner, `history --as-scenario`, `mock record`), 13 (the target graph, for `record` in iframes)
 Roadmap: track 7 of [plan 12](12-after-v1.md)
 
@@ -422,3 +422,33 @@ and `convert-real-world-specs` (18.7):
 ## Decisions log
 
 _(append here)_
+- 18.1 `history-testid-attribute`: the attribute travels as
+  `Request::testid_attribute` beside `root`, and both are now
+  process-wide rather than thread-local, since `test` runs its jobs on
+  threads of their own. `stable.ts` keeps writing an attribute other than
+  `data-testid` as `css=[data-test="…"]`: that locator replays whatever
+  the config says, and the candidate is found only with the attribute.
+- 18.1 `runner-context-leftovers`: outputs go straight into the test's
+  (or hook's, or try's) artifacts folder, not a subfolder, so their paths
+  are the ones report.md lists. A relative `state load` looks for a file
+  an earlier step wrote (the step's folder, the test's folder and its
+  `try-N`/`run-N` folders, newest first, then the file's `@before-all`
+  folder) before the current directory: that keeps `@before-all` →
+  `@before` hand-overs and an `@after` that leaves a file for the retry
+  working. Input paths (`upload`, a `state load` no step wrote) stay
+  relative to the current directory.
+- 18.1 `watch-data-files`: the data files are read off each prepared
+  step (its `${data:…}` variables, relative to the step's file, and a
+  literal `state load FILE`) when the watcher computes dependencies,
+  rather than recorded by `e2e::scenario::Vars` as it resolves: the
+  runner resolves `data:` at run time, after the watcher has its list.
+- 18.1 `secrets-in-screenshots`: before `failure.png` and each `--trace`
+  screenshot an isolated-world script marks inputs and text areas whose
+  whole value is a secret, compared by length and FNV-1a hash so the
+  secret is never in the script, and the screenshot masks
+  `css=[data-chrome-cdp-secret]`. Partial values and iframes are not
+  covered (a note).
+- 18.1 `lint-after-load-errors`: `e2e::scenario::read` returns the
+  scenario with its errors; a `@test` with problems keeps what was right.
+  `no-expect` is left out for a file with load errors, whose missing
+  steps may hold the `expect`. A syntax error still stops its file.

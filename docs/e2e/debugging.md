@@ -12,7 +12,7 @@ its `tests` glob starts in, `<test>` its name as a slug):
 
 | File | What |
 |---|---|
-| `steps.jsonl` | One JSON object per step, the runner's setup included: `n`, `start_ms`, `duration_ms`, `at` (`file:line:col`), `command`, `hook`, `ok`, `output`, `warnings`, `error`, and with `--trace` a `screenshot` |
+| `steps.jsonl` | One JSON object per step, the runner's setup included: `n`, `start_ms`, `duration_ms`, `at` (`file:line:col`), `command`, `hook`, `ok`, `output`, `warnings`, `error`, and with `--trace` a `screenshot` (and `masked`: how many fields holding a secret it paints over) |
 | `requests.txt` | Every request of every tab: method, status, URL, type, time, and the mock (or route) that answered it, or the set it went unmatched in |
 | `console.txt` | The console of every tab |
 | `failure.png` | A failed test: the page when it failed (before `@after`) |
