@@ -1,0 +1,8 @@
+# Healing (plan 18.2): crates/chrome-cdp/tests/e2e.rs runs it once on
+# ?v=1 for the fingerprints, then on the redesigned ?v=2.
+
+@test "buys a ticket"
+  goto /e2e/heal.html?v=${var:heal_version}
+  fill 'label="Name"' Ada
+  click 'role=button[name="Buy ticket"]'
+  expect role=status text 'Bought for Ada'

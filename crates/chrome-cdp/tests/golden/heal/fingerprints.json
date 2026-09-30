@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "tests": {
+    "buys a ticket": {
+      "6:label=\"Name\"": {
+        "role": "textbox",
+        "name": "Name",
+        "tag": "input",
+        "testid": "name",
+        "label": "Name",
+        "classes": [
+          "input"
+        ],
+        "container": {
+          "role": "form",
+          "name": "Order"
+        },
+        "index": 0,
+        "page": "/e2e/heal.html",
+        "candidates": [
+          "role=textbox[name=\"Name\"]",
+          "label=\"Name\"",
+          "testid=name"
+        ]
+      },
+      "7:role=button[name=\"Buy ticket\"]": {
+        "role": "button",
+        "name": "Buy ticket",
+        "tag": "button",
+        "type": "button",
+        "testid": "buy",
+        "text": "Buy ticket",
+        "classes": [
+          "button",
+          "primary"
+        ],
+        "container": {
+          "role": "form",
+          "name": "Order"
+        },
+        "index": 0,
+        "page": "/e2e/heal.html",
+        "candidates": [
+          "role=button[name=\"Buy ticket\"]",
+          "testid=buy",
+          "text=\"Buy ticket\""
+        ]
+      },
+      "8:role=status": {
+        "role": "status",
+        "tag": "p",
+        "text": "Bought for Ada",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/e2e/heal.html",
+        "candidates": [
+          "text=\"Bought for Ada\""
+        ]
+      }
+    }
+  }
+}

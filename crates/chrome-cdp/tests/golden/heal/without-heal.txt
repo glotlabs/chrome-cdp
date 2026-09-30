@@ -1,0 +1,11 @@
+running 1 test from 1 file, 1 at once
+✗ scenarios/heal/tickets.cdp:4 buys a ticket (<t>)
+    failed at scenarios/heal/tickets.cdp:6:3: fill 'label="Name"' Ada
+    error: no element matches label="Name"
+      waited: <t>
+      likely the same element now: role=textbox[name="Full name"] (confidence 0.84: same testid, role, container and tag; similar name)
+      hint: run it with --heal to use it (chrome-cdp test scenarios/heal/tickets.cdp:4 --heal), or change the locator
+    report: <root>/e2e/.results/scenarios/heal/tickets.cdp/buys-a-ticket/report.md
+1 test: 0 passed, 1 failed (<t>)
+failure reports:
+  <root>/e2e/.results/scenarios/heal/tickets.cdp/buys-a-ticket/report.md

@@ -1,0 +1,11 @@
+--- a/scenarios/heal/tickets.cdp
++++ b/scenarios/heal/tickets.cdp
+@@ -3,6 +3,6 @@
+ 
+ @test "buys a ticket"
+   goto /e2e/heal.html?v=${var:heal_version}
+-  fill 'label="Name"' Ada
+-  click 'role=button[name="Buy ticket"]'
++  fill 'role=textbox[name="Full name"]' Ada
++  click 'role=button[name="Buy tickets now"]'
+   expect role=status text 'Bought for Ada'

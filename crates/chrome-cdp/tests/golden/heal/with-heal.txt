@@ -1,0 +1,6 @@
+running 1 test from 1 file, 1 at once
+✓ scenarios/heal/tickets.cdp:4 buys a ticket (<t>)
+    healed scenarios/heal/tickets.cdp:6: label="Name" -> role=textbox[name="Full name"] (0.84: same testid, role, container and tag; similar name)
+    healed scenarios/heal/tickets.cdp:7: role=button[name="Buy ticket"] -> role=button[name="Buy tickets now"] (0.84: same testid, role, container and tag; similar name)
+heal.patch: <root>/e2e/.results/heal.patch (2 locators; --heal --write applies it)
+1 test: 1 passed (<t>)

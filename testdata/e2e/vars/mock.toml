@@ -1,3 +1,5 @@
 # ${var:…} of every backend; a backend's own vars file goes on top.
 first_todo = "Buy milk"
 price = 49
+# The version of /e2e/heal.html (scenarios/heal).
+heal_version = 1

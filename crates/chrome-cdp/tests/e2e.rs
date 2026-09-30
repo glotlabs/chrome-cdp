@@ -1773,3 +1773,89 @@ fn record_mocks_writes_a_set_per_passed_test() {
         stderr(&out)
     );
 }
+
+/// Compares `actual` with golden file `heal/<name>`, or writes it with
+/// UPDATE_GOLDEN=1.
+fn golden(name: &str, actual: &str) {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden/heal")
+        .join(name);
+    if std::env::var_os("UPDATE_GOLDEN").is_some_and(|v| !v.is_empty() && v != "0") {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, actual).unwrap();
+        return;
+    }
+    let expected = std::fs::read_to_string(&path).unwrap_or_default();
+    assert_eq!(
+        expected, actual,
+        "golden/heal/{name} differs (UPDATE_GOLDEN=1 accepts it)"
+    );
+}
+
+/// `text` without what changes from run to run: the project's path,
+/// durations and the fixture site's origin.
+fn steady(text: &str, root: &Path) -> String {
+    let text = text
+        .replace(&root.display().to_string(), "<root>")
+        .replace(Fixtures::shared().a(), "<site>");
+    let durations = regex::Regex::new(r"\b\d+(\.\d+)?(ms|s)\b").unwrap();
+    let tabs = regex::Regex::new(r"\bt\d+\b").unwrap();
+    let text = durations.replace_all(&text, "<t>");
+    tabs.replace_all(&text, "<tab>").into_owned()
+}
+
+/// Plan 18.2: a passed run leaves fingerprints; on the redesigned page
+/// the failure names the element each broken locator's fingerprint
+/// matches, and --heal runs the steps with them and writes the patch.
+#[test]
+fn a_redesigned_page_is_healed() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let run = |args: &[&str]| {
+        common::run(
+            project
+                .sandbox
+                .cli()
+                .current_dir(&project.root)
+                .env_remove("CI")
+                .args(["test", "scenarios/heal", "--timeout", "2s"])
+                .args(args),
+        )
+    };
+    assert_eq!(run(&[]).status.code(), Some(0));
+    let fingerprints = project
+        .root
+        .join("e2e/fingerprints/scenarios/heal/tickets.json");
+    let taken = std::fs::read_to_string(&fingerprints).unwrap();
+    golden("fingerprints.json", &taken);
+
+    let vars = project.root.join("vars/mock.toml");
+    let text = std::fs::read_to_string(&vars).unwrap();
+    std::fs::write(&vars, text.replace("heal_version = 1", "heal_version = 2")).unwrap();
+    let out = run(&[]);
+    assert_eq!(out.status.code(), Some(1));
+    golden("without-heal.txt", &steady(&stdout(&out), &project.root));
+    let report = project
+        .root
+        .join("e2e/.results/scenarios/heal/tickets.cdp/buys-a-ticket/report.md");
+    let report = std::fs::read_to_string(report).unwrap();
+    let from = report.find("# Failed").unwrap();
+    let to = report.find("\n## Page").unwrap();
+    golden("report.md", &steady(&report[from..to], &project.root));
+
+    let out = run(&["--heal"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+    golden("with-heal.txt", &steady(&stdout(&out), &project.root));
+    let patch = std::fs::read_to_string(project.root.join("e2e/.results/heal.patch")).unwrap();
+    golden("heal.patch", &patch);
+    let steps = std::fs::read_to_string(
+        project
+            .root
+            .join("e2e/.results/scenarios/heal/tickets.cdp/buys-a-ticket/steps.jsonl"),
+    )
+    .unwrap();
+    assert_eq!(steps.matches("\"healed\":{").count(), 2, "{steps}");
+    // Healed, the test passed: its fingerprints are the new elements', under
+    // the old keys until the file changes.
+    assert_ne!(std::fs::read_to_string(&fingerprints).unwrap(), taken);
+}

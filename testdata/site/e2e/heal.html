@@ -1,0 +1,34 @@
+<!doctype html>
+<!-- The page `test --heal` is tested on (plan 18.2): ?v=1 is the page the
+     fingerprints were taken of; ?v=2 is its redesign, with another label,
+     another button text and new classes, the test ids kept. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tickets</title>
+</head>
+<body>
+<main id="app"></main>
+<script>
+  const v2 = new URLSearchParams(location.search).get('v') === '2';
+  const app = document.getElementById('app');
+  app.innerHTML = v2
+    ? `<h1>Tickets</h1>
+       <form aria-label="Order">
+         <label>Full name <input data-testid="name" class="field field--wide"></label>
+         <button type="button" data-testid="buy" class="btn btn--primary css-9x8y7z">Buy tickets now</button>
+       </form>
+       <p role="status"></p>`
+    : `<h1>Tickets</h1>
+       <form aria-label="Order">
+         <label>Name <input data-testid="name" class="input"></label>
+         <button type="button" data-testid="buy" class="button primary">Buy ticket</button>
+       </form>
+       <p role="status"></p>`;
+  document.querySelector('button').addEventListener('click', () => {
+    document.querySelector('[role=status]').textContent =
+      'Bought for ' + document.querySelector('input').value;
+  });
+</script>
+</body>
+</html>
