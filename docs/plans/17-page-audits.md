@@ -533,3 +533,12 @@ _(append here)_
   --audit`, not a failure. `--min-severity`, `--baseline`, `--update` and
   `--dir` of `expect` are shared with `--no-issues` and `--layout` and
   checked by hand (clap's `requires` does not see a flag's absence).
+- Close-out: every criterion checked against the code and the tests
+  (`issues`, `audit`, `perf`, `a11y` engine tests; `golden`, `cli`,
+  `e2e`, `lint`), then the whole workspace's tests. Fixed: `console`
+  findings now name their script and line in `target.source`, as
+  `issues`' findings do; the parity summary counts `audit`'s row; the
+  fixture index links `issues/`, `a11y/` and `audit/`; `fmt`'s test
+  expects the message that names audit baselines. Grouping
+  one element's findings from several categories (§17.4, "may") is not
+  done; the report stays one line per finding.
