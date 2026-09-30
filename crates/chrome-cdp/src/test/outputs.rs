@@ -29,15 +29,15 @@ pub(super) fn resolve(cli: &mut crate::cli::Cli, dir: &Path, reads: &[PathBuf]) 
         Some(Command::Explore(args)) => args.output.as_mut(),
         Some(Command::Har(args)) => match &mut args.command {
             HarCommand::Stop(args) => args.output.as_mut(),
-            _ => None,
+            HarCommand::Start(_) => None,
         },
         Some(Command::Trace(args)) => match &mut args.command {
             TraceCommand::Stop(args) => args.output.as_mut(),
-            _ => None,
+            TraceCommand::Start(_) => None,
         },
         Some(Command::Clipboard(args)) => match &mut args.command {
             ClipboardCommand::Read(args) => args.output.as_mut(),
-            _ => None,
+            ClipboardCommand::Write(_) => None,
         },
         Some(Command::Network(args)) => match &mut args.command {
             Some(NetworkCommand::Show(args)) => args.output.as_mut(),

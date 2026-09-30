@@ -174,14 +174,16 @@ impl Client {
         let mut request = Request::new(id, method, params).in_context(self.context.clone());
         if method != rpc::HELLO {
             request.line = LINE.with(|line| line.borrow_mut().take());
-            request.root = ROOT
-                .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone();
-            request.testid_attribute = TESTID_ATTRIBUTE
-                .read()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone();
+            request.root.clone_from(
+                &ROOT
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+            );
+            request.testid_attribute.clone_from(
+                &TESTID_ATTRIBUTE
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+            );
         }
         let mut line = serde_json::to_vec(&request).unwrap_or_default();
         line.push(b'\n');

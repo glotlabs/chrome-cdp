@@ -246,13 +246,18 @@ fn data_files(step: &super::plan::Prepared, artifacts: &Path) -> Vec<PathBuf> {
         .line
         .words
         .iter()
-        .flat_map(|w| w.vars())
+        .flat_map(protocol::script::Word::vars)
         .filter_map(|v| match &v.var {
             protocol::script::Var::Data { file, .. } => Some(absolute(&step.vars.dir.join(file))),
             _ => None,
         })
         .collect();
-    let words: Vec<Option<String>> = step.line.words.iter().map(|w| w.literal()).collect();
+    let words: Vec<Option<String>> = step
+        .line
+        .words
+        .iter()
+        .map(protocol::script::Word::literal)
+        .collect();
     if let [Some(state), Some(load), Some(file), ..] = words.as_slice()
         && state == "state"
         && load == "load"

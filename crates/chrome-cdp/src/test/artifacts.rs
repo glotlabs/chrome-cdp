@@ -270,7 +270,7 @@ fn secret_fields(invoke: &Invoke<'_>) -> usize {
     }
     let keys: Vec<String> = secrets.iter().map(|s| secret_key(s)).collect();
     let script = format!(
-        r#"(() => {{
+        r"(() => {{
   const keys = new Set({keys});
   const key = (v) => {{
     let h = 0x811c9dc5;
@@ -291,7 +291,7 @@ fn secret_fields(invoke: &Invoke<'_>) -> usize {
   }};
   walk(document);
   return n;
-}})()"#,
+}})()",
         keys = serde_json::to_string(&keys).unwrap_or_else(|_| "[]".to_owned()),
     );
     invoke(&["eval", "--world", "isolated", &script])
