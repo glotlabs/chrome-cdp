@@ -224,8 +224,9 @@ function fill(field: Field, el: Element, role: string) {
     if (el.multiple) {
       field.multiple = true;
       field.selected = selected;
+    } else {
+      field.value = shownValue(selected[0] || '');
     }
-    field.value = shownValue(selected[0] || '');
     if (el.value === '') field.empty = true;
     return;
   }
@@ -253,7 +254,7 @@ function fill(field: Field, el: Element, role: string) {
     listed(field, options.map(([, n]) => n));
     field.selected = options.filter(([o]) => attr(o, 'aria-selected') === 'true').map(([, n]) => n);
     if (aria('aria-multiselectable')) field.multiple = true;
-    field.value = shownValue(field.selected[0] || '');
+    else if (field.selected.length) field.value = shownValue(field.selected[0]);
     if (!field.selected.length) field.empty = true;
     return;
   }

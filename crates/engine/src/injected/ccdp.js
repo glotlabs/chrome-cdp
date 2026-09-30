@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 6a67cd390fb5d7a4
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 7360fcf94514e655
 "use strict";
 (() => {
   // src/dom.ts
@@ -3170,8 +3170,9 @@ ${inner}
       if (el.multiple) {
         field2.multiple = true;
         field2.selected = selected;
+      } else {
+        field2.value = shownValue(selected[0] || "");
       }
-      field2.value = shownValue(selected[0] || "");
       if (el.value === "") field2.empty = true;
       return;
     }
@@ -3196,7 +3197,7 @@ ${inner}
       listed(field2, options.map(([, n]) => n));
       field2.selected = options.filter(([o]) => attr(o, "aria-selected") === "true").map(([, n]) => n);
       if (aria("aria-multiselectable")) field2.multiple = true;
-      field2.value = shownValue(field2.selected[0] || "");
+      else if (field2.selected.length) field2.value = shownValue(field2.selected[0]);
       if (!field2.selected.length) field2.empty = true;
       return;
     }
