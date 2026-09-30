@@ -921,6 +921,63 @@ impl Tabs {
         .await;
     }
 
+    /// The session of the service worker of extension `id`, while it
+    /// runs.
+    pub(crate) fn extension_worker(&self, id: &str) -> Option<Session> {
+        let origin = format!("{EXTENSION_SCHEME}{id}");
+        let state = self.shared.lock();
+        state
+            .targets
+            .values()
+            .find(|t| {
+                t.kind == TargetKind::ServiceWorker
+                    && t.parent.is_none()
+                    && worker_origin(&t.url).as_deref() == Some(origin.as_str())
+            })
+            .map(|t| t.session.clone())
+    }
+
+    /// The ready tabs showing a page of extension `id`, by id.
+    pub(crate) fn extension_tabs(&self, id: &str) -> Vec<u32> {
+        let origin = format!("{EXTENSION_SCHEME}{id}");
+        let state = self.shared.lock();
+        state
+            .tabs
+            .iter()
+            .filter(|(_, t)| t.ready && worker_origin(&t.url).as_deref() == Some(origin.as_str()))
+            .map(|(&id, _)| id)
+            .collect()
+    }
+
+    /// Waits up to `timeout` for a tab not in `before` to show a page of
+    /// extension `id` (its popup); its id.
+    pub(crate) async fn wait_for_extension_tab(
+        &self,
+        id: &str,
+        before: &[u32],
+        timeout: Duration,
+    ) -> Option<u32> {
+        let origin = format!("{EXTENSION_SCHEME}{id}");
+        let found = |state: &State| {
+            state
+                .tabs
+                .iter()
+                .find(|&(id, t)| {
+                    t.ready
+                        && !before.contains(id)
+                        && worker_origin(&t.url).as_deref() == Some(origin.as_str())
+                })
+                .map(|(&id, _)| id)
+        };
+        let mut tab = None;
+        self.wait(timeout, |state| {
+            tab = found(state);
+            tab.is_some()
+        })
+        .await;
+        tab
+    }
+
     /// Updates every tab's URL and title from Chrome.
     pub(crate) async fn refresh(&self, timeout: Duration) -> cdp::Result<()> {
         let targets = self
@@ -1651,12 +1708,30 @@ impl State {
                 .iter()
                 .filter(|&(&id, tab)| {
                     self.in_scope(id, target.scope.as_deref())
-                        && tab.frames.list().iter().any(|f| {
-                            crate::state::origin_of(&f.url).as_deref() == Some(origin.as_str())
-                        })
+                        && tab
+                            .frames
+                            .list()
+                            .iter()
+                            .any(|f| worker_origin(&f.url).as_deref() == Some(origin.as_str()))
                 })
                 .map(|(&id, _)| id)
                 .collect(),
+        }
+    }
+
+    /// The tabs whose console gets `target`'s: those it belongs to, or
+    /// for an extension's worker, every tab of its scope, since an
+    /// extension works on every page (its requests stay with the tabs of
+    /// its own pages, so they hold no other page's `--idle` wait).
+    fn console_tabs_of(&self, target: &Target) -> Vec<u32> {
+        match &target.owner {
+            Owner::Origin { origin } if origin.starts_with(EXTENSION_SCHEME) => self
+                .tabs
+                .keys()
+                .copied()
+                .filter(|&id| self.in_scope(id, target.scope.as_deref()))
+                .collect(),
+            _ => self.tabs_of(target),
         }
     }
 
@@ -1808,6 +1883,20 @@ fn document_gone(err: &cdp::CdpError) -> bool {
             || message.starts_with("Inspected target navigated or closed"))
 }
 
+/// The scheme of an extension's pages and workers.
+const EXTENSION_SCHEME: &str = "chrome-extension://";
+
+/// The origin a shared or service worker at `url` belongs to, and that a
+/// frame at `url` is on for it: a web origin, or an extension's
+/// (`chrome-extension://<id>`).
+fn worker_origin(url: &str) -> Option<String> {
+    if let Some(rest) = url.strip_prefix(EXTENSION_SCHEME) {
+        let id = rest.split(['/', '?', '#']).next().unwrap_or_default();
+        return (!id.is_empty()).then(|| format!("{EXTENSION_SCHEME}{id}"));
+    }
+    crate::state::origin_of(url)
+}
+
 /// Whether a target is a tab: a page, not a prerender or other special
 /// kind.
 fn is_tab(info: &target::TargetInfo) -> bool {
@@ -1838,6 +1927,7 @@ async fn watch_browser(shared: Arc<Shared>, mut events: LosslessEventStream) {
             target::TargetInfoChanged::NAME => {
                 if let Ok(changed) = decode::<target::TargetInfoChanged>(&event) {
                     shared.lock().update(&changed.target_info);
+                    became_page(&shared, &changed.target_info);
                 }
             }
             browser::DownloadWillBegin::NAME => downloads::will_begin(&shared, &event),
@@ -2088,7 +2178,7 @@ fn worker_console_event(shared: &Shared, session_id: &str, event: &RawEvent) {
     target.events += 1;
     let once =
         (target.kind != TargetKind::DedicatedWorker).then(|| (target.id.clone(), target.events));
-    let tabs = state.tabs_of(&state.targets[session_id]);
+    let tabs = state.console_tabs_of(&state.targets[session_id]);
     if tabs.is_empty() && is_logged(event) {
         state.dropped += 1;
     }
@@ -2238,8 +2328,9 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent<'_>) {
     };
     let owner = match kind {
         // Shared by the tabs of its scope on its origin.
-        TargetKind::SharedWorker | TargetKind::ServiceWorker => crate::state::origin_of(&info.url)
-            .map_or(Owner::None, |origin| Owner::Origin { origin }),
+        TargetKind::SharedWorker | TargetKind::ServiceWorker => {
+            worker_origin(&info.url).map_or(Owner::None, |origin| Owner::Origin { origin })
+        }
         _ => tab.map_or(Owner::None, Owner::Tab),
     };
     // Before auto-attach and the domains are turned on for it, so no
@@ -2404,6 +2495,49 @@ fn front_after_popup(shared: &Shared, id: u32) -> Option<Session> {
     }?;
     let front = state.tabs.get(&front)?;
     (front.target_id != popup.target_id).then(|| front.session.clone())
+}
+
+/// A target the browser session attached to as `other` became a page: an
+/// extension's popup (`extensions popup`), which Chrome announces before it
+/// knows what it is. It was only resumed, so attach to it again: the new
+/// session is announced as a page and becomes a tab. What its scripts
+/// logged before that is not seen.
+fn became_page(shared: &Arc<Shared>, info: &target::TargetInfo) {
+    if !is_tab(info) {
+        return;
+    }
+    let session_id = {
+        let mut state = shared.lock();
+        let Some(session_id) = state
+            .targets
+            .iter()
+            .find(|(_, t)| {
+                t.id == info.target_id && t.kind == TargetKind::Other && t.parent.is_none()
+            })
+            .map(|(id, _)| id.clone())
+        else {
+            return;
+        };
+        state.forget_target(&session_id);
+        session_id
+    };
+    tracing::debug!(url = %info.url, "attaching again to {}, now a page", info.target_id);
+    let browser = shared.conn.browser().with_timeout(SETUP_TIMEOUT);
+    let target_id = info.target_id.clone();
+    shared.spawn(async move {
+        let detach = target::DetachFromTargetParams {
+            session_id: Some(session_id),
+            target_id: None,
+        };
+        if let Err(e) = browser.call(detach).await {
+            tracing::debug!("detaching from {target_id} failed: {e}");
+        }
+        let mut attach = target::AttachToTargetParams::new(target_id.clone());
+        attach.flatten = Some(true);
+        if let Err(e) = browser.call(attach).await {
+            tracing::debug!("attaching again to {target_id} failed: {e}");
+        }
+    });
 }
 
 /// Target `target_id` is gone: forget it, and its tab if it is one.
@@ -2637,6 +2771,21 @@ mod tests {
         assert_eq!(state.tabs_of(&dedicated), [4]);
         dedicated.owner = Owner::None;
         assert!(state.tabs_of(&dedicated).is_empty());
+
+        // An extension's worker: its requests go to the tabs of its pages
+        // (none), its console to every tab of its scope.
+        let origin = super::worker_origin("chrome-extension://abc/background.js").unwrap();
+        assert_eq!(origin, "chrome-extension://abc");
+        let extension = worker(&origin, None);
+        assert!(state.tabs_of(&extension).is_empty());
+        assert_eq!(state.console_tabs_of(&extension), [1, 2, 4]);
+        assert_eq!(state.console_tabs_of(&worker("http://a.test", None)), [1]);
+        assert_eq!(
+            super::worker_origin("chrome-extension://abc/popup.html?x#y").as_deref(),
+            Some("chrome-extension://abc")
+        );
+        assert_eq!(super::worker_origin("chrome-extension://"), None);
+        assert_eq!(super::worker_origin("about:blank"), None);
     }
 
     /// A target that goes takes the targets it announced with it.

@@ -724,6 +724,56 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<ClipboardWriteData>),
     },
     CommandSchema {
+        name: "extensions",
+        summary: "the unpacked extensions the browser has loaded",
+        schema: || schema_for!(Envelope<ExtensionsData>),
+    },
+    CommandSchema {
+        name: "extensions load",
+        summary: "the extension loaded, and every loaded one",
+        schema: || schema_for!(Envelope<ExtensionsData>),
+    },
+    CommandSchema {
+        name: "extensions reload",
+        summary: "the extension reloaded from its directory, and every loaded one",
+        schema: || schema_for!(Envelope<ExtensionsData>),
+    },
+    CommandSchema {
+        name: "extensions uninstall",
+        summary: "the extension uninstalled, and the ones left",
+        schema: || schema_for!(Envelope<ExtensionsData>),
+    },
+    CommandSchema {
+        name: "extensions popup",
+        summary: "the extension whose action ran, and the tab of its popup",
+        schema: || schema_for!(Envelope<ExtensionPopupData>),
+    },
+    CommandSchema {
+        name: "extensions storage",
+        summary: "the items in an extension's chrome.storage area",
+        schema: || schema_for!(Envelope<ExtensionStorageData>),
+    },
+    CommandSchema {
+        name: "extensions storage get",
+        summary: "the items in an extension's chrome.storage area, or those of some keys",
+        schema: || schema_for!(Envelope<ExtensionStorageData>),
+    },
+    CommandSchema {
+        name: "extensions storage set",
+        summary: "the items in an extension's chrome.storage area, after merging some in",
+        schema: || schema_for!(Envelope<ExtensionStorageData>),
+    },
+    CommandSchema {
+        name: "extensions storage remove",
+        summary: "the items in an extension's chrome.storage area, after removing some keys",
+        schema: || schema_for!(Envelope<ExtensionStorageData>),
+    },
+    CommandSchema {
+        name: "extensions storage clear",
+        summary: "the items in an extension's chrome.storage area (none), after clearing it",
+        schema: || schema_for!(Envelope<ExtensionStorageData>),
+    },
+    CommandSchema {
         name: "batch",
         summary: "one line per step: its place, its command, and that command's envelope",
         schema: || schema_for!(StepLine),
@@ -1162,7 +1212,7 @@ pub struct BrowserInfo {
     pub endpoint: Option<String>,
 }
 
-/// An unpacked extension `open --extension` loaded.
+/// An unpacked extension (`open --extension`, `extensions load`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ExtensionInfo {
     /// Its id, the host of its pages: `chrome-extension://<id>/…`.
@@ -3149,6 +3199,43 @@ pub struct ClipboardWriteData {
     /// The types of the item written, e.g. `["text/html", "text/plain"]`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub types: Vec<String>,
+}
+
+/// `data` of `chrome-cdp extensions --json`, and of `extensions load`,
+/// `reload` and `uninstall`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExtensionsData {
+    /// The extension the command loaded, reloaded or uninstalled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extension: Option<ExtensionInfo>,
+    /// The unpacked extensions loaded now (after the command).
+    pub extensions: Vec<ExtensionInfo>,
+}
+
+/// `data` of `chrome-cdp extensions popup --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExtensionPopupData {
+    pub extension: ExtensionInfo,
+    /// The tab the action ran on, e.g. `t1`.
+    pub tab: String,
+    /// The tab of the popup it opened, e.g. `t2`; none for an action
+    /// without a popup.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub popup: Option<String>,
+    /// The popup's URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+/// `data` of `chrome-cdp extensions storage --json` and its subcommands.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ExtensionStorageData {
+    pub extension: ExtensionInfo,
+    /// The storage area: `local`, `sync`, `session` or `managed`.
+    pub area: String,
+    /// The items: those of the keys asked for (`get KEY…`), else all the
+    /// area holds after the command.
+    pub items: serde_json::Map<String, Value>,
 }
 
 /// `data` of `chrome-cdp tabs --json`.

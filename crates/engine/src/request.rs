@@ -2523,3 +2523,82 @@ mod tests {
         assert!(Margins::parse("1cm,1cm,1cm,1cm,1cm").is_err());
     }
 }
+
+/// What `extensions` does. An extension is named by its id or its name.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExtensionsOp {
+    /// `extensions`: the unpacked extensions loaded.
+    List,
+    /// `extensions load <DIR>`: loads an unpacked extension (an absolute
+    /// path).
+    Load { dir: PathBuf },
+    /// `extensions reload <ID|NAME>`: loads it again from its directory.
+    Reload { extension: String },
+    /// `extensions uninstall <ID|NAME>`.
+    Uninstall { extension: String },
+    /// `extensions popup <ID|NAME>`: runs its action on the tab (`--tab`,
+    /// else the active one), which opens its popup if it has one.
+    Popup { extension: String },
+    /// `extensions storage <ID|NAME> [get|set|remove|clear]`: its
+    /// `chrome.storage`.
+    Storage {
+        extension: String,
+        area: ExtensionStorageArea,
+        op: ExtensionStorageOp,
+    },
+}
+
+/// A `chrome.storage` area (`extensions storage --area`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExtensionStorageArea {
+    #[default]
+    Local,
+    Sync,
+    Session,
+    /// Set by policy; read-only.
+    Managed,
+}
+
+impl ExtensionStorageArea {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Local => "local",
+            Self::Sync => "sync",
+            Self::Session => "session",
+            Self::Managed => "managed",
+        }
+    }
+}
+
+/// What `extensions storage` does to the area.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExtensionStorageOp {
+    /// `get [KEY...]`: the items of `keys`, or every item without.
+    Get {
+        #[serde(default)]
+        keys: Vec<String>,
+    },
+    /// `set <JSON>`: merges the object's items into the area.
+    Set { values: Map<String, Value> },
+    /// `remove <KEY...>`.
+    Remove { keys: Vec<String> },
+    /// `clear`: removes every item.
+    Clear,
+}
+
+/// `extensions` and its subcommands.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExtensionsRequest {
+    pub op: ExtensionsOp,
+    /// `--tab`: the tab `popup` runs the action on; the active one if
+    /// `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    #[serde(default)]
+    pub max_chars: usize,
+}
