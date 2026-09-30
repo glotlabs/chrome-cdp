@@ -1,0 +1,43 @@
+$ chrome-cdp text
+exit: 0
+--- stdout
+Checkout
+
+Before the frames.
+
+[iframe "same"]
+Payment details
+Pay now
+[/iframe]
+
+[iframe <site-b>/read/frame.html]
+Payment details
+Pay now
+[/iframe]
+
+After the frames.
+
+$ chrome-cdp text --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"tab":"t1","texts":["Checkout\n\nBefore the frames.\n\n[iframe \"same\"]\nPayment details\nPay now\n[/iframe]\n\n[iframe <site-b>/read/frame.html]\nPayment details\nPay now\n[/iframe]\n\nAfter the frames."]}}
+
+$ chrome-cdp text -q
+exit: 0
+--- stdout
+Checkout
+
+Before the frames.
+
+[iframe "same"]
+Payment details
+Pay now
+[/iframe]
+
+[iframe <site-b>/read/frame.html]
+Payment details
+Pay now
+[/iframe]
+
+After the frames.
+

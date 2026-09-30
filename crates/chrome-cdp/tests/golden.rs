@@ -1000,6 +1000,12 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/read/index.html"),
     },
     Case {
+        name: "text-frames",
+        args: &["text"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/read/framed.html"),
+    },
+    Case {
         name: "html",
         args: &["html", "#checkout", "--outer"],
         modes: ALL,
@@ -1079,6 +1085,12 @@ const CASES: &[Case] = &[
         args: &["markdown"],
         modes: ALL,
         fixture: Fixture::SessionAt("/read/article.html"),
+    },
+    Case {
+        name: "markdown-frames",
+        args: &["markdown"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/read/framed.html"),
     },
     Case {
         name: "count-no-locator",

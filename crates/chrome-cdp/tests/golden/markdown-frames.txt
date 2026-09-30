@@ -1,0 +1,39 @@
+$ chrome-cdp markdown
+exit: 0
+--- stdout
+# Checkout
+
+Before the frames.
+
+[iframe "same"]
+## Payment details
+[/iframe]
+
+[iframe <site-b>/read/frame.html]
+## Payment details
+[/iframe]
+
+After the frames.
+
+$ chrome-cdp markdown --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"markdown":"# Checkout\n\nBefore the frames.\n\n[iframe \"same\"]\n## Payment details\n[/iframe]\n\n[iframe <site-b>/read/frame.html]\n## Payment details\n[/iframe]\n\nAfter the frames.","source":"main","tab":"t1","title":"Framed article","url":"<site>/read/framed.html"}}
+
+$ chrome-cdp markdown -q
+exit: 0
+--- stdout
+# Checkout
+
+Before the frames.
+
+[iframe "same"]
+## Payment details
+[/iframe]
+
+[iframe <site-b>/read/frame.html]
+## Payment details
+[/iframe]
+
+After the frames.
+

@@ -21,8 +21,10 @@ Without a locator, the main content: a single <main> (or role=main), else
 a single <article>, else the element that holds the most paragraph text;
 navigation, sidebars and footers inside it are left out. Headings, lists,
 links (relative on the page's origin), images, code, quotes and tables are
-kept; controls are not. A locator that names a frame reads that frame's
-main content. Needs a running session.
+kept; controls are not. An iframe in the main content shows its frame's
+main content where it sits, between [iframe "name"] (or its URL) and
+[/iframe] lines. A locator that names a frame reads that frame's main
+content. Needs a running session.
 
 Examples:
   chrome-cdp markdown

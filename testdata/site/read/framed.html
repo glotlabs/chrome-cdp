@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Framed article</title>
+<style>iframe { width: 300px; height: 100px; display: block; }</style>
+<main>
+  <h1>Checkout</h1>
+  <p>Before the frames.</p>
+  <iframe name="same" title="Same" src="/read/frame.html"></iframe>
+  <iframe title="Other" src="{{ORIGIN_B}}/read/frame.html?from=framed"></iframe>
+  <iframe name="hidden" title="Hidden" src="/read/frame.html" style="display: none"></iframe>
+  <p>After the frames.</p>
+</main>

@@ -9,7 +9,10 @@
 //! element and fail with `Ambiguous` otherwise. `text`, `html` and
 //! `markdown` read the page without a locator, and a frame's document
 //! when the locator names only a frame (`frame=payment`, an iframe's
-//! ref).
+//! ref). Without a locator, `text` and `markdown` put each visible
+//! iframe's content where its `<iframe>` sits ([`frames`]).
+
+mod frames;
 
 use std::fmt::Write as _;
 use std::time::Duration;
@@ -26,6 +29,8 @@ use crate::locator::{Called, FrameOnly, LocateOptions, Locator, Want};
 use crate::request::{Read, ReadRequest, millis};
 use crate::tabs::{Page, tab_name};
 use crate::{Engine, Running};
+
+use self::frames::FramesRead;
 
 /// Checks a read request's arguments (its locator, and that the commands
 /// that need one have it) without a browser, so the CLI can fail before
@@ -260,15 +265,39 @@ impl Reader<'_> {
         }
     }
 
+    /// The page's own read, with its iframes (see [`frames`]).
+    async fn page_read(&self, function: &str, field: Option<&str>) -> Result<Called, ErrorInfo> {
+        let read = FramesRead { function, field };
+        let value = self
+            .engine
+            .read_frames(self.running, self.page, &read, self.timeout)
+            .await?;
+        Ok(Called {
+            value,
+            note: None,
+            frame: String::new(),
+        })
+    }
+
     async fn text(&self) -> Result<Output, ErrorInfo> {
-        let called = self
-            .call(
+        let called = if self.locator.is_some() {
+            self.call(
                 Want::All,
                 FrameOnly::Document,
                 "function () { return this.map((el) => ({ text: globalThis.__ccdp.text(el),\n\
                  visible: el instanceof Document || globalThis.__ccdp.visible(el) })); }",
             )
-            .await?;
+            .await?
+        } else {
+            let mut called = self
+                .page_read(
+                    "function (owners) { return globalThis.__ccdp.text(this, owners); }",
+                    None,
+                )
+                .await?;
+            called.value = serde_json::json!([{ "text": called.value, "visible": true }]);
+            called
+        };
         let shown: Vec<Shown> = parse(&called.value)?;
         if let Some(locator) = self.locator
             && shown.is_empty()
@@ -508,13 +537,21 @@ impl Reader<'_> {
     }
 
     async fn markdown(&self) -> Result<Output, ErrorInfo> {
-        let called = self
-            .call_one(
+        let called = if self.locator.is_some() {
+            self.call_one(
                 FrameOnly::Document,
                 "function () { const r = globalThis.__ccdp.markdown(this);\n\
                  return { ...r, url: location.href, title: document.title }; }",
             )
-            .await?;
+            .await?
+        } else {
+            self.page_read(
+                "function (owners) { const r = globalThis.__ccdp.markdown(this, owners);\n\
+                 return { ...r, url: location.href, title: document.title }; }",
+                Some("markdown"),
+            )
+            .await?
+        };
         let readable: Readable = parse(&called.value)?;
         let data = MarkdownData {
             tab: self.tab(),

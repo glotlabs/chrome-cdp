@@ -16,6 +16,7 @@ use tokio::task::AbortHandle;
 
 use super::targets::{Target, TargetKind};
 use super::{Shared, State, Tabs, lock};
+use crate::frames::iframe_label;
 
 /// One event a [`Tap`] heard.
 #[derive(Debug)]
@@ -163,8 +164,9 @@ fn name(state: &State, tab: u32, session_id: &str) -> Option<String> {
                 .get(&tab)
                 .and_then(|t| t.frames.list().into_iter().find(|f| f.id == target.id));
             match frame {
-                Some(frame) if !frame.name.is_empty() => format!("iframe {:?}", frame.name),
-                Some(frame) if !frame.url.is_empty() => format!("iframe {}", short(&frame.url)),
+                Some(frame) if !frame.name.is_empty() || !frame.url.is_empty() => {
+                    iframe_label(&frame)
+                }
                 _ => format!("iframe {}", short(&target.url)),
             }
         }

@@ -490,6 +490,19 @@ impl FrameTree {
     }
 }
 
+/// What output calls an iframe: `iframe "pay"` (its name), or `iframe
+/// https://b.test/pay` (its URL without the query) when it has none.
+pub(crate) fn iframe_label(frame: &FrameInfo) -> String {
+    if frame.name.is_empty() {
+        format!(
+            "iframe {}",
+            frame.url.split(['?', '#']).next().unwrap_or_default()
+        )
+    } else {
+        format!("iframe {:?}", frame.name)
+    }
+}
+
 /// A frame's URL with its fragment; for Chrome's error page, the URL that
 /// failed to load (as the address bar shows it).
 fn full_url(frame: &page::Frame) -> String {

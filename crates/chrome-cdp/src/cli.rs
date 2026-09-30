@@ -667,9 +667,11 @@ Examples:
     #[command(after_help = "\
 The rendered text (innerText): hidden content left out, runs of spaces
 collapsed, lines trimmed, at most one empty line in a row. With a locator
-that matches several elements, one text per match, in page order. A
+that matches several elements, one text per match, in page order. Without
+a locator, each visible iframe's text (cross-site ones too) is where its
+<iframe> sits, between [iframe \"name\"] (or its URL) and [/iframe] lines. A
 locator that names a frame (frame=payment, or an iframe's ref) reads that
-frame's document. Needs a running session.
+frame's document only. Needs a running session.
 
 Examples:
   chrome-cdp text
@@ -751,8 +753,10 @@ Without a locator, the main content: a single <main> (or role=main), else
 a single <article>, else the element that holds the most paragraph text;
 navigation, sidebars and footers inside it are left out. Headings, lists,
 links (relative on the page's origin), images, code, quotes and tables are
-kept; controls are not. A locator that names a frame reads that frame's
-main content. Needs a running session.
+kept; controls are not. An iframe in the main content shows its frame's
+main content where it sits, between [iframe \"name\"] (or its URL) and
+[/iframe] lines. A locator that names a frame reads that frame's main
+content. Needs a running session.
 
 Examples:
   chrome-cdp markdown

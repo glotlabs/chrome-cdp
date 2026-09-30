@@ -151,9 +151,15 @@ async fn text_reads_what_is_shown() {
     assert!(text.contains("Inside the shadow"), "{text}");
     assert!(!text.contains("Secret"), "{text}");
     assert!(!text.contains("Cherries"), "{text}");
+    // Each iframe's text is where its <iframe> is, read in its own
+    // document (the second one's is out of process).
     assert!(
-        !text.contains("Pay now"),
-        "iframes are their own documents: {text}"
+        text.ends_with(
+            "Box\n\nFar\n\n\
+             [iframe \"same\"]\nPayment details\nPay now\n[/iframe]\n\n\
+             [iframe \"other\"]\nPayment details\nPay now\n[/iframe]"
+        ),
+        "{text}"
     );
 
     let (intro, _): (TextData, _) = data(&engine, Read::Text, Some("#intro")).await;
@@ -399,6 +405,33 @@ async fn markdown_reads_the_main_content() {
     assert!(!cart.markdown.contains("Email"), "{}", cart.markdown);
     let (frame, _): (MarkdownData, _) = data(&engine, Read::Markdown, Some("frame=same")).await;
     assert_eq!(frame.markdown, "## Payment details");
+
+    // Iframes in the main content are read where they sit: by name, or by
+    // URL without a name; a hidden one is left out.
+    goto(&engine, &site.url("/read/framed.html")).await;
+    let (framed, _): (MarkdownData, _) = data(&engine, Read::Markdown, None).await;
+    assert_eq!(framed.source, "main");
+    assert_eq!(
+        framed.markdown,
+        format!(
+            "# Checkout\n\nBefore the frames.\n\n\
+             [iframe \"same\"]\n## Payment details\n[/iframe]\n\n\
+             [iframe {}/read/frame.html]\n## Payment details\n[/iframe]\n\n\
+             After the frames.",
+            site.b()
+        )
+    );
+    let (framed, _): (TextData, _) = data(&engine, Read::Text, None).await;
+    assert_eq!(
+        framed.texts,
+        [format!(
+            "Checkout\n\nBefore the frames.\n\n\
+             [iframe \"same\"]\nPayment details\nPay now\n[/iframe]\n\n\
+             [iframe {}/read/frame.html]\nPayment details\nPay now\n[/iframe]\n\n\
+             After the frames.",
+            site.b()
+        )]
+    );
     engine.close().await;
 }
 

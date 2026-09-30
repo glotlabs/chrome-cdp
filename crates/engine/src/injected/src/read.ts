@@ -17,19 +17,35 @@ export function tidy(text: string): string {
     .trim();
 }
 
+/** Where a child frame's content goes in what `text` and `markdown`
+ * return: `\u0000` and the frame's index in `owners`. The engine puts the
+ * frame's own text there. */
+export const frameMark = (i: number): string => `\u0000${i}\u0000`;
+
+/** The index in `owners` of `el` if it is one of them and shown. */
+function ownerIndex(el: Element, owners: Element[]): number {
+  if (!owners.length) return -1;
+  const i = owners.indexOf(el);
+  return i >= 0 && visible(el) ? i : -1;
+}
+
 /** `text`: the element's (or the document body's) rendered text
  * (`innerText`), tidied; empty when it is not rendered. `innerText` does
  * not reach into shadow roots, so the elements around open shadow roots
- * are walked here, and the rest read with `innerText`. */
-export function text(node: Element | Document): string {
+ * are walked here, and the rest read with `innerText`. Each of `owners`
+ * (the `<iframe>`s of child frames) that shows gets a line with its
+ * [`frameMark`]. */
+export function text(node: Element | Document, owners: Element[] = []): string {
   const el = node instanceof Document ? node.body || node.documentElement : node;
   if (!el) return '';
   if (!(el instanceof HTMLElement)) return tidy(el.textContent || '');
   if (!visible(el)) return '';
   const around = new Set<Element>();
-  for (const d of descendants(el)) {
-    if (!d.shadowRoot) continue;
+  const mark = (d: Element) => {
     for (let a: Element | null = d; a && !around.has(a); a = a === el ? null : parentOf(a)) around.add(a);
+  };
+  for (const d of descendants(el)) {
+    if (d.shadowRoot || ownerIndex(d, owners) >= 0) mark(d);
   }
   if (!around.size) return tidy(el.innerText);
   let out = '';
@@ -40,6 +56,11 @@ export function text(node: Element | Document): string {
         continue;
       }
       if (!(child instanceof HTMLElement) || SKIP.has(tag(child))) continue;
+      const frame = ownerIndex(child, owners);
+      if (frame >= 0) {
+        out += `\n${frameMark(frame)}\n`;
+        continue;
+      }
       const style = getComputedStyle(child);
       if (style.display === 'none') continue;
       const block = style.display !== 'contents' && !style.display.startsWith('inline');
@@ -241,11 +262,12 @@ export interface Readable {
 /** `markdown`: `el`'s content as Markdown; for the document, its main
  * content (a single `<main>` or `[role=main]`, else a single `<article>`,
  * else the element that holds the most paragraph text), without page
- * furniture. */
-export function markdown(el: Element | Document): Readable {
+ * furniture. Each of `owners` (the `<iframe>`s of child frames) that
+ * shows is a block with its [`frameMark`]. */
+export function markdown(el: Element | Document, owners: Element[] = []): Readable {
   const readable = el instanceof Document;
   const root = el instanceof Document ? mainContent() : el;
-  const md = new Markdown(readable);
+  const md = new Markdown(readable, owners);
   const blocks: string[] = [];
   md.blocks(root, blocks);
   return { markdown: blocks.join('\n\n').replace(/\n{3,}/g, '\n\n').trim(), source: describeEl(root) };
@@ -294,8 +316,11 @@ class Markdown {
   private base = location.href;
 
   /** `readable`: leave page furniture (navigation, sidebars, footers)
-   * out. */
-  constructor(private readable: boolean) {}
+   * out. `owners`: the `<iframe>`s whose frames' content goes in. */
+  constructor(
+    private readable: boolean,
+    private owners: Element[],
+  ) {}
 
   private display(el: Element): string {
     return (el.ownerDocument.defaultView as Window).getComputedStyle(el).display;
@@ -331,7 +356,14 @@ class Markdown {
         run += collapse((child as Text).data);
         continue;
       }
-      if (!(child instanceof Element) || !this.shown(child) || this.furniture(child)) continue;
+      if (!(child instanceof Element)) continue;
+      const frame = ownerIndex(child, this.owners);
+      if (frame >= 0) {
+        flush();
+        out.push(frameMark(frame));
+        continue;
+      }
+      if (!this.shown(child) || this.furniture(child)) continue;
       if (this.display(child) === 'contents') {
         flush();
         this.blocks(child, out);
@@ -446,7 +478,10 @@ class Markdown {
    * a line break. */
   private inline(node: Node): string {
     if (node.nodeType === Node.TEXT_NODE) return collapse((node as Text).data);
-    if (!(node instanceof Element) || !this.shown(node) || this.furniture(node)) return '';
+    if (!(node instanceof Element)) return '';
+    const frame = ownerIndex(node, this.owners);
+    if (frame >= 0) return `\n${frameMark(frame)}\n`;
+    if (!this.shown(node) || this.furniture(node)) return '';
     const name = tag(node);
     if (name === 'br') return '\n';
     if (name === 'img') {

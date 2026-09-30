@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 72f2f91dcadda2a3
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: e7d481aa07ef8f0e
 "use strict";
 (() => {
   // src/dom.ts
@@ -796,15 +796,23 @@
   function tidy(text2) {
     return text2.replace(/ /g, " ").split(/\r?\n/).map((line) => line.replace(/[ \t\f\v\r]+/g, " ").trim()).join("\n").replace(/\n{3,}/g, "\n\n").trim();
   }
-  function text(node) {
+  var frameMark = (i) => `\0${i}\0`;
+  function ownerIndex(el, owners) {
+    if (!owners.length) return -1;
+    const i = owners.indexOf(el);
+    return i >= 0 && visible(el) ? i : -1;
+  }
+  function text(node, owners = []) {
     const el = node instanceof Document ? node.body || node.documentElement : node;
     if (!el) return "";
     if (!(el instanceof HTMLElement)) return tidy(el.textContent || "");
     if (!visible(el)) return "";
     const around = /* @__PURE__ */ new Set();
-    for (const d of descendants(el)) {
-      if (!d.shadowRoot) continue;
+    const mark = (d) => {
       for (let a = d; a && !around.has(a); a = a === el ? null : parentOf(a)) around.add(a);
+    };
+    for (const d of descendants(el)) {
+      if (d.shadowRoot || ownerIndex(d, owners) >= 0) mark(d);
     }
     if (!around.size) return tidy(el.innerText);
     let out = "";
@@ -815,6 +823,13 @@
           continue;
         }
         if (!(child instanceof HTMLElement) || SKIP.has(tag(child))) continue;
+        const frame2 = ownerIndex(child, owners);
+        if (frame2 >= 0) {
+          out += `
+${frameMark(frame2)}
+`;
+          continue;
+        }
         const style = getComputedStyle(child);
         if (style.display === "none") continue;
         const block = style.display !== "contents" && !style.display.startsWith("inline");
@@ -996,10 +1011,10 @@
   var LIST_START = /^(?:- |\d+\. )/;
   var FURNITURE = /* @__PURE__ */ new Set(["nav", "aside", "footer"]);
   var FURNITURE_ROLES = /* @__PURE__ */ new Set(["navigation", "complementary", "contentinfo", "search"]);
-  function markdown(el) {
+  function markdown(el, owners = []) {
     const readable = el instanceof Document;
     const root = el instanceof Document ? mainContent() : el;
-    const md = new Markdown(readable);
+    const md = new Markdown(readable, owners);
     const blocks = [];
     md.blocks(root, blocks);
     return { markdown: blocks.join("\n\n").replace(/\n{3,}/g, "\n\n").trim(), source: describeEl(root) };
@@ -1041,11 +1056,13 @@
   }
   var Markdown = class {
     /** `readable`: leave page furniture (navigation, sidebars, footers)
-     * out. */
-    constructor(readable) {
+     * out. `owners`: the `<iframe>`s whose frames' content goes in. */
+    constructor(readable, owners) {
       this.readable = readable;
+      this.owners = owners;
     }
     readable;
+    owners;
     base = location.href;
     display(el) {
       return el.ownerDocument.defaultView.getComputedStyle(el).display;
@@ -1077,7 +1094,14 @@
           run += collapse(child.data);
           continue;
         }
-        if (!(child instanceof Element) || !this.shown(child) || this.furniture(child)) continue;
+        if (!(child instanceof Element)) continue;
+        const frame2 = ownerIndex(child, this.owners);
+        if (frame2 >= 0) {
+          flush();
+          out.push(frameMark(frame2));
+          continue;
+        }
+        if (!this.shown(child) || this.furniture(child)) continue;
         if (this.display(child) === "contents") {
           flush();
           this.blocks(child, out);
@@ -1184,7 +1208,12 @@
      * a line break. */
     inline(node) {
       if (node.nodeType === Node.TEXT_NODE) return collapse(node.data);
-      if (!(node instanceof Element) || !this.shown(node) || this.furniture(node)) return "";
+      if (!(node instanceof Element)) return "";
+      const frame2 = ownerIndex(node, this.owners);
+      if (frame2 >= 0) return `
+${frameMark(frame2)}
+`;
+      if (!this.shown(node) || this.furniture(node)) return "";
       const name = tag(node);
       if (name === "br") return "\n";
       if (name === "img") {

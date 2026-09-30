@@ -25,6 +25,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use crate::Engine;
 use crate::context::Scoped as _;
 use crate::errors::from_cdp;
+use crate::frames::iframe_label;
 use crate::request::{CoverageStartRequest, CoverageStopRequest, millis};
 use crate::tabs::coverage::Sheet;
 use crate::tabs::tab_name;
@@ -181,11 +182,7 @@ fn place_label(file: &CoverageFile, frames: &[FrameInfo]) -> Option<String> {
     }
     let id = file.frame.as_deref()?;
     Some(match frames.iter().find(|f| f.id == id) {
-        Some(frame) if !frame.name.is_empty() => format!("[iframe {:?}]", frame.name),
-        Some(frame) => {
-            let url = frame.url.split(['?', '#']).next().unwrap_or_default();
-            format!("[iframe {url}]")
-        }
+        Some(frame) => format!("[{}]", iframe_label(frame)),
         None => "[iframe, gone]".to_owned(),
     })
 }
