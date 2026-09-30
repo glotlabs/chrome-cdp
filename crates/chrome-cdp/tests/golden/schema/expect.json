@@ -831,6 +831,11 @@
           },
           "type": "array"
         },
+        "from_start": {
+          "default": true,
+          "description": "Whether chrome-cdp watched the page from its start (as `perf`'s\n`from_start`). If not, INP counts only interactions of 104ms or\nmore.",
+          "type": "boolean"
+        },
         "throttling": {
           "$ref": "#/$defs/PerfThrottling",
           "description": "The network and CPU throttling (`throttle`, `cpu-throttle`)."

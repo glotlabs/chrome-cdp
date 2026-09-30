@@ -2358,6 +2358,10 @@ fn one() -> u64 {
     1
 }
 
+fn yes() -> bool {
+    true
+}
+
 /// `data` of `chrome-cdp route --json` and `chrome-cdp block --json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct RouteData {
@@ -4838,6 +4842,11 @@ pub struct ExpectPerf {
     pub budgets: Vec<PerfBudgetCheck>,
     /// The network and CPU throttling (`throttle`, `cpu-throttle`).
     pub throttling: PerfThrottling,
+    /// Whether chrome-cdp watched the page from its start (as `perf`'s
+    /// `from_start`). If not, INP counts only interactions of 104ms or
+    /// more.
+    #[serde(default = "yes")]
+    pub from_start: bool,
 }
 
 /// One budget of `expect --perf`.

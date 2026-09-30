@@ -458,6 +458,15 @@ pub(super) fn passed_line(perf: &ExpectPerf) -> String {
     )
 }
 
+/// The warning when an INP budget was checked on what chrome-cdp saw of a
+/// page it attached to after it loaded (as `perf` warns).
+pub(super) fn partial_inp(perf: &ExpectPerf) -> Option<&'static str> {
+    (!perf.from_start && perf.budgets.iter().any(|b| b.metric == "inp")).then_some(
+        "chrome-cdp attached after this page loaded, so INP counts only interactions of 104ms \
+         or more; reload for all of them",
+    )
+}
+
 /// The failure's `actual`: `1 budget over, 1 not measured (of 3)`.
 fn actual(results: &[(Budget, Measured, bool)]) -> String {
     let over = results
@@ -559,6 +568,7 @@ impl Engine {
                 })
                 .collect(),
             throttling: self.throttling()?,
+            from_start: data.from_start,
         };
         if results.iter().all(|(_, _, held)| *held) {
             let mut values = Map::new();
@@ -595,6 +605,9 @@ impl Engine {
         failed
             .notes
             .push(("throttling".into(), throttling_text(&perf.throttling)));
+        if let Some(warning) = partial_inp(&perf) {
+            failed.notes.push(("note".into(), warning.to_owned()));
+        }
         let no_interaction = results
             .iter()
             .any(|(b, m, held)| !held && b.metric == "inp" && m.value.is_none());

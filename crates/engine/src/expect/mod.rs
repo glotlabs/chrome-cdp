@@ -968,9 +968,12 @@ impl Engine {
             text.push('\n');
             text.push_str(&perf::passed_line(perf));
         }
-        let output = Output::typed(&data, text)
+        let mut output = Output::typed(&data, text)
             .quiet(passed.quiet)
             .limit(req.max_chars, "--max-chars 0 for all of it");
+        if let Some(warning) = data.perf.as_ref().and_then(perf::partial_inp) {
+            output = output.warning(warning);
+        }
         Ok(self.report_events(&running, mark, output, None).await)
     }
 

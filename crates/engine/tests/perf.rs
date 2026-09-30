@@ -245,6 +245,16 @@ async fn perf_of_a_page_loaded_before_attaching() {
     click(&engine, "#slow").await;
     let (_, data) = perf(&engine).await;
     assert!(data.inp.as_ref().unwrap().ms >= 250, "{:?}", data.inp);
+    // An INP budget on what was seen says it saw only the slow ones.
+    let (out, perf) = perf_passes(&engine, "inp<60s", false).await;
+    assert!(!perf.from_start);
+    assert!(
+        out.warnings.iter().any(|w| w.contains("104ms")),
+        "{:?}",
+        out.warnings
+    );
+    let (out, _) = perf_passes(&engine, "cls<1", false).await;
+    assert!(out.warnings.is_empty(), "{:?}", out.warnings);
     engine.close().await;
 }
 

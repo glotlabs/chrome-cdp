@@ -429,3 +429,6 @@ _(append here)_
 - 17.2: The LCP element's ref comes only when an `lcp` budget fails and
   the element is still in the document (`perf.js` keeps a `WeakRef` to
   it); `offline` shows as the network throttling.
+- 17.2: On a page chrome-cdp attached to after it loaded, an `inp` budget
+  passes or fails with `perf`'s warning (INP counts only interactions of
+  104ms or more); `ExpectPerf.from_start` says so.
