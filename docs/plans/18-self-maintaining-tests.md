@@ -1,6 +1,6 @@
 # Plan 18 — Tests that maintain themselves
 
-Status: IN PROGRESS (18.1 done)
+Status: IN PROGRESS (18.1-18.2 done)
 Depends on: 11 (the test runner, `history --as-scenario`, `mock record`), 13 (the target graph, for `record` in iframes)
 Roadmap: track 7 of [plan 12](12-after-v1.md)
 
@@ -381,15 +381,15 @@ and `convert-real-world-specs` (18.7):
 
 ## Acceptance criteria
 
-- [ ] Two runs of an unchanged e2e-shop suite write byte-identical
+- [x] Two runs of an unchanged e2e-shop suite write byte-identical
       fingerprint files.
-- [ ] Against the redesigned shop (18.2's fixture), `test --heal` passes
+- [x] Against the redesigned shop (18.2's fixture), `test --heal` passes
       every test whose element still exists, `heal.patch` fixes each
       broken locator, and after `--write` the suite passes without
       `--heal`.
-- [ ] The removed element is not healed: its test fails, with the
+- [x] The removed element is not healed: its test fails, with the
       closest candidate and its low confidence in report.md.
-- [ ] Without `--heal`, every broken locator's report.md names the
+- [x] Without `--heal`, every broken locator's report.md names the
       element it likely is now.
 - [ ] Each planted flake of 18.3 is diagnosed as its own cause, first
       in rank, with evidence naming the right request or element.
@@ -452,3 +452,62 @@ _(append here)_
   scenario with its errors; a `@test` with problems keeps what was right.
   `no-expect` is left out for a file with load errors, whose missing
   steps may hold the `expect`. A syntax error still stops its file.
+- 18.2 RPC: `Request::fingerprint` carries the step's locator (as the
+  runner expanded it) and `Response::fingerprint` the answer; the daemon
+  runs the call in `Engine::fingerprinting`, a task-local that
+  `locate_one` fills the first time the call resolves that locator to one
+  element (before an action acts). `expect` and `wait` resolve elements
+  another way, so a passed call without one gets it read after. The
+  client keeps the ask and the answer in thread-locals, like the history
+  line. The JSON field `type` is `kind` in Rust.
+- 18.2: the bundle reads features (`fingerprint.ts`: `fingerprint`,
+  `healCandidates` of the elements of the fingerprint's role or family,
+  tag, test id or id, `healStable`); the engine filters class names, makes
+  path templates and scores (`engine::fingerprint::score`), so those rules
+  have unit tests.
+- 18.2 weights, tuned on the redesign fixture: test id 2 (not 3: with 3,
+  a renamed test id with everything else equal scored 0.74, medium);
+  role 3, of one family 1.5; name 3 / similar 2; label, placeholder and
+  text 2 / similar 1.5, and not counted when equal to the name (a
+  button's text is its name); container 2; id 1; classes 1 × Jaccard;
+  tag and type 1 when both equal; index 0.5; another role capped at half
+  marks. Similar is not one 0.7 score (`Add to cart`/`Add to basket` is
+  0.69 by edit distance, 0.67 by words): edit similarity ≥ 0.7, or two
+  thirds of the longer's words in the shorter (a word counts at edit
+  similarity ≥ 0.8), or the shorter (3+ characters) as whole words of the
+  longer. On the fixture: 0.84 for a new text with the test id kept,
+  0.81 for a new test id, 0.24 for the removed link's closest.
+- 18.2 files: `e2e/fingerprints/<scenario below its tests glob's
+  folder>.json` (like the artifacts: `cart.cdp` is `cart.json`). Keys
+  drop the quotes around a word; a step of another file starts with that
+  file's path from the project root; the `@include` parameters in a key
+  are those the locator uses. Heal looks a key up in the test's object,
+  then in the file's other tests (a renamed test).
+- 18.2: only runs against the mocks write fingerprints (a real backend's
+  data changes), as baselines come from mock runs. `@before-all` and
+  `@after-all` steps get none (they belong to no test); `@before` and
+  `@after` count as each test's. A step has one fingerprint: `drag`'s is
+  its FROM's.
+- 18.2: matching looks in the frame the locator's `frame=` steps name,
+  else the main frame, and a match in an iframe gets its `frame=` step.
+  No iframe test yet (a note).
+- 18.2 patch: `similar`'s unified diff with 3 lines of context, paths
+  from the project root with `a/` and `b/` (`git apply` there). Changes
+  closer than that share a hunk: separate hunks would overlap, which
+  `patch` rejects. `--write` writes only when every change still applies
+  to every file. Without `--write`, a healed test's new fingerprint stays
+  under the old key, so the next run matches the new element at 1.0 until
+  the file changes.
+- 18.2: `--heal` with `fingerprints = "off"`, or with `--backend all`
+  (which reports several runs), is a usage error.
+- 18.2 `history-testid-locator-form`: heal and fingerprint locators run in
+  the project's `test`, where its `testid_attribute` holds, so they write
+  `testid=…` for any attribute; `history --as-scenario` keeps its form (the
+  note stays for it and 18.6's recorder).
+- 18.2 fixture: the shop's buttons got classes and test ids (a redesign
+  needs something to rename), and its fingerprints are committed. The
+  redesign is `testdata/heal/redesign.toml`: substitutions in a copy of the
+  shop's minified `dist/`, so its names are the committed build's; the
+  test names the substitution that stops applying after a rebuild.
+  `testdata/e2e/scenarios/heal` and `testdata/site/e2e/heal.html` back the
+  golden output (`crates/chrome-cdp/tests/golden/heal/`).
