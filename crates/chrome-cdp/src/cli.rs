@@ -390,6 +390,15 @@ reports mocks whose JSON shape drifted (--update fixes their data
 files); --record-mocks writes each passed test's requests as a mock set.
 A protected backend runs only @safe tests unless --allow-writes.
 
+Healing (docs/e2e/healing.md): a passed test keeps what the element each
+step's locator found looks like in e2e/fingerprints/ (commit it;
+[e2e] fingerprints = \"auto\" writes them unless CI is set). When a
+locator later finds nothing, the failure names the element that
+fingerprint matches best now, with its confidence. --heal runs the step
+with it when the match is high (--heal=medium: medium too), marks the
+step healed, and writes the passed tests' changes to heal.patch in the
+artifacts folder; --heal --write applies it to the scenario files.
+
 Scenario syntax (docs/e2e/scenarios.md):
   @mocks base checkout          # file settings: @mocks @tags @skip @only
   @before                       #   @timeout @viewport @device @retries
@@ -412,6 +421,8 @@ Examples:
   chrome-cdp test --reporter text,junit,html --trace
   chrome-cdp test --backend local              # against the real API
   chrome-cdp test --backend staging --verify-mocks
+  chrome-cdp test --heal       # after a redesign: heal broken locators
+  chrome-cdp test --heal --write   # and fix them in the files
   chrome-cdp test --list")]
     Test(TestArgs),
 
@@ -7394,6 +7405,24 @@ pub(crate) struct TestArgs {
     #[arg(long)]
     pub(crate) allow_writes: bool,
 
+    /// When a step's locator finds nothing, run it with the element its
+    /// fingerprint matches (high confidence; =medium: medium too), and
+    /// write the changes to heal.patch.
+    #[arg(
+        long,
+        value_enum,
+        value_name = "LEVEL",
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "high"
+    )]
+    pub(crate) heal: Option<HealLevelArg>,
+
+    /// With --heal: apply heal.patch to the scenario and step files after
+    /// the run.
+    #[arg(long, requires = "heal")]
+    pub(crate) write: bool,
+
     /// With a real backend: write each passed test's fetch and XHR
     /// requests as a mock set, recorded/<file>/<test> in the mocks
     /// directory (replacing an older one).
@@ -7403,6 +7432,15 @@ pub(crate) struct TestArgs {
     /// Bound the JSON output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 200_000, value_name = "N")]
     pub(crate) max_chars: usize,
+}
+
+/// `test --heal`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum HealLevelArg {
+    /// Only high-confidence matches (0.8 and up).
+    High,
+    /// Medium ones (0.6 and up) too.
+    Medium,
 }
 
 /// `test --jobs-isolation`.

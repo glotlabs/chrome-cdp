@@ -32,6 +32,8 @@ Options:
 - `--verify-mocks`: With a real backend: compare each answer with the mock that would have given it, and report the mocks whose JSON shape drifted
 - `--update`: With --verify-mocks: rewrite drifted JSON data files from the real answers, keeping the values whose shape still fits
 - `--allow-writes`: Run the tests not marked @safe on a protected backend too; `http` writes are then allowed in their steps
+- `--heal <LEVEL>`: When a step's locator finds nothing, run it with the element its fingerprint matches (high confidence; =medium: medium too), and write the changes to heal.patch (one of `high`, `medium`)
+- `--write`: With --heal: apply heal.patch to the scenario and step files after the run
 - `--record-mocks`: With a real backend: write each passed test's fetch and XHR requests as a mock set, recorded/&lt;file&gt;/&lt;test&gt; in the mocks directory (replacing an older one)
 - `--max-chars <N>`: Bound the JSON output to this many characters (0 = no limit) (default `200000`)
 
@@ -77,6 +79,15 @@ reports mocks whose JSON shape drifted (--update fixes their data
 files); --record-mocks writes each passed test's requests as a mock set.
 A protected backend runs only @safe tests unless --allow-writes.
 
+Healing (docs/e2e/healing.md): a passed test keeps what the element each
+step's locator found looks like in e2e/fingerprints/ (commit it;
+[e2e] fingerprints = "auto" writes them unless CI is set). When a
+locator later finds nothing, the failure names the element that
+fingerprint matches best now, with its confidence. --heal runs the step
+with it when the match is high (--heal=medium: medium too), marks the
+step healed, and writes the passed tests' changes to heal.patch in the
+artifacts folder; --heal --write applies it to the scenario files.
+
 Scenario syntax (docs/e2e/scenarios.md):
   @mocks base checkout          # file settings: @mocks @tags @skip @only
   @before                       #   @timeout @viewport @device @retries
@@ -99,6 +110,8 @@ Examples:
   chrome-cdp test --reporter text,junit,html --trace
   chrome-cdp test --backend local              # against the real API
   chrome-cdp test --backend staging --verify-mocks
+  chrome-cdp test --heal       # after a redesign: heal broken locators
+  chrome-cdp test --heal --write   # and fix them in the files
   chrome-cdp test --list
 ```
 

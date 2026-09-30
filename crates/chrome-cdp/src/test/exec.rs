@@ -39,7 +39,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use protocol::schema::{MockLogData, RoutedRequest, TestFailure};
+use protocol::schema::{HealCandidate, HealMatchData, MockLogData, RoutedRequest, TestFailure};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use serde_json::Value;
 
@@ -47,6 +47,8 @@ use e2e::scenario::Settings;
 
 use super::artifacts::{self, Capture, Logs, Recorder, StepRecord};
 use super::determinism;
+use super::fingerprints::{self, Taken};
+use super::heal::{self, Heal};
 use super::plan::{Plan, Planned, Prepared};
 use super::report_md::{self, Subject};
 use super::vars::{self, Resolver};
@@ -84,6 +86,8 @@ pub(super) struct Outcome {
     /// Its artifacts (its last try's; with `--repeat`, the first failed
     /// run's, else the first run's).
     pub(super) artifacts: Option<PathBuf>,
+    /// `--heal`: the steps its last try healed.
+    pub(super) healed: Vec<Heal>,
 }
 
 /// How a run's steps are made.
@@ -109,6 +113,16 @@ pub(super) struct Options {
     /// The `mock_server` of the web servers (plan 11.9), once started:
     /// each test gets a partition of its own, with its own sets.
     pub(super) mock_server: std::sync::OnceLock<e2e::mock_server::MockServer>,
+    /// The fingerprints the run reads (plan 18.2); `None` with
+    /// `fingerprints = "off"`.
+    pub(super) fingerprints: Option<fingerprints::Store>,
+    /// `--heal`: the lowest level of match it uses.
+    pub(super) heal: Option<heal::Level>,
+    /// What the steps of passed tests gave, by file (the plan's index),
+    /// then test name.
+    pub(super) taken: Mutex<BTreeMap<usize, BTreeMap<String, Taken>>>,
+    /// What reading the fingerprints warned about.
+    pub(super) fingerprint_warnings: Vec<String>,
 }
 
 /// The browser context `--debug` kept.
@@ -198,6 +212,7 @@ pub(super) fn execute(
                             failed_runs: None,
                             warnings: Vec::new(),
                             artifacts: None,
+                            healed: Vec::new(),
                         }
                     } else {
                         let runner = Runner {
@@ -213,6 +228,10 @@ pub(super) fn execute(
                             file_saved: RefCell::new(BTreeMap::new()),
                             http_log: RefCell::new(Vec::new()),
                             reads: RefCell::new(Vec::new()),
+                            current: RefCell::new(None),
+                            taken: RefCell::new(Vec::new()),
+                            healed: RefCell::new(Vec::new()),
+                            likely: RefCell::new(None),
                         };
                         let index = item / repeat;
                         let outcome = match runner.before_all(test, &before_all[test.file]) {
@@ -225,6 +244,7 @@ pub(super) fn execute(
                                 failed_runs: None,
                                 warnings: Vec::new(),
                                 artifacts: None,
+                                healed: Vec::new(),
                             },
                             Ok(()) => {
                                 runner.test(test, index, (repeat > 1).then_some(item % repeat + 1))
@@ -293,14 +313,16 @@ fn merge(mut runs: Vec<Outcome>, repeat: usize) -> Outcome {
     } else {
         Status::Passed
     };
-    let artifacts = runs
+    let shown = runs
         .iter()
         .find(|o| o.status == Status::Failed)
-        .or(runs.first())
-        .and_then(|o| o.artifacts.clone());
+        .or(runs.first());
+    let artifacts = shown.and_then(|o| o.artifacts.clone());
+    let healed = shown.map(|o| o.healed.clone()).unwrap_or_default();
     Outcome {
         status,
         artifacts,
+        healed,
         duration: runs.iter().map(|o| o.duration).max().unwrap_or_default(),
         tries: runs.iter().map(|o| o.tries).sum(),
         failure: runs.iter().find_map(|o| o.failure.clone()),
@@ -335,6 +357,7 @@ fn not_run(options: &Options) -> Outcome {
         failed_runs: None,
         warnings: Vec::new(),
         artifacts: None,
+        healed: Vec::new(),
     }
 }
 
@@ -362,6 +385,16 @@ struct Runner<'a> {
     /// Where a `state load` of the try looks for files earlier steps
     /// wrote, after its own artifacts folder ([`super::outputs`]).
     reads: RefCell<Vec<PathBuf>>,
+    /// The test running now, by file (the plan's index), name and
+    /// `file:line`; `None` in a file-wide hook, whose steps get no
+    /// fingerprints.
+    current: RefCell<Option<(usize, String, String)>>,
+    /// The fingerprints the try's steps gave.
+    taken: RefCell<Taken>,
+    /// The steps the try healed.
+    healed: RefCell<Vec<Heal>>,
+    /// The element a failed step's fingerprint matches now.
+    likely: RefCell<Option<HealCandidate>>,
 }
 
 /// A step's place in a test, for its failure.
@@ -392,10 +425,23 @@ impl Runner<'_> {
                 None if tries > 1 => Some(format!("try {attempt} of {tries}")),
                 None => None,
             };
+            *self.current.borrow_mut() = Some((test.file, test.name.clone(), self.test_span(test)));
+            self.taken.borrow_mut().clear();
+            self.healed.borrow_mut().clear();
             let result = self.attempt(test, index, &dir, label);
+            *self.current.borrow_mut() = None;
             let duration = started.elapsed();
             match result {
                 Ok(()) => {
+                    if self.options.fingerprints.is_some() {
+                        self.options
+                            .taken
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .entry(test.file)
+                            .or_default()
+                            .insert(test.name.clone(), self.taken.take());
+                    }
                     let status = if attempt == 1 {
                         Status::Passed
                     } else {
@@ -410,6 +456,7 @@ impl Runner<'_> {
                         failed_runs: None,
                         warnings: Vec::new(),
                         artifacts: Some(dir),
+                        healed: self.healed.take(),
                     };
                 }
                 Err(failure) if attempt == tries => {
@@ -422,6 +469,7 @@ impl Runner<'_> {
                         failed_runs: None,
                         warnings: Vec::new(),
                         artifacts: Some(dir),
+                        healed: self.healed.take(),
                     };
                 }
                 Err(failure) => {
@@ -758,7 +806,10 @@ impl Runner<'_> {
     ) -> Result<(), Box<TestFailure>> {
         for step in steps {
             let started = Instant::now();
+            let heals = self.healed.borrow().len();
+            self.likely.borrow_mut().take();
             let result = self.step(step, context, deadline, part);
+            let healed = self.healed.borrow().get(heals).cloned();
             let unmatched = self.unmatched(context);
             let result = match result {
                 Err(error) => Err(self.forget_session(with_unmatched(error, &unmatched))),
@@ -778,9 +829,12 @@ impl Runner<'_> {
                 result.as_ref(),
             );
             record.output = self.forget_session_in(&record.output);
+            record.healed = healed.map(|h| h.schema(None));
             self.record(record, started, Some(context));
             if let Err(error) = result {
-                return Err(failure(step, part, error));
+                let mut failure = failure(step, part, error);
+                failure.likely = self.likely.borrow_mut().take();
+                return Err(failure);
             }
         }
         Ok(())
@@ -956,19 +1010,27 @@ impl Runner<'_> {
             )),
             _ => None,
         };
-        super::project_baselines(
-            &mut cli,
-            &self.plan.config.root,
-            self.options.update_snapshots,
-        );
-        // Files the step writes go in the test's artifacts folder.
-        let dir = self.recorder.borrow().as_ref().map(|r| r.dir.clone());
-        if let Some(dir) = dir {
-            super::outputs::resolve(&mut cli, &dir, &self.reads.borrow());
-        }
+        self.prepare(&mut cli);
         let screenshot = matches!(cli.command, Some(Command::ExpectScreenshot(_)));
         let exit_on_finding = crate::exits_on_finding(&cli);
-        let out = crate::run(cli)?;
+        let target = if self.fingerprinted(part) {
+            fingerprints::target(&words)
+        } else {
+            None
+        };
+        let (result, taken) = run_fingerprinted(cli, target.as_ref().map(|t| t.locator.as_str()));
+        let out = match (result, &target) {
+            (Ok(out), Some(target)) => {
+                let key = self.key(step, target.word);
+                self.keep_fingerprint(key, taken);
+                out
+            }
+            (Ok(out), None) => out,
+            (Err(error), Some(target)) if Instant::now() < deadline => {
+                self.heal(step, &words, target, error, context, deadline, &global)?
+            }
+            (Err(error), _) => return Err(error),
+        };
         if exit_on_finding && crate::found(&out) {
             let message = if out.data["differs"] == true {
                 "the pages differ (--exit-code)"
@@ -999,6 +1061,153 @@ impl Runner<'_> {
         if Instant::now() > deadline {
             return Err(over());
         }
+        Ok(out)
+    }
+
+    /// Points a step's baselines and output files where the run keeps
+    /// them.
+    fn prepare(&self, cli: &mut crate::cli::Cli) {
+        super::project_baselines(cli, &self.plan.config.root, self.options.update_snapshots);
+        // Files the step writes go in the test's artifacts folder.
+        let dir = self.recorder.borrow().as_ref().map(|r| r.dir.clone());
+        if let Some(dir) = dir {
+            super::outputs::resolve(cli, &dir, &self.reads.borrow());
+        }
+    }
+
+    /// Whether steps of `part` get fingerprints: a test's own and its
+    /// `@before` and `@after` steps, unless `fingerprints = "off"`.
+    fn fingerprinted(&self, part: Part) -> bool {
+        self.options.fingerprints.is_some()
+            && self.current.borrow().is_some()
+            && matches!(part, Part::Test | Part::Hook("before" | "after"))
+    }
+
+    /// The fingerprint key of `step`'s word `word`.
+    fn key(&self, step: &Prepared, word: usize) -> String {
+        let file = self.current.borrow().as_ref().map_or(0, |c| c.0);
+        fingerprints::key(
+            step,
+            word,
+            &self.plan.scenarios[file],
+            &self.plan.config.root,
+        )
+    }
+
+    /// Keeps what a step gave for step key `key`, less secrets.
+    fn keep_fingerprint(&self, key: String, taken: Option<protocol::schema::Fingerprint>) {
+        let taken = taken.map(|mut fp| {
+            fingerprints::scrub(&mut fp, &crate::output::secret_values());
+            fp
+        });
+        self.taken.borrow_mut().push((key, taken));
+    }
+
+    /// A fingerprinted step (`words`, its `target` locator) failed with
+    /// `error`: when its locator finds no element now (or several), asks
+    /// which element its fingerprint matches, names it in the error, and
+    /// with `--heal` runs the step with it if the match is good enough.
+    #[allow(clippy::too_many_arguments)]
+    fn heal(
+        &self,
+        step: &Prepared,
+        words: &[String],
+        target: &fingerprints::Target,
+        error: ErrorInfo,
+        context: &str,
+        deadline: Instant,
+        global: &GlobalArgs,
+    ) -> Result<Output, ErrorInfo> {
+        let Some((file, test, place)) = self.current.borrow().clone() else {
+            return Err(error);
+        };
+        let key = self.key(step, target.word);
+        let stored = self
+            .options
+            .fingerprints
+            .as_ref()
+            .and_then(|store| store.get(file, &test, &key))
+            .cloned();
+        let Some(fingerprint) = stored else {
+            return Err(error);
+        };
+        let left = deadline
+            .saturating_duration_since(Instant::now())
+            .min(HEAL_WAIT);
+        let request = engine::HealMatchRequest {
+            tab: None,
+            locator: target.locator.clone(),
+            fingerprint,
+            testid_attribute: global.testid_attribute.clone(),
+            timeout_ms: u64::try_from(left.as_millis()).unwrap_or(u64::MAX),
+        };
+        let matched = crate::session::call_running(
+            &self.global(Some(context), Some(deadline)),
+            daemon::rpc::HEAL_MATCH,
+            &request,
+        )
+        .ok()
+        .and_then(|out| serde_json::from_value::<HealMatchData>(out.data).ok());
+        let Some(data) = matched else {
+            return Err(error);
+        };
+        if data.found == 1 {
+            // It finds its element: something else went wrong.
+            return Err(error);
+        }
+        let Some(best) = data.candidates.into_iter().next() else {
+            return Err(error.note("closest element now", "none like it"));
+        };
+        *self.likely.borrow_mut() = Some(best.clone());
+        let rerun = Cmd::new("test").arg(&place).to_string();
+        let level = self.options.heal;
+        let to = match &best.locator {
+            Some(to) if level.is_some_and(|l| l.accepts(&best.level)) && *to != target.locator => {
+                to.clone()
+            }
+            _ => return Err(heal::explain(error, &best, &rerun, level)),
+        };
+        let mut healed_words = words.to_vec();
+        healed_words[target.word].clone_from(&to);
+        let explained = heal::explain(error, &best, &rerun, level);
+        let mut cli = match script::command(&healed_words, global) {
+            Ok(cli) => cli,
+            Err(e) => return Err(explained.note("heal", e.message)),
+        };
+        self.prepare(&mut cli);
+        let (result, taken) = run_fingerprinted(cli, Some(&to));
+        let mut out = result.map_err(|e| {
+            explained.note(
+                "heal",
+                format!("with {to} the step failed too: {}", e.message),
+            )
+        })?;
+        let word = &step.line.words[target.word];
+        let literal = word.literal();
+        let new_key = match &literal {
+            Some(l) => format!("{}{to}", key.strip_suffix(l.as_str()).unwrap_or(&key)),
+            None => key.clone(),
+        };
+        let heal = Heal {
+            file: word.span.file.to_string(),
+            line: word.span.line,
+            start: word.span.start,
+            end: word.span.end,
+            raw: word.raw.clone(),
+            fixed: literal
+                .is_none()
+                .then(|| heal::fixed_reason(word, step.vars.include.as_deref())),
+            from: target.locator.clone(),
+            to,
+            key: key.clone(),
+            new_key,
+            confidence: best.confidence,
+            reasons: best.reasons,
+        };
+        out.warnings.push(format!("healed: {}", heal.line()));
+        self.likely.borrow_mut().take();
+        self.healed.borrow_mut().push(heal);
+        self.keep_fingerprint(key, taken);
         Ok(out)
     }
 
@@ -1304,6 +1513,25 @@ fn http_exchange(data: &Value, body: Option<String>, headers: &[String]) -> mock
         resource_type: "other".into(),
     }
 }
+
+/// Runs step `cli`, asking the daemon for the fingerprint of the element
+/// `locator` finds when given; the step's result and the fingerprint.
+fn run_fingerprinted(
+    cli: crate::cli::Cli,
+    locator: Option<&str>,
+) -> (
+    Result<Output, ErrorInfo>,
+    Option<protocol::schema::Fingerprint>,
+) {
+    daemon::client::ask_fingerprint(locator.map(str::to_owned));
+    let result = crate::run(cli);
+    let taken = daemon::client::take_fingerprint();
+    daemon::client::ask_fingerprint(None);
+    (result, taken)
+}
+
+/// How long asking which element a fingerprint matches may take.
+const HEAL_WAIT: Duration = Duration::from_secs(10);
 
 /// How long `@after` steps may run past the test's time limit, so a test
 /// that ran out of time still cleans up.

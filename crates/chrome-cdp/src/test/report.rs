@@ -52,6 +52,14 @@ pub(super) fn line(plan: &Plan, test: &Planned, outcome: &Outcome) -> String {
     for warning in &outcome.warnings {
         let _ = writeln!(text, "    warning: {warning}");
     }
+    for heal in &outcome.healed {
+        let suspect = if outcome.status == Status::Failed {
+            " (suspect: the test failed after it)"
+        } else {
+            ""
+        };
+        let _ = writeln!(text, "    healed {}{suspect}", heal.line());
+    }
     if let Some(failure) = &outcome.failure {
         let label = if outcome.status == Status::Flaky {
             "first try failed"

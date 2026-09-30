@@ -17,6 +17,8 @@ mod artifacts;
 mod backend;
 mod determinism;
 mod exec;
+mod fingerprints;
+mod heal;
 mod outputs;
 pub(crate) mod plan;
 mod record;
@@ -186,6 +188,15 @@ fn ready(plan: &Plan, args: &TestArgs, global: &GlobalArgs, mode: Mode) -> Resul
                 .why("lists the tests without --grep, --tags or --shard"),
         ));
     }
+    if args.heal.is_some() && !plan.config.fingerprints.read() {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            "--heal needs the fingerprints, and [e2e] has fingerprints = \"off\"",
+        )
+        .hint(Hint::text(
+            "set fingerprints = \"auto\" in [e2e], run the tests once so they pass, then heal",
+        )));
+    }
     if (args.verify_mocks || args.record_mocks) && !plan.real() {
         let flag = if args.verify_mocks {
             "--verify-mocks compares mocks with"
@@ -280,7 +291,20 @@ fn options(plan: &Plan, args: &TestArgs, global: &GlobalArgs, explicit_session: 
     {
         global.base_url = Some(url.clone());
     }
+    let mut fingerprint_warnings = Vec::new();
+    let fingerprints = plan
+        .config
+        .fingerprints
+        .read()
+        .then(|| fingerprints::Store::load(plan, &mut fingerprint_warnings));
     Options {
+        fingerprints,
+        heal: args.heal.map(|level| match level {
+            crate::cli::HealLevelArg::High => heal::Level::High,
+            crate::cli::HealLevelArg::Medium => heal::Level::Medium,
+        }),
+        taken: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+        fingerprint_warnings,
         global,
         sessions,
         update_snapshots: args.update_snapshots,
@@ -400,6 +424,9 @@ fn conclude(
     mode: Mode,
 ) -> u8 {
     let mut data = report::data(plan, outcomes, duration, args.shard.as_deref());
+    let (heal_data, heal_text, mut heal_warnings) =
+        healing(plan, args, outcomes, options, &mut data);
+    data.heal = heal_data;
     data.verify = options
         .verify
         .as_ref()
@@ -429,7 +456,8 @@ fn conclude(
     if let (Err(info), Some(debug)) = (&mut result, &data.debug) {
         *info = report::debugging(info.clone(), debug, servers_started);
     }
-    for warning in record_warnings {
+    heal_warnings.extend(options.fingerprint_warnings.iter().cloned());
+    for warning in record_warnings.into_iter().chain(heal_warnings) {
         result = match result {
             Ok(out) => Ok(out.warning(warning)),
             Err(info) => Err(info.note("warning", warning)),
@@ -455,10 +483,129 @@ fn conclude(
             };
         }
     }
+    if mode == Mode::Text && !heal_text.is_empty() {
+        output::stdout(&heal_text);
+    }
     if mode == Mode::Text && result.is_err() {
         output::stdout(&format!("{summary}\n{}", report::reports(&data)));
     }
     output::print(mode, result)
+}
+
+/// After the tests: `heal.patch` from the heals of the tests that passed
+/// (`--write` applies it), each test's heals in `data`, and the
+/// fingerprints of the passed tests written to their files. Returns the
+/// run's heal data, the text that says what it did, and warnings.
+fn healing(
+    plan: &Plan,
+    args: &TestArgs,
+    outcomes: &[Outcome],
+    options: &Options,
+    data: &mut protocol::schema::TestRunData,
+) -> (Option<protocol::schema::TestHealData>, String, Vec<String>) {
+    use exec::Status;
+    let mut warnings = Vec::new();
+    let tests: Vec<(usize, bool, &[heal::Heal])> = outcomes
+        .iter()
+        .enumerate()
+        .filter(|(_, o)| !o.healed.is_empty())
+        .map(|(i, o)| {
+            let passed = matches!(o.status, Status::Passed | Status::Flaky);
+            (i, passed, o.healed.as_slice())
+        })
+        .collect();
+    let planned = heal::plan(&tests, &plan.config.root);
+    for (i, outcome) in outcomes.iter().enumerate() {
+        if let Some(result) = data.tests.get_mut(i) {
+            result.healed = outcome
+                .healed
+                .iter()
+                .enumerate()
+                .map(|(n, h)| h.schema(planned.left_out.get(&(i, n)).cloned()))
+                .collect();
+        }
+    }
+    let path = plan.config.artifacts.join(heal::PATCH);
+    let files = if planned.changes.is_empty() {
+        Vec::new()
+    } else {
+        heal::apply(&planned.changes).unwrap_or_else(|why| {
+            warnings.push(format!("no heal.patch: {why}"));
+            Vec::new()
+        })
+    };
+    let mut patch = None;
+    if files.is_empty() {
+        let _ = std::fs::remove_file(&path);
+    } else {
+        let written = std::fs::create_dir_all(&plan.config.artifacts)
+            .and_then(|()| std::fs::write(&path, heal::diff(&files)));
+        match written {
+            Ok(()) => patch = Some(path.display().to_string()),
+            Err(e) => warnings.push(format!("cannot write {}: {e}", path.display())),
+        }
+    }
+    let mut written = Vec::new();
+    let mut renamed = std::collections::BTreeMap::new();
+    if args.write && !files.is_empty() {
+        for (file, _, _, new) in &files {
+            match std::fs::write(file, new) {
+                Ok(()) => written.push(file.display().to_string()),
+                Err(e) => warnings.push(format!("cannot write {}: {e}", file.display())),
+            }
+        }
+        if written.len() == files.len() {
+            for change in &planned.changes {
+                renamed.insert(change.key.clone(), change.new_key.clone());
+            }
+        }
+    }
+    let ci = std::env::var_os("CI").is_some_and(|v| !v.is_empty());
+    if plan.config.fingerprints.write(ci) {
+        let taken = options
+            .taken
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (_, problems) = fingerprints::write(plan, &taken, &renamed);
+        warnings.extend(problems);
+    }
+    let healed = tests.iter().map(|(_, _, h)| h.len()).sum::<usize>();
+    if healed == 0 && args.heal.is_none() {
+        return (None, String::new(), warnings);
+    }
+    let mut text = String::new();
+    let changes = planned.changes.len();
+    if !written.is_empty() {
+        let _ = writeln!(
+            text,
+            "healed {changes} locator{} in {}",
+            if changes == 1 { "" } else { "s" },
+            written.join(", ")
+        );
+    } else if let Some(patch) = &patch {
+        let _ = writeln!(
+            text,
+            "heal.patch: {patch} ({changes} locator{}; --heal --write applies it)",
+            if changes == 1 { "" } else { "s" }
+        );
+    } else if args.heal.is_some() {
+        text.push_str("nothing healed\n");
+    }
+    for ((i, n), why) in &planned.left_out {
+        if let Some(heal) = outcomes.get(*i).and_then(|o| o.healed.get(*n)) {
+            let _ = writeln!(
+                text,
+                "not in heal.patch: {}:{}: {why}; it should find {}",
+                heal.file, heal.line, heal.to
+            );
+        }
+    }
+    let data = protocol::schema::TestHealData {
+        patch,
+        changes,
+        written,
+    };
+    (Some(data), text, warnings)
 }
 
 /// The session `--debug` leaves a failed test's context open in.

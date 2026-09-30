@@ -91,6 +91,48 @@ pub(super) fn render(
         md.push_str("```\n");
     }
 
+    if let Some(likely) = &failure.likely {
+        md.push_str("\n## Likely the same element\n\n");
+        md.push_str(
+            "The step's locator finds no element now (or several). The element its \
+             fingerprint (e2e/fingerprints) matches best:\n\n",
+        );
+        let _ = writeln!(
+            md,
+            "    {}\n\nconfidence {:.2} ({}): {}.",
+            likely.locator.as_deref().unwrap_or(&likely.element),
+            likely.confidence,
+            likely.level,
+            super::heal::reasons_text(&likely.reasons)
+        );
+        md.push_str(match likely.level.as_str() {
+            "high" => "Run the test with --heal to use it, or change the locator.\n",
+            "medium" => "Run the test with --heal=medium to use it, or change the locator.\n",
+            _ => "Too low to heal: the element may be gone. Change the step.\n",
+        });
+    }
+    let healed: Vec<&protocol::schema::TestHeal> =
+        steps.iter().filter_map(|s| s.healed.as_ref()).collect();
+    if !healed.is_empty() {
+        md.push_str(
+            "\n## Healed steps\n\nThese steps' locators found nothing, and they ran with \
+             the element their fingerprint matched (--heal). The test failed after, so \
+             the heals are suspect, and heal.patch leaves them out.\n\n",
+        );
+        for h in healed {
+            let _ = writeln!(
+                md,
+                "- `{}:{}`: `{}` -> `{}` (confidence {:.2}: {})",
+                h.file,
+                h.line,
+                h.from,
+                h.to,
+                h.confidence,
+                super::heal::reasons_text(&h.reasons)
+            );
+        }
+    }
+
     md.push_str("\n## Page\n\n");
     match capture {
         None => md.push_str("Not captured: the failure came before a page was open.\n"),
@@ -382,6 +424,7 @@ mod tests {
             error: None,
             screenshot: None,
             masked: 0,
+            healed: None,
         }
     }
 

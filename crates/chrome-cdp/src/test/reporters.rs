@@ -524,6 +524,7 @@ mod tests {
             error: None,
             screenshot: Some("trace/001.png".into()),
             masked: 0,
+            healed: None,
         };
         std::fs::create_dir_all(dir.path().join("trace")).unwrap();
         std::fs::write(dir.path().join("trace/001.png"), b"png").unwrap();

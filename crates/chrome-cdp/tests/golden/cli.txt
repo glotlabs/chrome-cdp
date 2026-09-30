@@ -103,6 +103,8 @@ command chrome-cdp test
   flag --verify-mocks
   flag --update
   flag --allow-writes
+  flag --heal value=LEVEL values=high|medium
+  flag --write
   flag --record-mocks
   flag --max-chars value=N
 command chrome-cdp history

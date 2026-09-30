@@ -73,6 +73,9 @@ pub(super) struct StepRecord {
     /// paints over ([`secret_fields`]).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub(super) masked: usize,
+    /// `--heal`: its locator found nothing, and it ran with this one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) healed: Option<protocol::schema::TestHeal>,
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -112,6 +115,7 @@ impl StepRecord {
             error,
             screenshot: None,
             masked: 0,
+            healed: None,
         }
     }
 }
