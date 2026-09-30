@@ -1,6 +1,6 @@
 # Plan 17 — Page audits
 
-Status: IN PROGRESS (17.1 done)
+Status: IN PROGRESS (17.1-17.2 done)
 Depends on: 13 (the target graph: issues come from every target), 16
 §16.2 (`layout`, one of `audit`'s categories), 09 §9.1 (`expect`,
 `--a11y`), 06 (`perf`, `console`, `network`)
@@ -312,7 +312,7 @@ smoke scenario per page). Link it from `docs/README.md` and mention
       and ids for requests.
 - [x] Every `InspectorIssueCode` in the vendored protocol has a rule id,
       severity and message; an unknown code is shown, not dropped.
-- [ ] `expect --perf` parses every metric in the table with units, fails
+- [x] `expect --perf` parses every metric in the table with units, fails
       with every budget's measured value and the throttling, and treats a
       metric not measured yet as a failure with a hint.
 - [ ] The 14 new accessibility rules each flag exactly the failing
@@ -408,3 +408,24 @@ _(append here)_
   (`! issue: <rule> <message>`, at most 5, then a line with `issues
   --min-severity error`); `--json` has them as `issue` events
   (`Event::Issue`, boxed: it is the largest event).
+- 17.2: The budgets stay a string in `Expectation::Perf` (its f64 limits
+  would cost the enum `Eq`); `engine::check_perf_budgets` parses them on
+  the command line, and `script::step` does for `batch`, `run`, `test` and
+  `lint`, since clap only sees a string.
+- 17.2: `kb`, `mb` (and `gb`, added for heap budgets) are binary, as
+  chrome-cdp prints sizes (`12KB`); `b` is allowed too. A unit a metric
+  cannot have (`cls<1s`, `requests<1kb`) is a usage error. `good` may be
+  combined with other budgets (`good tbt<200`).
+- 17.2: The failure is the usual `ExpectFailed` notes, one per budget
+  (`lcp: 3120ms > 2500ms ✗ (element: img#hero [e4])`), not aligned
+  columns; the sign is how the value compares with the limit. `--json`
+  has every budget in `ExpectData.perf` on a pass and `details.perf` on a
+  failure.
+- 17.2: It reads after the next paint (two animation frames, at most
+  200ms): an image that arrives with `load` paints a frame later, and
+  only then is it the LCP. `perf` itself still reads at once.
+- 17.2: INP when the page had interactions but none of 16ms or more (what
+  the browser reports) counts as 16ms, shown as `under 16ms`.
+- 17.2: The LCP element's ref comes only when an `lcp` budget fails and
+  the element is still in the document (`perf.js` keeps a `WeakRef` to
+  it); `offline` shows as the network throttling.
