@@ -277,17 +277,22 @@ impl Engine {
 
 /// `--grep`'s pattern, or a usage error.
 fn grep_regex(pattern: &str) -> Result<Regex, ErrorInfo> {
+    regex_arg("--grep", pattern)
+}
+
+/// Flag `flag`'s regular expression, or a usage error.
+pub(crate) fn regex_arg(flag: &str, pattern: &str) -> Result<Regex, ErrorInfo> {
     Regex::new(pattern).map_err(|e| {
         let why = e.to_string();
         let why = why.lines().last().unwrap_or_default().trim();
         let why = why.strip_prefix("error: ").unwrap_or(why);
         ErrorInfo::new(
             ErrorKind::BadArgs,
-            format!("--grep {pattern:?} is not a regular expression: {why}"),
+            format!("{flag} {pattern:?} is not a regular expression: {why}"),
         )
-        .hint(Hint::text(
-            "escape special characters with \\, e.g. --grep 'fetch\\('",
-        ))
+        .hint(Hint::text(format!(
+            "escape special characters with \\, e.g. {flag} 'fetch\\('"
+        )))
     })
 }
 
@@ -410,7 +415,7 @@ pub(super) fn frame_line(frame: &StackFrame, page_origin: Option<&str>) -> Strin
 
 /// Adds `entry`'s lines to `text`: `#12 error uncaught TypeError: …`,
 /// its other lines indented, and for errors the stack (`    at …`).
-fn entry_text(text: &mut String, entry: &ConsoleEntry, page_origin: Option<&str>) {
+pub(crate) fn entry_text(text: &mut String, entry: &ConsoleEntry, page_origin: Option<&str>) {
     let mut message = entry.text.clone();
     format::cut(&mut message, SHOWN_TEXT);
     let mut lines = message.lines();

@@ -404,6 +404,7 @@ chrome-cdp open --init-script ./stubs.js localhost:3000   # the same, before the
 chrome-cdp init-script list                     # s1 main /home/me/app/stubs.js 2KB
 chrome-cdp init-script remove s1                # or --all
 chrome-cdp expose onCheckout                    # window.onCheckout(...) → console: binding onCheckout({"total":42})
+chrome-cdp wait --binding onCheckout            # until the page calls it (since the previous command began)
 chrome-cdp unexpose onCheckout                  # or --all
 ```
 

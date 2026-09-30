@@ -1,0 +1,13 @@
+$ chrome-cdp wait --console refunded --timeout 300ms
+exit: 3
+--- stderr
+error: waited 300ms for a console entry matching "refunded"
+  observed: no console entries since the previous command began
+  page: about:blank ""
+  hint: chrome-cdp wait --console refunded --timeout 600ms   (only entries since the previous command began count; run the action that logs it first)
+
+$ chrome-cdp wait --console refunded --timeout 300ms --json
+exit: 3
+--- stdout
+{"ok":false,"error":{"kind":"Timeout","message":"waited 300ms for a console entry matching \"refunded\"","hint":"chrome-cdp wait --console refunded --timeout 600ms   (only entries since the previous command began count; run the action that logs it first)","notes":[{"label":"observed","text":"no console entries since the previous command began"},{"label":"page","text":"about:blank \"\""}],"details":{"condition":"console","observed":{"entries":[]},"page":{"title":"","url":"about:blank"},"timeout_ms":300}}}
+

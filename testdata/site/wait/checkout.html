@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Checkout</title>
+<button id="pay" onclick="pay()">Pay</button>
+<button id="log" onclick="console.log('checkout done', 42)">Log</button>
+<script>
+  // `Pay` reports to the test through an exposed function (`expose
+  // onCheckout`) once its slow API answered: after ?after= ms (default
+  // 300).
+  const after = Number(new URLSearchParams(location.search).get('after') || 300);
+  function pay() {
+    setTimeout(() => {
+      console.info('paid');
+      window.onCheckout?.({ total: 42 }, 'EUR');
+    }, after);
+  }
+</script>

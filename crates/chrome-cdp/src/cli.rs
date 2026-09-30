@@ -489,6 +489,11 @@ Give exactly one condition. It is checked against the active tab (or
   --request, --response [--status]  since the previous command began
   --download          a download started since the previous command began
                       has finished (prints its path with -q)
+  --console <REGEX>   a console entry (any level or source) whose text or
+                      URL matches, logged since the previous command
+                      began; prints it as `console` does
+  --binding <NAME>    a call of a function `expose NAME` put in the page,
+                      since the previous command began
   <MS>                a fixed sleep, e.g. 500 or 2s (prefer a condition)
 
 Examples:
@@ -502,7 +507,9 @@ Examples:
   chrome-cdp wait --idle
   chrome-cdp wait --fn 'window.app && window.app.ready'
   chrome-cdp wait --response '**/api/save' --status 200
-  chrome-cdp wait --download")]
+  chrome-cdp wait --download
+  chrome-cdp wait --console 'checkout (done|failed)'
+  chrome-cdp wait --binding onCheckout      # after expose onCheckout")]
     Wait(WaitCmdArgs),
 
     /// Assert something about the page, retrying until it holds: an element's state, text, value, count, …
@@ -5598,7 +5605,8 @@ impl Wait {
             .required(true)
             .args([
                 "target", "load", "domcontentloaded", "idle", "settle", "text", "text_gone",
-                "url", "function", "request", "response", "download",
+                "url", "function", "request", "response", "download", "console",
+                "binding",
             ])
     )
 )]
@@ -5679,6 +5687,16 @@ pub(crate) struct WaitCmdArgs {
     /// A download, started since the previous command began, to finish.
     #[arg(long)]
     pub(crate) download: bool,
+
+    /// A console entry whose text or URL matches this regular
+    /// expression, logged since the previous command began.
+    #[arg(long, value_name = "REGEX")]
+    pub(crate) console: Option<String>,
+
+    /// A call of the function `expose NAME` put in the page, since the
+    /// previous command began.
+    #[arg(long, value_name = "NAME")]
+    pub(crate) binding: Option<String>,
 
     /// Bound the output (--fn's value) to this many characters (0 = no
     /// limit).

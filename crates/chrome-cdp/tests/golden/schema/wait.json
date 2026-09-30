@@ -30,6 +30,97 @@
       ],
       "type": "object"
     },
+    "ConsoleEntry": {
+      "description": "One console message, uncaught exception or browser message (a failed\nload, a CSP violation, an intervention).",
+      "properties": {
+        "column": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "kind": {
+          "description": "The `console` method (`log`, `error`, `table`, …), or for an\nexception `uncaught` or `uncaught (in promise)`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "level": {
+          "$ref": "#/$defs/Level"
+        },
+        "line": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "seq": {
+          "description": "Its place in the tab's console; later ones are larger\n(`--since <seq>`).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "source": {
+          "description": "`console` (a `console.*` call), `exception` (thrown, never\ncaught), or where Chrome's own message came from: `network`,\n`security`, `violation`, `intervention`, `deprecation`, …",
+          "type": "string"
+        },
+        "stack": {
+          "description": "The top of the stack (5 frames at most), innermost first.",
+          "items": {
+            "$ref": "#/$defs/StackFrame"
+          },
+          "type": "array"
+        },
+        "text": {
+          "description": "The message, its arguments formatted like DevTools does (objects\nfrom their preview).",
+          "type": "string"
+        },
+        "time_ms": {
+          "description": "When the daemon received it, in ms since the Unix epoch.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "description": "The script (or, for a failed load, the resource) it is about, with\nline and column (1-based).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "worker": {
+          "description": "The worker's script, for a message of a worker.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "worker_kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkerKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What kind of worker `worker` is. A shared or service worker's\nmessage is in each tab of its origin (plan 13)."
+        }
+      },
+      "required": [
+        "seq",
+        "time_ms",
+        "level",
+        "source",
+        "text"
+      ],
+      "type": "object"
+    },
     "DownloadInfo": {
       "description": "A file the browser downloaded (or is downloading) into the session's\n`downloads` directory.",
       "properties": {
@@ -554,6 +645,16 @@
         }
       ]
     },
+    "Level": {
+      "description": "How severe a console entry is, most severe first. `--level warn`\nshows `error` and `warn` entries.",
+      "enum": [
+        "error",
+        "warn",
+        "info",
+        "debug"
+      ],
+      "type": "string"
+    },
     "Note": {
       "description": "One labelled line of an error's text form.",
       "properties": {
@@ -641,6 +742,80 @@
       ],
       "type": "object"
     },
+    "SourcePosition": {
+      "description": "A place in an original source file, from a source map.",
+      "properties": {
+        "column": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "line": {
+          "description": "1-based.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "description": "The original name at that place, if the map has one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "The source file as the map names it, resolved against the map's\nURL (`http://localhost:5173/src/app.ts`) unless it has its own\nscheme (`webpack://app/./src/app.ts`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "line",
+        "column"
+      ],
+      "type": "object"
+    },
+    "StackFrame": {
+      "description": "One frame of a stack trace.",
+      "properties": {
+        "column": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "function": {
+          "description": "The function; empty at a script's top level.",
+          "type": "string"
+        },
+        "line": {
+          "description": "1-based.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "original": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourcePosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where it is in the original source, when a source map says so\n(`--sourcemaps`, on by default for localhost pages)."
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "function",
+        "url",
+        "line",
+        "column"
+      ],
+      "type": "object"
+    },
     "TruncatedKind": {
       "description": "What kind of value was shortened.",
       "oneOf": [
@@ -692,8 +867,19 @@
       "description": "`data` of `chrome-cdp wait --json`.",
       "properties": {
         "condition": {
-          "description": "What was waited for: `load`, `domcontentloaded`, `idle`, `settle`,\n`element`, `text`, `text_gone`, `url`, `fn`, `request`, `response`\nor `delay`.",
+          "description": "What was waited for: `load`, `domcontentloaded`, `idle`, `settle`,\n`element`, `text`, `text_gone`, `url`, `fn`, `request`, `response`,\n`delay`, `download`, `console` or `binding`.",
           "type": "string"
+        },
+        "console": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConsoleEntry"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`--console` and `--binding`: the entry that matched, as `console\n--json` shows it."
         },
         "count": {
           "description": "`wait <locator>`: how many elements matched.",

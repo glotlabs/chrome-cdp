@@ -130,7 +130,7 @@ Today: 130 rows; 112 ✅, 13 🟡, 0 ❌, 5 ➖. No row is ❌.
 
 | Playwright | chrome-cdp | Status | Agent-critical |
 |---|---|---|---|
-| `page.on('console')`, `worker.on('console')` | `console` (`--level warn`, `--grep`, `--follow`), recorded from the tab's start, its frames' and workers' too (shared and service workers in each tab of their origin) | ✅ | yes |
+| `page.on('console')`, `worker.on('console')`, `waitForEvent('console')` | `console` (`--level warn`, `--grep`, `--follow`), `wait --console REGEX`, recorded from the tab's start, its frames' and workers' too (shared and service workers in each tab of their origin) | ✅ | yes |
 | `page.on('pageerror')` | `errors` (uncaught exceptions, `console.error`, failed loads; `--sourcemaps`) | ✅ | yes |
 | `page.on('request' \| 'response' \| 'requestfailed')` | `network` (`--failed`, `--url`, `--type`, `--status 4xx`, `--follow`) | ✅ | yes |
 | `response.body()`, `json()` | `network show ID --body` | ✅ | yes |
@@ -140,7 +140,7 @@ Today: 130 rows; 112 ✅, 13 🟡, 0 ❌, 5 ➖. No row is ❌.
 | HAR record (`recordHar`) | `har start`, `har stop -o FILE` | ✅ | no |
 | HAR replay (`routeFromHAR`) | `mock import FILE.har`, then `mock use NAME` | ✅ | no |
 | `context.request` (`APIRequestContext`) | `http METHOD URL` with the context's cookies | ✅ | no |
-| `exposeFunction`, `exposeBinding` | `expose NAME`: calls are logged in `console`, but return nothing | 🟡 | no |
+| `exposeFunction`, `exposeBinding` | `expose NAME`: calls are logged in `console` (`wait --binding NAME` waits for one), but return nothing | 🟡 | no |
 | `addInitScript` | `init-script add FILE`, `init-script add --code 'JS'`, `open --init-script FILE` | ✅ | no |
 | `page.coverage` | `coverage` | ✅ | no |
 | `newCDPSession` | `cdp Domain.method '{…}'` (`--listen` for events) | ✅ | no |

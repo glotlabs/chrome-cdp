@@ -25,6 +25,8 @@ Waiting: chrome-cdp waits for you, so never sleep
   wait --settle           network idle and no DOM changes for 300ms
   wait --response '**/api/save' --status 200
   wait --fn 'window.app?.ready'   a JavaScript expression is truthy
+  wait --console 'saved \d+'      a console entry matches
+  wait --binding onCheckout       the page called an exposed function
 
 - To check a result rather than wait for it, use `expect`: it retries the
   same way (5s by default) and fails with exit 1, saying what it saw.

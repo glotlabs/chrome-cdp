@@ -343,6 +343,8 @@ struct Tab {
     command_marks: (u64, u64),
     /// The same for the event sequence (downloads).
     event_marks: (u64, u64),
+    /// The same for its console (`wait --console`).
+    console_marks: (u64, u64),
     /// The network and console marks when the main frame's document
     /// committed: where `expect --no-errors` starts by default.
     document_marks: (u64, u64),
@@ -386,6 +388,7 @@ impl Tab {
             document_marks: (0, 0),
             marks: HashMap::new(),
             event_marks: (0, 0),
+            console_marks: (0, 0),
             dialog: None,
             crashed: None,
             snapshot: SnapshotMemory::default(),
@@ -1315,15 +1318,27 @@ impl Tabs {
         }
     }
 
-    /// Marks the start of a page command on tab `id` in its network log
-    /// and the event sequence.
+    /// Marks the start of a page command on tab `id` in its network log,
+    /// console and the event sequence.
     pub(crate) fn begin_command(&self, id: u32) {
         let mut state = self.shared.lock();
         let seq = state.seq;
         if let Some(tab) = state.tabs.get_mut(&id) {
             tab.command_marks = (tab.command_marks.1, tab.network.seq());
             tab.event_marks = (tab.event_marks.1, seq);
+            tab.console_marks = (tab.console_marks.1, tab.console.seq());
         }
+    }
+
+    /// The console's mark when the page command before the current one on
+    /// tab `id` began: `wait --console` also accepts what was logged while
+    /// that command (a click) ran.
+    pub(crate) fn previous_console_mark(&self, id: u32) -> u64 {
+        self.shared
+            .lock()
+            .tabs
+            .get(&id)
+            .map_or(0, |t| t.console_marks.0)
     }
 
     /// The event mark when the page command before the current one on tab

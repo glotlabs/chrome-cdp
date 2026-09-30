@@ -137,6 +137,8 @@ command chrome-cdp wait
   flag --response value=PATTERN
   flag --status value=CODE
   flag --download
+  flag --console value=REGEX
+  flag --binding value=NAME
   flag --max-chars value=N
 command chrome-cdp expect
   arg LOCATOR

@@ -3411,8 +3411,8 @@ pub struct WaitData {
     /// The tab watched, e.g. `t1`.
     pub tab: String,
     /// What was waited for: `load`, `domcontentloaded`, `idle`, `settle`,
-    /// `element`, `text`, `text_gone`, `url`, `fn`, `request`, `response`
-    /// or `delay`.
+    /// `element`, `text`, `text_gone`, `url`, `fn`, `request`, `response`,
+    /// `delay`, `download`, `console` or `binding`.
     pub condition: String,
     /// What held, in words: `text "Welcome" is visible`.
     pub met: String,
@@ -3432,6 +3432,10 @@ pub struct WaitData {
     /// `--download`: the file downloaded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub download: Option<DownloadInfo>,
+    /// `--console` and `--binding`: the entry that matched, as `console
+    /// --json` shows it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub console: Option<ConsoleEntry>,
 }
 
 /// `data` of `chrome-cdp expect --json`: the assertion held.

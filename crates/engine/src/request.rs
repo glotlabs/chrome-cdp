@@ -506,6 +506,12 @@ pub enum WaitFor {
     /// `--download`: a download that started since the previous command
     /// began has finished.
     Download,
+    /// `--console`: a console entry (any level or source) logged after
+    /// the wait began whose text or URL matches a regular expression.
+    Console { pattern: String },
+    /// `--binding`: a call of a function `expose` put in the page (its
+    /// `binding NAME(…)` console entry), after the wait began.
+    Binding { name: String },
 }
 
 /// The state `wait <locator>` waits for.

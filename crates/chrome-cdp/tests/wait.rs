@@ -141,3 +141,59 @@ fn reads_wait_for_their_element() {
     assert!(started.elapsed() >= Duration::from_millis(700));
     assert_eq!(code(&sandbox.run(&["close"])), 0);
 }
+
+#[test]
+fn wait_for_a_console_entry_or_an_exposed_functions_call() {
+    let Some(chrome) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let out = sandbox.run(&["expose", "onCheckout"]);
+    assert_eq!(code(&out), 4, "expose needs a session: {}", stderr(&out));
+    let out = sandbox.run(&["open"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["expose", "onCheckout"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["goto", &site.url("/wait/checkout.html?after=400")]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+
+    // The page calls it after the click returned.
+    let out = sandbox.run(&["click", "#pay", "--no-wait-after"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["wait", "--binding", "onCheckout"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert!(
+        stdout(&out).contains("[binding] binding onCheckout({\"total\":42}, \"EUR\")"),
+        "{}",
+        stdout(&out)
+    );
+
+    // Logged while the click ran: the previous command's entries count.
+    let out = sandbox.run(&["click", "#log"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["wait", "--console", "checkout (done|failed)", "--json"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let data = &json_out(&out)["data"];
+    assert_eq!(data["condition"], "console");
+    assert_eq!(data["console"]["text"], "checkout done 42");
+    assert_eq!(data["console"]["level"], "info");
+
+    // It is gone for the next one: a timeout lists what it saw.
+    let out = sandbox.run(&["click", "#pay"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["wait", "--console", "refunded", "--timeout", "1s"]);
+    assert_eq!(code(&out), 3, "{}", stderr(&out));
+    let err = stderr(&out);
+    assert!(
+        err.contains("waited 1s for a console entry matching \"refunded\""),
+        "{err}"
+    );
+    assert!(err.contains("seen: #"), "{err}");
+    assert!(err.contains("[binding] binding onCheckout("), "{err}");
+
+    // A bad pattern or name is a usage error.
+    let out = sandbox.run(&["wait", "--console", "("]);
+    assert_eq!(code(&out), 2, "{}", stderr(&out));
+    let out = sandbox.run(&["wait", "--binding", "on-checkout"]);
+    assert_eq!(code(&out), 2, "{}", stderr(&out));
+    assert_eq!(code(&sandbox.run(&["close"])), 0);
+}

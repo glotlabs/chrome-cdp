@@ -1,0 +1,5 @@
+$ chrome-cdp wait --binding onCheckout
+exit: 0
+--- stdout
+#3 info [binding] binding onCheckout({"total":42}, "EUR")
+

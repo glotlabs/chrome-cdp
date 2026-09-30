@@ -14,11 +14,12 @@
 //! requests in flight, the URL, the last value, and the page's URL and
 //! title.
 
+mod console;
 mod probe;
 
 use std::time::Duration;
 
-use protocol::schema::{DownloadInfo, RequestInfo, WaitData};
+use protocol::schema::{ConsoleEntry, DownloadInfo, RequestInfo, WaitData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde_json::{Map, Value, json};
 use tokio::time::Instant;
@@ -81,6 +82,12 @@ pub(crate) enum Condition {
     },
     Delay(Duration),
     Download,
+    /// A console entry: one whose text or URL `regex` matches, or with
+    /// `binding`, a call of that exposed function.
+    Console {
+        regex: regex::Regex,
+        binding: Option<String>,
+    },
     /// `expect`'s polled checks (plan 09): `check` (see `expect.ts`) on
     /// what `locator` matches, or on the page without one. It is met when
     /// the check passes, or fails with `not`; `absent` is whether it
@@ -182,6 +189,25 @@ impl Condition {
             },
             WaitFor::Delay { ms } => Self::Delay(Duration::from_millis(*ms)),
             WaitFor::Download => Self::Download,
+            WaitFor::Console { pattern } => {
+                not_empty(
+                    pattern,
+                    "the --console pattern",
+                    "--console 'checkout done'",
+                )?;
+                Self::Console {
+                    regex: crate::observe::regex_arg("--console", pattern)?,
+                    binding: None,
+                }
+            }
+            WaitFor::Binding { name } => {
+                crate::inject::check_binding_name(name)?;
+                Self::Console {
+                    regex: regex::Regex::new(&format!(r"^binding {}\(", regex::escape(name)))
+                        .map_err(|e| ErrorInfo::new(ErrorKind::BadArgs, e.to_string()))?,
+                    binding: Some(name.clone()),
+                }
+            }
         })
     }
 
@@ -221,6 +247,10 @@ impl Condition {
             Self::Exchange { response: true, .. } => "response",
             Self::Delay(_) => "delay",
             Self::Download => "download",
+            Self::Console { binding: None, .. } => "console",
+            Self::Console {
+                binding: Some(_), ..
+            } => "binding",
             Self::Expect { .. } => "expect",
         }
     }
@@ -267,6 +297,13 @@ impl Condition {
             }
             Self::Delay(delay) => format::duration(*delay),
             Self::Download => "a download to finish".into(),
+            Self::Console {
+                binding: Some(name),
+                ..
+            } => format!("a call of {name}()"),
+            Self::Console { regex, .. } => {
+                format!("a console entry matching {:?}", regex.as_str())
+            }
             Self::Expect { .. } => "the assertion".into(),
         }
     }
@@ -281,6 +318,8 @@ pub(crate) struct Met {
     pub(crate) value: Option<Value>,
     pub(crate) exchange: Option<Exchange>,
     pub(crate) download: Option<DownloadInfo>,
+    /// `--console` and `--binding`: the entry.
+    pub(crate) console: Option<ConsoleEntry>,
     /// `e6 re-resolved by role+name` when a ref's element was found again.
     pub(crate) note: Option<String>,
 }
@@ -383,7 +422,12 @@ impl Engine {
         }
         let mark = running.tabs.mark();
         let start = Instant::now();
-        let met = {
+        let met = if let Condition::Console { .. } = &condition {
+            // Reading the console takes no tab lock, and a dialog does
+            // not stop it: an action can run meanwhile.
+            self.wait_until(&running, &page, &condition, start, timeout, &req)
+                .await?
+        } else {
             let _tab = self.tabs.lock(&page.target_id).await;
             let wait = self.wait_until(&running, &page, &condition, start, timeout, &req);
             self.unless_blocked(&running, &page, mark, wait).await?
@@ -415,11 +459,23 @@ impl Engine {
                     exchange: Some(e), ..
                 },
             ) => e.url.clone(),
+            (
+                _,
+                Met {
+                    console: Some(e), ..
+                },
+            ) => e.text.clone(),
             (_, Met { value: Some(v), .. }) => v.to_string(),
             (_, Met { count: Some(n), .. }) => n.to_string(),
             _ => String::new(),
         };
-        let text = if matches!(condition, Condition::Delay(_)) {
+        let text = if let Some(entry) = &met.console {
+            // The entry, as `console` shows it.
+            let page_origin = crate::input::origin(&url).map(str::to_owned);
+            let mut text = String::new();
+            crate::observe::entry_text(&mut text, entry, page_origin.as_deref());
+            text.trim_end().to_owned()
+        } else if matches!(condition, Condition::Delay(_)) {
             met.text.clone()
         } else {
             format!("{} ({})", met.text, format::duration(elapsed))
@@ -434,6 +490,7 @@ impl Engine {
             value: met.value,
             request,
             download: met.download.clone(),
+            console: met.console,
         };
         let mut output = Output::typed(&data, text)
             .quiet(quiet)
@@ -558,6 +615,10 @@ impl Engine {
                         .note("observed", "no download started")
                         .observed("download", Value::Null)),
                 }
+            }
+            Condition::Console { regex, binding } => {
+                self.console_until(running, page, regex, binding.as_deref(), deadline)
+                    .await?
             }
             Condition::Load { .. }
             | Condition::Element { .. }
@@ -696,6 +757,9 @@ impl Engine {
             Condition::Exchange { .. } => Hint::run(again).why(
                 "only requests since the previous command count; run the action that sends it first",
             ),
+            Condition::Console { .. } => Hint::run(again).why(
+                "only entries since the previous command began count; run the action that logs it first",
+            ),
             Condition::Download if unmet.observed.get("download") == Some(&Value::Null) => {
                 Hint::run(again).why(
                     "only downloads since the previous command count; run the action that starts it first",
@@ -755,6 +819,8 @@ fn retry(condition: &WaitFor, tab: Option<&str>) -> Cmd {
         }
         WaitFor::Delay { ms } => cmd.arg(ms.to_string()),
         WaitFor::Download => cmd.switch("download"),
+        WaitFor::Console { pattern } => cmd.flag("console", pattern),
+        WaitFor::Binding { name } => cmd.flag("binding", name),
     };
     match tab {
         Some(tab) => cmd.flag("tab", tab),

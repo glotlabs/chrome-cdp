@@ -2195,6 +2195,12 @@ fn wait_condition(args: &WaitCmdArgs) -> Result<WaitFor, ErrorInfo> {
         }
     } else if args.download {
         WaitFor::Download
+    } else if let Some(pattern) = &args.console {
+        WaitFor::Console {
+            pattern: pattern.clone(),
+        }
+    } else if let Some(name) = &args.binding {
+        WaitFor::Binding { name: name.clone() }
     } else {
         return Err(
             bad_args("wait needs a condition").hint(Cmd::new("wait").switch("help").to_string())

@@ -100,6 +100,9 @@ const FILTERS: &[&[&str]] = &[
 ];
 const ERR: &[&str] = &["", "--json"];
 
+/// The checkout fixture after its Log button logged `checkout done 42`.
+const CHECKOUT_LOGGED: &[&[&str]] = &[&["open", "{site}/wait/checkout.html"], &["click", "#log"]];
+
 /// The mock fixture page with the `base` and `sale` sets in use, after a
 /// mocked, an unmatched and an unmocked request.
 const MOCKED: &[&[&str]] = &[
@@ -707,6 +710,36 @@ const CASES: &[Case] = &[
         args: &["forward"],
         modes: ERR,
         fixture: Fixture::NoSessions,
+    },
+    Case {
+        name: "wait-console",
+        args: &["wait", "--console", "checkout (done|failed)"],
+        // Each run would wait for another entry: one mode per case.
+        modes: &[""],
+        fixture: Fixture::SessionAfter(CHECKOUT_LOGGED),
+    },
+    Case {
+        name: "wait-console-json",
+        args: &["wait", "--console", "checkout (done|failed)"],
+        modes: &["--json"],
+        fixture: Fixture::SessionAfter(CHECKOUT_LOGGED),
+    },
+    Case {
+        name: "wait-console-timeout",
+        args: &["wait", "--console", "refunded", "--timeout", "300ms"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "wait-binding",
+        args: &["wait", "--binding", "onCheckout"],
+        modes: &[""],
+        fixture: Fixture::SessionAfter(&[
+            &["open"],
+            &["expose", "onCheckout"],
+            &["goto", "{site}/wait/checkout.html?after=0"],
+            &["click", "#pay"],
+        ]),
     },
     Case {
         name: "wait-url",

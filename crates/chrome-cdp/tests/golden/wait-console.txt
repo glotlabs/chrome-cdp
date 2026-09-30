@@ -1,0 +1,5 @@
+$ chrome-cdp wait --console 'checkout (done|failed)'
+exit: 0
+--- stdout
+#2 info checkout done 42 (/wait/checkout.html:5)
+

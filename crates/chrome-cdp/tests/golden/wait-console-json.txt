@@ -1,0 +1,5 @@
+$ chrome-cdp wait --console 'checkout (done|failed)' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"condition":"console","console":{"column":69,"kind":"log","level":"info","line":5,"seq":2,"source":"console","stack":[{"column":69,"function":"onclick","line":5,"url":"<site>/wait/checkout.html"}],"text":"checkout done 42","time_ms":<ms>,"url":"<site>/wait/checkout.html"},"elapsed_ms":<ms>,"met":"checkout done 42","tab":"t1","url":"<site>/wait/checkout.html"}}
+

@@ -4,7 +4,7 @@
 Wait for the page: an element, text, the URL, network idle, a request, …
 
 ```text
-chrome-cdp wait [OPTIONS] <LOCATOR|MS|--load|--domcontentloaded|--idle|--settle|--text <TEXT>|--text-gone <TEXT>|--url <PATTERN>|--fn <JS>|--request <PATTERN>|--response <PATTERN>|--download>
+chrome-cdp wait [OPTIONS] <LOCATOR|MS|--load|--domcontentloaded|--idle|--settle|--text <TEXT>|--text-gone <TEXT>|--url <PATTERN>|--fn <JS>|--request <PATTERN>|--response <PATTERN>|--download|--console <REGEX>|--binding <NAME>>
 ```
 
 Arguments:
@@ -28,6 +28,8 @@ Options:
 - `--response <PATTERN>`: A response whose URL matches, received since the previous command began
 - `--status <CODE>`: The status the --response must have
 - `--download`: A download, started since the previous command began, to finish
+- `--console <REGEX>`: A console entry whose text or URL matches this regular expression, logged since the previous command began
+- `--binding <NAME>`: A call of the function `expose NAME` put in the page, since the previous command began
 - `--max-chars <N>`: Bound the output (--fn's value) to this many characters (0 = no limit) (default `20000`)
 
 ```text
@@ -50,6 +52,11 @@ Give exactly one condition. It is checked against the active tab (or
   --request, --response [--status]  since the previous command began
   --download          a download started since the previous command began
                       has finished (prints its path with -q)
+  --console <REGEX>   a console entry (any level or source) whose text or
+                      URL matches, logged since the previous command
+                      began; prints it as `console` does
+  --binding <NAME>    a call of a function `expose NAME` put in the page,
+                      since the previous command began
   <MS>                a fixed sleep, e.g. 500 or 2s (prefer a condition)
 
 Examples:
@@ -64,5 +71,7 @@ Examples:
   chrome-cdp wait --fn 'window.app && window.app.ready'
   chrome-cdp wait --response '**/api/save' --status 200
   chrome-cdp wait --download
+  chrome-cdp wait --console 'checkout (done|failed)'
+  chrome-cdp wait --binding onCheckout      # after expose onCheckout
 ```
 
