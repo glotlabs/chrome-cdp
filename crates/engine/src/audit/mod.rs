@@ -76,9 +76,9 @@ const GROUP: &str = "chrome-cdp-audit";
 pub fn check_audit(req: &AuditRequest) -> Result<(), ErrorInfo> {
     categories(req)?;
     if let Some(b) = &req.baseline
-        && !std::path::Path::new(&b.name)
+        && std::path::Path::new(&b.name)
             .extension()
-            .is_some_and(|e| e == "json")
+            .is_none_or(|e| e != "json")
     {
         crate::expect::baseline::check_name(
             &b.name,

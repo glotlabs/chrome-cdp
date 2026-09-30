@@ -2394,7 +2394,7 @@ fn expect_layout(args: &crate::cli::ExpectArgs, global: &GlobalArgs) -> Result<O
 }
 
 /// What `audit` and `expect --audit` send.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 fn audit_request(
     locator: Option<&String>,
     flags: &crate::cli::AuditFlags,
