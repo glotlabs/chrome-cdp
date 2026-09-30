@@ -34,7 +34,7 @@ use engine::{
     OpenInitScript, OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest, RouteRequest,
     RoutesRequest, ScreenshotRequest, SnapshotRequest, SourceRequest, TabCloseRequest,
     TabNewRequest, TabSelectRequest, TabsRequest, TraceStartRequest, TraceStopRequest,
-    UnrouteRequest, WaitFor, WaitRequest,
+    UnrouteRequest, WaitFor, WaitRequest, WhyRequest,
 };
 use engine::{
     CookieFilter, CookieSpec, CookiesOp, CookiesRequest, StateLoadRequest, StateSaveRequest,
@@ -60,7 +60,7 @@ use crate::cli::{
     PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs,
     SnapshotArgs, SourceArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg,
     StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs,
-    TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, WhyArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -2219,6 +2219,24 @@ pub(crate) fn components(args: &ComponentsArgs, global: &GlobalArgs) -> Result<O
     let mut client = running_session(&ctx)?;
     ctx.runtime
         .block_on(client.call_output(rpc::COMPONENTS, &request, ctx.timeout + QUICK))
+}
+
+/// `why`: needs a running session.
+pub(crate) fn why(args: &WhyArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let request = WhyRequest {
+        tab: ctx.tab.clone(),
+        locator: args.locator.clone(),
+        action: args.action.to_engine(),
+        no_scroll: args.no_scroll,
+        strict_refs: args.refs.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(ctx.timeout),
+    };
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::WHY, &request, ctx.timeout + QUICK))
 }
 
 /// `inspect`: needs a running session.

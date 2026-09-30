@@ -45,6 +45,7 @@ const READS: &[&str] = &[
     "tabs",
     "text",
     "value",
+    "why",
     "clipboard read",
     "init-script list",
     "mock explain",

@@ -214,6 +214,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Debug(args)) => session::debug(&args, &cli.global),
         Some(Command::Highlight(args)) => session::highlight(&args, &cli.global),
         Some(Command::Source(args)) => session::source(&args, &cli.global),
+        Some(Command::Why(args)) => session::why(&args, &cli.global),
         Some(Command::Components(args)) => session::components(&args, &cli.global),
         Some(Command::Inspect(args)) => session::inspect(&args, &cli.global),
         Some(Command::Clipboard(args)) => match &args.command {

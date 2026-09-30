@@ -650,6 +650,10 @@ impl Daemon {
                 Ok(p) => output(Box::pin(self.engine.source(p)).await),
                 Err(e) => Err(e),
             },
+            rpc::WHY => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.why(p)).await),
+                Err(e) => Err(e),
+            },
             rpc::COMPONENTS => match params(req.params) {
                 Ok(p) => output(Box::pin(self.engine.components(p)).await),
                 Err(e) => Err(e),

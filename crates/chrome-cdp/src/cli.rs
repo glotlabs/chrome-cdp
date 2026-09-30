@@ -823,6 +823,31 @@ Examples:
     )]
     BoundingBox(BoxArgs),
 
+    /// Explain why an action on an element would wait or fail, check by
+    /// check, without acting.
+    #[command(after_help = "\
+Runs the checks the action needs (--for, default click) once, now, and
+prints each with its cause: resolve (no match, or which elements an
+ambiguous locator matches), visible (display: none on which ancestor,
+visibility, opacity: 0, an empty box), stable (how far it moved between
+two frames, and the animations on it), enabled (disabled, a disabled
+fieldset, aria-disabled, inert, a modal dialog open elsewhere), editable
+(fill, type), in view (which container scrolled, or what clips it) and
+hit test (what covers it and the button that likely dismisses it, or
+pointer-events: none). The last line says what the action would do:
+act now, wait until the timeout, or fail at once. Elements are named as
+the snapshot names them, with refs. It scrolls the element into view as
+the action would; --no-scroll leaves the page where it is and skips the
+hit test when the element is out of view. It does not act, wait or
+retry, and exits 0 whatever it finds. -q prints the last line. Needs a
+running session.
+
+Examples:
+  chrome-cdp why e12
+  chrome-cdp why '#email' --for fill
+  chrome-cdp why 'role=button[name=\"Pay\"]' --no-scroll")]
+    Why(WhyArgs),
+
     /// Print the file and line an element came from, and its components.
     #[command(after_help = "\
 For the app's own dev build: the element's place (`at`) and the
@@ -3366,6 +3391,53 @@ pub(crate) struct ReadTextArgs {
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct WhyArgs {
+    /// The element: a ref (e12) or a locator that matches one.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: String,
+
+    /// The action whose checks run.
+    #[arg(long = "for", value_enum, default_value_t = WhyForArg::Click, value_name = "ACTION")]
+    pub(crate) action: WhyForArg,
+
+    /// Leave the page where it is: an element out of view is not
+    /// hit-tested.
+    #[arg(long)]
+    pub(crate) no_scroll: bool,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+}
+
+/// `why --for`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum WhyForArg {
+    Click,
+    Hover,
+    Fill,
+    Type,
+    Check,
+    Select,
+    Upload,
+    Drag,
+}
+
+impl WhyForArg {
+    pub(crate) fn to_engine(self) -> engine::WhyFor {
+        match self {
+            Self::Click => engine::WhyFor::Click,
+            Self::Hover => engine::WhyFor::Hover,
+            Self::Fill => engine::WhyFor::Fill,
+            Self::Type => engine::WhyFor::Type,
+            Self::Check => engine::WhyFor::Check,
+            Self::Select => engine::WhyFor::Select,
+            Self::Upload => engine::WhyFor::Upload,
+            Self::Drag => engine::WhyFor::Drag,
+        }
+    }
 }
 
 #[derive(Debug, Args)]
@@ -6930,6 +7002,8 @@ mod tests {
         "box",
         // The element and at most --depth components (default 8).
         "source",
+        // A line per check, at most 7, and 5 candidates.
+        "why",
         "install",
         "uninstall",
         "extensions load",

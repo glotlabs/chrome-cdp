@@ -236,6 +236,11 @@ command chrome-cdp count
 command chrome-cdp box
   arg LOCATOR required
   flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp why
+  arg LOCATOR required
+  flag --for value=ACTION values=click|hover|fill|type|check|select|upload|drag
+  flag --no-scroll
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
 command chrome-cdp source
   arg LOCATOR required
   flag --depth value=N

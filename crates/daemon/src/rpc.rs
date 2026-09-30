@@ -84,6 +84,7 @@ pub const DEBUG_CLEAR: &str = "debug_clear";
 pub const DEBUG_LOCALS: &str = "debug_locals";
 pub const HIGHLIGHT: &str = "highlight";
 pub const SOURCE: &str = "source";
+pub const WHY: &str = "why";
 pub const COMPONENTS: &str = "components";
 pub const INSPECT: &str = "inspect";
 
