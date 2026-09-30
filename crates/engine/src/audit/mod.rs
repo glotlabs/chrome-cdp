@@ -31,7 +31,7 @@ use std::time::Duration;
 use cdp::domains::{network, runtime};
 use protocol::schema::{
     AuditBaselineFile, AuditBaselineResult, AuditBaselineState, AuditData, ExpectAudit, ExpectData,
-    Finding, FindingTarget, Issue, LayoutFinding, Severity,
+    Finding, FindingTarget, Issue, LayoutFinding, Severity, SourceLine,
 };
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format, suggest};
 use serde_json::{Value, json};
@@ -508,6 +508,11 @@ impl Engine {
                     message.push(')');
                 }
                 let target = FindingTarget {
+                    source: source.zip(e.line).map(|(u, line)| SourceLine {
+                        url: u.to_owned(),
+                        line,
+                        column: e.column.unwrap_or(1),
+                    }),
                     worker: e.worker.clone(),
                     ..FindingTarget::default()
                 };
