@@ -24,8 +24,8 @@ use daemon::meta::Meta;
 use daemon::paths::{Env, SessionPaths, check_name};
 use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
-    Action, ActionRequest, CdpRequest, ClipboardOp, ClipboardRequest, ConnectRequest,
-    ConsoleRequest, ContextCloseRequest, ContextListRequest, ContextNewRequest,
+    Action, ActionRequest, CdpRequest, ClipboardOp, ClipboardRequest, ComponentsRequest,
+    ConnectRequest, ConsoleRequest, ContextCloseRequest, ContextListRequest, ContextNewRequest,
     CoverageStartRequest, CoverageStopRequest, DialogRequest, DownloadsRequest, ElementState,
     EvalRequest, FindRequest, FramesRequest, HarStartRequest, HarStopRequest, HighlightRequest,
     HttpCredentials, ImageFormat, InspectRequest, LocatorRequest, NavigateRequest, Navigation,
@@ -48,17 +48,17 @@ use serde_json::{Map, Value, json};
 use tokio::runtime::Runtime;
 
 use crate::cli::{
-    AfterArgs, BlockArgs, CdpArgs, ClipboardReadArgs, CloseArgs, ConnectArgs, ContextArgs,
-    ContextCommand, CookieFilterArgs, CookieSetArgs, CookiesArgs, CookiesCommand, CoverageArgs,
-    CoverageCommand, DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg,
-    EvalArgs, ExtensionStorageAreaArg, ExtensionStorageCommand, ExtensionsArgs, ExtensionsCommand,
-    FindArgs, FrameDirArg, FramesArgs, GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs,
-    HistoryArgs, IdleArgs, ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand,
-    InspectArgs, LocatorArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs,
-    PermissionsArgs, PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs,
-    SessionsArgs, SnapshotArgs, SourceArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg,
-    StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs,
-    TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    AfterArgs, BlockArgs, CdpArgs, ClipboardReadArgs, CloseArgs, ComponentsArgs, ConnectArgs,
+    ContextArgs, ContextCommand, CookieFilterArgs, CookieSetArgs, CookiesArgs, CookiesCommand,
+    CoverageArgs, CoverageCommand, DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs,
+    ElementStateArg, EvalArgs, ExtensionStorageAreaArg, ExtensionStorageCommand, ExtensionsArgs,
+    ExtensionsCommand, FindArgs, FrameDirArg, FramesArgs, GlobalArgs, GotoArgs, HarArgs,
+    HarCommand, HighlightArgs, HistoryArgs, IdleArgs, ImageFormatArg, InitScriptAddArgs,
+    InitScriptArgs, InitScriptCommand, InspectArgs, LocatorArgs, LogReadArgs, NetworkArgs,
+    NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs, PermissionsCommand, ReloadArgs, RouteArgs,
+    RoutesArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs, SourceArgs, StateArgs, StateCommand,
+    StatusArgs, StorageActionArg, StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand,
+    TabsArgs, TraceArgs, TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -2101,6 +2101,24 @@ pub(crate) fn source(args: &SourceArgs, global: &GlobalArgs) -> Result<Output, E
     let mut client = running_session(&ctx)?;
     ctx.runtime
         .block_on(client.call_output(rpc::SOURCE, &request, ctx.timeout + QUICK))
+}
+
+/// `components`: needs a running session.
+pub(crate) fn components(args: &ComponentsArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let request = ComponentsRequest {
+        tab: ctx.tab.clone(),
+        locator: args.locator.clone(),
+        depth: args.depth,
+        strict_refs: args.refs.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(ctx.timeout),
+        max_chars: args.max_chars,
+    };
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::COMPONENTS, &request, ctx.timeout + QUICK))
 }
 
 /// `inspect`: needs a running session.

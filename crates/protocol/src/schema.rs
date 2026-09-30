@@ -614,6 +614,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<SourceData>),
     },
     CommandSchema {
+        name: "components",
+        summary: "the page's component tree, or the component that rendered an element",
+        schema: || schema_for!(Envelope<ComponentsData>),
+    },
+    CommandSchema {
         name: "markdown",
         summary: "the page's readable content (or an element's) as Markdown",
         schema: || schema_for!(Envelope<MarkdownData>),
@@ -2075,6 +2080,15 @@ fn is_zero(n: &u64) -> bool {
     *n == 0
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_one(n: &u64) -> bool {
+    *n == 1
+}
+
+fn one() -> u64 {
+    1
+}
+
 /// `data` of `chrome-cdp route --json` and `chrome-cdp block --json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct RouteData {
@@ -3121,6 +3135,111 @@ pub struct SourceComponent {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub place: Option<SourcePlace>,
+}
+
+/// `data` of `chrome-cdp components --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ComponentsData {
+    /// The tab, e.g. `t1`.
+    pub tab: String,
+    /// The frameworks whose debug info answered (the page's own, which it
+    /// could fake).
+    pub frameworks: Vec<ComponentFramework>,
+    /// Without a locator: the component trees, one per root component,
+    /// `--depth` levels deep.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roots: Vec<ComponentNode>,
+    /// Components on the page past the most chrome-cdp reads (5,000).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub more: u64,
+    /// With a locator: the element asked about.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element: Option<ActedElement>,
+    /// With a locator: the component that rendered it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<ComponentDetail>,
+}
+
+/// A framework on the page (`chrome-cdp components`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ComponentFramework {
+    /// `react`, `vue` or `svelte`.
+    pub name: String,
+    /// Its version, as the page gives it (`19`, `3.5.13`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+}
+
+/// A component of the tree (`chrome-cdp components`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ComponentNode {
+    /// Its name, as the framework gives it (`CartItem`).
+    pub name: String,
+    /// Its own file, at the first element it renders.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place: Option<SourcePlace>,
+    /// How many alike siblings this node stands for (same name, place,
+    /// props and components below); absent for 1.
+    #[serde(default = "one", skip_serializing_if = "is_one")]
+    pub count: u64,
+    /// Its props, functions and `children` left out, each previewed one
+    /// level deep (collections counted: `[3 items]`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub props: Vec<ComponentValue>,
+    /// A root's framework (`react`, `vue` or `svelte`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub framework: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub children: Vec<ComponentNode>,
+    /// How many components are below it past `--depth`.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub more: u64,
+}
+
+/// The component that rendered an element (`chrome-cdp components LOC`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ComponentDetail {
+    pub name: String,
+    /// Its own file, at the first element it renders.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place: Option<SourcePlace>,
+    /// `react`, `vue` or `svelte`.
+    pub framework: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// Its props, previewed; absent when the framework keeps none that
+    /// can be read (`unavailable` says why).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub props: Option<Vec<ComponentValue>>,
+    /// Its state: a React function component's `useState` and
+    /// `useReducer` hooks (by index), a class component's `state`, Vue's
+    /// `setupState` (refs unwrapped) and `data`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<Vec<ComponentValue>>,
+    /// Why props and state are absent (`Svelte 5 has no public API …`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unavailable: Option<String>,
+    /// The components that rendered it, innermost first, at most
+    /// `--depth`: each at the place in its file that renders the next one
+    /// down (as `source` shows them).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub owners: Vec<SourceComponent>,
+    /// How many more owners there are past `--depth`.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub more: u64,
+}
+
+/// A prop or a piece of a component's state, previewed in the page: at
+/// most 2 levels deep, strings cut at 80 characters, collections over 5
+/// entries counted (`[12 items]`, `{…8 keys}`), functions as `ƒ`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ComponentValue {
+    /// The prop or variable's name; a React hook's index (`#0`).
+    pub name: String,
+    pub value: String,
+    /// A React hook's kind: `useState` or `useReducer`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hook: Option<String>,
 }
 
 /// A point in the tab's viewport, in CSS pixels.

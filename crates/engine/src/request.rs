@@ -1846,6 +1846,35 @@ pub struct SourceRequest {
     pub timeout_ms: u64,
 }
 
+/// `components`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComponentsRequest {
+    /// `--tab`: the tab to read; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// The element whose component is shown; the whole tree if `None`.
+    #[serde(default)]
+    pub locator: Option<String>,
+    /// `--depth`: the tree's levels, or the element's owners listed;
+    /// [`ComponentsRequest::TREE_DEPTH`] or `OWNERS` if `None`.
+    #[serde(default)]
+    pub depth: Option<u32>,
+    #[serde(default)]
+    pub strict_refs: bool,
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
+impl ComponentsRequest {
+    /// The tree's levels by default.
+    pub const TREE_DEPTH: u32 = 4;
+    /// The owners listed by default, as `source` lists components.
+    pub const OWNERS: u32 = 8;
+}
+
 /// `inspect`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InspectRequest {

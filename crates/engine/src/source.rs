@@ -80,7 +80,7 @@ const JSX_FACTORIES: [&str; 5] = ["jsxDEV", "jsx", "jsxs", "createElement", "clo
 /// is a local of the function, so nothing is left on the page. (Its
 /// `"use strict"` rules out a rest parameter: the arguments are read
 /// from `arguments`.)
-fn adapters(call: &str) -> String {
+pub(crate) fn adapters(call: &str) -> String {
     format!("function () {{\n{FRAMEWORKS}\nconst args = Array.from(arguments);\nreturn {call};\n}}")
 }
 
@@ -96,9 +96,9 @@ pub(crate) struct Found {
     more: u64,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(default)]
-struct PagePlace {
+pub(crate) struct PagePlace {
     file: Option<String>,
     line: Option<u32>,
     column: Option<u32>,
@@ -107,7 +107,7 @@ struct PagePlace {
     matching: Option<Match>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 struct PageFrame {
     #[serde(rename = "fn")]
@@ -118,7 +118,7 @@ struct PageFrame {
 }
 
 /// What to look for in a Vue component's `<template>`.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 struct Match {
     tag: String,
@@ -129,9 +129,9 @@ struct Match {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
-struct PageComponent {
-    name: String,
-    place: Option<PagePlace>,
+pub(crate) struct PageComponent {
+    pub(crate) name: String,
+    pub(crate) place: Option<PagePlace>,
 }
 
 /// What `source` found for an element.
@@ -492,14 +492,40 @@ impl Engine {
         backends: &[dom::BackendNodeId],
         timeout: Duration,
     ) -> Result<Vec<Option<Found>>, ErrorInfo> {
+        let values = self
+            .on_elements(
+                running,
+                page,
+                frame,
+                backends,
+                "__ccdpFrameworks.sources(args)",
+                timeout,
+            )
+            .await?;
+        Ok(values.into_iter().map(found_of).collect())
+    }
+
+    /// Runs `call` of the adapters (an expression of `__ccdpFrameworks`
+    /// and `args`, one value per element) on the elements `backends` of
+    /// frame `frame`, in the page's main world: `None` for an element
+    /// gone, or when the adapters threw.
+    pub(crate) async fn on_elements(
+        &self,
+        running: &Running,
+        page: &Page,
+        frame: &str,
+        backends: &[dom::BackendNodeId],
+        call: &str,
+        timeout: Duration,
+    ) -> Result<Vec<Option<Value>>, ErrorInfo> {
         let context = self
             .frame_context(running, page, Some(frame), World::Main, timeout)
             .await?;
         let session = context.session.with_timeout(timeout);
         let objects = resolve_all(&session, context.context_id, backends).await;
-        let found = adapters_on(&session, context.context_id, &objects).await;
+        let values = run_adapters(&session, context.context_id, &objects, call).await;
         release(&session);
-        Ok(found)
+        Ok(values)
     }
 
     /// The answer of a framework's debug info.
@@ -578,7 +604,7 @@ impl Engine {
     /// The places the page gave, as files on disk: a stack's first frame
     /// of the app (source-mapped; all stacks in one go), a file name, or
     /// a file and what to find in its template.
-    async fn resolve_places(
+    pub(crate) async fn resolve_places(
         &self,
         running: &Running,
         page: &Page,
@@ -623,7 +649,7 @@ impl Engine {
     }
 
     /// The main frame's origin, for places on it shown as paths.
-    fn page_origin(running: &Running, page: &Page) -> Option<String> {
+    pub(crate) fn page_origin(running: &Running, page: &Page) -> Option<String> {
         let frames = running.tabs.frames(page.id);
         let main_url = frames.first().map(|f| f.url.clone()).unwrap_or_default();
         origin(&main_url).map(str::to_owned)
@@ -722,6 +748,34 @@ async fn adapters_on(
     context_id: runtime::ExecutionContextId,
     objects: &[Option<String>],
 ) -> Vec<Option<Found>> {
+    run_adapters(
+        session,
+        context_id,
+        objects,
+        "__ccdpFrameworks.sources(args)",
+    )
+    .await
+    .into_iter()
+    .map(found_of)
+    .collect()
+}
+
+/// An adapter's answer for an element, if a framework rendered it.
+fn found_of(value: Option<Value>) -> Option<Found> {
+    value
+        .and_then(|v| serde_json::from_value::<Found>(v).ok())
+        .filter(|f| !f.framework.is_empty())
+}
+
+/// Runs `call` of the adapters (one value per element of `args`) on the
+/// elements `objects` (handles in the main world's context `context_id`),
+/// [`BATCH`] per call.
+async fn run_adapters(
+    session: &Session,
+    context_id: runtime::ExecutionContextId,
+    objects: &[Option<String>],
+    call: &str,
+) -> Vec<Option<Value>> {
     let mut found = Vec::with_capacity(objects.len());
     for batch in objects.chunks(BATCH) {
         let arguments: Vec<Value> = batch
@@ -735,7 +789,7 @@ async fn adapters_on(
             .call_raw(
                 "Runtime.callFunctionOn",
                 json!({
-                    "functionDeclaration": adapters("__ccdpFrameworks.sources(args)"),
+                    "functionDeclaration": adapters(call),
                     "executionContextId": context_id,
                     "arguments": arguments,
                     "returnByValue": true,
@@ -759,12 +813,7 @@ async fn adapters_on(
             }
         }
         .unwrap_or_default();
-        found.extend((0..batch.len()).map(|i| {
-            values
-                .get(i)
-                .and_then(|v| serde_json::from_value::<Found>(v.clone()).ok())
-                .filter(|f| !f.framework.is_empty())
-        }));
+        found.extend((0..batch.len()).map(|i| values.get(i).filter(|v| !v.is_null()).cloned()));
     }
     found
 }
@@ -926,7 +975,7 @@ fn tag_names(tag: &str) -> Vec<String> {
 
 /// A place as text: the file relative to the project root (else the
 /// URL, without the page's origin), `:line`, and `:column` if `column`.
-fn place_text(place: &SourcePlace, column: bool, page_origin: Option<&str>) -> String {
+pub(crate) fn place_text(place: &SourcePlace, column: bool, page_origin: Option<&str>) -> String {
     let mut text = shown_source(&place.source, place.file.as_deref(), page_origin);
     if let Some(line) = place.line {
         let _ = write!(text, ":{line}");

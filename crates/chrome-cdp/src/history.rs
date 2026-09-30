@@ -24,6 +24,7 @@ use crate::session;
 const READS: &[&str] = &[
     "attr",
     "box",
+    "components",
     "console",
     "count",
     "downloads",
