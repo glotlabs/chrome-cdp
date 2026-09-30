@@ -241,6 +241,7 @@ reads fewer files to get there (measured).
 ### Track 5 ★ — Seeing more of the page
 
 Plan: [16-seeing-more](16-seeing-more.md).
+Status: DONE (plan 16, 16.1-16.6).
 
 **Why.** The AX tree tells an agent what is there. It does not say
 what is *wrong* with how it looks, why an action would fail, or what

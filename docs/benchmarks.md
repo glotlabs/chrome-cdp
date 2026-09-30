@@ -113,24 +113,25 @@ Counts are deterministic, so `--check` is exact: it fails when a page's
 tokenizer (`bench/baselines/tokens-<tokenizer>.json`).
 
 <!-- bench:tokens -->
-Last run: 2026-09-29 with Google Chrome for Testing 154.0.8037.57. Tokenizer: `o200k_base` (gpt-tokenizer, offline: an approximation; set ANTHROPIC_API_KEY for Claude's own counts).
+Last run: 2026-09-30 with Google Chrome for Testing 154.0.8037.57. Tokenizer: `o200k_base` (gpt-tokenizer, offline: an approximation; set ANTHROPIC_API_KEY for Claude's own counts).
 
-| Page | `snapshot` | `snapshot -i` | Playwright MCP `browser_snapshot` | `snapshot` vs MCP | Actionable (MCP refs) | Without a chrome-cdp ref |
-|---|---:|---:|---:|---:|---:|---:|
-| simple | 65 | 40 | 128 | 51% | 1 | 0 |
-| login | 221 | 192 | 444 | 50% | 10 | 0 |
-| forms | 525 | 519 | 1014 | 52% | 31 | 0 |
-| hidden | 116 | 79 | 262 | 44% | 4 | 1 |
-| clickable | 229 | 194 | 379 | 60% | 3 | 0 |
-| lists-tables | 665 | 131 | 3813 | 17% | 8 | 0 |
-| widgets | 352 | 253 | 514 | 68% | 15 | 0 |
-| modal | 93 | 83 | 353 | 26% | 8 | 4 |
-| shadow | 68 | 47 | 115 | 59% | 1 | 0 |
-| frames | 132 | 100 | 236 | 56% | 4 | 0 |
-| article | 226 | 43 | 415 | 54% | 1 | 0 |
-| big-app | 4181 | 2782 | 52898 | 8% | 1245 | 0 |
-| huge | 7752 | 7130 | 415654 | 2% | 6000 | 0 |
-| **total** | **14625** | **11593** | **476225** | **3%** | | |
+| Page | `snapshot` | `snapshot -i` | `--fold` | `--budget 2000` | Playwright MCP `browser_snapshot` | `snapshot` vs MCP | Actionable (MCP refs) | Without a chrome-cdp ref |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| simple | 65 | 40 | 65 | 65 | 128 | 51% | 1 | 0 |
+| login | 221 | 192 | 221 | 221 | 444 | 50% | 10 | 0 |
+| forms | 525 | 519 | 525 | 525 | 1014 | 52% | 31 | 0 |
+| hidden | 116 | 79 | 116 | 116 | 262 | 44% | 4 | 1 |
+| clickable | 229 | 194 | 229 | 229 | 379 | 60% | 3 | 0 |
+| lists-tables | 665 | 131 | 665 | 665 | 3813 | 17% | 8 | 0 |
+| widgets | 352 | 253 | 352 | 352 | 514 | 68% | 15 | 0 |
+| modal | 93 | 83 | 93 | 93 | 353 | 26% | 8 | 4 |
+| shadow | 68 | 47 | 68 | 68 | 115 | 59% | 1 | 0 |
+| frames | 132 | 100 | 132 | 132 | 236 | 56% | 4 | 0 |
+| article | 226 | 43 | 226 | 226 | 415 | 54% | 1 | 0 |
+| big-app | 4181 | 2782 | 894 | 2681 | 52898 | 8% | 1245 | 0 |
+| huge | 7752 | 7130 | 140 | 2775 | 415654 | 2% | 6000 | 0 |
+| cards | 2663 | 1228 | 349 | 2663 | 7848 | 34% | 129 | 0 |
+| **total** | **17288** | **12821** | **4075** | **10811** | **484073** | **4%** | | |
 <!-- /bench:tokens -->
 
 ## Agent task benchmark

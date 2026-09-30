@@ -1,6 +1,6 @@
 # Plan 16 — Seeing more of the page
 
-Status: IN PROGRESS (16.1-16.5 done)
+Status: DONE (16.1-16.6)
 Depends on: 04 (snapshot, refs, locators), 05 (actionability pipeline, action report), 06 (screenshots), 07 (viewport emulation), 09 (`expect`, baselines), 11 (contexts, stable locators), 13 (the target graph, for out-of-process iframes)
 
 ## Goal
@@ -579,17 +579,17 @@ on its state.
       shows every value.
 - [x] `compare` reports exactly the known differences of `compare/a.html`
       and `b.html`, across the two fixture origins.
-- [ ] `explore` maps `testdata/site/explore/` to its expected map, never
+- [x] `explore` maps `testdata/site/explore/` to its expected map, never
       clicks the destructive button or submits the form without the
       flags, and its `states/*.cdp` files replay.
-- [ ] `explore` maps `examples/e2e-shop` (run with its mock backend)
+- [x] `explore` maps `examples/e2e-shop` (run with its mock backend)
       fully within its default budget.
-- [ ] Every new command and flag has help with an example, a
+- [x] Every new command and flag has help with an example, a
       `docs/commands/` page, a golden schema, and a line in
       `chrome-cdp skill` where an agent should reach for it (`why`,
       `forms`/`fill-form`, `snapshot --budget`); the skill stays within
       its token budget.
-- [ ] The token suite has rows for `snapshot --fold` and
+- [x] The token suite has rows for `snapshot --fold` and
       `--budget 2000`, and the saving is recorded in the decisions log
       (`cargo xtask bench tokens` is a count, not a timing, so it is run).
 
@@ -823,3 +823,67 @@ _(append here)_
 - 16.5: no line in `chrome-cdp skill` (at its budget; the plan asks for
   lines for `why`, `forms` and `snapshot --budget` only). The dev server
   guide shows `compare` local against production.
+- 16.6: explore's context is a context of ours while it runs (`c3`,
+  listed by `context list`, its id not reused), so the code that picks
+  settings by context works unchanged. Copied into it: the cookies and
+  Web Storage `state save` reads (not IndexedDB), the routes, the mock
+  sets with their state as it is (a copy: the walk's clicks do not
+  change the agent's mock state), init scripts and the mock shim, and
+  emulation. Exposed functions (the agent answers their calls) and
+  permissions are not.
+- 16.6: a link to where another link led already is not clicked again;
+  the edge is recorded. A header's links would otherwise be clicked on
+  every state, and the e2e-shop's map would not fit 200 actions.
+  Buttons are clicked on each state.
+- 16.6: a state's skeleton is the set of roles of what gets a ref (each
+  once) and the names of its headings, landmarks and dialogs in order.
+  A hash route (`#/…`, `#!…`) keeps its fragment in the normalised URL;
+  a link that only differs from the page's URL by another fragment is
+  no candidate.
+- 16.6: candidates are the main frame's (and its open shadow roots'),
+  listed when a state is found: an iframe's link moves the iframe, not
+  the app.
+- 16.6: a step that leads to a document of status 400 or more, or none,
+  is `broken` (once per link target), not a state; one that leaves the
+  allowed origins (a redirect) is listed as external. `--include` and
+  `--exclude` apply to links' targets and a new tab's URL, not to where
+  a button leads; a link they rule out is listed as external.
+- 16.6: a new tab a click opens is closed and its URL loaded in the
+  walk's tab: a `goto` step with `new_tab`, `goto URL` in the scenario.
+- 16.6: a submit button is a form submit (`skipped.forms`) with or
+  without `--click-buttons`; `--submit-forms` makes submit buttons
+  candidates on their own. A reset button is destructive. The
+  destructive names match as whole words ("Dropdown" does not), on
+  links too.
+- 16.6: `skipped` has `other` for `mailto:`, `tel:` and `javascript:`
+  links (`files` has files and downloads). The JSON also has `actions`,
+  `duration_ms`, `unvisited`, `failed` (a click that failed, a state the
+  walk could not get back to), `problems` (what `--exit-code` and `-q`
+  look at: errors, failed requests, broken links and layout errors) and
+  `dir`; a state has `dialogs`, `scenario` and `screenshot`. Errors and
+  failed requests are the action report's `console_error` and
+  `request_failed` events, counted for the state the page is in after
+  the step; restores and replays add none. Chrome's own `/favicon.ico`
+  is not a failed request.
+- 16.6: `stopped_by` is `done`, `depth` (all followed but what
+  `--depth` left), `max-states`, `max-actions` or `time`.
+  `--max-actions` counts every click and load, the start's and the
+  restores' too; a step is taken only when getting back to its state
+  and the click fit in what is left. `--time` is checked before each
+  step, so the last one can run past it.
+- 16.6: on Ctrl-C the daemon drops an `explore` call whose client went
+  away (only explore's: other calls run to the end, as before), and a
+  guard disposes of its context from a task of its own.
+- 16.6: `explore/expected.txt` has `<site>`, `<host-b>` and `<time>` for
+  what changes from run to run; `UPDATE_GOLDEN=1` rewrites it. The
+  e2e-shop test serves the built app with no API, so the map completes
+  only if the mocks were copied (6 states in 12 actions).
+- 16.6: no line in `chrome-cdp skill` (at its budget; the plan asks for
+  none); the dev server guide shows `explore`.
+- Close-out: `cargo xtask bench tokens` (o200k_base, offline) over the
+  corpus: `snapshot` 17,288 tokens, `--fold` 4,075 (−76%), `--budget
+  2000` 10,811 (−37%); on `huge.html` 7,752 → 140 folded and 2,775
+  with the budget, on `big-app` 4,181 → 894 and 2,681. The budget
+  works on chrome-cdp's own estimate (≈4 characters a token), which
+  undercounts this tokenizer on those two pages by about a third, and
+  keeps `cards` (2,663 here) whole because its estimate fits.
