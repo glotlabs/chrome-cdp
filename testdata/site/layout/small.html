@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Layout: small-target</title>
+<!-- Two findings: two 16x16 icons 20px apart. A small icon with room
+     around it and a link in a line of text do not count. -->
+<style>
+  body { margin: 0; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+  .icon { position: absolute; width: 16px; height: 16px; padding: 0; border: 0; background: #ddd; }
+  #close { left: 20px; top: 20px; }
+  #pin { left: 40px; top: 20px; }
+  #alone { left: 200px; top: 20px; }
+  p { position: absolute; top: 80px; left: 20px; margin: 0; }
+</style>
+<button class="icon" id="close" aria-label="Close"></button>
+<button class="icon" id="pin" aria-label="Pin"></button>
+<button class="icon" id="alone" aria-label="Help"></button>
+<p>Read the <a href="/terms">terms</a> first.</p>

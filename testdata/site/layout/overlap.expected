@@ -1,0 +1,7 @@
+layout t1 <site>/layout/overlap.html: mobile 1 error, tablet 1 error, desktop 1 error
+mobile (390x844): 1 error
+✗ overlap       button "Save" [e4] overlaps button "Delete" [e5] by 30×36px
+tablet (820x1180): 1 error
+✗ overlap       button "Save" [e4] overlaps button "Delete" [e5] by 30×36px
+desktop (1280x800): 1 error
+✗ overlap       button "Save" [e4] overlaps button "Delete" [e5] by 30×36px

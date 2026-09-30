@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Layout: contrast</title>
+<!-- Four findings, and two texts that pass:
+     - #gradient: white on a light gradient; its declared background (the
+       colour under the gradient) is dark, so expect --a11y passes it.
+     - #photo: white on a light photo; the same.
+     - #grey: light grey on white, declared and rendered.
+     - #big: large text, 2.3:1 (needs 3:1).
+     - #on-dark: light grey text over a dark photo that sits behind it
+       (not its background): the declared colours fail, the pixels pass.
+     - #plain: dark text on white. -->
+<style>
+  body { margin: 0; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+  section { margin: 16px; width: 320px; }
+  #gradient { color: #fff; background-color: #000;
+    background-image: linear-gradient(90deg, #d8e8ff, #f4f8ff); padding: 8px; }
+  #photo { color: #fff; background: #000 url(light-photo.png) center / cover; padding: 8px; }
+  #grey { color: #bbb; }
+  #big { color: #999; font-size: 28px; }
+  .behind { position: relative; background: #fff; height: 60px; }
+  .behind img { position: absolute; left: 0; top: 0; width: 320px; height: 60px; }
+  #on-dark { position: relative; color: #ddd; margin: 0; padding: 16px; }
+</style>
+<section><p id="gradient">Free shipping on every order</p></section>
+<section><p id="photo">Summer sale starts today</p></section>
+<section><p id="grey">Terms and conditions apply</p></section>
+<section><p id="big">Big but pale</p></section>
+<section class="behind"><img src="dark-photo.png" alt=""><p id="on-dark">Readable on the photo</p></section>
+<section><p id="plain">Plain dark text on white</p></section>

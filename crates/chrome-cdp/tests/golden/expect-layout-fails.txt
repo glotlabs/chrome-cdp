@@ -1,0 +1,14 @@
+$ chrome-cdp expect --layout --baseline small --dir <sandbox>/b --timeout 300ms
+exit: 1
+--- stderr
+error: expect --layout --baseline small failed: 2 findings the baseline does not list
+  baseline: <sandbox>/b/layout/small.txt
+  new: small-target at desktop: button "Close" [e1]: 16×16px, needs 24×24
+  new: small-target at desktop: button "Pin" [e2]: 16×16px, needs 24×24
+  hint: chrome-cdp expect --layout --baseline small --dir <sandbox>/b --update   (accepts them into the baseline, if they are fine), or fix them, or see them with chrome-cdp layout
+
+$ chrome-cdp expect --layout --baseline small --dir <sandbox>/b --timeout 300ms --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect --layout --baseline small failed: 2 findings the baseline does not list","hint":"chrome-cdp expect --layout --baseline small --dir <sandbox>/b --update   (accepts them into the baseline, if they are fine), or fix them, or see them with chrome-cdp layout","notes":[{"label":"baseline","text":"<sandbox>/b/layout/small.txt"},{"label":"new","text":"small-target at desktop: button \"Close\" [e1]: 16×16px, needs 24×24"},{"label":"new","text":"small-target at desktop: button \"Pin\" [e2]: 16×16px, needs 24×24"}],"details":{"assertion":"--layout --baseline small","baseline":"<sandbox>/b/layout/small.txt","elapsed_ms":<ms>,"found":["small-target desktop role=button[name=\"Close\"]","small-target desktop role=button[name=\"Pin\"]"],"new":["small-target desktop role=button[name=\"Close\"]","small-target desktop role=button[name=\"Pin\"]"],"retries":<n>}}}
+

@@ -1,0 +1,7 @@
+layout t1 <site>/layout/offscreen.html: mobile 1 error, tablet 1 error, desktop 1 error
+mobile (390x844): 1 error
+✗ offscreen     button "Lost" [e12] at X,Y: no scroll reaches it (the page is 980x2121)
+tablet (820x1180): 1 error
+✗ offscreen     button "Lost" [e12] at X,Y: no scroll reaches it (the page is 820x1180)
+desktop (1280x800): 1 error
+✗ offscreen     button "Lost" [e12] at X,Y: no scroll reaches it (the page is 1280x800)

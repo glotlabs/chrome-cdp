@@ -1,0 +1,7 @@
+layout t1 <site>/layout/frames.html: mobile 1 error, tablet 1 error, desktop 1 error
+mobile (390x844): 1 error
+✗ clipped       text "Delivered by tomorrow afternoon" [e19]: Npx of Mpx shown (overflow: hidden on it)
+tablet (820x1180): 1 error
+✗ clipped       text "Delivered by tomorrow afternoon" [e19]: Npx of Mpx shown (overflow: hidden on it)
+desktop (1280x800): 1 error
+✗ clipped       text "Delivered by tomorrow afternoon" [e19]: Npx of Mpx shown (overflow: hidden on it)

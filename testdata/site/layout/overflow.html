@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Layout: overflow-x</title>
+<!-- One finding: the page scrolls sideways because the table is 1400px
+     wide. A wide box inside a scroller does not count. -->
+<style>
+  body { margin: 0; font: 16px sans-serif; color: #222; background: #fff; }
+  table { width: 1400px; border-collapse: collapse; }
+  td { border: 1px solid #ccc; padding: 4px; }
+  .scroller { width: 300px; overflow-x: auto; }
+  .scroller div { width: 2000px; }
+</style>
+<h1>Orders</h1>
+<table aria-label="Orders"><tr><td>Order 1</td><td>12 €</td></tr></table>
+<div class="scroller"><div>A wide strip that scrolls inside its box</div></div>

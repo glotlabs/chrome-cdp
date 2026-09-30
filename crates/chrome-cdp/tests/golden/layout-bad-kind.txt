@@ -1,0 +1,12 @@
+$ chrome-cdp layout --only overlaps
+exit: 2
+--- stderr
+error: --only: there is no finding kind "overlaps"
+  kinds: covered, overlap, clipped, truncated, overflow-x, offscreen, small-target, contrast
+  hint: chrome-cdp layout --only covered,clipped
+
+$ chrome-cdp layout --only overlaps --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"--only: there is no finding kind \"overlaps\"","hint":"chrome-cdp layout --only covered,clipped","notes":[{"label":"kinds","text":"covered, overlap, clipped, truncated, overflow-x, offscreen, small-target, contrast"}]}}
+

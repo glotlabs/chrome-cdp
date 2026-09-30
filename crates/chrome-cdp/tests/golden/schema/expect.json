@@ -30,6 +30,31 @@
       ],
       "type": "object"
     },
+    "BaselineResult": {
+      "description": "What `expect-snapshot` and `expect-screenshot` did with the baseline.",
+      "oneOf": [
+        {
+          "const": "passed",
+          "description": "The page matched the baseline.",
+          "type": "string"
+        },
+        {
+          "const": "created",
+          "description": "There was no baseline; the page was stored as one.",
+          "type": "string"
+        },
+        {
+          "const": "updated",
+          "description": "`--update` replaced a baseline the page no longer matched.",
+          "type": "string"
+        },
+        {
+          "const": "unchanged",
+          "description": "`--update` found the page matching the baseline already.",
+          "type": "string"
+        }
+      ]
+    },
     "DownloadInfo": {
       "description": "A file the browser downloaded (or is downloading) into the session's\n`downloads` directory.",
       "properties": {
@@ -708,6 +733,17 @@
           "description": "What it expected, in words: `text containing \"Saved\"`.",
           "type": "string"
         },
+        "layout": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExpectLayout"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`expect --layout`: the baseline and the findings."
+        },
         "retries": {
           "description": "How many times it was checked again before it held.",
           "format": "uint64",
@@ -725,6 +761,38 @@
         "actual",
         "elapsed_ms",
         "retries"
+      ],
+      "type": "object"
+    },
+    "ExpectLayout": {
+      "description": "`expect --layout`: the baseline and what differed from it.",
+      "properties": {
+        "baseline": {
+          "description": "The baseline file, absolute.",
+          "type": "string"
+        },
+        "findings": {
+          "description": "The keys of the error findings on the page.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "result": {
+          "$ref": "#/$defs/BaselineResult"
+        },
+        "stale": {
+          "description": "Keys the baseline lists that were not found (the file can lose\nthem).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "baseline",
+        "result",
+        "findings"
       ],
       "type": "object"
     },

@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Layout: offscreen</title>
+<!-- One finding: a button moved off the page to the left. A skip link
+     and a visually hidden (.sr-only) link do not count. -->
+<style>
+  body { margin: 0; font: 16px sans-serif; color: #222; background: #fff; }
+  .skip { position: absolute; left: -9999px; }
+  .skip:focus { left: 8px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);
+    white-space: nowrap; }
+  #lost { position: absolute; left: -500px; top: 100px; width: 120px; height: 36px; }
+</style>
+<a class="skip" href="#main">Skip to content</a>
+<main id="main">
+  <h1>Offscreen</h1>
+  <a class="sr-only" href="/help">Help for screen readers</a>
+  <button id="lost">Lost</button>
+</main>

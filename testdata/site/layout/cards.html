@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Layout: cards</title>
+<!-- #narrow's title fits in a card 60% of the page wide at 1280px and is cut
+     at 390px (--viewports). #tight's title fits in its 260px card, but not
+     with the text 40% longer (--stretch-text 40). -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { margin: 0; font: 16px sans-serif; color: #222; background: #fff; }
+  .card { overflow: hidden; border: 1px solid #ccc; margin: 16px; }
+  .card h2 { white-space: nowrap; font: 20px sans-serif; margin: 8px; }
+  #narrow { width: 60vw; }
+  #tight { width: 260px; }
+</style>
+<div class="card" id="narrow"><h2>Wireless noise-cancelling headphones</h2></div>
+<div class="card" id="tight"><h2>Stainless water bottle</h2></div>

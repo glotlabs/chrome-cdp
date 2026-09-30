@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Layout: overlap</title>
+<!-- One finding: Save and Delete overlap. A link inside a button and a
+     button beside another do not count. -->
+<style>
+  body { margin: 0; font: 16px sans-serif; color: #222; background: #fff; }
+  .bar { position: relative; height: 60px; margin: 16px; }
+  .bar button { position: absolute; top: 8px; width: 100px; height: 36px; font: inherit; }
+  #save { left: 0; }
+  #delete { left: 70px; }
+  #next { left: 300px; }
+</style>
+<div class="bar">
+  <button id="save">Save</button>
+  <button id="delete">Delete</button>
+  <button id="next">Next</button>
+</div>

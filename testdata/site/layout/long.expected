@@ -1,0 +1,4 @@
+layout t1 <site>/layout/long.html: mobile 0 errors, tablet 0 errors, desktop 0 errors
+mobile (390x844): no errors
+tablet (820x1180): no errors
+desktop (1280x800): no errors

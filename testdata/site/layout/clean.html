@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Layout: clean</title>
+<!-- A page layout finds nothing on, at every viewport. -->
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { margin: 0; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
+  header, main { padding: 16px; }
+  nav a { display: inline-block; padding: 8px 12px; margin-right: 8px; color: #0645ad; }
+  button { font: inherit; padding: 8px 16px; margin: 8px 8px 8px 0; }
+  label { display: block; margin: 12px 0; }
+  input { font: inherit; padding: 6px; max-width: 100%; box-sizing: border-box; }
+  .card { border: 1px solid #ccc; padding: 12px; max-width: 480px; }
+  .card h2 { margin: 0 0 8px; font-size: 20px; }
+</style>
+<header>
+  <nav><a href="#top">Home</a><a href="#shop">Shop</a><a href="#about">About</a></nav>
+</header>
+<main>
+  <h1>Welcome</h1>
+  <p>Read the <a href="#terms">terms</a> before you order, and write to us if you have questions.</p>
+  <div class="card">
+    <h2>Coffee mug</h2>
+    <p>A mug that holds your coffee.</p>
+    <button>Add to cart</button><button>Save</button>
+  </div>
+  <form>
+    <label>Email <input type="email" name="email"></label>
+    <label>Name <input name="name"></label>
+    <button type="submit">Subscribe</button>
+  </form>
+</main>

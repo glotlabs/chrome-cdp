@@ -1,0 +1,17 @@
+$ chrome-cdp layout
+exit: 0
+--- stdout
+layout t1 <site>/layout/small.html (1280x800): 2 errors
+✗ small-target  button "Close" [e1]: 16×16px, needs 24×24
+✗ small-target  button "Pin" [e2]: 16×16px, needs 24×24
+
+$ chrome-cdp layout --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"tab":"t1","url":"<site>/layout/small.html","viewports":[{"errors":2,"findings":[{"box":{"height":16,"width":16,"x":20,"y":20},"details":{"height":16,"min":24,"width":16},"element":{"class":"icon","name":"Close","ref":"e1","role":"button","tag":"button"},"key":"small-target desktop role=button[name=\"Close\"]","kind":"small-target","message":"button \"Close\" [e1]: 16×16px, needs 24×24","severity":"error"},{"box":{"height":16,"width":16,"x":40,"y":20},"details":{"height":16,"min":24,"width":16},"element":{"class":"icon","name":"Pin","ref":"e2","role":"button","tag":"button"},"key":"small-target desktop role=button[name=\"Pin\"]","kind":"small-target","message":"button \"Pin\" [e2]: 16×16px, needs 24×24","severity":"error"}],"height":800,"info":0,"name":"desktop","width":1280}]}}
+
+$ chrome-cdp layout -q
+exit: 0
+--- stdout
+2
+

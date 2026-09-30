@@ -1,0 +1,5 @@
+layout t1 <site>/layout/covered.html: mobile 0 errors, tablet 0 errors, desktop 1 error
+mobile (390x844): no errors
+tablet (820x1180): no errors
+desktop (1280x800): 1 error
+✗ covered       button "Checkout" [e3] under div.cookie-banner [e1] at X,Y; its button "Accept" [e2] likely dismisses it

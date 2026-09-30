@@ -1,0 +1,15 @@
+$ chrome-cdp expect --layout --baseline small --dir <sandbox>/b
+exit: 0
+--- stdout
+passed: expect --layout --baseline small: 2 error findings, all in the baseline (<ms>)
+
+$ chrome-cdp expect --layout --baseline small --dir <sandbox>/b --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"actual":0,"assertion":"--layout --baseline small","count":2,"elapsed_ms":<ms>,"expected":"no error findings the baseline does not list","layout":{"baseline":"<sandbox>/b/layout/small.txt","findings":["small-target desktop role=button[name=\"Close\"]","small-target desktop role=button[name=\"Pin\"]"],"result":"passed"},"retries":<n>,"tab":"t1"}}
+
+$ chrome-cdp expect --layout --baseline small --dir <sandbox>/b -q
+exit: 0
+--- stdout
+<sandbox>/b/layout/small.txt
+

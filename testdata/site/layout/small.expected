@@ -1,0 +1,10 @@
+layout t1 <site>/layout/small.html: mobile 2 errors, tablet 2 errors, desktop 2 errors
+mobile (390x844): 2 errors
+✗ small-target  button "Close" [e13]: 16×16px, needs 24×24
+✗ small-target  button "Pin" [e14]: 16×16px, needs 24×24
+tablet (820x1180): 2 errors
+✗ small-target  button "Close" [e13]: 16×16px, needs 24×24
+✗ small-target  button "Pin" [e14]: 16×16px, needs 24×24
+desktop (1280x800): 2 errors
+✗ small-target  button "Close" [e13]: 16×16px, needs 24×24
+✗ small-target  button "Pin" [e14]: 16×16px, needs 24×24

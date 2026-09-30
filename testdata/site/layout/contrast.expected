@@ -1,0 +1,16 @@
+layout t1 <site>/layout/contrast.html: mobile 4 errors, tablet 4 errors, desktop 4 errors
+mobile (390x844): 4 errors
+✗ contrast      paragraph "Free shipping on every order" [e15]: R:1 on COLOURS, needs 4.5:1
+✗ contrast      paragraph "Summer sale starts today" [e16]: R:1 on COLOURS, needs 4.5:1
+✗ contrast      paragraph "Terms and conditions apply" [e17]: R:1 on COLOURS, needs 4.5:1
+✗ contrast      paragraph "Big but pale" [e18]: R:1 on COLOURS, needs 3:1
+tablet (820x1180): 4 errors
+✗ contrast      paragraph "Free shipping on every order" [e15]: R:1 on COLOURS, needs 4.5:1
+✗ contrast      paragraph "Summer sale starts today" [e16]: R:1 on COLOURS, needs 4.5:1
+✗ contrast      paragraph "Terms and conditions apply" [e17]: R:1 on COLOURS, needs 4.5:1
+✗ contrast      paragraph "Big but pale" [e18]: R:1 on COLOURS, needs 3:1
+desktop (1280x800): 4 errors
+✗ contrast      paragraph "Free shipping on every order" [e15]: R:1 on COLOURS, needs 4.5:1
+✗ contrast      paragraph "Summer sale starts today" [e16]: R:1 on COLOURS, needs 4.5:1
+✗ contrast      paragraph "Terms and conditions apply" [e17]: R:1 on COLOURS, needs 4.5:1
+✗ contrast      paragraph "Big but pale" [e18]: R:1 on COLOURS, needs 3:1

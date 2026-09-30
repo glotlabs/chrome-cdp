@@ -1,0 +1,9 @@
+layout t1 <site>/layout/cards.html: mobile 2 errors, tablet 2 errors, desktop 1 error
+mobile (390x844): 2 errors
+✗ clipped       heading "Wireless noise-cancelling headphones" [e22]: Npx of Mpx shown (overflow: hidden on div.card [e23])
+✗ clipped       heading "Stainless water bottle" [e24]: Npx of Mpx shown (overflow: hidden on div.card [e25]) (stretched 40%)
+tablet (820x1180): 2 errors
+✗ clipped       heading "Wireless noise-cancelling headphones" [e22]: Npx of Mpx shown (overflow: hidden on div.card [e23]) (stretched 40%)
+✗ clipped       heading "Stainless water bottle" [e24]: Npx of Mpx shown (overflow: hidden on div.card [e25]) (stretched 40%)
+desktop (1280x800): 1 error
+✗ clipped       heading "Stainless water bottle" [e24]: Npx of Mpx shown (overflow: hidden on div.card [e25]) (stretched 40%)

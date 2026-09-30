@@ -384,6 +384,40 @@ fn web_servers_are_reused_or_fail_the_run() {
 }
 
 #[test]
+fn layout_baselines_in_the_project() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    // expect --layout baselines go to e2e/snapshots/layout of the project.
+    std::fs::write(
+        project.root.join("scenarios/pass/layout.cdp"),
+        "@test \"small targets\"\n  goto /layout/small.html\n  expect --layout --baseline small\n",
+    )
+    .unwrap();
+    // No baseline yet: it fails, and --update-snapshots writes one.
+    let out = project.test(&["scenarios/pass/layout.cdp"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    let out = project.test(&["scenarios/pass/layout.cdp", "--update-snapshots"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+    let baseline = project.root.join("e2e/snapshots/layout/small.txt");
+    let written = std::fs::read_to_string(&baseline).unwrap();
+    assert!(
+        written.contains("small-target desktop role=button[name=\"Close\"]\n"),
+        "{written}"
+    );
+    // Compared, not written, without the flag.
+    let out = project.test(&["scenarios/pass/layout.cdp"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+    std::fs::write(&baseline, "# nothing accepted\n").unwrap();
+    let out = project.test(&["scenarios/pass/layout.cdp", "--timeout", "1s"]);
+    assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("the baseline does not list"),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
 fn a_chrome_per_job_and_snapshot_baselines_in_the_project() {
     let Some(chrome) = chrome_path() else { return };
     let project = Project::new(&chrome);

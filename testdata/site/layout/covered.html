@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Layout: covered</title>
+<!-- One finding: the Checkout button under the cookie banner. -->
+<style>
+  body { margin: 0; font: 16px sans-serif; color: #222; background: #fff; }
+  main { padding: 16px; height: 900px; position: relative; }
+  #checkout { position: absolute; left: 16px; bottom: 30px; font: inherit; padding: 8px 16px; }
+  .cookie-banner { position: fixed; left: 0; right: 0; bottom: 0; height: 120px; background: #333;
+    color: #fff; padding: 16px; box-sizing: border-box; }
+  .cookie-banner button { font: inherit; padding: 8px 16px; }
+</style>
+<main style="height: 760px">
+  <h1>Cart</h1>
+  <button id="checkout">Checkout</button>
+</main>
+<div class="cookie-banner">We use cookies. <button>Accept</button></div>

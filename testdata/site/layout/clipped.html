@@ -1,0 +1,24 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Layout: clipped</title>
+<!-- Two errors (a title cut by its card, a note cut by its own fixed
+     height) and two info (an ellipsis, a line clamp). A scroller and a
+     carousel's other slide do not count. -->
+<style>
+  body { margin: 0; font: 16px/20px sans-serif; color: #222; background: #fff; }
+  .card { width: 200px; overflow: hidden; border: 1px solid #ccc; margin: 16px; }
+  .card h2 { white-space: nowrap; font-size: 20px; margin: 8px; }
+  .note { width: 200px; height: 40px; overflow: hidden; margin: 16px; }
+  .ellipsis { width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 16px; }
+  .clamp { width: 200px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+    overflow: hidden; margin: 16px; }
+  .scroller { width: 200px; height: 40px; overflow: auto; margin: 16px; }
+  .carousel { width: 200px; height: 30px; overflow: hidden; position: relative; margin: 16px; }
+  .slide { position: absolute; top: 0; width: 200px; }
+</style>
+<div class="card"><h2>Wireless noise-cancelling headphones</h2></div>
+<p class="note">This note is longer than the two lines its box has room for, so the rest is cut off.</p>
+<p class="ellipsis">A long product name that ends in an ellipsis on purpose</p>
+<p class="clamp">A description clamped to two lines on purpose, with more words than two lines can hold at this width.</p>
+<div class="scroller">A scroller shows the rest of its text when it is scrolled, so it is not cut off.</div>
+<div class="carousel"><div class="slide" style="left: 0">First slide</div><div class="slide" style="left: 200px">Second slide</div></div>

@@ -1,0 +1,5 @@
+layout t1 <site>/layout/cards.html: mobile 1 error, tablet 0 errors, desktop 0 errors
+mobile (390x844): 1 error
+✗ clipped       heading "Wireless noise-cancelling headphones" [e20]: Npx of Mpx shown (overflow: hidden on div.card [e21])
+tablet (820x1180): no errors
+desktop (1280x800): no errors

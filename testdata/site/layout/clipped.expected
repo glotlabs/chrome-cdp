@@ -1,0 +1,16 @@
+layout t1 <site>/layout/clipped.html: mobile 2 errors, tablet 2 errors, desktop 2 errors
+mobile (390x844): 2 errors, 2 info
+✗ clipped       heading "Wireless noise-cancelling headphones" [e6]: Npx of Mpx shown (overflow: hidden on div.card [e7])
+✗ clipped       paragraph "This note is longer than the two lines its box has room for…" [e8]: Npx of Mpx shown in height (overflow: hidden on it)
+- truncated     paragraph "A long product name that ends in an ellipsis on purpose" [e9]: cut with an ellipsis, Npx of Mpx shown: "A long product name that ends in an ellipsis on purpose"
+- truncated     paragraph "A description clamped to two lines on purpose, with more wo…" [e10]: cut with a line clamp, Npx of Mpx shown in height: "A description clamped to two lines on purpose, with more words than two lines c…"
+tablet (820x1180): 2 errors, 2 info
+✗ clipped       heading "Wireless noise-cancelling headphones" [e6]: Npx of Mpx shown (overflow: hidden on div.card [e7])
+✗ clipped       paragraph "This note is longer than the two lines its box has room for…" [e8]: Npx of Mpx shown in height (overflow: hidden on it)
+- truncated     paragraph "A long product name that ends in an ellipsis on purpose" [e9]: cut with an ellipsis, Npx of Mpx shown: "A long product name that ends in an ellipsis on purpose"
+- truncated     paragraph "A description clamped to two lines on purpose, with more wo…" [e10]: cut with a line clamp, Npx of Mpx shown in height: "A description clamped to two lines on purpose, with more words than two lines c…"
+desktop (1280x800): 2 errors, 2 info
+✗ clipped       heading "Wireless noise-cancelling headphones" [e6]: Npx of Mpx shown (overflow: hidden on div.card [e7])
+✗ clipped       paragraph "This note is longer than the two lines its box has room for…" [e8]: Npx of Mpx shown in height (overflow: hidden on it)
+- truncated     paragraph "A long product name that ends in an ellipsis on purpose" [e9]: cut with an ellipsis, Npx of Mpx shown: "A long product name that ends in an ellipsis on purpose"
+- truncated     paragraph "A description clamped to two lines on purpose, with more wo…" [e10]: cut with a line clamp, Npx of Mpx shown in height: "A description clamped to two lines on purpose, with more words than two lines c…"
