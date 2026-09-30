@@ -375,15 +375,17 @@ impl Engine {
                     let cause = p.el.and_then(|i| names.get(i));
                     Some((fill_in(p.text.as_deref()?, cause), cause.cloned()))
                 });
-                // A modal dialog open elsewhere: its backdrop takes the click.
-                let modal = checks
+                // Inert (a modal dialog open elsewhere, or `inert`): clicks
+                // pass through it, or land on the dialog's backdrop.
+                let inert = checks
                     .iter()
                     .find(|c| {
-                        c.name == "enabled" && c.why.as_deref().is_some_and(|w| w.contains("modal"))
+                        c.name == "enabled"
+                            && c.why.as_deref().is_some_and(|w| w.starts_with("inert"))
                     })
-                    .and_then(|c| c.element.clone());
+                    .and_then(|c| Some((c.why.clone()?, c.element.clone()?)));
                 checks.push(hit_check(
-                    running, page, &obscured, clip, pointer, modal, generation,
+                    running, page, &obscured, clip, pointer, inert, generation,
                 ));
             }
             Err(Attempt::Retry(failure)) => {
@@ -517,7 +519,7 @@ fn hit_check(
     obscured: &Obscured,
     clip: Option<(String, Option<WhyElement>)>,
     pointer: Option<(String, Option<WhyElement>)>,
-    modal: Option<WhyElement>,
+    inert: Option<(String, WhyElement)>,
     generation: Option<u64>,
 ) -> WhyCheck {
     let listed = |l: &Listed| {
@@ -555,12 +557,20 @@ fn hit_check(
             checked.element = cause;
         } else {
             why.push_str("clicks pass through it");
-            if let Some(covering) = &covering {
-                let _ = write!(why, " to {}", element_text(covering));
+            if let Some((cause, element)) = inert {
+                let _ = write!(why, ": {cause}");
+                checked.element = Some(element);
+            } else {
+                if let Some(covering) = &covering {
+                    let _ = write!(why, " to {}", element_text(covering));
+                }
+                checked.element = covering;
             }
-            checked.element = covering;
         }
     } else {
+        let modal = inert
+            .filter(|(cause, _)| cause.contains("modal"))
+            .map(|(_, element)| element);
         match &covering {
             Some(covering) => {
                 let _ = write!(why, "covered by {}", element_text(covering));

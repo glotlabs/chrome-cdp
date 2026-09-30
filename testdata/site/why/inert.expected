@@ -4,5 +4,5 @@ why #inert button "Asleep" [e10] (for click)
 ✓ stable
 ✗ enabled    inert on section [e11]
 ✓ in view
-✗ hit test   clicks pass through it
-→ click would wait until the timeout: inert; clicks pass through it
+✗ hit test   clicks pass through it: inert on section [e11]
+→ click would wait until the timeout: inert; clicks pass through it: inert on section [e11]
