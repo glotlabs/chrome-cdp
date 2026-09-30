@@ -18,6 +18,7 @@
 | [waiting.md](waiting.md) | what commands wait for by themselves, `wait` for the rest, timeouts, `expect` |
 | [debugging-a-dev-server.md](debugging-a-dev-server.md) | the see-why-fix-check loop on a local frontend: errors with source maps, requests, `route` |
 | [testing.md](testing.md) | `.cdp` files: `batch`, `run`, `expect` and `chrome-cdp test` |
+| [accessibility.md](accessibility.md) | `expect --a11y`: every built-in accessibility rule, with its WCAG criterion |
 | [ci.md](ci.md) | GitHub Actions (and other CI) workflows |
 | [docker.md](docker.md) | the `ghcr.io/glotlabs/chrome-cdp` image with Chrome and fonts |
 | [migrating-from-playwright.md](migrating-from-playwright.md) | Playwright's API, call by call, as chrome-cdp commands |

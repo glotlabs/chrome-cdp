@@ -78,9 +78,12 @@ Page checks:
                        (--origin self: only to the page's origin; the
                        browser's own /favicon.ico does not count;
                        --all-tabs: in any tab since it opened)
-  --a11y [--level A]   built-in accessibility rules (WCAG A and AA), in
+  --a11y [--level A]   26 built-in accessibility rules (WCAG A and AA:
+                       names, labels, ARIA roles and attributes, headings,
+                       lists, tables, contrast, target size, focus), in
                        the page and its iframes, or the element LOCATOR
-                       names
+                       names. focus-visible (AA) focuses each element and
+                       gives focus back; docs/accessibility.md lists them
   --perf BUDGETS       `perf`'s numbers within every budget, e.g.
                        'lcp<2.5s cls<0.1 tbt<200': <metric><op><value>,
                        op <, <=, > or >=; ttfb, fcp, dcl, load, lcp, inp,
