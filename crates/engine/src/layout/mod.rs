@@ -1232,10 +1232,11 @@ fn finding(
 /// no role, found for its text, by the text.
 fn named(kind: &str, element: &WhyElement) -> String {
     let text_kind = matches!(kind, "clipped" | "truncated" | "contrast");
-    if text_kind
-        && (element.role == "generic" || element.role.is_empty())
-        && !element.name.is_empty()
-    {
+    let roleless = matches!(
+        element.role.as_str(),
+        "" | "generic" | "none" | "presentation"
+    );
+    if text_kind && roleless && !element.name.is_empty() {
         let mut out = format!("text \"{}\"", element.name.replace('"', "\\\""));
         if let Some(reference) = &element.reference {
             let _ = write!(out, " [{reference}]");

@@ -1,8 +1,9 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>Layout: overlap</title>
-<!-- One finding: Save and Delete overlap. A link inside a button and a
-     button beside another do not count. -->
+<!-- One finding: Save and Delete overlap. A button beside another does
+     not count, nor links in a paragraph where one wraps onto a second
+     line (its bounding box takes in the others). -->
 <style>
   body { margin: 0; font: 16px sans-serif; color: #222; background: #fff; }
   .bar { position: relative; height: 60px; margin: 16px; }
@@ -16,3 +17,4 @@
   <button id="delete">Delete</button>
   <button id="next">Next</button>
 </div>
+<p style="width: 170px; margin: 16px">Go to <a href="#a">first</a> or <a href="#b">the second link that wraps</a> or <a href="#c">third</a>.</p>

@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: d6e92961653be8aa
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 18a6410583ef99f3
 "use strict";
 (() => {
   // src/dom.ts
@@ -2513,8 +2513,7 @@ ${inner}
   }
   var area = (b) => b[2] * b[3];
   var centre = (b) => [b[0] + b[2] / 2, b[1] + b[3] / 2];
-  function shownBox(el) {
-    let box = boxOf(el.getBoundingClientRect());
+  function clipBox(el, box) {
     for (let a = parentOf(el); a && box; a = parentOf(a)) {
       const t = tag(a);
       if (t === "html" || t === "body") break;
@@ -2532,6 +2531,13 @@ ${inner}
     }
     return box;
   }
+  function shownBoxes(el, style) {
+    const rects = style.display === "inline" ? Array.from(el.getClientRects()) : [];
+    const boxes = rects.length > 1 ? rects.map(boxOf) : [boxOf(el.getBoundingClientRect())];
+    return boxes.filter((b) => b[2] >= 1 && b[3] >= 1).map((b) => clipBox(el, b)).filter((b) => !!b);
+  }
+  var largest = (boxes) => boxes.reduce((a, b) => area(b) > area(a) ? b : a);
+  var reach = (p, b) => Math.hypot(Math.max(b[0] - p[0], 0, p[0] - b[0] - b[2]), Math.max(b[1] - p[1], 0, p[1] - b[1] - b[3]));
   function visuallyHidden2(el, style) {
     const r = el.getBoundingClientRect();
     if (r.width <= 1 || r.height <= 1) return true;
@@ -2555,6 +2561,7 @@ ${inner}
       return value2;
     };
     const all = root instanceof Document ? descendants(root) : [root, ...descendants(root)];
+    const modal = openModal(document);
     for (const el of all) {
       const t = tag(el);
       if (SKIP.has(t) || t === "html" || t === "body") continue;
@@ -2568,7 +2575,8 @@ ${inner}
       const tabindex = parseInt(el.getAttribute("tabindex") || "", 10);
       const pointer = style.cursor === "pointer" && !(parentStyle && parentStyle.cursor === "pointer");
       const clickable = el.hasAttribute("onclick") || tabindex >= 0 || pointer;
-      const interactive = role !== "iframe" && (INTERACTIVE.has(role) || clickable);
+      const inert = !!el.closest("[inert]") || outsideModal(el, modal);
+      const interactive = role !== "iframe" && !inert && (INTERACTIVE.has(role) || clickable);
       out.push({ el, style, role, interactive });
     }
     return out;
@@ -2622,6 +2630,58 @@ ${inner}
     for (let a = el; a; a = parentOf(a)) o *= parseFloat(getComputedStyle(a).opacity) || 0;
     return o;
   }
+  var NATIVE = /* @__PURE__ */ new Set(["button", "input", "select", "textarea"]);
+  var Native = class {
+    host = null;
+    root = null;
+    sizes = /* @__PURE__ */ new Map();
+    /** Whether `el`'s small sides (under `min`) are the size an unstyled
+     * control of its kind has: the browser sized them (WCAG 2.5.8's
+     * exception), as it does the options of a native select. */
+    unstyled(el, box, min) {
+      const t = tag(el);
+      if (t === "option") return !!el.closest("select");
+      if (!NATIVE.has(t)) return false;
+      const ref = this.size(el);
+      if (!ref) return false;
+      const width = box[2] >= min || Math.abs(box[2] - ref.width) <= 1;
+      const height = box[3] >= min || Math.abs(box[3] - ref.height) <= 1;
+      return width && height;
+    }
+    size(el) {
+      const t = tag(el);
+      const type = t === "input" ? el.type : "";
+      const multiple = t === "select" ? `${el.multiple}:${el.size}` : "";
+      const text2 = t === "button" ? norm(el.textContent) : "";
+      const key = `${t}:${type}:${multiple}:${text2}`;
+      const known = this.sizes.get(key);
+      if (known) return known;
+      if (!this.root) {
+        this.host = document.createElement("div");
+        this.host.style.cssText = "position: absolute; left: -10000px; top: 0; visibility: hidden";
+        this.root = this.host.attachShadow({ mode: "closed" });
+        (document.body || document.documentElement).append(this.host);
+      }
+      const copy = document.createElement(t);
+      if (type) copy.setAttribute("type", type);
+      if (text2) copy.textContent = text2;
+      if (t === "select") {
+        const select = el;
+        copy.multiple = select.multiple;
+        copy.size = select.size;
+        for (const o of Array.from(select.options)) copy.append(new Option(o.text));
+      }
+      this.root.append(copy);
+      const size2 = copy.getBoundingClientRect();
+      this.sizes.set(key, size2);
+      return size2;
+    }
+    remove() {
+      this.host?.remove();
+      this.host = null;
+      this.root = null;
+    }
+  };
   var measured = [];
   function layoutCheck(root, options) {
     const kinds = new Set(options.kinds);
@@ -2635,14 +2695,14 @@ ${inner}
     };
     const targets = seen.filter((s) => s.interactive && !visuallyHidden2(s.el, s.style));
     const shown2 = /* @__PURE__ */ new Map();
-    const shownOf = (el) => {
-      if (!shown2.has(el)) shown2.set(el, shownBox(el));
-      return shown2.get(el);
+    const shownOf = (s) => {
+      if (!shown2.has(s.el)) shown2.set(s.el, shownBoxes(s.el, s.style));
+      return shown2.get(s.el);
     };
     if (kinds.has("covered")) {
       for (const t of targets) {
-        const box = shownOf(t.el);
-        if (!box || !inView(box)) continue;
+        const box = shownOf(t).find(inView);
+        if (!box) continue;
         const [x, y] = centre(box);
         const hit = hitAt(t.el.ownerDocument, x, y);
         if (!hit || contains(t.el, hit) || contains(hit, t.el)) continue;
@@ -2663,13 +2723,30 @@ ${inner}
       }
     }
     if (kinds.has("overlap")) {
-      const boxes = targets.map((t) => ({ el: t.el, box: shownOf(t.el) })).filter((b) => !!b.box).sort((a, b) => a.box[0] - b.box[0]);
+      const boxes = targets.map((t) => {
+        const parts = shownOf(t);
+        const left = Math.min(...parts.map((b) => b[0]));
+        const right = Math.max(...parts.map((b) => b[0] + b[2]));
+        const size2 = parts.reduce((sum, b) => sum + area(b), 0);
+        return { el: t.el, parts, left, right, size: size2 };
+      }).filter((b) => b.parts.length).sort((a, b) => a.left - b.left);
       for (let i = 0; i < boxes.length; i++) {
         const a = boxes[i];
-        for (let j = i + 1; j < boxes.length && boxes[j].box[0] < a.box[0] + a.box[2]; j++) {
+        for (let j = i + 1; j < boxes.length && boxes[j].left < a.right; j++) {
           const b = boxes[j];
-          const both = intersect(a.box, b.box);
-          if (!both || area(both) <= 4 || area(both) < 0.1 * Math.min(area(a.box), area(b.box))) continue;
+          let both = 0;
+          let width = 0;
+          let height = 0;
+          for (const pa of a.parts) {
+            for (const pb of b.parts) {
+              const part = intersect(pa, pb);
+              if (!part) continue;
+              both += area(part);
+              width = Math.max(width, part[2]);
+              height = Math.max(height, part[3]);
+            }
+          }
+          if (both <= 4 || both < 0.1 * Math.min(a.size, b.size)) continue;
           if (contains(a.el, b.el) || contains(b.el, a.el)) continue;
           const [first, second] = a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? [a, b] : [b, a];
           findings.push({
@@ -2677,7 +2754,7 @@ ${inner}
             el: els.add(first.el),
             box: boxOf(first.el.getBoundingClientRect()),
             others: [els.add(second.el)],
-            details: { width: px2(both[2]), height: px2(both[3]) }
+            details: { width: px2(width), height: px2(height) }
           });
         }
       }
@@ -2784,7 +2861,7 @@ ${inner}
         const [w, h] = fixed ? [doc.clientWidth, doc.clientHeight] : [width, height];
         if (!(x + r.width <= 0 || y + r.height <= 0 || x >= w || y >= h)) continue;
         if (tag(t.el) === "a" && (t.el.getAttribute("href") || "").startsWith("#")) continue;
-        if (!shownOf(t.el)) continue;
+        if (!shownOf(t).length) continue;
         findings.push({
           kind: "offscreen",
           el: els.add(t.el),
@@ -2795,30 +2872,34 @@ ${inner}
     }
     if (kinds.has("small-target")) {
       const min = options.minTarget;
-      const boxes = targets.map((t) => ({ t, box: shownOf(t.el) })).filter((b) => !!b.box);
+      const boxes = targets.map((t) => ({ t, parts: shownOf(t) })).filter((b) => b.parts.length).map((b) => ({ ...b, box: largest(b.parts) }));
       const small = (b) => b[2] < min - 0.01 || b[3] < min - 0.01;
-      const reach = (p, b) => Math.hypot(Math.max(b[0] - p[0], 0, p[0] - b[0] - b[2]), Math.max(b[1] - p[1], 0, p[1] - b[1] - b[3]));
-      for (const { t, box } of boxes) {
-        const own = boxOf(t.el.getBoundingClientRect());
-        if (!small(own)) continue;
-        if (t.role === "link" && t.style.display === "inline") {
-          let block = parentOf(t.el);
-          while (block && getComputedStyle(block).display.startsWith("inline")) block = parentOf(block);
-          if (block && norm(block.textContent).length > norm(t.el.textContent).length) continue;
+      const native = new Native();
+      try {
+        for (const { t, box, parts } of boxes) {
+          if (!small(box)) continue;
+          if (t.role === "link" && t.style.display === "inline") {
+            let block = parentOf(t.el);
+            while (block && getComputedStyle(block).display.startsWith("inline")) block = parentOf(block);
+            if (block && norm(block.textContent).length > norm(t.el.textContent).length) continue;
+          }
+          if (native.unstyled(t.el, box, min)) continue;
+          const c = centre(box);
+          const crowded = boxes.some((o) => {
+            if (o.t === t || contains(o.t.el, t.el) || contains(t.el, o.t.el)) return false;
+            if (o.parts.some((b) => reach(c, b) < min / 2)) return true;
+            return small(o.box) && Math.hypot(c[0] - centre(o.box)[0], c[1] - centre(o.box)[1]) < min;
+          });
+          if (!crowded) continue;
+          findings.push({
+            kind: "small-target",
+            el: els.add(t.el),
+            box: parts.length > 1 ? box : boxOf(t.el.getBoundingClientRect()),
+            details: { width: px2(box[2]), height: px2(box[3]), min }
+          });
         }
-        const c = centre(box);
-        const crowded = boxes.some(({ t: o, box: ob }) => {
-          if (o === t || contains(o.el, t.el) || contains(t.el, o.el)) return false;
-          if (reach(c, ob) < min / 2) return true;
-          return small(boxOf(o.el.getBoundingClientRect())) && Math.hypot(c[0] - centre(ob)[0], c[1] - centre(ob)[1]) < min;
-        });
-        if (!crowded) continue;
-        findings.push({
-          kind: "small-target",
-          el: els.add(t.el),
-          box: own,
-          details: { width: px2(own[2]), height: px2(own[3]), min }
-        });
+      } finally {
+        native.remove();
       }
     }
     const texts = [];
@@ -2828,9 +2909,10 @@ ${inner}
       for (const s of seen) {
         if (tag(s.el) === "input" || tag(s.el) === "textarea" || tag(s.el) === "select") continue;
         if (visuallyHidden2(s.el, s.style)) continue;
+        if (s.el.closest(':disabled, [aria-disabled="true"]')) continue;
         const own = textBox(s.el);
         if (!own) continue;
-        const shownText = intersect(own, shownOf(s.el) || [0, 0, 0, 0]);
+        const shownText = clipBox(s.el, own);
         const box = shownText && intersect(shownText, view);
         if (!box || box[2] < 1 || box[3] < 1) continue;
         const c = colour2(s.style.webkitTextFillColor || s.style.color);

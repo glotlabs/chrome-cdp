@@ -7,7 +7,7 @@
 //
 // Boxes are `[x, y, width, height]` in this frame's viewport (CSS px).
 
-import { INTERACTIVE, roleOf } from './aria';
+import { INTERACTIVE, openModal, outsideModal, roleOf } from './aria';
 import { covering, frame, named, Named } from './actionable';
 import { SKIP, contains, descendants, norm, parentOf, tag } from './dom';
 import { stable } from './stable';
@@ -112,11 +112,10 @@ function intersect(a: Box, b: Box): Box | null {
 const area = (b: Box) => b[2] * b[3];
 const centre = (b: Box): [number, number] => [b[0] + b[2] / 2, b[1] + b[3] / 2];
 
-/** The part of `el`'s box that no ancestor with `overflow` other than
- * `visible` clips away (`html` and `body` clip to the viewport, which is
+/** `box` less what the ancestors of `el` with `overflow` other than
+ * `visible` clip away (`html` and `body` clip to the viewport, which is
  * not counted); `null` when nothing of it shows. */
-function shownBox(el: Element): Box | null {
-  let box: Box | null = boxOf(el.getBoundingClientRect());
+function clipBox(el: Element, box: Box | null): Box | null {
   for (let a = parentOf(el); a && box; a = parentOf(a)) {
     const t = tag(a);
     if (t === 'html' || t === 'body') break;
@@ -134,6 +133,24 @@ function shownBox(el: Element): Box | null {
   }
   return box;
 }
+
+/** The boxes of `el` that show: an inline element that wraps has one per
+ * line (its bounding box would take in what lies between), anything else
+ * one; each less what ancestors clip away. Empty when none shows. */
+function shownBoxes(el: Element, style: CSSStyleDeclaration): Box[] {
+  const rects = style.display === 'inline' ? Array.from(el.getClientRects()) : [];
+  const boxes = rects.length > 1 ? rects.map(boxOf) : [boxOf(el.getBoundingClientRect())];
+  return boxes
+    .filter((b) => b[2] >= 1 && b[3] >= 1)
+    .map((b) => clipBox(el, b))
+    .filter((b): b is Box => !!b);
+}
+
+const largest = (boxes: Box[]) => boxes.reduce((a, b) => (area(b) > area(a) ? b : a));
+
+/** How far a point is from a box (0 inside it). */
+const reach = (p: [number, number], b: Box) =>
+  Math.hypot(Math.max(b[0] - p[0], 0, p[0] - b[0] - b[2]), Math.max(b[1] - p[1], 0, p[1] - b[1] - b[3]));
 
 /** Visually hidden on purpose (the `.sr-only` pattern): 1 px or less, or
  * clipped to nothing by `clip` or `clip-path`. */
@@ -173,6 +190,7 @@ function rendered(root: Element | Document): Seen[] {
     return value;
   };
   const all = root instanceof Document ? descendants(root) : [root, ...descendants(root)];
+  const modal = openModal(document);
   for (const el of all) {
     const t = tag(el);
     if (SKIP.has(t) || t === 'html' || t === 'body') continue;
@@ -186,7 +204,9 @@ function rendered(root: Element | Document): Seen[] {
     const tabindex = parseInt(el.getAttribute('tabindex') || '', 10);
     const pointer = style.cursor === 'pointer' && !(parentStyle && parentStyle.cursor === 'pointer');
     const clickable = el.hasAttribute('onclick') || tabindex >= 0 || pointer;
-    const interactive = role !== 'iframe' && (INTERACTIVE.has(role) || clickable);
+    // Inert (by `inert`, or a modal dialog open elsewhere): no target.
+    const inert = !!el.closest('[inert]') || outsideModal(el, modal);
+    const interactive = role !== 'iframe' && !inert && (INTERACTIVE.has(role) || clickable);
     out.push({ el, style, role, interactive });
   }
   return out;
@@ -252,6 +272,67 @@ function opacity(el: Element): number {
   return o;
 }
 
+/** Form controls whose size the browser picks when the page does not
+ * style them. */
+const NATIVE = new Set(['button', 'input', 'select', 'textarea']);
+
+/** Unstyled controls to compare with: made on demand in a closed shadow
+ * root, where the page's rules do not reach, and removed after. */
+class Native {
+  host: HTMLElement | null = null;
+  root: ShadowRoot | null = null;
+  sizes = new Map<string, DOMRect>();
+
+  /** Whether `el`'s small sides (under `min`) are the size an unstyled
+   * control of its kind has: the browser sized them (WCAG 2.5.8's
+   * exception), as it does the options of a native select. */
+  unstyled(el: Element, box: Box, min: number): boolean {
+    const t = tag(el);
+    if (t === 'option') return !!el.closest('select');
+    if (!NATIVE.has(t)) return false;
+    const ref = this.size(el);
+    if (!ref) return false;
+    const width = box[2] >= min || Math.abs(box[2] - ref.width) <= 1;
+    const height = box[3] >= min || Math.abs(box[3] - ref.height) <= 1;
+    return width && height;
+  }
+
+  size(el: Element): DOMRect | null {
+    const t = tag(el);
+    const type = t === 'input' ? (el as HTMLInputElement).type : '';
+    const multiple = t === 'select' ? `${(el as HTMLSelectElement).multiple}:${(el as HTMLSelectElement).size}` : '';
+    const text = t === 'button' ? norm(el.textContent) : '';
+    const key = `${t}:${type}:${multiple}:${text}`;
+    const known = this.sizes.get(key);
+    if (known) return known;
+    if (!this.root) {
+      this.host = document.createElement('div');
+      this.host.style.cssText = 'position: absolute; left: -10000px; top: 0; visibility: hidden';
+      this.root = this.host.attachShadow({ mode: 'closed' });
+      (document.body || document.documentElement).append(this.host);
+    }
+    const copy = document.createElement(t);
+    if (type) copy.setAttribute('type', type);
+    if (text) copy.textContent = text;
+    if (t === 'select') {
+      const select = el as HTMLSelectElement;
+      (copy as HTMLSelectElement).multiple = select.multiple;
+      (copy as HTMLSelectElement).size = select.size;
+      for (const o of Array.from(select.options)) copy.append(new Option(o.text));
+    }
+    this.root.append(copy);
+    const size = copy.getBoundingClientRect();
+    this.sizes.set(key, size);
+    return size;
+  }
+
+  remove(): void {
+    this.host?.remove();
+    this.host = null;
+    this.root = null;
+  }
+}
+
 /** The elements `measure` returned for contrast, until `textNames`. */
 let measured: Element[] = [];
 
@@ -271,16 +352,16 @@ export function layoutCheck(root: Element | null, options: Options): { json: str
     return x >= view[0] && y >= view[1] && x < view[0] + view[2] && y < view[1] + view[3];
   };
   const targets = seen.filter((s) => s.interactive && !visuallyHidden(s.el, s.style));
-  const shown = new Map<Element, Box | null>();
-  const shownOf = (el: Element) => {
-    if (!shown.has(el)) shown.set(el, shownBox(el));
-    return shown.get(el) as Box | null;
+  const shown = new Map<Element, Box[]>();
+  const shownOf = (s: Seen) => {
+    if (!shown.has(s.el)) shown.set(s.el, shownBoxes(s.el, s.style));
+    return shown.get(s.el) as Box[];
   };
 
   if (kinds.has('covered')) {
     for (const t of targets) {
-      const box = shownOf(t.el);
-      if (!box || !inView(box)) continue;
+      const box = shownOf(t).find(inView);
+      if (!box) continue;
       const [x, y] = centre(box);
       const hit = hitAt(t.el.ownerDocument, x, y);
       if (!hit || contains(t.el, hit) || contains(hit, t.el)) continue;
@@ -303,15 +384,32 @@ export function layoutCheck(root: Element | null, options: Options): { json: str
 
   if (kinds.has('overlap')) {
     const boxes = targets
-      .map((t) => ({ el: t.el, box: shownOf(t.el) }))
-      .filter((b): b is { el: Element; box: Box } => !!b.box)
-      .sort((a, b) => a.box[0] - b.box[0]);
+      .map((t) => {
+        const parts = shownOf(t);
+        const left = Math.min(...parts.map((b) => b[0]));
+        const right = Math.max(...parts.map((b) => b[0] + b[2]));
+        const size = parts.reduce((sum, b) => sum + area(b), 0);
+        return { el: t.el, parts, left, right, size };
+      })
+      .filter((b) => b.parts.length)
+      .sort((a, b) => a.left - b.left);
     for (let i = 0; i < boxes.length; i++) {
       const a = boxes[i];
-      for (let j = i + 1; j < boxes.length && boxes[j].box[0] < a.box[0] + a.box[2]; j++) {
+      for (let j = i + 1; j < boxes.length && boxes[j].left < a.right; j++) {
         const b = boxes[j];
-        const both = intersect(a.box, b.box);
-        if (!both || area(both) <= 4 || area(both) < 0.1 * Math.min(area(a.box), area(b.box))) continue;
+        let both = 0;
+        let width = 0;
+        let height = 0;
+        for (const pa of a.parts) {
+          for (const pb of b.parts) {
+            const part = intersect(pa, pb);
+            if (!part) continue;
+            both += area(part);
+            width = Math.max(width, part[2]);
+            height = Math.max(height, part[3]);
+          }
+        }
+        if (both <= 4 || both < 0.1 * Math.min(a.size, b.size)) continue;
         if (contains(a.el, b.el) || contains(b.el, a.el)) continue;
         // The first in document order is the one named.
         const [first, second] =
@@ -321,7 +419,7 @@ export function layoutCheck(root: Element | null, options: Options): { json: str
           el: els.add(first.el),
           box: boxOf(first.el.getBoundingClientRect()),
           others: [els.add(second.el)],
-          details: { width: px(both[2]), height: px(both[3]) },
+          details: { width: px(width), height: px(height) },
         });
       }
     }
@@ -442,7 +540,7 @@ export function layoutCheck(root: Element | null, options: Options): { json: str
       // A skip link: it comes into view when it has focus.
       if (tag(t.el) === 'a' && (t.el.getAttribute('href') || '').startsWith('#')) continue;
       // Clipped away by a container (a carousel's other slide): hidden.
-      if (!shownOf(t.el)) continue;
+      if (!shownOf(t).length) continue;
       findings.push({
         kind: 'offscreen',
         el: els.add(t.el),
@@ -455,36 +553,40 @@ export function layoutCheck(root: Element | null, options: Options): { json: str
   if (kinds.has('small-target')) {
     const min = options.minTarget;
     const boxes = targets
-      .map((t) => ({ t, box: shownOf(t.el) }))
-      .filter((b): b is { t: Seen; box: Box } => !!b.box);
+      .map((t) => ({ t, parts: shownOf(t) }))
+      .filter((b) => b.parts.length)
+      .map((b) => ({ ...b, box: largest(b.parts) }));
     const small = (b: Box) => b[2] < min - 0.01 || b[3] < min - 0.01;
-    // Distance from a point to a box (0 inside it).
-    const reach = (p: [number, number], b: Box) =>
-      Math.hypot(Math.max(b[0] - p[0], 0, p[0] - b[0] - b[2]), Math.max(b[1] - p[1], 0, p[1] - b[1] - b[3]));
-    for (const { t, box } of boxes) {
-      const own = boxOf(t.el.getBoundingClientRect());
-      if (!small(own)) continue;
-      // A link in a line of text: its block has other text.
-      if (t.role === 'link' && t.style.display === 'inline') {
-        let block: Element | null = parentOf(t.el);
-        while (block && getComputedStyle(block).display.startsWith('inline')) block = parentOf(block);
-        if (block && norm(block.textContent).length > norm(t.el.textContent).length) continue;
+    const native = new Native();
+    try {
+      for (const { t, box, parts } of boxes) {
+        if (!small(box)) continue;
+        // A link in a line of text: its block has other text.
+        if (t.role === 'link' && t.style.display === 'inline') {
+          let block: Element | null = parentOf(t.el);
+          while (block && getComputedStyle(block).display.startsWith('inline')) block = parentOf(block);
+          if (block && norm(block.textContent).length > norm(t.el.textContent).length) continue;
+        }
+        // Sized by the browser, not the page (an unstyled control).
+        if (native.unstyled(t.el, box, min)) continue;
+        // The spacing exception: a circle of `min` px around its centre
+        // reaches no other target, nor the circle of another small one.
+        const c = centre(box);
+        const crowded = boxes.some((o) => {
+          if (o.t === t || contains(o.t.el, t.el) || contains(t.el, o.t.el)) return false;
+          if (o.parts.some((b) => reach(c, b) < min / 2)) return true;
+          return small(o.box) && Math.hypot(c[0] - centre(o.box)[0], c[1] - centre(o.box)[1]) < min;
+        });
+        if (!crowded) continue;
+        findings.push({
+          kind: 'small-target',
+          el: els.add(t.el),
+          box: parts.length > 1 ? box : boxOf(t.el.getBoundingClientRect()),
+          details: { width: px(box[2]), height: px(box[3]), min },
+        });
       }
-      // The spacing exception: a circle of `min` px around its centre
-      // reaches no other target, nor the circle of another small one.
-      const c = centre(box);
-      const crowded = boxes.some(({ t: o, box: ob }) => {
-        if (o === t || contains(o.el, t.el) || contains(t.el, o.el)) return false;
-        if (reach(c, ob) < min / 2) return true;
-        return small(boxOf(o.el.getBoundingClientRect())) && Math.hypot(c[0] - centre(ob)[0], c[1] - centre(ob)[1]) < min;
-      });
-      if (!crowded) continue;
-      findings.push({
-        kind: 'small-target',
-        el: els.add(t.el),
-        box: own,
-        details: { width: px(own[2]), height: px(own[3]), min },
-      });
+    } finally {
+      native.remove();
     }
   }
 
@@ -495,9 +597,11 @@ export function layoutCheck(root: Element | null, options: Options): { json: str
     for (const s of seen) {
       if (tag(s.el) === 'input' || tag(s.el) === 'textarea' || tag(s.el) === 'select') continue;
       if (visuallyHidden(s.el, s.style)) continue;
+      // The text of what is disabled needs no contrast (WCAG 1.4.3).
+      if (s.el.closest(':disabled, [aria-disabled="true"]')) continue;
       const own = textBox(s.el);
       if (!own) continue;
-      const shownText = intersect(own, shownOf(s.el) || [0, 0, 0, 0]);
+      const shownText = clipBox(s.el, own);
       const box = shownText && intersect(shownText, view);
       if (!box || box[2] < 1 || box[3] < 1) continue;
       const c = colour(s.style.webkitTextFillColor || s.style.color);

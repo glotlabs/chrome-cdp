@@ -139,9 +139,14 @@ fn check(name: &str, status: WhyStatus, why: Option<String>) -> WhyCheck {
 }
 
 /// How the output names an element: `button "Pay" [e12]`, or for one
-/// without a role, its tag and first class (`div.cookie-banner [e88]`).
+/// without a role (or with `none`), its tag and first class
+/// (`div.cookie-banner [e88]`).
 pub(crate) fn element_text(element: &WhyElement) -> String {
-    let mut text = if element.role == "generic" || element.role.is_empty() {
+    let roleless = matches!(
+        element.role.as_str(),
+        "" | "generic" | "none" | "presentation"
+    );
+    let mut text = if roleless {
         let mut text = element.tag.clone();
         if !element.class.is_empty() {
             let _ = write!(text, ".{}", element.class);

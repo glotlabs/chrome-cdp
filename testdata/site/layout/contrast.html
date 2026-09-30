@@ -9,7 +9,8 @@
      - #big: large text, 2.3:1 (needs 3:1).
      - #on-dark: light grey text over a dark photo that sits behind it
        (not its background): the declared colours fail, the pixels pass.
-     - #plain: dark text on white. -->
+     - #plain: dark text on white.
+     - #off: a disabled button's pale text (WCAG does not ask it). -->
 <style>
   body { margin: 0; font: 16px/1.5 sans-serif; color: #222; background: #fff; }
   section { margin: 16px; width: 320px; }
@@ -28,3 +29,4 @@
 <section><p id="big">Big but pale</p></section>
 <section class="behind"><img src="dark-photo.png" alt=""><p id="on-dark">Readable on the photo</p></section>
 <section><p id="plain">Plain dark text on white</p></section>
+<section><button id="off" disabled style="color: #ccc; background: #fff; border: 1px solid #ccc">Unavailable</button></section>
