@@ -1113,6 +1113,12 @@ async fn paused(shared: &Arc<Shared>, session: &Session, params: &serde_json::Va
         locals::capture(shared, session, params).await;
         return;
     }
+    // A failed `console.assert` pauses too where exceptions do: the
+    // console has it already.
+    if params["reason"] == "assert" {
+        resume(session).await;
+        return;
+    }
     if params["reason"] == "instrumentation" {
         let data = &params["data"];
         let url = data["url"].as_str().unwrap_or_default().to_owned();

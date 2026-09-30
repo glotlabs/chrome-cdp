@@ -70,6 +70,13 @@
           ],
           "description": "A logpoint's hit (`source` is `logpoint`): its values."
         },
+        "no_locals": {
+          "description": "With `--locals`, for an uncaught exception whose frames have no\nlocals: why (`the page is not on localhost`, …).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "seq": {
           "description": "Its place in the tab's console; later ones are larger\n(`--since <seq>`).",
           "format": "uint64",
@@ -734,6 +741,23 @@
       ],
       "type": "string"
     },
+    "Local": {
+      "description": "A local variable of a stack frame, at an uncaught error.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "description": "Its value, previewed in the page as a logpoint's values are (at\nmost 2 levels deep, strings cut at 80 characters, collections over\n5 entries counted, functions as `ƒ`); `<ReferenceError: …>` when\nit could not be read (a `let` before its line ran).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "type": "object"
+    },
     "LogpointHit": {
       "description": "A logpoint was hit (`chrome-cdp debug log`): the line ran, and these\nwere its expressions' values.",
       "properties": {
@@ -933,6 +957,13 @@
     "StackFrame": {
       "description": "One frame of a stack trace.",
       "properties": {
+        "async_boundary": {
+          "description": "In a request's initiator stack: the frame is the first of an async\nparent, and this is what scheduled the code before it\n(`Promise.then`, `setTimeout`, `await`, …).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "column": {
           "format": "uint32",
           "minimum": 0,
@@ -954,6 +985,16 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "locals": {
+          "description": "The frame's local variables when an uncaught error went through it\n(`errors --locals`, `console --locals`): its `local`, `closure`\nand `block` scopes, at most 10, innermost scope first. Only the\ntop 3 frames have them.",
+          "items": {
+            "$ref": "#/$defs/Local"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
         },
         "original": {
           "anyOf": [

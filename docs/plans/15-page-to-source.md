@@ -1,6 +1,6 @@
 # Plan 15 — From page to source
 
-Status: IN PROGRESS (15.1-15.4 done)
+Status: IN PROGRESS (15.1-15.5 done)
 Depends on: v1 (plans 01-11), mainly 04 (refs), 05 (the action report)
 and 06 (console, network, source maps). Uses plan 13's target graph where
 it exists. Track 4 of [plan 12](12-after-v1.md).
@@ -540,9 +540,9 @@ test that needs Node is the gated real-Vite test.
 - [x] `debug log` at a source line shows the value on the next action,
       in `console` and in the report, survives a reload, and never
       stops the page.
-- [ ] `errors --locals` shows a local of the throwing function and its
+- [x] `errors --locals` shows a local of the throwing function and its
       caller for thrown errors and rejected promises.
-- [ ] `network show` prints a request's source-mapped initiator stack
+- [x] `network show` prints a request's source-mapped initiator stack
       across async boundaries.
 - [ ] `wait --hmr` and the report lines tell applied, failed and full
       reloads apart for Vite and webpack (fake servers), and for a real
@@ -765,3 +765,58 @@ _(append here)_
   the React 19 app's `index.js` (`react/index.js`, `react-dom/index.js`).
   "`debug clear --all` disables Debugger" is checked by the `debugger;`
   statement no longer pausing (no second note).
+- 15.5: Locals capture follows each target's own URL (`localhost` and
+  loopback documents and workers by default, like source maps), switched
+  at `Page.frameStartedNavigating` before the new document runs, as node
+  stacks are. Debugger is therefore on in every local page, whether or
+  not it has a logpoint: a session's `Mode` says why (logpoints, locals),
+  and only logpoints set the instrumentation breakpoint and the binding,
+  so a dev server's many modules do not each pause. `debug clear` leaves
+  Debugger on where locals need it and says so. `debug locals` takes
+  `localhost` too (back to the default) and, with no argument, shows the
+  setting.
+- 15.5: At a pause the names come from `Runtime.getProperties` of the
+  `local`, `closure` and `block` scopes (an inner name hides an outer
+  one, 10 a frame), and the values from one
+  `Debugger.evaluateOnCallFrame` a frame that runs `logpoint.js`'s new
+  `locals` over a closure per name: the same preview as logpoint values,
+  and a `let` read before its line shows its error. Pauses in scripts
+  without a URL (`eval`, chrome-cdp's own calls) resume at once. At most
+  10 reads a second a session; the errors past that resume at once and
+  say `too many errors`.
+- 15.5: Matching rule: the read waits in its session (16 at most, 10
+  seconds) for the `Runtime.exceptionThrown` of the same thrown value (its
+  `description`, which holds an error's stack, else its value) whose top
+  frame has the same script and line; else the same value and script.
+  Frames get locals by index when the function names agree. An entry
+  without them has `ConsoleEntry.no_locals` (additive) with the reason,
+  which the text prints once per reason. Neither `locals` nor `no_locals`
+  is in the output without `--locals`, so `console --json` did not grow.
+- 15.5: `setPauseOnExceptions("uncaught")`, as planned, only stops where
+  no JavaScript catches the error. In the fixture apps that is the plain
+  app and React 18 (its dev build rethrows in a fake event). React 19
+  catches a handler's error and calls `reportError`, so the debugger
+  never stops; Vue (dev) and Svelte 5 catch it and throw it again from
+  their handlers, so it stops in the framework. Those errors say why and
+  print `chrome-cdp debug log <top frame's place> <expr>…` instead.
+  Pausing on caught exceptions too would cover them, but pauses at every
+  caught throw of a page (a parser's `try`/`catch` in a loop): left as a
+  follow-up.
+- 15.5: Chrome gives initiator stacks async parents only with
+  `Runtime.setAsyncCallStackDepth`, which costs the page time per async
+  task: it is set (8) where Debugger is on, so on localhost pages and in
+  tabs with a logpoint. The "Add" request's stack is synchronous in every
+  app (`fetchCart` calls `fetch` before its first `await`), so the async
+  boundary is checked on `testdata/site/debug/initiator.html` (a timer,
+  then a promise). `StackFrame` gains `async_boundary` on the first frame
+  of each async parent; frames without a URL are left out, so the
+  innermost frame (`Initiator.url`, `line`, `function`) is now the
+  innermost one with a URL. The `network` list maps only first frames,
+  and shows `from src/api.ts:13` when a source map gives an original
+  place.
+- 15.5: With pause-on-exceptions set, V8 also pauses at a failed
+  `console.assert` (reason `assert`): it resumes at once, unnoted (the
+  console has the assertion). `network` and `network show` gained
+  `--sourcemaps`, as `console` and `errors` have, for initiator stacks
+  off localhost. No golden shows `network show`'s initiator stack (its
+  timing line is not stable); the engine tests check its text.

@@ -14,6 +14,7 @@ Options:
 - `--limit <N>`: Show at most this many entries, the newest (0 = all) (default `50`)
 - `-f, --follow`: Keep printing new entries as they come, until Ctrl-C (or --timeout, if given)
 - `--sourcemaps`: Resolve stack frames with the scripts' source maps (always on for localhost pages)
+- `--locals`: Show the local variables of the top 3 frames of each uncaught error, read when it was thrown (localhost pages; see `debug locals`)
 - `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
 
 ```text
@@ -23,8 +24,15 @@ every error the tab kept. Stack frames of localhost pages are resolved with
 source maps, so they point at your original source files, shown relative
 to your project (src/cart.ts:18:22) when they are there.
 
+`--locals` shows, under each of an uncaught error's top 3 frames, its local
+variables when the error was thrown (`item = undefined, qty = 2`): the
+page pauses at uncaught errors for up to 200ms to read them, on localhost
+pages by default (`debug locals on|off` changes that). An error without
+them says why.
+
 Examples:
   chrome-cdp errors
+  chrome-cdp errors --locals                     # and each frame's variables
   chrome-cdp errors --since 0 --limit 5
   chrome-cdp errors --sourcemaps --tab t2
 ```

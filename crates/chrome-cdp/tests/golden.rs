@@ -2378,6 +2378,28 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAfter(DEBUGGING),
     },
     Case {
+        name: "debug-locals",
+        args: &["debug", "locals", "off"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "debug-locals-show",
+        args: &["debug", "locals"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "errors-locals",
+        args: &["errors", "--since", "0", "--locals"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/debug/locals.html"],
+            &["click", "#reject"],
+            &["wait", "--fn", "window.ticks === 0"],
+        ]),
+    },
+    Case {
         name: "components",
         args: &["components"],
         modes: ALL,

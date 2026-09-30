@@ -18,15 +18,18 @@ Options:
 - `--since <WHEN>`: Where to start: `last` (what this command has not shown yet), a request id such as 12 (0 for all), a duration such as 30s (started in the last 30 seconds), or a mark (see `mark`) (default `last`)
 - `--limit <N>`: Show at most this many requests, the newest (0 = all) (default `50`)
 - `-f, --follow`: Keep printing new requests (and pending ones as they end) as they come, until Ctrl-C (or --timeout, if given)
+- `--sourcemaps`: Resolve initiator stacks with the scripts' source maps (always on for localhost pages)
 - `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
 
 ```text
 Every tab records its requests from the moment it opens (the newest 2,000;
 see `open --network-buffer`). By default only requests this command has not
 shown before are printed; one shown while pending is shown again when it
-ends. Each line reads: #id METHOD STATUS URL TYPE SIZE TIME. Requests of
-the tab's workers are in it too, marked with the worker, e.g. `[service
-worker sw.js]`; a shared or service worker's go to every tab of its origin.
+ends. Each line reads: #id METHOD STATUS URL TYPE SIZE TIME, and on
+localhost pages where in your source a script sent it (`from
+src/api.ts:12`). Requests of the tab's workers are in it too, marked with
+the worker, e.g. `[service worker sw.js]`; a shared or service worker's go
+to every tab of its origin.
 
 Examples:
   chrome-cdp network
@@ -55,9 +58,16 @@ Options:
 - `--body`: Fetch and show the response body
 - `--request-body`: Show the request body
 - `-o, --output <PATH>`: Save the response body to this file (decoded: an image as its bytes) and print its path, instead of showing it
+- `--sourcemaps`: Resolve initiator stacks with the scripts' source maps (always on for localhost pages)
 - `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
 
 ```text
+A request a script sent shows the script's stack when it sent it (8
+frames at most), across `await`s, promises and timers (`-- async
+Promise.then --`; recorded where the debugger is on: localhost pages, see
+`debug locals`), resolved with source maps on localhost pages (and
+elsewhere with --sourcemaps).
+
 Bodies are fetched from Chrome only when asked for. Chrome keeps them while
 its buffer has room and the page that loaded them is open; if it no longer
 has one, the output says so. JSON bodies are pretty-printed.

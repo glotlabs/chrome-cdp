@@ -1,0 +1,15 @@
+$ chrome-cdp debug locals
+exit: 0
+--- stdout
+locals capture is on for localhost pages: chrome-cdp errors --locals shows an uncaught error's variables
+
+$ chrome-cdp debug locals --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"capturing":0,"locals":"localhost"}}
+
+$ chrome-cdp debug locals -q
+exit: 0
+--- stdout
+localhost
+

@@ -375,6 +375,7 @@ command chrome-cdp console
   flag --limit value=N
   flag --follow -f
   flag --sourcemaps
+  flag --locals
   flag --max-chars value=N
 command chrome-cdp errors
   flag --since value=WHEN
@@ -382,6 +383,7 @@ command chrome-cdp errors
   flag --limit value=N
   flag --follow -f
   flag --sourcemaps
+  flag --locals
   flag --max-chars value=N
 command chrome-cdp network
   flag --failed
@@ -392,6 +394,7 @@ command chrome-cdp network
   flag --since value=WHEN
   flag --limit value=N
   flag --follow -f
+  flag --sourcemaps
   flag --max-chars value=N
 command chrome-cdp network show
   arg ID required
@@ -399,6 +402,7 @@ command chrome-cdp network show
   flag --body
   flag --request-body
   flag --output -o value=PATH
+  flag --sourcemaps
   flag --max-chars value=N
 command chrome-cdp network frames
   arg ID required
@@ -691,6 +695,8 @@ command chrome-cdp debug list
 command chrome-cdp debug clear
   arg ID
   flag --all
+command chrome-cdp debug locals
+  arg on|off|localhost values=on|off|localhost
 command chrome-cdp highlight
   arg LOCATOR required
   flag --duration value=DURATION

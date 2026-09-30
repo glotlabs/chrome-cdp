@@ -1,0 +1,15 @@
+$ chrome-cdp debug locals off
+exit: 0
+--- stdout
+locals capture is off; chrome-cdp debug locals on turns it on
+
+$ chrome-cdp debug locals off --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"capturing":0,"locals":"off"}}
+
+$ chrome-cdp debug locals off -q
+exit: 0
+--- stdout
+off
+

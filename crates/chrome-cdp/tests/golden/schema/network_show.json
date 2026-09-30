@@ -696,6 +696,13 @@
             "null"
           ]
         },
+        "stack": {
+          "description": "The script's stack when it sent it (at most 8 frames, innermost\nfirst), across async boundaries (`StackFrame::async_boundary`).\n`network show` resolves it with source maps; the `network` list\nresolves its first frame.",
+          "items": {
+            "$ref": "#/$defs/StackFrame"
+          },
+          "type": "array"
+        },
         "type": {
           "description": "`parser` (the HTML), `script`, `preload`, `preflight`, `other`, …",
           "type": "string"
@@ -710,6 +717,23 @@
       },
       "required": [
         "type"
+      ],
+      "type": "object"
+    },
+    "Local": {
+      "description": "A local variable of a stack frame, at an uncaught error.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "description": "Its value, previewed in the page as a logpoint's values are (at\nmost 2 levels deep, strings cut at 80 characters, collections over\n5 entries counted, functions as `ƒ`); `<ReferenceError: …>` when\nit could not be read (a `let` before its line ran).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "value"
       ],
       "type": "object"
     },
@@ -1110,6 +1134,71 @@
       },
       "required": [
         "source",
+        "line",
+        "column"
+      ],
+      "type": "object"
+    },
+    "StackFrame": {
+      "description": "One frame of a stack trace.",
+      "properties": {
+        "async_boundary": {
+          "description": "In a request's initiator stack: the frame is the first of an async\nparent, and this is what scheduled the code before it\n(`Promise.then`, `setTimeout`, `await`, …).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "column": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "file": {
+          "description": "The script on disk (an absolute path), when it has no source map\nand chrome-cdp found it under the project root (see\n`SourcePosition::file`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "function": {
+          "description": "The function; empty at a script's top level.",
+          "type": "string"
+        },
+        "line": {
+          "description": "1-based.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "locals": {
+          "description": "The frame's local variables when an uncaught error went through it\n(`errors --locals`, `console --locals`): its `local`, `closure`\nand `block` scopes, at most 10, innermost scope first. Only the\ntop 3 frames have them.",
+          "items": {
+            "$ref": "#/$defs/Local"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "original": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourcePosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where it is in the original source, when a source map says so\n(`--sourcemaps`, on by default for localhost pages)."
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "function",
+        "url",
         "line",
         "column"
       ],

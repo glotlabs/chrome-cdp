@@ -15,6 +15,7 @@ Options:
 - `--limit <N>`: Show at most this many entries, the newest (0 = all) (default `50`)
 - `-f, --follow`: Keep printing new entries as they come, until Ctrl-C (or --timeout, if given)
 - `--sourcemaps`: Resolve stack frames with the scripts' source maps (always on for localhost pages)
+- `--locals`: Show the local variables of the top 3 frames of each uncaught error, read when it was thrown (localhost pages; see `debug locals`)
 - `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
 
 ```text
@@ -25,7 +26,8 @@ Stack frames of localhost pages are resolved with source maps, and shown
 as files of your project when they are there (src/cart.ts:12, relative to
 the directory with chrome-cdp.toml or .git, or `source_root` in the
 config; `chrome-cdp help config`). Workers log here too, marked `[dedicated worker w.js]`; a shared or service worker's
-messages are in every tab with a frame on its origin.
+messages are in every tab with a frame on its origin. `--locals` shows the
+variables of each uncaught error's top frames, as `errors --locals` does.
 
 Examples:
   chrome-cdp console

@@ -1,0 +1,17 @@
+$ chrome-cdp errors --since 0 --locals
+exit: 0
+--- stdout
+#2 error uncaught (in promise) Error: no item 7
+    at load (/debug/locals.html:13:23)
+      id = 7, found = null, tries = [1, 2]
+
+$ chrome-cdp errors --since 0 --locals --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"cursor":2,"dropped":0,"entries":[{"column":23,"kind":"uncaught (in promise)","level":"error","line":13,"seq":2,"source":"exception","stack":[{"column":23,"function":"load","line":13,"locals":[{"name":"id","value":"7"},{"name":"found","value":"null"},{"name":"tries","value":"[1, 2]"}],"url":"<site>/debug/locals.html"}],"text":"Error: no item 7","time_ms":<ms>,"url":"<site>/debug/locals.html"}],"skipped":0,"tab":"t1"}}
+
+$ chrome-cdp errors --since 0 --locals -q
+exit: 0
+--- stdout
+Error: no item 7
+

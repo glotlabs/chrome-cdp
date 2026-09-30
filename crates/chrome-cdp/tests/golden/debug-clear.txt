@@ -1,15 +1,15 @@
 $ chrome-cdp debug clear --all
 exit: 0
 --- stdout
-cleared logpoint 1; the debugger is off
+cleared logpoint 1; the debugger stays on for locals at uncaught errors (chrome-cdp debug locals off turns it off)
 
 $ chrome-cdp debug clear --all --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"cleared":[],"debugger":false,"remaining":0}}
+{"ok":true,"data":{"cleared":[],"debugger":true,"remaining":0}}
 
 $ chrome-cdp debug clear --all -q
 exit: 0
 --- stdout
-no logpoints to clear; the debugger is off
+no logpoints to clear; the debugger stays on for locals at uncaught errors (chrome-cdp debug locals off turns it off)
 
