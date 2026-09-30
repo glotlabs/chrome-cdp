@@ -220,3 +220,30 @@ async fn focus_goes_back_where_it_was() {
     assert_eq!(focused, "BODY");
     engine.close().await;
 }
+
+/// `docs/accessibility.md`'s table has every rule of `a11y.ts`, with its
+/// WCAG criterion and level, and no other (the docs are hand-written:
+/// the rules are TypeScript).
+#[test]
+fn the_docs_list_every_rule() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let source =
+        std::fs::read_to_string(root.join("crates/engine/src/injected/src/a11y.ts")).unwrap();
+    let docs = std::fs::read_to_string(root.join("docs/accessibility.md")).unwrap();
+    let rule = regex::Regex::new(r"id: '([a-z-]+)', wcag: '([\d.]+)', level: '(A{1,2})'").unwrap();
+    let rules: Vec<String> = rule
+        .captures_iter(&source)
+        .map(|c| format!("| `{}` | {} | {} |", &c[1], &c[2], &c[3]))
+        .collect();
+    assert_eq!(rules.len(), 26, "the rules in a11y.ts");
+    let row = regex::Regex::new(r"(?m)^(\| `[a-z-]+` \| [\d.]+ \| A{1,2} \|)").unwrap();
+    let documented: Vec<&str> = row
+        .captures_iter(&docs)
+        .map(|c| c.get(1).unwrap().as_str())
+        .collect();
+    let mut expected: Vec<&str> = rules.iter().map(String::as_str).collect();
+    let mut found = documented.clone();
+    expected.sort_unstable();
+    found.sort_unstable();
+    assert_eq!(found, expected, "docs/accessibility.md's rule table");
+}
