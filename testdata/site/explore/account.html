@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Account</title>
+<header>
+  <nav aria-label="Main">
+    <a href="./">Home</a>
+    <a href="products.html">Products</a>
+    <a href="about.html">About</a>
+    <a href="account.html">Account</a>
+  </nav>
+</header>
+<main>
+  <h1>Account</h1>
+  <form action="sent.html">
+    <label>Message <input name="message"></label>
+    <button>Send</button>
+  </form>
+  <button type="button" id="delete">Delete account</button>
+  <script>
+    document.getElementById("delete").onclick = () => {
+      document.querySelector("main").innerHTML = "<h1>Account deleted</h1>";
+    };
+  </script>
+</main>

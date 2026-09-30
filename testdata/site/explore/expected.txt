@@ -1,0 +1,25 @@
+$ chrome-cdp explore <site>/explore/
+explore <site>/explore/: 7 states, 19 actions, <time> (stopped: all visited)
+s1  /explore/               "Explore"   ok
+s2  /explore/products.html  "Products"  ok       ← s1 click link "Products"
+s3  /explore/about.html     "About"     ok       ← s1 click link "About"
+s4  /explore/account.html   "Account"   ok       ← s1 click link "Account"
+s5  /explore/secret         "Secret"    ok       ← s1 click link "Secret"
+s6  /explore/item.html      "Mug"       1 error  ← s2 click link "Mug"
+      ! console error: TypeError: price is undefined (item.html:18)
+s7  /explore/team.html      "Team"      ok       ← s5 click link "team" (new tab)
+broken: /explore/missing.html 404 (from s1 link "old page")
+not followed: 1 external link (<host-b>), 1 form submit (s4; --submit-forms), 2 files (s3), 1 mailto/tel/javascript link (s3)
+$ chrome-cdp explore <site>/explore/ --click-buttons
+explore <site>/explore/: 8 states, 25 actions, <time> (stopped: all visited)
+s1  /explore/               "Explore"                  ok
+s2  /explore/products.html  "Products"                 ok       ← s1 click link "Products"
+s3  /explore/about.html     "About"                    ok       ← s1 click link "About"
+s4  /explore/account.html   "Account"                  ok       ← s1 click link "Account"
+s5  /explore/secret         "Secret"                   ok       ← s1 click link "Secret"
+s6  /explore/               "Explore" + dialog "Help"  ok       ← s1 click button "Help"
+s7  /explore/item.html      "Mug"                      1 error  ← s2 click link "Mug"
+      ! console error: TypeError: price is undefined (item.html:18)
+s8  /explore/team.html      "Team"                     ok       ← s5 click link "team" (new tab)
+broken: /explore/missing.html 404 (from s1 link "old page")
+not followed: 1 external link (<host-b>), 1 destructive (button "Delete account" on s4), 1 form submit (s4; --submit-forms), 2 files (s3), 1 mailto/tel/javascript link (s3)

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Explore</title>
+<!-- explore (plan 16, 16.6): a small app with a known map. Pages:
+     index (this), products, item (logs an error), about, account, team
+     (only through a link that opens a new tab) and secret (a client-side
+     route of this page: /explore/secret itself is a 404). Also: a modal
+     (Help), a link loop (every page links home), a "Delete account"
+     button, a form, an external link, a link to a 404, a mailto link and
+     two file links. expected.txt is explore's output. -->
+<header>
+  <nav aria-label="Main">
+    <a href="./">Home</a>
+    <a href="products.html">Products</a>
+    <a href="about.html">About</a>
+    <a href="account.html">Account</a>
+    <a href="secret" id="secret">Secret</a>
+  </nav>
+</header>
+<main id="main">
+  <h1>Explore</h1>
+  <p>Our <a href="missing.html">old page</a> moved. See our <a href="{{ORIGIN_B}}/index.html">partner site</a>.</p>
+  <button id="help">Help</button>
+</main>
+<dialog id="help-dialog" aria-label="Help">
+  <h2>Help</h2>
+  <p>Ask us anything.</p>
+  <button id="close">Close</button>
+</dialog>
+<script>
+  const main = document.getElementById('main');
+  const dialog = document.getElementById('help-dialog');
+  document.getElementById('help').onclick = () => dialog.showModal();
+  document.getElementById('close').onclick = () => dialog.close();
+  // The secret page exists only here: the server has no /explore/secret.
+  function secret() {
+    document.title = 'Secret';
+    main.innerHTML = '<h1>Secret</h1><p>Meet the <a href="team.html" target="_blank">team</a>.</p>';
+  }
+  document.getElementById('secret').onclick = (event) => {
+    event.preventDefault();
+    history.pushState(null, '', 'secret');
+    secret();
+  };
+  addEventListener('popstate', () => location.reload());
+</script>
