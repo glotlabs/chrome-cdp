@@ -1,6 +1,6 @@
 # Plan 14 — Parity gaps and small commands
 
-Status: IN PROGRESS (14.1-14.5 done)
+Status: IN PROGRESS (14.1-14.6 done)
 Depends on: v1 (plans 01–11). Track 3 of [plan 12](12-after-v1.md). Plan 13
 (every frame, every worker) is not required, but where it has landed, use its
 target graph instead of adding per-session code.
@@ -638,4 +638,39 @@ match with changed dynamic text, fail on a missing button, and survive
   command of the protocol files. The hint adds `--target page` unless the
   suggestion is a `Browser.` or `Target.` method, and `…` when params were
   given.
-
+- **14.6, HAR page ids.** A tab with one page keeps `t1`, even when a
+  navigation started it (`har start`, `goto`, `har stop`), so files of a
+  single load look as before; `t1_1`, `t1_2`, … only when there are
+  several. Requests of the document loaded before `har start` are a page
+  of their own, first, named by that document's URL when the log still
+  has its request, with timings -1. A navigation is a main-frame request
+  of type Document (the netlog knows the page's target id, which is the
+  main frame's id); a redirect's hops share its loader and stay one page.
+  The times come from `Page.lifecycleEvent`, on the same monotonic clock
+  as the request's `timestamp`. A back/forward-cache restore sends no
+  request, so it starts no page.
+- **14.6, `har stop` output.** The "from t1, t2" line stays; when a tab
+  has several pages each gets a line (`t1_2 URL: 3 requests,
+  DOMContentLoaded 40ms, load 52ms`). JSON adds `page_details` (id, tab,
+  url, entries, `dom_content_loaded_ms`, `load_ms`) next to `pages`.
+- **14.6, PDF templates.** Either of `--header`/`--footer` turns on
+  `displayHeaderFooter` and the other is `<span></span>`: Chrome's default
+  one (date and title, URL and page number) would surprise. A value
+  starting with `@` is a file, read by the CLI. `--scale` is checked by
+  clap (0.1 to 2); the text output says `scale 0.5` when it is not 1. The
+  test reads the footer's text out of the PDF (Flate streams and the
+  fonts' ToUnicode maps) rather than trusting the page count. `convert`
+  translates `headerTemplate`/`footerTemplate` only with
+  `displayHeaderFooter: true` (as Playwright prints them), and that flag
+  alone is a TODO; it also adds `--margin` (Playwright's margins are 0
+  unless given, `pdf`'s 1cm).
+- **14.6, `--annotate` and the top layer.** The overlay is a manual
+  popover only when the document has `:modal`, `:popover-open` or
+  `:fullscreen` content (found with `querySelector`, so not inside shadow
+  roots); a popover everywhere would show in page code's
+  `:popover-open` queries for nothing. Labels are nudged within each
+  frame's overlay: down by a label's height, then right by its width,
+  then both, else left where they were.
+- **14.6, `screenshot LOC` timeout.** The v1 backlog note: `screenshot`
+  with a locator waits for its element, so it now defaults to the 10s of
+  actions and reads; a whole-page capture keeps 30s.
