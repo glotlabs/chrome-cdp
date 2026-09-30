@@ -3,16 +3,17 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use super::task::{Copy, Replace, Task, Vars};
+use super::task::{Copy, Link, Replace, Task, Vars};
 use crate::report;
 
-/// Copies, removes and replaces as `task.setup` says, then records the
-/// files of `verify.unchanged`.
+/// Copies, links, removes and replaces as `task.setup` says, then records
+/// the files of `verify.unchanged`.
 pub fn prepare(task: &Task, workdir: &Path, vars: &Vars) -> Result<Files, String> {
     copy_all(&task.setup.copy, workdir)?;
     if task.files().is_dir() {
         copy_dir(&task.files(), workdir, &[])?;
     }
+    link_all(&task.setup.link, workdir)?;
     remove_all(&task.setup.remove, workdir)?;
     replace_all(&task.setup.replace, workdir, vars)?;
     Ok(files_under(workdir, &task.verify.unchanged))
@@ -39,6 +40,31 @@ fn copy_all(copies: &[Copy], workdir: &Path) -> Result<(), String> {
             }
             std::fs::copy(&from, &to).map_err(|e| format!("copy {}: {e}", from.display()))?;
         }
+    }
+    Ok(())
+}
+
+fn link_all(links: &[Link], workdir: &Path) -> Result<(), String> {
+    let root = report::workspace_root();
+    for l in links {
+        let from = root.join(&l.from);
+        let from = from.canonicalize().map_err(|e| {
+            let hint = l
+                .hint
+                .as_deref()
+                .map(|h| format!("; {h}"))
+                .unwrap_or_default();
+            format!("{}: {e}{hint}", from.display())
+        })?;
+        let to = workdir.join(&l.to);
+        if let Some(dir) = to.parent() {
+            mkdir(dir)?;
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&from, &to)
+            .map_err(|e| format!("link {}: {e}", to.display()))?;
+        #[cfg(not(unix))]
+        return Err(format!("link {}: symlinks need Unix", to.display()));
     }
     Ok(())
 }

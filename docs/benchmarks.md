@@ -10,7 +10,7 @@ themselves (between the `<!-- bench:… -->` markers); edit the rest by hand.
 |---|---|---|---|
 | `micro` | Per-command latency, next to the Playwright library | Chrome, Node (for the comparison) | a few minutes; timing-sensitive |
 | `tokens` | Snapshot size in tokens, next to Playwright MCP | Chrome, Node | a minute; deterministic |
-| `agent` | Claude Code's success, tokens, turns and time on ~25 tasks, with chrome-cdp vs Playwright MCP | Chrome, Node, `claude` logged in | hours and API spend |
+| `agent` | Claude Code's success, tokens, turns, files read and time on ~30 tasks, with chrome-cdp vs Playwright MCP | Chrome, Node, `claude` logged in | hours and API spend |
 
 ## Setup
 
@@ -146,12 +146,14 @@ cargo xtask bench agent -- --task login --arm chrome-cdp --reps 1
 cargo xtask bench agent -- --offline --model claude-opus-5-5
 ```
 
-The tasks live in `bench/agent/tasks/` (see its README): 26 of them, on
+The tasks live in `bench/agent/tasks/` (see its README): 30 of them, on
 the fixture site (log in, a multi-step form, a hover menu, dialogs, a
 popup, a cross-site iframe, shadow DOM, drag to reorder, upload, download,
 a mobile layout, a console error, a failed request, …), three on a public
 sandbox (`--offline` skips them), a bug to find and fix on a local dev
-server, and plan 11's E2E tasks on `examples/e2e-shop`: write scenarios
+server, four "fix the bug behind this button" tasks on the fixture apps of
+`testdata/apps-src` (React 18, React 19, Vue, Svelte) running on Vite's
+dev server (they need Node and `cargo xtask apps`), and plan 11's E2E tasks on `examples/e2e-shop`: write scenarios
 and mocks for it, fix an app change that broke checkout, and make the
 mocked suite also pass against the real backend.
 
@@ -177,7 +179,9 @@ script against the fixed app, `chrome-cdp test` in the working dir, files
 that must not change (the tests of a "fix the app" task), or, for
 questions, the agent's final `ANSWER:` line. Tokens are the sum over every
 model Claude Code called (input, output, cache reads and writes), turns
-its `num_turns`, and wall time the whole `claude` process. Each task runs
+its `num_turns`, files read the Read, Grep and Glob calls in the
+transcript (how much code the agent looked through to find the place),
+and wall time the whole `claude` process. Each task runs
 5 times per arm (`--reps`); the tables show the success rate and medians.
 
 `--check` runs no agent. For each task it checks that the verifier fails
@@ -192,7 +196,7 @@ secret): it checks the tasks, runs the benchmark, and uploads the logs and
 the updated page.
 
 Each run's log is kept under `target/bench/agent/<time>/`: Claude Code's
-JSON result, its stderr, and `episodes.jsonl` with every check's outcome.
+transcript (`stream-json`, the result last), its stderr, and `episodes.jsonl` with every check's outcome.
 Only a full run (every task, both arms) is published here.
 
 <!-- bench:agent -->

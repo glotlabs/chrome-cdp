@@ -68,9 +68,55 @@ pub struct AgentRun {
     pub tokens: Tokens,
     pub cost_usd: f64,
     pub wall_ms: u64,
+    /// Read, Grep and Glob calls in the transcript: how much of the code
+    /// the agent looked through (plan 15.7).
+    #[serde(default)]
+    pub file_reads: u64,
 }
 
-/// Reads Claude Code's `--output-format json` result.
+/// The tools that read the working dir's files.
+pub const READ_TOOLS: [&str; 3] = ["Read", "Grep", "Glob"];
+
+/// Reads Claude Code's `--output-format stream-json` transcript (one JSON
+/// message a line): the last `result` message, and the reading tool
+/// calls of the assistant's messages.
+pub fn parse_transcript(text: &str) -> AgentRun {
+    let mut result = None;
+    let mut file_reads = 0;
+    for msg in text
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+    {
+        match msg.get("type").and_then(Value::as_str) {
+            Some("result") => result = Some(msg),
+            Some("assistant") => {
+                let content = msg
+                    .pointer("/message/content")
+                    .and_then(Value::as_array)
+                    .map_or(&[][..], Vec::as_slice);
+                file_reads += content
+                    .iter()
+                    .filter(|c| c.get("type").and_then(Value::as_str) == Some("tool_use"))
+                    .filter_map(|c| c.get("name").and_then(Value::as_str))
+                    .filter(|name| READ_TOOLS.contains(name))
+                    .count() as u64;
+            }
+            _ => {}
+        }
+    }
+    let mut run = result.as_ref().map_or_else(
+        || AgentRun {
+            is_error: true,
+            ..AgentRun::default()
+        },
+        parse_result,
+    );
+    run.file_reads = file_reads;
+    run
+}
+
+/// Reads Claude Code's result message (`--output-format json`, or the
+/// last line of `stream-json`).
 pub fn parse_result(out: &Value) -> AgentRun {
     let u64_at = |v: &Value, key: &str| v.get(key).and_then(Value::as_u64).unwrap_or(0);
     let mut tokens = Tokens::default();
@@ -104,6 +150,7 @@ pub fn parse_result(out: &Value) -> AgentRun {
             .and_then(Value::as_f64)
             .unwrap_or(0.0),
         wall_ms: 0,
+        file_reads: 0,
     }
 }
 
@@ -180,7 +227,7 @@ fn arm_setup(
 }
 
 /// Runs the agent on `prompt` in `workdir`; its output goes to `log`
-/// (`<log>.json` and `<log>.stderr`). `sandbox` is chrome-cdp's session
+/// (the transcript in `<log>.jsonl`, and `<log>.stderr`). `sandbox` is chrome-cdp's session
 /// dirs for the chrome-cdp arm.
 pub fn run_agent(
     arm: Arm,
@@ -199,7 +246,8 @@ pub fn run_agent(
     let mut cmd = Command::new(&opts.claude);
     cmd.arg("-p")
         .arg(&prompt)
-        .args(["--output-format", "json"])
+        // Every message, for the tool calls; the last is the result.
+        .args(["--output-format", "stream-json", "--verbose"])
         .arg("--no-session-persistence")
         // The project's settings (the installed skill) and nothing of the
         // user's: no CLAUDE.md, skills, hooks or MCP servers of theirs.
@@ -262,21 +310,15 @@ pub fn run_agent(
     // The MCP server and browsers it started go with it.
     kill_group(child.id());
     let bytes = reader.join().unwrap_or_default();
-    std::fs::write(log.with_extension("json"), &bytes).map_err(|e| e.to_string())?;
-    let mut run = serde_json::from_slice::<Value>(&bytes).map_or_else(
-        |_| AgentRun {
-            is_error: true,
-            ..AgentRun::default()
-        },
-        |v| parse_result(&v),
-    );
+    std::fs::write(log.with_extension("jsonl"), &bytes).map_err(|e| e.to_string())?;
+    let mut run = parse_transcript(&String::from_utf8_lossy(&bytes));
     run.timed_out = timed_out;
     run.wall_ms = u64::try_from(wall.as_millis()).unwrap_or(u64::MAX);
     Ok(run)
 }
 
 /// Kills the process group `pid` leads (a no-op once it is gone).
-fn kill_group(pid: u32) {
+pub(super) fn kill_group(pid: u32) {
     #[cfg(unix)]
     let _ = Command::new("kill")
         .args(["-KILL", &format!("-{pid}")])
@@ -316,6 +358,36 @@ mod tests {
             }
         );
         assert_eq!(run.tokens.total(), 376);
+    }
+
+    #[test]
+    fn transcripts_count_reading_tools() {
+        let lines = [
+            json!({"type": "system", "subtype": "init"}),
+            json!({"type": "assistant", "message": {"content": [
+                {"type": "text", "text": "Looking."},
+                {"type": "tool_use", "name": "Bash", "input": {"command": "chrome-cdp source e3"}},
+                {"type": "tool_use", "name": "Read", "input": {"file_path": "src/a.tsx"}},
+            ]}}),
+            json!({"type": "user", "message": {"content": [{"type": "tool_result"}]}}),
+            json!({"type": "assistant", "message": {"content": [
+                {"type": "tool_use", "name": "Grep", "input": {"pattern": "Add"}},
+                {"type": "tool_use", "name": "Glob", "input": {"pattern": "**/*.vue"}},
+                {"type": "tool_use", "name": "Edit", "input": {}},
+            ]}}),
+            json!({"type": "result", "is_error": false, "num_turns": 3, "result": "Fixed.",
+                "usage": {"input_tokens": 2, "output_tokens": 3}}),
+        ];
+        let text = lines.map(|l| l.to_string()).join("\n");
+        let run = parse_transcript(&text);
+        assert_eq!(run.file_reads, 3);
+        assert_eq!(run.turns, 3);
+        assert_eq!(run.reply, "Fixed.");
+        assert_eq!(run.tokens.total(), 5);
+        // No result: an error, the reads still counted.
+        let cut = parse_transcript(text.trim_end().rsplit_once('\n').unwrap().0);
+        assert!(cut.is_error);
+        assert_eq!(cut.file_reads, 3);
     }
 
     #[test]

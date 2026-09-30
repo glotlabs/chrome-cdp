@@ -7,6 +7,7 @@
 //! fails on the untouched task and passes after the task's known solution,
 //! so a broken task shows up before anyone pays for a run.
 
+pub mod dev;
 pub mod run;
 pub mod task;
 pub mod verify;
@@ -113,6 +114,9 @@ fn free_port() -> Result<u16, String> {
 /// A task's working dir, servers and placeholders, ready for an agent
 /// or a solution.
 struct Setup {
+    /// `[setup] dev`'s server. Fields drop in order: it stops before its
+    /// files go.
+    _dev_server: Option<dev::DevServer>,
     workdir: tempfile::TempDir,
     vars: Vars,
     before: workdir::Files,
@@ -131,7 +135,8 @@ impl Setup {
         vars.set("site", site.a());
         vars.set("site_b", site.b());
         vars.set("workdir", workdir.path().display().to_string());
-        vars.set("port", free_port()?.to_string());
+        let port = free_port()?;
+        vars.set("port", port.to_string());
         vars.set("port2", free_port()?.to_string());
         vars.set("fixtures", fixtures_bin.display().to_string());
         let before = workdir::prepare(task, workdir.path(), &vars)?;
@@ -144,11 +149,23 @@ impl Setup {
             }
             None => None,
         };
+        let dev_server = match &task.setup.dev {
+            Some(_) if dev.is_some() => {
+                return Err("a task has `serve` or `dev`, not both".to_owned());
+            }
+            Some(command) => {
+                let server = dev::DevServer::start(&vars.expand(command), workdir.path(), port)?;
+                vars.set("dev", format!("http://127.0.0.1:{port}"));
+                Some(server)
+            }
+            None => None,
+        };
         Ok(Self {
             workdir,
             vars,
             before,
             dev,
+            _dev_server: dev_server,
             records_from: site.records().len(),
         })
     }
@@ -332,10 +349,11 @@ pub fn run(opts: &Options) -> Result<AgentReport, String> {
                 ));
                 let e = episode(task, arm, rep, &site, opts);
                 crate::note(&format!(
-                    "  {} in {} turns, {} tokens, {:.0}s{}",
+                    "  {} in {} turns, {} tokens, {} file reads, {:.0}s{}",
                     if e.success { "passed" } else { "FAILED" },
                     e.run.turns,
                     e.run.tokens.total(),
+                    e.run.file_reads,
                     Duration::from_millis(e.run.wall_ms).as_secs_f64(),
                     e.error
                         .as_deref()
@@ -415,6 +433,8 @@ pub struct ArmSummary {
     pub tokens_median: f64,
     pub tokens_mean: f64,
     pub turns_median: f64,
+    /// Read, Grep and Glob calls.
+    pub file_reads_median: f64,
     pub wall_median_s: f64,
     pub cost_usd: f64,
 }
@@ -430,6 +450,7 @@ pub fn summarize(episodes: &[Episode]) -> Vec<ArmSummary> {
             }
             let tokens: Vec<f64> = mine.iter().map(|e| e.run.tokens.total() as f64).collect();
             let turns: Vec<f64> = mine.iter().map(|e| e.run.turns as f64).collect();
+            let reads: Vec<f64> = mine.iter().map(|e| e.run.file_reads as f64).collect();
             let wall: Vec<f64> = mine.iter().map(|e| e.run.wall_ms as f64 / 1000.0).collect();
             Some(ArmSummary {
                 arm,
@@ -438,6 +459,7 @@ pub fn summarize(episodes: &[Episode]) -> Vec<ArmSummary> {
                 tokens_median: stats::percentile(&tokens, 50.0),
                 tokens_mean: stats::mean(&tokens),
                 turns_median: stats::percentile(&turns, 50.0),
+                file_reads_median: stats::percentile(&reads, 50.0),
                 wall_median_s: stats::percentile(&wall, 50.0),
                 cost_usd: mine.iter().map(|e| e.run.cost_usd).sum(),
             })
@@ -458,11 +480,11 @@ pub fn markdown(r: &AgentReport) -> String {
         tasks.len(),
         r.reps
     );
-    md.push_str("| Arm | Success | Tokens (median) | Tokens (mean) | Turns (median) | Wall time (median) | Cost |\n|---|---:|---:|---:|---:|---:|---:|\n");
+    md.push_str("| Arm | Success | Tokens (median) | Tokens (mean) | Turns (median) | Files read (median) | Wall time (median) | Cost |\n|---|---:|---:|---:|---:|---:|---:|---:|\n");
     for s in summarize(&r.episodes) {
         let _ = writeln!(
             md,
-            "| {} | {}/{} ({:.0}%) | {:.0} | {:.0} | {:.0} | {:.0}s | ${:.2} |",
+            "| {} | {}/{} ({:.0}%) | {:.0} | {:.0} | {:.0} | {:.0} | {:.0}s | ${:.2} |",
             s.arm.name(),
             s.passed,
             s.episodes,
@@ -470,6 +492,7 @@ pub fn markdown(r: &AgentReport) -> String {
             s.tokens_median,
             s.tokens_mean,
             s.turns_median,
+            s.file_reads_median,
             s.wall_median_s,
             s.cost_usd
         );
@@ -516,6 +539,7 @@ mod tests {
             checks: vec![],
             run: AgentRun {
                 turns: 4,
+                file_reads: 6,
                 tokens: Tokens {
                     input: tokens,
                     ..Tokens::default()
@@ -556,7 +580,7 @@ mod tests {
             episodes: episodes.to_vec(),
         });
         assert!(
-            md.contains("| chrome-cdp | 1/2 (50%) | 100 | 200 | 4 | 30s | $1.00 |"),
+            md.contains("| chrome-cdp | 1/2 (50%) | 100 | 200 | 4 | 6 | 30s | $1.00 |"),
             "{md}"
         );
         assert!(md.contains("| `login` | 1/2 | 100 | 1/1 | 900 |"), "{md}");

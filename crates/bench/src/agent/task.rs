@@ -99,10 +99,32 @@ pub struct Setup {
     /// Text replacements in files.
     #[serde(default)]
     pub replace: Vec<Replace>,
+    /// Repository paths to symlink into the working dir (after copying):
+    /// a fixture app's `node_modules`, which `cargo xtask apps` installed.
+    #[serde(default)]
+    pub link: Vec<Link>,
     /// A dir of the working dir to serve as `{dev}`: a local dev server
     /// (the fixture server, reading the files on every request).
     #[serde(default)]
     pub serve: Option<String>,
+    /// A real dev server as `{dev}` (`http://127.0.0.1:{port}`): this shell
+    /// command, run in the working dir, must listen on `{port}`. It runs
+    /// while the agent works and the checks run, then its process group is
+    /// killed. Not with `serve`.
+    #[serde(default)]
+    pub dev: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Link {
+    /// Relative to the repository root; it must exist.
+    pub from: String,
+    /// Relative to the working dir.
+    pub to: String,
+    /// Said when `from` is missing: how to make it.
+    #[serde(default)]
+    pub hint: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -283,6 +305,14 @@ mod tests {
                 t.id
             );
             assert!(!t.arms().is_empty(), "{}", t.id);
+            if let Some(dev) = &t.setup.dev {
+                assert!(
+                    dev.contains("{port}"),
+                    "{}: the dev server ignores {{port}}",
+                    t.id
+                );
+                assert!(t.setup.serve.is_none(), "{}: both serve and dev", t.id);
+            }
         }
     }
 
