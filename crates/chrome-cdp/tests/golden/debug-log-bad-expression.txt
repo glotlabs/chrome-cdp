@@ -1,0 +1,11 @@
+$ chrome-cdp debug log debug/debugger.html:10 'runs +'
+exit: 2
+--- stderr
+error: "runs +" is not a JavaScript expression: SyntaxError: Unexpected token ')'
+  hint: give each expression as one argument, e.g. chrome-cdp debug log src/cart.ts:42 total 'items.length'
+
+$ chrome-cdp debug log debug/debugger.html:10 'runs +' --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"\"runs +\" is not a JavaScript expression: SyntaxError: Unexpected token ')'","hint":"give each expression as one argument, e.g. chrome-cdp debug log src/cart.ts:42 total 'items.length'","details":{"error":"SyntaxError: Unexpected token ')'","expr":"runs +"}}}
+

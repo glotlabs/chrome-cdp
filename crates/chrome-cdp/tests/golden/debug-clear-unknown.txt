@@ -1,0 +1,11 @@
+$ chrome-cdp debug clear 7
+exit: 1
+--- stderr
+error: no logpoint 7; the session has 1
+  hint: chrome-cdp debug list
+
+$ chrome-cdp debug clear 7 --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"no logpoint 7; the session has 1","hint":"chrome-cdp debug list","details":{"id":7,"ids":[1]}}}
+

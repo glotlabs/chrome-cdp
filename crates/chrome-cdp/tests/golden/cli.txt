@@ -682,6 +682,15 @@ command chrome-cdp coverage start
 command chrome-cdp coverage stop
   flag --limit value=N
   flag --max-chars value=N
+command chrome-cdp debug
+command chrome-cdp debug log
+  arg FILE:LINE required
+  arg EXPR multiple
+  flag --limit value=N
+command chrome-cdp debug list
+command chrome-cdp debug clear
+  arg ID
+  flag --all
 command chrome-cdp highlight
   arg LOCATOR required
   flag --duration value=DURATION

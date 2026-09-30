@@ -1,6 +1,6 @@
 # Plan 15 — From page to source
 
-Status: IN PROGRESS (15.1-15.3 done)
+Status: IN PROGRESS (15.1-15.4 done)
 Depends on: v1 (plans 01-11), mainly 04 (refs), 05 (the action report)
 and 06 (console, network, source maps). Uses plan 13's target graph where
 it exists. Track 4 of [plan 12](12-after-v1.md).
@@ -537,7 +537,7 @@ test that needs Node is the gated real-Vite test.
       created before stacks, no source map), with the next command.
 - [x] `components` shows each app's tree and a component's props and
       state, bounded by `--max-chars`.
-- [ ] `debug log` at a source line shows the value on the next action,
+- [x] `debug log` at a source line shows the value on the next action,
       in `console` and in the report, survives a reload, and never
       stops the page.
 - [ ] `errors --locals` shows a local of the throwing function and its
@@ -713,3 +713,55 @@ _(append here)_
   a dev build rendered the element). The 200-item list is the React 19
   app with `cart.json` routed; the deep tree a page that fakes 41 nested
   Svelte components (`testdata/site/source/deep-svelte.html`).
+- 15.4: Breakpoints are set by the script's URL
+  (`Debugger.setBreakpointByUrl`), not by `scriptId`: V8 sets them again
+  in the next document's script before it runs, so a reload needs no
+  pause. V8 names such a breakpoint by its URL, line and column (not its
+  condition), so the logpoints at one place share one breakpoint whose
+  condition runs each, set again when one comes or goes.
+- 15.4: Only scripts with a source map pause before they run
+  (`beforeScriptWithSourceMapExecution`, as planned); a script without
+  one is bound when `Debugger.scriptParsed` reports it, after its top
+  level ran (its functions log from then on). An inline script is its
+  document's URL, so `debug/page.html:10` works on a page with no build.
+- 15.4: The line used is the first mapped column of the line asked (or
+  of the next line with mappings, at most 100 lines on), then where V8
+  puts the breakpoint (the next place it can stop), mapped back: a
+  comment above a function binds at its first statement. `debug log`
+  reports the line it used when it is another.
+- 15.4: A place matches a source when one's path segments end with all
+  of the other's, or the source is on disk as the file the place names
+  (`places::same_file`); the place may be a file name alone (`cart.ts`),
+  a source must have two segments to be the end of a longer place.
+  Sources compare without their query (`?t=123`). Ambiguity is decided
+  at `debug log`, over the sources of the tab's scripts then (more than
+  one distinct source: `Ambiguous`, with candidates); a pending
+  logpoint takes the first source that matches in a script loaded
+  later.
+- 15.4: Each expression is compiled (not run) in the tab's main frame
+  first (`Runtime.compileScript` of `(() => (EXPR\n))`): a typo fails
+  with `BadArgs` instead of a logpoint that never logs. No expression is
+  allowed too (`debug log src/App.tsx:30`: was the line reached?).
+- 15.4: The condition holds `logpoint.js`, a third bundle built from
+  `injected/src/logpoint.ts`, which reuses `components`' value preview.
+  Hits are console entries of source `logpoint` with a structured
+  `ConsoleEntry.logpoint` (additive), and the report's `logpoint` event
+  carries the same. Hits past `--limit` are dropped while the
+  breakpoint is taken out; the stop is one console entry.
+- 15.4: Logpoints belong to a tab (`--tab`) and go with it when it
+  closes. Debugger is on in the page, iframe and worker sessions of the
+  tabs with a logpoint that has not stopped (shared and service workers
+  of those tabs too), and off elsewhere; `debug clear` turns it off where
+  nothing needs it (15.5's locals will be a second reason to keep it).
+- 15.4: A pause chrome-cdp did not ask for is resumed, then noted as a
+  `warn` console entry of source `debugger`: `paused at a debugger
+  statement (src/x.ts:3); resumed` (`a breakpoint` when one a raw `cdp`
+  call set was hit). `CallFrame.url` is deprecated and empty in Chrome
+  154, so the place comes from the script's `scriptParsed`.
+- 15.4: The plain app gained `src/later.ts`, imported when the page
+  gets a `later` event (appended to `main.ts`, so the lines 15.2's tests
+  pin do not move), for the pending logpoint; `testdata/site/debug/
+  debugger.html` has the `debugger;` statement. The ambiguous place is
+  the React 19 app's `index.js` (`react/index.js`, `react-dom/index.js`).
+  "`debug clear --all` disables Debugger" is checked by the `debugger;`
+  statement no longer pausing (no second note).

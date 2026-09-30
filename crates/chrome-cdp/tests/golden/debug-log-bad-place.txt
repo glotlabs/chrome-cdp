@@ -1,0 +1,11 @@
+$ chrome-cdp debug log debug/debugger.html runs
+exit: 2
+--- stderr
+error: "debug/debugger.html" is not a source line: give FILE:LINE or FILE:LINE:COLUMN
+  hint: chrome-cdp debug log src/cart.ts:42 <expr>…
+
+$ chrome-cdp debug log debug/debugger.html runs --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"\"debug/debugger.html\" is not a source line: give FILE:LINE or FILE:LINE:COLUMN","hint":"chrome-cdp debug log src/cart.ts:42 <expr>…"}}
+

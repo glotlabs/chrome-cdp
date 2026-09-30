@@ -1,0 +1,15 @@
+$ chrome-cdp debug log debug/debugger.html:10 runs
+exit: 0
+--- stdout
+logpoint 1 at /debug/debugger.html:10 (bound in /debug/debugger.html)
+
+$ chrome-cdp debug log debug/debugger.html:10 runs --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"logpoint":{"exprs":["runs"],"hits":0,"id":2,"limit":1000,"line":10,"place":"/debug/debugger.html:10","scripts":["<site>/debug/debugger.html"],"source":"<site>/debug/debugger.html","state":"bound","tab":"t1"}}}
+
+$ chrome-cdp debug log debug/debugger.html:10 runs -q
+exit: 0
+--- stdout
+3
+

@@ -100,6 +100,13 @@ const FILTERS: &[&[&str]] = &[
 ];
 const ERR: &[&str] = &["", "--json"];
 
+/// The page with a `debugger;` statement, with a logpoint on the line
+/// after it.
+const DEBUGGING: &[&[&str]] = &[
+    &["open", "{site}/debug/debugger.html"],
+    &["debug", "log", "debug/debugger.html:10", "runs"],
+];
+
 /// The checkout fixture after its Log button logged `checkout done 42`.
 const CHECKOUT_LOGGED: &[&[&str]] = &[&["open", "{site}/wait/checkout.html"], &["click", "#log"]];
 
@@ -2316,6 +2323,59 @@ const CASES: &[Case] = &[
         args: &["source", "role=button >> nth=0"],
         modes: ERR,
         fixture: Fixture::SessionAt("/apps/react.html"),
+    },
+    Case {
+        name: "debug-log",
+        args: &["debug", "log", "debug/debugger.html:10", "runs"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/debug/debugger.html"),
+    },
+    Case {
+        name: "debug-log-pending",
+        args: &["debug", "log", "src/later.ts:6", "note"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/debug/debugger.html"),
+    },
+    Case {
+        name: "debug-log-bad-expression",
+        args: &["debug", "log", "debug/debugger.html:10", "runs +"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/debug/debugger.html"),
+    },
+    Case {
+        name: "debug-log-bad-place",
+        args: &["debug", "log", "debug/debugger.html", "runs"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "debug-hit",
+        args: &["click", "#go"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(DEBUGGING),
+    },
+    Case {
+        name: "debug-list",
+        args: &["debug", "list"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/debug/debugger.html"],
+            &["debug", "log", "debug/debugger.html:10", "runs"],
+            &["debug", "log", "src/later.ts:6"],
+            &["click", "#go"],
+        ]),
+    },
+    Case {
+        name: "debug-clear",
+        args: &["debug", "clear", "--all"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(DEBUGGING),
+    },
+    Case {
+        name: "debug-clear-unknown",
+        args: &["debug", "clear", "7"],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(DEBUGGING),
     },
     Case {
         name: "components",

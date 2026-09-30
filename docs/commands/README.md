@@ -100,6 +100,7 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`eval`](eval.md) | Run JavaScript in the page and print its value |
 | [`perf`](perf.md) | Show how fast the page is: load timing, Web Vitals, blocking time, memory |
 | [`coverage`](coverage.md) | Measure how much of the page's JavaScript and CSS is unused |
+| [`debug`](debug.md) | Log values at a source line each time it runs (logpoints), without stopping the page or editing its code |
 | [`har`](har.md) | Record the page's requests to a HAR file |
 | [`trace`](trace.md) | Record a Chrome performance trace, for DevTools or Perfetto |
 | [`highlight`](highlight.md) | Point out an element in the browser window, for a human watching |

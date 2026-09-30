@@ -1,0 +1,17 @@
+$ chrome-cdp debug list
+exit: 0
+--- stdout
+1 /debug/debugger.html:10  runs  hits 1
+2 src/later.ts:6  hits 0  (pending: no script has it yet)
+
+$ chrome-cdp debug list --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"logpoints":[{"exprs":["runs"],"hits":1,"id":1,"limit":1000,"line":10,"place":"/debug/debugger.html:10","scripts":["<site>/debug/debugger.html"],"source":"<site>/debug/debugger.html","state":"bound","tab":"t1"},{"exprs":[],"hits":0,"id":2,"limit":1000,"line":6,"place":"src/later.ts:6","state":"pending","tab":"t1"}]}}
+
+$ chrome-cdp debug list -q
+exit: 0
+--- stdout
+1
+2
+

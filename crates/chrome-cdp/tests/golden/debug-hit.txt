@@ -1,0 +1,16 @@
+$ chrome-cdp click '#go'
+exit: 0
+--- stdout
+clicked e1 button "Go"
+! logpoint 1 /debug/debugger.html:10: runs=1
+
+$ chrome-cdp click '#go' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"action":"click","button":"left","count":1,"element":{"name":"Go","ref":"e1","role":"button","tag":"button"},"locator":"#go","point":{"x":24.89,"y":18.5},"tab":"t1"},"events":[{"type":"logpoint","tab":"t1","id":1,"place":"/debug/debugger.html:10","line":10,"values":[{"expr":"runs","value":"2"}]}]}
+
+$ chrome-cdp click '#go' -q
+exit: 0
+--- stdout
+e1
+

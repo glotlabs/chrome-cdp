@@ -540,6 +540,58 @@
           "type": "object"
         },
         {
+          "description": "A logpoint (`chrome-cdp debug log`) was hit after the command\nbegan.",
+          "properties": {
+            "file": {
+              "description": "The source on disk (an absolute path), when found.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "description": "The logpoint's id (`debug list`, `debug clear <id>`).",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "line": {
+              "description": "The original line it is bound at (1-based).",
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "place": {
+              "description": "Its place as text shows it: the file relative to the project root\nwhen chrome-cdp found it, else the source's URL path, with the\nline it is bound at (`src/cart.ts:42`).",
+              "type": "string"
+            },
+            "tab": {
+              "description": "The tab, e.g. `t1`.",
+              "type": "string"
+            },
+            "type": {
+              "const": "logpoint",
+              "type": "string"
+            },
+            "values": {
+              "description": "Each expression's value, in the order given.",
+              "items": {
+                "$ref": "#/$defs/LogpointValue"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "type",
+            "tab",
+            "id",
+            "place",
+            "line",
+            "values"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Focus moved to an element of another form than before (or into a\nform, or out of one, or into another frame) that the action did not\nact on: a dialog or the next step of a flow took it.",
           "properties": {
             "element": {
@@ -602,6 +654,33 @@
         "files",
         "changed",
         "check"
+      ],
+      "type": "object"
+    },
+    "LogpointValue": {
+      "description": "An expression of a logpoint, and its value at a hit.",
+      "properties": {
+        "error": {
+          "description": "What it threw (`ReferenceError: total is not defined`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "expr": {
+          "description": "The expression, as given.",
+          "type": "string"
+        },
+        "value": {
+          "description": "Its value, previewed in the page: at most 2 levels deep, strings\ncut at 80 characters, collections over 5 entries counted\n(`[12 items]`), functions as `ƒ`. Absent if it threw.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "expr"
       ],
       "type": "object"
     },

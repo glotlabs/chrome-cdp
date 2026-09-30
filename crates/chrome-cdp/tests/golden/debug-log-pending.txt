@@ -1,0 +1,10 @@
+$ chrome-cdp debug log src/later.ts:6 note
+exit: 0
+--- stdout
+logpoint 1 at src/later.ts:6 is pending: no script of t1 has src/later.ts yet; it binds when one loads
+
+$ chrome-cdp debug log src/later.ts:6 note --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"logpoint":{"exprs":["note"],"hits":0,"id":2,"limit":1000,"line":6,"place":"src/later.ts:6","state":"pending","tab":"t1"}}}
+
