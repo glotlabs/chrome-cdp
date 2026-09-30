@@ -421,7 +421,7 @@ fn removed_nodes(nodes: Option<&Vec<&Node>>) -> Vec<DiffNode> {
 }
 
 /// The parts of `before`'s line that differ from `after`'s.
-fn was(before: &Node, after: &Node) -> String {
+pub(super) fn was(before: &Node, after: &Node) -> String {
     let mut parts = Vec::new();
     if before.role != after.role {
         parts.push(before.role.clone());
@@ -456,7 +456,7 @@ fn was(before: &Node, after: &Node) -> String {
 }
 
 /// Drops unchanged subtrees with no change below them.
-fn prune_unchanged(nodes: Vec<DiffNode>) -> Vec<DiffNode> {
+pub(super) fn prune_unchanged(nodes: Vec<DiffNode>) -> Vec<DiffNode> {
     nodes
         .into_iter()
         .filter_map(|mut node| {

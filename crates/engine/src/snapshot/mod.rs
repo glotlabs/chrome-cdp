@@ -14,6 +14,7 @@
 //! tree and gives refs from the same registry.
 
 mod ax;
+pub(crate) mod compare;
 mod dom;
 mod find;
 pub use find::check_find;
