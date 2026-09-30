@@ -1957,6 +1957,58 @@ pub enum LocalsMode {
     Localhost,
 }
 
+/// `forms [LOCATOR]`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FormsRequest {
+    /// `--tab`: the tab to look in; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// The form to list: the one this element is or is inside (else the
+    /// forms in it, else its fields); every form if `None`.
+    #[serde(default)]
+    pub locator: Option<String>,
+    #[serde(default)]
+    pub strict_refs: bool,
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    #[serde(default)]
+    pub max_chars: usize,
+}
+
+/// `fill-form [LOCATOR] --values JSON [--submit]`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FillFormRequest {
+    /// `--tab`: the tab to act in; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// The form, as for `forms`; the page's only form if `None`.
+    #[serde(default)]
+    pub locator: Option<String>,
+    /// The values by key, in the order given.
+    pub values: Vec<(String, serde_json::Value)>,
+    /// `--submit`: then click the form's first submit button, or press
+    /// Enter in the last field filled.
+    #[serde(default)]
+    pub submit: bool,
+    /// The directory relative file paths are under (the CLI's).
+    #[serde(default)]
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub strict_refs: bool,
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    /// Bounds each field's action, as `--timeout` bounds one action.
+    pub timeout_ms: u64,
+    #[serde(default)]
+    pub no_wait_after: bool,
+    #[serde(default)]
+    pub snap: bool,
+    #[serde(default)]
+    pub max_chars: usize,
+}
+
 /// `why`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WhyRequest {

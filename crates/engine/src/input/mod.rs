@@ -20,6 +20,7 @@
 mod actionability;
 mod drag;
 mod form;
+mod forms;
 mod keyboard;
 mod keys;
 mod mouse;
@@ -40,6 +41,7 @@ use serde_json::Value;
 use tokio::time::Instant;
 
 pub use actionability::{ActionPoint, Checks};
+pub use forms::check_fill_form;
 pub(crate) use keys::Key;
 pub(crate) use mouse::Pointer;
 pub use mouse::parse_modifiers;

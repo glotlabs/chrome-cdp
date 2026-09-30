@@ -644,6 +644,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<WhyData>),
     },
     CommandSchema {
+        name: "forms",
+        summary: "the page's forms with each field's name, kind, state, value and validation message",
+        schema: || schema_for!(Envelope<FormsData>),
+    },
+    CommandSchema {
+        name: "fill-form",
+        summary: "the fields a form was filled in, by key, and the button --submit clicked",
+        schema: || schema_for!(Envelope<Acted<FillFormData>>),
+    },
+    CommandSchema {
         name: "layout",
         summary: "what looks broken: covered, overlapping, clipped, off-screen, too small, low contrast",
         schema: || schema_for!(Envelope<LayoutData>),
@@ -3401,6 +3411,182 @@ pub struct WhyVerdict {
     /// an ambiguous locator, an element that can never take text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fails: Option<String>,
+}
+
+/// `data` of `chrome-cdp forms --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FormsData {
+    /// The tab, e.g. `t1`.
+    pub tab: String,
+    /// The forms, in document order (the main frame's first), and last
+    /// the fields outside any form.
+    pub forms: Vec<FormUnit>,
+}
+
+/// A form as `forms` lists it: a `<form>`, `role=form` or `role=search`,
+/// the element a locator named, or the fields outside any form.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FormUnit {
+    /// `form`, `search`, `scope` (the element a locator named, which is
+    /// no form and in none) or `outside` (the fields in no form).
+    pub kind: String,
+    /// The form element; absent for `outside`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element: Option<WhyElement>,
+    /// A `<form>`'s method (`GET`, `POST`), when it has a method or an
+    /// action.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+    /// Where a `<form>` submits to: a path on the page's origin, else
+    /// the URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+    /// The URL of the iframe it is in; absent in the main frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<String>,
+    /// Its fields and buttons, in document order.
+    pub fields: Vec<FormField>,
+    /// How many fields it has (buttons not counted).
+    pub count: u64,
+    /// How many of them are required and empty.
+    pub required_empty: u64,
+}
+
+/// A field of a form: a control, a group of radio buttons, or a button.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FormField {
+    /// The control (for a radio group, its `radiogroup` or `<fieldset>`,
+    /// else its first radio).
+    pub element: WhyElement,
+    /// An input's type (`text`, `email`, `password`, `date`, `file`, …),
+    /// `select`, `textarea`, `contenteditable`, a button's type
+    /// (`submit`, `reset`, `button`), `radiogroup`, or a custom widget's
+    /// role (`combobox`, `listbox`, `checkbox`, `switch`, `textbox`,
+    /// `slider`, `spinbutton`).
+    pub kind: String,
+    /// A custom widget (by its role), not a native control.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub custom: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub required: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub disabled: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub readonly: bool,
+    /// What it holds (cut to 80 characters): the text, the selected
+    /// option's label, the checked radio's name. Never a password's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    /// A password field: its value is not shown.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub secret: bool,
+    /// It holds nothing: no text, no option with a value, unchecked, no
+    /// file, no radio checked.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub empty: bool,
+    /// A checkbox's or switch's state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked: Option<bool>,
+    /// A checkbox that is neither checked nor unchecked.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mixed: bool,
+    /// A file input's files, by name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
+    /// A file input's `accept`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accept: Option<String>,
+    /// It takes several values (files, options).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub multiple: bool,
+    /// The first 10 options of a select, listbox or combobox.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<String>,
+    /// How many more options there are.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub more_options: u64,
+    /// The options selected in a multiple select or a listbox.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub selected: Vec<String>,
+    /// It is invalid: constraint validation fails (other than only being
+    /// empty), or `aria-invalid` is set.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub invalid: bool,
+    /// Why: its `validationMessage`, else the text its
+    /// `aria-errormessage` or `aria-describedby` points to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// Its `name` attribute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub html_name: Option<String>,
+    /// Its `id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholder: Option<String>,
+    /// A radio group's radio buttons.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub radios: Vec<FormRadio>,
+    /// A button that submits the form.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub submit: bool,
+}
+
+/// A radio button of a group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FormRadio {
+    pub element: WhyElement,
+    /// A native radio's `value`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    pub checked: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub disabled: bool,
+}
+
+/// `data` of `chrome-cdp fill-form --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FillFormData {
+    /// The tab acted in, e.g. `t1`.
+    pub tab: String,
+    /// The form filled; absent for fields outside any form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub form: Option<WhyElement>,
+    /// The fields filled, in the order they were (the page's).
+    pub filled: Vec<FilledField>,
+    /// The keys that matched no field, or several (then the command
+    /// fails with `NotFound`, after filling the others).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unmatched: Vec<UnmatchedKey>,
+    /// `--submit`: the button clicked, or the field Enter was pressed in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub submitted: Option<FilledField>,
+}
+
+/// A field `fill-form` filled.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FilledField {
+    /// The key of the values that named it (empty for `submitted`).
+    pub key: String,
+    /// The field (for a radio group, the radio checked).
+    pub element: WhyElement,
+    /// The action: `fill`, `select`, `check`, `uncheck`, `upload`,
+    /// `click` (options of a listbox, or the submit button) or `press`
+    /// (Enter, to submit).
+    pub action: String,
+    /// The options clicked: of a listbox, or the one of a combobox's
+    /// popup after its text was filled.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<WhyElement>,
+}
+
+/// A key `fill-form` could not match to one field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct UnmatchedKey {
+    pub key: String,
+    /// The fields it matched when it matched several; empty when none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidates: Vec<WhyElement>,
 }
 
 /// `data` of `chrome-cdp layout --json`.
