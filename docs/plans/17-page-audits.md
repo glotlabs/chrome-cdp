@@ -1,6 +1,6 @@
 # Plan 17 — Page audits
 
-Status: NOT STARTED
+Status: IN PROGRESS (17.1 done)
 Depends on: 13 (the target graph: issues come from every target), 16
 §16.2 (`layout`, one of `audit`'s categories), 09 §9.1 (`expect`,
 `--a11y`), 06 (`perf`, `console`, `network`)
@@ -307,10 +307,10 @@ smoke scenario per page). Link it from `docs/README.md` and mention
 
 ## Acceptance criteria
 
-- [ ] `issues` shows Chrome's issues for the page, its iframes (same-site
+- [x] `issues` shows Chrome's issues for the page, its iframes (same-site
       and OOPIF) and its workers, deduplicated, with refs for elements
       and ids for requests.
-- [ ] Every `InspectorIssueCode` in the vendored protocol has a rule id,
+- [x] Every `InspectorIssueCode` in the vendored protocol has a rule id,
       severity and message; an unknown code is shown, not dropped.
 - [ ] `expect --perf` parses every metric in the table with units, fails
       with every budget's measured value and the throttling, and treats a
@@ -359,3 +359,52 @@ smoke scenario per page). Link it from `docs/README.md` and mention
 ## Decisions log
 
 _(append here)_
+- 17.1: `Audits.issueAdded` is read as raw JSON (`observe/issues.rs`), like
+  the console's events, not through the generated types: a code or reason
+  newer than the vendored protocol must not fail to decode. `Audits` is
+  generated for `enable` and `checkFormsIssues`.
+- 17.1: Rule ids: the kebab-case of the code without `Issue`, then of the
+  reason without the words the code already says (`MixedContentBlocked`
+  of `mixed-content` is `mixed-content-blocked`; CSP's `kInlineViolation`
+  is `content-security-policy-inline-violation`). `GenericIssue` is the
+  reason alone, without its `Error` suffix (`form-label-for-name`), since
+  `generic-` says nothing. Codes whose details have no reason (quirks
+  mode, lazy-load image, …) are the code alone. The table (`CODES`) also
+  generates the rule table at the end of `docs/commands/issues.md`.
+- 17.1: Deprecations are `deprecation-<type>` (Chrome's type, kebab-case);
+  common types get a message in words, the rest `deprecated: <Type>`.
+- 17.1: Folding: an issue raised again with the same rule and key in the
+  same document of the main frame counts up and moves to the end with a
+  new number, so `issues --since last` shows it again with its count.
+  Issues about an element are the exception: Chrome reports form issues
+  again on each parse of the form, which is not another occurrence, so
+  they are not counted again. A tab keeps 1,000 distinct issues (no flag:
+  folding makes more unlikely).
+- 17.1: Chrome 154 answers `Audits.checkFormsIssues` with an empty list
+  for the fixture's form problems and sends them as `issueAdded` after
+  parsing instead. `issues` and `expect --no-issues` still call it, and
+  add what it returns only if the document does not have it yet.
+- 17.1: Keys: an element's is its stable locator (asked without the tab
+  lock, since `expect` and actions hold it), else for issues about the
+  element (form issues) its role and name; an issue about a script place
+  (a CSP-blocked inline script) keeps the place when the element has no
+  stable locator, so the same block in two frames has two keys. URLs lose
+  their query, fragment and port; the page's origin is `self`.
+- 17.1: Chrome raises a worker's request's issue (CORS) on the page's
+  session; the network log's record of the request names the worker, so
+  the issue gets it there. Chrome names the frame of few issues: an
+  OOPIF session's issues get its frame, and an element in a same-site
+  iframe is looked up in each frame of the page's session until one has
+  it.
+- 17.1: Mixed content cannot come from the fixture's origins: 127.0.0.1
+  and localhost are potentially trustworthy, so http from them is not
+  mixed. The test maps `mixed.test` to 127.0.0.1 with
+  `--host-resolver-rules` and loads the https origin's page with
+  `--ignore-https-errors`.
+- 17.1: `issues --all-tabs` reads each tab from its own cursor (`--limit`
+  is per tab), shows a shared or service worker's issue once, and takes
+  no `--tab` or `--follow`; with a mark, a tab without it is read whole.
+- 17.1: The action report lists new issues of severity `error` only
+  (`! issue: <rule> <message>`, at most 5, then a line with `issues
+  --min-severity error`); `--json` has them as `issue` events
+  (`Event::Issue`, boxed: it is the largest event).
