@@ -18,7 +18,7 @@ around it. **The v1 gate: no ❌ in an agent-critical row.** A test
 (`crates/chrome-cdp/tests/parity.rs`) holds the tables to that, checks the
 counts below, and checks that every command a row names exists.
 
-Today: 132 rows; 118 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
+Today: 133 rows; 119 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
 
 ## Navigation
 
@@ -188,6 +188,7 @@ Today: 132 rows; 118 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
 | `toPass`, plain-value `expect` | the shell compares `-q` output | ➖ | no |
 | — | `expect --no-errors`, `expect --no-failed-requests`, `expect --a11y` | ✅ | no |
 | — | `layout` lints how the page looks (covered, overlapping, clipped, off-screen and too small elements, sideways scrolling, contrast on pixels), per `--viewports`; `expect --layout --baseline NAME` fails on findings the baseline does not list | ✅ | no |
+| — | `compare A B` diffs two pages (URLs on two origins, tabs, sessions or `snapshot --json` files) by structure, and with `--visual` their pixels as named regions and a diff image; `--exit-code` exits 1 when they differ | ✅ | no |
 
 ## Test runner
 

@@ -49,6 +49,7 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`why`](why.md) | Explain why an action on an element would wait or fail, check by check, without acting |
 | [`forms`](forms.md) | List the page's forms: each field's name, kind, state, value and validation message |
 | [`layout`](layout.md) | Lint what the page looks like: covered, overlapping, clipped, off-screen and too small elements, sideways scrolling, low contrast |
+| [`compare`](compare.md) | Compare two pages: what their snapshots differ in, and with --visual their pixels |
 | [`source`](source.md) | Print the file and line an element came from, and its components |
 | [`components`](components.md) | Print the page's component tree, or the component that rendered an element, with its props and state |
 

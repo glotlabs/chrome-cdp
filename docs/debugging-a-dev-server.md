@@ -156,6 +156,14 @@ chrome-cdp screenshot e20                 # one element
 chrome-cdp emulate 'iPhone 15' && chrome-cdp screenshot --full
 ```
 
+`compare` puts the local page next to production (or a tab before a
+change next to one after): what their snapshots differ in, and with
+`--visual` the regions of pixels that differ, each named by its element:
+
+```sh
+chrome-cdp compare http://localhost:5173/cart https://shop.example.com/cart --visual
+```
+
 **Speed.** `perf` sums up load timing, LCP, CLS, INP and long tasks;
 `trace start` / `trace stop -o trace.json` records a trace for DevTools'
 Performance panel.
