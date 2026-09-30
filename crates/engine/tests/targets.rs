@@ -428,6 +428,7 @@ async fn console(engine: &Engine, errors: bool) -> ConsoleData {
             limit: 0,
             wait_ms: 0,
             sourcemaps: false,
+            locals: false,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })
@@ -1262,6 +1263,7 @@ async fn a_shared_workers_error_counts_once_across_tabs() {
                     limit: 0,
                     wait_ms: 0,
                     sourcemaps: false,
+                    locals: false,
                     timeout_ms: TIMEOUT_MS,
                     max_chars: 0,
                 })

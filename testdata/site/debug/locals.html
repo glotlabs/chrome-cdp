@@ -1,0 +1,32 @@
+<!doctype html>
+<title>locals</title>
+<button id="reject">Reject</button>
+<button id="storm">Storm</button>
+<p id="out"></p>
+<script>
+  // An async function whose promise nobody handles: an unhandled
+  // rejection.
+  async function load(id) {
+    const found = null;
+    const tries = [1, 2];
+    await Promise.resolve();
+    if (!found) throw new Error(`no item ${id}`);
+  }
+  document.getElementById("reject").addEventListener("click", function onReject() {
+    load(7);
+  });
+  // 100 uncaught errors a second for a second; `ticks` counts the timer's
+  // runs, so a page the pauses held up shows fewer.
+  window.ticks = 0;
+  document.getElementById("storm").addEventListener("click", function onStorm() {
+    const timer = setInterval(function storm() {
+      window.ticks += 1;
+      if (window.ticks >= 100) {
+        clearInterval(timer);
+        document.getElementById("out").textContent = "done";
+      }
+      const n = window.ticks;
+      throw new Error(`storm ${n}`);
+    }, 10);
+  });
+</script>

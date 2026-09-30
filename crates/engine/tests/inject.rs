@@ -221,6 +221,7 @@ async fn binding_calls(engine: &Engine, tab: Option<&str>) -> Vec<String> {
             limit: 0,
             wait_ms: 0,
             sourcemaps: false,
+            locals: false,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })
@@ -431,6 +432,7 @@ async fn scripts_are_added_listed_and_removed_while_pages_run() {
             limit: 0,
             wait_ms: 0,
             sourcemaps: false,
+            locals: false,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })

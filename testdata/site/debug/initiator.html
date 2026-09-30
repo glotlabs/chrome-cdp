@@ -1,0 +1,18 @@
+<!doctype html>
+<title>initiator</title>
+<button id="go">Go</button>
+<p id="out"></p>
+<script>
+  // A request sent after two async boundaries: a timer, then a promise.
+  function load() {
+    return fetch("/debug/initiator.html?n=1");
+  }
+  function later() {
+    Promise.resolve().then(function afterTick() {
+      load().then(() => (document.getElementById("out").textContent = "loaded"));
+    });
+  }
+  document.getElementById("go").addEventListener("click", function onGo() {
+    setTimeout(later, 0);
+  });
+</script>

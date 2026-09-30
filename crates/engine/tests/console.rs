@@ -96,6 +96,7 @@ fn request(errors: bool) -> ConsoleRequest {
         limit: 50,
         wait_ms: 0,
         sourcemaps: false,
+        locals: false,
         timeout_ms: TIMEOUT_MS,
         max_chars: 0,
     }

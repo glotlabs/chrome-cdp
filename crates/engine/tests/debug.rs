@@ -21,12 +21,14 @@ use std::sync::Arc;
 use browser::Host;
 use engine::{
     Action, ActionRequest, Button, ConsoleRequest, DebugClearRequest, DebugListRequest,
-    DebugLogRequest, Engine, EvalRequest, EvalWorld, NavigateRequest, Navigation, OpenRequest,
-    Since, WaitFor, WaitRequest, WaitUntil,
+    DebugLocalsRequest, DebugLogRequest, Engine, EvalRequest, EvalWorld, LocalsMode,
+    NavigateRequest, Navigation, NetworkRequest, NetworkShowRequest, OpenRequest, Since, WaitFor,
+    WaitRequest, WaitUntil,
 };
 use fixtures::Fixtures;
 use protocol::schema::{
-    ConsoleData, DebugClearData, DebugListData, DebugLogData, Event, Level, Logpoint, LogpointHit,
+    ConsoleData, ConsoleEntry, DebugClearData, DebugListData, DebugLocalsData, DebugLogData, Event,
+    Level, Logpoint, LogpointHit, NetworkData, NetworkShowData,
 };
 use protocol::{ErrorInfo, ErrorKind, Output};
 
@@ -248,6 +250,7 @@ async fn console(engine: &Engine, app: &str) -> (String, ConsoleData) {
             limit: 0,
             wait_ms: 0,
             sourcemaps: false,
+            locals: false,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         }),
@@ -339,8 +342,15 @@ async fn a_logpoint_reports_its_values() {
 
         let (output, cleared) = clear(&engine, None).await;
         assert_eq!(cleared.cleared, [1]);
-        assert!(!cleared.debugger, "{app}");
-        assert_eq!(output.text, "cleared logpoint 1; the debugger is off");
+        // Locals capture keeps it on: the page is on localhost.
+        assert!(cleared.debugger, "{app}");
+        assert!(
+            output
+                .text
+                .starts_with("cleared logpoint 1; the debugger stays on for locals"),
+            "{}",
+            output.text
+        );
         // No more hits.
         let clicked = in_app(app, click(&engine, "testid=add-1")).await;
         assert!(hits(&clicked).is_empty(), "{app}: {}", clicked.text);
@@ -530,6 +540,8 @@ async fn an_ambiguous_place_lists_the_candidates() {
 async fn a_debugger_statement_does_not_stop_the_page() {
     let Some(chrome) = chrome_path() else { return };
     let engine = start(&chrome, "debug-statement").await;
+    // Only the logpoint turns the debugger on.
+    locals(&engine, Some(LocalsMode::Off)).await;
     goto(&engine, "/debug/debugger.html").await;
     let (output, logpoint) = log(&engine, "plain", "debug/debugger.html", 10, &["runs"], 1000)
         .await
@@ -644,5 +656,432 @@ async fn two_logpoints_on_one_line() {
     assert_eq!(hits.len(), 1, "{}", clicked.text);
     assert_eq!(hits[0].id, 2);
     assert_eq!(hits[0].values[0].value.as_deref(), Some("1"));
+    engine.close().await;
+}
+
+/// The requests of the tab whose URL ends with `suffix`, as `network`
+/// lists them (text) and as data.
+async fn requests(engine: &Engine, app: &str, suffix: &str) -> (String, NetworkData) {
+    let output = in_app(
+        app,
+        engine.network(NetworkRequest {
+            tab: None,
+            failed: false,
+            types: Vec::new(),
+            url: None,
+            method: None,
+            status: Vec::new(),
+            since: Since::Seq { seq: 0 },
+            limit: 0,
+            wait_ms: 0,
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 0,
+        }),
+    )
+    .await
+    .unwrap();
+    let mut data: NetworkData = serde_json::from_value(output.data).unwrap();
+    data.requests.retain(|r| r.url.ends_with(suffix));
+    let text = output
+        .text
+        .lines()
+        .filter(|l| l.contains(suffix))
+        .collect::<Vec<_>>()
+        .join("\n");
+    (text, data)
+}
+
+/// `network show ID` in app `app`'s directory.
+async fn show(engine: &Engine, app: &str, id: u64) -> (String, NetworkShowData) {
+    let output = in_app(
+        app,
+        engine.network_show(NetworkShowRequest {
+            tab: None,
+            id,
+            headers: false,
+            body: false,
+            request_body: false,
+            output: None,
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 0,
+        }),
+    )
+    .await
+    .unwrap_or_else(|e| panic!("network show {id}: {}", e.to_text()));
+    let data = serde_json::from_value(output.data).unwrap();
+    (output.text, data)
+}
+
+/// The "Add" button's request names `fetchCart` in `src/api.ts` and the
+/// click handler that called it, in their sources; the list shows where
+/// in `src/api.ts` each was sent.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_request_s_initiator_is_its_source_stack() {
+    let Some(chrome) = chrome_path() else { return };
+    for (app, handler) in [
+        ("plain", "src/components/CartItem.ts"),
+        ("react19", "src/App.tsx"),
+    ] {
+        let engine = start(&chrome, &format!("debug-initiator-{app}")).await;
+        open_app(&engine, app).await;
+        let (_, before) = requests(&engine, app, "cart.json").await;
+        in_app(app, click(&engine, "testid=add-1")).await;
+        let (text, after) = requests(&engine, app, "cart.json").await;
+        assert_eq!(
+            after.requests.len(),
+            before.requests.len() + 1,
+            "{app}: {text}"
+        );
+        let fetch_line = line_of(app, "src/api.ts", "fetch(\"cart.json\")");
+        assert!(
+            text.lines()
+                .all(|l| l.ends_with(&format!("from src/api.ts:{fetch_line}"))),
+            "{app}: {text}"
+        );
+        let added = after.requests.last().unwrap();
+        let (text, data) = show(&engine, app, added.id).await;
+        let stack = &data.request.initiator.as_ref().unwrap().stack;
+        let original = stack[0].original.as_ref().unwrap();
+        assert_eq!(stack[0].function, "fetchCart", "{app}: {text}");
+        assert!(
+            original.source.ends_with("src/api.ts"),
+            "{app}: {original:?}"
+        );
+        assert_eq!(original.line, fetch_line);
+        assert!(
+            text.contains(&format!("initiator: script\n  fetchCart")),
+            "{app}: {text}"
+        );
+        assert!(
+            text.contains(&format!("src/api.ts:{fetch_line}:")),
+            "{app}: {text}"
+        );
+        assert!(
+            text.contains(&format!("  {handler}:")) || text.contains(&format!(" {handler}:")),
+            "{app}: {text}"
+        );
+        engine.close().await;
+    }
+}
+
+/// An initiator's stack goes on across async boundaries (a timer, a
+/// promise), each marked.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_initiator_crosses_async_boundaries() {
+    let Some(chrome) = chrome_path() else { return };
+    let engine = start(&chrome, "debug-initiator-async").await;
+    goto(&engine, "/debug/initiator.html").await;
+    in_app("plain", click(&engine, "#go")).await;
+    wait(
+        &engine,
+        WaitFor::Function {
+            expression: "document.getElementById('out').textContent === 'loaded'".into(),
+        },
+    )
+    .await;
+    let (_, data) = requests(&engine, "plain", "initiator.html?n=1").await;
+    let (text, _) = show(&engine, "plain", data.requests[0].id).await;
+    let expected = "initiator: script\n  \
+                    load       /debug/initiator.html:8:12\n  \
+                    afterTick  /debug/initiator.html:12:7\n  \
+                    -- async Promise.then --\n  \
+                    later      /debug/initiator.html:11:23\n  \
+                    -- async setTimeout --\n  \
+                    onGo       /debug/initiator.html:16:5\n";
+    assert!(text.contains(expected), "{text}");
+    engine.close().await;
+}
+
+/// `debug locals [on|off|localhost]`.
+async fn locals(engine: &Engine, set: Option<LocalsMode>) -> (Output, DebugLocalsData) {
+    let output = engine
+        .debug_locals(DebugLocalsRequest {
+            set,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("debug locals: {}", e.to_text()));
+    let data = serde_json::from_value(output.data.clone()).unwrap();
+    (output, data)
+}
+
+/// `errors --locals --since 0` in app `app`'s directory: the text and the
+/// entries.
+async fn errors_with_locals(engine: &Engine, app: &str) -> (String, Vec<ConsoleEntry>) {
+    let output = in_app(
+        app,
+        engine.console(ConsoleRequest {
+            errors: true,
+            tab: None,
+            level: Level::Error,
+            since: Since::Seq { seq: 0 },
+            grep: None,
+            limit: 0,
+            wait_ms: 0,
+            sourcemaps: false,
+            locals: true,
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 0,
+        }),
+    )
+    .await
+    .unwrap();
+    let data: ConsoleData = serde_json::from_value(output.data).unwrap();
+    (output.text, data.entries)
+}
+
+/// Waits until the tab's console has an uncaught exception whose text
+/// has `needle`.
+async fn wait_for_exception(engine: &Engine, needle: &str) {
+    for _ in 0..200 {
+        let (_, data) = console(engine, "plain").await;
+        if data
+            .entries
+            .iter()
+            .any(|e| e.source == "exception" && e.text.contains(needle))
+        {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    panic!("no uncaught {needle:?}");
+}
+
+/// "Checkout" throws in `lineTotal` (a missing item): `errors --locals`
+/// shows `item = undefined` there and the cart's list in `total`, at the
+/// lines of `src/cart.ts`. (The other apps' frameworks catch the error:
+/// see `a_caught_error_suggests_a_logpoint`.)
+#[tokio::test(flavor = "multi_thread")]
+async fn an_uncaught_error_keeps_its_locals() {
+    let Some(chrome) = chrome_path() else { return };
+    for app in ["plain", "react18"] {
+        let engine = start(&chrome, &format!("debug-locals-{app}")).await;
+        open_app(&engine, app).await;
+        let (output, data) = locals(&engine, None).await;
+        assert_eq!(data.locals, "localhost");
+        assert!(data.capturing >= 1, "{app}: {data:?}");
+        assert!(
+            output
+                .text
+                .starts_with("locals capture is on for localhost pages"),
+            "{}",
+            output.text
+        );
+        in_app(app, click(&engine, "testid=checkout")).await;
+        wait_for_exception(&engine, "reading 'price'").await;
+        let (text, entries) = errors_with_locals(&engine, app).await;
+        let entry = entries
+            .iter()
+            .find(|e| e.text.contains("reading 'price'"))
+            .unwrap_or_else(|| panic!("{app}: {text}"));
+        assert_eq!(entry.no_locals, None, "{app}: {text}");
+        let line_total = line_of(app, "src/cart.ts", "return item.price * qty");
+        let total = line_of(app, "src/cart.ts", "sum += lineTotal");
+        let lines: Vec<&str> = text.lines().collect();
+        let at = lines
+            .iter()
+            .position(|l| l.starts_with(&format!("    at lineTotal (src/cart.ts:{line_total}:")))
+            .unwrap_or_else(|| panic!("{app}: {text}"));
+        assert!(
+            lines[at + 1].starts_with("      item = undefined, qty = 1"),
+            "{app}: {text}"
+        );
+        assert!(
+            lines[at + 2].starts_with(&format!("    at total (src/cart.ts:{total}:")),
+            "{app}: {text}"
+        );
+        assert!(lines[at + 3].contains("items = [{id: 1, "), "{app}: {text}");
+        let frame = &entry.stack[0];
+        let item = &frame.locals.as_ref().unwrap()[0];
+        assert_eq!(
+            (item.name.as_str(), item.value.as_str()),
+            ("item", "undefined")
+        );
+        // Without --locals, none.
+        let (text, _) = console(&engine, app).await;
+        assert!(!text.contains("item = undefined"), "{app}: {text}");
+        engine.close().await;
+    }
+}
+
+/// React 19 catches a handler's error and reports it itself, and Vue
+/// (in development) and Svelte 5 throw it again from their handlers: the
+/// debugger stops at no throw of the app, and the error says to set a
+/// logpoint at its line instead.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_caught_error_suggests_a_logpoint() {
+    let Some(chrome) = chrome_path() else { return };
+    for (app, why) in [
+        ("react19", "the debugger did not stop at it"),
+        ("vue", "it was caught and thrown again"),
+        ("svelte", "it was caught and thrown again"),
+    ] {
+        let engine = start(&chrome, &format!("debug-locals-caught-{app}")).await;
+        open_app(&engine, app).await;
+        in_app(app, click(&engine, "testid=checkout")).await;
+        wait_for_exception(&engine, "reading 'price'").await;
+        let (text, entries) = errors_with_locals(&engine, app).await;
+        let entry = entries
+            .iter()
+            .find(|e| e.text.contains("reading 'price'"))
+            .unwrap();
+        assert!(
+            entry
+                .no_locals
+                .as_deref()
+                .is_some_and(|w| w.starts_with(why)),
+            "{app}: {text}"
+        );
+        let line = line_of(app, "src/cart.ts", "return item.price * qty");
+        let hint = format!(
+            "; chrome-cdp debug log src/cart.ts:{line} <expr>… --session debug-locals-caught-{app} logs values there)"
+        );
+        assert!(text.contains(&hint), "{app}: {text}");
+        engine.close().await;
+    }
+}
+
+/// A promise rejection nobody handles has its locals too; a page that is
+/// not on this machine has none, and says why once; `debug locals on`
+/// captures there too, and `off` nowhere.
+#[tokio::test(flavor = "multi_thread")]
+async fn rejections_and_other_pages() {
+    let Some(chrome) = chrome_path() else { return };
+    let engine = start(&chrome, "debug-locals-reject").await;
+    goto(&engine, "/debug/locals.html").await;
+    in_app("plain", click(&engine, "#reject")).await;
+    wait_for_exception(&engine, "no item 7").await;
+    let (text, entries) = errors_with_locals(&engine, "plain").await;
+    let entry = entries
+        .iter()
+        .find(|e| e.text.contains("no item 7"))
+        .unwrap();
+    assert_eq!(entry.kind.as_deref(), Some("uncaught (in promise)"));
+    assert!(
+        text.contains("    at load (/debug/locals.html:13:")
+            && text.contains("      id = 7, found = null, tries = [1, 2]"),
+        "{text}"
+    );
+
+    // A page off this machine: a data: URL.
+    let page = "<button id=go onclick='boom()'>Go</button><script>\
+                function boom() { const secret = 1; null.x; }</script>";
+    let url = format!(
+        "data:text/html,{}",
+        page.replace(' ', "%20").replace('#', "%23")
+    );
+    engine
+        .navigate(NavigateRequest {
+            navigation: Navigation::Goto {
+                url,
+                base_url: None,
+            },
+            wait: WaitUntil::Settle,
+            tab: None,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap();
+    for _ in 0..2 {
+        in_app("plain", click(&engine, "#go")).await;
+    }
+    wait_for_exception(&engine, "reading 'x'").await;
+    let (text, entries) = errors_with_locals(&engine, "plain").await;
+    let remote: Vec<&ConsoleEntry> = entries
+        .iter()
+        .filter(|e| e.text.contains("reading 'x'"))
+        .collect();
+    assert!(remote.len() >= 1, "{text}");
+    assert!(
+        remote.iter().all(|e| e.no_locals.as_deref()
+            == Some("the page is not on localhost; chrome-cdp debug locals on")),
+        "{remote:?}"
+    );
+    assert_eq!(
+        text.matches(
+            "(locals not captured: the page is not on localhost; chrome-cdp debug locals on)"
+        )
+        .count(),
+        1,
+        "{text}"
+    );
+    assert!(!text.contains("secret ="), "{text}");
+
+    let (_, data) = locals(&engine, Some(LocalsMode::On)).await;
+    assert_eq!(data.locals, "on");
+    in_app("plain", click(&engine, "#go")).await;
+    for _ in 0..200 {
+        let (text, _) = errors_with_locals(&engine, "plain").await;
+        if text.contains("secret = 1") {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    let (text, _) = errors_with_locals(&engine, "plain").await;
+    assert!(text.contains("      secret = 1"), "{text}");
+
+    let (output, data) = locals(&engine, Some(LocalsMode::Off)).await;
+    assert_eq!((data.locals.as_str(), data.capturing), ("off", 0));
+    assert!(
+        output.text.starts_with("locals capture is off"),
+        "{}",
+        output.text
+    );
+    in_app("plain", click(&engine, "#go")).await;
+    let mut last = None;
+    for _ in 0..200 {
+        let (_, entries) = errors_with_locals(&engine, "plain").await;
+        last = entries.into_iter().rev().find(|e| e.source == "exception");
+        if last.as_ref().is_some_and(|e| e.no_locals.is_some()) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    assert_eq!(
+        last.unwrap().no_locals.as_deref(),
+        Some("capture is off; chrome-cdp debug locals on")
+    );
+    engine.close().await;
+}
+
+/// A page throwing 100 errors a second keeps running: at most 10 a
+/// second get their locals, the rest say why, and the console stays
+/// bounded.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_error_storm_stays_bounded() {
+    let Some(chrome) = chrome_path() else { return };
+    let engine = start(&chrome, "debug-locals-storm").await;
+    goto(&engine, "/debug/locals.html").await;
+    in_app("plain", click(&engine, "#storm")).await;
+    wait(
+        &engine,
+        WaitFor::Function {
+            expression: "document.getElementById('out').textContent === 'done'".into(),
+        },
+    )
+    .await;
+    wait_for_exception(&engine, "storm 100").await;
+    let (_, entries) = errors_with_locals(&engine, "plain").await;
+    let storm: Vec<&ConsoleEntry> = entries
+        .iter()
+        .filter(|e| e.text.starts_with("Error: storm "))
+        .collect();
+    assert_eq!(storm.len(), 100);
+    let with = storm
+        .iter()
+        .filter(|e| e.stack.first().is_some_and(|f| f.locals.is_some()))
+        .count();
+    let too_many = storm
+        .iter()
+        .filter(|e| {
+            e.no_locals
+                .as_deref()
+                .is_some_and(|w| w.starts_with("too many errors"))
+        })
+        .count();
+    assert!((10..=40).contains(&with), "{with} with locals");
+    assert_eq!(with + too_many, 100, "{storm:?}");
+    let (_, data) = console(&engine, "plain").await;
+    assert!(data.entries.len() <= 1000);
     engine.close().await;
 }

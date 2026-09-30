@@ -334,6 +334,7 @@ async fn errors_print_places_on_disk() {
                 limit: 1,
                 wait_ms: 0,
                 sourcemaps: false,
+                locals: false,
                 timeout_ms: TIMEOUT_MS,
                 max_chars: 0,
             }),
