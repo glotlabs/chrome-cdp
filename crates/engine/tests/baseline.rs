@@ -619,6 +619,53 @@ async fn expect_screenshot_stills_the_page() {
     assert_eq!(state, serde_json::json!([1, 1]));
 }
 
+/// A field's `value=` and a link's href may be open in a template too.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn expect_snapshot_template_values_and_hrefs() {
+    let Some(chrome) = chrome_path() else { return };
+    let out = tempfile::tempdir().unwrap();
+    let engine = start(&chrome, "engine-baseline-template-values", out.path()).await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("login.txt");
+    goto(&engine, "/expect/baseline.html").await;
+    eval(&engine, "document.getElementById('email').value = 'a@b.c'").await;
+    let (_, data) = snapshot_ok(&engine, snapshot_request(&path)).await;
+    assert!(
+        data.snapshot.contains("value=\"a@b.c\""),
+        "{}",
+        data.snapshot
+    );
+    assert!(data.snapshot.contains("→ /help"), "{}", data.snapshot);
+    let template = data
+        .snapshot
+        .replace("value=\"a@b.c\"", "value=/@b\\.c$/")
+        .replace("→ /help", "→ \"*\"");
+    std::fs::write(&path, &template).unwrap();
+
+    eval(
+        &engine,
+        "document.getElementById('email').value = 'x@b.c'; \
+         document.querySelector('nav a').href = '/help?session=f00'",
+    )
+    .await;
+    let (output, data) = snapshot_ok(&engine, snapshot_request(&path)).await;
+    assert_eq!(data.result, BaselineResult::Passed, "{}", output.text);
+
+    // A value the regex does not find fails.
+    eval(&engine, "document.getElementById('email').value = 'x@y.z'").await;
+    let err = snapshot(
+        &engine,
+        ExpectSnapshotRequest {
+            timeout_ms: SHORT_MS,
+            ..snapshot_request(&path)
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::ExpectFailed, "{}", err.to_text());
+    engine.close().await;
+}
+
 /// A baseline may be a template: `"*"` and `/regex/` values and `...`
 /// lines match changing text; a missing button still fails, with a diff
 /// of the template's lines; `--update` keeps the template lines that

@@ -137,7 +137,8 @@ where the page changes from run to run:
 ```
 
 `"*"` is any name or text, `/regex/` (or `/regex/i`) one it finds a match
-in, the rest of the line as it is, and a line `...` stands for any number
+in, the rest of the line as it is; a field's `value=` takes both too, and
+a link's `→ "*"` is any href. A line `...` stands for any number
 of lines at its depth (with those below them). A failure's diff shows the
 template's lines where they match, so a missing `button "Pay"` is the only
 `-` line. `--update` keeps the template lines that still match and

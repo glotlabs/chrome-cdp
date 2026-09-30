@@ -707,6 +707,9 @@ match with changed dynamic text, fail on a missing button, and survive
   longer matches. A regex that does not compile is BadArgs naming the
   line. `convert` keeps `toMatchAriaSnapshot` a TODO: Playwright's YAML
   (`[level=1]`, `- text: …`) is not the `snapshot -i` format.
+- **14.7, template values (close-out).** A field's `value=` takes `"*"`
+  and `/regex/` as the name does; a link's href takes only `→ "*"`: an
+  href is not quoted, and `→ /docs/` is a path, not a regex.
 - **14.7, skill.** `chrome-cdp skill` gets no line for these: its list
   is the hot path, and WebSocket frames, exposed answers and templates
   are for tests that need them.

@@ -2,9 +2,12 @@
 //!
 //! A baseline line may leave a value open:
 //!
-//! - `"*"` as a whole name or text: any value (`button "*"`);
-//! - `/regex/` (or `/regex/i`) in place of the quoted name or text: a value
-//!   the regex finds a match in (`heading /Order #\d+/`);
+//! - `"*"` as a whole name or text, or a field's `value=`: any value
+//!   (`button "*"`, `textbox "Since" value="*"`);
+//! - `/regex/` (or `/regex/i`) in place of the quoted name, text or
+//!   `value=`: a value the regex finds a match in (`heading /Order #\d+/`);
+//! - `→ "*"` in place of a link's href: any href. An href is not quoted,
+//!   and `/docs/` is one, so it takes no regex;
 //! - a line `...`: any number of lines at its depth (with the lines below
 //!   them).
 //!
@@ -39,19 +42,89 @@ enum Kind {
     Dots,
     /// A line to match as it is: what follows `- `.
     Plain(String),
-    /// A line with an open name or text.
-    Open {
-        role: String,
-        name: Name,
-        /// What follows the name, leading space included.
-        rest: String,
-    },
+    /// A line with an open value: its pieces in order.
+    Open(Vec<Piece>),
+}
+
+#[derive(Debug)]
+enum Piece {
+    /// Text to match as it is.
+    Text(String),
+    /// A quoted value (name, text or `value=`).
+    Value(Name),
+    /// Any href, to the end of the line.
+    Href,
 }
 
 #[derive(Debug)]
 enum Name {
     Any,
     Regex(Regex),
+}
+
+impl Name {
+    /// An open value at the start of `text` (`"*"` or `/regex/`), and
+    /// what follows it.
+    fn parse(text: &str) -> Result<Option<(Self, &str)>, String> {
+        if let Some(rest) = text.strip_prefix("\"*\"")
+            && (rest.is_empty() || rest.starts_with(' '))
+        {
+            return Ok(Some((Self::Any, rest)));
+        }
+        regex(text)
+            .transpose()
+            .map(|found| found.map(|(re, rest)| (Self::Regex(re), rest)))
+    }
+
+    fn fits(&self, value: &str) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Regex(re) => re.is_match(value),
+        }
+    }
+}
+
+/// The pieces of a line's content, or `None` when it opens no value.
+fn pieces(content: &str) -> Result<Option<Vec<Piece>>, String> {
+    let Some((role, mut rest)) = content.split_once(' ') else {
+        return Ok(None);
+    };
+    let mut pieces = Vec::new();
+    let mut text = format!("{role} ");
+    // A value here (the name, or after `value=`): open, or quoted as is.
+    let value = |rest: &mut &str, text: &mut String, pieces: &mut Vec<Piece>| {
+        if let Some((name, after)) = Name::parse(rest)? {
+            pieces.push(Piece::Text(std::mem::take(text)));
+            pieces.push(Piece::Value(name));
+            *rest = after;
+        } else if let Some((_, after)) = quoted(rest) {
+            text.push_str(&rest[..rest.len() - after.len()]);
+            *rest = after;
+        }
+        Ok::<_, String>(())
+    };
+    value(&mut rest, &mut text, &mut pieces)?;
+    if let Some(i) = rest.find(" value=") {
+        let end = i + " value=".len();
+        text.push_str(&rest[..end]);
+        rest = &rest[end..];
+        value(&mut rest, &mut text, &mut pieces)?;
+    }
+    const ARROW: &str = " → ";
+    if let Some(i) = rest.find(ARROW)
+        && &rest[i + ARROW.len()..] == "\"*\""
+    {
+        text.push_str(&rest[..i + ARROW.len()]);
+        pieces.push(Piece::Text(std::mem::take(&mut text)));
+        pieces.push(Piece::Href);
+        rest = "";
+    }
+    if pieces.is_empty() {
+        return Ok(None);
+    }
+    text.push_str(rest);
+    pieces.push(Piece::Text(text));
+    Ok(Some(pieces))
 }
 
 /// A line of the page: its depth and what follows `- `.
@@ -136,24 +209,8 @@ impl Template {
             let kind = if content == "..." {
                 Kind::Dots
             } else {
-                let (role, after) = content.split_once(' ').unwrap_or((content, ""));
-                let name = if let Some(rest) = after.strip_prefix("\"*\"")
-                    && (rest.is_empty() || rest.starts_with(' '))
-                {
-                    Some((Name::Any, rest))
-                } else {
-                    match regex(after) {
-                        Some(Ok((re, rest))) => Some((Name::Regex(re), rest)),
-                        Some(Err(why)) => return Err(format!("line {}: {why}", n + 1)),
-                        None => None,
-                    }
-                };
-                match name {
-                    Some((name, rest)) => Kind::Open {
-                        role: role.to_owned(),
-                        name,
-                        rest: rest.to_owned(),
-                    },
+                match pieces(content).map_err(|why| format!("line {}: {why}", n + 1))? {
+                    Some(pieces) => Kind::Open(pieces),
                     None => Kind::Plain(content.to_owned()),
                 }
             };
@@ -289,19 +346,23 @@ impl Line {
         match &self.kind {
             Kind::Dots => false,
             Kind::Plain(plain) => plain == content,
-            Kind::Open { role, name, rest } => {
-                let Some((actual_role, after)) = content.split_once(' ') else {
-                    return false;
-                };
-                let Some((value, actual_rest)) = quoted(after) else {
-                    return false;
-                };
-                actual_role == role
-                    && actual_rest == rest
-                    && match name {
-                        Name::Any => true,
-                        Name::Regex(re) => re.is_match(&value),
+            Kind::Open(pieces) => {
+                let mut rest = content;
+                for piece in pieces {
+                    match piece {
+                        Piece::Text(text) => match rest.strip_prefix(text.as_str()) {
+                            Some(after) => rest = after,
+                            None => return false,
+                        },
+                        Piece::Value(name) => match quoted(rest) {
+                            Some((value, after)) if name.fits(&value) => rest = after,
+                            _ => return false,
+                        },
+                        Piece::Href if rest.is_empty() => return false,
+                        Piece::Href => rest = "",
                     }
+                }
+                rest.is_empty()
             }
         }
     }
@@ -393,6 +454,37 @@ mod tests {
             t.project(page),
             "- main\n  - heading \"Invoice\" (h1)\n  ...\n  - button \"Pay\"\n  - button \"Cancel\""
         );
+    }
+
+    #[test]
+    fn values_and_hrefs_open_too() {
+        let page = "\
+- form
+  - textbox \"Since\" value=\"2026-09-30 10:02\" focused
+  - textbox \"Code\" value=\"A-1\"
+  - link \"Invoice\" → /invoices/9?session=f00";
+        let t = template(
+            "\
+- form
+  - textbox \"Since\" value=\"*\" focused
+  - textbox /code/i value=/^A-\\d+$/
+  - link \"Invoice\" → \"*\"",
+        );
+        assert!(t.matches(page));
+        // The rest of the line still counts: no `focused`, no match.
+        assert!(!template("- form\n  - textbox \"Since\" value=\"*\"\n  ...").matches(page));
+        // A value the regex does not find, a missing href.
+        assert!(
+            !template("- textbox \"Code\" value=/B/").matches("- textbox \"Code\" value=\"A-1\"")
+        );
+        assert!(!template("- link \"x\" → \"*\"").matches("- link \"x\""));
+        // A name holding ` value=` or ` → ` is the name's.
+        let t = template("- button \"a value=b → c\" value=\"*\"");
+        assert!(t.matches("- button \"a value=b → c\" value=\"z\""));
+        // An href is not a regex: `→ /a/` is plain.
+        assert!(Template::parse("- link \"a\" → /a/").unwrap().is_none());
+        let err = Template::parse("- textbox \"a\" value=/(/").unwrap_err();
+        assert!(err.starts_with("line 1: /(/"), "{err}");
     }
 
     #[test]

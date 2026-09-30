@@ -617,6 +617,8 @@ Edit a baseline into a template for what changes from run to run:
   button \"*\"                 any name (or text, for a text line)
   heading /Order #\\d+/ (h1)  a name the regex finds a match in (/…/i:
                              any case); the rest of the line as it is
+  textbox \"At\" value=\"*\"     a field's value= takes \"*\" and /…/ too
+  link \"Invoice\" → \"*\"       any href
   ...                        any number of lines at its depth, with the
                              lines below them
 A failure's diff shows the template's lines where they match. --update
