@@ -1,6 +1,6 @@
 # Plan 14 — Parity gaps and small commands
 
-Status: IN PROGRESS (14.1-14.4 done)
+Status: IN PROGRESS (14.1-14.5 done)
 Depends on: v1 (plans 01–11). Track 3 of [plan 12](12-after-v1.md). Plan 13
 (every frame, every worker) is not required, but where it has landed, use its
 target graph instead of adding per-session code.
@@ -602,3 +602,40 @@ match with changed dynamic text, fail on a missing button, and survive
   rather than engine tests: they go through the argument parsing (JSON,
   `--area`) and the session sandbox the extension fixture already uses.
   Golden ids depend on the fixture's path, so they read `<ext-id>`.
+- **14.5, `open --init-script`.** The CLI reads the files (a missing one
+  fails before a browser starts) and sends their sources, files first,
+  then `--init-script-code`s. `open` adds only the scripts the session
+  does not have yet (same source and file), so running it again adds
+  nothing; its output lists them all (`init script: s1 main …`,
+  `init_scripts` in JSON). The daemon's launch record merges them, so a
+  daemon upgrade adds them again; it now also keeps an `open --device`
+  given to a running browser, which it dropped before.
+- **14.5, read waits.** Decided once for all of them: `text`, `html`,
+  `attr`, `value`, `box` and `markdown` with a locator, `eval --in` and
+  `locator` try again (every 50ms) while their locator matches nothing or
+  names a frame not there yet, as actions do (`locator::until_found`);
+  a timeout is their NotFound with `waited: 10s`. `count` answers at
+  once. The read commands and `locator` default to the actions' 10s
+  (they had 30s); `eval` keeps 30s, since its timeout bounds the script
+  too. Each try bounds its calls by the whole timeout: a last try with a
+  few milliseconds left would time out instead of finding nothing.
+- **14.5, `wait --console`** counts entries logged since the previous
+  command began, not since `wait` started: an agent runs `click` and
+  then `wait`, and a call the click caused (while it settled) would be
+  missed; `--request` and `--download` count the same way. It matches an
+  entry's text or URL, as `console --grep` does; `--binding NAME` an
+  entry of source `binding` and kind NAME. It takes no tab lock (an
+  action can run meanwhile) and a dialog does not stop it. The text
+  output is the entry as `console` prints it; JSON adds `console` to
+  `wait`'s data.
+- **14.5, `--no-failed-requests --all-tabs`.** `--origin self` is each
+  tab's own page's origin. A worker's request is in each tab of its
+  origin, so it counts once (by session and request id). `--all-tabs` no
+  longer `requires` `--no-errors` in clap; `expect` checks that it comes
+  with one of the two.
+- **14.5, `cdp` did you mean.** The generated modules cover only
+  `domains.txt`, so `cdp-gen` also writes `domains/names.rs`: every
+  command of the protocol files. The hint adds `--target page` unless the
+  suggestion is a `Browser.` or `Target.` method, and `…` when params were
+  given.
+
