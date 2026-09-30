@@ -628,7 +628,7 @@ async fn accessibility_rules() {
     // Level A leaves out the AA rules.
     let err = fails(&engine, &a11y(None, A11yLevel::A), false).await;
     let details = err.details.unwrap();
-    assert_eq!(details["rules"], 9);
+    assert_eq!(details["rules"], 21);
     assert_eq!(details["violations"].as_array().unwrap().len(), 5);
 
     // A scope checks only its element, and no page rules.

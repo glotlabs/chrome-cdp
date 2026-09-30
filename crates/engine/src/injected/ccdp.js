@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: aebf5376d60adfad
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: cd1296402e75968e
 "use strict";
 (() => {
   // src/dom.ts
@@ -61,7 +61,7 @@
     const order = /* @__PURE__ */ new Map();
     descendants(root).forEach((el, i) => order.set(el, i));
     if (root instanceof Element) order.set(root, -1);
-    return unique.sort((a, b) => (order.get(a) ?? 1e9) - (order.get(b) ?? 1e9));
+    return unique.sort((a2, b) => (order.get(a2) ?? 1e9) - (order.get(b) ?? 1e9));
   }
 
   // src/aria.ts
@@ -454,9 +454,9 @@
     return now;
   }
   function activeElement() {
-    let a = document.activeElement;
-    while (a && a.shadowRoot && a.shadowRoot.activeElement) a = a.shadowRoot.activeElement;
-    return a;
+    let a2 = document.activeElement;
+    while (a2 && a2.shadowRoot && a2.shadowRoot.activeElement) a2 = a2.shadowRoot.activeElement;
+    return a2;
   }
   function statesOf(el, role, active) {
     const s = {};
@@ -560,8 +560,8 @@
   }
   function ancestorsMatch(el, parts) {
     let j = parts.length - 1;
-    for (let a = parentOf(el); a && j >= 0; a = parentOf(a)) {
-      if (a.matches(parts[j])) j--;
+    for (let a2 = parentOf(el); a2 && j >= 0; a2 = parentOf(a2)) {
+      if (a2.matches(parts[j])) j--;
     }
     return j < 0;
   }
@@ -798,10 +798,10 @@
     const role = roleOf(el) || "generic";
     const name = cut(shownName(el, role) || (INTERACTIVE.has(role) ? "" : norm(el.textContent)), 60);
     const out = { role, name, tag: tag(el), visible: visible(el) };
-    for (let a = parentOf(el); a; a = parentOf(a)) {
-      const r = roleOf(a);
+    for (let a2 = parentOf(el); a2; a2 = parentOf(a2)) {
+      const r = roleOf(a2);
       if (!r || !CONTEXT_ROLES.has(r)) continue;
-      const n = cut(r === "row" || r === "listitem" ? norm(textOf(a, null, 0)) : nameOf(a, r), 40);
+      const n = cut(r === "row" || r === "listitem" ? norm(textOf(a2, null, 0)) : nameOf(a2, r), 40);
       if (!n) continue;
       out.context = `${r} "${n.replace(/"/g, '\\"')}"`;
       break;
@@ -840,7 +840,7 @@
     if (!visible(el)) return "";
     const around = /* @__PURE__ */ new Set();
     const mark = (d) => {
-      for (let a = d; a && !around.has(a); a = a === el ? null : parentOf(a)) around.add(a);
+      for (let a2 = d; a2 && !around.has(a2); a2 = a2 === el ? null : parentOf(a2)) around.add(a2);
     };
     for (const d of descendants(el)) {
       if (d.shadowRoot || ownerIndex(d, owners) >= 0) mark(d);
@@ -897,8 +897,8 @@ ${frameMark(frame2)}
   var escapeAttr = (s) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
   function openTag(el) {
     let out = `<${tag(el)}`;
-    for (const a of Array.from(el.attributes)) {
-      out += a.value === "" ? ` ${a.name}` : ` ${a.name}="${escapeAttr(cut2(a.value, CUT))}"`;
+    for (const a2 of Array.from(el.attributes)) {
+      out += a2.value === "" ? ` ${a2.name}` : ` ${a2.name}="${escapeAttr(cut2(a2.value, CUT))}"`;
     }
     return out + ">";
   }
@@ -1398,8 +1398,8 @@ ${inner}
   var norm2 = (s) => (s || "").replace(/\s+/g, " ").trim();
   var cut3 = (s, n) => s.length > n ? s.slice(0, n - 1) + "…" : s;
   function closest(el, test2) {
-    for (let a = el; a; a = parentOf(a)) {
-      if (test2(a, getComputedStyle(a))) return a;
+    for (let a2 = el; a2; a2 = parentOf(a2)) {
+      if (test2(a2, getComputedStyle(a2))) return a2;
     }
     return null;
   }
@@ -1410,7 +1410,7 @@ ${inner}
   }
   function setter(el, test2) {
     let top = el;
-    for (let a = parentOf(el); a && test2(getComputedStyle(a)); a = parentOf(a)) top = a;
+    for (let a2 = parentOf(el); a2 && test2(getComputedStyle(a2)); a2 = parentOf(a2)) top = a2;
     return top;
   }
   function invisibleCause(el) {
@@ -1422,7 +1422,7 @@ ${inner}
       }
       const none = closest(el, (_, s) => s.display === "none");
       if (none) return causeOn(el, "display: none", none);
-      const skipped = closest(el, (a, s) => a !== el && s.contentVisibility === "hidden");
+      const skipped = closest(el, (a2, s) => a2 !== el && s.contentVisibility === "hidden");
       if (skipped) {
         return {
           why: `it is inside ${outline(skipped)}, which has content-visibility: hidden`,
@@ -1444,11 +1444,11 @@ ${inner}
   function disabledCause(el) {
     if (CONTROLS.has(tag(el)) && el.matches(":disabled")) {
       if (el.hasAttribute("disabled")) return { why: "it has the disabled attribute", what: "the disabled attribute" };
-      const parent = closest(el, (a) => a !== el && a.matches("fieldset:disabled, select:disabled, optgroup:disabled"));
+      const parent = closest(el, (a2) => a2 !== el && a2.matches("fieldset:disabled, select:disabled, optgroup:disabled"));
       if (parent) return { why: `it is inside a disabled ${outline(parent)}`, what: "inside the disabled {el}", el: parent };
       return { why: "it is disabled", what: "disabled" };
     }
-    const aria = closest(el, (a) => a.getAttribute("aria-disabled") === "true");
+    const aria = closest(el, (a2) => a2.getAttribute("aria-disabled") === "true");
     if (aria) return causeOn(el, 'aria-disabled="true"', aria);
     return null;
   }
@@ -1456,7 +1456,7 @@ ${inner}
     return disabledCause(el)?.why ?? null;
   }
   function inertCause(el) {
-    const inert = closest(el, (a) => a.hasAttribute("inert"));
+    const inert = closest(el, (a2) => a2.hasAttribute("inert"));
     if (inert) return causeOn(el, "inert", inert);
     const doc = el.ownerDocument;
     const modals = Array.from(doc.querySelectorAll("dialog")).filter((d) => d.matches(":modal"));
@@ -1537,9 +1537,9 @@ ${inner}
     if (!start) return { json: "{}", els: [] };
     const doc = start.ownerDocument;
     let top = start;
-    for (let a = parentOf(start); a && a !== doc.body && a !== doc.documentElement; a = parentOf(a)) {
-      if (el && contains(a, el)) break;
-      top = a;
+    for (let a2 = parentOf(start); a2 && a2 !== doc.body && a2 !== doc.documentElement; a2 = parentOf(a2)) {
+      if (el && contains(a2, el)) break;
+      top = a2;
     }
     const inert = el !== null && contains(start, el);
     if (inert) top = start;
@@ -1565,9 +1565,9 @@ ${inner}
   }
   function container(el) {
     const root = document.scrollingElement || document.documentElement;
-    for (let a = el; a; a = parentOf(a)) {
-      if (a === root || a === document.body) return null;
-      if (scrollable(a)) return a;
+    for (let a2 = el; a2; a2 = parentOf(a2)) {
+      if (a2 === root || a2 === document.body) return null;
+      if (scrollable(a2)) return a2;
     }
     return null;
   }
@@ -1611,9 +1611,9 @@ ${inner}
     });
   }
   function draggable(el) {
-    for (let a = el; a; a = parentOf(a)) {
-      if (a.getAttribute("draggable") === "false") return false;
-      if (a instanceof HTMLElement && a.draggable) return true;
+    for (let a2 = el; a2; a2 = parentOf(a2)) {
+      if (a2.getAttribute("draggable") === "false") return false;
+      if (a2 instanceof HTMLElement && a2.draggable) return true;
     }
     return false;
   }
@@ -1774,8 +1774,8 @@ ${inner}
   }
   function reaches(el, hit) {
     if (contains(el, hit)) return true;
-    for (let a = hit instanceof Element ? hit : parentOf(hit); a; a = parentOf(a)) {
-      if (a instanceof HTMLLabelElement) return a.control === el;
+    for (let a2 = hit instanceof Element ? hit : parentOf(hit); a2; a2 = parentOf(a2)) {
+      if (a2 instanceof HTMLLabelElement) return a2.control === el;
     }
     return false;
   }
@@ -1786,8 +1786,8 @@ ${inner}
   var isFrame = (el) => el instanceof HTMLIFrameElement || el instanceof HTMLFrameElement;
   function formOf(el) {
     if (!el) return null;
-    const owner = el.form;
-    return owner instanceof HTMLFormElement ? owner : el.closest("form");
+    const owner2 = el.form;
+    return owner2 instanceof HTMLFormElement ? owner2 : el.closest("form");
   }
   function focusMark(held = true) {
     const el = focused();
@@ -1808,10 +1808,10 @@ ${inner}
     if (isFrame(el)) return el;
     if (!wasMarked) actedOn = [];
     if (!el || el === mark.el) return null;
-    for (const a of actedOn) {
-      if (a === el || contains(a, el) || a instanceof HTMLLabelElement && a.control === el) return null;
+    for (const a2 of actedOn) {
+      if (a2 === el || contains(a2, el) || a2 instanceof HTMLLabelElement && a2.control === el) return null;
     }
-    if (mark.away) return actedOn.some((a) => formOf(a) === formOf(el)) ? null : el;
+    if (mark.away) return actedOn.some((a2) => formOf(a2) === formOf(el)) ? null : el;
     return formOf(el) === mark.form ? null : el;
   }
 
@@ -1882,8 +1882,8 @@ ${inner}
   function cssMatches(actual, p) {
     if (p.mode === "regex") return test(p)(actual);
     if (norm(actual) === norm(p.value)) return true;
-    const a = colour(actual);
-    return a !== null && a === colour(p.value);
+    const a2 = colour(actual);
+    return a2 !== null && a2 === colour(p.value);
   }
   var ONE = /* @__PURE__ */ new Set([
     "visible",
@@ -2008,7 +2008,571 @@ ${inner}
     return { json: JSON.stringify(shown3.map(describe)), els: shown3 };
   }
 
+  // src/ariaspec.ts
+  var ROLES = /* @__PURE__ */ new Set([
+    "alert",
+    "alertdialog",
+    "application",
+    "article",
+    "banner",
+    "blockquote",
+    "button",
+    "caption",
+    "cell",
+    "checkbox",
+    "code",
+    "columnheader",
+    "combobox",
+    "complementary",
+    "contentinfo",
+    "definition",
+    "deletion",
+    "dialog",
+    "directory",
+    "document",
+    "emphasis",
+    "feed",
+    "figure",
+    "form",
+    "generic",
+    "grid",
+    "gridcell",
+    "group",
+    "heading",
+    "img",
+    "insertion",
+    "link",
+    "list",
+    "listbox",
+    "listitem",
+    "log",
+    "main",
+    "marquee",
+    "math",
+    "menu",
+    "menubar",
+    "menuitem",
+    "menuitemcheckbox",
+    "menuitemradio",
+    "meter",
+    "navigation",
+    "none",
+    "note",
+    "option",
+    "paragraph",
+    "presentation",
+    "progressbar",
+    "radio",
+    "radiogroup",
+    "region",
+    "row",
+    "rowgroup",
+    "rowheader",
+    "scrollbar",
+    "search",
+    "searchbox",
+    "separator",
+    "slider",
+    "spinbutton",
+    "status",
+    "strong",
+    "subscript",
+    "superscript",
+    "switch",
+    "tab",
+    "table",
+    "tablist",
+    "tabpanel",
+    "term",
+    "textbox",
+    "time",
+    "timer",
+    "toolbar",
+    "tooltip",
+    "tree",
+    "treegrid",
+    "treeitem",
+    "image",
+    "mark",
+    "comment",
+    "suggestion",
+    "graphics-document",
+    "graphics-object",
+    "graphics-symbol",
+    "doc-abstract",
+    "doc-acknowledgments",
+    "doc-afterword",
+    "doc-appendix",
+    "doc-backlink",
+    "doc-biblioentry",
+    "doc-bibliography",
+    "doc-biblioref",
+    "doc-chapter",
+    "doc-colophon",
+    "doc-conclusion",
+    "doc-cover",
+    "doc-credit",
+    "doc-credits",
+    "doc-dedication",
+    "doc-endnote",
+    "doc-endnotes",
+    "doc-epigraph",
+    "doc-epilogue",
+    "doc-errata",
+    "doc-example",
+    "doc-footnote",
+    "doc-foreword",
+    "doc-glossary",
+    "doc-glossref",
+    "doc-index",
+    "doc-introduction",
+    "doc-noteref",
+    "doc-notice",
+    "doc-pagebreak",
+    "doc-pagefooter",
+    "doc-pageheader",
+    "doc-pagelist",
+    "doc-part",
+    "doc-preface",
+    "doc-prologue",
+    "doc-pullquote",
+    "doc-qna",
+    "doc-subtitle",
+    "doc-tip",
+    "doc-toc"
+  ]);
+  var ATTRS = {
+    "aria-activedescendant": "idref",
+    "aria-atomic": "bool",
+    "aria-autocomplete": ["inline", "list", "both", "none"],
+    "aria-braillelabel": "string",
+    "aria-brailleroledescription": "string",
+    "aria-busy": "bool",
+    "aria-checked": ["true", "false", "mixed", "undefined"],
+    "aria-colcount": "int",
+    "aria-colindex": "int",
+    "aria-colindextext": "string",
+    "aria-colspan": "int",
+    "aria-controls": "idrefs",
+    "aria-current": ["page", "step", "location", "date", "time", "true", "false"],
+    "aria-describedby": "idrefs",
+    "aria-description": "string",
+    "aria-details": "idrefs",
+    "aria-disabled": "bool",
+    "aria-dropeffect": { list: ["copy", "execute", "link", "move", "none", "popup"] },
+    "aria-errormessage": "idrefs",
+    "aria-expanded": "bool-undefined",
+    "aria-flowto": "idrefs",
+    "aria-grabbed": "bool-undefined",
+    "aria-haspopup": ["false", "true", "menu", "listbox", "tree", "grid", "dialog"],
+    "aria-hidden": "bool-undefined",
+    // Any other value counts as `true`, by the spec: nothing is wrong.
+    "aria-invalid": "string",
+    "aria-keyshortcuts": "string",
+    "aria-label": "string",
+    "aria-labelledby": "idrefs",
+    "aria-level": "int",
+    "aria-live": ["assertive", "off", "polite"],
+    "aria-modal": "bool",
+    "aria-multiline": "bool",
+    "aria-multiselectable": "bool",
+    "aria-orientation": ["horizontal", "vertical", "undefined"],
+    "aria-owns": "idrefs",
+    "aria-placeholder": "string",
+    "aria-posinset": "int",
+    "aria-pressed": ["true", "false", "mixed", "undefined"],
+    "aria-readonly": "bool",
+    "aria-relevant": { list: ["additions", "removals", "text", "all"] },
+    "aria-required": "bool",
+    "aria-roledescription": "string",
+    "aria-rowcount": "int",
+    "aria-rowindex": "int",
+    "aria-rowindextext": "string",
+    "aria-rowspan": "int",
+    "aria-selected": "bool-undefined",
+    "aria-setsize": "int",
+    "aria-sort": ["ascending", "descending", "none", "other"],
+    "aria-valuemax": "number",
+    "aria-valuemin": "number",
+    "aria-valuenow": "number",
+    "aria-valuetext": "string"
+  };
+  function badValue(name, value2, exists) {
+    const kind = ATTRS[name];
+    const v = value2.trim();
+    if (!kind || !v || kind === "string") return null;
+    const shown3 = `${name}="${value2}"`;
+    const tokens = (allowed) => `${shown3}: not ${allowed.map((t) => `"${t}"`).join(", ").replace(/, ([^,]*)$/, " or $1")}`;
+    const lower = v.toLowerCase();
+    if (kind === "bool") return ["true", "false"].includes(lower) ? null : tokens(["true", "false"]);
+    if (kind === "bool-undefined") {
+      return ["true", "false", "undefined"].includes(lower) ? null : tokens(["true", "false", "undefined"]);
+    }
+    if (kind === "int") return /^-?\d+$/.test(v) ? null : `${shown3}: not a whole number`;
+    if (kind === "number") return /^-?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(v) ? null : `${shown3}: not a number`;
+    if (kind === "idref" || kind === "idrefs") {
+      const ids = v.split(/\s+/);
+      if (kind === "idref" && ids.length > 1) return `${shown3}: takes one id`;
+      const missing = ids.filter((id) => !exists(id));
+      if (!missing.length) return null;
+      return `${shown3}: no element has id ${missing.map((id) => `"${id}"`).join(", ")}`;
+    }
+    if (Array.isArray(kind)) return kind.includes(lower) ? null : tokens(kind);
+    const bad = lower.split(/\s+/).find((t) => !kind.list.includes(t));
+    return bad === void 0 ? null : `${shown3}: "${bad}" is not ${kind.list.map((t) => `"${t}"`).join(", ").replace(/, ([^,]*)$/, " or $1")}`;
+  }
+  var REQUIRED_ATTRS = {
+    checkbox: ["aria-checked"],
+    combobox: ["aria-expanded"],
+    heading: ["aria-level"],
+    menuitemcheckbox: ["aria-checked"],
+    menuitemradio: ["aria-checked"],
+    meter: ["aria-valuenow"],
+    radio: ["aria-checked"],
+    scrollbar: ["aria-controls", "aria-valuenow"],
+    slider: ["aria-valuenow"],
+    switch: ["aria-checked"]
+  };
+  var REQUIRED_CHILDREN = {
+    feed: ["article"],
+    grid: ["row", "rowgroup"],
+    list: ["listitem"],
+    listbox: ["option", "group"],
+    menu: ["menuitem", "menuitemcheckbox", "menuitemradio", "group", "separator"],
+    menubar: ["menuitem", "menuitemcheckbox", "menuitemradio", "group", "separator"],
+    row: ["cell", "columnheader", "gridcell", "rowheader"],
+    rowgroup: ["row"],
+    table: ["row", "rowgroup", "caption"],
+    tablist: ["tab"],
+    tree: ["treeitem", "group"],
+    treegrid: ["row", "rowgroup"]
+  };
+  var REQUIRED_PARENT = {
+    cell: ["row"],
+    columnheader: ["row"],
+    gridcell: ["row"],
+    listitem: ["list", "directory"],
+    menuitem: ["menu", "menubar", "group"],
+    menuitemcheckbox: ["menu", "menubar", "group"],
+    menuitemradio: ["menu", "menubar", "group"],
+    option: ["listbox", "group"],
+    row: ["grid", "rowgroup", "table", "treegrid"],
+    rowgroup: ["grid", "table", "treegrid"],
+    rowheader: ["row"],
+    tab: ["tablist"],
+    treeitem: ["tree", "group"]
+  };
+  var FIELDS = /* @__PURE__ */ new Set([
+    "name",
+    "honorific-prefix",
+    "given-name",
+    "additional-name",
+    "family-name",
+    "honorific-suffix",
+    "nickname",
+    "username",
+    "new-password",
+    "current-password",
+    "one-time-code",
+    "organization-title",
+    "organization",
+    "street-address",
+    "address-line1",
+    "address-line2",
+    "address-line3",
+    "address-level4",
+    "address-level3",
+    "address-level2",
+    "address-level1",
+    "country",
+    "country-name",
+    "postal-code",
+    "cc-name",
+    "cc-given-name",
+    "cc-additional-name",
+    "cc-family-name",
+    "cc-number",
+    "cc-exp",
+    "cc-exp-month",
+    "cc-exp-year",
+    "cc-csc",
+    "cc-type",
+    "transaction-currency",
+    "transaction-amount",
+    "language",
+    "bday",
+    "bday-day",
+    "bday-month",
+    "bday-year",
+    "sex",
+    "url",
+    "photo"
+  ]);
+  var CONTACT = /* @__PURE__ */ new Set([
+    "tel",
+    "tel-country-code",
+    "tel-national",
+    "tel-area-code",
+    "tel-local",
+    "tel-local-prefix",
+    "tel-local-suffix",
+    "tel-extension",
+    "email",
+    "impp"
+  ]);
+  function badAutocomplete(value2) {
+    const tokens = value2.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!tokens.length) return null;
+    if (tokens.length === 1 && (tokens[0] === "on" || tokens[0] === "off")) return null;
+    let i = 0;
+    if (tokens[i]?.startsWith("section-")) i++;
+    if (tokens[i] === "shipping" || tokens[i] === "billing") i++;
+    const contact = ["home", "work", "mobile", "fax", "pager"].includes(tokens[i]);
+    if (contact) i++;
+    const field2 = tokens[i];
+    const known = field2 !== void 0 && (!contact && FIELDS.has(field2) || CONTACT.has(field2));
+    if (!known) {
+      if (field2 === void 0) return `autocomplete="${value2}": no field name`;
+      if (contact && FIELDS.has(field2)) return `autocomplete="${value2}": "${tokens[i - 1]}" only goes with tel, email or impp`;
+      const near = closest2(field2, [...FIELDS, ...CONTACT]);
+      return `autocomplete="${value2}": "${field2}" is not a field name${near ? ` (did you mean ${near}?)` : ""}`;
+    }
+    i++;
+    if (tokens[i] === "webauthn") i++;
+    if (i < tokens.length) return `autocomplete="${value2}": "${tokens[i]}" is out of place`;
+    return null;
+  }
+  function closest2(word, known) {
+    const words = Array.from(known);
+    if (word.length >= 3) {
+      const longer = words.filter((k) => k.startsWith(word)).sort((a2, b) => a2.length - b.length)[0];
+      if (longer) return longer;
+    }
+    let best = null;
+    let bestDistance = 3;
+    for (const k of words) {
+      const d = distance(word, k);
+      if (d < bestDistance) {
+        best = k;
+        bestDistance = d;
+      }
+    }
+    return best;
+  }
+  function distance(a2, b) {
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a2.length; i++) {
+      const row = [i];
+      for (let j = 1; j <= b.length; j++) {
+        row.push(Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a2[i - 1] === b[j - 1] ? 0 : 1)));
+      }
+      prev = row;
+    }
+    return prev[b.length];
+  }
+
   // src/a11y.ts
+  var Context = class {
+    constructor(all, hidden3) {
+      this.all = all;
+      this.hidden = hidden3;
+    }
+    all;
+    hidden;
+    memo = /* @__PURE__ */ new Map();
+    once(key, make) {
+      if (!this.memo.has(key)) this.memo.set(key, make());
+      return this.memo.get(key);
+    }
+    /** Elements shown to assistive tech. */
+    shown() {
+      return this.once("shown", () => this.all.filter((el) => !this.hidden.get(el)));
+    }
+    /** The elements that `aria-owns` moves, and their owner. */
+    owners() {
+      return this.once("owners", () => {
+        const out = /* @__PURE__ */ new Map();
+        for (const el of this.all) {
+          const ids = el.getAttribute("aria-owns");
+          if (!ids) continue;
+          for (const owned of idsIn(el, ids)) out.set(owned, el);
+        }
+        return out;
+      });
+    }
+    /** Each heading's previous heading's level (in document order). */
+    previousLevels() {
+      return this.once("headings", () => {
+        const out = /* @__PURE__ */ new Map();
+        let previous = 0;
+        for (const el of this.shown()) {
+          if (roleOf(el) !== "heading") continue;
+          if (previous) out.set(el, previous);
+          previous = level(el, "heading") || 2;
+        }
+        return out;
+      });
+    }
+    /** A root's elements by id, and which ids something refers to (and
+     * how). */
+    ids(root) {
+      const key = root instanceof ShadowRoot ? root : root.documentElement;
+      let roots = this.memo.get("ids");
+      if (!roots) this.memo.set("ids", roots = /* @__PURE__ */ new Map());
+      let found = roots.get(key);
+      if (found) return found;
+      found = { byId: /* @__PURE__ */ new Map(), referred: /* @__PURE__ */ new Map() };
+      for (const el of Array.from(root.querySelectorAll("*"))) {
+        const id = el.id;
+        if (id) {
+          const list = found.byId.get(id);
+          if (list) list.push(el);
+          else found.byId.set(id, [el]);
+        }
+        if (tag(el) === "label" && el.getAttribute("for")) {
+          const id2 = el.getAttribute("for");
+          if (!found.referred.has(id2)) found.referred.set(id2, "a <label for>");
+        }
+        for (const name of IDREFS) {
+          const ids = el.getAttribute(name);
+          if (!ids) continue;
+          for (const id2 of ids.trim().split(/\s+/)) if (!found.referred.has(id2)) found.referred.set(id2, name);
+        }
+      }
+      roots.set(key, found);
+      return found;
+    }
+    /** The pointer targets shown: their box and whether it is under
+     * 24×24, by element. */
+    targets() {
+      return this.once("targets", () => new Map(this.shown().filter((el) => TARGETS.has(roleOf(el) || "") && !disabled(el) && visible(el)).map((el) => {
+        const box = el.getBoundingClientRect();
+        return [el, { el, box, small: box.width < 24 - 0.01 || box.height < 24 - 0.01 }];
+      })));
+    }
+    /** How many elements `focus-visible` focused. */
+    focused = 0;
+  };
+  var IDREFS = Object.keys(ATTRS).filter((name) => ATTRS[name] === "idref" || ATTRS[name] === "idrefs");
+  function idsIn(el, ids) {
+    const root = el.getRootNode();
+    return ids.trim().split(/\s+/).map((id) => root.getElementById(id)).filter((e) => !!e);
+  }
+  function hasId(el, id) {
+    return !!el.getRootNode().getElementById(id);
+  }
+  function explicitRole(el) {
+    const first = (el.getAttribute("role") || "").trim().toLowerCase().split(/\s+/)[0];
+    return first || null;
+  }
+  var TRANSPARENT = /* @__PURE__ */ new Set(["none", "presentation", "generic"]);
+  function owner(el, ctx) {
+    return ctx.owners().get(el) || parentOf(el);
+  }
+  function a(role) {
+    return /^[aeiou]/.test(role) ? `an ${role}` : `a ${role}`;
+  }
+  function either(roles) {
+    return roles.length < 2 ? roles.join("") : `${roles.slice(0, -1).join(", ")} or ${roles[roles.length - 1]}`;
+  }
+  function ownedOf(el, ctx) {
+    const out = [];
+    const visit = (parent, depth) => {
+      const kids = [...Array.from((parent.shadowRoot || parent).children)];
+      if (parent === el) {
+        const ids = el.getAttribute("aria-owns");
+        if (ids) kids.push(...idsIn(el, ids));
+      }
+      for (const kid of kids) {
+        if (["script", "template", "style"].includes(tag(kid)) || ctx.hidden.get(kid) || hiddenForAria(kid)) continue;
+        const role = roleOf(kid);
+        if (!role) continue;
+        if (TRANSPARENT.has(role) && depth < 20) visit(kid, depth + 1);
+        else out.push(kid);
+      }
+    };
+    visit(el, 0);
+    return out;
+  }
+  var TARGETS = new Set([...INTERACTIVE].filter((r) => r !== "iframe"));
+  function targetSize(el, ctx) {
+    const me = ctx.targets().get(el);
+    if (!me || !me.small) return null;
+    const style = getComputedStyle(el);
+    if (style.display === "inline") {
+      const parent = el.parentElement;
+      if (parent && norm(parent.textContent).length > norm(el.textContent).length) return null;
+    }
+    if (uaSized(el, style)) return null;
+    const cx = me.box.left + me.box.width / 2;
+    const cy = me.box.top + me.box.height / 2;
+    for (const other of ctx.targets().values()) {
+      if (other.el === el || other.el.contains(el) || el.contains(other.el)) continue;
+      const b = other.box;
+      const dx = Math.max(b.left - cx, 0, cx - b.right);
+      const dy = Math.max(b.top - cy, 0, cy - b.bottom);
+      let near = Math.hypot(dx, dy) < 12;
+      if (!near && other.small) {
+        near = Math.hypot(b.left + b.width / 2 - cx, b.top + b.height / 2 - cy) < 24;
+      }
+      if (near) return `${Math.round(me.box.width)}×${Math.round(me.box.height)}px, ${describeShort(other.el)} is within 12px of its centre`;
+    }
+    return null;
+  }
+  function uaSized(el, style) {
+    if (!["input", "button", "select", "textarea"].includes(tag(el))) return false;
+    return style.appearance !== "none" && Math.abs(parseFloat(style.fontSize) - 40 / 3) < 0.01;
+  }
+  function describeShort(el) {
+    const c = describe(el);
+    return c.name ? `${c.role} "${c.name}"` : c.role;
+  }
+  var FOCUS_CHECKED = 300;
+  function look(el) {
+    const parts = [];
+    const add = (e, pseudo) => {
+      const s = getComputedStyle(e, pseudo);
+      if (pseudo && (s.content === "none" || s.content === "normal")) return;
+      const outline2 = s.outlineStyle === "none" || parseFloat(s.outlineWidth) === 0 ? "none" : `${s.outlineStyle} ${s.outlineWidth} ${s.outlineColor} ${s.outlineOffset}`;
+      const borders = ["Top", "Right", "Bottom", "Left"].map((side) => {
+        const get = (p) => s.getPropertyValue(`border-${side.toLowerCase()}-${p}`);
+        return get("style") === "none" || parseFloat(get("width")) === 0 ? "-" : `${get("width")} ${get("style")} ${get("color")}`;
+      });
+      parts.push(
+        outline2,
+        s.boxShadow,
+        borders.join(","),
+        s.backgroundColor,
+        s.backgroundImage,
+        s.color,
+        s.textDecorationLine,
+        s.opacity,
+        s.transform,
+        pseudo ? s.content : ""
+      );
+    };
+    add(el);
+    add(el, "::before");
+    add(el, "::after");
+    let up = parentOf(el);
+    for (let i = 0; up && i < 3; i++, up = parentOf(up)) add(up);
+    descendants(el).slice(0, 10).forEach((d) => add(d));
+    return parts.join("|");
+  }
+  function noFocusChange(el, ctx) {
+    if (!focusable(el) || tag(el) === "iframe" || !visible(el) || ctx.focused >= FOCUS_CHECKED) return false;
+    ctx.focused++;
+    const before2 = look(el);
+    el.focus({ preventScroll: true, focusVisible: true });
+    if (activeElement() !== el) return false;
+    if (!el.matches(":focus-visible")) {
+      el.blur();
+      return false;
+    }
+    const same = !el.getAnimations().length && look(el) === before2;
+    el.blur();
+    return same;
+  }
   function field(el) {
     const t = tag(el);
     if (t === "select" || t === "textarea") return true;
@@ -2027,13 +2591,13 @@ ${inner}
   function parseColour(s) {
     const m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/.exec(s.trim());
     if (!m) return null;
-    let a = m[4] === void 0 ? 1 : parseFloat(m[4]);
-    if (m[4] && m[4].endsWith("%")) a /= 100;
-    return [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]), a];
+    let a2 = m[4] === void 0 ? 1 : parseFloat(m[4]);
+    if (m[4] && m[4].endsWith("%")) a2 /= 100;
+    return [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]), a2];
   }
   function over(top, under) {
-    const a = top[3];
-    return [0, 1, 2].map((i) => top[i] * a + under[i] * (1 - a)).concat(1);
+    const a2 = top[3];
+    return [0, 1, 2].map((i) => top[i] * a2 + under[i] * (1 - a2)).concat(1);
   }
   function luminance(c) {
     const [r, g, b] = [0, 1, 2].map((i) => {
@@ -2044,8 +2608,8 @@ ${inner}
   }
   function background(el) {
     const layers = [];
-    for (let a = el; a; a = a.parentElement) {
-      const style = getComputedStyle(a);
+    for (let a2 = el; a2; a2 = a2.parentElement) {
+      const style = getComputedStyle(a2);
       if (style.backgroundImage !== "none") return null;
       const c = parseColour(style.backgroundColor);
       if (c && c[3] > 0) {
@@ -2057,14 +2621,20 @@ ${inner}
     for (let i = layers.length - 1; i >= 0; i--) colour3 = over(layers[i], colour3);
     return colour3;
   }
+  function fade(el) {
+    let out = 1;
+    for (let a2 = el; a2; a2 = a2.parentElement) out *= parseFloat(getComputedStyle(a2).opacity);
+    return out;
+  }
   function contrast(el) {
     const own = Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && n.data.trim());
     if (!own || !visible(el) || disabled(el)) return null;
     const style = getComputedStyle(el);
+    if (style.textShadow !== "none") return null;
     const fg = parseColour(style.color);
     const bg = background(el);
     if (!fg || !bg) return null;
-    const text2 = over(fg, bg);
+    const text2 = over([fg[0], fg[1], fg[2], fg[3] * fade(el)], bg);
     const [l1, l2] = [luminance(text2), luminance(bg)].sort((x, y) => y - x);
     const ratio = (l1 + 0.05) / (l2 + 0.05);
     const size2 = parseFloat(style.fontSize);
@@ -2138,6 +2708,163 @@ ${inner}
       check: (el) => focusable(el) && !!el.closest('[aria-hidden="true"]')
     },
     {
+      id: "aria-valid-role",
+      wcag: "4.1.2",
+      level: "A",
+      help: "has a role that is not an ARIA role",
+      check: (el) => {
+        const role = explicitRole(el);
+        if (!role || ROLES.has(role)) return false;
+        const near = closest2(role, ROLES);
+        return `role="${el.getAttribute("role")}"${near ? ` (did you mean ${near}?)` : ""}`;
+      }
+    },
+    {
+      id: "aria-valid-attr",
+      wcag: "4.1.2",
+      level: "A",
+      help: "has an aria-* attribute that does not exist",
+      check: (el) => {
+        const bad = el.getAttributeNames().find((n) => n.startsWith("aria-") && !(n in ATTRS));
+        if (!bad) return false;
+        const near = closest2(bad, Object.keys(ATTRS));
+        return `${bad}${near ? ` (did you mean ${near}?)` : ""}`;
+      }
+    },
+    {
+      id: "aria-valid-attr-value",
+      wcag: "4.1.2",
+      level: "A",
+      help: "has an aria-* attribute with a wrong value",
+      check: (el) => {
+        for (const name of el.getAttributeNames()) {
+          if (!(name in ATTRS)) continue;
+          const lenient = name === "aria-controls" && el.getAttribute("aria-expanded") === "false";
+          const why = badValue(name, el.getAttribute(name) || "", (id) => lenient || hasId(el, id));
+          if (why) return why;
+        }
+        return false;
+      }
+    },
+    {
+      id: "aria-required-attr",
+      wcag: "4.1.2",
+      level: "A",
+      help: "has a role without an attribute it needs",
+      check: (el) => {
+        const role = explicitRole(el);
+        const needs = role ? REQUIRED_ATTRS[role] : void 0;
+        if (!role || !needs) return false;
+        const t = tag(el);
+        const type = (el.type || "").toLowerCase();
+        if (t === "input" && ["checkbox", "radio", "range", "number"].includes(type)) return false;
+        if (["select", "meter", "progress", "h1", "h2", "h3", "h4", "h5", "h6"].includes(t)) return false;
+        const missing = needs.filter((attr2) => !el.hasAttribute(attr2));
+        return missing.length ? `role=${role} needs ${missing.join(" and ")}` : false;
+      }
+    },
+    {
+      id: "aria-required-children",
+      wcag: "1.3.1",
+      level: "A",
+      help: "owns elements its role does not allow",
+      check: (el, ctx) => {
+        const role = explicitRole(el);
+        const allowed = role ? REQUIRED_CHILDREN[role] : void 0;
+        if (!role || !allowed || roleOf(el) !== role || implicitRole(el) === role) return false;
+        const bad = ownedOf(el, ctx).find((o) => !allowed.includes(roleOf(o) || ""));
+        if (!bad) return false;
+        return `owns ${describeShort(bad).replace(/^(\w+)/, (r) => a(r))}; ${a(role)} owns ${either(allowed)}`;
+      }
+    },
+    {
+      id: "aria-required-parent",
+      wcag: "1.3.1",
+      level: "A",
+      help: "is not inside the role it needs",
+      check: (el, ctx) => {
+        const role = explicitRole(el) || (tag(el) === "li" ? "listitem" : null);
+        const allowed = role ? REQUIRED_PARENT[role] : void 0;
+        if (!role || !allowed || roleOf(el) !== role) return false;
+        const parent = el.parentElement;
+        if (!explicitRole(el) && parent && ["ul", "ol", "menu"].includes(tag(parent))) return false;
+        for (let o = owner(el, ctx); o; o = owner(o, ctx)) {
+          const r = roleOf(o);
+          if (!r || TRANSPARENT.has(r)) continue;
+          return allowed.includes(r) ? false : `${a(role)} needs ${a(either(allowed))} parent, not ${a(r)}`;
+        }
+        return `${a(role)} needs ${a(either(allowed))} parent`;
+      }
+    },
+    {
+      id: "duplicate-id-referenced",
+      wcag: "4.1.2",
+      level: "A",
+      help: "has the id of an earlier element, which something refers to",
+      check: (el, ctx) => {
+        const id = el.id;
+        if (!id) return false;
+        const { byId, referred } = ctx.ids(el.getRootNode());
+        const same = byId.get(id) || [];
+        if (same.length < 2 || same[0] === el || !referred.has(id)) return false;
+        return `id "${id}" (on ${same.length} elements; ${referred.get(id)} refers to it)`;
+      }
+    },
+    {
+      id: "list",
+      wcag: "1.3.1",
+      level: "A",
+      help: "is a list with children that are not <li>",
+      check: (el) => {
+        if (tag(el) !== "ul" && tag(el) !== "ol" || roleOf(el) !== "list") return false;
+        const bad = Array.from(el.children).find((c) => !["li", "script", "template"].includes(tag(c)));
+        return bad ? `has a <${tag(bad)}>` : false;
+      }
+    },
+    {
+      id: "table-headers",
+      wcag: "1.3.1",
+      level: "A",
+      help: "is a data table with no header cells",
+      ax: "data-table",
+      check: (el) => {
+        if (tag(el) !== "table" || roleOf(el) !== "table") return false;
+        const mine = (e) => e.closest("table") === el;
+        if (!Array.from(el.querySelectorAll("td")).some(mine)) return false;
+        return !Array.from(el.querySelectorAll("th, [role=columnheader], [role=rowheader]")).some(mine);
+      }
+    },
+    {
+      id: "heading-order",
+      wcag: "1.3.1",
+      level: "A",
+      help: "skips a heading level",
+      check: (el, ctx) => {
+        const previous = ctx.previousLevels().get(el);
+        const level2 = level(el, "heading") || 2;
+        return previous !== void 0 && level2 > previous + 1 ? `level ${previous} → ${level2}` : false;
+      }
+    },
+    {
+      id: "empty-heading",
+      wcag: "1.3.1",
+      level: "A",
+      help: "is a heading with no text",
+      ax: "no-name",
+      check: (el) => roleOf(el) === "heading" && !nameOf(el, "heading")
+    },
+    {
+      id: "landmark-one-main",
+      wcag: "1.3.1",
+      level: "A",
+      help: "the page needs one main landmark",
+      page: (_doc, ctx) => {
+        const mains = ctx.shown().filter((el) => roleOf(el) === "main" && visible(el));
+        if (mains.length === 1) return null;
+        return mains.length ? `the page has ${mains.length} visible main landmarks` : "the page has no main landmark";
+      }
+    },
+    {
       id: "meta-viewport",
       wcag: "1.4.4",
       level: "AA",
@@ -2157,9 +2884,44 @@ ${inner}
       level: "AA",
       help: "has text with too little contrast",
       check: (el) => contrast(el) || false
+    },
+    {
+      id: "autocomplete-valid",
+      wcag: "1.3.5",
+      level: "AA",
+      help: "has an autocomplete value browsers do not know",
+      check: (el) => {
+        if (!["input", "select", "textarea"].includes(tag(el))) return false;
+        const value2 = el.getAttribute("autocomplete");
+        return value2 ? badAutocomplete(value2) || false : false;
+      }
+    },
+    {
+      id: "target-size",
+      wcag: "2.5.8",
+      level: "AA",
+      help: "is a pointer target under 24×24px, close to another",
+      check: (el, ctx) => targetSize(el, ctx) || false
+    },
+    {
+      id: "focus-visible",
+      wcag: "2.4.7",
+      level: "AA",
+      help: "looks the same when it has keyboard focus",
+      check: (el, ctx) => noFocusChange(el, ctx)
     }
   ];
   var LISTED3 = 5;
+  var AX_LISTED = 20;
+  var ELEMENTS = 200;
+  var focusBefore = null;
+  function refocus(el) {
+    if (el && el !== document.body && el !== document.documentElement) {
+      el.focus({ preventScroll: true });
+    } else if (document.activeElement && document.activeElement !== document.body) {
+      document.activeElement.blur();
+    }
+  }
   function a11y(root, level2, page = true) {
     const rules = RULES.filter((r) => level2 === "AA" || r.level === "A");
     const violations = [];
@@ -2167,27 +2929,36 @@ ${inner}
     const scope = root || document.documentElement;
     const all = [scope, ...descendants(scope)];
     const hidden3 = new Map(all.map((el) => [el, hiddenForAria(el)]));
+    const ctx = new Context(all, hidden3);
+    const before2 = activeElement();
+    if (page) focusBefore = before2;
     for (const rule of rules) {
       const v = { rule: rule.id, wcag: rule.wcag, level: rule.level, help: rule.help, count: 0, nodes: [] };
+      if (rule.ax) v.ax = rule.ax;
       if (rule.page) {
         if (root || !page) continue;
-        const why = rule.page(document);
+        const why = rule.page(document, ctx);
         if (why) violations.push({ ...v, count: 1, page: why });
         continue;
       }
+      const listed2 = rule.ax ? AX_LISTED : LISTED3;
       for (const el of all) {
         if (rule.id === "aria-hidden-focus" ? !hidden3.get(el) || !visible(el) : hidden3.get(el)) continue;
-        const found = rule.check?.(el);
+        const found = rule.check?.(el, ctx);
         if (!found) continue;
         v.count++;
-        if (v.nodes.length < LISTED3) {
+        if (v.nodes.length < listed2 && els.length < ELEMENTS) {
           v.nodes.push({ candidate: describe(el), why: typeof found === "string" ? found : void 0, index: els.length });
           els.push(el);
         }
       }
       if (v.count) violations.push(v);
     }
+    if (ctx.focused) refocus(before2);
     return { json: JSON.stringify({ rules: rules.length, violations }), els };
+  }
+  function a11yRefocus() {
+    refocus(focusBefore);
   }
 
   // src/stable.ts
@@ -2247,26 +3018,26 @@ ${inner}
     }
     return "";
   }
-  function containers(a, role) {
+  function containers(a2, role) {
     const out = [];
-    const name = nameOf(a, role);
+    const name = nameOf(a2, role);
     if (name && name.length <= LONGEST) {
       out.push({
         steps: [{ kind: "role", role, name: { mode: "exact", value: name } }],
         locator: `role=${role}[name=${quoted(name)}]`
       });
     }
-    const text2 = firstText(a);
+    const text2 = firstText(a2);
     if (bare(text2)) {
       out.push({
         steps: [{ kind: "role", role }, { kind: "has-text", text: { mode: "substring", value: text2 } }],
         locator: `role=${role} >> has-text=${text2}`
       });
     }
-    return out.filter((c) => only(c.steps, a));
+    return out.filter((c) => only(c.steps, a2));
   }
-  function leafText(a, el, texts) {
-    for (const leaf of Array.from(a.querySelectorAll("*"))) {
+  function leafText(a2, el, texts) {
+    for (const leaf of Array.from(a2.querySelectorAll("*"))) {
       if (leaf.childElementCount > 0 || el.contains(leaf) || leaf.contains(el)) continue;
       const text2 = norm(texts.of(leaf));
       if (text2) return text2.length <= LONGEST ? text2 : "";
@@ -2278,25 +3049,25 @@ ${inner}
     for (const c of own) yield { ...c, how: c.steps[0].kind };
     if (own.length === 0) return;
     const around = [];
-    for (let a = parentOf(el); a; a = parentOf(a)) {
-      const role = roleOf(a);
-      if (role && CONTEXT_ROLES.has(role)) around.push([a, role]);
+    for (let a2 = parentOf(el); a2; a2 = parentOf(a2)) {
+      const role = roleOf(a2);
+      if (role && CONTEXT_ROLES.has(role)) around.push([a2, role]);
     }
-    for (const [a, role] of around) {
-      for (const outer of containers(a, role)) {
+    for (const [a2, role] of around) {
+      for (const outer of containers(a2, role)) {
         for (const c of own) {
           yield { steps: [...outer.steps, ...c.steps], locator: `${outer.locator} >> ${c.locator}`, how: "scoped" };
         }
       }
     }
-    for (const [a, role] of around) {
-      const text2 = leafText(a, el, texts);
+    for (const [a2, role] of around) {
+      const text2 = leafText(a2, el, texts);
       if (!text2) continue;
       const outer = [
         { kind: "role", role },
         { kind: "has", steps: [{ kind: "text", text: { mode: "exact", value: text2 } }] }
       ];
-      if (!only(outer, a)) continue;
+      if (!only(outer, a2)) continue;
       for (const c of own) {
         yield {
           steps: [...outer, ...c.steps],
@@ -2353,21 +3124,21 @@ ${inner}
   };
   var px = (n) => Math.round(n);
   var size = (r) => `${px(r.width)}×${px(r.height)}`;
-  function animationName(a) {
-    if (typeof CSSAnimation !== "undefined" && a instanceof CSSAnimation) return `animation "${a.animationName}"`;
-    if (typeof CSSTransition !== "undefined" && a instanceof CSSTransition) return `transition of ${a.transitionProperty}`;
-    return a.id ? `animation "${a.id}"` : "a script animation";
+  function animationName(a2) {
+    if (typeof CSSAnimation !== "undefined" && a2 instanceof CSSAnimation) return `animation "${a2.animationName}"`;
+    if (typeof CSSTransition !== "undefined" && a2 instanceof CSSTransition) return `transition of ${a2.transitionProperty}`;
+    return a2.id ? `animation "${a2.id}"` : "a script animation";
   }
   function animations(el, els) {
-    const running = (a) => a.getAnimations().filter((x) => x.playState === "running" && x.effect?.target === a);
+    const running = (a2) => a2.getAnimations().filter((x) => x.playState === "running" && x.effect?.target === a2);
     const parts = [];
     let index;
     const own = running(el);
     if (own.length) parts.push(`${own.slice(0, 2).map(animationName).join(", ")} on it`);
-    for (let a = parentOf(el); a; a = parentOf(a)) {
-      const theirs = running(a);
+    for (let a2 = parentOf(el); a2; a2 = parentOf(a2)) {
+      const theirs = running(a2);
       if (!theirs.length) continue;
-      index = els.add(a);
+      index = els.add(a2);
       parts.push(`${theirs.slice(0, 2).map(animationName).join(", ")} on {el}`);
       break;
     }
@@ -2420,15 +3191,15 @@ ${inner}
   function clipped(el) {
     const els = new Els();
     const r = el.getBoundingClientRect();
-    for (let a = parentOf(el); a; a = parentOf(a)) {
-      const s = getComputedStyle(a);
+    for (let a2 = parentOf(el); a2; a2 = parentOf(a2)) {
+      const s = getComputedStyle(a2);
       const clips2 = (o) => o === "hidden" || o === "clip";
-      const b = a.getBoundingClientRect();
+      const b = a2.getBoundingClientRect();
       const outX = clips2(s.overflowX) && (r.right <= b.left || r.left >= b.right);
       const outY = clips2(s.overflowY) && (r.bottom <= b.top || r.top >= b.bottom);
       if (outX || outY) {
         const overflow = outX ? s.overflowX : s.overflowY;
-        return els.answer({ text: `clipped out of {el} (overflow: ${overflow})`, el: els.add(a) });
+        return els.answer({ text: `clipped out of {el} (overflow: ${overflow})`, el: els.add(a2) });
       }
     }
     const view = el.ownerDocument.defaultView || window;
@@ -2440,23 +3211,23 @@ ${inner}
     return els.answer({});
   }
   var marks = /* @__PURE__ */ new Map();
-  var offsetOf = (a) => a ? [a.scrollLeft, a.scrollTop] : [scrollX, scrollY];
+  var offsetOf = (a2) => a2 ? [a2.scrollLeft, a2.scrollTop] : [scrollX, scrollY];
   function scrollMark(el) {
     marks = /* @__PURE__ */ new Map();
     const root = document.scrollingElement || document.documentElement;
-    for (let a = parentOf(el); a && a !== root && a !== document.body; a = parentOf(a)) {
-      if (a.scrollHeight > a.clientHeight || a.scrollWidth > a.clientWidth) marks.set(a, offsetOf(a));
+    for (let a2 = parentOf(el); a2 && a2 !== root && a2 !== document.body; a2 = parentOf(a2)) {
+      if (a2.scrollHeight > a2.clientHeight || a2.scrollWidth > a2.clientWidth) marks.set(a2, offsetOf(a2));
     }
     marks.set(null, offsetOf(null));
   }
   function scrolledSince() {
     const els = new Els();
     const moved = [];
-    for (const [a, [x, y]] of marks) {
-      const [nx, ny] = offsetOf(a);
+    for (const [a2, [x, y]] of marks) {
+      const [nx, ny] = offsetOf(a2);
       const dx = px(nx - x);
       const dy = px(ny - y);
-      if (dx || dy) moved.push({ dx, dy, el: els.add(a) });
+      if (dx || dy) moved.push({ dx, dy, el: els.add(a2) });
     }
     marks = /* @__PURE__ */ new Map();
     return els.answer({ moved });
@@ -2479,20 +3250,20 @@ ${inner}
     } catch {
     }
     const parts = [];
-    for (let a = el; a && parts.length < 5; a = parentOf(a)) {
-      const t = tag(a);
+    for (let a2 = el; a2 && parts.length < 5; a2 = parentOf(a2)) {
+      const t = tag(a2);
       if (t === "html" || t === "body") break;
-      const id = a.getAttribute("id");
+      const id = a2.getAttribute("id");
       if (id && /^[A-Za-z][\w-]*$/.test(id)) {
         parts.unshift(`#${id}`);
         break;
       }
-      const cls = norm(a.getAttribute("class")).split(" ")[0];
+      const cls = norm(a2.getAttribute("class")).split(" ")[0];
       let part = cls && /^[A-Za-z_][\w-]*$/.test(cls) ? `${t}.${cls}` : t;
-      const parent = a.parentElement;
+      const parent = a2.parentElement;
       if (parent) {
         const same = Array.from(parent.children).filter((c) => tag(c) === t);
-        if (same.length > 1) part += `:nth-of-type(${same.indexOf(a) + 1})`;
+        if (same.length > 1) part += `:nth-of-type(${same.indexOf(a2) + 1})`;
       }
       parts.unshift(part);
     }
@@ -2504,22 +3275,22 @@ ${inner}
     const r = el.getBoundingClientRect();
     return [r.x + el.clientLeft, r.y + el.clientTop, el.clientWidth, el.clientHeight];
   }
-  function intersect(a, b) {
-    const x = Math.max(a[0], b[0]);
-    const y = Math.max(a[1], b[1]);
-    const right = Math.min(a[0] + a[2], b[0] + b[2]);
-    const bottom = Math.min(a[1] + a[3], b[1] + b[3]);
+  function intersect(a2, b) {
+    const x = Math.max(a2[0], b[0]);
+    const y = Math.max(a2[1], b[1]);
+    const right = Math.min(a2[0] + a2[2], b[0] + b[2]);
+    const bottom = Math.min(a2[1] + a2[3], b[1] + b[3]);
     return right > x && bottom > y ? [x, y, right - x, bottom - y] : null;
   }
   var area = (b) => b[2] * b[3];
   var centre = (b) => [b[0] + b[2] / 2, b[1] + b[3] / 2];
   function clipBox(el, box) {
-    for (let a = parentOf(el); a && box; a = parentOf(a)) {
-      const t = tag(a);
+    for (let a2 = parentOf(el); a2 && box; a2 = parentOf(a2)) {
+      const t = tag(a2);
       if (t === "html" || t === "body") break;
-      const s = getComputedStyle(a);
+      const s = getComputedStyle(a2);
       if (s.overflowX === "visible" && s.overflowY === "visible") continue;
-      const p = paddingBox(a);
+      const p = paddingBox(a2);
       const limit = [
         s.overflowX === "visible" ? -1e9 : p[0],
         s.overflowY === "visible" ? -1e9 : p[1],
@@ -2536,7 +3307,7 @@ ${inner}
     const boxes = rects.length > 1 ? rects.map(boxOf) : [boxOf(el.getBoundingClientRect())];
     return boxes.filter((b) => b[2] >= 1 && b[3] >= 1).map((b) => clipBox(el, b)).filter((b) => !!b);
   }
-  var largest = (boxes) => boxes.reduce((a, b) => area(b) > area(a) ? b : a);
+  var largest = (boxes) => boxes.reduce((a2, b) => area(b) > area(a2) ? b : a2);
   var reach = (p, b) => Math.hypot(Math.max(b[0] - p[0], 0, p[0] - b[0] - b[2]), Math.max(b[1] - p[1], 0, p[1] - b[1] - b[3]));
   function visuallyHidden2(el, style) {
     const r = el.getBoundingClientRect();
@@ -2621,13 +3392,13 @@ ${inner}
   function colour2(s) {
     const m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/.exec(s.trim());
     if (!m) return null;
-    let a = m[4] === void 0 ? 1 : parseFloat(m[4]);
-    if (m[4] && m[4].endsWith("%")) a /= 100;
-    return [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]), a];
+    let a2 = m[4] === void 0 ? 1 : parseFloat(m[4]);
+    if (m[4] && m[4].endsWith("%")) a2 /= 100;
+    return [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]), a2];
   }
   function opacity(el) {
     let o = 1;
-    for (let a = el; a; a = parentOf(a)) o *= parseFloat(getComputedStyle(a).opacity) || 0;
+    for (let a2 = el; a2; a2 = parentOf(a2)) o *= parseFloat(getComputedStyle(a2).opacity) || 0;
     return o;
   }
   var NATIVE = /* @__PURE__ */ new Set(["button", "input", "select", "textarea"]);
@@ -2729,15 +3500,15 @@ ${inner}
         const right = Math.max(...parts.map((b) => b[0] + b[2]));
         const size2 = parts.reduce((sum, b) => sum + area(b), 0);
         return { el: t.el, parts, left, right, size: size2 };
-      }).filter((b) => b.parts.length).sort((a, b) => a.left - b.left);
+      }).filter((b) => b.parts.length).sort((a2, b) => a2.left - b.left);
       for (let i = 0; i < boxes.length; i++) {
-        const a = boxes[i];
-        for (let j = i + 1; j < boxes.length && boxes[j].left < a.right; j++) {
+        const a2 = boxes[i];
+        for (let j = i + 1; j < boxes.length && boxes[j].left < a2.right; j++) {
           const b = boxes[j];
           let both = 0;
           let width = 0;
           let height = 0;
-          for (const pa of a.parts) {
+          for (const pa of a2.parts) {
             for (const pb of b.parts) {
               const part = intersect(pa, pb);
               if (!part) continue;
@@ -2746,9 +3517,9 @@ ${inner}
               height = Math.max(height, part[3]);
             }
           }
-          if (both <= 4 || both < 0.1 * Math.min(a.size, b.size)) continue;
-          if (contains(a.el, b.el) || contains(b.el, a.el)) continue;
-          const [first, second] = a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? [a, b] : [b, a];
+          if (both <= 4 || both < 0.1 * Math.min(a2.size, b.size)) continue;
+          if (contains(a2.el, b.el) || contains(b.el, a2.el)) continue;
+          const [first, second] = a2.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? [a2, b] : [b, a2];
           findings.push({
             kind: "overlap",
             el: els.add(first.el),
@@ -2764,17 +3535,17 @@ ${inner}
         if (visuallyHidden2(s.el, s.style)) continue;
         const text2 = textBox(s.el);
         if (!text2) continue;
-        for (let a = s.el; a; a = parentOf(a)) {
-          const t = tag(a);
+        for (let a2 = s.el; a2; a2 = parentOf(a2)) {
+          const t = tag(a2);
           if (t === "html" || t === "body") break;
-          const style = a === s.el ? s.style : getComputedStyle(a);
+          const style = a2 === s.el ? s.style : getComputedStyle(a2);
           const cutX = clips(style.overflowX);
           const cutY = clips(style.overflowY);
           if (!cutX && !cutY) {
             if (style.position === "fixed") break;
             continue;
           }
-          const p = paddingBox(a);
+          const p = paddingBox(a2);
           const x = cutX && (text2[0] < p[0] - 1 || text2[0] + text2[2] > p[0] + p[2] + 1);
           const y = cutY && (text2[1] < p[1] - 1 || text2[1] + text2[3] > p[1] + p[3] + 1);
           if (!x && !y) {
@@ -2795,7 +3566,7 @@ ${inner}
             shown: px2(part),
             full: px2(full),
             overflow: axis === "x" ? style.overflowX : style.overflowY,
-            own: a === s.el
+            own: a2 === s.el
           };
           if (how) {
             details.how = how;
@@ -2806,7 +3577,7 @@ ${inner}
             kind,
             el: els.add(s.el),
             box: boxOf(s.el.getBoundingClientRect()),
-            others: a === s.el ? [] : [els.add(a)],
+            others: a2 === s.el ? [] : [els.add(a2)],
             details
           });
           break;
@@ -2825,10 +3596,10 @@ ${inner}
         return r.right + scrollX > doc.clientWidth + 1;
       };
       const within = (el) => {
-        for (let a = parentOf(el); a; a = parentOf(a)) {
-          const t = tag(a);
+        for (let a2 = parentOf(el); a2; a2 = parentOf(a2)) {
+          const t = tag(a2);
           if (t === "html" || t === "body") return false;
-          const st = getComputedStyle(a);
+          const st = getComputedStyle(a2);
           if (st.overflowX !== "visible" || st.position === "fixed") return true;
         }
         return false;
@@ -2917,15 +3688,15 @@ ${inner}
         if (!box || box[2] < 1 || box[3] < 1) continue;
         const c = colour2(s.style.webkitTextFillColor || s.style.color);
         if (!c) continue;
-        const a = c[3] * opacity(s.el);
-        if (a <= 0.01) continue;
+        const a2 = c[3] * opacity(s.el);
+        if (a2 <= 0.01) continue;
         if (texts.length >= options.texts) {
           skipped++;
           continue;
         }
         const size2 = parseFloat(s.style.fontSize) || 16;
         const weight = parseInt(s.style.fontWeight, 10) || 400;
-        texts.push({ box, colour: [c[0], c[1], c[2], a], large: size2 >= 24 || size2 >= 18.66 && weight >= 700 });
+        texts.push({ box, colour: [c[0], c[1], c[2], a2], large: size2 >= 24 || size2 >= 18.66 && weight >= 700 });
         measured.push(s.el);
       }
     }
@@ -3056,12 +3827,12 @@ ${inner}
   var cut5 = (s, n) => s.length > n ? s.slice(0, n - 1) + "…" : s;
   var isUnit = (el) => tag(el) === "form" || UNITS.has(roleOf(el) || "");
   function unitAbove(el) {
-    for (let a = parentOf(el); a; a = parentOf(a)) if (isUnit(a)) return a;
+    for (let a2 = parentOf(el); a2; a2 = parentOf(a2)) if (isUnit(a2)) return a2;
     return null;
   }
   function ownerOf(el) {
-    const owner = el.form;
-    if (owner && !contains(owner, el)) return owner;
+    const owner2 = el.form;
+    if (owner2 && !contains(owner2, el)) return owner2;
     return unitAbove(el);
   }
   function nativeKind(el) {
@@ -3117,9 +3888,9 @@ ${inner}
     const active = attr(el, "aria-activedescendant");
     if (active) {
       for (const o of byIds(el, active)) {
-        for (let a = parentOf(o); a; a = parentOf(a)) {
-          if (roleOf(a) === "listbox") {
-            lists.push(a);
+        for (let a2 = parentOf(o); a2; a2 = parentOf(a2)) {
+          if (roleOf(a2) === "listbox") {
+            lists.push(a2);
             break;
           }
         }
@@ -3238,22 +4009,22 @@ ${inner}
       }
     }
     const units = /* @__PURE__ */ new Map();
-    const unitOf = (owner) => {
-      if (scope) owner = scope;
-      else if (wanted && (!owner || !wanted.includes(owner))) return null;
-      let unit = units.get(owner);
+    const unitOf = (owner2) => {
+      if (scope) owner2 = scope;
+      else if (wanted && (!owner2 || !wanted.includes(owner2))) return null;
+      let unit = units.get(owner2);
       if (!unit) {
         unit = { fields: [] };
-        if (owner) unit.el = ref(owner);
+        if (owner2) unit.el = ref(owner2);
         else unit.outside = true;
         if (scope) unit.scope = true;
-        if (owner instanceof HTMLFormElement && (owner.hasAttribute("action") || owner.hasAttribute("method"))) {
-          unit.method = owner.method.toUpperCase();
-          const action = new URL(owner.action, doc.baseURI);
+        if (owner2 instanceof HTMLFormElement && (owner2.hasAttribute("action") || owner2.hasAttribute("method"))) {
+          unit.method = owner2.method.toUpperCase();
+          const action = new URL(owner2.action, doc.baseURI);
           const here = new URL(doc.URL);
           unit.action = action.origin === here.origin ? action.pathname + action.search : action.href;
         }
-        units.set(owner, unit);
+        units.set(owner2, unit);
       }
       return unit;
     };
@@ -3297,16 +4068,16 @@ ${inner}
       if (isRadio) {
         if (!shown2(el)) continue;
         let around = null;
-        for (let a = parentOf(el); a && a !== doc.body; a = parentOf(a)) {
-          if (roleOf(a) === "radiogroup") {
-            around = a;
+        for (let a2 = parentOf(el); a2 && a2 !== doc.body; a2 = parentOf(a2)) {
+          if (roleOf(a2) === "radiogroup") {
+            around = a2;
             break;
           }
         }
         let key = around || el;
         if (!around && native && attr(el, "name")) {
-          const owner = ownerOf(el);
-          key = `${owner ? ref(owner) : ""}|${attr(el, "name")}`;
+          const owner2 = ownerOf(el);
+          key = `${owner2 ? ref(owner2) : ""}|${attr(el, "name")}`;
         }
         let group = groups.get(key);
         if (!group) {
@@ -3342,7 +4113,7 @@ ${inner}
       if (group.radios) group.value = group.radios.find((r) => r.checked)?.name;
     }
     const out = Array.from(units.values()).filter((u) => !u.outside || u.fields.length);
-    out.sort((a, b) => Number(!!a.outside) - Number(!!b.outside));
+    out.sort((a2, b) => Number(!!a2.outside) - Number(!!b.outside));
     return { json: JSON.stringify({ units: out, names }), els };
   }
   function pickOption(el, want) {
@@ -3434,10 +4205,10 @@ ${inner}
       const described = describe(el);
       const found = { kind, role: described.role, name: described.name, tag: described.tag };
       if (kind === "link") {
-        const a = el;
-        found.href = a.href;
-        if (a.target) found.target = a.target;
-        if (a.hasAttribute("download")) found.download = true;
+        const a2 = el;
+        found.href = a2.href;
+        if (a2.target) found.target = a2.target;
+        if (a2.hasAttribute("download")) found.download = true;
       }
       const located = JSON.parse(stable(el, testid));
       if (located.locator) found.locator = located.locator;
@@ -3481,6 +4252,7 @@ ${inner}
     expectPage,
     expectNamed,
     a11y,
+    a11yRefocus,
     stable,
     explainActionable,
     clipped,

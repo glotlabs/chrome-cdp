@@ -27,7 +27,8 @@ const ariaTrue = (el: Element, name: string) => attr(el, name) === 'true';
 const scoped = (el: Element) => el.closest('article, aside, main, nav, section');
 const styleOf = (el: Element) => (el.ownerDocument.defaultView as Window).getComputedStyle(el);
 
-function implicitRole(el: Element): string | null {
+/** The role an element has without a `role` attribute. */
+export function implicitRole(el: Element): string | null {
   const t = tag(el);
   switch (t) {
     case 'a': case 'area': return el.hasAttribute('href') ? 'link' : 'generic';

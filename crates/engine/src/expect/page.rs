@@ -5,6 +5,8 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
+use cdp::domains::accessibility::GetPartialAxTreeParams;
+use cdp::domains::emulation::SetFocusEmulationEnabledParams;
 use cdp::domains::runtime;
 use protocol::schema::{Event, ExpectData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
@@ -20,15 +22,18 @@ use crate::input::origin;
 use crate::locator::{LocateOptions, Locator, read_listed};
 use crate::network::Failure;
 use crate::request::{A11yLevel, ExpectRequest, SnapshotEngine};
+use crate::snapshot::NodeKey;
 use crate::tabs::{FrameContext, Page, parse_tab_id, tab_name};
 use crate::{Engine, Running};
 
 /// How many errors, failed requests or violations a failure lists.
 pub(super) const LISTED: usize = 5;
 
-/// How many elements `a11y.ts` lists per rule (its `LISTED`) and in all.
+/// How many elements `a11y.ts` lists per rule (its `LISTED`), per rule
+/// that Chrome's accessibility tree confirms (`AX_LISTED`: candidates,
+/// cut to `PER_RULE` once confirmed) and in all.
 const PER_RULE: usize = 5;
-const ELEMENTS: usize = 60;
+const ELEMENTS: usize = 200;
 
 /// What `a11y.ts` found.
 #[derive(Debug, Default, Deserialize)]
@@ -46,6 +51,10 @@ struct Violation {
     count: usize,
     #[serde(default)]
     page: Option<String>,
+    /// What Chrome's accessibility tree must say of a listed element for
+    /// it to stay a violation (`a11y.ts`' `Rule.ax`).
+    #[serde(default)]
+    ax: Option<String>,
     nodes: Vec<Node>,
 }
 
@@ -447,6 +456,7 @@ impl Engine {
                 let mut audit = self
                     .audit(running, page, (&context, &main), None, level, timeout)
                     .await?;
+                let mut checked_frames = false;
                 for frame in running.tabs.frames(page.id).into_iter().skip(1) {
                     let Ok(context) = running
                         .tabs
@@ -467,6 +477,16 @@ impl Engine {
                         node.frame = Some((frame.id.clone(), label.clone()));
                     }
                     audit.merge(found);
+                    checked_frames = true;
+                }
+                // Checking an iframe's `focus-visible` moved the page's
+                // focus into it.
+                if checked_frames && level == A11yLevel::AA {
+                    let params = runtime::CallFunctionOnParams::new(format!(
+                        "function () {{ {GUARD} globalThis.__ccdp.a11yRefocus(); }}"
+                    ));
+                    let session = context.session.with_timeout(timeout);
+                    let _ = injected::call(&session, context.context_id, params).await;
                 }
                 audit
             }
@@ -622,7 +642,21 @@ impl Engine {
         params.object_group = Some(GROUP.to_owned());
         params.object_id = object.map(str::to_owned);
         let session = context.session.with_timeout(timeout);
+        // `focus-visible` focuses elements: `:focus` matches only in a
+        // document that has focus, which a tab in the background, or any
+        // tab of a headless browser, does not.
+        let emulate = level == A11yLevel::AA;
+        if emulate {
+            let _ = session
+                .call(SetFocusEmulationEnabledParams::new(true))
+                .await;
+        }
         let result = injected::call(&session, context.context_id, params).await;
+        if emulate {
+            let _ = session
+                .call(SetFocusEmulationEnabledParams::new(false))
+                .await;
+        }
         let listed = async {
             let result = result.map_err(|e| crate::errors::from_cdp(&e, &self.session))?;
             if let Some(exception) = result.exception_details {
@@ -650,6 +684,7 @@ impl Engine {
             .await;
         let (json, keys) = listed?;
         let mut audit: Audit = serde_json::from_str(&json).unwrap_or_default();
+        confirm(&session, &mut audit, &keys).await;
         running.tabs.snapshot_memory(page.id, |m| {
             if Some(m.refs.generation()) != generation {
                 return;
@@ -677,6 +712,62 @@ impl Engine {
     ) -> ErrorInfo {
         self.failure(page, req, failed, None)
     }
+}
+
+/// Asks Chrome's accessibility tree about the listed elements of the
+/// rules that need it (`Violation::ax`), and drops those it does not
+/// confirm: a table Chrome takes for a layout table (`data-table`), a
+/// heading Chrome finds a name for (`no-name`). Elements without a key,
+/// or that Chrome has no node for, stay. Then each rule lists at most
+/// `PER_RULE`.
+async fn confirm(session: &cdp::Session, audit: &mut Audit, keys: &[Option<NodeKey>]) {
+    for v in &mut audit.violations {
+        let Some(ax) = v.ax.clone() else { continue };
+        let mut kept = Vec::with_capacity(v.nodes.len());
+        for node in std::mem::take(&mut v.nodes) {
+            let Some(Some(key)) = keys.get(node.index) else {
+                kept.push(node);
+                continue;
+            };
+            let params = GetPartialAxTreeParams {
+                backend_node_id: Some(key.backend),
+                fetch_relatives: Some(false),
+                ..GetPartialAxTreeParams::default()
+            };
+            let Some(ax_node) = session
+                .call(params)
+                .await
+                .ok()
+                .and_then(|r| r.nodes.into_iter().next())
+            else {
+                kept.push(node);
+                continue;
+            };
+            let text = |value: &Option<cdp::domains::accessibility::AXValue>| {
+                value
+                    .as_ref()
+                    .and_then(|v| v.value.as_ref())
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_owned()
+            };
+            let violates = !ax_node.ignored
+                && match ax.as_str() {
+                    "data-table" => text(&ax_node.role) != "LayoutTable",
+                    "no-name" => text(&ax_node.name).is_empty(),
+                    _ => true,
+                };
+            if violates {
+                kept.push(node);
+            } else {
+                v.count -= 1;
+            }
+        }
+        kept.truncate(PER_RULE);
+        v.nodes = kept;
+    }
+    audit.violations.retain(|v| v.count > 0);
 }
 
 /// Whether `url` is a site's `/favicon.ico`, which Chrome asks for by

@@ -22,7 +22,7 @@ import { draggable, scrollSettled, scrollState } from './pointer';
 import { caretToEnd, checkState, fieldValue, fillPrepare, focused, hasFocus, reaches, selectOptions } from './form';
 import { acted, focusMark, focusMoved } from './report';
 import { expectElements, expectNamed, expectPage } from './expect';
-import { a11y } from './a11y';
+import { a11y, a11yRefocus } from './a11y';
 import { stable } from './stable';
 import { clipped, explainActionable, scrolledSince, scrollMark } from './why';
 import {
@@ -70,6 +70,7 @@ const api = {
   expectPage,
   expectNamed,
   a11y,
+  a11yRefocus,
   stable,
   explainActionable,
   clipped,
