@@ -9,7 +9,7 @@ use std::time::Duration;
 use engine::{A11yLevel, Expectation, MockStateCheck, RequestCheck};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 
-use crate::cli::{A11yLevelArg, ExpectArgs, SeverityArg};
+use crate::cli::{A11yLevelArg, ExpectArgs, PerfMissingArg, SeverityArg};
 use crate::input;
 
 /// How long `expect` retries unless `--timeout` says otherwise
@@ -28,6 +28,7 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
         (args.no_errors, "--no-errors"),
         (args.no_issues, "--no-issues"),
         (args.no_failed_requests, "--no-failed-requests"),
+        (args.perf.is_some(), "--perf"),
     ]
     .into_iter()
     .find_map(|(given, flag)| given.then_some(flag));
@@ -134,6 +135,13 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
             all_tabs: args.all_tabs,
         });
     }
+    if let Some(budgets) = &args.perf {
+        engine::check_perf_budgets(budgets)?;
+        return Ok(Expectation::Perf {
+            budgets: budgets.clone(),
+            missing_ok: args.perf_missing == Some(PerfMissingArg::Ok),
+        });
+    }
     if args.a11y {
         return Ok(Expectation::A11y {
             scope: args.target.clone(),
@@ -149,8 +157,9 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
     let Some(locator) = &args.target else {
         return Err(bad_args(
             "expect needs a LOCATOR and a MATCHER, or a page check",
-            Hint::run(Cmd::new("expect").arg("#main").raw("visible"))
-                .or("--url, --title, --no-errors, --no-failed-requests or --a11y"),
+            Hint::run(Cmd::new("expect").arg("#main").raw("visible")).or(
+                "--url, --title, --no-errors, --no-issues, --no-failed-requests, --a11y or --perf",
+            ),
         ));
     };
     let Some(name) = &args.matcher else {
@@ -666,6 +675,47 @@ mod tests {
             ])
             .is_err()
         );
+    }
+
+    #[test]
+    fn perf_budgets_are_checked_before_the_browser() {
+        assert_eq!(
+            parse(&["--perf", "lcp<2.5s cls<0.1"]).unwrap(),
+            Expectation::Perf {
+                budgets: "lcp<2.5s cls<0.1".into(),
+                missing_ok: false,
+            }
+        );
+        assert_eq!(
+            parse(&["--perf", "good", "--perf-missing", "ok"]).unwrap(),
+            Expectation::Perf {
+                budgets: "good".into(),
+                missing_ok: true,
+            }
+        );
+        let err = parse(&["--perf", "lpc<2500"]).unwrap_err();
+        assert_eq!(err.kind, ErrorKind::BadArgs);
+        assert_eq!(
+            err.hint.as_deref(),
+            Some("chrome-cdp expect --perf 'lcp<2500'   (did you mean this?)")
+        );
+        let err = parse(&["e1", "--perf", "lcp<2500"]).unwrap_err();
+        assert!(
+            err.message.starts_with("--perf checks the page"),
+            "{}",
+            err.message
+        );
+        for args in [
+            &["--perf", "good", "--a11y"][..],
+            &["--perf", "good", "--no-errors"],
+            &["--perf-missing", "ok"],
+            &["--perf", "good", "--perf-missing", "maybe"],
+        ] {
+            assert!(
+                Cli::try_parse_from(["chrome-cdp", "expect"].iter().chain(args)).is_err(),
+                "{args:?}"
+            );
+        }
     }
 
     #[test]

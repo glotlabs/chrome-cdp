@@ -2,4 +2,5 @@
 @test "arguments"
   goto /
   fill label=Email
+  expect --perf 'lpc<2500 cls<0.1'
   expect text=Saved visible

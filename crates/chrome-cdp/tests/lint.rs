@@ -90,6 +90,14 @@ fn lint_reports_each_rule_where_it_is() {
             "chrome-cdp fill --help",
         ),
         (
+            "e2e/scenarios/args.cdp",
+            5,
+            3,
+            "bad-args",
+            "error",
+            "chrome-cdp expect --perf 'lcp<2500 cls<0.1'   (did you mean this?)",
+        ),
+        (
             "e2e/scenarios/includes.cdp",
             2,
             12,
@@ -258,7 +266,7 @@ fn lint_prints_github_annotations() {
     let root = fixture().canonicalize().unwrap().display().to_string();
     golden("lint/github.txt", &stdout(&out).replace(&root, "<fixture>"));
     assert!(
-        stderr(&out).contains("10 files: 16 errors, 5 warnings"),
+        stderr(&out).contains("10 files: 17 errors, 5 warnings"),
         "{}",
         stderr(&out)
     );

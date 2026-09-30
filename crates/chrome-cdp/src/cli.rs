@@ -573,7 +573,18 @@ Page checks:
   --a11y [--level A]   built-in accessibility rules (WCAG A and AA), in
                        the page and its iframes, or the element LOCATOR
                        names
-The last three look once: what they find does not go away by waiting.
+  --perf BUDGETS       `perf`'s numbers within every budget, e.g.
+                       'lcp<2.5s cls<0.1 tbt<200': <metric><op><value>,
+                       op <, <=, > or >=; ttfb, fcp, dcl, load, lcp, inp,
+                       tbt in ms (or 2.5s), cls a score, requests and
+                       elements counts, transfer and heap in bytes (or kb,
+                       mb); `good` is lcp<=2500 cls<=0.1 inp<=200. Waits
+                       for load, then reads once; the failure lists every
+                       budget and the throttling. A metric not measured
+                       yet (inp before an interaction) fails, unless
+                       --perf-missing ok
+From --no-errors to --perf, they look once: what they find does not go
+away by waiting.
   --layout --baseline NAME   no error finding of `layout` (in the page, or
                        LOCATOR's element) that .chrome-cdp/layout/NAME.txt
                        does not list; retried like the matchers. --update
@@ -610,6 +621,7 @@ Examples:
   chrome-cdp expect --no-failed-requests --all-tabs
   chrome-cdp expect --no-issues --min-severity error
   chrome-cdp expect --a11y --level A
+  chrome-cdp expect --perf 'lcp<2.5s cls<0.1 tbt<200'
   chrome-cdp expect --layout --baseline cart --viewports mobile,desktop
   chrome-cdp expect mock-state todos count 4
   chrome-cdp expect request POST /api/orders --json-body '{\"qty\":2}' --count 1
@@ -6803,7 +6815,7 @@ pub(crate) struct WaitCmdArgs {
     group(
         ArgGroup::new("assertion")
             .required(true)
-            .args(["target", "url", "title", "no_errors", "no_issues", "no_failed_requests", "a11y", "layout"])
+            .args(["target", "url", "title", "no_errors", "no_issues", "no_failed_requests", "a11y", "perf", "layout"])
             .multiple(true)
     )
 )]
@@ -6911,12 +6923,26 @@ pub(crate) struct ExpectArgs {
     #[arg(long, value_enum, value_name = "LEVEL", requires = "a11y")]
     pub(crate) level: Option<A11yLevelArg>,
 
+    /// Check `perf`'s numbers against budgets, all of which must hold:
+    /// 'lcp<2.5s cls<0.1 tbt<200', or good (the Web Vitals thresholds).
+    #[arg(
+        long,
+        value_name = "BUDGETS",
+        conflicts_with_all = ["matcher", "url", "title", "no_errors", "no_issues", "no_failed_requests", "a11y"]
+    )]
+    pub(crate) perf: Option<String>,
+
+    /// --perf: what a metric not measured yet (INP before an
+    /// interaction) does.
+    #[arg(long, value_enum, value_name = "WHAT", requires = "perf")]
+    pub(crate) perf_missing: Option<PerfMissingArg>,
+
     /// Check the page's layout (see `layout`) or LOCATOR's element: fail
     /// on error findings the --baseline does not list.
     #[arg(
         long,
         requires = "baseline",
-        conflicts_with_all = ["matcher", "url", "title", "no_errors", "no_issues", "no_failed_requests", "a11y"]
+        conflicts_with_all = ["matcher", "url", "title", "no_errors", "no_issues", "no_failed_requests", "a11y", "perf"]
     )]
     pub(crate) layout: bool,
 
@@ -6951,6 +6977,15 @@ pub(crate) struct ExpectArgs {
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
+}
+
+/// `expect --perf-missing`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum PerfMissingArg {
+    /// It fails, with what to do (the default).
+    Fail,
+    /// It passes.
+    Ok,
 }
 
 /// `expect --a11y --level`.
