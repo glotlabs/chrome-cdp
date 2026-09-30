@@ -142,7 +142,7 @@ inside it are not interpreted.
 | `${data:file.json#/a/0}` | the value at a JSON pointer in a JSON file (relative to the script's folder, or in `test` to the folder of the scenario or step file the line is in; the whole file without `#`). Strings are used as is, other values as compact JSON | `batch`, `run`, `test` |
 | `${var:name}` | the run's backend's vars file ([docs/e2e/backends.md](e2e/backends.md)) | `test` |
 | `${secret:NAME}` | the environment variable `NAME`, masked in all output and artifacts | `test` |
-| `${saved.x.y}` | field `y` of the JSON answer an earlier `http … --save x` of the test (or of its file's `@before-all`) got; objects only, no list indexes | `test` |
+| `${saved.x.y}` | field `y` of the JSON answer an earlier `http … --save x` of the test (or of its file's `@before-all`) got; a number picks an item of a list (`${saved.x.items.0.sku}`) | `test` |
 | `${test.id}`, `${run.id}` | unique ids for the test's try and for the run (`k3j9x0qa-4`, `k3j9x0qa`) | `test` |
 | `${backend}` | the run's backend (`mock`, `local`, …), unless an `@include` parameter has the name | `test` |
 

@@ -602,11 +602,13 @@ fn var(inner: &str) -> Result<Var, (String, String)> {
             )),
         };
     }
+    // Later parts of a dotted name may be list indexes: `${saved.order.items.0.sku}`.
     let path: Vec<&str> = inner.split('.').collect();
-    if !path.iter().all(|p| is_ident(p)) {
+    let index = |p: &str| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit());
+    if !is_ident(path[0]) || !path[1..].iter().all(|p| is_ident(p) || index(p)) {
         return Err((
             format!("bad variable name {shown}"),
-            "names are letters, digits, _ and -, starting with a letter or _".into(),
+            "names are letters, digits, _ and -, starting with a letter or _; later parts of a dotted name may be list indexes (0, 1, …)".into(),
         ));
     }
     Ok(match path.as_slice() {

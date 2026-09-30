@@ -172,6 +172,7 @@ impl Resolver<'_> {
                 for (i, key) in path.iter().enumerate() {
                     let next = match value {
                         Value::Object(map) => map.get(*key),
+                        Value::Array(items) => key.parse::<usize>().ok().and_then(|i| items.get(i)),
                         _ => None,
                     };
                     let Some(next) = next else {
@@ -184,9 +185,13 @@ impl Resolver<'_> {
                                 "it has {}",
                                 map.keys().cloned().collect::<Vec<_>>().join(", ")
                             ),
+                            Value::Array(items) if items.is_empty() => {
+                                "it is an empty list".to_owned()
+                            }
                             Value::Array(items) => format!(
-                                "it is a list of {} items; save an object, or read it whole",
-                                items.len()
+                                "it is a list of {} items: use an index from 0 to {}",
+                                items.len(),
+                                items.len() - 1
                             ),
                             other => format!("it is {other}"),
                         };
@@ -315,6 +320,12 @@ mod tests {
             expand("fill x ${saved.order.items}", &r).unwrap(),
             r#"fill x [{"sku":"kb"}]"#
         );
+        assert_eq!(
+            expand("fill x ${saved.order.items.0.sku}", &r).unwrap(),
+            "fill x kb"
+        );
+        let e = expand("fill x ${saved.order.items.1.sku}", &r).unwrap_err();
+        assert_eq!(e, "${saved.order.items.1.sku}: saved.order.items has no 1");
         let e = expand("fill x ${saved.order.nope}", &r).unwrap_err();
         assert_eq!(e, "${saved.order.nope}: saved.order has no nope");
         let e = expand("fill x ${saved.cart.id}", &r).unwrap_err();

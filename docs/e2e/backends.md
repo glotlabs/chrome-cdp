@@ -124,7 +124,8 @@ browser context, outside the page:
   steps work the same with every backend;
 - it fails unless the status is `--expect-status` (default `2xx`);
 - `--save NAME` keeps the JSON answer for `${saved.NAME.field}` in the
-  test's later steps (a `@before-all`'s for every test of its file);
+  test's later steps (a `@before-all`'s for every test of its file); a
+  number reaches into a list: `${saved.order.items.0.sku}`;
 - the page never sees it, so `expect request` does not count it.
 
 Arrange in `@before` rather than `@before-all` when the tests also run

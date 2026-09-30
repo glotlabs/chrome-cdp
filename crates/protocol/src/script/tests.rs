@@ -300,7 +300,9 @@ fn variable_kinds() {
         ]
     );
     assert_eq!(
-        vars("x ${data:state/user.json#/email} ${data:all.json} ${saved.order.id}"),
+        vars(
+            "x ${data:state/user.json#/email} ${data:all.json} ${saved.order.id} ${saved.o.items.0.sku}"
+        ),
         [
             Var::Data {
                 file: "state/user.json".into(),
@@ -311,6 +313,13 @@ fn variable_kinds() {
                 pointer: String::new()
             },
             Var::Path(vec!["saved".into(), "order".into(), "id".into()]),
+            Var::Path(vec![
+                "saved".into(),
+                "o".into(),
+                "items".into(),
+                "0".into(),
+                "sku".into()
+            ]),
         ]
     );
 }
@@ -348,6 +357,8 @@ fn bad_variables_are_errors() {
     );
     assert_eq!(errors("x ${a..b}"), ["1:3 bad variable name ${a..b}"]);
     assert_eq!(errors("x ${1a}"), ["1:3 bad variable name ${1a}"]);
+    assert_eq!(errors("x ${0.a}"), ["1:3 bad variable name ${0.a}"]);
+    assert_eq!(errors("x ${a.-1}"), ["1:3 bad variable name ${a.-1}"]);
 }
 
 #[test]
