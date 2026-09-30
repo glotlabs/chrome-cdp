@@ -99,16 +99,36 @@ const CLEAR: &str = "function () {\n\
     return true;\n\
 }";
 
-/// Watches the drop events of `this`'s window until [`DROPPED`] asks:
-/// the capture listeners see every `drop`, even one the page stops.
+/// Watches the drop and dragover events of `this`'s window until
+/// [`DROPPED`] asks: the capture listeners see every one, even one the
+/// page stops.
 const WATCH_DROP: &str = "function () {\n\
     const view = this.ownerDocument.defaultView;\n\
-    const watch = { drops: [] };\n\
-    watch.listener = (e) => watch.drops.push(e);\n\
-    watch.stop = () => view.removeEventListener('drop', watch.listener, true);\n\
-    view.addEventListener('drop', watch.listener, true);\n\
+    const watch = { drops: [], overs: [] };\n\
+    watch.drop = (e) => watch.drops.push(e);\n\
+    watch.over = (e) => watch.overs.push(e);\n\
+    watch.stop = () => {\n\
+        view.removeEventListener('drop', watch.drop, true);\n\
+        view.removeEventListener('dragover', watch.over, true);\n\
+    };\n\
+    view.addEventListener('drop', watch.drop, true);\n\
+    view.addEventListener('dragover', watch.over, true);\n\
     this[Symbol.for('chrome-cdp.drop')] = watch;\n\
 }";
+
+/// Whether the page took the dragover in `this`'s window since
+/// [`WATCH_DROP`] (cancelled it, read once it has run its course), as
+/// it must for a drop. Chrome fires it after `Input.dispatchDragEvent`
+/// returns, and not at all when a drop target the page showed on
+/// dragenter (an overlay) is not laid out yet: `null` until it comes.
+const ACCEPTED: &str = "function () {\n\
+    const watch = this[Symbol.for('chrome-cdp.drop')];\n\
+    const over = watch && watch.overs[watch.overs.length - 1];\n\
+    return over ? over.defaultPrevented : null;\n\
+}";
+
+/// How long a drop waits for its dragover to reach the page.
+const DRAGOVER_WAIT: Duration = Duration::from_millis(300);
 
 /// Whether a `drop` fired in `this`'s window since [`WATCH_DROP`], which
 /// stops watching. Anywhere: many pages show an overlay on `dragenter`
@@ -539,16 +559,32 @@ impl Actor<'_> {
                 files: Some(files.paths()),
                 drag_operations_mask: DRAG_COPY,
             };
+            let drag = |kind| session.call(DispatchDragEventParams::new(kind, x, y, data.clone()));
             for kind in [
                 DispatchDragEventType::DragEnter,
                 DispatchDragEventType::DragOver,
-                DispatchDragEventType::Drop,
             ] {
-                session
-                    .call(DispatchDragEventParams::new(kind, x, y, data.clone()))
-                    .await
-                    .map_err(|e| from_cdp(&e, self.session()))?;
+                drag(kind).await.map_err(|e| from_cdp(&e, self.session()))?;
             }
+            // A drop the page does not take is Chrome's to handle: it
+            // opens the files in a tab, as for a user's drop. Cancel the
+            // drag instead, so a refused drop changes nothing. With no
+            // dragover in the element's window, drop anyway: `DROPPED`
+            // tells whether something took it.
+            let asked = Instant::now();
+            let accepted = loop {
+                let accepted = self.call(&ready.ready.target, ACCEPTED, Vec::new()).await?;
+                if !accepted.is_null() || asked.elapsed() >= DRAGOVER_WAIT {
+                    break accepted;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            };
+            let last = if accepted == serde_json::Value::Bool(false) {
+                DispatchDragEventType::DragCancel
+            } else {
+                DispatchDragEventType::Drop
+            };
+            drag(last).await.map_err(|e| from_cdp(&e, self.session()))?;
             let dropped = self.call(&ready.ready.target, DROPPED, Vec::new()).await?;
             Ok::<_, ErrorInfo>(dropped == serde_json::Value::Bool(true))
         }

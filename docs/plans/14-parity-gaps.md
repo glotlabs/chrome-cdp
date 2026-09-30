@@ -555,6 +555,12 @@ match with changed dynamic text, fail on a missing button, and survive
   body open.
 - **14.3, golden runs.** `GOLDEN_CASES=word,word` runs only the golden
   cases whose names hold one of the words, for iterating on a few.
+- **14.3, refused drops (close-out).** Chrome opens files dropped where
+  the page takes no drop in a new tab, late enough to be pinned on the
+  next command. `upload --drop` now reads the page's dragover (cancelled
+  or not) and cancels the drag when the page refused it; with no
+  dragover within 300ms (an overlay shown on dragenter gets none) it
+  drops as before.
 - **14.4, reload.** `reload` calls `Extensions.loadUnpacked` on the
   extension's directory again instead of uninstall + load: Chrome reloads
   it with the same id and keeps its `chrome.storage`, as the Reload button
