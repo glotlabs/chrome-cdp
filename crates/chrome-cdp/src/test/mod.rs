@@ -560,8 +560,9 @@ fn healing(
             }
         }
     }
+    // Only the mocks' data stays the same from run to run.
     let ci = std::env::var_os("CI").is_some_and(|v| !v.is_empty());
-    if plan.config.fingerprints.write(ci) {
+    if plan.config.fingerprints.write(ci) && !plan.real() {
         let taken = options
             .taken
             .lock()

@@ -145,7 +145,7 @@ pub(super) fn key(step: &Prepared, word: usize, scenario: &Scenario, root: &Path
     let Some(w) = step.line.words.get(word) else {
         return String::new();
     };
-    let text = w.literal().unwrap_or_else(|| w.raw.clone());
+    let text = w.literal().unwrap_or_else(|| unquoted(&w.raw).to_owned());
     let file = &*step.line.span.file;
     let mut key = if file == scenario.name {
         String::new()
@@ -172,6 +172,18 @@ pub(super) fn key(step: &Prepared, word: usize, scenario: &Scenario, root: &Path
         key.push_str(&format!(" [{}]", params.join(", ")));
     }
     key
+}
+
+/// `raw` without the quotes around it, when one pair holds it all.
+fn unquoted(raw: &str) -> &str {
+    for q in ['"', '\''] {
+        if let Some(inner) = raw.strip_prefix(q).and_then(|r| r.strip_suffix(q))
+            && !inner.contains(q)
+        {
+            return inner;
+        }
+    }
+    raw
 }
 
 /// `file` (as spans name it: relative to the current directory, or
@@ -477,6 +489,13 @@ mod tests {
         assert_eq!(f.text, "fine");
         assert_eq!(f.container.unwrap().name, "");
         assert_eq!(f.candidates, ["#ok"]);
+    }
+
+    #[test]
+    fn keys_drop_the_quotes_around_a_word() {
+        assert_eq!(unquoted("\"role=link[name=${x}]\""), "role=link[name=${x}]");
+        assert_eq!(unquoted("'a'b'"), "'a'b'");
+        assert_eq!(unquoted("x"), "x");
     }
 
     #[test]
