@@ -1,0 +1,11 @@
+$ chrome-cdp keyboard down Shift+a
+exit: 2
+--- stderr
+error: keyboard down takes one key, not `Shift+a`
+  hint: chrome-cdp keyboard down Shift   (one key per command), or chrome-cdp press Shift+a   (a whole chord)
+
+$ chrome-cdp keyboard down Shift+a --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"keyboard down takes one key, not `Shift+a`","hint":"chrome-cdp keyboard down Shift   (one key per command), or chrome-cdp press Shift+a   (a whole chord)"}}
+

@@ -9,7 +9,8 @@
 <!-- Every key event (in the capture phase, on the document) and every
      input event is logged into #keys, one per line: type, key (JSON),
      code, keyCode, location, modifiers held, target id, and whether it
-     was trusted; input events log their inputType and data instead. -->
+     was trusted; input events log their inputType and data instead.
+     Clicks are logged into #clicks: target id and the modifiers held. -->
 <label>Field <input id="field"></label>
 <label>Area <textarea id="area"></textarea></label>
 <div id="editor" contenteditable="true" role="textbox" aria-label="Editor">Hello <b>world</b></div>
@@ -20,6 +21,7 @@
 <button id="btn">Button</button>
 <p id="palette" hidden>Command palette</p>
 <pre id="keys"></pre>
+<pre id="clicks"></pre>
 <script>
   const out = document.getElementById('keys');
   const mods = (e) => ['alt', 'ctrl', 'meta', 'shift'].filter((k) => e[k + 'Key']).join('+') || '-';
@@ -30,6 +32,9 @@
       out.textContent += `${type} ${JSON.stringify(e.key)} ${e.code} ${e.keyCode} L${e.location} ${mods(e)} ${who(e)} ${trust(e)}\n`;
     }, true);
   }
+  document.addEventListener('click', (e) => {
+    document.getElementById('clicks').textContent += `click ${who(e)} ${mods(e)}\n`;
+  }, true);
   document.addEventListener('input', (e) => {
     out.textContent += `input ${e.inputType} ${JSON.stringify(e.data)} ${who(e)} ${trust(e)}\n`;
   }, true);

@@ -2281,6 +2281,30 @@ impl MouseOp {
     }
 }
 
+/// What `keyboard` does.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum KeyboardOp {
+    /// `keyboard down <key>`: presses the key and holds it.
+    Down { key: String },
+    /// `keyboard up <key>`, or `keyboard up --all` (`key` is `None`):
+    /// releases held keys.
+    Up {
+        #[serde(default)]
+        key: Option<String>,
+    },
+}
+
+impl KeyboardOp {
+    /// The subcommand's name.
+    pub fn command(&self) -> &'static str {
+        match self {
+            Self::Down { .. } => "down",
+            Self::Up { .. } => "up",
+        }
+    }
+}
+
 /// What an input action does (plan 05). Each names its element(s) with a
 /// locator, except `mouse`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -2326,6 +2350,8 @@ pub enum Action {
     },
     /// `mouse move|down|up|wheel`: raw mouse events at viewport points.
     Mouse(MouseOp),
+    /// `keyboard down|up`: holds keys across commands (plan 14).
+    Keyboard(KeyboardOp),
     /// `drag <from> <to>`.
     Drag {
         from: String,
@@ -2417,6 +2443,7 @@ impl Action {
             Self::Hover { .. } => "hover",
             Self::Tap { .. } => "tap",
             Self::Mouse(_) => "mouse",
+            Self::Keyboard(_) => "keyboard",
             Self::Drag { .. } => "drag",
             Self::Scroll { .. } => "scroll",
             Self::Press { .. } => "press",

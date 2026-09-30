@@ -1,0 +1,15 @@
+$ chrome-cdp keyboard down Shift
+exit: 0
+--- stdout
+holding Shift
+
+$ chrome-cdp keyboard down Shift --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"action":"down","held":["Shift"],"key":"Shift","tab":"t1"}}
+
+$ chrome-cdp keyboard down Shift -q
+exit: 0
+--- stdout
+Shift
+

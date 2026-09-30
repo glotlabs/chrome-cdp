@@ -101,8 +101,10 @@ impl Actor<'_> {
         self.running.tabs.pointer(self.page.id, f);
     }
 
-    /// Sends one mouse event to the tab.
-    async fn mouse_event(&self, params: DispatchMouseEventParams) -> Result<(), ErrorInfo> {
+    /// Sends one mouse event to the tab, with the modifiers `keyboard
+    /// down` holds added.
+    async fn mouse_event(&self, mut params: DispatchMouseEventParams) -> Result<(), ErrorInfo> {
+        params.modifiers = Some(params.modifiers.unwrap_or(0) | self.held_bits());
         self.page
             .session
             .with_timeout(self.timeout)
@@ -231,7 +233,15 @@ impl Actor<'_> {
         let element = ready.element.clone();
         let note = ready.ready.target.note.clone();
         ready.release();
-        let modifiers = &self.resolve_modifiers(modifiers).await?;
+        let mut modifiers = self.resolve_modifiers(modifiers).await?;
+        // What `keyboard down` holds goes with the events too.
+        for held in self.held_modifiers() {
+            let held = held.modifier();
+            if !modifiers.contains(&held) {
+                modifiers.push(held);
+            }
+        }
+        let modifiers = &modifiers;
         let bits = modifier_bits(modifiers);
         let mut data = PointerData {
             tab: self.tab(),
@@ -287,6 +297,7 @@ impl Actor<'_> {
     /// A touch at `(x, y)`: start, then end. The browser makes the
     /// click (and the mouse events before it) of the tap.
     async fn tap(&self, x: f64, y: f64, modifiers: i64) -> Result<(), ErrorInfo> {
+        let modifiers = modifiers | self.held_bits();
         let session = self.page.session.with_timeout(self.timeout);
         let point = TouchPoint {
             x,

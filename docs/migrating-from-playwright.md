@@ -180,7 +180,7 @@ events, like Playwright's actionability checks. `--force` skips the checks
 | `loc.press('Enter')` | `press Enter --in LOC` | ✅ |
 | `page.keyboard.press('Control+A')` | `press Control+A` (Playwright's `ControlOrMeta+A` is `Mod+A`) | ✅ |
 | `page.keyboard.type('x')`, `insertText('x')` | `type x` | ✅ |
-| `page.keyboard.down('Shift')` / `up()` | `click --modifiers Shift`, a chord (`press Shift+ArrowDown`), or `cdp Input.dispatchKeyEvent` | 🟡 |
+| `page.keyboard.down('Shift')` / `up()` | `keyboard down Shift`, then `click`, `press`, … carry Shift; `keyboard up Shift` | ✅ |
 | `loc.check()` / `uncheck()` / `setChecked(b)` | `check LOC` / `uncheck LOC` (a no-op when it already is) | ✅ |
 | `loc.selectOption('blue')`, `selectOption(['a', 'b'])`, `{ label }` | `select LOC blue`, `select LOC a b` (a value, else a label) | ✅ |
 | `loc.setInputFiles('a.png')`, `[]` | `upload LOC a.png`, `upload LOC --clear` | ✅ |

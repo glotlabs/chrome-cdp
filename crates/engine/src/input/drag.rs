@@ -192,7 +192,7 @@ impl Actor<'_> {
                         x: to.0,
                         y: to.1,
                         data: data.clone(),
-                        modifiers: None,
+                        modifiers: Some(self.held_bits()),
                     })
                     .await
                     .map_err(|e| from_cdp(&e, self.session()))?;

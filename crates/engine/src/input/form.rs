@@ -207,7 +207,7 @@ impl Actor<'_> {
             if text.is_empty() {
                 // Inserting nothing leaves the selection; Delete clears it.
                 let mac = self.mac().await?;
-                for event in keys::chord_events(&["Delete".to_owned()], mac)
+                for event in keys::chord_events(&["Delete".to_owned()], mac, &[])
                     .map_err(|m| ErrorInfo::new(ErrorKind::BadArgs, m))?
                 {
                     self.key_event(&event).await?;

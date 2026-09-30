@@ -123,6 +123,7 @@ value <loc> | attr <loc> <a>   a field's value | an attribute
 click | dblclick | hover <loc>
 fill <loc> <text>              set a field (type <text> types key by key)
 press Enter | 'Control+A'      keys and shortcuts
+keyboard down Shift           hold a key across commands; keyboard up --all
 select <loc> <value>           a <select> option
 check | uncheck <loc>          checkboxes and radios
 upload <loc> <file...> [--drop] file inputs; --drop for drop zones

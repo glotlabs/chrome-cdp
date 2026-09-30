@@ -76,6 +76,19 @@ pub(crate) enum Mod {
     Shift = 8,
 }
 
+impl Mod {
+    /// The request's name for it.
+    pub(crate) fn modifier(self) -> crate::request::Modifier {
+        use crate::request::Modifier;
+        match self {
+            Mod::Alt => Modifier::Alt,
+            Mod::Control => Modifier::Control,
+            Mod::Meta => Modifier::Meta,
+            Mod::Shift => Modifier::Shift,
+        }
+    }
+}
+
 /// A key as a name finds it: itself, and what it is with Shift held.
 #[derive(Debug, Clone, Copy)]
 struct Found {
@@ -281,25 +294,18 @@ pub(crate) struct KeyEvent {
 /// held, keys are their shifted selves. `mac` is the browser's platform:
 /// `Mod` is Meta there (Control elsewhere), and key downs carry the
 /// editing commands macOS would run for them.
-pub(crate) fn chord_events(chord: &[String], mac: bool) -> Result<Vec<KeyEvent>, String> {
-    let mut held: Vec<Mod> = Vec::new();
-    let bits = |held: &[Mod]| held.iter().fold(0, |bits, m| bits | *m as i64);
+/// `held` are modifiers `keyboard down` holds: the chord's events carry
+/// them, and they stay held after it.
+pub(crate) fn chord_events(
+    chord: &[String],
+    mac: bool,
+    held: &[Mod],
+) -> Result<Vec<KeyEvent>, String> {
+    let mut held: Vec<Mod> = held.to_vec();
     let mut keys = Vec::new();
     let mut events = Vec::new();
     for name in chord {
-        let name = if is_mod(name) {
-            if mac { "Meta" } else { "Control" }
-        } else {
-            name.as_str()
-        };
-        let found = find(name).ok_or_else(|| format!("unknown key `{name}`"))?;
-        let mut key = match found.shifted {
-            Some(shifted) if held.contains(&Mod::Shift) => shifted,
-            _ => found.key,
-        };
-        if held.len() > 1 || (held.len() == 1 && held[0] != Mod::Shift) {
-            key.text = "";
-        }
+        let key = resolve(name, mac, &held)?;
         if let Some(m) = key.modifier()
             && !held.contains(&m)
         {
@@ -330,6 +336,52 @@ pub(crate) fn chord_events(chord: &[String], mac: bool) -> Result<Vec<KeyEvent>,
         });
     }
     Ok(events)
+}
+
+/// The `modifiers` bits of `held`.
+pub(crate) fn bits(held: &[Mod]) -> i64 {
+    held.iter().fold(0, |bits, m| bits | *m as i64)
+}
+
+/// The key `name` names with `held` down: `Mod` by the browser's
+/// platform (`mac`), its shifted self with Shift held, typing nothing
+/// with another modifier held.
+pub(crate) fn resolve(name: &str, mac: bool, held: &[Mod]) -> Result<Key, String> {
+    let name = if is_mod(name) {
+        if mac { "Meta" } else { "Control" }
+    } else {
+        name
+    };
+    let found = find(name).ok_or_else(|| format!("unknown key `{name}`"))?;
+    let mut key = match found.shifted {
+        Some(shifted) if held.contains(&Mod::Shift) => shifted,
+        _ => found.key,
+    };
+    if held.iter().any(|m| *m != Mod::Shift) {
+        key.text = "";
+    }
+    Ok(key)
+}
+
+/// The key down `keyboard down` sends for `key` with `held` down before
+/// it (the key's own modifier is added to the event's).
+pub(crate) fn down_event(key: Key, mac: bool, held: &[Mod]) -> KeyEvent {
+    let mut now = held.to_vec();
+    if let Some(m) = key.modifier()
+        && !now.contains(&m)
+    {
+        now.push(m);
+    }
+    KeyEvent {
+        down: true,
+        key,
+        modifiers: bits(&now),
+        commands: if mac {
+            mac_commands(&now, key.code)
+        } else {
+            Vec::new()
+        },
+    }
 }
 
 /// The editing commands macOS runs for `code` with `held`.
@@ -449,7 +501,7 @@ mod tests {
 
     #[test]
     fn a_chord_holds_modifiers_around_its_key() {
-        let events = chord_events(&chord("Control+a"), false).unwrap();
+        let events = chord_events(&chord("Control+a"), false, &[]).unwrap();
         assert_eq!(
             names(&events),
             [
@@ -460,26 +512,26 @@ mod tests {
             ]
         );
         // Shift makes keys their shifted selves, and they still type.
-        let events = chord_events(&chord("Shift+1"), false).unwrap();
+        let events = chord_events(&chord("Shift+1"), false, &[]).unwrap();
         assert_eq!(names(&events)[1], "down ! Digit1 \"!\" m8");
-        let events = chord_events(&chord("Shift+Tab"), false).unwrap();
+        let events = chord_events(&chord("Shift+Tab"), false, &[]).unwrap();
         assert_eq!(names(&events)[1], "down Tab Tab \"\" m8");
-        let events = chord_events(&chord("Enter"), false).unwrap();
+        let events = chord_events(&chord("Enter"), false, &[]).unwrap();
         assert_eq!(
             names(&events),
             ["down Enter Enter \"\\r\" m0", "up Enter Enter \"\\r\" m0"]
         );
         // Shift with another modifier types nothing.
-        let events = chord_events(&chord("Control+Shift+z"), false).unwrap();
+        let events = chord_events(&chord("Control+Shift+z"), false, &[]).unwrap();
         assert_eq!(names(&events)[2], "down Z KeyZ \"\" m10");
     }
 
     #[test]
     fn mod_and_editing_commands_follow_the_browser_platform() {
-        let linux = chord_events(&chord("Mod+a"), false).unwrap();
+        let linux = chord_events(&chord("Mod+a"), false, &[]).unwrap();
         assert_eq!(linux[0].key.key, "Control");
         assert!(linux.iter().all(|e| e.commands.is_empty()));
-        let mac = chord_events(&chord("Mod+a"), true).unwrap();
+        let mac = chord_events(&chord("Mod+a"), true, &[]).unwrap();
         assert_eq!(
             names(&mac),
             [
@@ -489,12 +541,12 @@ mod tests {
                 "up Meta MetaLeft \"\" m0",
             ]
         );
-        let redo = chord_events(&chord("Shift+Meta+z"), true).unwrap();
+        let redo = chord_events(&chord("Shift+Meta+z"), true, &[]).unwrap();
         assert_eq!(redo[2].commands, ["redo"]);
-        let back = chord_events(&chord("Backspace"), true).unwrap();
+        let back = chord_events(&chord("Backspace"), true, &[]).unwrap();
         assert_eq!(back[0].commands, ["deleteBackward"]);
         // Commands that insert text are left to the key's own text.
-        let enter = chord_events(&chord("Enter"), true).unwrap();
+        let enter = chord_events(&chord("Enter"), true, &[]).unwrap();
         assert!(enter[0].commands.is_empty());
     }
 

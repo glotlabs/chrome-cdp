@@ -1,0 +1,17 @@
+$ chrome-cdp keyboard up Alt
+exit: 0
+--- stdout
+holding nothing
+--- stderr
+warning: Alt is not held
+
+$ chrome-cdp keyboard up Alt --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"action":"up","held":[],"key":"Alt","tab":"t1"},"warnings":["Alt is not held"]}
+
+$ chrome-cdp keyboard up Alt -q
+exit: 0
+--- stderr
+warning: Alt is not held
+

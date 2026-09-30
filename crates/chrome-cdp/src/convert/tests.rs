@@ -234,6 +234,11 @@ const CASES: &[(&str, &str)] = &[
     ("await page.fill('#q', 'x');", "fill '#q' x"),
     // Keyboard and mouse.
     ("await page.keyboard.press('Enter');", "press Enter"),
+    ("await page.keyboard.down('Shift');", "keyboard down Shift"),
+    (
+        "await page.keyboard.up('ControlOrMeta');",
+        "keyboard up Mod",
+    ),
     (
         "await page.keyboard.type('hello world');",
         "type 'hello world'",
@@ -524,7 +529,6 @@ const TODOS: &[(&str, &str)] = &[
         "for (const u of users) { await page.goto(u); }",
         "(conditions and loops",
     ),
-    ("await page.keyboard.down('Shift');", "(holding keys"),
     (
         "await page.locator('#zone').dispatchEvent('drop', { dataTransfer });",
         "(dispatching drag events: drop files on the element with upload LOC FILE --drop",

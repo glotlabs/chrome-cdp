@@ -59,7 +59,7 @@ use std::time::Duration;
 use cdp::domains::{browser, page, runtime, security, target};
 use cdp::{Connection, Event as _, LosslessEventStream, RawEvent, Session};
 use futures_util::future::join_all;
-use protocol::schema::{Event, TabInfo, Viewport, Worker, WorkerInfo, WorkerKind};
+use protocol::schema::{Event, HeldKeys, TabInfo, Viewport, Worker, WorkerInfo, WorkerKind};
 
 use self::dialogs::OpenDialog;
 use self::downloads::Download;
@@ -69,7 +69,7 @@ use crate::emulate::{Aspects, Emulator};
 use crate::frames::{self, Context, FindError, FrameInfo, FrameTree, World};
 use crate::inject::{Injector, MOCK_BINDING, SEED_BINDING};
 use crate::injected;
-use crate::input::Pointer;
+use crate::input::{Key, Pointer};
 use crate::network::{Exchange, Failure, Idle, InFlight, Network};
 use crate::observe::console::{self, Console, ConsoleError, FromWorker};
 use crate::observe::netlog::{self, NetLog};
@@ -335,6 +335,9 @@ struct Tab {
     snapshot: SnapshotMemory,
     /// Where the mouse is and what it holds, as chrome-cdp sent it.
     pointer: Pointer,
+    /// The keys `keyboard down` holds, in the order they went down. They
+    /// stay across navigations and go with the tab.
+    keys: Vec<Key>,
 }
 
 impl Tab {
@@ -365,6 +368,7 @@ impl Tab {
             crashed: None,
             snapshot: SnapshotMemory::default(),
             pointer: Pointer::default(),
+            keys: Vec::new(),
         }
     }
 }
@@ -1061,6 +1065,33 @@ impl Tabs {
             .tabs
             .get_mut(&id)
             .map(|tab| f(&mut tab.pointer))
+    }
+
+    /// Calls `f` with the keys tab `id` holds (`None` if the tab is gone).
+    pub(crate) fn keys<R>(&self, id: u32, f: impl FnOnce(&mut Vec<Key>) -> R) -> Option<R> {
+        self.shared
+            .lock()
+            .tabs
+            .get_mut(&id)
+            .map(|tab| f(&mut tab.keys))
+    }
+
+    /// The keys each tab that holds some holds, by tab id (`status`).
+    pub(crate) fn held_keys(&self) -> Vec<HeldKeys> {
+        let state = self.shared.lock();
+        let mut held: Vec<(u32, Vec<String>)> = state
+            .tabs
+            .iter()
+            .filter(|(_, tab)| tab.ready && !tab.keys.is_empty())
+            .map(|(&id, tab)| (id, tab.keys.iter().map(|k| k.key.to_owned()).collect()))
+            .collect();
+        held.sort_by_key(|(id, _)| *id);
+        held.into_iter()
+            .map(|(id, keys)| HeldKeys {
+                tab: tab_name(id),
+                keys,
+            })
+            .collect()
     }
 
     /// The frame of tab `id` that `query` names (see

@@ -66,6 +66,7 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`drag`](drag.md) | Drag an element onto another: mouse events, or HTML5 drag and drop |
 | [`scroll`](scroll.md) | Scroll the page or an element with the mouse wheel |
 | [`mouse`](mouse.md) | Low-level mouse events at viewport coordinates |
+| [`keyboard`](keyboard.md) | Hold keys down across commands (Shift while clicking, …) |
 | [`dialog`](dialog.md) | Answer the JavaScript dialog (confirm, prompt, …) the page waits on |
 | [`clipboard`](clipboard.md) | Read or write the clipboard (text, HTML or a PNG), through the page |
 

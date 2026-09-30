@@ -2064,7 +2064,7 @@ fn keyboard(env: &Env, method: &str, args: &[Expr]) -> Out {
             }
             Ok(vec![c.line()])
         }
-        "down" | "up" => why("holding keys: a chord (press Shift+ArrowDown) or click --modifiers"),
+        "down" | "up" => Ok(vec![cmd(["keyboard", method]).arg(keys(&text()?)).line()]),
         other => why(format!("keyboard.{other}")),
     }
 }

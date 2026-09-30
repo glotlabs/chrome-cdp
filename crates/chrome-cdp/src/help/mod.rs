@@ -111,6 +111,7 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
             "drag",
             "scroll",
             "mouse",
+            "keyboard",
             "dialog",
             "clipboard",
         ],

@@ -287,6 +287,12 @@ command chrome-cdp mouse up
 command chrome-cdp mouse wheel
   arg DX required
   arg DY required
+command chrome-cdp keyboard
+command chrome-cdp keyboard down
+  arg KEY required
+command chrome-cdp keyboard up
+  arg KEY
+  flag --all
 command chrome-cdp press
   arg KEYS required
   flag --in value=LOCATOR

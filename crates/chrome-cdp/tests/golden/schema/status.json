@@ -677,6 +677,27 @@
       ],
       "type": "object"
     },
+    "HeldKeys": {
+      "description": "The keys a tab holds (`status`).",
+      "properties": {
+        "keys": {
+          "description": "Its held keys, in the order they went down.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tab": {
+          "description": "The tab, e.g. `t1`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tab",
+        "keys"
+      ],
+      "type": "object"
+    },
     "Note": {
       "description": "One labelled line of an error's text form.",
       "properties": {
@@ -820,6 +841,13 @@
         "dir": {
           "description": "The session directory (socket, logs, `meta.json`).",
           "type": "string"
+        },
+        "held_keys": {
+          "description": "The keys `keyboard down` holds, per tab (only tabs that hold some).",
+          "items": {
+            "$ref": "#/$defs/HeldKeys"
+          },
+          "type": "array"
         },
         "idle_timeout_ms": {
           "description": "Milliseconds of inactivity before the daemon closes the browser and\nexits; 0 means never.",

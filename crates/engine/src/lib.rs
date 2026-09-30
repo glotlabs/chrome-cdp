@@ -66,7 +66,7 @@ use browser::{Chrome, Host, LaunchOptions, Launched, ProfileChoice};
 use cdp::domains::browser as cdp_browser;
 use cdp::transport::WsTransport;
 use cdp::{Connection, ConnectionOptions};
-use protocol::schema::{BrowserInfo, BrowserKind, OpenData, ProfileInfo, SessionState};
+use protocol::schema::{BrowserInfo, BrowserKind, HeldKeys, OpenData, ProfileInfo, SessionState};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 use tokio::sync::Notify;
 
@@ -98,7 +98,7 @@ pub use request::{
     Expectation, ExposeRequest, FindRequest, FramesRequest, HarContent, HarExportRequest,
     HarStartRequest, HarStopRequest, HighlightRequest, HttpCredentials, HttpRequest, ImageFormat,
     InitScriptAddRequest, InitScriptListRequest, InitScriptRemoveRequest, InspectRequest,
-    LocatorRequest, Margins, MarkRequest, Matcher, MockExplainRequest, MockListRequest,
+    KeyboardOp, LocatorRequest, Margins, MarkRequest, Matcher, MockExplainRequest, MockListRequest,
     MockLogRequest, MockOffRequest, MockSeedRequest, MockStateCheck, MockStateRequest, MockTestTag,
     MockUseRequest, MockWsSendRequest, Modifier, MouseOp, NavigateRequest, Navigation,
     NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest,
@@ -209,6 +209,8 @@ pub struct EngineStatus {
     /// Console messages and requests of shared and service workers no
     /// tab had a frame on the origin of.
     pub worker_events_dropped: u64,
+    /// The keys `keyboard down` holds, per tab that holds some.
+    pub held_keys: Vec<HeldKeys>,
 }
 
 /// What `close` did to the browser.
@@ -797,6 +799,7 @@ impl Engine {
                 tabs: Some(running.tabs.count()),
                 uptime: Some(running.started.elapsed()),
                 worker_events_dropped: running.tabs.worker_events_dropped(),
+                held_keys: running.tabs.held_keys(),
             },
             Err(Some(crash)) => EngineStatus {
                 state: SessionState::Crashed,
@@ -805,6 +808,7 @@ impl Engine {
                 tabs: None,
                 uptime: None,
                 worker_events_dropped: 0,
+                held_keys: Vec::new(),
             },
             Err(None) => EngineStatus {
                 state: SessionState::Idle,
@@ -813,6 +817,7 @@ impl Engine {
                 tabs: None,
                 uptime: None,
                 worker_events_dropped: 0,
+                held_keys: Vec::new(),
             },
         }
     }

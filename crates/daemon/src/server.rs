@@ -724,6 +724,7 @@ impl Daemon {
             logs: p.logs.map(|n| output::log_tail(&self.paths.chrome_log, n)),
             worker_events_dropped: (st.worker_events_dropped > 0)
                 .then_some(st.worker_events_dropped),
+            held_keys: st.held_keys,
         }
     }
 }

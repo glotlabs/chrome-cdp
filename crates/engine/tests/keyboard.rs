@@ -15,8 +15,8 @@ use std::time::Duration;
 
 use browser::Host;
 use engine::{
-    Action, ActionRequest, Engine, LocateOptions, Modifier, NavigateRequest, Navigation,
-    OpenRequest, WaitUntil,
+    Action, ActionRequest, Engine, KeyboardOp, LocateOptions, Modifier, NavigateRequest,
+    Navigation, OpenRequest, WaitUntil,
 };
 use fixtures::Fixtures;
 use protocol::{ErrorInfo, ErrorKind, Output};
@@ -776,5 +776,142 @@ async fn types_into_cross_origin_iframes() {
     act(&engine, type_in("X", None)).await;
     assert_eq!(value(&engine, "frame=other >> #inner-field").await, "X");
 
+    engine.close().await;
+}
+
+fn key_down(key: &str) -> Action {
+    Action::Keyboard(KeyboardOp::Down {
+        key: key.to_owned(),
+    })
+}
+
+fn key_up(key: Option<&str>) -> Action {
+    Action::Keyboard(KeyboardOp::Up {
+        key: key.map(str::to_owned),
+    })
+}
+
+fn click(locator: &str) -> Action {
+    Action::Click {
+        locator: locator.to_owned(),
+        button: engine::Button::Left,
+        count: 1,
+        modifiers: Vec::new(),
+        position: None,
+        force: false,
+        dblclick: false,
+    }
+}
+
+#[tokio::test]
+async fn holds_keys_across_commands() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "keys-held").await;
+    goto(&engine, &site.url("/actions/keyboard.html")).await;
+    act(
+        &engine,
+        Action::Focus {
+            locator: "#field".to_owned(),
+        },
+    )
+    .await;
+
+    // A held Shift goes with a later click, and with nothing after up.
+    let out = act(&engine, key_down("Shift")).await;
+    assert_eq!(out.text, "holding Shift");
+    assert_eq!(out.data["held"], serde_json::json!(["Shift"]));
+    assert_eq!(
+        lines(&engine, "#keys", 0).await,
+        ["keydown \"Shift\" ShiftLeft 16 L1 shift field trusted"]
+    );
+    let out = act(&engine, click("#btn")).await;
+    assert!(out.text.ends_with(" with Shift"), "{}", out.text);
+    assert_eq!(out.data["modifiers"], serde_json::json!(["Shift"]));
+    // Held keys stay across a navigation.
+    goto(&engine, &site.url("/actions/keyboard.html")).await;
+    act(&engine, click("#btn")).await;
+    assert_eq!(lines(&engine, "#clicks", 0).await, ["click btn shift"]);
+    let status = engine.status();
+    assert_eq!(status.held_keys.len(), 1);
+    assert_eq!(status.held_keys[0].tab, "t1");
+    assert_eq!(status.held_keys[0].keys, ["Shift"]);
+
+    // A key pressed while Shift is held is its shifted self.
+    act(
+        &engine,
+        Action::Focus {
+            locator: "#field".to_owned(),
+        },
+    )
+    .await;
+    let before = log_len(&engine, "#keys").await;
+    act(&engine, press("a", None)).await;
+    assert_eq!(value(&engine, "#field").await, "A");
+    let keys = lines(&engine, "#keys", before).await;
+    assert!(
+        keys.contains(&"keydown \"A\" KeyA 65 L0 shift field trusted".to_owned()),
+        "{keys:#?}"
+    );
+
+    let out = act(&engine, key_up(Some("Shift"))).await;
+    assert_eq!(out.text, "released Shift (holding nothing)");
+    assert_eq!(out.data["held"], serde_json::json!([]));
+    let before = log_len(&engine, "#clicks").await;
+    act(&engine, click("#btn")).await;
+    assert_eq!(lines(&engine, "#clicks", before).await, ["click btn -"]);
+    assert!(engine.status().held_keys.is_empty());
+
+    // A letter held down is a keydown the page sees, then its keyup.
+    act(
+        &engine,
+        Action::Focus {
+            locator: "#field".to_owned(),
+        },
+    )
+    .await;
+    let before = log_len(&engine, "#keys").await;
+    act(&engine, key_down("a")).await;
+    assert_eq!(value(&engine, "#field").await, "Aa");
+    let out = act(&engine, key_down("a")).await;
+    assert_eq!(out.warnings, ["a is held already"]);
+    let out = act(&engine, key_up(Some("a"))).await;
+    assert_eq!(out.text, "released a (holding nothing)");
+    assert_eq!(
+        lines(&engine, "#keys", before).await,
+        [
+            "keydown \"a\" KeyA 65 L0 - field trusted",
+            "keypress \"a\" KeyA 97 L0 - field trusted",
+            "input insertText \"a\" field trusted",
+            "keyup \"a\" KeyA 65 L0 - field trusted",
+        ]
+    );
+
+    // Up of a key not held warns; --all releases the last held first.
+    let out = act(&engine, key_up(Some("Alt"))).await;
+    assert_eq!(out.text, "holding nothing");
+    assert_eq!(out.warnings, ["Alt is not held"]);
+    act(&engine, key_down("Control")).await;
+    let out = act(&engine, key_down("Shift")).await;
+    assert_eq!(out.text, "holding Control, Shift");
+    let before = log_len(&engine, "#keys").await;
+    let out = act(&engine, key_up(None)).await;
+    assert_eq!(out.text, "released Shift, Control (holding nothing)");
+    assert_eq!(
+        lines(&engine, "#keys", before).await,
+        [
+            "keyup \"Shift\" ShiftLeft 16 L1 ctrl field trusted",
+            "keyup \"Control\" ControlLeft 17 L1 - field trusted",
+        ]
+    );
+    let out = act(&engine, key_up(None)).await;
+    assert_eq!(out.warnings, ["no key is held"]);
+
+    // Names are checked like press's, one key at a time.
+    let err = fails(&engine, key_down("Shft")).await;
+    assert_eq!(err.kind, ErrorKind::BadArgs);
+    assert_eq!(err.hint.as_deref(), Some("chrome-cdp keyboard down Shift"));
+    let err = fails(&engine, key_down("Shift+a")).await;
+    assert_eq!(err.message, "keyboard down takes one key, not `Shift+a`");
     engine.close().await;
 }

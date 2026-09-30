@@ -1,4 +1,5 @@
-//! The keyboard (plan 05, milestone 5.3): `press` and `type`.
+//! The keyboard (plan 05, milestone 5.3): `press` and `type`; `keyboard
+//! down|up` (plan 14, milestone 14.3) hold keys across commands.
 //!
 //! Keys go where focus is, as a user's do: `--in <loc>` focuses an element
 //! first (after the pipeline, without the hit test: no mouse is used).
@@ -6,24 +7,71 @@
 //! `type` presses the layout's key for each character it has one for and
 //! inserts the rest as text (`Input.insertText`, what an IME does), so
 //! emoji and CJK arrive whole.
+//!
+//! Keys `keyboard down` holds are kept per tab (across navigations, gone
+//! with the tab), as the mouse's buttons are. Held modifiers go with every
+//! later key, mouse, touch and drag event of the tab, as in Playwright;
+//! `fill` sets text without them.
 
 use std::fmt::Write as _;
 use std::time::Duration;
 
 use cdp::domains::{browser as cdp_browser, dom, input, runtime};
-use protocol::schema::{ActedElement, KeysData};
+use protocol::schema::{ActedElement, KeyboardData, KeysData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use tokio::time::Instant;
 
-use super::keys::{self, Key, KeyEvent};
+use super::keys::{self, Key, KeyEvent, Mod};
 use super::report::{FOCUS_DEPTH, FOCUS_FRAME_WAIT};
 use super::{Actor, Checks, Ready, describe};
 use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::injected::{self, GUARD};
-use crate::request::{Action, Modifier};
+use crate::request::{Action, KeyboardOp, Modifier};
 use crate::snapshot::{NodeKey, Target};
+
+/// Checks a `keyboard` command's key: one known key, not a chord.
+pub(super) fn check(op: &KeyboardOp) -> Result<(), ErrorInfo> {
+    let (KeyboardOp::Down { key: name } | KeyboardOp::Up { key: Some(name) }) = op else {
+        return Ok(());
+    };
+    let command = format!("keyboard {}", op.command());
+    let chords = match keys::parse(name) {
+        Ok(chords) => chords,
+        Err(message) => {
+            let info = ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("{message}; name keys like Shift, Control, Mod, Enter, a or A"),
+            );
+            return Err(match keys::suggest(name) {
+                Some(fixed) => info
+                    .note("did you mean", &fixed)
+                    .hint(Hint::run(Cmd::new(&command).arg(fixed))),
+                None => info.hint(Hint::run(Cmd::new(&command).arg("Shift"))),
+            });
+        }
+    };
+    if let [chord] = chords.as_slice()
+        && let [_] = chord.as_slice()
+    {
+        return Ok(());
+    }
+    let first = chords
+        .first()
+        .and_then(|chord| chord.first())
+        .cloned()
+        .unwrap_or_default();
+    Err(ErrorInfo::new(
+        ErrorKind::BadArgs,
+        format!("{command} takes one key, not `{name}`"),
+    )
+    .hint(
+        Hint::run(Cmd::new(&command).arg(first))
+            .why("one key per command")
+            .or(format!("{}   (a whole chord)", Cmd::new("press").arg(name))),
+    ))
+}
 
 impl Actor<'_> {
     /// Whether the browser runs on macOS (asked once per browser): `Mod`
@@ -106,13 +154,34 @@ impl Actor<'_> {
         Ok(())
     }
 
-    /// Presses and releases `key` alone.
-    async fn tap_key(&self, key: Key) -> Result<(), ErrorInfo> {
+    /// The modifiers `keyboard down` holds in the tab.
+    pub(super) fn held_modifiers(&self) -> Vec<Mod> {
+        self.running
+            .tabs
+            .keys(self.page.id, |keys| {
+                keys.iter().filter_map(Key::modifier).collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The `modifiers` bits of what `keyboard down` holds in the tab, for
+    /// mouse and touch events.
+    pub(super) fn held_bits(&self) -> i64 {
+        keys::bits(&self.held_modifiers())
+    }
+
+    /// Presses and releases `key` alone (with the modifiers `keyboard
+    /// down` holds; another than Shift makes it type nothing).
+    async fn tap_key(&self, mut key: Key) -> Result<(), ErrorInfo> {
+        let held = self.held_modifiers();
+        if held.iter().any(|m| *m != Mod::Shift) {
+            key.text = "";
+        }
         for down in [true, false] {
             let event = KeyEvent {
                 down,
                 key,
-                modifiers: 0,
+                modifiers: keys::bits(&held),
                 commands: Vec::new(),
             };
             self.key_event(&event).await?;
@@ -135,9 +204,10 @@ impl Actor<'_> {
     pub(super) async fn press_chords(&self, keys: &str) -> Result<Vec<String>, ErrorInfo> {
         let chords = keys::parse(keys).map_err(|m| ErrorInfo::new(ErrorKind::BadArgs, m))?;
         let mac = self.mac().await?;
+        let held = self.held_modifiers();
         let mut pressed = Vec::new();
         for chord in &chords {
-            let events = keys::chord_events(chord, mac)
+            let events = keys::chord_events(chord, mac, &held)
                 .map_err(|m| ErrorInfo::new(ErrorKind::BadArgs, m))?;
             for event in &events {
                 self.key_event(event).await?;
@@ -461,5 +531,98 @@ impl Actor<'_> {
             ),
         )
         .hint(Hint::run(retry))
+    }
+
+    /// `keyboard down <key>` and `keyboard up <key>|--all`.
+    pub(super) async fn keyboard(&self, op: &KeyboardOp) -> Result<Output, ErrorInfo> {
+        let mac = self.mac().await?;
+        let held: Vec<Key> = self
+            .running
+            .tabs
+            .keys(self.page.id, |keys| keys.clone())
+            .unwrap_or_default();
+        let modifiers = |keys: &[Key]| keys.iter().filter_map(Key::modifier).collect::<Vec<_>>();
+        let bad = |message: String| ErrorInfo::new(ErrorKind::BadArgs, message);
+        let mut warnings = Vec::new();
+        let mut released = Vec::new();
+        let mut now = held.clone();
+        match op {
+            KeyboardOp::Down { key: name } => {
+                let key = keys::resolve(name, mac, &modifiers(&held)).map_err(bad)?;
+                if held.iter().any(|h| h.code == key.code) {
+                    warnings.push(format!("{} is held already", key.key));
+                } else {
+                    let event = keys::down_event(key, mac, &modifiers(&held));
+                    self.key_event(&event).await?;
+                    now.push(key);
+                    self.set_keys(&now);
+                }
+            }
+            KeyboardOp::Up { key: Some(name) } => {
+                let code = keys::resolve(name, mac, &[]).map_err(bad)?.code;
+                match held.iter().position(|h| h.code == code) {
+                    None => warnings.push(format!("{name} is not held")),
+                    Some(at) => {
+                        let key = now.remove(at);
+                        self.release_key(key, &now).await?;
+                        released.push(key.key.to_owned());
+                    }
+                }
+            }
+            KeyboardOp::Up { key: None } => {
+                if held.is_empty() {
+                    warnings.push("no key is held".to_owned());
+                }
+                while let Some(key) = now.pop() {
+                    self.release_key(key, &now).await?;
+                    released.push(key.key.to_owned());
+                }
+            }
+        }
+        let names: Vec<String> = now.iter().map(|k| k.key.to_owned()).collect();
+        let holding = if names.is_empty() {
+            "holding nothing".to_owned()
+        } else {
+            format!("holding {}", names.join(", "))
+        };
+        let text = if released.is_empty() {
+            holding
+        } else {
+            format!("released {} ({holding})", released.join(", "))
+        };
+        let data = KeyboardData {
+            tab: self.tab(),
+            action: op.command().to_owned(),
+            key: match op {
+                KeyboardOp::Down { key } | KeyboardOp::Up { key: Some(key) } => Some(key.clone()),
+                KeyboardOp::Up { key: None } => None,
+            },
+            released,
+            held: names.clone(),
+        };
+        Ok(warnings.into_iter().fold(
+            Output::typed(&data, text).quiet(names.join(",")),
+            Output::warning,
+        ))
+    }
+
+    /// Sends `key`'s up with `rest` still held, and keeps `rest`.
+    async fn release_key(&self, key: Key, rest: &[Key]) -> Result<(), ErrorInfo> {
+        let modifiers: Vec<Mod> = rest.iter().filter_map(Key::modifier).collect();
+        let event = KeyEvent {
+            down: false,
+            key,
+            modifiers: keys::bits(&modifiers),
+            commands: Vec::new(),
+        };
+        self.key_event(&event).await?;
+        self.set_keys(rest);
+        Ok(())
+    }
+
+    fn set_keys(&self, keys: &[Key]) {
+        self.running
+            .tabs
+            .keys(self.page.id, |held| *held = keys.to_vec());
     }
 }

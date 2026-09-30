@@ -18,7 +18,7 @@ around it. **The v1 gate: no ❌ in an agent-critical row.** A test
 (`crates/chrome-cdp/tests/parity.rs`) holds the tables to that, checks the
 counts below, and checks that every command a row names exists.
 
-Today: 129 rows; 110 ✅, 14 🟡, 0 ❌, 5 ➖. No row is ❌.
+Today: 129 rows; 111 ✅, 13 🟡, 0 ❌, 5 ➖. No row is ❌.
 
 ## Navigation
 
@@ -78,7 +78,7 @@ Today: 129 rows; 110 ✅, 14 🟡, 0 ❌, 5 ➖. No row is ❌.
 | `fill`, `clear` | `fill LOC text`, `fill LOC ''` | ✅ | yes |
 | `pressSequentially`, `keyboard.type` | `type text --in LOC --delay 50ms` | ✅ | yes |
 | `press`, `keyboard.press` | `press Enter --in LOC`, `press Control+A`, `Mod+A` | ✅ | yes |
-| `keyboard.down` / `up` | `click --modifiers`, a chord (`press Shift+ArrowDown`), or `cdp Input.dispatchKeyEvent` | 🟡 | no |
+| `keyboard.down` / `up` | `keyboard down Shift`, `keyboard up Shift` / `--all`: held modifiers go with later clicks, keys, `mouse` and `drag` | ✅ | no |
 | `check`, `uncheck`, `setChecked` | `check LOC`, `uncheck LOC` (a no-op when already so) | ✅ | yes |
 | `selectOption` | `select LOC value…` (a value, else a label) | ✅ | yes |
 | `setInputFiles`, the file chooser | `upload LOC file…` (an input, or a button that opens the chooser), `upload LOC --clear`; `upload LOC file… --drop` for a drop zone | ✅ | yes |

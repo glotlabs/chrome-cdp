@@ -40,6 +40,7 @@ use serde_json::Value;
 use tokio::time::Instant;
 
 pub use actionability::{ActionPoint, Checks};
+pub(crate) use keys::Key;
 pub(crate) use mouse::Pointer;
 pub use mouse::parse_modifiers;
 
@@ -104,6 +105,7 @@ pub fn check_action(req: &ActionRequest) -> Result<(), ErrorInfo> {
             }
         }
         Action::Mouse(op) => mouse::check(op)?,
+        Action::Keyboard(op) => keyboard::check(op)?,
         Action::Press { keys, locator } => {
             if let Some(locator) = locator {
                 options.parse(locator)?;
@@ -261,6 +263,7 @@ impl Actor<'_> {
                 self.pointer().await
             }
             Action::Mouse(op) => self.mouse(*op).await,
+            Action::Keyboard(op) => self.keyboard(op).await,
             Action::Drag { .. } => self.drag().await,
             Action::Scroll { .. } => self.scroll().await,
             Action::Press { .. } => self.press_keys().await,
@@ -348,7 +351,7 @@ impl Actor<'_> {
                     _ => cmd,
                 }
             }
-            Action::Mouse(_) => cmd,
+            Action::Mouse(_) | Action::Keyboard(_) => cmd,
             Action::Press { keys, .. } => cmd.arg(keys).flag("in", locator),
             Action::Type { text, delay_ms, .. } => {
                 let cmd = cmd.arg(text).flag("in", locator);

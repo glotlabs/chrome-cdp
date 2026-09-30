@@ -890,6 +890,26 @@ Examples:
     )]
     Mouse(MouseArgs),
 
+    /// Hold keys down across commands (Shift while clicking, …).
+    #[command(
+        subcommand_required = true,
+        arg_required_else_help = true,
+        after_help = "\
+`keyboard down` presses a key and holds it; `keyboard up` releases it.
+Held modifiers (Shift, Control, Alt, Meta, Mod) go with the tab's later
+click, dblclick, press, type, mouse and drag events, as a user's held key
+does. Keys stay held across navigations and are dropped when the tab
+closes; `status` lists them. For a shortcut, `press Control+A` is simpler.
+
+Examples:
+  chrome-cdp keyboard down Shift
+  chrome-cdp click e7                      # a Shift+click
+  chrome-cdp click e9                      # extends the selection
+  chrome-cdp keyboard up Shift
+  chrome-cdp keyboard up --all"
+    )]
+    Keyboard(KeyboardArgs),
+
     /// Press keys or shortcuts: Enter, Control+A, "Mod+A Backspace".
     #[command(after_help = "\
 Keys go where focus is, as a user's do; --in focuses an element first.
@@ -2822,6 +2842,60 @@ Examples:
   chrome-cdp mouse wheel 0 -400"
     )]
     Wheel(MouseWheelArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct KeyboardArgs {
+    #[command(subcommand)]
+    pub(crate) command: KeyboardCommand,
+
+    #[command(flatten)]
+    pub(crate) after: AfterArgs,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum KeyboardCommand {
+    /// Press a key and hold it until `keyboard up`.
+    #[command(after_help = "\
+Name the key as `press` does: Shift, Control, Alt, Meta, Mod (Meta on
+macOS, Control elsewhere), Enter, a, A, … A held key is not pressed again.
+
+Examples:
+  chrome-cdp keyboard down Shift
+  chrome-cdp keyboard down Mod
+  chrome-cdp keyboard down a               # a keydown the page sees, held")]
+    Down(KeyboardDownArgs),
+
+    /// Release a held key, or all of them.
+    #[command(after_help = "\
+A key that is not held is a warning, not an error.
+
+Examples:
+  chrome-cdp keyboard up Shift
+  chrome-cdp keyboard up --all")]
+    Up(KeyboardUpArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct KeyboardDownArgs {
+    /// The key: Shift, Control, Mod, Enter, a, …
+    #[arg(value_name = "KEY")]
+    pub(crate) key: String,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct KeyboardUpArgs {
+    /// The key to release.
+    #[arg(
+        value_name = "KEY",
+        required_unless_present = "all",
+        conflicts_with = "all"
+    )]
+    pub(crate) key: Option<String>,
+
+    /// Release every held key, the last held first.
+    #[arg(long)]
+    pub(crate) all: bool,
 }
 
 #[derive(Debug, Args)]

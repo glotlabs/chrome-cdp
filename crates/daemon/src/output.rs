@@ -81,6 +81,14 @@ pub fn status(data: &StatusData) -> Output {
     if let Some(tabs) = data.tabs {
         let _ = write!(text, "\ntabs: {tabs}");
     }
+    for held in &data.held_keys {
+        let _ = write!(
+            text,
+            "\nkeys held in {}: {}",
+            held.tab,
+            held.keys.join(", ")
+        );
+    }
     if let Some(dropped) = data.worker_events_dropped {
         let _ = write!(
             text,
@@ -153,6 +161,7 @@ pub fn stopped(session: &str, dir: &Path, logs: Option<Vec<String>>) -> StatusDa
         dir: dir.display().to_string(),
         logs,
         worker_events_dropped: None,
+        held_keys: Vec::new(),
     }
 }
 

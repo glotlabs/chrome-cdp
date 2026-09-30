@@ -42,7 +42,7 @@ mod test;
 mod upgrade;
 mod version;
 
-use cli::{Cli, ClipboardCommand, Command};
+use cli::{Cli, ClipboardCommand, Command, KeyboardCommand};
 
 fn main() -> ExitCode {
     let parsed = Cli::command()
@@ -363,6 +363,19 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         ),
         Some(Command::Mouse(args)) => session::act(
             engine::Action::Mouse(mouse_op(&args.command)),
+            false,
+            &args.after,
+            &cli.global,
+        ),
+        Some(Command::Keyboard(args)) => session::act(
+            engine::Action::Keyboard(match &args.command {
+                KeyboardCommand::Down(down) => engine::KeyboardOp::Down {
+                    key: down.key.clone(),
+                },
+                KeyboardCommand::Up(up) => engine::KeyboardOp::Up {
+                    key: up.key.clone(),
+                },
+            }),
             false,
             &args.after,
             &cli.global,

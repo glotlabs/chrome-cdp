@@ -649,6 +649,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<Acted<MouseData>>),
     },
     CommandSchema {
+        name: "keyboard down",
+        summary: "the key pressed and the keys held now",
+        schema: || schema_for!(Envelope<Acted<KeyboardData>>),
+    },
+    CommandSchema {
+        name: "keyboard up",
+        summary: "the keys released and the keys still held",
+        schema: || schema_for!(Envelope<Acted<KeyboardData>>),
+    },
+    CommandSchema {
         name: "drag",
         summary: "the elements dragged from and to, the points, and how",
         schema: || schema_for!(Envelope<Acted<DragResult>>),
@@ -1266,6 +1276,18 @@ pub struct StatusData {
     /// no tab had a frame on the origin of, so no tab's log has them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worker_events_dropped: Option<u64>,
+    /// The keys `keyboard down` holds, per tab (only tabs that hold some).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub held_keys: Vec<HeldKeys>,
+}
+
+/// The keys a tab holds (`status`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HeldKeys {
+    /// The tab, e.g. `t1`.
+    pub tab: String,
+    /// Its held keys, in the order they went down.
+    pub keys: Vec<String>,
 }
 
 /// `data` of `chrome-cdp sessions --json`.
@@ -2906,6 +2928,23 @@ pub struct MouseData {
     /// The wheel's deltas (`wheel`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delta: Option<Point>,
+}
+
+/// `data` of `chrome-cdp keyboard down|up --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct KeyboardData {
+    /// The tab acted in, e.g. `t1`.
+    pub tab: String,
+    /// `down` or `up`.
+    pub action: String,
+    /// The key as given (none for `up --all`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    /// The keys released (`up`), by their `key` names.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub released: Vec<String>,
+    /// The keys held now, in the order they went down, e.g. `["Shift"]`.
+    pub held: Vec<String>,
 }
 
 /// `data` of `chrome-cdp drag --json`.

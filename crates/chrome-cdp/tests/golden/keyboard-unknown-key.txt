@@ -1,0 +1,12 @@
+$ chrome-cdp keyboard down Shft
+exit: 2
+--- stderr
+error: unknown key `Shft`; name keys like Shift, Control, Mod, Enter, a or A
+  did you mean: Shift
+  hint: chrome-cdp keyboard down Shift
+
+$ chrome-cdp keyboard down Shft --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"unknown key `Shft`; name keys like Shift, Control, Mod, Enter, a or A","hint":"chrome-cdp keyboard down Shift","notes":[{"label":"did you mean","text":"Shift"}]}}
+

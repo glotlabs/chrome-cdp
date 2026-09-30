@@ -11,6 +11,8 @@
 //!
 //! To accept new output: `UPDATE_GOLDEN=1 cargo test -p chrome-cdp --test
 //! golden` (with `CHROME_PATH` set, or the Chrome cases are not written).
+//! `GOLDEN_CASES=keyboard,status` runs only the cases whose names hold one
+//! of those words.
 
 #![allow(clippy::unwrap_used, clippy::print_stderr)]
 
@@ -2688,6 +2690,46 @@ const CASES: &[Case] = &[
         fixture: Fixture::Session,
     },
     Case {
+        name: "keyboard-down",
+        args: &["keyboard", "down", "Shift"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "keyboard-up",
+        args: &["keyboard", "up", "--all"],
+        modes: &[""],
+        fixture: Fixture::SessionAfter(&[
+            &["open"],
+            &["keyboard", "down", "Control"],
+            &["keyboard", "down", "Shift"],
+        ]),
+    },
+    Case {
+        name: "keyboard-up-not-held",
+        args: &["keyboard", "up", "Alt"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "keyboard-unknown-key",
+        args: &["keyboard", "down", "Shft"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "keyboard-chord",
+        args: &["keyboard", "down", "Shift+a"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "status-held-keys",
+        args: &["status"],
+        modes: &["", "--json"],
+        fixture: Fixture::SessionAfter(&[&["open"], &["keyboard", "down", "Shift"]]),
+    },
+    Case {
         name: "drag",
         args: &["drag", "#card1", "#done"],
         modes: ALL,
@@ -3157,7 +3199,14 @@ fn shell_words(arg: &str) -> String {
 fn command_output_matches_golden_files() {
     let base = Normalizer::new();
     let mut failures = Vec::new();
+    // `GOLDEN_CASES=keyboard,status`: only the cases whose names hold one
+    // of these, while working on them.
+    let only = std::env::var("GOLDEN_CASES").unwrap_or_default();
+    let only: Vec<&str> = only.split(',').filter(|s| !s.is_empty()).collect();
     for case in CASES {
+        if !only.is_empty() && !only.iter().any(|o| case.name.contains(o)) {
+            continue;
+        }
         let Some(actual) = run_case(case, &base) else {
             continue;
         };
