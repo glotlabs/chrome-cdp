@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Forms: two forms</title>
+<!-- Two forms on one page (plan 16, 16.4): a login form with a submit
+     button, and a newsletter form without one (Enter in its field
+     submits it). A filter box outside both is in no form. Submitting
+     shows what was sent in #sent. -->
+<style>body { margin: 8px; font: 16px sans-serif; } label { display: block; margin: 6px 0; }</style>
+<label>Filter <input type="search" id="filter"></label>
+<form id="login" aria-label="Log in">
+  <label>Email <input type="email" name="email" required></label>
+  <label>Password <input type="password" name="password" required></label>
+  <label><input type="checkbox" name="remember"> Remember me</label>
+  <button>Sign in</button>
+</form>
+<form id="newsletter" aria-label="Newsletter" action="/subscribe">
+  <label>Your email <input type="email" name="subscriber" placeholder="you@example.com"></label>
+</form>
+<pre id="sent"></pre>
+<script>
+  for (const form of document.forms) {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const data = Object.fromEntries(new FormData(form));
+      document.getElementById('sent').textContent = `${form.id} ${JSON.stringify(data)}`;
+    });
+  }
+</script>
+</html>
