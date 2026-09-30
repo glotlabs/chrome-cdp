@@ -1,0 +1,16 @@
+$ chrome-cdp open --downloads-dir <sandbox>/dl
+exit: 0
+--- stdout
+session default is already open: Chrome/<version>, headless, temporary profile, pid <pid>
+downloads: <sandbox>/dl
+
+$ chrome-cdp open --downloads-dir <sandbox>/dl --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"browser":{"headless":true,"kind":"launched","path":"<chrome>","pid":<pid>,"product":"Chrome/<version>","profile":{"dir":"<sandbox>/tmp/chrome-cdp-<rand>/profile","kind":"temporary"},"source":"given by CHROME_CDP_CHROME"},"downloads_dir":"<sandbox>/dl","session":"default","started":false}}
+
+$ chrome-cdp open --downloads-dir <sandbox>/dl -q
+exit: 0
+--- stdout
+default
+

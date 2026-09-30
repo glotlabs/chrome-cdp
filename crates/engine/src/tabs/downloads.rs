@@ -113,7 +113,7 @@ pub(super) fn progress(shared: &Shared, event: &RawEvent) {
             return;
         }
     };
-    let dir = shared.settings.downloads_dir.clone();
+    let dir = shared.settings.downloads_dir();
     let mut state = shared.lock();
     let Some(download) = state.downloads.iter_mut().find(|d| d.guid == progress.guid) else {
         return;
@@ -200,7 +200,30 @@ impl State {
 impl Tabs {
     /// Where the session's downloads go, if the session manages them.
     pub(crate) fn downloads_dir(&self) -> Option<PathBuf> {
-        self.shared.settings.downloads_dir.clone()
+        self.shared.settings.downloads_dir()
+    }
+
+    /// `downloads --clear`: forgets every finished download, deleting
+    /// the files of the completed ones. Returns the files deleted and the
+    /// downloads still in progress (kept).
+    pub(crate) fn clear_downloads(&self) -> (Vec<PathBuf>, Vec<DownloadInfo>) {
+        let mut state = self.shared.lock();
+        let (done, kept): (Vec<Download>, Vec<Download>) =
+            state.downloads.drain(..).partition(Download::done);
+        state.downloads = kept;
+        let kept = state.downloads.iter().map(Download::info).collect();
+        drop(state);
+        self.shared.bump();
+        let mut deleted = Vec::new();
+        for path in done.into_iter().filter_map(|d| d.path) {
+            match std::fs::remove_file(&path) {
+                Ok(()) => deleted.push(path),
+                // Already gone (the user deleted it): nothing to do.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => tracing::warn!("cannot delete {}: {e}", path.display()),
+            }
+        }
+        (deleted, kept)
     }
 
     /// Every download the session remembers, oldest first.

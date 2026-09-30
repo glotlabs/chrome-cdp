@@ -27,6 +27,9 @@ pub fn opened(opened: &Opened) -> Output {
     if let Some(device) = &data.device {
         let _ = write!(text, "\ndevice: {device}");
     }
+    if let Some(dir) = &data.downloads_dir {
+        let _ = write!(text, "\ndownloads: {dir}");
+    }
     if let Some(state) = &data.state {
         let plural = |n: usize, what: &str| format!("{n} {what}{}", if n == 1 { "" } else { "s" });
         let _ = write!(

@@ -81,7 +81,7 @@ Today: 129 rows; 111 ✅, 13 🟡, 0 ❌, 5 ➖. No row is ❌.
 | `keyboard.down` / `up` | `keyboard down Shift`, `keyboard up Shift` / `--all`: held modifiers go with later clicks, keys, `mouse` and `drag` | ✅ | no |
 | `check`, `uncheck`, `setChecked` | `check LOC`, `uncheck LOC` (a no-op when already so) | ✅ | yes |
 | `selectOption` | `select LOC value…` (a value, else a label) | ✅ | yes |
-| `setInputFiles`, the file chooser | `upload LOC file…` (an input, or a button that opens the chooser), `upload LOC --clear`; `upload LOC DIR` for a `webkitdirectory` input; `upload LOC file… --drop` for a drop zone | ✅ | yes |
+| `setInputFiles`, the file chooser | `upload LOC file…` (an input, or a button that opens the chooser), `upload LOC --clear`; `upload LOC DIR` for a folder (webkitdirectory) input; `upload LOC file… --drop` for a drop zone | ✅ | yes |
 | `dragTo` | `drag LOC TARGET` (mouse events, or HTML5 drag and drop) | ✅ | yes |
 | `tap` | `tap LOC` (with touch emulation) | ✅ | no |
 | `focus`, `blur` | `focus LOC`, `blur LOC` | ✅ | yes |
@@ -111,7 +111,7 @@ Today: 129 rows; 111 ✅, 13 🟡, 0 ❌, 5 ➖. No row is ❌.
 | Playwright | chrome-cdp | Status | Agent-critical |
 |---|---|---|---|
 | dialogs (`page.on('dialog')`, `accept(text)`) | an alert is accepted; a confirm or prompt exits 5 until `dialog accept [TEXT]` or `dialog dismiss`; `open --dialogs accept` | ✅ | yes |
-| downloads | always accepted into the session's directory; `wait --download -q` prints the path, `downloads` lists them | ✅ | yes |
+| downloads | always accepted into the session's directory (`open --downloads-dir` picks another); `wait --download -q` prints the path, `downloads` lists them, `downloads --clear` deletes them | ✅ | yes |
 | popups | the action reports `→ new tab t2`; `tab t2`, `--tab t2`, `open --follow-popups` | ✅ | yes |
 | frames (`frameLocator`, `contentFrame`, `page.frame`, `page.frames()`) | `'frame=NAME >> LOC'`, an iframe's ref (`'e30 >> text=Pay'`), `eval --frame`, `snapshot --scope`, `frames` lists them; cross-origin iframes too | ✅ | yes |
 | `page.workers()`, `context.serviceWorkers()` | `frames` lists the tab's dedicated, shared and service workers | ✅ | no |

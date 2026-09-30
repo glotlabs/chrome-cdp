@@ -12,7 +12,7 @@ use std::io::Write as _;
 use std::path::Path;
 use std::process::Stdio;
 
-use common::{Sandbox, chrome_path, code, json_out, stderr, stdout};
+use common::{Sandbox, chrome_path, code, json_out, run, stderr, stdout};
 use fixtures::{AUTH_PASSWORD, AUTH_USER, Fixtures};
 
 #[test]
@@ -96,6 +96,122 @@ fn downloads_land_in_the_session_dir() {
     let out = sandbox.run(&["close"]);
     assert_eq!(code(&out), 0, "{}", stderr(&out));
     assert_eq!(std::fs::read(&first).unwrap(), expected);
+}
+
+#[test]
+fn downloads_go_where_open_says_and_clear_deletes_them() {
+    let Some(chrome) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let report = site.url("/downloads/report.txt?download=report.txt");
+    let first_dir = sandbox.dir.path().join("dl/first");
+    let second_dir = sandbox.dir.path().join("dl/second");
+
+    // A relative --downloads-dir is the CLI's, and is created.
+    let out = run(sandbox.cli().current_dir(sandbox.dir.path()).args([
+        "open",
+        "--downloads-dir",
+        "dl/first",
+        &site.url("/nav/a.html"),
+    ]));
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert!(first_dir.is_dir());
+    let out = sandbox.run(&["goto", &report, "-q"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let first = first_dir.join("report.txt");
+    assert_eq!(stdout(&out).trim_end(), first.display().to_string());
+
+    // Given to a running browser, it applies at once.
+    let second = second_dir.to_string_lossy().into_owned();
+    let out = sandbox.run(&["open", "--downloads-dir", &second]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["goto", &report, "-q"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let second_file = second_dir.join("report.txt");
+    assert_eq!(stdout(&out).trim_end(), second_file.display().to_string());
+    let out = sandbox.run(&["downloads", "--json"]);
+    assert_eq!(json_out(&out)["data"]["dir"], second);
+
+    // --clear deletes what chrome-cdp saved, and nothing else.
+    let other = second_dir.join("mine.txt");
+    std::fs::write(&other, "not a download").unwrap();
+    let out = sandbox.run(&["downloads", "--clear"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert_eq!(
+        stdout(&out),
+        "deleted 2 downloaded files; the list is empty\n"
+    );
+    assert!(!first.exists());
+    assert!(!second_file.exists());
+    assert!(other.exists());
+    let out = sandbox.run(&["downloads", "--json"]);
+    assert_eq!(json_out(&out)["data"]["downloads"], serde_json::json!([]));
+    let out = sandbox.run(&["downloads", "--clear", "--json"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert_eq!(json_out(&out)["data"]["deleted"], serde_json::Value::Null);
+}
+
+#[test]
+fn a_replaced_daemon_keeps_the_downloads_dir_and_says_the_list_restarts() {
+    let Some(chrome) = chrome_path() else { return };
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let dir = sandbox.dir.path().join("dl");
+    let dir_text = dir.to_string_lossy().into_owned();
+    // The browser an older daemon had, as its meta.json says.
+    let out = sandbox.run(&["open", "--session", "other", "--json"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let browser = json_out(&out)["data"]["browser"].clone();
+    assert_eq!(code(&sandbox.run(&["close", "--session", "other"])), 0);
+
+    // A daemon as an older chrome-cdp started it, which opened a browser
+    // with --downloads-dir.
+    let log = std::fs::File::create(sandbox.dir.path().join("old-daemon.log")).unwrap();
+    let mut old = sandbox
+        .cli()
+        .args(["__daemon", "--session", "default", "--build", "0.0.1+old"])
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let session_dir = sandbox.runtime_dir().join("chrome-cdp/default");
+    common::wait_until("the old daemon to listen", || {
+        session_dir.join("sock").exists() && session_dir.join("meta.json").exists()
+    });
+    let meta_path = session_dir.join("meta.json");
+    let mut meta: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&meta_path).unwrap()).unwrap();
+    meta["browser"] = browser;
+    meta["launch"] = serde_json::json!({ "downloads_dir": dir_text, "timeout_ms": 30000 });
+    std::fs::write(&meta_path, serde_json::to_vec(&meta).unwrap()).unwrap();
+
+    // The new daemon opens a browser as the old one had, and its list
+    // starts now.
+    let out = sandbox.run(&["goto", "about:blank"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["downloads", "--json"]);
+    assert_eq!(code(&out), 0, "{}\n{}", stdout(&out), stderr(&out));
+    let json = json_out(&out);
+    assert_eq!(json["data"]["dir"], dir_text);
+    assert!(
+        json["data"]["since"].as_str().unwrap().ends_with('Z'),
+        "{json}"
+    );
+    let warning = json["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|w| w.as_str())
+        .find(|w| w.starts_with("the list starts at "))
+        .unwrap_or_else(|| panic!("{json}"))
+        .to_owned();
+    assert!(
+        warning.ends_with(&format!(
+            "(the session's daemon was replaced); earlier downloads are still in {dir_text}"
+        )),
+        "{warning}"
+    );
+    let _ = old.wait();
+    assert_eq!(code(&sandbox.run(&["close"])), 0);
 }
 
 #[test]

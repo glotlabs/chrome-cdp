@@ -1,0 +1,13 @@
+$ chrome-cdp downloads --clear
+exit: 0
+--- stdout
+deleted 0 downloaded files; the list is empty
+
+$ chrome-cdp downloads --clear --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"dir":"<sandbox>/run/chrome-cdp/default/downloads","downloads":[]}}
+
+$ chrome-cdp downloads --clear -q
+exit: 0
+

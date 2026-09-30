@@ -256,6 +256,16 @@ fn open_in(
         network_buffer: args
             .network_buffer
             .map(|n| usize::try_from(n).unwrap_or(usize::MAX)),
+        downloads_dir: args
+            .downloads_dir
+            .as_deref()
+            .map(input::absolute_path)
+            .transpose()?
+            .map(PathBuf::from),
+        replaced_daemon: session
+            .replaced
+            .as_ref()
+            .is_some_and(|m| m.browser.is_some()),
         timeout_ms: millis(ctx.timeout),
     };
     if let Some(previous) = session.replaced.as_ref().and_then(|m| m.launch.as_ref()) {
@@ -319,6 +329,9 @@ fn keep_previous_options(request: &mut OpenRequest, previous: &OpenRequest) {
     }
     if request.network_buffer.is_none() {
         request.network_buffer = previous.network_buffer;
+    }
+    if request.downloads_dir.is_none() {
+        request.downloads_dir.clone_from(&previous.downloads_dir);
     }
 }
 
@@ -1062,6 +1075,7 @@ pub(crate) fn downloads(args: &DownloadsArgs, global: &GlobalArgs) -> Result<Out
     let ctx = Ctx::new(global)?;
     let mut client = running_session(&ctx)?;
     let request = DownloadsRequest {
+        clear: args.clear,
         timeout_ms: millis(ctx.timeout),
         max_chars: args.max_chars,
     };
@@ -2113,6 +2127,10 @@ fn auto_open(ctx: &Ctx, session: &mut Session) -> Result<Vec<String>, ErrorInfo>
         let mut warnings = chrome.warnings.clone();
         let request = OpenRequest {
             chrome: Some(chrome),
+            replaced_daemon: session
+                .replaced
+                .as_ref()
+                .is_some_and(|m| m.browser.is_some()),
             timeout_ms: millis(ctx.timeout),
             ..previous
         };
@@ -2457,6 +2475,7 @@ mod tests {
             follow_popups: Some(true),
             profile: Some(browser::ProfileChoice::Named("work".into())),
             chrome_args: vec!["--lang=de".into()],
+            downloads_dir: Some("/tmp/dl".into()),
             ..OpenRequest::default()
         };
         let mut request = OpenRequest {
@@ -2468,5 +2487,6 @@ mod tests {
         assert_eq!(request.profile, previous.profile);
         assert_eq!(request.chrome_args, ["--lang=fr"]);
         assert_eq!(request.follow_popups, Some(true));
+        assert_eq!(request.downloads_dir, previous.downloads_dir);
     }
 }

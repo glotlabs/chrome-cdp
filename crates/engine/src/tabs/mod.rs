@@ -141,7 +141,10 @@ pub(crate) struct Settings {
     /// What HTTP authentication challenges are answered with.
     http_credentials: Mutex<Option<HttpCredentials>>,
     /// Where downloads go; `None` leaves Chrome's download behaviour alone.
-    pub(crate) downloads_dir: Option<PathBuf>,
+    downloads_dir: Mutex<Option<PathBuf>>,
+    /// When the downloads list starts (ms since the epoch), if a daemon
+    /// an upgrade replaced had one before.
+    downloads_since: Mutex<Option<u64>>,
     /// How many console entries each tab keeps (`open --console-buffer`).
     console_buffer: AtomicUsize,
     /// How many requests each tab's network log keeps (`open
@@ -164,7 +167,7 @@ impl Settings {
     /// Settings with downloads going to `downloads_dir`.
     pub(crate) fn new(downloads_dir: Option<PathBuf>) -> Self {
         Self {
-            downloads_dir,
+            downloads_dir: Mutex::new(downloads_dir),
             console_buffer: AtomicUsize::new(console::DEFAULT_CAPACITY),
             network_buffer: AtomicUsize::new(netlog::DEFAULT_CAPACITY),
             ..Self::default()
@@ -192,6 +195,25 @@ impl Settings {
             0 => netlog::DEFAULT_CAPACITY,
             n => n,
         }
+    }
+
+    /// Where downloads go (`None`: Chrome's own behaviour).
+    pub(crate) fn downloads_dir(&self) -> Option<PathBuf> {
+        lock(&self.downloads_dir).clone()
+    }
+
+    pub(crate) fn set_downloads_dir(&self, dir: PathBuf) {
+        *lock(&self.downloads_dir) = Some(dir);
+    }
+
+    /// When the downloads list starts, if a replaced daemon had one.
+    pub(crate) fn downloads_since(&self) -> Option<u64> {
+        *lock(&self.downloads_since)
+    }
+
+    /// The downloads list starts at `ms` (the first call counts).
+    pub(crate) fn set_downloads_since(&self, ms: u64) {
+        lock(&self.downloads_since).get_or_insert(ms);
     }
 
     pub(crate) fn set_dialogs(&self, policy: DialogPolicy) {
@@ -431,7 +453,7 @@ impl Tabs {
     pub(crate) async fn init(&self, timeout: Duration) -> cdp::Result<()> {
         let browser = self.conn.browser().with_timeout(timeout);
         self.apply_security(timeout).await?;
-        self.manage_downloads(timeout).await;
+        let _ = self.manage_downloads(timeout).await;
         emulation::apply_permissions(&self.shared, timeout).await;
         browser
             .call(target::SetDiscoverTargetsParams::new(true))
@@ -491,18 +513,20 @@ impl Tabs {
     }
 
     /// Sends downloads to the session's directory (created, user-only),
-    /// with events. A browser that refuses keeps its own behaviour.
-    async fn manage_downloads(&self, timeout: Duration) {
-        let Some(dir) = &self.shared.settings.downloads_dir else {
-            return;
+    /// with events. A browser that refuses keeps its own behaviour; the
+    /// error says why.
+    pub(crate) async fn manage_downloads(&self, timeout: Duration) -> Result<(), String> {
+        let Some(dir) = self.shared.settings.downloads_dir() else {
+            return Ok(());
         };
         let mut builder = std::fs::DirBuilder::new();
         builder.recursive(true);
         #[cfg(unix)]
         std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
-        if let Err(e) = builder.create(dir) {
-            tracing::warn!("cannot create {}: {e}", dir.display());
-            return;
+        if let Err(e) = builder.create(&dir) {
+            let why = format!("cannot create {}: {e}", dir.display());
+            tracing::warn!("{why}");
+            return Err(why);
         }
         let mut params = browser::SetDownloadBehaviorParams::new(
             browser::SetDownloadBehaviorBehavior::AllowAndName,
@@ -511,14 +535,17 @@ impl Tabs {
         params.events_enabled = Some(true);
         let result = self.conn.browser().with_timeout(timeout).call(params).await;
         if let Err(e) = result {
-            tracing::warn!("cannot send downloads to {}: {e}", dir.display());
+            let why = format!("cannot send downloads to {}: {e}", dir.display());
+            tracing::warn!("{why}");
+            return Err(why);
         }
+        Ok(())
     }
 
     /// Gives a browser we leave running (`close` of a connected session)
     /// its own download behaviour back.
     pub(crate) async fn release(&self, timeout: Duration) {
-        if self.shared.settings.downloads_dir.is_none() || self.conn.is_closed() {
+        if self.shared.settings.downloads_dir().is_none() || self.conn.is_closed() {
             return;
         }
         let params =

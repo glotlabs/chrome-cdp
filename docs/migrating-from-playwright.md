@@ -97,7 +97,7 @@ expect .row count 3
 | `page.close()` | `tab close [t2]` | ✅ |
 | `browser.close()` | `close` | ✅ |
 | `browser.version()` | `status` | ✅ |
-| `launch({ downloadsPath })`, `acceptDownloads` | downloads are always accepted into the session's directory: `downloads` | ✅ |
+| `launch({ downloadsPath })`, `acceptDownloads` | downloads are always accepted, into the session's directory or `open --downloads-dir DIR`: `downloads` | ✅ |
 | `context.newCDPSession(page)` | `cdp Domain.method '{…}'` (`--tab`, `--frame`, `--listen` for events) | ✅ |
 | `page.pause()` | `open --headed`, then `inspect` opens DevTools for the tab | 🟡 |
 

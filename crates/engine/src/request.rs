@@ -85,6 +85,14 @@ pub struct OpenRequest {
     /// loading `url`.
     #[serde(default)]
     pub device: Option<String>,
+    /// `--downloads-dir`: where downloads go (absolute; created); `None`
+    /// keeps the session's (`<session dir>/downloads` at first).
+    #[serde(default)]
+    pub downloads_dir: Option<PathBuf>,
+    /// Sent by a CLI whose daemon an upgrade replaced: `downloads` says
+    /// its list starts now.
+    #[serde(default)]
+    pub replaced_daemon: bool,
     /// `--state`: load this storage state (as `state load`) before
     /// loading `url`. Never kept for a later daemon: it holds secrets.
     #[serde(default)]
@@ -844,6 +852,9 @@ pub struct DialogRequest {
 /// `downloads`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadsRequest {
+    /// `--clear`: delete the files of finished downloads and forget them.
+    #[serde(default)]
+    pub clear: bool,
     pub timeout_ms: u64,
     /// The output budget (0 = none).
     pub max_chars: usize,

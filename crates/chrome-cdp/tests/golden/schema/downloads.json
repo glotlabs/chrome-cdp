@@ -86,16 +86,30 @@
     "DownloadsData": {
       "description": "`data` of `chrome-cdp downloads --json`.",
       "properties": {
+        "deleted": {
+          "description": "`--clear`: the files deleted.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "dir": {
           "description": "The session's downloads directory.",
           "type": "string"
         },
         "downloads": {
-          "description": "Every download of the session, oldest first.",
+          "description": "Every download of the session, oldest first (after `--clear`, the\nones still in progress).",
           "items": {
             "$ref": "#/$defs/DownloadInfo"
           },
           "type": "array"
+        },
+        "since": {
+          "description": "When the list starts (RFC 3339, UTC), if the session's daemon was\nreplaced (an upgrade): downloads before it are not listed.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [

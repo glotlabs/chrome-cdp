@@ -45,6 +45,7 @@ command chrome-cdp open
   flag --ignore-https-errors
   flag --bypass-service-worker
   flag --dialogs value=POLICY values=auto|accept|dismiss|manual
+  flag --downloads-dir value=DIR
   flag --http-credentials value=USER:PASSWORD env=CHROME_CDP_HTTP_CREDENTIALS
   flag --http-credentials-origin value=ORIGIN env=CHROME_CDP_HTTP_CREDENTIALS_ORIGIN
   flag --console-buffer value=N env=CHROME_CDP_CONSOLE_BUFFER
@@ -348,6 +349,7 @@ command chrome-cdp dialog accept
   arg TEXT
 command chrome-cdp dialog dismiss
 command chrome-cdp downloads
+  flag --clear
   flag --max-chars value=N
 command chrome-cdp console
   flag --level value=LEVEL values=error|warn|info|debug

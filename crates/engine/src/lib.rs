@@ -320,7 +320,24 @@ impl Engine {
         if let Some(device) = &req.device {
             emulate::find_device(device, &self.session)?;
         }
+        if let Some(dir) = &req.downloads_dir {
+            std::fs::create_dir_all(dir).map_err(|e| {
+                ErrorInfo::new(
+                    ErrorKind::BadArgs,
+                    format!("--downloads-dir: cannot create {}: {e}", dir.display()),
+                )
+            })?;
+        }
         let _lifecycle = self.lifecycle.lock().await;
+        if let Some(dir) = &req.downloads_dir {
+            self.settings.set_downloads_dir(dir.clone());
+        }
+        if req.replaced_daemon {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
+            self.settings.set_downloads_since(now);
+        }
         if let Some(follow) = req.follow_popups {
             self.settings.set_follow_popups(follow);
         }
@@ -367,6 +384,11 @@ impl Engine {
                 }
                 if req.http_credentials.is_some() || req.bypass_service_worker.is_some() {
                     running.tabs.apply_interception(timeout, true).await;
+                }
+                if req.downloads_dir.is_some()
+                    && let Err(why) = running.tabs.manage_downloads(timeout).await
+                {
+                    warnings.push(why);
                 }
                 (running, false)
             }
@@ -417,6 +439,10 @@ impl Engine {
                     .as_ref()
                     .and(self.settings.emulation.get().device),
                 state,
+                downloads_dir: req
+                    .downloads_dir
+                    .as_ref()
+                    .map(|dir| dir.display().to_string()),
             },
             warnings,
         })
@@ -526,6 +552,7 @@ impl Engine {
                         page: None,
                         device: None,
                         state: None,
+                        downloads_dir: None,
                     },
                     warnings,
                 });
@@ -603,6 +630,7 @@ impl Engine {
                 page: None,
                 device: None,
                 state: None,
+                downloads_dir: None,
             },
             warnings,
         })

@@ -526,7 +526,12 @@ Downloads go to the session's `downloads` directory, named as the server
 suggests (`report (1).pdf` if the name is taken). `goto` to a file waits for
 it and prints `downloaded: report.pdf (12KB) → /path/report.pdf`, a command
 that starts one says so, `wait --download` waits for one to finish, and
-`downloads` lists them. A tab whose page crashed fails commands with exit
+`downloads` lists them. `open --downloads-dir ./downloads` sends them
+elsewhere (at once in a running browser, and kept by the session), and
+`downloads --clear` deletes the files of finished downloads and empties the
+list; nothing else in the directory is touched. The list is the daemon's:
+after an upgrade replaced it, `downloads` says when the new list starts. A
+tab whose page crashed fails commands with exit
 code 4 until `reload` (or `goto`) loads it again. `open --http-credentials
 user:password` (or `-` to read them from stdin) answers HTTP basic and digest
 authentication.

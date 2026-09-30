@@ -1220,6 +1220,9 @@ pub struct OpenData {
     /// The storage state loaded (`--state`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<StateData>,
+    /// Where downloads go now (`--downloads-dir`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub downloads_dir: Option<String>,
 }
 
 /// `data` of `chrome-cdp close --json`.
@@ -1404,8 +1407,16 @@ pub struct DownloadInfo {
 pub struct DownloadsData {
     /// The session's downloads directory.
     pub dir: String,
-    /// Every download of the session, oldest first.
+    /// Every download of the session, oldest first (after `--clear`, the
+    /// ones still in progress).
     pub downloads: Vec<DownloadInfo>,
+    /// `--clear`: the files deleted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deleted: Vec<String>,
+    /// When the list starts (RFC 3339, UTC), if the session's daemon was
+    /// replaced (an upgrade): downloads before it are not listed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<String>,
 }
 
 /// How severe a console entry is, most severe first. `--level warn`

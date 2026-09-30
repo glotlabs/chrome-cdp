@@ -223,6 +223,7 @@ Examples:
   chrome-cdp open --restart --chrome-arg=--window-size=1920,1080
   chrome-cdp open --follow-popups                   # popups become the active tab
   chrome-cdp open --dialogs dismiss                 # answer every dialog with Cancel
+  chrome-cdp open --downloads-dir ./downloads       # downloads land there
   chrome-cdp open --http-credentials ada:s3cret http://localhost:8080/admin
   chrome-cdp open --extension ./my-extension         # prints its chrome-extension:// origin")]
     Open(OpenArgs),
@@ -1080,13 +1081,17 @@ Examples:
 
     /// List the files the session's pages downloaded.
     #[command(after_help = "\
-Downloads go to the session's downloads directory, named as the server
-suggests (made unique). A command that starts one says so; `wait
---download` waits for it to finish.
+Downloads go to the session's downloads directory (`open --downloads-dir`
+picks another), named as the server suggests (made unique). A command that
+starts one says so; `wait --download` waits for it to finish. --clear
+deletes the files of finished downloads and empties the list; downloads
+still in progress are kept, and no other file is touched. The list is the
+daemon's: after an upgrade replaced it, it starts again (and says so).
 
 Examples:
   chrome-cdp downloads
-  chrome-cdp downloads -q         # one path per line")]
+  chrome-cdp downloads -q         # one path per line
+  chrome-cdp downloads --clear")]
     Downloads(DownloadsArgs),
 
     /// Show what the page logged: console calls, uncaught exceptions and
@@ -2258,6 +2263,12 @@ pub(crate) struct OpenArgs {
     #[arg(long, value_enum, value_name = "POLICY")]
     pub(crate) dialogs: Option<Dialogs>,
 
+    /// Save downloads in this directory (created; relative to the current
+    /// one) instead of the session's. The session keeps this setting; it
+    /// applies to a running browser too.
+    #[arg(long, value_name = "DIR")]
+    pub(crate) downloads_dir: Option<PathBuf>,
+
     /// Answer HTTP authentication (basic, digest) with USER:PASSWORD; `-`
     /// reads it from stdin. The session keeps it; it applies to a running
     /// browser too. Every origin that asks gets it, unless
@@ -3212,6 +3223,10 @@ pub(crate) struct MarkdownArgs {
 
 #[derive(Debug, Args)]
 pub(crate) struct DownloadsArgs {
+    /// Delete the files of finished downloads and forget them.
+    #[arg(long)]
+    pub(crate) clear: bool,
+
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,

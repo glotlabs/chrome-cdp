@@ -672,6 +672,7 @@ impl Daemon {
             restart: false,
             // It holds secrets, and a later daemon must not load it again.
             state: None,
+            replaced_daemon: false,
             ..p.request.clone()
         };
         let result = self.engine.open(p.request).await;
@@ -753,6 +754,9 @@ fn keep_settings(launch: &mut OpenRequest, newer: &OpenRequest) {
     if newer.network_buffer.is_some() {
         launch.network_buffer = newer.network_buffer;
     }
+    if newer.downloads_dir.is_some() {
+        launch.downloads_dir.clone_from(&newer.downloads_dir);
+    }
 }
 
 fn millis(d: Duration) -> u64 {
@@ -817,10 +821,12 @@ mod tests {
         let newer = OpenRequest {
             headed: Some(false),
             dialogs: Some(DialogPolicy::Dismiss),
+            downloads_dir: Some("/tmp/dl".into()),
             ..OpenRequest::default()
         };
         keep_settings(&mut launch, &newer);
         assert_eq!(launch.dialogs, Some(DialogPolicy::Dismiss));
+        assert_eq!(launch.downloads_dir, newer.downloads_dir);
         assert_eq!(launch.follow_popups, Some(true));
         // Launch options are not settings.
         assert_eq!(launch.headed, Some(true));

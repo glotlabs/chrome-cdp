@@ -28,6 +28,7 @@ Options:
 - `--ignore-https-errors`: Load pages despite certificate errors (self-signed test servers). The session keeps this setting; it applies to a running browser too
 - `--bypass-service-worker`: Send requests past service workers to the network, even without routes (routes always do, since a service worker would answer before them). The session keeps this setting; it applies to a running browser too
 - `--dialogs <POLICY>`: How to answer JavaScript dialogs. The session keeps this setting (one of `auto`, `accept`, `dismiss`, `manual`)
+- `--downloads-dir <DIR>`: Save downloads in this directory (created; relative to the current one) instead of the session's. The session keeps this setting; it applies to a running browser too
 - `--http-credentials <USER:PASSWORD>`: Answer HTTP authentication (basic, digest) with USER:PASSWORD; `-` reads it from stdin. The session keeps it; it applies to a running browser too. Every origin that asks gets it, unless --http-credentials-origin names one (env `CHROME_CDP_HTTP_CREDENTIALS`)
 - `--http-credentials-origin <ORIGIN>`: Send --http-credentials only to this origin (e.g. https://app.test); other origins' challenges are cancelled, so a third-party frame or a redirect elsewhere never gets them (env `CHROME_CDP_HTTP_CREDENTIALS_ORIGIN`)
 - `--console-buffer <N>`: How many console entries each tab keeps (default 1,000). The session keeps this setting (env `CHROME_CDP_CONSOLE_BUFFER`)
@@ -51,6 +52,7 @@ Examples:
   chrome-cdp open --restart --chrome-arg=--window-size=1920,1080
   chrome-cdp open --follow-popups                   # popups become the active tab
   chrome-cdp open --dialogs dismiss                 # answer every dialog with Cancel
+  chrome-cdp open --downloads-dir ./downloads       # downloads land there
   chrome-cdp open --http-credentials ada:s3cret http://localhost:8080/admin
   chrome-cdp open --extension ./my-extension         # prints its chrome-extension:// origin
 ```

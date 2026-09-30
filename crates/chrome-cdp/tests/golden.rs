@@ -1190,6 +1190,18 @@ const CASES: &[Case] = &[
         fixture: Fixture::Session,
     },
     Case {
+        name: "downloads-clear",
+        args: &["downloads", "--clear"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "open-downloads-dir",
+        args: &["open", "--downloads-dir", "{sandbox}/dl"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
         name: "console",
         args: &["console", "--since", "0"],
         modes: ALL,

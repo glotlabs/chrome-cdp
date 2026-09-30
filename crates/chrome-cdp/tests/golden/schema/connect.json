@@ -751,6 +751,13 @@
             "null"
           ]
         },
+        "downloads_dir": {
+          "description": "Where downloads go now (`--downloads-dir`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "page": {
           "anyOf": [
             {
