@@ -8,7 +8,7 @@ CSS: enable, disable, getComputedStyleForNode, startRuleUsageTracking, stopRuleU
 DOM
 DOMSnapshot
 Emulation
-Extensions: loadUnpacked, getExtensions, uninstall
+Extensions: loadUnpacked, getExtensions, uninstall, triggerAction, getStorageItems, setStorageItems, removeStorageItems, clearStorageItems
 Fetch
 IO
 Input
