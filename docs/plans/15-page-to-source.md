@@ -1,6 +1,6 @@
 # Plan 15 — From page to source
 
-Status: IN PROGRESS (15.1-15.7 done)
+Status: DONE (15.1-15.7; running the agent benchmark is deferred)
 Depends on: v1 (plans 01-11), mainly 04 (refs), 05 (the action report)
 and 06 (console, network, source maps). Uses plan 13's target graph where
 it exists. Track 4 of [plan 12](12-after-v1.md).
@@ -547,9 +547,9 @@ test that needs Node is the gated real-Vite test.
 - [x] `wait --hmr` and the report lines tell applied, failed and full
       reloads apart for Vite and webpack (fake servers), and for a real
       Vite dev server (gated test).
-- [ ] Every place printed by this plan's commands, and by `errors` and
+- [x] Every place printed by this plan's commands, and by `errors` and
       `console`, is a project-relative disk path when the file exists.
-- [ ] `--json` schemas only grew; `cargo xtask release check` passes.
+- [x] `--json` schemas only grew; `cargo xtask release check` passes.
 - [x] The agent benchmark has the four "fix the bug behind this
       element" tasks and records files read. (Running it is deferred:
       benchmarks run after all plans.)
@@ -918,3 +918,11 @@ _(append here)_
   run after all plans.
 - 15.7: The AGENTS.md section gains one line for `source` and `wait
   --hmr`, the two an agent on a dev server reaches for first.
+- Close-out: checked by hand on the React 19 app (a copy as its own
+  project): `source`, `snapshot --source`, `components`, `debug log` and
+  `debug list`, the report's logpoint and console error lines, `errors`,
+  `console`, `network` and `network show` all print `src/…` and
+  `node_modules/…` paths; the engine tests cover the other apps and
+  `wait --hmr`. No release tag exists yet, so `release check` gained
+  `--since <rev>`: `cargo xtask release check --since 241f9bd` (the
+  commit before 15.1) says 154 schemas and the command line only add.

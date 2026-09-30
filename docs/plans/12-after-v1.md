@@ -186,6 +186,7 @@ Done: `docs/playwright-parity.md` has no ❌, and the 🟡 rows above are ✅.
 ### Track 4 ★ — From page to source
 
 Plan: [15-page-to-source](15-page-to-source.md).
+Status: DONE (plan 15, 15.1-15.7; the agent benchmark's run is deferred).
 
 **Why.** §1: a coding agent's next step after "the button is wrong" is
 "which file do I edit?". Today it greps the codebase for the button's
@@ -210,7 +211,7 @@ it.
   (React, Vue, Svelte adapters), bounded like every output. For "why
   does this show 3 items?".
 - **Logpoints: printf debugging without editing code.**
-  `debug log src/cart.ts:42 'total, items.length'` sets a
+  `debug log src/cart.ts:42 total items.length` sets a
   `Debugger.setBreakpointByUrl` whose condition logs and returns
   `false`, mapped through the source map. The values land in `console`
   and in the next action's report. `debug clear`. The agent learns the
@@ -510,3 +511,12 @@ plan's close-out names. Fix gaps that fit, tick what is true, set
 ## Decisions log
 
 _(append here)_
+- Track 4: the Vite apps are test fixtures in `testdata/apps-src` (built
+  into `testdata/site/apps/dev`), not `examples/`: tests run offline
+  from committed dev builds, and they are one cart app in five
+  frameworks, not examples to copy. The agent benchmark's four
+  find-the-code tasks record files read; running them (the "measured"
+  part) is deferred: benchmarks run after all plans.
+- Track 4: `debug log` takes one expression per argument (`total
+  items.length`); `'total, items.length'` is one JavaScript comma
+  expression and logs only its last value.
