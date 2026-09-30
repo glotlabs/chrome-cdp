@@ -6,8 +6,9 @@
 //! no tab lock.
 
 use std::collections::VecDeque;
+use std::time::Duration;
 
-use protocol::schema::ConsoleEntry;
+use protocol::schema::{ConsoleEntry, StackFrame};
 use regex::Regex;
 use serde_json::json;
 use tokio::time::Instant;
@@ -19,6 +20,9 @@ use crate::{Engine, Running};
 
 /// How many of the entries that did not match a timeout lists.
 const LISTED: usize = 5;
+
+/// How long source-mapping the entries shown may take.
+const MAP_WAIT: Duration = Duration::from_millis(500);
 
 impl Engine {
     /// Waits until `page`'s console has a matching entry, up to
@@ -56,7 +60,11 @@ impl Engine {
                     found
                 })
                 .ok_or_else(|| self.tab_error(running, TabError::NoSuchTab(page.id)))?;
-            if let Some(entry) = found {
+            if let Some(mut entry) = found {
+                // Its places as `console` shows them.
+                let mut stack: Vec<&mut StackFrame> = entry.stack.iter_mut().collect();
+                self.map_stack(running, page, &mut stack, false, MAP_WAIT)
+                    .await;
                 return Ok(Ok(Met {
                     text: entry.text.lines().next().unwrap_or_default().to_owned(),
                     console: Some(entry),
@@ -68,6 +76,12 @@ impl Engine {
                 .console_logged(page.id, checked, deadline)
                 .await
             {
+                let mut stack: Vec<&mut StackFrame> = seen
+                    .iter_mut()
+                    .filter_map(|e| e.stack.first_mut())
+                    .collect();
+                self.map_stack(running, page, &mut stack, false, MAP_WAIT)
+                    .await;
                 return Ok(Err(unmet(page, running, &seen)));
             }
         }

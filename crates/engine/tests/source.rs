@@ -15,8 +15,9 @@ use std::sync::Arc;
 
 use browser::Host;
 use engine::{
-    Action, ActionRequest, Button, ConsoleRequest, Engine, NavigateRequest, Navigation, NodeStacks,
-    OpenRequest, Since, WaitUntil,
+    Action, ActionRequest, Button, ConsoleRequest, CoverageStartRequest, CoverageStopRequest,
+    Engine, NavigateRequest, Navigation, NodeStacks, OpenRequest, Since, WaitFor, WaitRequest,
+    WaitUntil,
 };
 use fixtures::Fixtures;
 use protocol::Output;
@@ -225,6 +226,38 @@ async fn a_node_made_before_stacks_were_on_has_none() {
     assert_eq!(stack[0].function, "renderTotal");
 }
 
+/// `coverage` turns `DOM` on and off in the sessions it measures; where
+/// node stacks record, stopping it leaves `DOM` on, so they go on
+/// recording.
+#[tokio::test]
+async fn coverage_leaves_node_stacks_recording() {
+    let Some(path) = chrome_path() else { return };
+    let engine = start(&path, "engine-source-coverage", None).await;
+    open_app(&engine, "plain").await;
+    engine
+        .coverage_start(CoverageStartRequest {
+            tab: None,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap();
+    engine
+        .coverage_stop(CoverageStopRequest {
+            limit: 0,
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 0,
+        })
+        .await
+        .unwrap();
+    click(&engine, "testid=remove-1").await;
+    let stack = engine
+        .node_stack("testid=total", None, TIMEOUT_MS)
+        .await
+        .unwrap()
+        .expect("a stack for the node made after coverage stopped");
+    assert_eq!(stack[0].function, "renderTotal");
+}
+
 /// "Checkout" throws in `lineTotal`: the action's report names the
 /// error's place in src/cart.ts, relative to the app, and `errors` shows
 /// the stack with paths on disk.
@@ -255,6 +288,30 @@ async fn errors_print_places_on_disk() {
         assert_eq!(
             error.file.as_deref().map(Path::new),
             Some(app_root(app).join("src/cart.ts").as_path())
+        );
+
+        // `wait --console` shows the entry as `console` does.
+        let waited = in_app(
+            app,
+            engine.wait(WaitRequest {
+                condition: WaitFor::Console {
+                    pattern: "TypeError".into(),
+                },
+                tab: None,
+                strict_refs: false,
+                testid_attribute: None,
+                timeout_ms: TIMEOUT_MS,
+                max_chars: 0,
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(
+            waited
+                .text
+                .contains(&format!("    at lineTotal (src/cart.ts:{line}:")),
+            "{app}: {}",
+            waited.text
         );
 
         let errors = in_app(

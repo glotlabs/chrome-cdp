@@ -272,8 +272,10 @@ fn bad_config_is_a_usage_error_naming_the_file() {
         stderr(&out),
         format!(
             "error: config {f}: unknown field `sesion`, expected one of `session`, `timeout`, \
-             `base_url`, `testid_attribute`, `snap_after_action`, `e2e`\n  hint: fix or remove the key in {f}; known keys: session, \
-             timeout, base_url, testid_attribute, snap_after_action, and the [e2e] section\n",
+             `base_url`, `testid_attribute`, `snap_after_action`, `node_stacks`, `source_root`, \
+             `e2e`\n  hint: fix or remove the key in {f}; known keys: session, \
+             timeout, base_url, testid_attribute, snap_after_action, node_stacks, source_root, \
+             and the [e2e] section\n",
             f = file.display()
         )
     );
