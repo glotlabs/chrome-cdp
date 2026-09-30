@@ -3,6 +3,7 @@
 # events. Types that listed items refer to are always generated, even from
 # domains not listed here.
 Accessibility
+Audits: enable, disable, checkFormsIssues, issueAdded
 Browser
 CSS: enable, disable, getComputedStyleForNode, startRuleUsageTracking, stopRuleUsageTracking, takeCoverageDelta, styleSheetAdded
 DOM

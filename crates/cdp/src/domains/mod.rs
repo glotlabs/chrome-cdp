@@ -12,6 +12,7 @@
 pub const PROTOCOL_REVISION: u32 = 1687809;
 
 pub mod accessibility;
+pub mod audits;
 pub mod browser;
 pub mod css;
 pub mod debugger;
