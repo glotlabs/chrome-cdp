@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 19b59857022e2fd6
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: a59eea2be74551f8
 "use strict";
 (() => {
   // src/dom.ts
@@ -2075,7 +2075,7 @@ ${inner}
     }
   ];
   var LISTED3 = 5;
-  function a11y(root, level2) {
+  function a11y(root, level2, page = true) {
     const rules = RULES.filter((r) => level2 === "AA" || r.level === "A");
     const violations = [];
     const els = [];
@@ -2085,7 +2085,7 @@ ${inner}
     for (const rule of rules) {
       const v = { rule: rule.id, wcag: rule.wcag, level: rule.level, help: rule.help, count: 0, nodes: [] };
       if (rule.page) {
-        if (root) continue;
+        if (root || !page) continue;
         const why = rule.page(document);
         if (why) violations.push({ ...v, count: 1, page: why });
         continue;

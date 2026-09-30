@@ -170,8 +170,10 @@ interface Violation {
 
 /** Checks the rules of `level` in `root` (the document when `null`):
  * `{json, els}` with `json` `{rules, violations}` and the listed
- * elements in `els` (each node's `index`), for refs. */
-export function a11y(root: Element | null, level: 'A' | 'AA'): { json: string; els: Element[] } {
+ * elements in `els` (each node's `index`), for refs. Page rules (the
+ * title, `lang`, the viewport) only check a page's document (`page`),
+ * not an iframe's. */
+export function a11y(root: Element | null, level: 'A' | 'AA', page = true): { json: string; els: Element[] } {
   const rules = RULES.filter((r) => level === 'AA' || r.level === 'A');
   const violations: Violation[] = [];
   const els: Element[] = [];
@@ -181,7 +183,7 @@ export function a11y(root: Element | null, level: 'A' | 'AA'): { json: string; e
   for (const rule of rules) {
     const v: Violation = { rule: rule.id, wcag: rule.wcag, level: rule.level, help: rule.help, count: 0, nodes: [] };
     if (rule.page) {
-      if (root) continue;
+      if (root || !page) continue;
       const why = rule.page(document);
       if (why) violations.push({ ...v, count: 1, page: why });
       continue;

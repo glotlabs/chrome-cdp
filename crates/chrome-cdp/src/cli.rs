@@ -529,7 +529,8 @@ Page checks:
                        (--origin self: only to the page's origin; the
                        browser's own /favicon.ico does not count)
   --a11y [--level A]   built-in accessibility rules (WCAG A and AA), in
-                       the page or the element LOCATOR names
+                       the page and its iframes, or the element LOCATOR
+                       names
 The last three look once: what they find does not go away by waiting.
 
 Mock state (expect mock-state <NAME> <CHECK>), retried like the matchers:
@@ -5342,8 +5343,8 @@ pub(crate) struct ExpectArgs {
     #[arg(long, value_name = "ORIGIN", requires = "no_failed_requests")]
     pub(crate) origin: Option<String>,
 
-    /// Check the page (or LOCATOR's element) against built-in
-    /// accessibility rules.
+    /// Check the page and its iframes (or LOCATOR's element) against
+    /// built-in accessibility rules.
     #[arg(long, conflicts_with = "matcher")]
     pub(crate) a11y: bool,
 

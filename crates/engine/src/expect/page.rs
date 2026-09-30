@@ -14,12 +14,12 @@ use tokio::time::Instant;
 
 use super::{Failed, GROUP, Named, Passed, assertion_text, expected};
 use crate::context::Scoped as _;
-use crate::frames::World;
+use crate::frames::{World, iframe_label};
 use crate::injected::{self, GUARD};
 use crate::input::origin;
 use crate::locator::{LocateOptions, Locator, read_listed};
 use crate::request::{A11yLevel, ExpectRequest, SnapshotEngine};
-use crate::tabs::{Page, parse_tab_id, tab_name};
+use crate::tabs::{FrameContext, Page, parse_tab_id, tab_name};
 use crate::{Engine, Running};
 
 /// How many errors, failed requests or violations a failure lists.
@@ -54,7 +54,30 @@ struct Node {
     #[serde(default)]
     why: Option<String>,
     index: usize,
+    /// The iframe it is in (its id and label), unless the main frame.
+    #[serde(skip)]
+    frame: Option<(String, String)>,
 }
+
+impl Audit {
+    /// Adds `other`'s violations (another frame's) to these, rule by rule.
+    fn merge(&mut self, other: Self) {
+        self.rules = self.rules.max(other.rules);
+        for v in other.violations {
+            match self.violations.iter_mut().find(|w| w.rule == v.rule) {
+                Some(w) => {
+                    w.count += v.count;
+                    w.nodes.extend(v.nodes);
+                }
+                None => self.violations.push(v),
+            }
+        }
+    }
+}
+
+/// How long `expect --a11y` waits for an iframe's document to have a
+/// context before it goes on without it (it is still loading).
+const A11Y_FRAME_WAIT: Duration = Duration::from_secs(1);
 
 impl Engine {
     /// The network and console marks `--since` names (the page's
@@ -333,8 +356,9 @@ impl Engine {
         Err(self.one_shot_failure(page, req, failed))
     }
 
-    /// `--a11y`: the built-in rules of `level` in the page, or in the one
-    /// element `scope` matches.
+    /// `--a11y`: the built-in rules of `level` in the page and each of its
+    /// iframes (out-of-process ones too), or in the one element `scope`
+    /// matches.
     #[allow(clippy::too_many_arguments, clippy::single_match_else)]
     pub(super) async fn a11y(
         &self,
@@ -346,92 +370,55 @@ impl Engine {
         options: &LocateOptions,
         timeout: Duration,
     ) -> Result<Passed, ErrorInfo> {
-        let generation = running
-            .tabs
-            .snapshot_memory(page.id, |m| m.refs.generation());
-        let declaration = format!(
-            "function (level) {{ {GUARD} \
-             return globalThis.__ccdp.a11y(this === globalThis ? null : this, level); }}"
-        );
-        let mut params = runtime::CallFunctionOnParams::new(declaration);
-        params.arguments = Some(vec![runtime::CallArgument {
-            value: Some(json!(level.as_str())),
-            unserializable_value: None,
-            object_id: None,
-        }]);
-        params.object_group = Some(GROUP.to_owned());
-        let (context, frame, target) = match scope {
+        let audit = match scope {
             Some(scope) => {
                 let target = self
                     .locate_one(running, page, scope, options, None, timeout)
                     .await?;
-                params.object_id = Some(target.object_id.clone());
-                (
-                    target.context.clone(),
-                    target.key.frame.clone(),
-                    Some(target),
-                )
+                let audit = self
+                    .audit(
+                        running,
+                        page,
+                        (&target.context, &target.key.frame),
+                        Some(&target.object_id),
+                        level,
+                        timeout,
+                    )
+                    .await;
+                target.release();
+                audit?
             }
             None => {
-                let context = self
-                    .frame_context(running, page, None, World::Isolated, timeout)
+                let (main, context) = self
+                    .frame_and_context(running, page, None, World::Isolated, timeout)
                     .await?;
-                let frame = running
-                    .tabs
-                    .frames(page.id)
-                    .first()
-                    .map(|f| f.id.clone())
-                    .unwrap_or_default();
-                (context, frame, None)
+                let mut audit = self
+                    .audit(running, page, (&context, &main), None, level, timeout)
+                    .await?;
+                for frame in running.tabs.frames(page.id).into_iter().skip(1) {
+                    let Ok(context) = running
+                        .tabs
+                        .context(page.id, &frame.id, World::Isolated, A11Y_FRAME_WAIT)
+                        .await
+                    else {
+                        continue;
+                    };
+                    // A frame that goes away meanwhile has nothing to check.
+                    let Ok(mut found) = self
+                        .audit(running, page, (&context, &frame.id), None, level, timeout)
+                        .await
+                    else {
+                        continue;
+                    };
+                    let label = iframe_label(&frame);
+                    for node in found.violations.iter_mut().flat_map(|v| v.nodes.iter_mut()) {
+                        node.frame = Some((frame.id.clone(), label.clone()));
+                    }
+                    audit.merge(found);
+                }
+                audit
             }
         };
-        let session = context.session.with_timeout(timeout);
-        let result = injected::call(&session, context.context_id, params).await;
-        let listed = async {
-            let result = result.map_err(|e| crate::errors::from_cdp(&e, &self.session))?;
-            if let Some(exception) = result.exception_details {
-                return Err(ErrorInfo::new(
-                    ErrorKind::EvalError,
-                    format!(
-                        "checking the page's accessibility failed: {}",
-                        exception.text
-                    ),
-                ));
-            }
-            let object_id = result.result.object_id.ok_or_else(|| {
-                ErrorInfo::new(
-                    ErrorKind::ProtocolError,
-                    "the accessibility check returned nothing",
-                )
-            })?;
-            read_listed(&session, &object_id, &frame, ELEMENTS)
-                .await
-                .map_err(|e| crate::errors::from_cdp(&e, &self.session))
-        }
-        .await;
-        let _ = session
-            .call(runtime::ReleaseObjectGroupParams::new(GROUP.to_owned()))
-            .await;
-        if let Some(target) = target {
-            target.release();
-        }
-        let (json, keys) = listed?;
-        let mut audit: Audit = serde_json::from_str(&json).unwrap_or_default();
-        running.tabs.snapshot_memory(page.id, |m| {
-            if Some(m.refs.generation()) != generation {
-                return;
-            }
-            for node in audit.violations.iter_mut().flat_map(|v| v.nodes.iter_mut()) {
-                if let Some(Some(key)) = keys.get(node.index) {
-                    let c = &node.candidate;
-                    let number = m.refs.get(key).unwrap_or_else(|| {
-                        m.refs
-                            .assign_from(key, &c.role, &c.name, SnapshotEngine::Dom)
-                    });
-                    node.candidate.reference = Some(format!("e{number}"));
-                }
-            }
-        });
         if audit.violations.is_empty() {
             return Ok(Passed {
                 actual: json!(0),
@@ -471,9 +458,14 @@ impl Engine {
                     .as_deref()
                     .map(|w| format!(": {w}"))
                     .unwrap_or_default();
+                let place = node
+                    .frame
+                    .as_ref()
+                    .map(|(_, label)| format!(" in {label}"))
+                    .unwrap_or_default();
                 failed.notes.push((
                     v.rule.clone(),
-                    format!("{} {}{why} ({wcag})", node.candidate.line(), v.help),
+                    format!("{}{place} {}{why} ({wcag})", node.candidate.line(), v.help),
                 ));
                 lines += 1;
             }
@@ -505,6 +497,9 @@ impl Engine {
                     "elements": v.nodes.iter().map(|n| {
                         let mut e = n.candidate.json();
                         e["why"] = json!(n.why);
+                        if let Some((frame, _)) = &n.frame {
+                            e["frame"] = json!(frame);
+                        }
                         e
                     }).collect::<Vec<_>>(),
                 })
@@ -532,6 +527,92 @@ impl Engine {
             }
         });
         Err(self.one_shot_failure(page, req, failed))
+    }
+
+    /// Runs the rules of `level` in a frame's isolated world (`at`: its
+    /// context and id), on the element `object` or the document; page
+    /// rules only in the main frame's document. The listed elements get
+    /// refs (unless a frame loaded a new document meanwhile).
+    async fn audit(
+        &self,
+        running: &Running,
+        page: &Page,
+        at: (&FrameContext, &str),
+        object: Option<&str>,
+        level: A11yLevel,
+        timeout: Duration,
+    ) -> Result<Audit, ErrorInfo> {
+        let (context, frame) = at;
+        let generation = running
+            .tabs
+            .snapshot_memory(page.id, |m| m.refs.generation());
+        let main = running
+            .tabs
+            .frames(page.id)
+            .first()
+            .is_some_and(|f| f.id == frame);
+        let declaration = format!(
+            "function (level, page) {{ {GUARD} \
+             return globalThis.__ccdp.a11y(this === globalThis ? null : this, level, page); }}"
+        );
+        let mut params = runtime::CallFunctionOnParams::new(declaration);
+        params.arguments = Some(
+            [json!(level.as_str()), json!(main)]
+                .into_iter()
+                .map(|value| runtime::CallArgument {
+                    value: Some(value),
+                    unserializable_value: None,
+                    object_id: None,
+                })
+                .collect(),
+        );
+        params.object_group = Some(GROUP.to_owned());
+        params.object_id = object.map(str::to_owned);
+        let session = context.session.with_timeout(timeout);
+        let result = injected::call(&session, context.context_id, params).await;
+        let listed = async {
+            let result = result.map_err(|e| crate::errors::from_cdp(&e, &self.session))?;
+            if let Some(exception) = result.exception_details {
+                return Err(ErrorInfo::new(
+                    ErrorKind::EvalError,
+                    format!(
+                        "checking the page's accessibility failed: {}",
+                        exception.text
+                    ),
+                ));
+            }
+            let object_id = result.result.object_id.ok_or_else(|| {
+                ErrorInfo::new(
+                    ErrorKind::ProtocolError,
+                    "the accessibility check returned nothing",
+                )
+            })?;
+            read_listed(&session, &object_id, frame, ELEMENTS)
+                .await
+                .map_err(|e| crate::errors::from_cdp(&e, &self.session))
+        }
+        .await;
+        let _ = session
+            .call(runtime::ReleaseObjectGroupParams::new(GROUP.to_owned()))
+            .await;
+        let (json, keys) = listed?;
+        let mut audit: Audit = serde_json::from_str(&json).unwrap_or_default();
+        running.tabs.snapshot_memory(page.id, |m| {
+            if Some(m.refs.generation()) != generation {
+                return;
+            }
+            for node in audit.violations.iter_mut().flat_map(|v| v.nodes.iter_mut()) {
+                if let Some(Some(key)) = keys.get(node.index) {
+                    let c = &node.candidate;
+                    let number = m.refs.get(key).unwrap_or_else(|| {
+                        m.refs
+                            .assign_from(key, &c.role, &c.name, SnapshotEngine::Dom)
+                    });
+                    node.candidate.reference = Some(format!("e{number}"));
+                }
+            }
+        });
+        Ok(audit)
     }
 
     /// The failure of a check that looks once (no timeout to report).

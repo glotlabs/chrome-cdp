@@ -629,4 +629,30 @@ async fn accessibility_rules() {
     let details = err.details.unwrap();
     assert_eq!(details["violations"].as_array().unwrap().len(), 1);
     assert_eq!(details["violations"][0]["rule"], "label");
+
+    // Iframes are checked too, cross-site ones included, each finding
+    // naming its frame; page rules are the page's only.
+    goto(&engine, &site.url("/expect/a11y-frames.html")).await;
+    let err = fails(&engine, &a11y(None, A11yLevel::AA), false).await;
+    let text = err.to_text();
+    let details = err.details.unwrap();
+    let rules: Vec<(&str, u64)> = details["violations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| (v["rule"].as_str().unwrap(), v["count"].as_u64().unwrap()))
+        .collect();
+    assert_eq!(rules, [("button-name", 2), ("label", 2)], "{text}");
+    let label = &details["violations"][1]["elements"];
+    assert!(label[0]["frame"].is_string(), "{label}");
+    assert_ne!(label[0]["frame"], label[1]["frame"]);
+    assert!(label[0]["ref"].is_string(), "{label}");
+    assert!(
+        text.contains(" in iframe \"pay\" is a form field with no label"),
+        "{text}"
+    );
+    assert!(
+        text.contains(" in iframe \"same\" is a form field with no label"),
+        "{text}"
+    );
 }

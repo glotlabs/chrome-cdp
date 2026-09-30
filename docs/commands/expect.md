@@ -30,7 +30,7 @@ Options:
 - `--header <HEADER>`: `request`: it has this header, 'Name: value' (a glob; repeatable)
 - `--json-body <JSON>`: `request`: its JSON body contains this, as a mock's match.json ("\*" any value, strings with \* are globs); `-` reads stdin
 - `--origin <ORIGIN>`: --no-failed-requests: only requests to this origin; `self` is the page's
-- `--a11y`: Check the page (or LOCATOR's element) against built-in accessibility rules
+- `--a11y`: Check the page and its iframes (or LOCATOR's element) against built-in accessibility rules
 - `--level <LEVEL>`: --a11y: the WCAG level to check (one of `A`, `AA`)
 - `--strict-refs`: A ref whose element is gone fails, instead of being re-resolved to the one element with its role and name (env `CHROME_CDP_STRICT_REFS`)
 - `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
@@ -62,7 +62,8 @@ Page checks:
                        (--origin self: only to the page's origin; the
                        browser's own /favicon.ico does not count)
   --a11y [--level A]   built-in accessibility rules (WCAG A and AA), in
-                       the page or the element LOCATOR names
+                       the page and its iframes, or the element LOCATOR
+                       names
 The last three look once: what they find does not go away by waiting.
 
 Mock state (expect mock-state <NAME> <CHECK>), retried like the matchers:

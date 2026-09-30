@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Accessible page, embedded forms</title>
+</head>
+<body>
+<main>
+  <h1>Checkout</h1>
+  <p>Readable text on white.</p>
+  <!-- The same form in a cross-site and a same-site iframe: each has a
+       field with no label and a button with no name. -->
+  <iframe name="pay" title="Pay" src="{{ORIGIN_B}}/expect/a11y-frame.html"></iframe>
+  <iframe name="same" title="Same" src="/expect/a11y-frame.html"></iframe>
+</main>
+</body>
+</html>
