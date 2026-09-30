@@ -69,7 +69,10 @@ its schemas compared.
 
 Without `--tag` it compares HEAD with the newest tag, so between
 releases a breaking change fails it until `Cargo.toml` has the next
-major version.
+major version. `release check --since <rev>` compares with any commit
+instead of a tag, so the schemas can be checked before the first
+release too (for example since the commit before a plan's work); there
+any break fails.
 
 ## Secrets
 

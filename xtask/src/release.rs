@@ -16,7 +16,8 @@
 //! - `check [--tag vX.Y.Z]`: the versions agree (workspace, internal
 //!   dependencies, the tag), the CHANGELOG has the tag's section, and the
 //!   `--json` schemas and command line only add to the previous tag's
-//!   (`crate::compat`).
+//!   (`crate::compat`); `check --since <rev>` compares with any commit
+//!   instead (between releases, e.g. the start of a plan).
 //!
 //! Archive names carry no version, so `releases/latest/download/…` URLs
 //! (install.sh) always name the newest build.
@@ -113,7 +114,9 @@ steps:
   check [--tag vX.Y.Z] check that the versions agree, CHANGELOG.md has the
                        tag's section, and the --json schemas and command line
                        only add to the previous tag's (unless the major version
-                       went up)";
+                       went up)
+  check --since REV    the same, comparing with commit REV instead of the
+                       previous tag (a break always fails)";
 
 pub(crate) fn run(args: &[String]) -> Result {
     let (step, rest) = args.split_first().ok_or_else(|| USAGE.to_owned())?;
@@ -138,8 +141,9 @@ pub(crate) fn run(args: &[String]) -> Result {
         }
         ("npm", []) => npm(&root, &dist, &root.join("target").join("npm")),
         ("npm", [flag, out]) if flag == "--out" => npm(&root, &dist, &root.join(out)),
-        ("check", []) => check(&root, None),
-        ("check", [flag, tag]) if flag == "--tag" => check(&root, Some(tag)),
+        ("check", []) => check(&root, None, None),
+        ("check", [flag, tag]) if flag == "--tag" => check(&root, Some(tag), None),
+        ("check", [flag, rev]) if flag == "--since" => check(&root, None, Some(rev)),
         _ => Err(USAGE.to_owned()),
     }
 }
@@ -633,9 +637,10 @@ fn group_commits(commits: &[Commit]) -> String {
 /// equals the workspace version, with `tag`, the tag is `v<version>` and
 /// CHANGELOG.md has its section, and the golden schemas and command line
 /// only add to the previous release tag's unless the major version went
-/// up (`compat`). A missing license only warns: the GitHub release does
-/// not need one, crates.io and npm refuse without.
-fn check(root: &Path, tag: Option<&String>) -> Result {
+/// up (`compat`), or to commit `since`'s when given. A missing license
+/// only warns: the GitHub release does not need one, crates.io and npm
+/// refuse without.
+fn check(root: &Path, tag: Option<&String>, since: Option<&String>) -> Result {
     let version = version(root)?;
     let manifest = read(&root.join("Cargo.toml"))?;
     let mut problems = internal_version_problems(&manifest, &version);
@@ -663,7 +668,7 @@ fn check(root: &Path, tag: Option<&String>) -> Result {
     // Without a tag (CI), what HEAD would release: after a release and
     // before the version bump, a break then fails until the bump.
     let head = tag.map_or_else(|| "HEAD".to_owned(), |t| release_head(root, t));
-    match previous_tag(root, &head) {
+    match since.cloned().or_else(|| previous_tag(root, &head)) {
         None => eprintln!(
             "release check: no previous release tag: the --json schemas and the \
              command line are not compared"
