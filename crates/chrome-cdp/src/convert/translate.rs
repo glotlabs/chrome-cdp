@@ -1340,11 +1340,7 @@ impl<'s> Converter<'s> {
                     "nth" => format!("nth={}", number(need(args.first(), "an index")?)?),
                     "filter" => return filter(env, &before, args.first()),
                     "contentFrame" => return frame_of(&before),
-                    "and" | "or" => {
-                        return why(format!(
-                            "locator.{method}(): use a CSS selector list or a ref from snapshot"
-                        ));
-                    }
+                    "and" | "or" => return combine(env, &before, method, args.first()),
                     _ => base_locator(env, method, args)?,
                 };
                 Ok(format!("{before} >> {step}"))
@@ -2324,7 +2320,7 @@ fn locator_text(env: &Env, e: &Expr, exact: bool) -> Result<String, Why> {
     Ok(text)
 }
 
-/// `.filter({ hasText, visible })`.
+/// `.filter({ hasText, hasNotText, has, hasNot, visible })`.
 fn filter(env: &Env, before: &str, opts: Option<&Expr>) -> Result<String, Why> {
     let mut out = before.to_owned();
     for (k, v) in options(opts, &["hasText", "visible", "has", "hasNot", "hasNotText"])? {
@@ -2332,17 +2328,67 @@ fn filter(env: &Env, before: &str, opts: Option<&Expr>) -> Result<String, Why> {
             "hasText" => {
                 let _ = write!(out, " >> has-text={}", locator_text(env, v, false)?);
             }
+            "hasNotText" => {
+                let _ = write!(out, " >> has-not-text={}", locator_text(env, v, false)?);
+            }
             "visible" => {
                 let _ = write!(out, " >> visible={}", flag_value(v)?);
             }
             _ => {
-                return why(format!(
-                    "filter({{ {k} }}): use a CSS :has() or a ref from snapshot"
-                ));
+                // Playwright searches `has` inside each element, as has= does.
+                let inner = Converter::locator(env, v)?;
+                let step = if k == "has" { "has" } else { "has-not" };
+                let _ = write!(
+                    out,
+                    " >> {step}={}",
+                    inner_value(&format!("filter({{ {k} }})"), &inner)?
+                );
             }
         }
     }
     Ok(out)
+}
+
+/// `a.or(b)`, `a.and(b)`: `A >> or="B"`. `or=` and `and=` search where a's
+/// last finder step searched, so b must be built from the same page or
+/// the same parent locator; B is b without that parent.
+fn combine(env: &Env, before: &str, method: &str, other: Option<&Expr>) -> Result<String, Why> {
+    let other = Converter::locator(env, need(other, "a locator")?)?;
+    let steps = |text: &str| {
+        engine::parse_locator(text)
+            .map(|l| l.typed_steps())
+            .map_err(|e| Why(e.message))
+    };
+    let (a, b) = (steps(before)?, steps(&other)?);
+    let parent = &a[..a.iter().rposition(|(_, filter)| !filter).unwrap_or(0)];
+    let rest = b
+        .strip_prefix(parent)
+        .filter(|r| r.first().is_some_and(|(_, f)| !f));
+    let Some(rest) = rest else {
+        return why(format!(
+            "locator.{method}() of a locator from another parent: build both from the same page or locator"
+        ));
+    };
+    let inner: Vec<&str> = rest.iter().map(|(part, _)| part.as_str()).collect();
+    Ok(format!(
+        "{before} >> {method}={}",
+        inner_value(&format!("{method}()"), &inner.join(" >> "))?
+    ))
+}
+
+/// An inner locator as a step's value: quoted when it has a `>>` of its
+/// own or would not parse bare. `what` names the Playwright call.
+fn inner_value(what: &str, inner: &str) -> Result<String, Why> {
+    if inner.starts_with("frame=") {
+        return why(format!("{what} with a frame locator inside"));
+    }
+    if inner.contains(">>") || inner.starts_with(['"', '\'']) || inner.trim() != inner {
+        return Ok(format!(
+            "\"{}\"",
+            inner.replace('\\', "\\\\").replace('"', "\\\"")
+        ));
+    }
+    Ok(inner.to_owned())
 }
 
 /// The `frame=` step of an iframe selector: its id or name.

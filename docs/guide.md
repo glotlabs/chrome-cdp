@@ -148,13 +148,16 @@ Every command that names an element takes the same locators:
 | `text=Sign in`, `text="Sign in"`, `text=/sign.?in/i` | the innermost visible element with that text: a case-insensitive part, the whole text when quoted, or a regex |
 | `role=button[name="Save"]` | an ARIA role and accessible name (quoted: exact), with `[checked]`, `[disabled]`, `[expanded]`, `[level=2]`, `[pressed]`, `[selected]`, `[include-hidden]` |
 | `label=Email`, `placeholder=…`, `alt=…`, `title=…`, `testid=…` | by label, attribute, or test id (`data-testid`; `testid_attribute` in the config changes it) |
-| `A >> B` | B inside A; `>> nth=0` (`-1` is the last), `>> visible=true`, `>> has-text=…` filter |
+| `A >> B` | B inside A; `>> nth=0` (`-1` is the last), `>> visible=true`, `>> has-text=…`, `>> has-not-text=…` filter |
+| `A >> has=B`, `A >> has-not=B` | the elements of A with (without) a descendant B finds ([more](locators-and-refs.md#inner-locators-has-has-not-and-or)) |
+| `A >> and=B`, `A >> or=B` | the elements of A that B also finds; A's plus B's, in page order |
 | `frame=payment >> #card` | inside an iframe, named by its name, a part of its URL, or its ref (`e8 >> #card` also works) |
 
 A command that acts on one element fails with `Ambiguous` when several match,
 and lists them with new refs and where each is (`e41: button "Delete" (in row
 "Invoice 12 …")`), so the next command can use a ref. `wait`, `text` and
-`count` take any number of matches.
+`count` take any number of matches. `locator e12` prints the locator a
+script or test should use for a ref's element.
 
 ## Reading the page
 

@@ -101,6 +101,43 @@ const CASES: &[(&str, &str)] = &[
         "await page.locator('.row').filter({ hasText: 'Total' }).first().click();",
         "click '.row >> has-text=Total >> nth=0'",
     ),
+    // filter({ has, hasNot, hasNotText }), or() and and() (plan 14).
+    (
+        "await page.getByRole('row').filter({ has: page.getByRole('button', { name: 'Delete' }) }).click();",
+        "click 'role=row >> has=role=button[name=Delete]'",
+    ),
+    (
+        "await page.locator('li').filter({ hasNot: page.locator('b').first() }).first().click();",
+        "click 'css=li >> has-not=\"css=b >> nth=0\" >> nth=0'",
+    ),
+    (
+        "await page.getByRole('row').filter({ hasNotText: 'Paid' }).first().click();",
+        "click 'role=row >> has-not-text=Paid >> nth=0'",
+    ),
+    (
+        "const del = page.getByText('Delete', { exact: true });\nawait page.locator('.row').filter({ has: del }).click();",
+        "click '.row >> has=text=\"Delete\"'",
+    ),
+    (
+        "await page.getByRole('button', { name: 'New' }).or(page.getByRole('link', { name: 'New' })).click();",
+        "click 'role=button[name=New] >> or=role=link[name=New]'",
+    ),
+    (
+        "await page.getByRole('button').or(page.locator('.row').getByRole('link')).click();",
+        "click 'role=button >> or=\".row >> role=link\"'",
+    ),
+    (
+        "await page.getByRole('button').and(page.getByTitle('Subscribe')).click();",
+        "click 'role=button >> and=title=Subscribe'",
+    ),
+    (
+        "const row = page.getByRole('row').first();\nawait row.getByRole('button').or(row.getByRole('link')).click();",
+        "click 'role=row >> nth=0 >> role=button >> or=role=link'",
+    ),
+    (
+        "await page.locator('#list').locator('li').first().or(page.locator('#list').getByText('None')).click();",
+        "click '#list >> css=li >> nth=0 >> or=text=None'",
+    ),
     (
         "await page.locator('li').nth(2).getByRole('button').click();",
         "click 'css=li >> nth=2 >> role=button'",
@@ -486,12 +523,16 @@ const TODOS: &[(&str, &str)] = &[
         "(dispatching drag events: drop files on the element with upload LOC FILE --drop",
     ),
     (
-        "await page.locator('li').filter({ has: page.locator('b') }).click();",
-        "(filter({ has })",
+        "const row = page.locator('.row'); await row.getByRole('button').or(page.getByRole('link')).click();",
+        "(locator.or() of a locator from another parent",
     ),
     (
-        "await page.locator('a').or(page.locator('b')).click();",
-        "(locator.or()",
+        "await page.locator('.row').getByRole('button').and(page.getByRole('link')).click();",
+        "(locator.and() of a locator from another parent",
+    ),
+    (
+        "await page.locator('li').filter({ has: page.frameLocator('#pay').locator('b') }).click();",
+        "(filter({ has }) with a frame locator inside",
     ),
     (
         "await page.locator('li:has-text(\"x\")').click();",

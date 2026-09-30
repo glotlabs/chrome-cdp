@@ -204,9 +204,26 @@ impl Locator {
     /// The locator without its last step, as typed (`.row` of
     /// `.row >> has=…`), if it has more than one.
     pub(crate) fn without_last(&self) -> Option<String> {
-        let parts = split_chain(&self.source).ok()?;
-        (parts.len() > 1 && parts.len() == self.steps.len())
-            .then(|| parts[..parts.len() - 1].join(" >> "))
+        let parts = self.typed_steps();
+        (parts.len() > 1).then(|| {
+            let kept: Vec<&str> = parts[..parts.len() - 1]
+                .iter()
+                .map(|(p, _)| p.as_str())
+                .collect();
+            kept.join(" >> ")
+        })
+    }
+
+    /// Its steps as typed, each with whether it filters (or, `or=`, adds
+    /// to) what the steps before it found rather than finding elements
+    /// inside them.
+    pub fn typed_steps(&self) -> Vec<(String, bool)> {
+        split_chain(&self.source)
+            .unwrap_or_default()
+            .into_iter()
+            .zip(&self.steps)
+            .map(|(part, step)| (part, step.is_filter()))
+            .collect()
     }
 }
 
@@ -938,6 +955,13 @@ mod tests {
             }
         );
         assert_eq!(locator.without_last().as_deref(), Some(".row"));
+        assert_eq!(
+            locator.typed_steps(),
+            [
+                (".row".to_owned(), false),
+                ("has=\"testid=del >> nth=0\"".to_owned(), true)
+            ]
+        );
         assert_eq!(parse_locator(".row").unwrap().without_last(), None);
 
         // Four deep is the limit.
