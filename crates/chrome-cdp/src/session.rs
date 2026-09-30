@@ -2043,6 +2043,13 @@ pub(crate) fn debug(args: &DebugArgs, global: &GlobalArgs) -> Result<Output, Err
     let (method, request) = match &args.command {
         DebugCommand::Log(log) => {
             let (path, line, column) = parse_place(&log.place)?;
+            if log.exprs.iter().filter(|e| *e == "-").count() > 1 {
+                return Err(ErrorInfo::new(
+                    ErrorKind::BadArgs,
+                    "only one expression can be read from stdin (`-`)",
+                )
+                .hint("give the others on the command line, each one argument"));
+            }
             let mut exprs = Vec::with_capacity(log.exprs.len());
             for expr in &log.exprs {
                 exprs.push(input::text_arg(expr, "expression")?.trim().to_owned());
