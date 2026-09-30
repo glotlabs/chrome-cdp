@@ -1,6 +1,6 @@
 # Plan 15 — From page to source
 
-Status: NOT STARTED
+Status: IN PROGRESS (15.1 done)
 Depends on: v1 (plans 01-11), mainly 04 (refs), 05 (the action report)
 and 06 (console, network, source maps). Uses plan 13's target graph where
 it exists. Track 4 of [plan 12](12-after-v1.md).
@@ -528,7 +528,7 @@ test that needs Node is the gated real-Vite test.
 
 ## Acceptance criteria
 
-- [ ] The five fixture apps are committed as dev builds, a stale build
+- [x] The five fixture apps are committed as dev builds, a stale build
       fails a test, and each app's dev-only debug info is checked.
 - [ ] `source` names the right file, line and component chain for ten
       chosen elements in each of the React 18, React 19, Vue and Svelte
@@ -557,3 +557,75 @@ test that needs Node is the gated real-Vite test.
 ## Decisions log
 
 _(append here)_
+- 15.1: The apps share one Vite config, `testdata/apps-src/shared/build.mjs`
+  (and `shared/public/cart.json`); each app's `vite.config.js` adds its
+  framework plugin. Vite's `mode: "development"` alone does not give a
+  dev build (plugin-react still emits `jsx`, not `jsxDEV`): the config
+  sets `NODE_ENV=development`, which the plugins read.
+- 15.1: Dev builds name files by absolute path (React 18's
+  `_debugSource.fileName`, Vue's `__file`), which would commit the
+  builder's home directory. The build rewrites the checkout's
+  `apps-src` to `/build/apps-src`, as a build made in a container would
+  be. So `to_disk` also matches an absolute path that does not exist
+  the way it matches a URL (longest end under the root); one that exists
+  is still used as it is.
+- 15.1: Svelte 5 (5.57.1) names files relative to the app
+  (`__svelte_meta.loc.file` = `src/components/CartItem.svelte`), so
+  `to_disk` takes a relative path as a rest too. Its `loc` is the
+  element's `{file, line, column}`; `parent` is a chain of
+  `{type: "component"|"each"|…, file, line, column, componentTag}`
+  entries up to the root (`parent: null`), which 15.2 can use for the
+  component chain.
+- 15.1: React 19 (19.3.0) fibers have no `_debugSource`; `_debugStack` is
+  an `Error` whose stack starts `Error: react-stack-top-frame`, then
+  `exports.jsxDEV`, then the component (`CartItem`), then
+  `react_stack_bottom_frame`: the first frame after `jsxDEV` is the
+  JSX's place. `_debugOwner` is the owning component's fiber. React 18
+  (18.3.1): `_debugSource` is `{fileName, lineNumber, columnNumber}` of
+  the JSX element's `<` (not of its attribute lines).
+- 15.1: The maps leave out `sourcesContent` (`sourcemapExcludeSources`):
+  chrome-cdp needs the mappings, not the text, and the React builds' maps
+  went from 1.6 MB to 0.4 MB. The builds are not minified and keep stable
+  file names (`assets/index.js`), so a rebuild's diff is readable, and no
+  React `StrictMode` (its doubled effects would double the requests
+  15.5's initiator tests count). About 3.2 MB are committed in all.
+- 15.1: The staleness and presence tests are `crates/engine/tests/apps.rs`;
+  the hash covers the app's directory (less `node_modules`) and
+  `shared/`. `cargo xtask apps [NAME…]` runs `npm ci && npm run build`.
+- 15.1: The project root travels beside each call's params
+  (`protocol::rpc::Request::root`), as `--context` does, not in each
+  request type: every command that prints a place (errors, console, the
+  action report, `expect --no-errors`) gets it without a new field. The
+  CLI sets it once per process (`daemon::client::set_project_root`); the
+  daemon runs the call inside `engine::in_root`. `source_root` in a config
+  file is relative to that file and must be a directory.
+- 15.1: `StackFrame` gains `file` too: a script with no source map that is
+  a file under the root (an unbundled dev server) prints as a path.
+  Disk lookups run only where source maps are resolved (localhost pages
+  or `--sourcemaps`), so a remote site's `/static/app.js` is never
+  matched to a local file by accident.
+- 15.1: Node stacks need `DOM` on while nodes are made; `DOM.disable`
+  stops recording (checked on Chrome 154). `coverage stop` and
+  `highlight` therefore leave `DOM` on in a session that records. With
+  `--node-stacks localhost`, each page or iframe session's top frame
+  turns recording on or off at `Page.frameStartedNavigating`, before the
+  new document runs a script; the commands are sent from the event
+  handler at once. `open --node-stacks` on a running browser applies to
+  every page and iframe (for nodes made from then on). The config key
+  `node_stacks` is `open`'s default (and an automatic open's), and
+  `CHROME_CDP_NODE_STACKS` its env var, like `--console-buffer`.
+- 15.1: Reading a node's stack: `DOM.getDocument` (depth 0), then
+  `DOM.requestNode` with the element's object id, then
+  `DOM.getNodeStackTraces`. The stack's async parents are followed (up
+  to 64 frames), mapped with source maps whatever the page, and frames
+  whose original place (else URL) is in `/node_modules/`,
+  `/.vite/deps/`, `/@vite/`, `/@react-refresh`, `/webpack/runtime/` or
+  `/__vite` are left out. `Engine::node_stack` is public for the tests;
+  15.2's `source` builds on it.
+- 15.1: The report's console error lines (backlog
+  `report-sourcemapped-console-errors`): the error's innermost frame (or
+  its place) is source-mapped within 500 ms (maps are cached after the
+  first lookup) and the line shows the original place, as a project path
+  when the file is there (`(src/cart.ts:21)`), else the source's file
+  name. The `console_error` event gains an optional `original`
+  (`SourcePosition`). `expect --no-errors` uses the same events.
