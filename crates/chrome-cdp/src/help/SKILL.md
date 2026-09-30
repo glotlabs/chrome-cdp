@@ -58,9 +58,9 @@ locators in single quotes.
 
 ## Pitfalls
 
-- Never `sleep`. Actions and `goto` wait by themselves. For later changes:
-  `wait --text 'Saved'`, `wait '#results'`, `wait --url /done`,
-  `wait .spinner --state hidden`, `wait --idle`.
+- Never `sleep`. Actions, reads (`text <loc>`, …) and `goto` wait by
+  themselves. For later changes: `wait --text 'Saved'`, `wait '#results'`,
+  `wait --url /done`, `wait .spinner --state hidden`, `wait --idle`.
 - Don't click with `eval "el.click()"` or coordinates: that skips the
   checks and the report. Use `click`, `fill`, `select`, `check`, `press`.
 - `Obscured`: something covers the element (a cookie banner, a modal). The

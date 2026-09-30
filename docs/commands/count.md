@@ -17,7 +17,9 @@ Options:
 
 ```text
 Prints the count, and how many are visible when that differs:
-`4 (3 visible)`. -q prints only the count. Needs a running session.
+`4 (3 visible)`. -q prints only the count. It does not wait: 0 is an
+answer (`wait LOCATOR` or `expect LOCATOR count` wait). Needs a running
+session.
 
 Examples:
   chrome-cdp count '.cart-item'

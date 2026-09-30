@@ -23,7 +23,8 @@ An element's content (its innerHTML) unless --outer; without a locator,
 the whole document. One element per line, two spaces per level, text
 collapsed, and long attribute values, comments and script or style bodies
 cut; open shadow roots show as #shadow-root. --raw prints the browser's
-own serialisation instead. Needs a running session.
+own serialisation instead. An element not there yet is waited for (up to
+--timeout, 10s by default). Needs a running session.
 
 Examples:
   chrome-cdp html e12

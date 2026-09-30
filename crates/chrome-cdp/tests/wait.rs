@@ -91,3 +91,53 @@ fn wait_through_the_daemon() {
     assert!(stderr(&out).starts_with("error: waited 10s for #never to be visible\n"));
     assert!(start.elapsed() >= Duration::from_secs(10));
 }
+
+#[test]
+fn reads_wait_for_their_element() {
+    let Some(chrome) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let lazy = site.url("/wait/lazy.html?after=500");
+    let reads: [&[&str]; 5] = [
+        &["text", "#welcome"],
+        &["attr", "#welcome", "id"],
+        &["eval", "--in", "#welcome", "el.id"],
+        &["locator", "#welcome"],
+        &["box", "#welcome", "-q"],
+    ];
+    for read in reads {
+        // `goto` settles, which may outlast the delay: load only.
+        let out = sandbox.run(&["goto", &lazy, "--wait", "load"]);
+        assert_eq!(code(&out), 0, "{}", stderr(&out));
+        let started = Instant::now();
+        let out = sandbox.run(read);
+        assert_eq!(code(&out), 0, "{read:?}: {}", stderr(&out));
+        assert!(!stdout(&out).trim().is_empty(), "{read:?}");
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "{read:?} took {:?}",
+            started.elapsed()
+        );
+    }
+    let out = sandbox.run(&["text", "#welcome"]);
+    assert_eq!(stdout(&out).trim(), "Welcome, Ada");
+
+    // `count` answers at once: 0 is an answer.
+    let out = sandbox.run(&["goto", &lazy, "--wait", "load"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["count", "#welcome"]);
+    assert_eq!((code(&out), stdout(&out).trim()), (0, "0"));
+
+    // Something that never shows up: a timeout's NotFound, saying so.
+    let started = Instant::now();
+    let out = sandbox.run(&["text", "#never", "--timeout", "700ms"]);
+    assert_eq!(code(&out), 1, "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("no element matches #never"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(stderr(&out).contains("waited: 700ms"), "{}", stderr(&out));
+    assert!(started.elapsed() >= Duration::from_millis(700));
+    assert_eq!(code(&sandbox.run(&["close"])), 0);
+}

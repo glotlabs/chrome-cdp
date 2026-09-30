@@ -624,8 +624,20 @@ async fn locator_prints_an_elements_stable_locator() {
         .unwrap_err();
     assert_eq!(err.kind, ErrorKind::Ambiguous, "{}", err.to_text());
     assert!(err.hint.unwrap_or_default().contains("locator e"));
-    let err = stable(&engine, "#nope", false).await.unwrap_err();
+    // Waited for, within the timeout.
+    let err = engine
+        .locator(LocatorRequest {
+            locator: "#nope".to_owned(),
+            all: false,
+            strict_refs: false,
+            testid_attribute: None,
+            tab: None,
+            timeout_ms: 300,
+        })
+        .await
+        .unwrap_err();
     assert_eq!(err.kind, ErrorKind::NotFound, "{}", err.to_text());
+    assert!(err.to_text().contains("waited: 300ms"), "{}", err.to_text());
 
     // An element with nothing to find it by.
     let err = stable(&engine, "#rule", false).await.unwrap_err();

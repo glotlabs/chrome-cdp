@@ -9,7 +9,8 @@
 //! element and fail with `Ambiguous` otherwise. `text`, `html` and
 //! `markdown` read the page without a locator, and a frame's document
 //! when the locator names only a frame (`frame=payment`, an iframe's
-//! ref). Without a locator, `text` and `markdown` put each visible
+//! ref). All but `count` wait for their locator to match (see
+//! `locator::until`). Without a locator, `text` and `markdown` put each visible
 //! iframe's content where its `<iframe>` sits ([`frames`]).
 
 mod frames;
@@ -25,7 +26,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::context::Scoped as _;
-use crate::locator::{Called, FrameOnly, LocateOptions, Locator, Want};
+use crate::locator::{Called, FrameOnly, LocateOptions, Locator, Want, until_found};
 use crate::request::{Read, ReadRequest, millis};
 use crate::tabs::{Page, tab_name};
 use crate::{Engine, Running};
@@ -85,7 +86,7 @@ impl Engine {
         self.check_not_blocked(&running, &page)?;
         let mark = running.tabs.mark();
         let _tab = self.tabs.lock(&page.target_id).await;
-        let reader = Reader {
+        let reader = |timeout| Reader {
             engine: self,
             running: &running,
             page: &page,
@@ -94,9 +95,19 @@ impl Engine {
             options: locate_options(&req),
             timeout,
         };
-        let output = self
-            .unless_blocked(&running, &page, mark, reader.run())
-            .await?;
+        // A locator not there yet is waited for; 0 is `count`'s answer.
+        let waits = locator.is_some() && req.read != Read::Count;
+        let read = async {
+            if waits {
+                until_found(tokio::time::Instant::now() + timeout, timeout, || async {
+                    reader(timeout).run().await
+                })
+                .await
+            } else {
+                reader(timeout).run().await
+            }
+        };
+        let output = self.unless_blocked(&running, &page, mark, read).await?;
         Ok(self.report_events(&running, mark, output, None).await)
     }
 }

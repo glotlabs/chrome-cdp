@@ -24,7 +24,8 @@ label, test id, placeholder or text; then one of those inside a unique
 container (a row, a list item, a dialog); then `>> nth=` as a last
 resort. An element in an iframe gets a frame= step first. --all lists
 every candidate tried, best first, with how many elements each finds (1
-is usable). testid= reads --testid-attribute. Needs a running session.
+is usable). testid= reads --testid-attribute. An element not there yet is
+waited for (up to --timeout, 10s by default). Needs a running session.
 
 Examples:
   chrome-cdp locator e12

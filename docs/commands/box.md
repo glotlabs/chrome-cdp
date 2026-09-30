@@ -20,7 +20,8 @@ CSS pixels from the top-left corner of the tab's viewport (iframes'
 offsets added), rounded to hundredths: `x=24 y=310 w=120 h=36`, with
 `(outside the 1280x720 viewport)` when scrolled out of view. Prints
 nothing and a warning when the element is not rendered. -q prints the
-four numbers. Needs a running session.
+four numbers. An element not there yet is waited for (up to --timeout,
+10s by default). Needs a running session.
 
 Examples:
   chrome-cdp box e12

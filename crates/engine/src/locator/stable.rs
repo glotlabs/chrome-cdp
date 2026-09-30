@@ -13,7 +13,7 @@ use protocol::schema::{LocatorCandidate, LocatorData, RefLocator};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use serde::Deserialize;
 
-use super::{FrameOnly, LocateOptions, Want};
+use super::{FrameOnly, LocateOptions, Want, until_found};
 use crate::Engine;
 use crate::frames::FrameInfo;
 use crate::request::{LocatorRequest, millis};
@@ -94,16 +94,25 @@ impl Engine {
             let cmd = Cmd::new("locator").arg(r);
             if req.all { cmd.switch("all") } else { cmd }
         };
-        let found = self
-            .stable_locator(
-                req.tab.as_deref(),
-                &req.locator,
-                &options,
-                req.all,
-                Some(&retry),
-                millis(req.timeout_ms),
-            )
-            .await?;
+        let (options, retry, request) = (&options, &retry, &req);
+        // It waits for the element, as the read commands do.
+        let timeout = millis(req.timeout_ms);
+        let found = until_found(
+            tokio::time::Instant::now() + timeout,
+            timeout,
+            || async move {
+                self.stable_locator(
+                    request.tab.as_deref(),
+                    &request.locator,
+                    options,
+                    request.all,
+                    Some(retry),
+                    timeout,
+                )
+                .await
+            },
+        )
+        .await?;
         let (Some(locator), Some(how)) = (found.locator, found.how) else {
             let reason = found
                 .reason

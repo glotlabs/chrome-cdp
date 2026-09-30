@@ -9,7 +9,10 @@ Waiting: chrome-cdp waits for you, so never sleep
   acts, then waits for what it caused (a navigation, the requests it sent)
   and reports it. --no-wait-after skips the second wait; --force skips the
   checks.
-- Waits end at --timeout: 10s for actions and `wait`, 30s for navigation.
+- Reads (text, html, attr, value, box, markdown, eval --in, locator)
+  wait for their locator to match; count does not (0 is an answer).
+- Waits end at --timeout: 10s for actions, reads and `wait`, 30s for
+  navigation.
   A timeout exits 3 and says what the page showed instead.
 - When the page updates later on its own, wait for the change itself:
 

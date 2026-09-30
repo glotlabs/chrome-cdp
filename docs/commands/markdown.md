@@ -24,7 +24,8 @@ links (relative on the page's origin), images, code, quotes and tables are
 kept; controls are not. An iframe in the main content shows its frame's
 main content where it sits, between [iframe "name"] (or its URL) and
 [/iframe] lines. A locator that names a frame reads that frame's main
-content. Needs a running session.
+content; one that matches nothing yet is waited for (up to --timeout,
+10s by default). Needs a running session.
 
 Examples:
   chrome-cdp markdown

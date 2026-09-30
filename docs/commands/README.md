@@ -170,7 +170,7 @@ the config files can set some of them (`chrome-cdp help config`).
 - `--json`: Print one JSON object on stdout: {"ok":true,"data":…} or {"ok":false,"error":…} (env `CHROME_CDP_JSON`)
 - `-q, --quiet`: Print only the essential result, for `$(…)` capture (env `CHROME_CDP_QUIET`)
 - `--session <NAME>`: Browser session to use; each session has its own daemon and Chrome (default `default`; env `CHROME_CDP_SESSION`)
-- `--timeout <DURATION>`: Give up after this long, e.g. 500ms, 30s, 2m. Default: 10s for `wait`, 30s for navigation and everything else (env `CHROME_CDP_TIMEOUT`)
+- `--timeout <DURATION>`: Give up after this long, e.g. 500ms, 30s, 2m. Default: 5s for `expect`; 10s for `wait`, actions and the read commands (`text`, `attr`, …); 30s for navigation and everything else (env `CHROME_CDP_TIMEOUT`)
 - `--tab <ID>`: The tab page commands act on, e.g. t2 (see `chrome-cdp tabs`). Default: the active tab (env `CHROME_CDP_TAB`)
 - `--context <ID>`: The browser context to act in, e.g. c1 (see `chrome-cdp context`): its tabs, cookies, routes and mocks. Default: the session's own (env `CHROME_CDP_CONTEXT`)
 - `-v, --verbose`: Log to stderr: -v info, -vv debug, -vvv trace. CHROME_CDP_LOG (e.g. cdp=trace) overrides it

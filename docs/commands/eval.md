@@ -29,8 +29,9 @@ they are; other values print as JSON. DOM nodes print as
 `button#id.class`, and elements of the page with a ref to act on
 (`button#save.primary [e14]`): the first 50 of a value; a warning says how
 many more got none. The script's `let`s and `const`s do not stay behind in
-the page. An exception exits 1 with its message and stack. Needs a running
-session.
+the page. An exception exits 1 with its message and stack. The --in
+element is waited for (within --timeout) while nothing matches it. Needs a
+running session.
 
 Examples:
   chrome-cdp eval document.title

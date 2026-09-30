@@ -20,7 +20,8 @@ Options:
 ```text
 Prints nothing (and a warning naming the attributes it has) when the
 element has no such attribute; --json has "value": null. For a
-field's current value use `value`. Needs a running session.
+field's current value use `value`. An element not there yet is waited
+for (up to --timeout, 10s by default). Needs a running session.
 
 Examples:
   chrome-cdp attr e12 href

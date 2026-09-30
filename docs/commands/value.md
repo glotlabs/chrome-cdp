@@ -19,7 +19,8 @@ Options:
 ```text
 A select prints the chosen option's value (a multiple select, and a file
 input's file names, one per line); an editable element its text; a slider,
-spin button, progress bar or meter its value. Needs a running session.
+spin button, progress bar or meter its value. An element not there yet
+is waited for (up to --timeout, 10s by default). Needs a running session.
 
 Examples:
   chrome-cdp value e3

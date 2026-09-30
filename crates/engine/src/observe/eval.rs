@@ -41,7 +41,7 @@ use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::injected::{self, GUARD, own_properties};
 use crate::input::origin;
-use crate::locator::{LocateOptions, Locator};
+use crate::locator::{LocateOptions, Locator, until_found};
 use crate::request::{EvalRequest, EvalWorld, SnapshotEngine, millis};
 use crate::snapshot::NodeKey;
 use crate::tabs::{FrameContext, Page, tab_name};
@@ -278,17 +278,22 @@ impl Run<'_> {
         options: &LocateOptions,
     ) -> Result<(String, FrameContext, String, Option<String>), ErrorInfo> {
         let retry = |r: &str| Cmd::new("eval").flag("in", r).raw("…");
-        let target = self
-            .engine
-            .locate_one(
-                self.running,
-                self.page,
-                locator,
-                options,
-                Some(&retry),
-                self.left(),
-            )
-            .await?;
+        let retry = &retry;
+        // It waits for the element, as the read commands do.
+        let timeout = millis(self.req.timeout_ms);
+        let target = until_found(self.deadline, timeout, || async move {
+            self.engine
+                .locate_one(
+                    self.running,
+                    self.page,
+                    locator,
+                    options,
+                    Some(retry),
+                    timeout,
+                )
+                .await
+        })
+        .await?;
         let (frame, backend, note) = (
             target.key.frame.clone(),
             target.key.backend,

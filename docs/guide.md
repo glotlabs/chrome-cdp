@@ -180,9 +180,12 @@ Reading the page without a full snapshot:
   without navigation, sidebars, footers and form controls.
 
 `text`, `html` and `markdown` read the page without a locator, and a frame's
-document when the locator names one (`text frame=payment`). An element that
-is not there is `NotFound` (exit 1); an attribute that is not there, or an
-element that is not rendered (for `box`), prints nothing and a warning.
+document when the locator names one (`text frame=payment`). A locator that
+matches nothing yet is waited for, as actions wait (up to `--timeout`, 10s
+by default; `eval --in` and `locator` too), and is then `NotFound` (exit
+1); `count` answers at once, since 0 is an answer. An attribute that is not
+there, or an element that is not rendered (for `box`), prints nothing and a
+warning.
 
 ## The mouse
 

@@ -176,10 +176,16 @@ async fn text_reads_what_is_shown() {
     let (frame, _): (TextData, _) = data(&engine, Read::Text, Some("frame=other")).await;
     assert_eq!(frame.texts, ["Payment details\nPay now"]);
 
-    let err = read(&engine, Read::Text, Some("#nothing"))
+    // Waited for, within the timeout.
+    let err = engine
+        .read(ReadRequest {
+            timeout_ms: 300,
+            ..request(Read::Text, Some("#nothing"))
+        })
         .await
         .unwrap_err();
     assert_eq!(err.kind, ErrorKind::NotFound);
+    assert!(err.to_text().contains("waited: 300ms"), "{}", err.to_text());
     engine.close().await;
 }
 

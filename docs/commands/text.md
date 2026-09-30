@@ -23,7 +23,8 @@ that matches several elements, one text per match, in page order. Without
 a locator, each visible iframe's text (cross-site ones too) is where its
 <iframe> sits, between [iframe "name"] (or its URL) and [/iframe] lines. A
 locator that names a frame (frame=payment, or an iframe's ref) reads that
-frame's document only. Needs a running session.
+frame's document only. A locator that matches nothing yet is waited for
+(up to --timeout, 10s by default). Needs a running session.
 
 Examples:
   chrome-cdp text

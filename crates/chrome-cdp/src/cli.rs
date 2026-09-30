@@ -72,8 +72,9 @@ pub(crate) struct GlobalArgs {
     )]
     pub(crate) session: String,
 
-    /// Give up after this long, e.g. 500ms, 30s, 2m. Default: 10s for
-    /// `wait`, 30s for navigation and everything else.
+    /// Give up after this long, e.g. 500ms, 30s, 2m. Default: 5s for
+    /// `expect`; 10s for `wait`, actions and the read commands (`text`,
+    /// `attr`, …); 30s for navigation and everything else.
     #[arg(
         long,
         global = true,
@@ -676,7 +677,8 @@ label, test id, placeholder or text; then one of those inside a unique
 container (a row, a list item, a dialog); then `>> nth=` as a last
 resort. An element in an iframe gets a frame= step first. --all lists
 every candidate tried, best first, with how many elements each finds (1
-is usable). testid= reads --testid-attribute. Needs a running session.
+is usable). testid= reads --testid-attribute. An element not there yet is
+waited for (up to --timeout, 10s by default). Needs a running session.
 
 Examples:
   chrome-cdp locator e12
@@ -693,7 +695,8 @@ that matches several elements, one text per match, in page order. Without
 a locator, each visible iframe's text (cross-site ones too) is where its
 <iframe> sits, between [iframe \"name\"] (or its URL) and [/iframe] lines. A
 locator that names a frame (frame=payment, or an iframe's ref) reads that
-frame's document only. Needs a running session.
+frame's document only. A locator that matches nothing yet is waited for
+(up to --timeout, 10s by default). Needs a running session.
 
 Examples:
   chrome-cdp text
@@ -709,7 +712,8 @@ An element's content (its innerHTML) unless --outer; without a locator,
 the whole document. One element per line, two spaces per level, text
 collapsed, and long attribute values, comments and script or style bodies
 cut; open shadow roots show as #shadow-root. --raw prints the browser's
-own serialisation instead. Needs a running session.
+own serialisation instead. An element not there yet is waited for (up to
+--timeout, 10s by default). Needs a running session.
 
 Examples:
   chrome-cdp html e12
@@ -722,7 +726,8 @@ Examples:
     #[command(after_help = "\
 Prints nothing (and a warning naming the attributes it has) when the
 element has no such attribute; --json has \"value\": null. For a
-field's current value use `value`. Needs a running session.
+field's current value use `value`. An element not there yet is waited
+for (up to --timeout, 10s by default). Needs a running session.
 
 Examples:
   chrome-cdp attr e12 href
@@ -734,7 +739,8 @@ Examples:
     #[command(after_help = "\
 A select prints the chosen option's value (a multiple select, and a file
 input's file names, one per line); an editable element its text; a slider,
-spin button, progress bar or meter its value. Needs a running session.
+spin button, progress bar or meter its value. An element not there yet
+is waited for (up to --timeout, 10s by default). Needs a running session.
 
 Examples:
   chrome-cdp value e3
@@ -745,7 +751,9 @@ Examples:
     /// Count the elements a locator matches (0 is not an error).
     #[command(after_help = "\
 Prints the count, and how many are visible when that differs:
-`4 (3 visible)`. -q prints only the count. Needs a running session.
+`4 (3 visible)`. -q prints only the count. It does not wait: 0 is an
+answer (`wait LOCATOR` or `expect LOCATOR count` wait). Needs a running
+session.
 
 Examples:
   chrome-cdp count '.cart-item'
@@ -761,7 +769,8 @@ CSS pixels from the top-left corner of the tab's viewport (iframes'
 offsets added), rounded to hundredths: `x=24 y=310 w=120 h=36`, with
 `(outside the 1280x720 viewport)` when scrolled out of view. Prints
 nothing and a warning when the element is not rendered. -q prints the
-four numbers. Needs a running session.
+four numbers. An element not there yet is waited for (up to --timeout,
+10s by default). Needs a running session.
 
 Examples:
   chrome-cdp box e12
@@ -778,7 +787,8 @@ links (relative on the page's origin), images, code, quotes and tables are
 kept; controls are not. An iframe in the main content shows its frame's
 main content where it sits, between [iframe \"name\"] (or its URL) and
 [/iframe] lines. A locator that names a frame reads that frame's main
-content. Needs a running session.
+content; one that matches nothing yet is waited for (up to --timeout,
+10s by default). Needs a running session.
 
 Examples:
   chrome-cdp markdown
@@ -1611,8 +1621,9 @@ they are; other values print as JSON. DOM nodes print as
 `button#id.class`, and elements of the page with a ref to act on
 (`button#save.primary [e14]`): the first 50 of a value; a warning says how
 many more got none. The script's `let`s and `const`s do not stay behind in
-the page. An exception exits 1 with its message and stack. Needs a running
-session.
+the page. An exception exits 1 with its message and stack. The --in
+element is waited for (within --timeout) while nothing matches it. Needs a
+running session.
 
 Examples:
   chrome-cdp eval document.title

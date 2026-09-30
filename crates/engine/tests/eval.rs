@@ -309,11 +309,18 @@ async fn elements_frames_and_worlds() {
         &engine,
         EvalRequest {
             locator: Some("#nope".into()),
+            // It waits for the element that long.
+            timeout_ms: 300,
             ..request("el")
         },
     )
     .await;
     assert_eq!(missing.kind, ErrorKind::NotFound);
+    assert!(
+        missing.to_text().contains("waited: 300ms"),
+        "{}",
+        missing.to_text()
+    );
     let both = failure(
         &engine,
         EvalRequest {

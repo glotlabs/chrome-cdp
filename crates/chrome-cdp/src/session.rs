@@ -937,7 +937,8 @@ pub(crate) fn locator(args: &LocatorArgs, global: &GlobalArgs) -> Result<Output,
     let locator = input::text_arg(&args.locator, "LOCATOR")?;
     engine::parse_locator(&locator)?;
     check_tab(global.tab.as_deref())?;
-    let ctx = Ctx::new(global)?;
+    // It waits for its element as actions do, so it has their timeout.
+    let ctx = Ctx::with_default(global, WAIT_TIMEOUT)?;
     let request = LocatorRequest {
         locator,
         all: args.all,
@@ -952,7 +953,7 @@ pub(crate) fn locator(args: &LocatorArgs, global: &GlobalArgs) -> Result<Output,
 }
 
 /// `text`, `html`, `attr`, `value`, `count`, `box` and `markdown`: need a
-/// running session.
+/// running session. They wait up to 10s by default, like actions.
 pub(crate) fn read(
     read: Read,
     locator: Option<String>,
@@ -961,7 +962,9 @@ pub(crate) fn read(
     global: &GlobalArgs,
 ) -> Result<Output, ErrorInfo> {
     check_tab(global.tab.as_deref())?;
-    let ctx = Ctx::new(global)?;
+    // They wait for their element as actions do, so they have their
+    // timeout.
+    let ctx = Ctx::with_default(global, WAIT_TIMEOUT)?;
     let request = ReadRequest {
         read,
         locator,
