@@ -10,7 +10,9 @@
 //!
 //! The same sources hold the framework adapters `source` runs in the
 //! page's main world (`src/frameworks.ts`), built into `frameworks.js`
-//! and never installed (see `crate::source`).
+//! and never installed (see `crate::source`), and the logpoints' helper
+//! (`src/logpoint.ts`, built into `logpoint.js`), which each logpoint's
+//! breakpoint condition holds (see `tabs::debug`).
 //!
 //! Functions that use it start with [`GUARD`]; [`call`] loads the bundle
 //! and calls again when the guard says it is missing.
@@ -116,7 +118,12 @@ mod tests {
     fn the_bundles_are_built_from_the_current_sources() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/injected/src");
         let frameworks = include_str!("injected/frameworks.js");
-        for (name, bundle) in [("ccdp.js", BUNDLE), ("frameworks.js", frameworks)] {
+        let logpoint = include_str!("injected/logpoint.js");
+        for (name, bundle) in [
+            ("ccdp.js", BUNDLE),
+            ("frameworks.js", frameworks),
+            ("logpoint.js", logpoint),
+        ] {
             let first = bundle.lines().next().unwrap();
             let recorded = first.rsplit("sources: ").next().unwrap();
             assert_eq!(

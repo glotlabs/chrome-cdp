@@ -835,6 +835,7 @@ fn apps(args: &[String]) -> Result {
 const INJECTED_DIR: &str = "crates/engine/src/injected";
 const INJECTED_OUT: &str = "ccdp.js";
 const FRAMEWORKS_OUT: &str = "frameworks.js";
+const LOGPOINT_OUT: &str = "logpoint.js";
 /// Pinned so the committed bundle builds the same everywhere.
 const ESBUILD: &str = "esbuild@0.28.2";
 const TYPESCRIPT: &str = "typescript@7.0.2";
@@ -882,9 +883,10 @@ fn build_js(args: &[String]) -> Result {
         .args(["--yes", "-p", TYPESCRIPT, "tsc", "-p", "tsconfig.json"])
         .current_dir(&dir))?;
     let hash = injected_hash(&dir.join("src"))?;
-    // The helper installed in chrome-cdp's isolated world, and the
-    // framework adapters the engine runs in the page's main world, each
-    // call as a local of its function (`__ccdpFrameworks`).
+    // The helper installed in chrome-cdp's isolated world, the framework
+    // adapters the engine runs in the page's main world, each call as a
+    // local of its function (`__ccdpFrameworks`), and the logpoints'
+    // helper, a local of each breakpoint's condition (`__ccdpLogpoint`).
     for (entry, out, global) in [
         ("src/index.ts", INJECTED_OUT, None),
         (
@@ -892,6 +894,7 @@ fn build_js(args: &[String]) -> Result {
             FRAMEWORKS_OUT,
             Some("__ccdpFrameworks"),
         ),
+        ("src/logpoint.ts", LOGPOINT_OUT, Some("__ccdpLogpoint")),
     ] {
         let mut esbuild = Command::new("npx");
         esbuild
