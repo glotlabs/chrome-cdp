@@ -39,8 +39,9 @@ const MESSAGE_LEN: usize = 500;
 /// Every `InspectorIssueCode` of the vendored protocol: the rule id it
 /// starts with, its severity (some depend on the details; see
 /// [`parse`]), and what it is about. `docs/commands/issues.md` lists
-/// this table; a test checks that it names every code.
-pub(crate) const CODES: &[Code] = &[
+/// this table (see the CLI's `help::reference`); a test checks that it
+/// names every code.
+pub const CODES: &[Code] = &[
     Code::new(
         "CookieIssue",
         "cookie",
@@ -83,11 +84,11 @@ pub(crate) const CODES: &[Code] = &[
         Severity::Error,
         "CORS blocked a request (warning when only warned)",
     ),
-    Code::new(
+    Code::plain(
         "QuirksModeIssue",
         "quirks-mode",
         Severity::Info,
-        "a document renders in quirks mode (no <!DOCTYPE html>)",
+        "a document renders in quirks mode (no <!DOCTYPE html>); quirks-mode-limited for limited-quirks mode",
     ),
     Code::new(
         "PartitioningBlobURLIssue",
@@ -95,7 +96,7 @@ pub(crate) const CODES: &[Code] = &[
         Severity::Warning,
         "a blob: URL was used across storage partitions",
     ),
-    Code::new(
+    Code::plain(
         "NavigatorUserAgentIssue",
         "navigator-user-agent",
         Severity::Info,
@@ -125,13 +126,13 @@ pub(crate) const CODES: &[Code] = &[
         Severity::Info,
         "a FedCM sign-in request failed",
     ),
-    Code::new(
+    Code::plain(
         "BounceTrackingIssue",
         "bounce-tracking",
         Severity::Info,
         "Chrome will clear the storage of bounce-tracking sites",
     ),
-    Code::new(
+    Code::plain(
         "CookieDeprecationMetadataIssue",
         "cookie-deprecation-metadata",
         Severity::Info,
@@ -203,7 +204,7 @@ pub(crate) const CODES: &[Code] = &[
         Severity::Info,
         "a slow API was used (document.cookie)",
     ),
-    Code::new(
+    Code::plain(
         "SelectivePermissionsInterventionIssue",
         "selective-permissions-intervention",
         Severity::Info,
@@ -215,7 +216,7 @@ pub(crate) const CODES: &[Code] = &[
         Severity::Info,
         "an email verification request failed",
     ),
-    Code::new(
+    Code::plain(
         "LazyLoadImageIssue",
         "lazy-load-image",
         Severity::Info,
@@ -225,15 +226,17 @@ pub(crate) const CODES: &[Code] = &[
 
 /// A row of [`CODES`].
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Code {
+pub struct Code {
     /// Chrome's `InspectorIssueCode`.
-    pub(crate) name: &'static str,
+    pub name: &'static str,
     /// The start of its rule ids (the reason follows); empty for
     /// `GenericIssue`, whose reasons say it all.
-    pub(crate) rule: &'static str,
+    pub rule: &'static str,
     /// Its severity, unless the details say otherwise.
-    pub(crate) severity: Severity,
-    pub(crate) about: &'static str,
+    pub severity: Severity,
+    pub about: &'static str,
+    /// Whether its details give a reason, which ends its rule ids.
+    pub reasons: bool,
 }
 
 impl Code {
@@ -248,6 +251,20 @@ impl Code {
             rule,
             severity,
             about,
+            reasons: true,
+        }
+    }
+
+    /// A code whose details give no reason: its rule is `rule`.
+    const fn plain(
+        name: &'static str,
+        rule: &'static str,
+        severity: Severity,
+        about: &'static str,
+    ) -> Self {
+        Self {
+            reasons: false,
+            ..Self::new(name, rule, severity, about)
         }
     }
 }

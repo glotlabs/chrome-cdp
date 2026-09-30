@@ -101,6 +101,7 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`pdf`](pdf.md) | Print the page to a PDF file (headless browsers only) |
 | [`console`](console.md) | Show what the page logged: console calls, uncaught exceptions and the browser's messages |
 | [`errors`](errors.md) | Show the page's errors: uncaught exceptions, console.error and failed loads from its own origin |
+| [`issues`](issues.md) | Show Chrome's own findings about the page, as in DevTools' Issues panel: mixed content, CORS and CSP blocks, cookie problems, deprecations, form problems |
 | [`network`](network.md) | Show the page's requests, or one in full, or clear the log |
 | [`downloads`](downloads.md) | List the files the session's pages downloaded |
 | [`eval`](eval.md) | Run JavaScript in the page and print its value |

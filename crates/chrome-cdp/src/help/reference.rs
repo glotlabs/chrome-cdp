@@ -30,10 +30,42 @@ pub(crate) fn files() -> BTreeMap<String, String> {
             let mut page = String::new();
             let _ = writeln!(page, "{HEADER}");
             command(&mut page, cmd, &format!("chrome-cdp {name}"), 1);
+            if *name == "issues" {
+                issue_codes(&mut page);
+            }
             files.insert(format!("{name}.md"), page);
         }
     }
     files
+}
+
+/// The `issues` page's table of Chrome's issue codes (from
+/// [`engine::ISSUE_CODES`]): each code's rule ids and severity.
+fn issue_codes(page: &mut String) {
+    page.push_str(
+        "\n## Rules and severities\n\n\
+         Each of Chrome's issue codes, the start of its rule ids (the reason\n\
+         in Chrome's details follows, in kebab-case: `cookie-` +\n\
+         `ExcludeSameSiteUnspecifiedTreatedAsLax` is\n\
+         `cookie-exclude-same-site-unspecified-treated-as-lax`), and its\n\
+         severity. A code this chrome-cdp does not know (a newer Chrome's)\n\
+         is shown as `unknown-<code>`, severity info.\n\n\
+         | Code | Rule | Severity | What |\n|---|---|---|---|\n",
+    );
+    for code in engine::ISSUE_CODES {
+        let rule = match (code.rule, code.reasons) {
+            ("", _) => "`<reason>`".to_owned(),
+            (rule, true) => format!("`{rule}-<reason>`"),
+            (rule, false) => format!("`{rule}`"),
+        };
+        let _ = writeln!(
+            page,
+            "| `{}` | {rule} | {} | {} |",
+            code.name,
+            code.severity.as_str(),
+            cell(code.about)
+        );
+    }
 }
 
 const HEADER: &str = "<!-- Generated from the CLI by `cargo xtask docs`; do not edit. -->";

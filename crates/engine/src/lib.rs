@@ -99,6 +99,7 @@ pub use input::{ActionPoint, Checks, check_action, check_fill_form, parse_modifi
 pub use layout::check_layout;
 pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, is_ref, parse_locator};
 pub use navigate::normalize_url;
+pub use observe::issues::{CODES as ISSUE_CODES, Code as IssueCode};
 pub use observe::{RESOURCE_TYPES, check_eval, check_screenshot};
 pub use places::in_root;
 pub use raw::check_cdp;

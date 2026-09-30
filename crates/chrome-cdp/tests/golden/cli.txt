@@ -155,6 +155,8 @@ command chrome-cdp expect
   flag --url value=PATTERN
   flag --title value=TEXT
   flag --no-errors
+  flag --no-issues
+  flag --min-severity value=SEVERITY values=error|warning|info
   flag --all-tabs
   flag --no-failed-requests
   flag --since value=MARK
@@ -450,6 +452,14 @@ command chrome-cdp errors
   flag --follow -f
   flag --sourcemaps
   flag --locals
+  flag --max-chars value=N
+command chrome-cdp issues
+  flag --since value=WHEN
+  flag --grep value=REGEX
+  flag --limit value=N
+  flag --follow -f
+  flag --min-severity value=SEVERITY values=error|warning|info
+  flag --all-tabs
   flag --max-chars value=N
 command chrome-cdp network
   flag --failed

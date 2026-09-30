@@ -1,0 +1,19 @@
+$ chrome-cdp issues --since 0
+exit: 0
+--- stdout
+2 issues (1 error, 1 warning)
+W deprecation-xml-http-request-synchronous-in-non-worker-outside-before-unload  a synchronous XMLHttpRequest on the main thread is deprecated  (/issues/sync.js:3)  ×1
+E content-security-policy-inline-violation  an inline script or style blocked by the Content-Security-Policy's script-src-elem  (e1 script "document.title = 'inline ran';", /issues/golden.html:13)  ×1
+1 less severe issue hidden; chrome-cdp issues --min-severity info --since 0 shows them
+
+$ chrome-cdp issues --since 0 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"cursor":2,"dropped":0,"hidden":1,"issues":[{"category":"issues","code":"DeprecationIssue","count":1,"docs":"https://chromestatus.com/features","key":"issues/deprecation-xml-http-request-synchronous-in-non-worker-outside-before-unload/self/issues/sync.js:3","message":"a synchronous XMLHttpRequest on the main thread is deprecated","rule":"deprecation-xml-http-request-synchronous-in-non-worker-outside-before-unload","seq":1,"severity":"warning","tab":"t1","target":{"source":{"column":10,"line":3,"url":"<site>/issues/sync.js"}},"time_ms":<ms>},{"category":"issues","code":"ContentSecurityPolicyIssue","count":1,"docs":"https://developer.mozilla.org/docs/Web/HTTP/Guides/CSP","key":"issues/content-security-policy-inline-violation/self/issues/golden.html:13","message":"an inline script or style blocked by the Content-Security-Policy's script-src-elem","rule":"content-security-policy-inline-violation","seq":2,"severity":"error","tab":"t1","target":{"element":"script \"document.title = 'inline ran';\"","ref":"e1","source":{"column":1,"line":13,"url":"<site>/issues/golden.html"}},"time_ms":<ms>}],"skipped":0,"tab":"t1"}}
+
+$ chrome-cdp issues --since 0 -q
+exit: 0
+--- stdout
+deprecation-xml-http-request-synchronous-in-non-worker-outside-before-unload a synchronous XMLHttpRequest on the main thread is deprecated
+content-security-policy-inline-violation an inline script or style blocked by the Content-Security-Policy's script-src-elem
+

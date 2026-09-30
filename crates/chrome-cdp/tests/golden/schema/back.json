@@ -488,6 +488,20 @@
           "type": "object"
         },
         {
+          "$ref": "#/$defs/Issue",
+          "description": "Chrome raised an issue of severity `error` (see `issues`) after\nthe command began: mixed content blocked, a CORS or CSP block, …",
+          "properties": {
+            "type": {
+              "const": "issue",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
           "description": "A request of the page to its own origin failed after the command\nbegan: an HTTP status of 400 or more, or no response.",
           "properties": {
             "error": {
@@ -679,6 +693,109 @@
         }
       ]
     },
+    "FindingCookie": {
+      "description": "A cookie a finding is about.",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "domain",
+        "path"
+      ],
+      "type": "object"
+    },
+    "FindingTarget": {
+      "description": "What a finding is about. Every field is optional: a finding names\nwhat it knows.",
+      "properties": {
+        "cookie": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FindingCookie"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The cookie it is about."
+        },
+        "element": {
+          "description": "The element's role and name: `textbox \"Email\"`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "frame": {
+          "description": "The frame it is in, when that is not the tab's main frame (what\n`--frame` takes; `frames` lists them).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "locator": {
+          "description": "The element's stable locator, for scripts.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ref": {
+          "description": "The element's ref, e.g. `e12`, while its document lives.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "request_id": {
+          "description": "The request's id in the tab's network log (`network show <id>`).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceLine"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The script and line (1-based) it comes from."
+        },
+        "url": {
+          "description": "The URL it is about: a request's, a blocked resource's, a\ndocument's.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "worker": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Worker"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The worker it came from, if a worker's."
+        }
+      },
+      "type": "object"
+    },
     "HotFile": {
       "description": "A file a hot update names.",
       "properties": {
@@ -718,6 +835,81 @@
           "type": "string"
         }
       ]
+    },
+    "Issue": {
+      "description": "One of Chrome's own findings about a page (`Audits.issueAdded`, the\nDevTools Issues panel), in the shape every page finding has (plan\n17): same `rule` and `key`, same finding.",
+      "properties": {
+        "category": {
+          "description": "Always `issues`: the audit category it belongs to.",
+          "type": "string"
+        },
+        "code": {
+          "description": "Chrome's `InspectorIssueCode`, e.g. `MixedContentIssue`.",
+          "type": "string"
+        },
+        "count": {
+          "description": "How many times Chrome raised it (occurrences with the same rule\nand key are one issue).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "docs": {
+          "description": "A page that explains it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "description": "Its identity across runs, ports and reloads:\n`issues/<rule>/<where>`, where is the element's stable locator\n(else its role and name), the URL without query (`self/…` on the\npage's own origin), the cookie's name and domain, or the page's\npath. No refs, request ids or ports.",
+          "type": "string"
+        },
+        "message": {
+          "description": "What is wrong, in one line.",
+          "type": "string"
+        },
+        "rule": {
+          "description": "A stable id: the kebab-case of Chrome's code and of its reason,\ne.g. `mixed-content-blocked`,\n`cookie-exclude-same-site-unspecified-treated-as-lax`;\n`unknown-<code>` for a code this chrome-cdp does not know.",
+          "type": "string"
+        },
+        "seq": {
+          "description": "Its place in the tab's issues; later ones are larger\n(`--since <seq>`).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "tab": {
+          "description": "The tab, e.g. `t1`.",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/FindingTarget",
+          "description": "What it is about."
+        },
+        "time_ms": {
+          "description": "When the daemon received it (its last occurrence), in ms since the\nUnix epoch.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seq",
+        "time_ms",
+        "tab",
+        "category",
+        "rule",
+        "severity",
+        "code",
+        "message",
+        "target",
+        "key",
+        "count"
+      ],
+      "type": "object"
     },
     "LogpointValue": {
       "description": "An expression of a logpoint, and its value at a hit.",
@@ -881,6 +1073,39 @@
       "required": [
         "ok",
         "data"
+      ],
+      "type": "object"
+    },
+    "Severity": {
+      "description": "How severe a finding is, most severe first (plan 17): `error` breaks\nsomething for some users or leaks data, `warning` will break or\ndegrade, `info` is worth knowing. `--min-severity warning` shows\n`error` and `warning`.",
+      "enum": [
+        "error",
+        "warning",
+        "info"
+      ],
+      "type": "string"
+    },
+    "SourceLine": {
+      "description": "A place in a script: its URL, line and column (1-based).",
+      "properties": {
+        "column": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "line": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "line",
+        "column"
       ],
       "type": "object"
     },

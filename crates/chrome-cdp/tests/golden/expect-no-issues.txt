@@ -1,0 +1,15 @@
+$ chrome-cdp expect --no-issues
+exit: 1
+--- stderr
+error: expect failed: --no-issues
+  expected: no issues of severity warning or error since the page loaded
+  actual: 2 issues
+  issue: deprecation-xml-http-request-synchronous-in-non-worker-outside-before-unload a synchronous XMLHttpRequest on the main thread is deprecated
+  issue: content-security-policy-inline-violation an inline script or style blocked by the Content-Security-Policy's script-src-elem
+  hint: chrome-cdp issues --since 0   (shows them with what they are about)
+
+$ chrome-cdp expect --no-issues --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect failed: --no-issues","hint":"chrome-cdp issues --since 0   (shows them with what they are about)","notes":[{"label":"expected","text":"no issues of severity warning or error since the page loaded"},{"label":"actual","text":"2 issues"},{"label":"issue","text":"deprecation-xml-http-request-synchronous-in-non-worker-outside-before-unload a synchronous XMLHttpRequest on the main thread is deprecated"},{"label":"issue","text":"content-security-policy-inline-violation an inline script or style blocked by the Content-Security-Policy's script-src-elem"}],"details":{"assertion":"--no-issues","expected":"no issues of severity warning or error since the page loaded","issues":[{"category":"issues","code":"DeprecationIssue","count":1,"docs":"https://chromestatus.com/features","key":"issues/deprecation-xml-http-request-synchronous-in-non-worker-outside-before-unload/self/issues/sync.js:3","message":"a synchronous XMLHttpRequest on the main thread is deprecated","rule":"deprecation-xml-http-request-synchronous-in-non-worker-outside-before-unload","seq":1,"severity":"warning","tab":"t1","target":{"source":{"column":10,"line":3,"url":"<site>/issues/sync.js"}},"time_ms":<ms>,"type":"issue"},{"category":"issues","code":"ContentSecurityPolicyIssue","count":1,"docs":"https://developer.mozilla.org/docs/Web/HTTP/Guides/CSP","key":"issues/content-security-policy-inline-violation/self/issues/golden.html:13","message":"an inline script or style blocked by the Content-Security-Policy's script-src-elem","rule":"content-security-policy-inline-violation","seq":2,"severity":"error","tab":"t1","target":{"element":"script \"document.title = 'inline ran';\"","ref":"e1","source":{"column":1,"line":13,"url":"<site>/issues/golden.html"}},"time_ms":<ms>,"type":"issue"}]}}}
+

@@ -4,7 +4,7 @@
 Assert something about the page, retrying until it holds: an element's state, text, value, count, …
 
 ```text
-chrome-cdp expect [OPTIONS] <LOCATOR|--url <PATTERN>|--title <TEXT>|--no-errors|--no-failed-requests|--a11y|--layout> [MATCHER] [VALUE]...
+chrome-cdp expect [OPTIONS] <LOCATOR|--url <PATTERN>|--title <TEXT>|--no-errors|--no-issues|--no-failed-requests|--a11y|--layout> [MATCHER] [VALUE]...
 ```
 
 Arguments:
@@ -22,9 +22,11 @@ Options:
 - `--url <PATTERN>`: The page URL matches: a part of it, a glob (\* and \*\*) or /regex/
 - `--title <TEXT>`: The page title contains this (all of it with --exact), or matches /regex/
 - `--no-errors`: No uncaught exception or console error since the page loaded (or --since)
-- `--all-tabs`: --no-errors and --no-failed-requests: in every tab of the session (or --context), each since it opened, whatever it loaded since
+- `--no-issues`: No issue of Chrome's (see `issues`) of --min-severity or above since the page loaded (or --since)
+- `--min-severity <SEVERITY>`: --no-issues: the least severe issues that fail it (one of `error`, `warning`, `info`)
+- `--all-tabs`: --no-errors, --no-issues and --no-failed-requests: in every tab of the session (or --context), each since it opened, whatever it loaded since
 - `--no-failed-requests`: No request failed or got a status of 400 or more since the page loaded (or --since)
-- `--since <MARK>`: --no-errors, --no-failed-requests and `request`: only after this mark (see `mark`), not since the page loaded
+- `--since <MARK>`: --no-errors, --no-issues, --no-failed-requests and `request`: only after this mark (see `mark`), not since the page loaded
 - `--count <N>`: `request`: exactly this many such requests
 - `--query <NAME=VALUE>`: `request`: the query has this parameter, `name=value` (a glob; repeatable)
 - `--header <HEADER>`: `request`: it has this header, 'Name: value' (a glob; repeatable)
@@ -67,6 +69,9 @@ Page checks:
   --no-errors          no uncaught exception or console.error since the
                        page loaded (or --since <mark>; see `mark`; or
                        --all-tabs: in any tab since it opened)
+  --no-issues          no issue of Chrome's (`issues`) of severity warning
+                       or error since then (--min-severity error|info;
+                       --since, --all-tabs as for --no-errors)
   --no-failed-requests no request failed or got a 4xx/5xx since then
                        (--origin self: only to the page's origin; the
                        browser's own /favicon.ico does not count;
@@ -109,6 +114,7 @@ Examples:
   chrome-cdp expect --url '**/dashboard'
   chrome-cdp expect --no-errors --since before-save
   chrome-cdp expect --no-failed-requests --all-tabs
+  chrome-cdp expect --no-issues --min-severity error
   chrome-cdp expect --a11y --level A
   chrome-cdp expect --layout --baseline cart --viewports mobile,desktop
   chrome-cdp expect mock-state todos count 4

@@ -1,0 +1,13 @@
+$ chrome-cdp issues
+exit: 0
+--- stdout
+no new issues in t1
+
+$ chrome-cdp issues --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"cursor":0,"dropped":0,"hidden":0,"issues":[],"skipped":0,"tab":"t1"}}
+
+$ chrome-cdp issues -q
+exit: 0
+

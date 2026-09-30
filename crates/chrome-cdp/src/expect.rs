@@ -121,9 +121,10 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
         return Ok(Expectation::NoIssues {
             since: args.since.clone(),
             all_tabs: args.all_tabs,
-            min_severity: args
-                .min_severity
-                .map_or(protocol::schema::Severity::Warning, SeverityArg::to_severity),
+            min_severity: args.min_severity.map_or(
+                protocol::schema::Severity::Warning,
+                SeverityArg::to_severity,
+            ),
         });
     }
     if args.no_failed_requests {
