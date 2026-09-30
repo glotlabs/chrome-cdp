@@ -262,6 +262,11 @@ const CASES: &[(&str, &str)] = &[
         "pdf -o a.pdf --format A4",
     ),
     (
+        "await page.pdf({ path: 'a.pdf', scale: 0.8, pageRanges: '1-2, 4', displayHeaderFooter: true, footerTemplate: '<span class=\"pageNumber\"></span>' });",
+        "pdf -o a.pdf --scale 0.8 --pages 1-2,4 --footer '<span class=\"pageNumber\"></span>'",
+    ),
+    ("await page.pdf({ headerTemplate: '<b>x</b>' });", "pdf"),
+    (
         "await page.evaluate(() => localStorage.clear());",
         "eval '() => localStorage.clear()'",
     ),
@@ -524,6 +529,10 @@ fn statements_become_commands() {
 
 /// Each case: code, and a part of the TODO line it becomes.
 const TODOS: &[(&str, &str)] = &[
+    (
+        "await page.pdf({ displayHeaderFooter: true });",
+        "displayHeaderFooter without templates",
+    ),
     ("if (x) { await page.goto('/'); }", "(conditions and loops"),
     (
         "for (const u of users) { await page.goto(u); }",

@@ -1042,14 +1042,56 @@ impl<'s> Converter<'s> {
             }
             "pdf" => {
                 let mut c = cmd(["pdf"]);
-                for (k, v) in options(arg(0), &["path", "format", "landscape", "printBackground"])?
-                {
+                // The templates print only with `displayHeaderFooter`.
+                let mut header_footer = false;
+                let mut templates = Vec::new();
+                for (k, v) in options(
+                    arg(0),
+                    &[
+                        "path",
+                        "format",
+                        "landscape",
+                        "printBackground",
+                        "scale",
+                        "pageRanges",
+                        "preferCSSPageSize",
+                        "displayHeaderFooter",
+                        "headerTemplate",
+                        "footerTemplate",
+                    ],
+                )? {
                     c = match k {
                         "path" => c.flag("-o", word(env, v)?),
                         "format" => c.flag("--format", word(env, v)?),
                         "landscape" => bool_switch(c, v, "--landscape")?,
+                        "scale" => c.flag("--scale", number(v)?),
+                        "pageRanges" => c.flag("--pages", plain(env, v)?.replace(' ', "")),
+                        "preferCSSPageSize" => bool_switch(c, v, "--css-page-size")?,
+                        "displayHeaderFooter" => {
+                            header_footer = boolean(v, "displayHeaderFooter")?;
+                            c
+                        }
+                        "headerTemplate" => {
+                            templates.push(("--header", word(env, v)?));
+                            c
+                        }
+                        "footerTemplate" => {
+                            templates.push(("--footer", word(env, v)?));
+                            c
+                        }
                         _ => bool_switch(c, v, "--background")?,
                     };
+                }
+                if header_footer {
+                    if templates.is_empty() {
+                        return why(
+                            "displayHeaderFooter without templates: pdf prints Chrome's default \
+                             header and footer only through --header and --footer",
+                        );
+                    }
+                    for (flag, template) in templates {
+                        c = c.flag(flag, template);
+                    }
                 }
                 one(c)
             }
@@ -1852,10 +1894,18 @@ fn options<'e>(e: Option<&'e Expr>, allowed: &[&str]) -> Result<Vec<(&'e str, &'
 }
 
 fn bool_switch(c: Cmd, v: &Expr, flag: &str) -> Result<Cmd, Why> {
+    Ok(if boolean(v, flag)? {
+        c.arg(flag.to_owned())
+    } else {
+        c
+    })
+}
+
+fn boolean(v: &Expr, what: &str) -> Result<bool, Why> {
     match v {
-        Expr::Name(b) if b == "true" => Ok(c.arg(flag.to_owned())),
-        Expr::Name(b) if b == "false" => Ok(c),
-        _ => why(format!("{flag} computed at run time")),
+        Expr::Name(b) if b == "true" => Ok(true),
+        Expr::Name(b) if b == "false" => Ok(false),
+        _ => why(format!("{what} computed at run time")),
     }
 }
 
