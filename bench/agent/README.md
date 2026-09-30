@@ -23,9 +23,14 @@ timeout_secs = 600       # optional: the run fails after this long
 [setup]                  # optional, applied in this order:
 copy = [{ from = "examples/e2e-shop", to = ".", exclude = ["node_modules"] }]
 #                          then files/ is copied over it
+link = [{ from = "testdata/apps-src/vue/node_modules", to = "app/node_modules",
+          hint = "run `cargo xtask apps vue`" }]   # symlinks, after files/
 remove = ["e2e/vars"]
 replace = [{ file = "dist/assets/index-*.js", from = "…", to = "…" }]
 serve = "app"            # serve ./app on a local dev server as {dev}
+# or a real dev server as {dev} (http://127.0.0.1:{port}): a shell command
+# run in the working dir, which must listen on {port}; killed afterwards
+dev = "cd app && exec node node_modules/vite/bin/vite.js --port {port} --strictPort"
 
 [verify]                 # every check given must pass
 answer = ["7F3K-92"]     # in the reply's last `ANSWER:` line
@@ -50,7 +55,8 @@ replace = […]
 
 Placeholders in the prompt, `replace`, `page`, the solution's `batch` and
 the test args: `{site}` and `{site_b}` (the fixture site's two origins,
-`127.0.0.1` and `localhost`), `{dev}` (the `serve`d dir), `{workdir}`,
+`127.0.0.1` and `localhost`), `{dev}` (the `serve`d dir or the `dev`
+server), `{workdir}`,
 `{port}` and `{port2}` (free ports), `{fixtures}` (the fixtures binary,
 which also serves e2e-shop's real backend: `{fixtures} --shop dist`).
 
@@ -65,6 +71,11 @@ which also serves e2e-shop's real backend: `{fixtures} --shop dist`).
   says which browser tool the agent has.
 - Give every task a `[solution]`, and run `--check`: the verifier must fail
   on the untouched task and pass after the solution.
+- The `find-code-*` tasks run a fixture app of `testdata/apps-src` on
+  Vite's dev server, with the `node_modules` that `cargo xtask apps`
+  installed (linked, not copied), and plant a bug in a component file the
+  page's text does not name. Their `files/app/vite.config.js` is a plain
+  config in place of the fixtures' shared build.
 - Keep answers hard to read from the page's source when the task is about
   the browser (the voucher, the popup's code and the beta code are built by
   script).

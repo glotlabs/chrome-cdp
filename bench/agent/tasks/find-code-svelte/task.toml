@@ -1,0 +1,48 @@
+title = "Fix the Add buttons of a Svelte app on its Vite dev server"
+timeout_secs = 900
+prompt = """
+Our shop's cart (a Svelte app in ./app) is running on its Vite dev server
+at {dev}/. Its "Add" buttons do nothing: the quantity and the total stay
+the same. Find the bug in ./app/src, fix it, and check in the browser
+that adding an item works. The dev server picks up your edits by itself;
+leave it running.
+"""
+
+[setup]
+copy = [
+  { from = "testdata/apps-src/svelte", to = "app", exclude = ["node_modules"] },
+  { from = "testdata/apps-src/shared/public", to = "app/public" },
+]
+link = [{ from = "testdata/apps-src/svelte/node_modules", to = "app/node_modules", hint = "run `cargo xtask apps svelte` (needs Node)" }]
+# The bug: the prop is `onadd` (CartList passes `{onadd}`), so `onAdd` is
+# undefined and the click throws.
+replace = [
+  { file = "app/src/components/CartItem.svelte", from = """
+    item,
+    onadd,""", to = """
+    item,
+    onAdd,""" },
+  { file = "app/src/components/CartItem.svelte", from = "}: { item: Item; onadd: (id: number) => void;", to = "}: { item: Item; onAdd: (id: number) => void;" },
+  { file = "app/src/components/CartItem.svelte", from = "    onadd(item.id);", to = "    onAdd(item.id);" },
+]
+dev = "cd app && exec node node_modules/vite/bin/vite.js --port {port} --strictPort --host 127.0.0.1"
+
+[verify]
+page = """
+open {dev}/
+expect testid=qty-3 text 4 --exact
+click testid=add-3
+expect testid=qty-3 text 5 --exact
+expect testid=total text 'Total: 44' --exact
+"""
+
+[solution]
+replace = [
+  { file = "app/src/components/CartItem.svelte", from = """
+    item,
+    onAdd,""", to = """
+    item,
+    onadd,""" },
+  { file = "app/src/components/CartItem.svelte", from = "}: { item: Item; onAdd: (id: number) => void;", to = "}: { item: Item; onadd: (id: number) => void;" },
+  { file = "app/src/components/CartItem.svelte", from = "    onAdd(item.id);", to = "    onadd(item.id);" },
+]

@@ -1,0 +1,39 @@
+title = "Fix the Remove buttons of a React 19 app on its Vite dev server"
+timeout_secs = 900
+prompt = """
+Our shop's cart (a React app in ./app) is running on its Vite dev server
+at {dev}/. Its "Remove" buttons do nothing: the item stays in the cart.
+Find the bug in ./app/src, fix it, and check in the browser that removing
+an item works. The dev server picks up your edits by itself; leave it
+running.
+"""
+
+[setup]
+copy = [
+  { from = "testdata/apps-src/react19", to = "app", exclude = ["node_modules"] },
+  { from = "testdata/apps-src/shared/public", to = "app/public" },
+]
+link = [{ from = "testdata/apps-src/react19/node_modules", to = "app/node_modules", hint = "run `cargo xtask apps react19` (needs Node)" }]
+# The bug: the button has no data-id, so the id is NaN.
+replace = [{ file = "app/src/components/CartItem.tsx", from = """
+        onClick={() => {
+          countClick("remove");
+          onRemove(item.id);""", to = """
+        onClick={(event) => {
+          countClick("remove");
+          onRemove(Number(event.currentTarget.dataset.id));""" }]
+dev = "cd app && exec node node_modules/vite/bin/vite.js --port {port} --strictPort --host 127.0.0.1"
+
+[verify]
+page = """
+open {dev}/
+expect testid=item-2 visible
+click testid=remove-2
+expect testid=item-2 detached
+expect testid=item-1 visible
+expect testid=item-3 visible
+expect testid=total text 'Total: 36' --exact
+"""
+
+[solution]
+replace = [{ file = "app/src/components/CartItem.tsx", from = "onRemove(Number(event.currentTarget.dataset.id));", to = "onRemove(item.id);" }]
