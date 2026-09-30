@@ -1,6 +1,7 @@
 // Plan 10's token-efficiency suite, and plan 04's first acceptance box:
 // for each page of the snapshot corpus (testdata/site/snapshot/), count the
-// tokens of `chrome-cdp snapshot`, `snapshot -i` and Playwright MCP's
+// tokens of `chrome-cdp snapshot`, `snapshot -i`, `snapshot --fold`,
+// `snapshot --budget 2000` (plan 16) and Playwright MCP's
 // `browser_snapshot`, and audit that every element Playwright gives a ref
 // to an agent can act on has a ref in chrome-cdp's tree too.
 //
@@ -37,7 +38,7 @@ const TARGET = process.env.CARGO_TARGET_DIR || join(ROOT, 'target');
 const BIN = join(TARGET, process.env.PROFILE || 'debug');
 
 const CORPUS = ['simple', 'login', 'forms', 'hidden', 'clickable', 'lists-tables', 'widgets',
-  'modal', 'shadow', 'frames', 'article', 'big-app', 'huge'];
+  'modal', 'shadow', 'frames', 'article', 'big-app', 'huge', 'cards'];
 
 // Roles an agent acts on (chrome-cdp's `is_interactive`, less its own
 // `clickable` and `iframe`).
@@ -196,6 +197,8 @@ async function main() {
       ccdp.run('goto', url);
       const ours = ccdp.run('snapshot');
       const interactive = ccdp.run('snapshot', '-i');
+      const fold = ccdp.run('snapshot', '--fold');
+      const budget = ccdp.run('snapshot', '--budget', '2000');
       // Every node, for the audit: nothing collapsed or cut.
       const full = ccdp.run('snapshot', '--all', '--max-chars', '0');
       await pw.call('browser_navigate', { url });
@@ -206,6 +209,8 @@ async function main() {
         page,
         chrome_cdp: await tokens(ours),
         interactive: await tokens(interactive),
+        fold: await tokens(fold),
+        budget: await tokens(budget),
         playwright: await tokens(theirs),
         actionable: pwRefs.filter((n) => ACTIONABLE.has(n.role)).length,
         missing,
@@ -224,7 +229,10 @@ async function main() {
     site.stop();
   }
   const sum = (k) => rows.reduce((s, r) => s + r[k], 0);
-  const total = { chrome_cdp: sum('chrome_cdp'), interactive: sum('interactive'), playwright: sum('playwright') };
+  const total = {
+    chrome_cdp: sum('chrome_cdp'), interactive: sum('interactive'), fold: sum('fold'),
+    budget: sum('budget'), playwright: sum('playwright'),
+  };
   if (opts.json) {
     console.log(JSON.stringify({ tokenizer: counter.name, rows, total }, null, 2));
     return;
@@ -232,11 +240,11 @@ async function main() {
   const pct = (a, b) => `${Math.round((100 * a) / b)}%`;
   const pad = (s, n) => String(s).padStart(n);
   console.log(`tokenizer: ${counter.name}`);
-  console.log(`${'page'.padEnd(14)}${pad('snapshot', 10)}${pad('-i', 8)}${pad('playwright', 12)}${pad('ratio', 7)}${pad('actionable', 12)}${pad('lost', 6)}`);
+  console.log(`${'page'.padEnd(14)}${pad('snapshot', 10)}${pad('-i', 8)}${pad('--fold', 8)}${pad('--budget', 10)}${pad('playwright', 12)}${pad('ratio', 7)}${pad('actionable', 12)}${pad('lost', 6)}`);
   for (const r of rows) {
-    console.log(`${r.page.padEnd(14)}${pad(r.chrome_cdp, 10)}${pad(r.interactive, 8)}${pad(r.playwright, 12)}${pad(pct(r.chrome_cdp, r.playwright), 7)}${pad(r.actionable, 12)}${pad(r.missing.length, 6)}`);
+    console.log(`${r.page.padEnd(14)}${pad(r.chrome_cdp, 10)}${pad(r.interactive, 8)}${pad(r.fold, 8)}${pad(r.budget, 10)}${pad(r.playwright, 12)}${pad(pct(r.chrome_cdp, r.playwright), 7)}${pad(r.actionable, 12)}${pad(r.missing.length, 6)}`);
   }
-  console.log(`${'total'.padEnd(14)}${pad(total.chrome_cdp, 10)}${pad(total.interactive, 8)}${pad(total.playwright, 12)}${pad(pct(total.chrome_cdp, total.playwright), 7)}`);
+  console.log(`${'total'.padEnd(14)}${pad(total.chrome_cdp, 10)}${pad(total.interactive, 8)}${pad(total.fold, 8)}${pad(total.budget, 10)}${pad(total.playwright, 12)}${pad(pct(total.chrome_cdp, total.playwright), 7)}`);
   for (const r of rows.filter((r) => r.missing.length)) {
     console.log(`\n${r.page}: Playwright refs with no chrome-cdp ref of the same name:`);
     for (const line of r.missing) console.log(`  ${line}`);

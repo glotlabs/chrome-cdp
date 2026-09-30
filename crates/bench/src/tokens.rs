@@ -1,6 +1,6 @@
 //! The token suite: for each snapshot corpus page, the tokens of
-//! `chrome-cdp snapshot`, `snapshot -i` and Playwright MCP's
-//! `browser_snapshot`. `bench/playwright/snapshot-tokens.mjs` does the
+//! `chrome-cdp snapshot`, `snapshot -i`, `snapshot --fold`, `snapshot
+//! --budget 2000` and Playwright MCP's `browser_snapshot`. `bench/playwright/snapshot-tokens.mjs` does the
 //! counting (it drives Playwright MCP); this runs it and keeps the result.
 //! Counts are deterministic for a given tokenizer, so the suite's gate is
 //! exact where the micro suite's is noisy.
@@ -19,6 +19,12 @@ pub struct Row {
     pub page: String,
     pub chrome_cdp: u64,
     pub interactive: u64,
+    /// `snapshot --fold` (plan 16; 0 in reports from before it).
+    #[serde(default)]
+    pub fold: u64,
+    /// `snapshot --budget 2000`.
+    #[serde(default)]
+    pub budget: u64,
     pub playwright: u64,
     /// Elements Playwright gives a ref that an agent acts on.
     pub actionable: u64,
@@ -30,6 +36,10 @@ pub struct Row {
 pub struct Totals {
     pub chrome_cdp: u64,
     pub interactive: u64,
+    #[serde(default)]
+    pub fold: u64,
+    #[serde(default)]
+    pub budget: u64,
     pub playwright: u64,
 }
 
@@ -115,9 +125,16 @@ pub fn metrics(c: &Counts) -> Vec<Metric> {
     for r in &c.rows {
         out.push(tokens(format!("snapshot/{}", r.page), r.chrome_cdp));
         out.push(tokens(format!("snapshot-i/{}", r.page), r.interactive));
+        out.push(tokens(format!("snapshot-fold/{}", r.page), r.fold));
+        out.push(tokens(format!("snapshot-budget-2000/{}", r.page), r.budget));
     }
     out.push(tokens("snapshot/total".to_owned(), c.total.chrome_cdp));
     out.push(tokens("snapshot-i/total".to_owned(), c.total.interactive));
+    out.push(tokens("snapshot-fold/total".to_owned(), c.total.fold));
+    out.push(tokens(
+        "snapshot-budget-2000/total".to_owned(),
+        c.total.budget,
+    ));
     out
 }
 
@@ -139,18 +156,20 @@ pub fn markdown(r: &TokenReport) -> String {
     };
     let mut md = format!(
         "Last run: {} with {}. Tokenizer: {tokenizer}.\n\n\
-         | Page | `snapshot` | `snapshot -i` | Playwright MCP `browser_snapshot` | `snapshot` vs MCP | Actionable (MCP refs) | Without a chrome-cdp ref |\n\
-         |---|---:|---:|---:|---:|---:|---:|\n",
+         | Page | `snapshot` | `snapshot -i` | `--fold` | `--budget 2000` | Playwright MCP `browser_snapshot` | `snapshot` vs MCP | Actionable (MCP refs) | Without a chrome-cdp ref |\n\
+         |---|---:|---:|---:|---:|---:|---:|---:|---:|\n",
         report::date(r.created),
         r.chrome
     );
     for row in &c.rows {
         let _ = writeln!(
             md,
-            "| {} | {} | {} | {} | {} | {} | {} |",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} |",
             row.page,
             row.chrome_cdp,
             row.interactive,
+            row.fold,
+            row.budget,
             row.playwright,
             pct(row.chrome_cdp, row.playwright),
             row.actionable,
@@ -159,9 +178,11 @@ pub fn markdown(r: &TokenReport) -> String {
     }
     let _ = writeln!(
         md,
-        "| **total** | **{}** | **{}** | **{}** | **{}** | | |",
+        "| **total** | **{}** | **{}** | **{}** | **{}** | **{}** | **{}** | | |",
         c.total.chrome_cdp,
         c.total.interactive,
+        c.total.fold,
+        c.total.budget,
         c.total.playwright,
         pct(c.total.chrome_cdp, c.total.playwright)
     );
@@ -179,6 +200,8 @@ mod tests {
                 page: "simple".into(),
                 chrome_cdp: 40,
                 interactive: 20,
+                fold: 35,
+                budget: 40,
                 playwright: 100,
                 actionable: 3,
                 missing: vec![],
@@ -186,6 +209,8 @@ mod tests {
             total: Totals {
                 chrome_cdp: 40,
                 interactive: 20,
+                fold: 35,
+                budget: 40,
                 playwright: 100,
             },
         }
@@ -200,8 +225,12 @@ mod tests {
             [
                 "snapshot/simple",
                 "snapshot-i/simple",
+                "snapshot-fold/simple",
+                "snapshot-budget-2000/simple",
                 "snapshot/total",
-                "snapshot-i/total"
+                "snapshot-i/total",
+                "snapshot-fold/total",
+                "snapshot-budget-2000/total"
             ]
         );
         let r = TokenReport {
@@ -213,7 +242,7 @@ mod tests {
         };
         let md = markdown(&r);
         assert!(
-            md.contains("| simple | 40 | 20 | 100 | 40% | 3 | 0 |"),
+            md.contains("| simple | 40 | 20 | 35 | 40 | 100 | 40% | 3 | 0 |"),
             "{md}"
         );
         assert!(md.contains("approximation"), "{md}");
