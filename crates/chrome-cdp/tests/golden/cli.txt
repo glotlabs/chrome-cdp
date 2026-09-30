@@ -253,6 +253,10 @@ command chrome-cdp why
   flag --for value=ACTION values=click|hover|fill|type|check|select|upload|drag
   flag --no-scroll
   flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp forms
+  arg LOCATOR
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+  flag --max-chars value=N
 command chrome-cdp layout
   arg LOCATOR
   flag --viewports value=LIST repeatable
@@ -353,6 +357,12 @@ command chrome-cdp fill
   arg LOCATOR required
   arg TEXT required
   flag --force
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp fill-form
+  arg LOCATOR
+  flag --values value=JSON
+  flag --file value=FILE
+  flag --submit
   flag --strict-refs env=CHROME_CDP_STRICT_REFS
 command chrome-cdp select
   arg LOCATOR required
