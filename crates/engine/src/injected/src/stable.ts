@@ -3,8 +3,10 @@
 // ref, which lives only as long as its session. Tried in order: role and
 // name, label, test id, placeholder, text; then the first of those that
 // is unique inside a named container (a list item, a row, a dialog, …);
-// then `>> nth=` as a last resort. Each is checked with the locator
-// engine itself, so it finds this element when the scenario runs.
+// then inside a container picked by the exact text of something in it
+// (`role=row >> has=text="Invoice 12" >> …`, plan 14); then `>> nth=` as
+// a last resort. Each is checked with the locator engine itself, so it
+// finds this element when the scenario runs. `locator --all` lists them.
 
 import { labelsOf, nameOf, roleOf } from './aria';
 import { norm, parentOf } from './dom';
@@ -103,32 +105,91 @@ function containers(a: Element, role: string): Candidate[] {
   return out.filter((c) => only(c.steps, a));
 }
 
-/** `{"locator": "…", "how": "role|label|…|scoped|nth"}`, or
- * `{"reason": "…"}` when there is none. In an iframe, the locator is the
- * frame's own; the engine puts the `frame=` step before it. */
-export function stable(el: Element, testid: string): string {
-  const texts = new Texts();
-  const own = candidates(el, testid || 'data-testid', texts);
-  for (const c of own) {
-    if (only(c.steps, el)) return JSON.stringify({ locator: c.locator, how: c.steps[0].kind });
+/** The first bit of text in `a`, outside `el`, that an element holds
+ * whole: `text="…"` finds that element, and `has=` the container around
+ * it. */
+function leafText(a: Element, el: Element, texts: Texts): string {
+  for (const leaf of Array.from(a.querySelectorAll('*'))) {
+    if (leaf.childElementCount > 0 || el.contains(leaf) || leaf.contains(el)) continue;
+    const text = norm(texts.of(leaf));
+    if (text) return text.length <= LONGEST ? text : '';
   }
-  if (own.length === 0) {
-    return JSON.stringify({ reason: 'it has no role and name, label, test id, placeholder or text' });
-  }
+  return '';
+}
+
+/** Every locator `stable` tries for `el`, best first; `how` says which
+ * kind it is. Their own candidates first, then scoped ones, then `nth=`. */
+function* tried(el: Element, testid: string, texts: Texts): Generator<Candidate & { how: string }> {
+  const own = candidates(el, testid, texts);
+  for (const c of own) yield { ...c, how: c.steps[0].kind };
+  if (own.length === 0) return;
+  const around: [Element, string][] = [];
   for (let a = parentOf(el); a; a = parentOf(a)) {
     const role = roleOf(a);
-    if (!role || !CONTEXT_ROLES.has(role)) continue;
+    if (role && CONTEXT_ROLES.has(role)) around.push([a, role]);
+  }
+  for (const [a, role] of around) {
     for (const outer of containers(a, role)) {
       for (const c of own) {
-        const steps = [...outer.steps, ...c.steps];
-        if (only(steps, el)) {
-          return JSON.stringify({ locator: `${outer.locator} >> ${c.locator}`, how: 'scoped' });
-        }
+        yield { steps: [...outer.steps, ...c.steps], locator: `${outer.locator} >> ${c.locator}`, how: 'scoped' };
       }
     }
   }
+  for (const [a, role] of around) {
+    const text = leafText(a, el, texts);
+    if (!text) continue;
+    const outer: Step[] = [
+      { kind: 'role', role },
+      { kind: 'has', steps: [{ kind: 'text', text: { mode: 'exact', value: text } }] },
+    ];
+    if (!only(outer, a)) continue;
+    for (const c of own) {
+      yield {
+        steps: [...outer, ...c.steps],
+        locator: `role=${role} >> has=text=${quoted(text)} >> ${c.locator}`,
+        how: 'has',
+      };
+    }
+  }
   const first = own[0];
-  const index = query(first.steps, null).indexOf(el);
-  if (index < 0) return JSON.stringify({ reason: 'no locator finds it (is it hidden?)' });
-  return JSON.stringify({ locator: `${first.locator} >> nth=${index}`, how: 'nth' });
+  const found = query(first.steps, null);
+  const index = found.indexOf(el);
+  if (index >= 0 && found.length > 1) {
+    yield { steps: [...first.steps, { kind: 'nth', index }], locator: `${first.locator} >> nth=${index}`, how: 'nth' };
+  }
+}
+
+/** `{"locator": "…", "how": "role|label|…|scoped|has|nth"}`, or
+ * `{"reason": "…"}` when there is none. With `all`, also `candidates`:
+ * every locator tried that finds `el`, with how many elements it finds
+ * (`1`: it finds `el` alone), the usable ones first: its own locators,
+ * and the scoped ones only when none of those is usable. In an iframe,
+ * the locators are the frame's own; the engine puts the `frame=` step
+ * before them. */
+export function stable(el: Element, testid: string, all?: boolean): string {
+  const texts = new Texts();
+  const usable: { locator: string; count: number }[] = [];
+  const others: { locator: string; count: number }[] = [];
+  let best: { locator: string; how: string } | null = null;
+  let any = false;
+  const own = new Set(['role', 'label', 'testid', 'placeholder', 'text']);
+  for (const c of tried(el, testid || 'data-testid', texts)) {
+    // Scoped forms are only tried when none of the element's own is usable.
+    if (best && own.has(best.how) && !own.has(c.how)) break;
+    any = true;
+    const found = query(c.steps, null);
+    if (found.length === 1 && found[0] === el) {
+      if (!best) best = { locator: c.locator, how: c.how };
+      if (!all) break;
+      usable.push({ locator: c.locator, count: 1 });
+    } else if (all && c.how !== 'scoped' && c.how !== 'has' && found.includes(el)) {
+      others.push({ locator: c.locator, count: found.length });
+    }
+  }
+  const candidates = all ? { candidates: [...usable, ...others] } : {};
+  if (best) return JSON.stringify({ ...best, ...candidates });
+  const reason = any
+    ? 'no locator finds it (is it hidden?)'
+    : 'it has no role and name, label, test id, placeholder or text';
+  return JSON.stringify({ reason, ...candidates });
 }

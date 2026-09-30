@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 54b2d23bd5c0b23b
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: d2e6be2ba4530332
 "use strict";
 (() => {
   // src/dom.ts
@@ -2213,31 +2213,76 @@ ${inner}
     }
     return out.filter((c) => only(c.steps, a));
   }
-  function stable(el, testid) {
-    const texts = new Texts();
-    const own = candidates(el, testid || "data-testid", texts);
-    for (const c of own) {
-      if (only(c.steps, el)) return JSON.stringify({ locator: c.locator, how: c.steps[0].kind });
+  function leafText(a, el, texts) {
+    for (const leaf of Array.from(a.querySelectorAll("*"))) {
+      if (leaf.childElementCount > 0 || el.contains(leaf) || leaf.contains(el)) continue;
+      const text2 = norm(texts.of(leaf));
+      if (text2) return text2.length <= LONGEST ? text2 : "";
     }
-    if (own.length === 0) {
-      return JSON.stringify({ reason: "it has no role and name, label, test id, placeholder or text" });
-    }
+    return "";
+  }
+  function* tried(el, testid, texts) {
+    const own = candidates(el, testid, texts);
+    for (const c of own) yield { ...c, how: c.steps[0].kind };
+    if (own.length === 0) return;
+    const around = [];
     for (let a = parentOf(el); a; a = parentOf(a)) {
       const role = roleOf(a);
-      if (!role || !CONTEXT_ROLES.has(role)) continue;
+      if (role && CONTEXT_ROLES.has(role)) around.push([a, role]);
+    }
+    for (const [a, role] of around) {
       for (const outer of containers(a, role)) {
         for (const c of own) {
-          const steps = [...outer.steps, ...c.steps];
-          if (only(steps, el)) {
-            return JSON.stringify({ locator: `${outer.locator} >> ${c.locator}`, how: "scoped" });
-          }
+          yield { steps: [...outer.steps, ...c.steps], locator: `${outer.locator} >> ${c.locator}`, how: "scoped" };
         }
       }
     }
+    for (const [a, role] of around) {
+      const text2 = leafText(a, el, texts);
+      if (!text2) continue;
+      const outer = [
+        { kind: "role", role },
+        { kind: "has", steps: [{ kind: "text", text: { mode: "exact", value: text2 } }] }
+      ];
+      if (!only(outer, a)) continue;
+      for (const c of own) {
+        yield {
+          steps: [...outer, ...c.steps],
+          locator: `role=${role} >> has=text=${quoted(text2)} >> ${c.locator}`,
+          how: "has"
+        };
+      }
+    }
     const first = own[0];
-    const index = query(first.steps, null).indexOf(el);
-    if (index < 0) return JSON.stringify({ reason: "no locator finds it (is it hidden?)" });
-    return JSON.stringify({ locator: `${first.locator} >> nth=${index}`, how: "nth" });
+    const found = query(first.steps, null);
+    const index = found.indexOf(el);
+    if (index >= 0 && found.length > 1) {
+      yield { steps: [...first.steps, { kind: "nth", index }], locator: `${first.locator} >> nth=${index}`, how: "nth" };
+    }
+  }
+  function stable(el, testid, all) {
+    const texts = new Texts();
+    const usable = [];
+    const others = [];
+    let best = null;
+    let any = false;
+    const own = /* @__PURE__ */ new Set(["role", "label", "testid", "placeholder", "text"]);
+    for (const c of tried(el, testid || "data-testid", texts)) {
+      if (best && own.has(best.how) && !own.has(c.how)) break;
+      any = true;
+      const found = query(c.steps, null);
+      if (found.length === 1 && found[0] === el) {
+        if (!best) best = { locator: c.locator, how: c.how };
+        if (!all) break;
+        usable.push({ locator: c.locator, count: 1 });
+      } else if (all && c.how !== "scoped" && c.how !== "has" && found.includes(el)) {
+        others.push({ locator: c.locator, count: found.length });
+      }
+    }
+    const candidates2 = all ? { candidates: [...usable, ...others] } : {};
+    if (best) return JSON.stringify({ ...best, ...candidates2 });
+    const reason = any ? "no locator finds it (is it hidden?)" : "it has no role and name, label, test id, placeholder or text";
+    return JSON.stringify({ reason, ...candidates2 });
   }
 
   // src/index.ts

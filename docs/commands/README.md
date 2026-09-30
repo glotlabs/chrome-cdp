@@ -37,6 +37,7 @@ same text as `chrome-cdp help <command>`. The guides in
 |---|---|
 | [`snapshot`](snapshot.md) | Show the page as an accessibility tree, with refs (e12) to act on |
 | [`find`](find.md) | Search the page for elements by role, name or text; shows refs |
+| [`locator`](locator.md) | Print the locator a test should use for one element (a ref's stable locator) |
 | [`text`](text.md) | Print the visible text of the page, or of every element a locator matches |
 | [`markdown`](markdown.md) | Print the page's readable content (or an element's) as Markdown |
 | [`html`](html.md) | Print the HTML of the document or of an element, pretty-printed |

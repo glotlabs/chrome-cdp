@@ -665,6 +665,24 @@ Examples:
   chrome-cdp find checkout -q               # only the refs")]
     Find(FindArgs),
 
+    /// Print the locator a test should use for one element (a ref's stable locator).
+    #[command(after_help = "\
+Refs last only as long as the session; a committed script or test needs a
+locator. This prints the most robust one that finds the element and
+nothing else, as `history --as-scenario` writes it: role and name, then
+label, test id, placeholder or text; then one of those inside a unique
+container (a row, a list item, a dialog); then `>> nth=` as a last
+resort. An element in an iframe gets a frame= step first. --all lists
+every candidate tried, best first, with how many elements each finds (1
+is usable). testid= reads --testid-attribute. Needs a running session.
+
+Examples:
+  chrome-cdp locator e12
+  chrome-cdp locator e12 --all              # every candidate, with counts
+  chrome-cdp locator 'text=Delete >> nth=1'
+  chrome-cdp locator e12 -q                 # only the locator")]
+    Locator(LocatorArgs),
+
     /// Print the visible text of the page, or of every element a locator matches.
     #[command(after_help = "\
 The rendered text (innerText): hidden content left out, runs of spaces
@@ -2951,6 +2969,20 @@ pub(crate) struct FindArgs {
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct LocatorArgs {
+    /// The element: a ref (e12) or any locator that matches one.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: String,
+
+    /// List every candidate tried, with how many elements each finds.
+    #[arg(long)]
+    pub(crate) all: bool,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
 }
 
 #[derive(Debug, Args)]
@@ -5936,6 +5968,7 @@ mod tests {
     /// paths and counts).
     const FIXED_SIZE: &[&str] = &[
         "mark",
+        "locator",
         "expect-screenshot",
         "emulate",
         "viewport",

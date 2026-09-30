@@ -1,0 +1,14 @@
+$ chrome-cdp locator 'role=button[name=Delete]'
+exit: 1
+--- stderr
+error: 3 elements match role=button[name=Delete]: e1, e2, e3
+  e1: button "Delete" (in row "Invoice 1 Due Open Delete")
+  e2: button "Delete" (in row "Invoice 3 Due Open Delete")
+  e3: button "Delete" (in row "Invoice 4 Paid Open Delete Archive")
+  hint: chrome-cdp locator e1   (the first one), or add >> nth=<index> to role=button[name=Delete]
+
+$ chrome-cdp locator 'role=button[name=Delete]' --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"Ambiguous","message":"3 elements match role=button[name=Delete]: e1, e2, e3","hint":"chrome-cdp locator e1   (the first one), or add >> nth=<index> to role=button[name=Delete]","notes":[{"label":"e1","text":"button \"Delete\" (in row \"Invoice 1 Due Open Delete\")"},{"label":"e2","text":"button \"Delete\" (in row \"Invoice 3 Due Open Delete\")"},{"label":"e3","text":"button \"Delete\" (in row \"Invoice 4 Paid Open Delete Archive\")"}],"details":{"candidates":[{"context":"row \"Invoice 1 Due Open Delete\"","name":"Delete","ref":"e1","role":"button","visible":true},{"context":"row \"Invoice 3 Due Open Delete\"","name":"Delete","ref":"e2","role":"button","visible":true},{"context":"row \"Invoice 4 Paid Open Delete Archive\"","name":"Delete","ref":"e3","role":"button","visible":true}],"count":3,"locator":"role=button[name=Delete]"}}}
+

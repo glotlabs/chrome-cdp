@@ -704,7 +704,7 @@
       "description": "A ref and the most robust locator that found its element alone.",
       "properties": {
         "how": {
-          "description": "How: `role`, `label`, `testid`, `placeholder`, `text`, `scoped` (inside a\nunique container) or `nth` (by position; the least robust).",
+          "description": "How: `role`, `label`, `testid`, `placeholder`, `text`, `scoped` (inside a\nunique container), `has` (inside the container that has a text) or\n`nth` (by position; the least robust).",
           "type": [
             "string",
             "null"

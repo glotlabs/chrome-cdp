@@ -442,6 +442,10 @@ impl Daemon {
                 Ok(p) => output(Box::pin(self.engine.find(p)).await),
                 Err(e) => Err(e),
             },
+            rpc::LOCATOR => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.locator(p)).await),
+                Err(e) => Err(e),
+            },
             rpc::READ => match params(req.params) {
                 Ok(p) => output(Box::pin(self.engine.read(p)).await),
                 Err(e) => Err(e),

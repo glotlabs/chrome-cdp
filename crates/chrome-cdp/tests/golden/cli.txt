@@ -197,6 +197,10 @@ command chrome-cdp find
   flag --strict-refs env=CHROME_CDP_STRICT_REFS
   flag --limit value=N
   flag --max-chars value=N
+command chrome-cdp locator
+  arg LOCATOR required
+  flag --all
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
 command chrome-cdp text
   arg LOCATOR
   flag --strict-refs env=CHROME_CDP_STRICT_REFS

@@ -1,0 +1,12 @@
+$ chrome-cdp click 'role=row >> has=role=button[name=Remove]' --timeout 300ms
+exit: 1
+--- stderr
+error: `role=row` matched 5 elements; none has `role=button[name=Remove]`
+  waited: 300ms
+  hint: chrome-cdp snapshot   (shows the page; use a ref from it)
+
+$ chrome-cdp click 'role=row >> has=role=button[name=Remove]' --timeout 300ms --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"`role=row` matched 5 elements; none has `role=button[name=Remove]`","hint":"chrome-cdp snapshot   (shows the page; use a ref from it)","notes":[{"label":"waited","text":"300ms"}],"details":{"before_has":5,"count":0,"locator":"role=row >> has=role=button[name=Remove]","tab":"t1"}}}
+

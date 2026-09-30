@@ -142,8 +142,9 @@ case-sensitive match (`exact: true`), or write `/regex/flags`.
 | `.first()` / `.last()` / `.nth(2)` | `>> nth=0` / `>> nth=-1` / `>> nth=2` | ✅ |
 | `.filter({ hasText: 'Total' })` | `>> has-text=Total` | ✅ |
 | `.filter({ visible: true })` | `>> visible=true` | ✅ |
-| `.filter({ has: loc })`, `.filter({ hasNot })`, `hasNotText` | a CSS `:has(…)`, or a ref from `snapshot`/`find` | ❌ |
-| `a.or(b)`, `a.and(b)` | a CSS selector list (`'css=.a, .b'`), or refs | ❌ |
+| `.filter({ has: loc })`, `.filter({ hasNot: loc })` | `'A >> has="B"'`, `'A >> has-not="B"'` (B is searched inside each of A) | ✅ |
+| `.filter({ hasNotText: 'Paid' })` | `>> has-not-text=Paid` | ✅ |
+| `a.or(b)`, `a.and(b)` | `'A >> or="B"'`, `'A >> and="B"'` | ✅ |
 | `frameLocator('#pay')`, `locator('iframe').contentFrame()` | `'frame=pay >> …'` (the frame's name, id or a part of its URL), or the iframe's ref: `'e30 >> text=Pay'` | ✅ |
 | shadow DOM | every locator but XPath looks inside open shadow roots, as in Playwright | ✅ |
 | strict mode (an action on several matches throws) | `Ambiguous` (exit 1), and the error lists the matches with refs | ✅ |
@@ -151,7 +152,9 @@ case-sensitive match (`exact: true`), or write `/regex/flags`.
 | `page.accessibility.snapshot()`, `locator.ariaSnapshot()` | `snapshot` (`-i` only what can be acted on, `--scope LOC` a part) | ✅ |
 
 `find <words>` has no Playwright equivalent: it searches the page by role,
-name and text, and prints the best matches with refs.
+name and text, and prints the best matches with refs. `locator e12` is
+Playwright MCP's `browser_generate_locator`: the most robust locator of
+one element, to put in a test.
 
 ## Actions
 

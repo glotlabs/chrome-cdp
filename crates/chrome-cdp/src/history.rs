@@ -33,6 +33,7 @@ const READS: &[&str] = &[
     "highlight",
     "html",
     "inspect",
+    "locator",
     "markdown",
     "network",
     "pdf",

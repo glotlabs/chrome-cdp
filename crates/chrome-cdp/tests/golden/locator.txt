@@ -1,0 +1,15 @@
+$ chrome-cdp locator e5
+exit: 0
+--- stdout
+role=row >> has-text=Invoice 3 >> role=button[name="Delete"]
+
+$ chrome-cdp locator e5 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"how":"scoped","locator":"role=row >> has-text=Invoice 3 >> role=button[name=\"Delete\"]"}}
+
+$ chrome-cdp locator e5 -q
+exit: 0
+--- stdout
+role=row >> has-text=Invoice 3 >> role=button[name="Delete"]
+

@@ -1,12 +1,12 @@
-$ chrome-cdp help locator
+$ chrome-cdp help locaters
 exit: 2
 --- stderr
-error: no command or help topic is called `locator`
+error: no command or help topic is called `locaters`
   did you mean: locators
   hint: chrome-cdp help locators
 
-$ chrome-cdp help locator --json
+$ chrome-cdp help locaters --json
 exit: 2
 --- stdout
-{"ok":false,"error":{"kind":"BadArgs","message":"no command or help topic is called `locator`","hint":"chrome-cdp help locators","notes":[{"label":"did you mean","text":"locators"}]}}
+{"ok":false,"error":{"kind":"BadArgs","message":"no command or help topic is called `locaters`","hint":"chrome-cdp help locators","notes":[{"label":"did you mean","text":"locators"}]}}
 

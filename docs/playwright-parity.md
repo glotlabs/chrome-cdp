@@ -18,7 +18,7 @@ around it. **The v1 gate: no ❌ in an agent-critical row.** A test
 (`crates/chrome-cdp/tests/parity.rs`) holds the tables to that, checks the
 counts below, and checks that every command a row names exists.
 
-Today: 129 rows; 106 ✅, 15 🟡, 3 ❌, 5 ➖. No agent-critical row is ❌.
+Today: 129 rows; 109 ✅, 14 🟡, 1 ❌, 5 ➖. No agent-critical row is ❌.
 
 ## Navigation
 
@@ -48,11 +48,11 @@ Today: 129 rows; 106 ✅, 15 🟡, 3 ❌, 5 ➖. No agent-critical row is ❌.
 | chaining: `a.locator(b)`, `a.getByRole(…)` | `'A >> B'` | ✅ | yes |
 | `first()`, `last()`, `nth(i)` | `>> nth=0`, `>> nth=-1`, `>> nth=2` | ✅ | yes |
 | `filter({ hasText })`, `filter({ visible })` | `>> has-text=Total`, `>> visible=true` | ✅ | yes |
-| `filter({ has, hasNot, hasNotText })` | a CSS `:has(…)`, `has-text=` on the row, or a ref | ❌ | no |
-| `a.or(b)`, `a.and(b)` | a CSS selector list (`'css=.a, .b'`), or refs | ❌ | no |
+| `filter({ has, hasNot, hasNotText })` | `>> has="…"`, `>> has-not="…"`, `>> has-not-text=Paid` | ✅ | no |
+| `a.or(b)`, `a.and(b)` | `'A >> or="B"'`, `'A >> and="B"'` | ✅ | no |
 | strict mode | several matches are `Ambiguous` (exit 1), listed with refs | ✅ | yes |
 | Playwright's CSS extensions (`:has-text()`, `:visible`, …) | `has-text=`, `visible=true`, `nth=` | 🟡 | no |
-| `browser_generate_locator` (MCP) | `history --as-scenario` writes each ref as its most robust locator | 🟡 | no |
+| `browser_generate_locator` (MCP) | `locator e12` prints a ref's most robust locator (`--all`: every candidate); `history --as-scenario` writes them for a whole session | ✅ | no |
 
 ## Auto-wait and actionability
 
@@ -206,11 +206,8 @@ Today: 129 rows; 106 ✅, 15 🟡, 3 ❌, 5 ➖. No agent-critical row is ❌.
 
 ## Gaps
 
-The ❌ rows, none agent-critical, and why they can wait:
+The ❌ row, not agent-critical, and why it can wait:
 
-- **`filter({ has, hasNot, hasNotText })`, `or()`, `and()`.** An agent acts on
-  refs, and `has-text=` covers the common "the row that says Ada" case.
-  Converted suites hit them, so they are a follow-up for `convert`.
 - **Paused timers (`clock.runFor`, `pauseAt`).** `time freeze` and
   `time advance` cover dates and timers that are due; nothing an agent
   does needs timers stopped.

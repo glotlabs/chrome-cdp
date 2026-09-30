@@ -28,11 +28,11 @@ use engine::{
     ConsoleRequest, ContextCloseRequest, ContextListRequest, ContextNewRequest,
     CoverageStartRequest, CoverageStopRequest, DialogRequest, DownloadsRequest, ElementState,
     EvalRequest, FindRequest, FramesRequest, HarStartRequest, HarStopRequest, HighlightRequest,
-    HttpCredentials, ImageFormat, InspectRequest, NavigateRequest, Navigation, NetworkClearRequest,
-    NetworkRequest, NetworkShowRequest, OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest,
-    RouteRequest, RoutesRequest, ScreenshotRequest, SnapshotRequest, TabCloseRequest,
-    TabNewRequest, TabSelectRequest, TabsRequest, TraceStartRequest, TraceStopRequest,
-    UnrouteRequest, WaitFor, WaitRequest,
+    HttpCredentials, ImageFormat, InspectRequest, LocatorRequest, NavigateRequest, Navigation,
+    NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PdfRequest, PerfRequest,
+    Read, ReadRequest, RouteRequest, RoutesRequest, ScreenshotRequest, SnapshotRequest,
+    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, TraceStartRequest,
+    TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest,
 };
 use engine::{
     CookieFilter, CookieSpec, CookiesOp, CookiesRequest, StateLoadRequest, StateSaveRequest,
@@ -50,12 +50,12 @@ use crate::cli::{
     CookieFilterArgs, CookieSetArgs, CookiesArgs, CookiesCommand, CoverageArgs, CoverageCommand,
     DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, FindArgs,
     FramesArgs, GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs,
-    ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs, LogReadArgs,
-    NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs, PermissionsCommand,
-    ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs, StateArgs,
-    StateCommand, StatusArgs, StorageActionArg, StorageAreaArg, StorageArgs, StrictRefsArgs,
-    TabArgs, TabCommand, TabsArgs, TraceArgs, TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs,
-    parse_duration,
+    ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs, LocatorArgs,
+    LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs,
+    PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs,
+    SnapshotArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg, StorageAreaArg,
+    StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs, TraceCommand,
+    UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -898,6 +898,25 @@ pub(crate) fn find(args: &FindArgs, global: &GlobalArgs) -> Result<Output, Error
     let mut client = running_session(&ctx)?;
     ctx.runtime
         .block_on(client.call_output(rpc::FIND, &request, ctx.timeout + QUICK))
+}
+
+/// `locator`: needs a running session.
+pub(crate) fn locator(args: &LocatorArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let locator = input::text_arg(&args.locator, "LOCATOR")?;
+    engine::parse_locator(&locator)?;
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let request = LocatorRequest {
+        locator,
+        all: args.all,
+        strict_refs: args.refs.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        tab: ctx.tab.clone(),
+        timeout_ms: millis(ctx.timeout),
+    };
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::LOCATOR, &request, ctx.timeout + QUICK))
 }
 
 /// `text`, `html`, `attr`, `value`, `count`, `box` and `markdown`: need a

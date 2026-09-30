@@ -12,8 +12,8 @@ use std::time::Duration;
 
 use browser::Host;
 use engine::{
-    ElementState, Engine, LocateOptions, NavigateRequest, Navigation, OpenRequest, SnapshotRequest,
-    WaitFor, WaitRequest, WaitUntil, World,
+    ElementState, Engine, LocateOptions, LocatorRequest, NavigateRequest, Navigation, OpenRequest,
+    SnapshotRequest, WaitFor, WaitRequest, WaitUntil, World,
 };
 use fixtures::Fixtures;
 use protocol::schema::{SnapshotData, SnapshotNode, WaitData};
@@ -552,6 +552,99 @@ async fn filters_and_combinators_find_their_elements() {
         .await
         .unwrap_err();
     assert_eq!(err.kind, ErrorKind::BadLocator, "{}", err.to_text());
+    engine.close().await;
+}
+
+async fn stable(engine: &Engine, locator: &str, all: bool) -> Result<Value, ErrorInfo> {
+    engine
+        .locator(LocatorRequest {
+            locator: locator.to_owned(),
+            all,
+            strict_refs: false,
+            testid_attribute: None,
+            tab: None,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .map(|o| o.data)
+}
+
+/// `locator <LOC>` (plan 14, milestone 14.1): the most robust locator of
+/// one element, `has=` where only it is unique, `frame=` in an iframe.
+#[tokio::test]
+async fn locator_prints_an_elements_stable_locator() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "engine-locators-stable").await;
+    goto(&engine, &site.url("/locators/filters.html")).await;
+    let options = LocateOptions::default();
+    let table = [
+        ("#save", "role=button[name=\"Save\"]", "role"),
+        (
+            "#del-3",
+            "role=row >> has-text=Invoice 3 >> role=button[name=\"Delete\"]",
+            "scoped",
+        ),
+        // `has-text=Plan 1` finds both plans; the exact text only one.
+        (
+            "#choose-1",
+            "role=listitem >> has=text=\"Plan 1\" >> role=button[name=\"Choose\"]",
+            "has",
+        ),
+    ];
+    for (element, want, how) in table {
+        let data = stable(&engine, element, false).await.unwrap();
+        assert_eq!(data["locator"], json!(want), "{element}: {data}");
+        assert_eq!(data["how"], json!(how), "{element}");
+        assert!(data.get("candidates").is_none(), "{element}");
+        // What it prints finds the element alone.
+        let found = all(&engine, want, &options).await.unwrap();
+        assert_eq!(found, json!([element.trim_start_matches('#')]), "{want}");
+    }
+
+    let data = stable(&engine, "#del-3", true).await.unwrap();
+    let candidates = data["candidates"].as_array().unwrap();
+    assert_eq!(
+        candidates[0],
+        json!({"locator": data["locator"], "count": 1})
+    );
+    assert!(
+        candidates
+            .contains(&json!({"locator": "role=button[name=\"Delete\"] >> nth=1", "count": 1})),
+        "{data}"
+    );
+    assert_eq!(
+        candidates.last().unwrap(),
+        &json!({"locator": "text=\"Delete\"", "count": 3})
+    );
+
+    // Several matches or none: as for actions.
+    let err = stable(&engine, "role=button[name=Delete]", false)
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Ambiguous, "{}", err.to_text());
+    assert!(err.hint.unwrap_or_default().contains("locator e"));
+    let err = stable(&engine, "#nope", false).await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::NotFound, "{}", err.to_text());
+
+    // An element with nothing to find it by.
+    let err = stable(&engine, "#rule", false).await.unwrap_err();
+    assert_eq!(err.kind, ErrorKind::NotFound, "{}", err.to_text());
+    assert!(
+        err.message
+            .ends_with("alone: it has no role and name, label, test id, placeholder or text"),
+        "{}",
+        err.message
+    );
+
+    // In an iframe, a frame= step comes first.
+    goto(&engine, &site.url("/locators/index.html")).await;
+    let data = stable(&engine, "frame=payment >> #card", false)
+        .await
+        .unwrap();
+    let locator = data["locator"].as_str().unwrap();
+    assert!(locator.starts_with("frame=payment >> "), "{data}");
+    assert_eq!(one(&engine, locator).await.unwrap(), json!("card"));
     engine.close().await;
 }
 

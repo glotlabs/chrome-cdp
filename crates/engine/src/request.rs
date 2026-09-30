@@ -2096,6 +2096,27 @@ pub struct FindRequest {
     pub max_chars: usize,
 }
 
+/// `locator <LOCATOR>`: the stable locator of one element.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocatorRequest {
+    /// The element: a ref (e12) or any locator that matches one.
+    pub locator: String,
+    /// `--all`: every candidate tried, with how many elements each finds.
+    #[serde(default)]
+    pub all: bool,
+    /// `--strict-refs`: a ref whose element is gone is an error, never
+    /// re-resolved by role and name.
+    #[serde(default)]
+    pub strict_refs: bool,
+    /// The attribute `testid=` locators read; `data-testid` if `None`.
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    /// `--tab`: the tab to look in; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    pub timeout_ms: u64,
+}
+
 /// Milliseconds from a request as a duration, at least 1 ms.
 pub(crate) fn millis(ms: u64) -> Duration {
     Duration::from_millis(ms.max(1))

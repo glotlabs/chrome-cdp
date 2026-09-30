@@ -1,0 +1,11 @@
+$ chrome-cdp locator '#rule'
+exit: 1
+--- stderr
+error: no locator finds #rule alone: it has no role and name, label, test id, placeholder or text
+  hint: use its ref in this session, or give it a test id (testid=…) for scripts
+
+$ chrome-cdp locator '#rule' --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"no locator finds #rule alone: it has no role and name, label, test id, placeholder or text","hint":"use its ref in this session, or give it a test id (testid=…) for scripts","details":{"candidates":[],"locator":"#rule","reason":"it has no role and name, label, test id, placeholder or text"}}}
+

@@ -88,7 +88,8 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
     (
         "Reading the page",
         &[
-            "snapshot", "find", "text", "markdown", "html", "attr", "value", "count", "box",
+            "snapshot", "find", "locator", "text", "markdown", "html", "attr", "value", "count",
+            "box",
         ],
     ),
     (
@@ -486,8 +487,8 @@ mod tests {
 
     #[test]
     fn unknown_topics_suggest_the_closest() {
-        let err = help(&["locator"]).unwrap_err();
-        assert_eq!(err.message, "no command or help topic is called `locator`");
+        let err = help(&["locaters"]).unwrap_err();
+        assert_eq!(err.message, "no command or help topic is called `locaters`");
         assert_eq!(err.hint.as_deref(), Some("chrome-cdp help locators"));
         let err = help(&["tab", "clse"]).unwrap_err();
         assert_eq!(err.message, "`tab` has no subcommand `clse`");

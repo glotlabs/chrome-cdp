@@ -53,6 +53,8 @@ locators in single quotes.
 - CSS: `#id`, `.class`, `'css=form button'`; XPath: `xpath=//a`
 - `'#list >> text=Delete >> nth=-1'` chains; `'frame=payment >> #card'`
   looks inside an iframe (`chrome-cdp frames` lists them, and workers).
+- `'role=row >> has="text=Invoice 12" >> role=button'` keeps the rows
+  with that text inside; also `has-not=`, `and=`, `or=`.
 
 ## Pitfalls
 
@@ -115,6 +117,7 @@ open [url] [--headed]          start the browser; --session NAME for another
 goto <url> | back | reload     navigate (goto /path with base_url)
 snapshot -i | --diff           refs to act on | what changed
 find <words> [--role button]   search elements, prints refs
+locator e12 [--all]            the stable locator to put in a script or test
 text [loc] | markdown | html   read the page or an element
 value <loc> | attr <loc> <a>   a field's value | an attribute
 click | dblclick | hover <loc>

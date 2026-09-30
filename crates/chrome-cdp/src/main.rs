@@ -209,6 +209,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         }
         Some(Command::Snapshot(args)) => session::snapshot(&args, &cli.global),
         Some(Command::Find(args)) => session::find(&args, &cli.global),
+        Some(Command::Locator(args)) => session::locator(&args, &cli.global),
         Some(Command::Text(args)) => session::read(
             engine::Read::Text,
             args.locator.clone(),

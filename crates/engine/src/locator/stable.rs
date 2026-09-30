@@ -3,16 +3,20 @@
 //! robust locator that finds the ref's element alone (the bundle's
 //! `stable`, `injected/src/stable.ts`). The daemon asks for them before a
 //! command that names refs runs, while the elements are still there.
+//! `locator <LOC>` (plan 14, milestone 14.1) prints one, or with `--all`
+//! every candidate tried.
 
+use std::fmt::Write as _;
 use std::time::Duration;
 
-use protocol::ErrorInfo;
-use protocol::schema::RefLocator;
+use protocol::schema::{LocatorCandidate, LocatorData, RefLocator};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use serde::Deserialize;
 
 use super::{FrameOnly, LocateOptions, Want};
 use crate::Engine;
 use crate::frames::FrameInfo;
+use crate::request::{LocatorRequest, millis};
 use crate::snapshot::parse_ref;
 
 /// Whether `text` is a ref (`e12`, `@e12`).
@@ -20,6 +24,7 @@ pub fn is_ref(text: &str) -> bool {
     parse_ref(text).is_some()
 }
 
+/// What the bundle's `stable` answers.
 #[derive(Deserialize)]
 struct Found {
     #[serde(default)]
@@ -28,7 +33,24 @@ struct Found {
     how: Option<String>,
     #[serde(default)]
     reason: Option<String>,
+    /// With `all`.
+    #[serde(default)]
+    candidates: Vec<LocatorCandidate>,
 }
+
+impl Found {
+    fn none(reason: impl Into<String>) -> Self {
+        Self {
+            locator: None,
+            how: None,
+            reason: Some(reason.into()),
+            candidates: Vec::new(),
+        }
+    }
+}
+
+/// How wide `locator --all`'s locator column may get.
+const COLUMN: usize = 80;
 
 impl Engine {
     /// The stable locator of each of `refs` in tab `tab` (the active one
@@ -45,23 +67,12 @@ impl Engine {
             strict_refs: true,
             testid_attribute: testid_attribute.map(str::to_owned),
         };
-        let attribute = serde_json::to_string(testid_attribute.unwrap_or("data-testid"))
-            .unwrap_or_else(|_| "\"data-testid\"".to_owned());
-        let function =
-            format!("function () {{ return globalThis.__ccdp.stable(this, {attribute}); }}");
         let mut out = Vec::with_capacity(refs.len());
         for reference in refs {
-            let found = match self
-                .stable_locator(tab, reference, &options, &function, timeout)
+            let found = self
+                .stable_locator(tab, reference, &options, false, None, timeout)
                 .await
-            {
-                Ok(found) => found,
-                Err(e) => Found {
-                    locator: None,
-                    how: None,
-                    reason: Some(e.message),
-                },
-            };
+                .unwrap_or_else(|e| Found::none(e.message));
             out.push(RefLocator {
                 reference: reference.trim_start_matches('@').to_owned(),
                 locator: found.locator,
@@ -72,17 +83,93 @@ impl Engine {
         out
     }
 
+    /// `locator <LOCATOR>`: the most robust locator that finds the one
+    /// element `LOCATOR` names, and with `--all` every candidate tried.
+    pub async fn locator(&self, req: LocatorRequest) -> Result<Output, ErrorInfo> {
+        let options = LocateOptions {
+            strict_refs: req.strict_refs,
+            testid_attribute: req.testid_attribute.clone(),
+        };
+        let retry = |r: &str| {
+            let cmd = Cmd::new("locator").arg(r);
+            if req.all { cmd.switch("all") } else { cmd }
+        };
+        let found = self
+            .stable_locator(
+                req.tab.as_deref(),
+                &req.locator,
+                &options,
+                req.all,
+                Some(&retry),
+                millis(req.timeout_ms),
+            )
+            .await?;
+        let (Some(locator), Some(how)) = (found.locator, found.how) else {
+            let reason = found
+                .reason
+                .unwrap_or_else(|| "the page did not say".to_owned());
+            return Err(ErrorInfo::new(
+                ErrorKind::NotFound,
+                format!("no locator finds {} alone: {reason}", req.locator),
+            )
+            .hint(Hint::text(
+                "use its ref in this session, or give it a test id (testid=…) for scripts",
+            ))
+            .details(serde_json::json!({
+                "locator": req.locator,
+                "reason": reason,
+                "candidates": found.candidates,
+            })));
+        };
+        let text = if req.all {
+            let width = found
+                .candidates
+                .iter()
+                .map(|c| c.locator.chars().count())
+                .filter(|&n| n <= COLUMN)
+                .max()
+                .unwrap_or(0);
+            let mut text = String::new();
+            for c in &found.candidates {
+                let _ = writeln!(text, "{:<width$}  {}", c.locator, c.count);
+            }
+            text.trim_end().to_owned()
+        } else {
+            locator.clone()
+        };
+        let data = LocatorData {
+            locator: locator.clone(),
+            how,
+            candidates: req.all.then_some(found.candidates),
+        };
+        Ok(Output::typed(&data, text).quiet(locator))
+    }
+
+    /// The stable locator of the one element `text` names (with `all`,
+    /// every candidate too), each with a `frame=` step first for an
+    /// element in an iframe.
     async fn stable_locator(
         &self,
         tab: Option<&str>,
-        reference: &str,
+        text: &str,
         options: &LocateOptions,
-        function: &str,
+        all: bool,
+        retry: Option<&(dyn Fn(&str) -> Cmd + Sync)>,
         timeout: Duration,
     ) -> Result<Found, ErrorInfo> {
-        let locator = options.parse(reference)?;
+        let locator = options.parse(text)?;
+        let attribute = serde_json::to_string(
+            options
+                .testid_attribute
+                .as_deref()
+                .unwrap_or(super::DEFAULT_TESTID_ATTRIBUTE),
+        )
+        .unwrap_or_else(|_| "\"data-testid\"".to_owned());
+        let function =
+            format!("function () {{ return globalThis.__ccdp.stable(this, {attribute}, {all}); }}");
         let running = self.running()?;
         let page = self.page(&running, tab, timeout).await?;
+        self.check_not_blocked(&running, &page)?;
         let _tab = self.tabs.lock(&page.target_id).await;
         let called = self
             .call_on(
@@ -90,42 +177,31 @@ impl Engine {
                 &page,
                 Some(&locator),
                 options,
-                Want::One(None),
+                Want::One(retry),
                 FrameOnly::Owner,
-                function,
+                &function,
                 timeout,
             )
             .await?;
-        let found = called
+        let mut found = called
             .value
             .as_str()
             .and_then(|s| serde_json::from_str::<Found>(s).ok())
-            .unwrap_or(Found {
-                locator: None,
-                how: None,
-                reason: Some("the page did not say".to_owned()),
-            });
+            .unwrap_or_else(|| Found::none("the page did not say"));
         let frames = running.tabs.frames(page.id);
-        let Some(inner) = found.locator else {
-            return Ok(found);
-        };
         if frames.first().is_none_or(|main| main.id == called.frame) {
-            return Ok(Found {
-                locator: Some(inner),
-                ..found
-            });
+            return Ok(found);
         }
-        Ok(match frame_step(&frames, &called.frame) {
-            Some(step) => Found {
-                locator: Some(format!("{step} >> {inner}")),
-                ..found
-            },
-            None => Found {
-                locator: None,
-                how: None,
-                reason: Some("it is in an iframe with no name or URL that only it has".to_owned()),
-            },
-        })
+        let Some(step) = frame_step(&frames, &called.frame) else {
+            return Ok(Found::none(
+                "it is in an iframe with no name or URL that only it has",
+            ));
+        };
+        found.locator = found.locator.map(|inner| format!("{step} >> {inner}"));
+        for c in &mut found.candidates {
+            c.locator = format!("{step} >> {}", c.locator);
+        }
+        Ok(found)
     }
 }
 

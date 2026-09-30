@@ -90,6 +90,12 @@ const FMT_PROJECT: &[(&str, &str)] = &[
 ];
 
 const ALL: &[&str] = &["", "--json", "-q"];
+
+/// `locators/filters.html` with refs: e5 is row 3's Delete button.
+const FILTERS: &[&[&str]] = &[
+    &["open", "{site}/locators/filters.html"],
+    &["snapshot", "-i"],
+];
 const ERR: &[&str] = &["", "--json"];
 
 /// The mock fixture page with the `base` and `sale` sets in use, after a
@@ -270,7 +276,7 @@ const CASES: &[Case] = &[
     },
     Case {
         name: "help-unknown",
-        args: &["help", "locator"],
+        args: &["help", "locaters"],
         modes: ERR,
         fixture: Fixture::None,
     },
@@ -998,6 +1004,41 @@ const CASES: &[Case] = &[
         args: &["find", "zebra", "--role", "button"],
         modes: ERR,
         fixture: Fixture::SessionAt("/read/index.html"),
+    },
+    Case {
+        name: "locator",
+        args: &["locator", "e5"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(FILTERS),
+    },
+    Case {
+        name: "locator-all",
+        args: &["locator", "e5", "--all"],
+        modes: &["", "--json"],
+        fixture: Fixture::SessionAfter(FILTERS),
+    },
+    Case {
+        name: "locator-ambiguous",
+        args: &["locator", "role=button[name=Delete]"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/locators/filters.html"),
+    },
+    Case {
+        name: "locator-none",
+        args: &["locator", "#rule"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/locators/filters.html"),
+    },
+    Case {
+        name: "locator-has-not-found",
+        args: &[
+            "click",
+            "role=row >> has=role=button[name=Remove]",
+            "--timeout",
+            "300ms",
+        ],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/locators/filters.html"),
     },
     Case {
         name: "text-matches",

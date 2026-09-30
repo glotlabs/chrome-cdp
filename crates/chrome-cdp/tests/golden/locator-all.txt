@@ -1,0 +1,16 @@
+$ chrome-cdp locator e5 --all
+exit: 0
+--- stdout
+role=row >> has-text=Invoice 3 >> role=button[name="Delete"]    1
+role=row >> has-text=Invoice 3 >> text="Delete"                 1
+role=row >> has=text="Invoice 3" >> role=button[name="Delete"]  1
+role=row >> has=text="Invoice 3" >> text="Delete"               1
+role=button[name="Delete"] >> nth=1                             1
+role=button[name="Delete"]                                      3
+text="Delete"                                                   3
+
+$ chrome-cdp locator e5 --all --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"candidates":[{"count":1,"locator":"role=row >> has-text=Invoice 3 >> role=button[name=\"Delete\"]"},{"count":1,"locator":"role=row >> has-text=Invoice 3 >> text=\"Delete\""},{"count":1,"locator":"role=row >> has=text=\"Invoice 3\" >> role=button[name=\"Delete\"]"},{"count":1,"locator":"role=row >> has=text=\"Invoice 3\" >> text=\"Delete\""},{"count":1,"locator":"role=button[name=\"Delete\"] >> nth=1"},{"count":3,"locator":"role=button[name=\"Delete\"]"},{"count":3,"locator":"text=\"Delete\""}],"how":"scoped","locator":"role=row >> has-text=Invoice 3 >> role=button[name=\"Delete\"]"}}
+

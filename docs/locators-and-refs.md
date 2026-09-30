@@ -183,7 +183,17 @@ In a script or a test, prefer what a user sees, since it survives
 redesigns: `role=` with a name, then `label=`, then `text=`. Use
 `testid=` where the app has test ids, CSS for structure the user cannot
 see, and `nth=` only as a last resort. That is also the order `history
---as-scenario` picks in.
+--as-scenario` picks in, and `locator` prints its pick for one element:
+
+```sh
+chrome-cdp locator e41
+# role=row >> has-text=Invoice 12 >> role=button[name="Delete"]
+chrome-cdp locator e41 --all    # every candidate, with how many elements each finds
+```
+
+Where only an exact text makes a container unique (`Invoice 1` is also
+part of `Invoice 12`), it picks the container with `has=`:
+`role=row >> has=text="Invoice 1" >> role=button[name="Delete"]`.
 
 ## Reading without a snapshot
 

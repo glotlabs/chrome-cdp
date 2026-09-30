@@ -549,6 +549,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<FindData>),
     },
     CommandSchema {
+        name: "locator",
+        summary: "the most robust locator that finds one element alone",
+        schema: || schema_for!(Envelope<LocatorData>),
+    },
+    CommandSchema {
         name: "text",
         summary: "the visible text of the page or of each match",
         schema: || schema_for!(Envelope<TextData>),
@@ -2633,6 +2638,32 @@ pub struct FindData {
     pub matches: Vec<FindMatch>,
 }
 
+/// `data` of `chrome-cdp locator --json` (plan 14, milestone 14.1): the
+/// locator a test should use for one element.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LocatorData {
+    /// The most robust locator that finds the element alone, e.g.
+    /// `role=button[name="Delete"] >> nth=1`; it starts with `frame=`
+    /// for an element in an iframe.
+    pub locator: String,
+    /// How it finds it: `role`, `label`, `testid`, `placeholder`, `text`,
+    /// `scoped` (inside a unique container), `has` (inside the container
+    /// that has a text) or `nth` (by position; the least robust).
+    pub how: String,
+    /// `--all`: every candidate tried that finds the element, best first,
+    /// with how many elements each finds (`1`: usable).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub candidates: Option<Vec<LocatorCandidate>>,
+}
+
+/// One candidate of `locator --all`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LocatorCandidate {
+    pub locator: String,
+    /// How many elements it finds; `1` means the element alone.
+    pub count: u64,
+}
+
 /// One match of `find`: its snapshot node (with a ref unless it is
 /// text) and where it is.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -3780,7 +3811,8 @@ pub struct RefLocator {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub locator: Option<String>,
     /// How: `role`, `label`, `testid`, `placeholder`, `text`, `scoped` (inside a
-    /// unique container) or `nth` (by position; the least robust).
+    /// unique container), `has` (inside the container that has a text) or
+    /// `nth` (by position; the least robust).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub how: Option<String>,
     /// Why there is no locator.

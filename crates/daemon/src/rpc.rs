@@ -33,6 +33,7 @@ pub const DIALOG: &str = "dialog";
 pub const DOWNLOADS: &str = "downloads";
 pub const SNAPSHOT: &str = "snapshot";
 pub const FIND: &str = "find";
+pub const LOCATOR: &str = "locator";
 pub const READ: &str = "read";
 pub const ACT: &str = "act";
 pub const CLIPBOARD: &str = "clipboard";
