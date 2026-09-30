@@ -105,6 +105,8 @@ pub struct Config {
     /// Whether a test may log console errors; if not (the default), the
     /// runner checks `expect --no-errors` at the end of each (plan 11.5).
     pub allow_console_errors: bool,
+    /// Whether `test` reads and writes `e2e/fingerprints` (plan 18.2).
+    pub fingerprints: Fingerprints,
     /// A test's time limit.
     pub timeout: Duration,
     /// Where test artifacts go (`.results`).
@@ -123,6 +125,39 @@ pub struct Config {
     /// The `${var:…}` file of every backend (the mock backend's); a real
     /// backend's `vars` go on top (plan 11.11).
     pub vars: Option<PathBuf>,
+}
+
+/// `fingerprints`: what `test` does with `e2e/fingerprints`, the
+/// elements its steps found, which heal a locator that no longer works.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Fingerprints {
+    /// `write`, except when the `CI` environment variable is set: `read`.
+    #[default]
+    Auto,
+    /// Reads them, and writes those of the tests that pass.
+    Write,
+    /// Reads them only.
+    Read,
+    /// Neither.
+    Off,
+}
+
+impl Fingerprints {
+    /// Whether a run reads them.
+    pub fn read(self) -> bool {
+        self != Self::Off
+    }
+
+    /// Whether a run writes them; `ci` says whether the `CI` environment
+    /// variable is set.
+    pub fn write(self, ci: bool) -> bool {
+        match self {
+            Self::Auto => !ci,
+            Self::Write => true,
+            Self::Read | Self::Off => false,
+        }
+    }
 }
 
 /// How many tests run at once.
@@ -475,6 +510,7 @@ impl Check<'_> {
             jobs: raw.jobs.map_or(Jobs::Auto, Spanned::into_inner),
             retries: raw.retries.unwrap_or(0),
             allow_console_errors: raw.allow_console_errors.unwrap_or(false),
+            fingerprints: raw.fingerprints.unwrap_or_default(),
             timeout: raw
                 .timeout
                 .map(|t| duration("e2e.timeout", &t))
@@ -784,6 +820,7 @@ struct RawE2e {
     jobs: Option<Spanned<Jobs>>,
     retries: Option<u32>,
     allow_console_errors: Option<bool>,
+    fingerprints: Option<Fingerprints>,
     timeout: Option<Spanned<String>>,
     artifacts: Option<String>,
     watch: Option<Vec<String>>,

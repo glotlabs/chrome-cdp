@@ -120,6 +120,11 @@ fn defaults_fill_an_empty_section() {
     assert_eq!(c.retries, 0);
     assert!(!c.allow_console_errors);
     assert!(parse("[e2e]\nallow_console_errors = true\n").allow_console_errors);
+    assert_eq!(c.fingerprints, super::Fingerprints::Auto);
+    assert_eq!(
+        parse("[e2e]\nfingerprints = \"read\"\n").fingerprints,
+        super::Fingerprints::Read
+    );
     assert_eq!(c.openapi, None);
     assert_eq!(
         parse("[e2e]\nopenapi = \"api/openapi.yaml\"\n").openapi,
