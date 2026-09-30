@@ -76,6 +76,9 @@ fn main() -> ExitCode {
             .as_ref()
             .map(|root| root.to_string_lossy().into_owned()),
     );
+    // The daemon's stable locators for the history read the configured
+    // attribute (plan 18.1).
+    daemon::client::set_testid_attribute(cli.global.testid_attribute.clone());
     // `batch`, `run` and `test` print each step or test as it ends.
     match &cli.command {
         Some(Command::Batch(args)) => return ExitCode::from(script::batch(args, &cli.global)),

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Test ids</title></head>
+<body>
+  <h1>Two lists</h1>
+  <!-- Two "Remove" buttons alike but for their data-test ids: a project
+       with testid_attribute = "data-test" gets testid= locators for them. -->
+  <section>
+    <h2>Monitor</h2>
+    <button data-test="remove-monitor" onclick="this.textContent = 'Removed'">Remove</button>
+  </section>
+  <section>
+    <h2>Mouse</h2>
+    <button data-test="remove-mouse" onclick="this.textContent = 'Removed'">Remove</button>
+  </section>
+</body>
+</html>

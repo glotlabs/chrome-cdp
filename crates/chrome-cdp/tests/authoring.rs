@@ -250,3 +250,42 @@ fn refs_in_frames_become_frame_locators_that_replay() {
         common::stderr(&out)
     );
 }
+
+/// The project's `testid_attribute` reaches the daemon's stable locators:
+/// two buttons alike but for their `data-test` are told apart by it
+/// (written as `css=[data-test=…]`, which replays whatever the config
+/// says), and the scenario replays.
+#[test]
+fn history_uses_the_configured_testid_attribute() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let config = project.root.join("chrome-cdp.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(&config, format!("testid_attribute = \"data-test\"\n{text}")).unwrap();
+    let site = Fixtures::shared().a();
+
+    project.ok(&["open", &format!("{site}/record/testids.html")]);
+    let snapshot = project.ok(&["snapshot", "-i"]);
+    let mouse = nth_ref(&snapshot, "button \"Remove\"", 1);
+    project.ok(&["click", &mouse]);
+    project.ok(&["expect", &mouse, "text", "Removed"]);
+
+    let out = project.run(&["history", "--as-scenario", "removes the mouse"]);
+    assert_eq!(out.status.code(), Some(0));
+    let scenario = stdout(&out);
+    assert_eq!(
+        scenario,
+        "@test \"removes the mouse\"\n  goto /record/testids.html\n  click 'css=[data-test=\"remove-mouse\"]'\n  expect 'role=button[name=\"Removed\"]' text Removed\n"
+    );
+    std::fs::write(project.root.join("scenarios/remove.cdp"), &scenario).unwrap();
+    project.ok(&["close"]);
+
+    let out = project.run(&["test"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}{}",
+        stdout(&out),
+        common::stderr(&out)
+    );
+}

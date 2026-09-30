@@ -45,15 +45,29 @@ thread_local! {
     static LINE: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
 }
 
-thread_local! {
-    /// The project root every call carries (see `Request::root`).
-    static ROOT: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+/// The project root every call carries (see `Request::root`). It is the
+/// process's, not a thread's: `test` runs its jobs on threads of their own.
+static ROOT: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+/// The attribute `testid=` locators read, which every call carries (see
+/// `Request::testid_attribute`); process-wide like [`ROOT`].
+static TESTID_ATTRIBUTE: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+/// Sets the project root the calls carry, so the daemon prints places in
+/// the page's code as paths relative to it.
+pub fn set_project_root(root: Option<String>) {
+    *ROOT
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = root;
 }
 
-/// Sets the project root the calls of this thread carry, so the daemon
-/// prints places in the page's code as paths relative to it.
-pub fn set_project_root(root: Option<String>) {
-    ROOT.with(|r| *r.borrow_mut() = root);
+/// Sets the configured `testid_attribute` the calls carry, so the stable
+/// locators the daemon keeps for the history (and `history --as-scenario`)
+/// use it.
+pub fn set_testid_attribute(attribute: Option<String>) {
+    *TESTID_ATTRIBUTE
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = attribute;
 }
 
 /// Sets the words of the command about to run on this thread (`None`
@@ -160,7 +174,14 @@ impl Client {
         let mut request = Request::new(id, method, params).in_context(self.context.clone());
         if method != rpc::HELLO {
             request.line = LINE.with(|line| line.borrow_mut().take());
-            request.root = ROOT.with(|root| root.borrow().clone());
+            request.root = ROOT
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            request.testid_attribute = TESTID_ATTRIBUTE
+                .read()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
         }
         let mut line = serde_json::to_vec(&request).unwrap_or_default();
         line.push(b'\n');

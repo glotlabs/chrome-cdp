@@ -47,6 +47,11 @@ pub struct Request {
     /// `--context` it travels beside the params.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root: Option<String>,
+    /// The configured `testid_attribute` of the CLI (plan 18.1): the
+    /// stable locators the daemon finds for a history line's refs use it.
+    /// Beside the params, like `root`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub testid_attribute: Option<String>,
 }
 
 impl Request {
@@ -60,6 +65,7 @@ impl Request {
             context: None,
             line: None,
             root: None,
+            testid_attribute: None,
         }
     }
 

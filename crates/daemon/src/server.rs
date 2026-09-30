@@ -308,12 +308,13 @@ impl Daemon {
                 | rpc::EXPECT_SCREENSHOT
         );
         let root = req.root.clone().map(std::path::PathBuf::from);
+        let testid = req.testid_attribute.clone();
         let (refs, result) = engine::in_context(
             context.clone(),
             Box::pin(engine::in_root(root, async {
                 // A ref's element may be gone once the command ran.
                 let refs = match &line {
-                    Some(words) if kept => self.stable_locators(words).await,
+                    Some(words) if kept => self.stable_locators(words, testid.as_deref()).await,
                     _ => Vec::new(),
                 };
                 let (result, notices) = Box::pin(engine::noting(self.call(req, &mut exit))).await;
@@ -343,8 +344,13 @@ impl Daemon {
     }
 
     /// The stable locators of the refs `words` name, in the tab its
-    /// `--tab` names.
-    async fn stable_locators(&self, words: &[String]) -> Vec<protocol::schema::RefLocator> {
+    /// `--tab` names; `testid=` ones read `testid` (the CLI's configured
+    /// attribute), else `data-testid`.
+    async fn stable_locators(
+        &self,
+        words: &[String],
+        testid: Option<&str>,
+    ) -> Vec<protocol::schema::RefLocator> {
         let mut refs: Vec<String> = Vec::new();
         for w in words {
             if engine::is_ref(w) && !refs.contains(w) {
@@ -355,7 +361,7 @@ impl Daemon {
             return Vec::new();
         }
         let tab = history::flag(words, "tab");
-        let testid = history::flag(words, "testid-attribute");
+        let testid = history::flag(words, "testid-attribute").or(testid);
         self.engine
             .stable_locators(tab, &refs, testid, STABLE_WAIT)
             .await
