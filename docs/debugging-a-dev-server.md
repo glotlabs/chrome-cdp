@@ -164,6 +164,16 @@ change next to one after): what their snapshots differ in, and with
 chrome-cdp compare http://localhost:5173/cart https://shop.example.com/cart --visual
 ```
 
+**The whole app.** New to an app, or after a change that could break
+pages you did not touch, `explore` walks it from a start page (in a
+context of its own, so your tabs stay as they are) and lists every page
+and state it found, how it got there, and what was wrong on each:
+
+```sh
+chrome-cdp explore http://localhost:5173/ --click-buttons --layout --exit-code
+chrome-cdp explore http://localhost:5173/ -o map    # map/states/s4.cdp gets to s4
+```
+
 **Speed.** `perf` sums up load timing, LCP, CLS, INP and long tasks;
 `trace start` / `trace stop -o trace.json` records a trace for DevTools'
 Performance panel.

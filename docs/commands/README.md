@@ -50,6 +50,7 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`forms`](forms.md) | List the page's forms: each field's name, kind, state, value and validation message |
 | [`layout`](layout.md) | Lint what the page looks like: covered, overlapping, clipped, off-screen and too small elements, sideways scrolling, low contrast |
 | [`compare`](compare.md) | Compare two pages: what their snapshots differ in, and with --visual their pixels |
+| [`explore`](explore.md) | Map an app: follow its links (and buttons) from a start page, and list every page and state found, how to reach each, and what was wrong on each |
 | [`source`](source.md) | Print the file and line an element came from, and its components |
 | [`components`](components.md) | Print the page's component tree, or the component that rendered an element, with its props and state |
 
