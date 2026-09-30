@@ -2423,6 +2423,13 @@ pub struct CoverageFile {
     pub inline: bool,
     pub total: u64,
     pub unused: u64,
+    /// The out-of-process (cross-site) iframe it ran in, by frame id;
+    /// `None` for the tab's own process (its page and same-site iframes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<String>,
+    /// The worker it ran in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker: Option<Worker>,
 }
 
 /// `data` of `chrome-cdp highlight --json`.

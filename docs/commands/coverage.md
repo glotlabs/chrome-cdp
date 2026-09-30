@@ -9,10 +9,12 @@ chrome-cdp coverage [OPTIONS] <COMMAND>
 
 ```text
 `coverage start` turns on V8's block coverage and CSS rule tracking in the
-tab; `coverage stop` lists the scripts and stylesheets by unused bytes
+tab, its cross-site iframes and its workers (and those that start while it
+runs); `coverage stop` lists the scripts and stylesheets by unused bytes
 (code that never ran, rules that never matched), as DevTools' Coverage
-panel does. Inline scripts and styles are summed per document. Needs a
-running session.
+panel does. Inline scripts and styles are summed per document; a file that
+ran in a cross-site iframe or a worker is marked [iframe "pay"] or
+[dedicated worker w.js]. Needs a running session.
 
 Examples:
   chrome-cdp coverage start

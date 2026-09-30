@@ -19,14 +19,16 @@ use std::time::{Duration, Instant};
 
 use browser::Host;
 use engine::{
-    CdpRequest, ConsoleRequest, EmulateRequest, EmulationChange, Engine, EvalRequest, EvalWorld,
-    ExpectRequest, Expectation, HttpCredentials, InitScriptAddRequest, InitScriptRemoveRequest,
-    MockLogRequest, MockOffRequest, MockUseRequest, NavigateRequest, Navigation, NetworkRequest,
-    OpenRequest, RequestCheck, RouteAction, RouteBody, RouteRequest, RouteSpec, Since,
-    TabNewRequest, Target, UnrouteRequest, WaitUntil,
+    CdpRequest, ConsoleRequest, CoverageStartRequest, CoverageStopRequest, EmulateRequest,
+    EmulationChange, Engine, EvalRequest, EvalWorld, ExpectRequest, Expectation, HttpCredentials,
+    InitScriptAddRequest, InitScriptRemoveRequest, MockLogRequest, MockOffRequest, MockUseRequest,
+    NavigateRequest, Navigation, NetworkRequest, OpenRequest, RequestCheck, RouteAction, RouteBody,
+    RouteRequest, RouteSpec, Since, TabNewRequest, Target, UnrouteRequest, WaitUntil,
 };
 use fixtures::Fixtures;
-use protocol::schema::{ConsoleData, EvalData, Level, MockLogData, NetworkData, WorkerKind};
+use protocol::schema::{
+    ConsoleData, CoverageStopData, EvalData, Level, MockLogData, NetworkData, WorkerKind,
+};
 use serde_json::{Value, json};
 
 const TIMEOUT_MS: u64 = 30_000;
@@ -109,6 +111,9 @@ enum Probe {
     Offline,
     /// `cdp --listen --all-sessions` hears its `fetch`, named after it.
     Listen,
+    /// `coverage` counts the script its `fetch` ran, marked with where it
+    /// ran.
+    Coverage,
 }
 
 struct Row {
@@ -240,6 +245,11 @@ const ROWS: &[Row] = &[
     Row {
         feature: "cdp --all-sessions",
         probe: Probe::Listen,
+        cells: [Check, Check, Check, Check, Check, Check],
+    },
+    Row {
+        feature: "coverage",
+        probe: Probe::Coverage,
         cells: [Check, Check, Check, Check, Check, Check],
     },
 ];
@@ -775,6 +785,47 @@ async fn probe(engine: &Arc<Engine>, probe: Probe, who: &str) -> Result<(), Stri
                 .then_some(())
                 .ok_or_else(|| format!("heard its request from {heard:?}, not {want}"))
         }
+        Probe::Coverage => {
+            engine
+                .coverage_start(CoverageStartRequest {
+                    tab: None,
+                    timeout_ms: TIMEOUT_MS,
+                })
+                .await
+                .map_err(|e| e.to_text())?;
+            ask(engine, who, "fetch").await;
+            let out = engine
+                .coverage_stop(CoverageStopRequest {
+                    limit: 0,
+                    timeout_ms: TIMEOUT_MS,
+                    max_chars: 0,
+                })
+                .await
+                .map_err(|e| e.to_text())?;
+            let data: CoverageStopData = serde_json::from_value(out.data).unwrap();
+            // Its `targetOps` ran in the ops.js of its own process.
+            let site = Fixtures::shared();
+            let origin = if who == "oopif" { site.b() } else { site.a() };
+            let ops = format!("{origin}/targets/ops.js");
+            let file = data.files.iter().find(|f| {
+                f.kind == "js"
+                    && f.url == ops
+                    && match worker_kind(who) {
+                        // The service worker's URL has no `who`.
+                        Some(kind) => f.worker.as_ref().is_some_and(|w| {
+                            w.kind == kind
+                                && (kind == WorkerKind::Service
+                                    || w.url.contains(&format!("who={who}")))
+                        }),
+                        None => f.worker.is_none() && f.frame.is_some() == (who == "oopif"),
+                    }
+            });
+            match file {
+                Some(file) if file.unused < file.total => Ok(()),
+                Some(file) => Err(format!("{ops} did not run: {file:?}")),
+                None => Err(format!("no {ops} of it in {:?}", data.files)),
+            }
+        }
         Probe::Offline => {
             emulate(engine, EmulationChange::Offline { offline: true }).await;
             let answer = ask(engine, who, "fetch").await;
@@ -1129,5 +1180,63 @@ async fn all_sessions_hears_a_worker_that_starts_meanwhile() {
         heard.contains(&("ops.js".to_owned(), "dedicated worker dedicated.js")),
         "{heard:?}"
     );
+    engine.close().await;
+}
+
+/// `coverage` measures a cross-site iframe that attaches while it runs,
+/// from its first script on. It shares the process (and V8 isolate) of the
+/// other iframe of its site: each script is counted once, an inline one
+/// under its own iframe.
+#[tokio::test]
+async fn coverage_measures_an_iframe_that_attaches_meanwhile() {
+    let Some(path) = chrome_path() else { return };
+    let engine = matrix(&path, "engine-targets-coverage-new").await;
+    let site = Fixtures::shared();
+    engine
+        .coverage_start(CoverageStartRequest {
+            tab: None,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("coverage start: {}", e.to_text()));
+    let src = site.url_b("/targets/frame.html?who=late");
+    eval(
+        &engine,
+        &format!(
+            "new Promise((resolve) => {{ \
+               addEventListener('message', (e) => {{ if (e.data.ready === 'late') resolve(); }}); \
+               const f = document.createElement('iframe'); \
+               f.name = 'late'; f.src = {src:?}; document.body.append(f); }})"
+        ),
+    )
+    .await;
+    ask(&engine, "oopif", "fetch").await;
+    let out = engine
+        .coverage_stop(CoverageStopRequest {
+            limit: 0,
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 0,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("coverage stop: {}", e.to_text()));
+    let data: CoverageStopData = serde_json::from_value(out.data).unwrap();
+    let frames = engine.frames(None, Duration::from_secs(5)).await.unwrap();
+    let id = |name: &str| frames.iter().find(|f| f.name == name).unwrap().id.clone();
+    let files: Vec<(&str, Option<&str>)> = data
+        .files
+        .iter()
+        .filter(|f| f.url.starts_with(site.b()) && f.worker.is_none())
+        .map(|f| (f.url.rsplit('/').next().unwrap(), f.frame.as_deref()))
+        .collect();
+    let (late, oopif) = (id("late"), id("oopif"));
+    let mut want = vec![
+        ("frame.html?who=late", Some(late.as_str())),
+        ("frame.html?who=oopif&workers=1", Some(oopif.as_str())),
+        ("ops.js", Some(oopif.as_str())),
+    ];
+    let mut files = files;
+    files.sort_unstable();
+    want.sort_unstable();
+    assert_eq!(files, want, "{}", out.text);
     engine.close().await;
 }

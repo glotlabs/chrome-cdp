@@ -37,6 +37,7 @@
 
 mod auth;
 pub(crate) mod commands;
+pub(crate) mod coverage;
 pub(crate) mod dialogs;
 mod downloads;
 pub(crate) mod emulation;
@@ -290,6 +291,8 @@ struct State {
     /// last id given to one.
     hooks: Vec<tap::Hook>,
     next_hook: u64,
+    /// The running `coverage start`, if any (see [`coverage`]).
+    coverage: Option<coverage::Measuring>,
 }
 
 #[derive(Debug)]
@@ -1525,6 +1528,7 @@ impl State {
             dropped: 0,
             hooks: Vec::new(),
             next_hook: 0,
+            coverage: None,
         }
     }
 

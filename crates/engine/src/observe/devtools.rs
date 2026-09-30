@@ -134,7 +134,7 @@ impl Engine {
                     let _ = session.call_raw("Overlay.hideHighlight", json!({})).await;
                     let _ = session.call_raw("Overlay.disable", json!({})).await;
                     // `coverage` needs `DOM` on until it stops.
-                    if !running.coverage_uses(&session) {
+                    if !running.tabs.coverage_uses(&session) {
                         let _ = session.call(dom::DisableParams {}).await;
                     }
                 }

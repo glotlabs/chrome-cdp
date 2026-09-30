@@ -25,7 +25,6 @@ mod screenshot;
 mod sourcemaps;
 mod trace;
 
-pub(crate) use coverage::CoverageRecording;
 pub use eval::check_eval;
 pub(crate) use har::{HarRecording, iso8601};
 pub use network::RESOURCE_TYPES;

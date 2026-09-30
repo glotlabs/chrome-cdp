@@ -19,7 +19,7 @@ use cdp::Session;
 use cdp::domains::{network, page, runtime};
 
 use super::targets::{KindSet, Target, TargetKind};
-use super::{Shared, State, Step, auto_attach, emulation, fetch, inject, seed, step};
+use super::{Shared, State, Step, auto_attach, coverage, emulation, fetch, inject, seed, step};
 use crate::{frames, injected, observe};
 
 /// A feature: something every target of some kinds gets.
@@ -47,10 +47,13 @@ pub(crate) enum Feature {
     /// [`emulation`]); workers get the user agent, locale, time zone and
     /// clock.
     Emulation,
+    /// JavaScript and CSS coverage, while `coverage start` measures the
+    /// target's tab (see [`coverage`]); workers have no CSS.
+    Coverage,
 }
 
 /// Every feature, in the order a new target gets their steps.
-pub(crate) const REGISTRY: [Feature; 7] = [
+pub(crate) const REGISTRY: [Feature; 8] = [
     Feature::Base,
     Feature::Runtime,
     Feature::Network,
@@ -58,6 +61,7 @@ pub(crate) const REGISTRY: [Feature; 7] = [
     Feature::Inject,
     Feature::Fetch,
     Feature::Emulation,
+    Feature::Coverage,
 ];
 
 /// A new target, paused, as the features see it.
@@ -79,6 +83,7 @@ impl Feature {
             Self::Inject => "inject",
             Self::Fetch => "fetch",
             Self::Emulation => "emulation",
+            Self::Coverage => "coverage",
         }
     }
 
@@ -89,7 +94,7 @@ impl Feature {
             // gets the mock shim.
             // Emulation: what means something in a worker (see
             // `emulation`).
-            Self::Runtime | Self::Network | Self::Inject | Self::Emulation => {
+            Self::Runtime | Self::Network | Self::Inject | Self::Emulation | Self::Coverage => {
                 KindSet::HOSTS_AND_WORKERS
             }
             // Chrome has no `Fetch` in a dedicated worker: its requests
@@ -153,6 +158,8 @@ impl Feature {
             Self::Fetch => fetch::setup_steps(shared, session, target.kind, steps),
             // Devices, viewport, locale, … (see `emulation`).
             Self::Emulation => emulation::setup_steps(shared, session, target.kind, steps),
+            // Only while it measures the target's tab.
+            Self::Coverage => coverage::setup_steps(shared, target, steps),
         }
     }
 }
@@ -285,6 +292,7 @@ mod tests {
                 "inject    xxxxx.",
                 "fetch     xx.xx.",
                 "emulation xxxxx.",
+                "coverage  xxxxx.",
             ]
         );
     }

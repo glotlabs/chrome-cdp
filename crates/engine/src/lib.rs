@@ -170,8 +170,6 @@ struct Running {
     har: Mutex<Option<observe::HarRecording>>,
     /// The `trace start` recording, if one runs.
     trace: Mutex<Option<observe::TraceRecording>>,
-    /// The `coverage start` measurement, if one runs.
-    coverage: Mutex<Option<observe::CoverageRecording>>,
     /// Counts `highlight`s, so only the latest one's timer hides it.
     highlights: AtomicU64,
 }
@@ -635,7 +633,6 @@ impl Engine {
             sourcemaps: observe::SourceMaps::default(),
             har: Mutex::new(None),
             trace: Mutex::new(None),
-            coverage: Mutex::new(None),
             highlights: AtomicU64::new(0),
         });
         *self.lock_state() = State::Running(running.clone());

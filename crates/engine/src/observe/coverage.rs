@@ -4,64 +4,37 @@
 //!
 //! JavaScript comes from V8's precise block coverage (`Profiler`), CSS
 //! from rule usage tracking (`CSS`, which needs `DOM` on); both are on
-//! for the tab's session only between start and stop. A stylesheet's size
-//! comes with `CSS.styleSheetAdded`, which `CSS.enable` sends for the
+//! between start and stop in every session of the tab: its page's, its
+//! out-of-process iframes' and its workers' (no CSS there), those that
+//! attach meanwhile too (plan 13.4, see `tabs::coverage`). A stylesheet's
+//! size comes with `CSS.styleSheetAdded`, which `CSS.enable` sends for the
 //! sheets that exist and later ones. The output sums up the unused bytes
-//! per file, inline scripts and styles summed per document; scripts with
-//! no URL (chrome-cdp's own, `eval`) are left out. Only the tab's own
-//! session is measured: a cross-site iframe runs in its own.
+//! per file and process, inline scripts and styles summed per document,
+//! and names the iframe or worker a file ran in outside the tab's own
+//! process; scripts with no URL (chrome-cdp's own, `eval`) are left out.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
-use cdp::Session;
-use cdp::domains::{css as cdp_css, dom as cdp_dom, profiler};
-use protocol::schema::{CoverageFile, CoverageStartData, CoverageStopData, CoverageTotal};
+use cdp::domains::{css as cdp_css, profiler};
+use protocol::schema::{
+    CoverageFile, CoverageStartData, CoverageStopData, CoverageTotal, FrameInfo, Worker,
+};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
-use tokio::task::AbortHandle;
 
 use crate::Engine;
 use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::request::{CoverageStartRequest, CoverageStopRequest, millis};
+use crate::tabs::coverage::Sheet;
 use crate::tabs::tab_name;
 
-/// How many stylesheets a recording keeps the size of.
-const SHEETS: usize = 5000;
-
-/// A running `coverage start`.
-#[derive(Debug)]
-pub(crate) struct CoverageRecording {
-    tab: u32,
-    session: Session,
-    started: Instant,
-    /// Stylesheets by id: their URL, whether inline, and length.
-    sheets: Arc<Mutex<HashMap<String, Sheet>>>,
-    watcher: AbortHandle,
-}
-
-#[derive(Debug, Clone)]
-struct Sheet {
-    url: String,
-    inline: bool,
-    length: u64,
-}
-
-impl crate::Running {
-    /// Whether `coverage` measures on `session` now (it needs `DOM` on).
-    pub(crate) fn coverage_uses(&self, session: &Session) -> bool {
-        lock(&self.coverage)
-            .as_ref()
-            .is_some_and(|c| c.session.id() == session.id())
-    }
-}
-
-impl Drop for CoverageRecording {
-    fn drop(&mut self) {
-        self.watcher.abort();
-    }
+/// Where a file ran, outside the tab's own process.
+#[derive(Debug, Clone, Default, PartialEq)]
+struct Place {
+    /// An out-of-process iframe's frame id.
+    frame: Option<String>,
+    worker: Option<Worker>,
 }
 
 impl Engine {
@@ -70,7 +43,7 @@ impl Engine {
         let running = self.running()?;
         let timeout = millis(req.timeout_ms);
         let page = self.page(&running, req.tab.as_deref(), timeout).await?;
-        if let Some(tab) = lock(&running.coverage).as_ref().map(|c| c.tab) {
+        if let Some(tab) = running.tabs.coverage_tab() {
             let data = CoverageStartData {
                 tab: tab_name(tab),
                 already: true,
@@ -82,62 +55,10 @@ impl Engine {
             );
             return Ok(Output::typed(&data, text).quiet(tab_name(tab)));
         }
-        let session = page.session.with_timeout(timeout);
-        // Before `CSS.enable`, which reports the sheets there are.
-        let sheets: Arc<Mutex<HashMap<String, Sheet>>> = Arc::default();
-        let mut events = session.listen::<cdp_css::StyleSheetAdded>();
-        let collect = sheets.clone();
-        let watcher = tokio::spawn(async move {
-            while let Some(added) = events.next().await {
-                let header = added.header;
-                let mut sheets = lock(&collect);
-                if sheets.len() < SHEETS {
-                    sheets.insert(
-                        header.style_sheet_id,
-                        Sheet {
-                            url: header.source_url,
-                            inline: header.is_inline,
-                            length: whole(header.length),
-                        },
-                    );
-                }
-            }
-        })
-        .abort_handle();
-        let recording = CoverageRecording {
-            tab: page.id,
-            session: page.session.clone(),
-            started: Instant::now(),
-            sheets,
-            watcher,
-        };
-        let start = profiler::StartPreciseCoverageParams {
-            call_count: Some(false),
-            detailed: Some(true),
-            allow_triggered_updates: None,
-        };
-        // Sent at once, awaited in order.
-        let calls = (
-            session.call(profiler::EnableParams {}),
-            session.call(start),
-            session.call(cdp_dom::EnableParams::default()),
-            session.call(cdp_css::EnableParams {}),
-            session.call(cdp_css::StartRuleUsageTrackingParams {}),
-        );
-        let started = async {
-            calls.0.await?;
-            calls.1.await?;
-            calls.2.await?;
-            calls.3.await?;
-            calls.4.await?;
-            Ok::<_, cdp::CdpError>(())
-        }
-        .await;
-        if let Err(e) = started {
-            coverage_off(&session).await;
+        if let Err(e) = running.tabs.coverage_start(page.id, timeout).await {
+            let _ = running.tabs.coverage_stop(timeout).await;
             return Err(from_cdp(&e, &self.session));
         }
-        *lock(&running.coverage) = Some(recording);
         let tab = tab_name(page.id);
         let text = format!(
             "measuring the JavaScript and CSS coverage of {tab}; act, then {} shows what was \
@@ -154,7 +75,8 @@ impl Engine {
     /// `coverage stop`: what ran and matched since `coverage start`.
     pub async fn coverage_stop(&self, req: CoverageStopRequest) -> Result<Output, ErrorInfo> {
         let running = self.running()?;
-        let Some(recording) = lock(&running.coverage).take() else {
+        let timeout = millis(req.timeout_ms);
+        let Some(stopped) = running.tabs.coverage_stop(timeout).await else {
             return Err(ErrorInfo::new(
                 ErrorKind::BadArgs,
                 format!("session {} is not measuring coverage", self.session),
@@ -164,23 +86,18 @@ impl Engine {
                     .why("then act, then coverage stop"),
             ));
         };
-        let timeout = millis(req.timeout_ms);
-        let session = recording.session.with_timeout(timeout);
-        let scripts = session.call(profiler::TakePreciseCoverageParams {});
-        let rules = session.call(cdp_css::StopRuleUsageTrackingParams {});
-        let (scripts, rules) = (scripts.await, rules.await);
-        coverage_off(&session).await;
-        let scripts = scripts.map_err(|e| from_cdp(&e, &self.session))?.result;
-        let rules = rules.map_err(|e| from_cdp(&e, &self.session))?.rule_usage;
-        let sheets = lock(&recording.sheets).clone();
-        let documents: Vec<String> = running
-            .tabs
-            .frames(recording.tab)
-            .into_iter()
-            .map(|f| f.url)
-            .collect();
-        let mut files = js_files(&scripts, &documents);
-        files.extend(css_files(&rules, &sheets));
+        let stopped = stopped.map_err(|e| from_cdp(&e, &self.session))?;
+        let frames = running.tabs.frames(stopped.tab);
+        let documents: Vec<String> = frames.iter().map(|f| f.url.clone()).collect();
+        let mut files = Vec::new();
+        for measured in &stopped.measured {
+            let place = Place {
+                frame: measured.frame.clone(),
+                worker: measured.worker.clone(),
+            };
+            js_files(&mut files, &measured.scripts, &documents, &place);
+            css_files(&mut files, &measured.rules, &measured.sheets, &place);
+        }
         let total = |kind: &str| {
             let of_kind = files.iter().filter(|f| f.kind == kind);
             CoverageTotal {
@@ -196,7 +113,7 @@ impl Engine {
             limit => files.len().saturating_sub(limit),
         };
         files.truncate(files.len() - skipped);
-        let tab = tab_name(recording.tab);
+        let tab = tab_name(stopped.tab);
         let mut text = String::new();
         for (name, t) in [("JS", &js), ("CSS", &css)] {
             let _ = writeln!(
@@ -214,15 +131,18 @@ impl Engine {
         let rows: Vec<Vec<String>> = files
             .iter()
             .map(|f| {
+                let mut url = f.url.clone();
+                if f.inline {
+                    url.push_str(" (inline)");
+                }
+                if let Some(label) = place_label(f, &frames) {
+                    let _ = write!(url, " {label}");
+                }
                 vec![
                     f.kind.clone(),
                     format::size(f.total),
                     format!("{} unused", share(f.unused, f.total)),
-                    if f.inline {
-                        format!("{} (inline)", f.url)
-                    } else {
-                        f.url.clone()
-                    },
+                    url,
                 ]
             })
             .collect();
@@ -245,7 +165,7 @@ impl Engine {
             css,
             files,
             skipped,
-            duration_ms: u64::try_from(recording.started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            duration_ms: u64::try_from(stopped.started.elapsed().as_millis()).unwrap_or(u64::MAX),
         };
         Ok(Output::typed(&data, text.trim_end().to_owned())
             .quiet(quiet)
@@ -253,18 +173,21 @@ impl Engine {
     }
 }
 
-/// Turns the domains `coverage start` turned on off again.
-async fn coverage_off(session: &Session) {
-    let calls = (
-        session.call(profiler::StopPreciseCoverageParams {}),
-        session.call(profiler::DisableParams {}),
-        session.call(cdp_css::DisableParams {}),
-        session.call(cdp_dom::DisableParams {}),
-    );
-    let _ = calls.0.await;
-    let _ = calls.1.await;
-    let _ = calls.2.await;
-    let _ = calls.3.await;
+/// `[iframe "pay"]` or `[dedicated worker w.js]`: where a file ran outside
+/// the tab's own process.
+fn place_label(file: &CoverageFile, frames: &[FrameInfo]) -> Option<String> {
+    if let Some(worker) = &file.worker {
+        return Some(worker.label());
+    }
+    let id = file.frame.as_deref()?;
+    Some(match frames.iter().find(|f| f.id == id) {
+        Some(frame) if !frame.name.is_empty() => format!("[iframe {:?}]", frame.name),
+        Some(frame) => {
+            let url = frame.url.split(['?', '#']).next().unwrap_or_default();
+            format!("[iframe {url}]")
+        }
+        None => "[iframe, gone]".to_owned(),
+    })
 }
 
 /// `40%` of `total`, or `0%` of nothing.
@@ -273,9 +196,14 @@ fn share(part: u64, total: u64) -> String {
     format!("{} ({percent}%)", format::size(part))
 }
 
-/// Each script with a URL, inline ones summed per document.
-fn js_files(scripts: &[profiler::ScriptCoverage], documents: &[String]) -> Vec<CoverageFile> {
-    let mut files: Vec<CoverageFile> = Vec::new();
+/// Adds each script with a URL to `files`, inline ones summed per
+/// document.
+fn js_files(
+    files: &mut Vec<CoverageFile>,
+    scripts: &[profiler::ScriptCoverage],
+    documents: &[String],
+    place: &Place,
+) {
     for script in scripts {
         if !has_url(&script.url) {
             continue;
@@ -288,13 +216,18 @@ fn js_files(scripts: &[profiler::ScriptCoverage], documents: &[String]) -> Vec<C
             .collect();
         let (total, used) = used(&ranges);
         let inline = documents.contains(&script.url);
-        add(&mut files, "js", &script.url, inline, total, total - used);
+        add(files, place, "js", &script.url, inline, total, total - used);
     }
-    files
 }
 
-/// Each stylesheet with a URL, inline ones summed per document.
-fn css_files(rules: &[cdp_css::RuleUsage], sheets: &HashMap<String, Sheet>) -> Vec<CoverageFile> {
+/// Adds each stylesheet with a URL to `files`, inline ones summed per
+/// document.
+fn css_files(
+    files: &mut Vec<CoverageFile>,
+    rules: &[cdp_css::RuleUsage],
+    sheets: &HashMap<String, Sheet>,
+    place: &Place,
+) {
     let mut used: HashMap<&str, Vec<(u64, u64)>> = HashMap::new();
     for rule in rules.iter().filter(|r| r.used) {
         used.entry(rule.style_sheet_id.as_str())
@@ -303,40 +236,46 @@ fn css_files(rules: &[cdp_css::RuleUsage], sheets: &HashMap<String, Sheet>) -> V
     }
     let mut ids: Vec<&String> = sheets.keys().collect();
     ids.sort();
-    let mut files = Vec::new();
     for id in ids {
         let sheet = &sheets[id];
         if !has_url(&sheet.url) {
             continue;
         }
+        let length = whole(sheet.length);
         let used = used
             .get(id.as_str())
             .map_or(0, |ranges| union(ranges))
-            .min(sheet.length);
+            .min(length);
         add(
-            &mut files,
+            files,
+            place,
             "css",
             &sheet.url,
             sheet.inline,
-            sheet.length,
-            sheet.length - used,
+            length,
+            length - used,
         );
     }
-    files
 }
 
+/// Adds a file's bytes to `files`: to the entry of the same file, place
+/// and kind if there is one.
 fn add(
     files: &mut Vec<CoverageFile>,
+    place: &Place,
     kind: &str,
     url: &str,
     inline: bool,
     total: u64,
     unused: u64,
 ) {
-    if let Some(file) = files
-        .iter_mut()
-        .find(|f| f.kind == kind && f.url == url && f.inline == inline)
-    {
+    if let Some(file) = files.iter_mut().find(|f| {
+        f.kind == kind
+            && f.url == url
+            && f.inline == inline
+            && f.frame == place.frame
+            && f.worker == place.worker
+    }) {
         file.total += total;
         file.unused += unused;
     } else {
@@ -346,6 +285,8 @@ fn add(
             inline,
             total,
             unused,
+            frame: place.frame.clone(),
+            worker: place.worker.clone(),
         });
     }
 }
@@ -416,10 +357,6 @@ fn offset(n: i64) -> u64 {
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn whole(n: f64) -> u64 {
     n.max(0.0).round() as u64
-}
-
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 #[cfg(test)]

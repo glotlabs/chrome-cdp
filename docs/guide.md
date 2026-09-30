@@ -489,7 +489,8 @@ page: 1,203 elements · 45 listeners · JS heap 4.1MB of 6MB
 ```
 
 `coverage start` and `coverage stop` list the scripts and stylesheets by the
-bytes that never ran or matched, as DevTools' Coverage panel does. For a
+bytes that never ran or matched, as DevTools' Coverage panel does, cross-site
+iframes and workers included (each such file marked with where it ran). For a
 human watching a headed browser (`open --headed`), `highlight e12` points out
 an element for two seconds (`--duration`), and `inspect [--panel console]`
 opens DevTools for the tab.

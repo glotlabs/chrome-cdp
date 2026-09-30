@@ -33,6 +33,13 @@
     "CoverageFile": {
       "description": "Coverage of one file.",
       "properties": {
+        "frame": {
+          "description": "The out-of-process (cross-site) iframe it ran in, by frame id;\n`None` for the tab's own process (its page and same-site iframes).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "inline": {
           "description": "Inline `<script>`s or `<style>`s of the document, summed.",
           "type": "boolean"
@@ -54,6 +61,17 @@
         "url": {
           "description": "The script's or stylesheet's URL; the document's for inline ones.",
           "type": "string"
+        },
+        "worker": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Worker"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The worker it ran in."
         }
       },
       "required": [
