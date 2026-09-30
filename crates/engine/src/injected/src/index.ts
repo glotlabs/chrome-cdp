@@ -6,7 +6,8 @@
 // actionability checks (5.1), what mouse actions ask the page (5.2), and
 // what keyboard and form actions ask it (5.3), where focus went for
 // the post-action report (5.5), what `expect` checks (plan 09), and the
-// stable locators `history --as-scenario` writes for refs (plan 11).
+// stable locators `history --as-scenario` writes for refs (plan 11), and
+// what `why` explains (plan 16).
 // Built into `ccdp.js` by `cargo xtask build-js`; the engine embeds that
 // file.
 
@@ -21,6 +22,7 @@ import { acted, focusMark, focusMoved } from './report';
 import { expectElements, expectNamed, expectPage } from './expect';
 import { a11y } from './a11y';
 import { stable } from './stable';
+import { clipped, explainActionable, scrolledSince, scrollMark } from './why';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -61,6 +63,10 @@ const api = {
   expectNamed,
   a11y,
   stable,
+  explainActionable,
+  clipped,
+  scrollMark,
+  scrolledSince,
 };
 
 if (!globalThis.__ccdp) globalThis.__ccdp = api;

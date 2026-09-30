@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: ba6f27963cd7543d
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 749bc8e31ff5983c
 "use strict";
 (() => {
   // src/dom.ts
@@ -1404,29 +1404,75 @@ ${inner}
     return null;
   }
   var on = (el, cause) => cause && cause !== el ? ` on ${outline(cause)}` : "";
-  function invisible(el) {
+  function causeOn(el, what, cause) {
+    if (!cause || cause === el) return { why: `it has ${what}`, what };
+    return { why: `it has ${what}${on(el, cause)}`, what: `${what} on {el}`, el: cause };
+  }
+  function setter(el, test2) {
+    let top = el;
+    for (let a = parentOf(el); a && test2(getComputedStyle(a)); a = parentOf(a)) top = a;
+    return top;
+  }
+  function invisibleCause(el) {
     if (!visible(el)) {
       const box = el.getBoundingClientRect();
-      if (box.width > 0 && box.height > 0) return "it has visibility: hidden";
+      if (box.width > 0 && box.height > 0) {
+        const hidden2 = (s) => s.visibility === "hidden" || s.visibility === "collapse";
+        return causeOn(el, "visibility: hidden", setter(el, hidden2));
+      }
       const none = closest(el, (_, s) => s.display === "none");
-      if (none) return `it has display: none${on(el, none)}`;
-      return `its box is empty (${Math.round(box.width)}x${Math.round(box.height)})`;
+      if (none) return causeOn(el, "display: none", none);
+      const skipped = closest(el, (a, s) => a !== el && s.contentVisibility === "hidden");
+      if (skipped) {
+        return {
+          why: `it is inside ${outline(skipped)}, which has content-visibility: hidden`,
+          what: "content-visibility: hidden on {el}",
+          el: skipped
+        };
+      }
+      const what = `an empty box (${Math.round(box.width)}x${Math.round(box.height)})`;
+      return { why: `its box is empty (${Math.round(box.width)}x${Math.round(box.height)})`, what };
     }
     const clear = closest(el, (_, s) => s.opacity === "0");
-    if (clear) return `it has opacity: 0${on(el, clear)}`;
+    if (clear) return causeOn(el, "opacity: 0", clear);
     return null;
   }
+  function invisible(el) {
+    return invisibleCause(el)?.why ?? null;
+  }
   var CONTROLS = /* @__PURE__ */ new Set(["button", "input", "select", "textarea", "optgroup", "option", "fieldset"]);
-  function disabled(el) {
+  function disabledCause(el) {
     if (CONTROLS.has(tag(el)) && el.matches(":disabled")) {
-      if (el.hasAttribute("disabled")) return "it has the disabled attribute";
+      if (el.hasAttribute("disabled")) return { why: "it has the disabled attribute", what: "the disabled attribute" };
       const parent = closest(el, (a) => a !== el && a.matches("fieldset:disabled, select:disabled, optgroup:disabled"));
-      if (parent) return `it is inside a disabled ${outline(parent)}`;
-      return "it is disabled";
+      if (parent) return { why: `it is inside a disabled ${outline(parent)}`, what: "inside the disabled {el}", el: parent };
+      return { why: "it is disabled", what: "disabled" };
     }
     const aria = closest(el, (a) => a.getAttribute("aria-disabled") === "true");
-    if (aria) return `it has aria-disabled="true"${on(el, aria)}`;
+    if (aria) return causeOn(el, 'aria-disabled="true"', aria);
     return null;
+  }
+  function disabled(el) {
+    return disabledCause(el)?.why ?? null;
+  }
+  function inertCause(el) {
+    const inert = closest(el, (a) => a.hasAttribute("inert"));
+    if (inert) return causeOn(el, "inert", inert);
+    const doc = el.ownerDocument;
+    const modals = Array.from(doc.querySelectorAll("dialog")).filter((d) => d.matches(":modal"));
+    if (modals.length && !modals.some((m) => contains(m, el))) {
+      const modal = modals[modals.length - 1];
+      return {
+        why: `it is inert while the modal ${outline(modal)} is open`,
+        what: "inert while the modal {el} is open",
+        el: modal
+      };
+    }
+    return null;
+  }
+  function pointerCause(el) {
+    if (getComputedStyle(el).pointerEvents !== "none") return null;
+    return causeOn(el, "pointer-events: none", setter(el, (s) => s.pointerEvents === "none"));
   }
   var NOT_TEXT = /* @__PURE__ */ new Set(["checkbox", "radio", "file", "button", "submit", "reset", "image", "hidden"]);
   function readOnly(el) {
@@ -1470,7 +1516,7 @@ ${inner}
       return { check: "stable", why: moved ? "it is still moving" : "it is still changing size" };
     }
     if (needs.enabled || needs.editable) {
-      const why = disabled(el);
+      const why = disabled(el) || inertCause(el)?.why;
       if (why) return { check: "enabled", why };
     }
     if (needs.editable) {
@@ -1478,6 +1524,12 @@ ${inner}
       if (why) return { check: "editable", ...why };
     }
     return null;
+  }
+  function named(el) {
+    const out = describe(el);
+    const cls = norm2(el.getAttribute("class")).split(" ")[0];
+    if (cls) out.cls = cut3(cls, 30);
+    return out;
   }
   var DISMISS = /^(accept|agree|allow|ok|okay|got it|close|dismiss|continue|no,? thanks|reject|decline|×|✕|x)\b/i;
   function covering(el, hit) {
@@ -1497,8 +1549,8 @@ ${inner}
       dismiss = buttons.find((b) => DISMISS.test(describe(b).name)) || buttons[0] || null;
     }
     const out = {
-      covering: describe(top),
-      dismiss: dismiss && describe(dismiss),
+      covering: named(top),
+      dismiss: dismiss && named(dismiss),
       inert
     };
     if (inert && el) out.pointerEvents = getComputedStyle(el).pointerEvents;
@@ -2015,8 +2067,8 @@ ${inner}
     const text2 = over(fg, bg);
     const [l1, l2] = [luminance(text2), luminance(bg)].sort((x, y) => y - x);
     const ratio = (l1 + 0.05) / (l2 + 0.05);
-    const size = parseFloat(style.fontSize);
-    const large = size >= 24 || size >= 18.66 && parseInt(style.fontWeight, 10) >= 700;
+    const size2 = parseFloat(style.fontSize);
+    const large = size2 >= 24 || size2 >= 18.66 && parseInt(style.fontWeight, 10) >= 700;
     const needed = large ? 3 : 4.5;
     if (ratio >= needed) return null;
     return `contrast ${ratio.toFixed(2)}:1, needs ${needed}:1`;
@@ -2285,6 +2337,131 @@ ${inner}
     return JSON.stringify({ reason, ...candidates2 });
   }
 
+  // src/why.ts
+  var Els = class {
+    els = [];
+    add(el) {
+      if (!el) return void 0;
+      const i = this.els.indexOf(el);
+      return i >= 0 ? i : this.els.push(el) - 1;
+    }
+    /** `{json, els}`, with each element's name in `names`. */
+    answer(json) {
+      const names = this.els.map(named);
+      return { json: JSON.stringify({ ...json, names }), els: this.els };
+    }
+  };
+  var px = (n) => Math.round(n);
+  var size = (r) => `${px(r.width)}×${px(r.height)}`;
+  function animationName(a) {
+    if (typeof CSSAnimation !== "undefined" && a instanceof CSSAnimation) return `animation "${a.animationName}"`;
+    if (typeof CSSTransition !== "undefined" && a instanceof CSSTransition) return `transition of ${a.transitionProperty}`;
+    return a.id ? `animation "${a.id}"` : "a script animation";
+  }
+  function animations(el, els) {
+    const running = (a) => a.getAnimations().filter((x) => x.playState === "running" && x.effect?.target === a);
+    const parts = [];
+    let index;
+    const own = running(el);
+    if (own.length) parts.push(`${own.slice(0, 2).map(animationName).join(", ")} on it`);
+    for (let a = parentOf(el); a; a = parentOf(a)) {
+      const theirs = running(a);
+      if (!theirs.length) continue;
+      index = els.add(a);
+      parts.push(`${theirs.slice(0, 2).map(animationName).join(", ")} on {el}`);
+      break;
+    }
+    return { text: parts.join("; "), el: index };
+  }
+  async function explainActionable(el, needs) {
+    const els = new Els();
+    const checks = [];
+    const add = (name, cause, ok) => {
+      if (!cause) {
+        checks.push({ name, ok: true, text: ok });
+        return;
+      }
+      const el2 = els.add(cause.el);
+      checks.push({ name, ok: false, text: cause.what, el: el2 });
+    };
+    if (!el.isConnected) {
+      checks.push({ name: "visible", ok: false, text: "it was removed from the page" });
+      return els.answer({ checks });
+    }
+    const box = el.getBoundingClientRect();
+    add("visible", invisibleCause(el), `${size(box)} at ${px(box.x)},${px(box.y)}`);
+    await frame();
+    const before2 = el.getBoundingClientRect();
+    await frame();
+    const after = el.getBoundingClientRect();
+    const moved = Math.hypot(after.x - before2.x, after.y - before2.y);
+    const resized = before2.width !== after.width || before2.height !== after.height;
+    if (moved || resized) {
+      const what = moved ? `moved ${moved < 1 ? "less than 1" : px(moved)}px between two frames` : `changed size from ${size(before2)} to ${size(after)} between two frames`;
+      const running = animations(el, els);
+      const text2 = running.text ? `${what} (${running.text})` : what;
+      checks.push({ name: "stable", ok: false, text: text2, el: running.el });
+    } else {
+      checks.push({ name: "stable", ok: true });
+    }
+    if (needs.enabled || needs.editable) add("enabled", disabledCause(el) || inertCause(el));
+    if (needs.editable) {
+      const cause = readOnly(el);
+      if (cause) {
+        checks.push({ name: "editable", ok: false, text: cause.why.replace(/^it has /, ""), final: cause.final });
+      } else {
+        checks.push({ name: "editable", ok: true });
+      }
+    }
+    const none = pointerCause(el);
+    const pointer = none ? { text: none.what, el: els.add(none.el) } : null;
+    return els.answer({ checks, pointer, own: named(el) });
+  }
+  function clipped(el) {
+    const els = new Els();
+    const r = el.getBoundingClientRect();
+    for (let a = parentOf(el); a; a = parentOf(a)) {
+      const s = getComputedStyle(a);
+      const clips = (o) => o === "hidden" || o === "clip";
+      const b = a.getBoundingClientRect();
+      const outX = clips(s.overflowX) && (r.right <= b.left || r.left >= b.right);
+      const outY = clips(s.overflowY) && (r.bottom <= b.top || r.top >= b.bottom);
+      if (outX || outY) {
+        const overflow = outX ? s.overflowX : s.overflowY;
+        return els.answer({ text: `clipped out of {el} (overflow: ${overflow})`, el: els.add(a) });
+      }
+    }
+    const view = el.ownerDocument.defaultView || window;
+    const x = r.left + view.scrollX;
+    const y = r.top + view.scrollY;
+    if (r.width && r.height && (x + r.width <= 0 || y + r.height <= 0)) {
+      return els.answer({ text: `it lies at a negative offset (x=${px(x)} y=${px(y)}), where no scroll reaches` });
+    }
+    return els.answer({});
+  }
+  var marks = /* @__PURE__ */ new Map();
+  var offsetOf = (a) => a ? [a.scrollLeft, a.scrollTop] : [scrollX, scrollY];
+  function scrollMark(el) {
+    marks = /* @__PURE__ */ new Map();
+    const root = document.scrollingElement || document.documentElement;
+    for (let a = parentOf(el); a && a !== root && a !== document.body; a = parentOf(a)) {
+      if (a.scrollHeight > a.clientHeight || a.scrollWidth > a.clientWidth) marks.set(a, offsetOf(a));
+    }
+    marks.set(null, offsetOf(null));
+  }
+  function scrolledSince() {
+    const els = new Els();
+    const moved = [];
+    for (const [a, [x, y]] of marks) {
+      const [nx, ny] = offsetOf(a);
+      const dx = px(nx - x);
+      const dy = px(ny - y);
+      if (dx || dy) moved.push({ dx, dy, el: els.add(a) });
+    }
+    marks = /* @__PURE__ */ new Map();
+    return els.answer({ moved });
+  }
+
   // src/index.ts
   var api = {
     version: 1,
@@ -2319,7 +2496,11 @@ ${inner}
     expectPage,
     expectNamed,
     a11y,
-    stable
+    stable,
+    explainActionable,
+    clipped,
+    scrollMark,
+    scrolledSince
   };
   if (!globalThis.__ccdp) globalThis.__ccdp = api;
 })();

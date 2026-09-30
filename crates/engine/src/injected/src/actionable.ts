@@ -45,37 +45,116 @@ function closest(el: Element, test: (el: Element, style: CSSStyleDeclaration) =>
 /** ` on <div class="modal">` when an ancestor, not the element, is why. */
 const on = (el: Element, cause: Element | null) => (cause && cause !== el ? ` on ${outline(cause)}` : '');
 
-/** Why the element is not visible, or `null` if it is: a non-empty box,
- * not `visibility: hidden`, and not transparent (`opacity: 0` on it or an
- * ancestor). */
-export function invisible(el: Element): string | null {
+/** Why a check fails: the pipeline's phrase (`why`), and for `why` the
+ * short form (`what`, with `{el}` where the element `el` that causes it
+ * is named) and that element, when it is not the checked one. */
+export interface Cause {
+  why: string;
+  what: string;
+  el?: Element;
+}
+
+/** A cause set by `cause` (the element itself, an ancestor, or `null`
+ * when nothing names one): `<what> on <el>` when it is an ancestor. */
+function causeOn(el: Element, what: string, cause: Element | null): Cause {
+  if (!cause || cause === el) return { why: `it has ${what}`, what };
+  return { why: `it has ${what}${on(el, cause)}`, what: `${what} on {el}`, el: cause };
+}
+
+/** The outermost element of the unbroken chain of `el` and its ancestors
+ * for which `test` holds: who sets an inherited property (`visibility`,
+ * `pointer-events`). */
+function setter(el: Element, test: (style: CSSStyleDeclaration) => boolean): Element {
+  let top = el;
+  for (let a = parentOf(el); a && test(getComputedStyle(a)); a = parentOf(a)) top = a;
+  return top;
+}
+
+/** Why the element is not visible, with the element that causes it, or
+ * `null` if it is: a non-empty box, not `visibility: hidden`, not in a
+ * `content-visibility: hidden` subtree, and not transparent (`opacity: 0`
+ * on it or an ancestor). */
+export function invisibleCause(el: Element): Cause | null {
   if (!visible(el)) {
     const box = el.getBoundingClientRect();
-    if (box.width > 0 && box.height > 0) return 'it has visibility: hidden';
+    if (box.width > 0 && box.height > 0) {
+      const hidden = (s: CSSStyleDeclaration) => s.visibility === 'hidden' || s.visibility === 'collapse';
+      return causeOn(el, 'visibility: hidden', setter(el, hidden));
+    }
     const none = closest(el, (_, s) => s.display === 'none');
-    if (none) return `it has display: none${on(el, none)}`;
-    return `its box is empty (${Math.round(box.width)}x${Math.round(box.height)})`;
+    if (none) return causeOn(el, 'display: none', none);
+    const skipped = closest(el, (a, s) => a !== el && s.contentVisibility === 'hidden');
+    if (skipped) {
+      return {
+        why: `it is inside ${outline(skipped)}, which has content-visibility: hidden`,
+        what: 'content-visibility: hidden on {el}',
+        el: skipped,
+      };
+    }
+    const what = `an empty box (${Math.round(box.width)}x${Math.round(box.height)})`;
+    return { why: `its box is empty (${Math.round(box.width)}x${Math.round(box.height)})`, what };
   }
   const clear = closest(el, (_, s) => s.opacity === '0');
-  if (clear) return `it has opacity: 0${on(el, clear)}`;
+  if (clear) return causeOn(el, 'opacity: 0', clear);
   return null;
+}
+
+/** Why the element is not visible, or `null` if it is (see
+ * `invisibleCause`). */
+export function invisible(el: Element): string | null {
+  return invisibleCause(el)?.why ?? null;
 }
 
 /** Form controls the `disabled` attribute (or a disabled fieldset)
  * applies to. */
 const CONTROLS = new Set(['button', 'input', 'select', 'textarea', 'optgroup', 'option', 'fieldset']);
 
-/** Why the element is disabled, or `null`. */
-export function disabled(el: Element): string | null {
+/** Why the element is disabled, with the element that causes it, or
+ * `null`: its `disabled`, a disabled `<fieldset>` (or `<select>`,
+ * `<optgroup>`) it is in, or `aria-disabled="true"` on it or an
+ * ancestor. */
+export function disabledCause(el: Element): Cause | null {
   if (CONTROLS.has(tag(el)) && el.matches(':disabled')) {
-    if (el.hasAttribute('disabled')) return 'it has the disabled attribute';
+    if (el.hasAttribute('disabled')) return { why: 'it has the disabled attribute', what: 'the disabled attribute' };
     const parent = closest(el, (a) => a !== el && a.matches('fieldset:disabled, select:disabled, optgroup:disabled'));
-    if (parent) return `it is inside a disabled ${outline(parent)}`;
-    return 'it is disabled';
+    if (parent) return { why: `it is inside a disabled ${outline(parent)}`, what: 'inside the disabled {el}', el: parent };
+    return { why: 'it is disabled', what: 'disabled' };
   }
   const aria = closest(el, (a) => a.getAttribute('aria-disabled') === 'true');
-  if (aria) return `it has aria-disabled="true"${on(el, aria)}`;
+  if (aria) return causeOn(el, 'aria-disabled="true"', aria);
   return null;
+}
+
+/** Why the element is disabled, or `null` (see `disabledCause`). */
+export function disabled(el: Element): string | null {
+  return disabledCause(el)?.why ?? null;
+}
+
+/** Why the element is inert, or `null`: `inert` on it or an ancestor, or
+ * a modal `<dialog>` open elsewhere (which makes the rest of the page
+ * inert). Actions that need the element enabled check this too: an inert
+ * element takes no clicks, focus or text. */
+export function inertCause(el: Element): Cause | null {
+  const inert = closest(el, (a) => a.hasAttribute('inert'));
+  if (inert) return causeOn(el, 'inert', inert);
+  const doc = el.ownerDocument;
+  const modals = Array.from(doc.querySelectorAll('dialog')).filter((d) => d.matches(':modal'));
+  if (modals.length && !modals.some((m) => contains(m, el))) {
+    const modal = modals[modals.length - 1];
+    return {
+      why: `it is inert while the modal ${outline(modal)} is open`,
+      what: 'inert while the modal {el} is open',
+      el: modal,
+    };
+  }
+  return null;
+}
+
+/** Why the element does not take pointer events, or `null`:
+ * `pointer-events: none` on it or the ancestor that sets it. */
+export function pointerCause(el: Element): Cause | null {
+  if (getComputedStyle(el).pointerEvents !== 'none') return null;
+  return causeOn(el, 'pointer-events: none', setter(el, (s) => s.pointerEvents === 'none'));
 }
 
 /** Input types `fill` and `type` cannot edit. */
@@ -105,7 +184,7 @@ export function readOnly(el: Element): { why: string; final?: boolean } | null {
 
 /** Resolves on the next animation frame, or after 100 ms where frames do
  * not run (a background tab). */
-const frame = () =>
+export const frame = () =>
   new Promise<void>((resolve) => {
     requestAnimationFrame(() => resolve());
     setTimeout(resolve, 100);
@@ -133,7 +212,7 @@ export async function checkActionable(el: Element, needs: Needs): Promise<Failed
     return { check: 'stable', why: moved ? 'it is still moving' : 'it is still changing size' };
   }
   if (needs.enabled || needs.editable) {
-    const why = disabled(el);
+    const why = disabled(el) || inertCause(el)?.why;
     if (why) return { check: 'enabled', why };
   }
   if (needs.editable) {
@@ -141,6 +220,20 @@ export async function checkActionable(el: Element, needs: Needs): Promise<Failed
     if (why) return { check: 'editable', ...why };
   }
   return null;
+}
+
+/** How `why` names an element: `describe`'s role, name and tag, and its
+ * first class, which names an element without a role
+ * (`div.cookie-banner`). */
+export interface Named extends Candidate {
+  cls?: string;
+}
+
+export function named(el: Element): Named {
+  const out: Named = describe(el);
+  const cls = norm(el.getAttribute('class')).split(' ')[0];
+  if (cls) out.cls = cut(cls, 30);
+  return out;
 }
 
 /** Buttons whose name says they close what they are in. */
@@ -170,9 +263,9 @@ export function covering(el: Element | null, hit: Node): { json: string; els: (E
       .filter((b) => visible(b));
     dismiss = buttons.find((b) => DISMISS.test(describe(b).name)) || buttons[0] || null;
   }
-  const out: { covering: Candidate; dismiss: Candidate | null; inert: boolean; pointerEvents?: string } = {
-    covering: describe(top),
-    dismiss: dismiss && describe(dismiss),
+  const out: { covering: Named; dismiss: Named | null; inert: boolean; pointerEvents?: string } = {
+    covering: named(top),
+    dismiss: dismiss && named(dismiss),
     inert,
   };
   if (inert && el) out.pointerEvents = getComputedStyle(el).pointerEvents;
