@@ -386,7 +386,7 @@ every tab of it. `emulate reset` turns everything off.
 | `serviceWorkers: 'block'` | `open --bypass-service-worker` | ✅ |
 | `page.clock.setFixedTime(t)`, `clock.install({ time })` | `time freeze 2026-01-31T09:30:00Z` | ✅ |
 | `clock.fastForward('01:30')` | `time advance 90s` (moves `Date` and `performance.now()`, and runs the timers due by then, each once) | ✅ |
-| `clock.runFor`, `pauseAt`, paused timers | — (timers keep running in real time) | ❌ |
+| `clock.pauseAt(t)`, `clock.runFor(ms)`, `clock.resume()` | `time pause 2026-01-31T10:00:00Z`, `time run-for 1s`, `time resume` (paused, `setTimeout`, `setInterval` and `requestAnimationFrame` wait; `run-for` fires each interval tick and a frame every 16ms; `time pause-at T` runs a paused clock on to T) | ✅ |
 | extensions (`--load-extension` in a persistent context) | `open --extension DIR` | ✅ |
 
 ## Tracing and debugging

@@ -1,6 +1,6 @@
 # Plan 14 — Parity gaps and small commands
 
-Status: IN PROGRESS (14.1 done)
+Status: IN PROGRESS (14.1-14.2 done)
 Depends on: v1 (plans 01–11). Track 3 of [plan 12](12-after-v1.md). Plan 13
 (every frame, every worker) is not required, but where it has landed, use its
 target graph instead of adding per-session code.
@@ -428,7 +428,7 @@ match with changed dynamic text, fail on a missing button, and survive
 
 ## Acceptance criteria
 
-- [ ] `docs/playwright-parity.md` has no ❌ row; its "Today:" line and
+- [x] `docs/playwright-parity.md` has no ❌ row; its "Today:" line and
       `tests/parity.rs` agree.
 - [ ] The 🟡 rows for `keyboard.down`/`up`, `exposeFunction`, WebSocket
       frames, `toMatchAriaSnapshot` and `browser_generate_locator` are ✅,
@@ -487,3 +487,27 @@ match with changed dynamic text, fail on a missing button, and survive
   `page.getByRole('button').or(page.locator('.row').getByRole('link'))`
   is therefore `role=button >> or=".row >> role=link"`, while
   `row.getByRole('button').or(page.getByRole('link'))` stays a TODO.
+- **14.2, errors.** `run-for`/`pause-at` on a clock that is not paused,
+  and `pause-at` to an earlier time, are `BadArgs` (exit 2) with the hint
+  `time pause`: there is no FailedPrecondition kind, and `time advance` on
+  an unfrozen clock is `BadArgs` already.
+- **14.2, `time pause` without TIME** keeps the frozen time when there is
+  one (now otherwise), so `freeze T` then `pause` stops the clock at T.
+  `time freeze` on a paused clock sets the time and lets timers run again.
+- **14.2, `fired`** sums what each page, out-of-process iframe and worker
+  session's main document fired. A same-process iframe runs its timers
+  but is not counted: reading every frame's count costs a call per frame.
+- **14.2, frames** run at 16ms steps from where the document paused, so a
+  1s `run-for` fires 62 or 63 of them. An interval of 0 steps 1ms at a
+  time while running, so it cannot stall the loop at one instant.
+- **14.2, the "timers set before now" warning** comes from the clock
+  marking a document it reached after it started loading (not
+  `about:blank`), so it also shows for a page frozen after it loaded.
+- **14.2, `resume`** hands queued animation frames to the browser under
+  new ids: `cancelAnimationFrame` with the old id no longer cancels one.
+- **14.2, `convert`.** Playwright's `clock.pauseAt(t)` also jumps a
+  running clock there, while `time pause-at` needs a paused one, so it
+  becomes `time pause T`; `runFor` becomes `time run-for`, `resume` `time
+  resume`.
+- **14.2, skill.** `chrome-cdp skill` has no `time` line, and paused
+  timers are for tests of countdowns and animations, so it gets none.

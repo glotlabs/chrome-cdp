@@ -27,3 +27,11 @@
   expect '#session' text 'Session active'
   time advance 5m
   expect '#session' text 'Session expired'
+
+@test "time pause stops a countdown until time run-for"
+  time pause
+  goto /emulate/timers.html
+  expect '#countdown' text 50 --exact
+  time run-for 1s
+  expect '#countdown' text 40 --exact
+  expect '#frames' text 62 --exact

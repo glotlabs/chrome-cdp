@@ -18,7 +18,7 @@ around it. **The v1 gate: no ❌ in an agent-critical row.** A test
 (`crates/chrome-cdp/tests/parity.rs`) holds the tables to that, checks the
 counts below, and checks that every command a row names exists.
 
-Today: 129 rows; 109 ✅, 14 🟡, 1 ❌, 5 ➖. No agent-critical row is ❌.
+Today: 129 rows; 110 ✅, 14 🟡, 0 ❌, 5 ➖. No row is ❌.
 
 ## Navigation
 
@@ -166,7 +166,7 @@ Today: 129 rows; 109 ✅, 14 🟡, 1 ❌, 5 ➖. No agent-critical row is ❌.
 | network and CPU throttling (CDP) | `throttle slow-3g`, `cpu-throttle 4` | ✅ | no |
 | `httpCredentials`, `ignoreHTTPSErrors`, `serviceWorkers: 'block'` | `open --http-credentials user:pass --ignore-https-errors --bypass-service-worker` | ✅ | no |
 | `clock.setFixedTime`, `install`, `fastForward` | `time freeze 2026-01-31T09:30:00Z`, `time advance 90s` | ✅ | no |
-| `clock.runFor`, `pauseAt`, paused timers | timers keep running in real time | ❌ | no |
+| `clock.runFor`, `pauseAt`, paused timers | `time pause`, `time run-for 1s` (every interval tick, a frame every 16ms), `time pause-at T`, `time resume` | ✅ | no |
 
 ## Tracing, snapshots and assertions
 
@@ -206,11 +206,7 @@ Today: 129 rows; 109 ✅, 14 🟡, 1 ❌, 5 ➖. No agent-critical row is ❌.
 
 ## Gaps
 
-The ❌ row, not agent-critical, and why it can wait:
-
-- **Paused timers (`clock.runFor`, `pauseAt`).** `time freeze` and
-  `time advance` cover dates and timers that are due; nothing an agent
-  does needs timers stopped.
+No row is ❌.
 
 Video (➖) is not in v1: an agent cannot watch one, and a failure already
 leaves step screenshots (`test --trace`) and a `report.md`. The raw

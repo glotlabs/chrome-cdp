@@ -42,6 +42,18 @@ without waiting:
   expect text="Your session has expired" visible
 ```
 
+For a countdown or an animation, `time pause` before `goto` stops its
+timers and animation frames, and `time run-for 1s` fires the ones due in
+that second, each interval tick and a frame every 16ms:
+
+```
+@test "the offer ends after the countdown"
+  time pause
+  goto /offer
+  time run-for 10s
+  expect text="The offer has ended" visible
+```
+
 A step can change any of these for its test: `time freeze
 2026-12-24T18:00:00Z`, `time reset`, `locale de-DE`, `tz Asia/Tokyo`,
 `media --reduced-motion no-preference`.

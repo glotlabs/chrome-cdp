@@ -361,6 +361,7 @@ chrome-cdp offline on                   # requests fail, navigator.onLine is fal
 chrome-cdp throttle slow-3g             # fast-3g, 4g, or --latency 300ms --down 1000 --up 500
 chrome-cdp cpu-throttle 4
 chrome-cdp time freeze 2026-01-31T09:30:00Z   # Date is frozen; `time advance 90s`, `time reset`
+chrome-cdp time pause                   # timers and animation frames stop too; `time run-for 1s`, `time resume`
 chrome-cdp permissions grant notifications camera --origin http://localhost:3000
 chrome-cdp emulate                      # what the session emulates; `emulate reset` turns it all off
 ```
@@ -368,7 +369,12 @@ chrome-cdp emulate                      # what the session emulates; `emulate re
 Each command has a `reset` (or `off`). `time freeze` replaces `Date` (and
 `Intl.DateTimeFormat` without a date) with an init script; timers and
 animations keep running in real time, since Chrome's virtual time stalls
-page loads. Permissions (`permissions`, and the ones `geo` and `clipboard`
+page loads. `time pause` stops them as well: `setTimeout`, `setInterval`
+and `requestAnimationFrame` callbacks wait and `performance.now()` stands
+still until `time run-for 1s` fires them in order (each interval tick, a
+frame every 16ms, `ran 10 timers, 62 frames`), `time pause-at T` runs on
+to a time, or `time resume` lets them run in real time again. Pause before
+the page loads: timers it set before the clock came keep running. Permissions (`permissions`, and the ones `geo` and `clipboard`
 grant) belong to the browser: `permissions` lists them, `permissions reset`
 takes them back. `open --fake-media` gives pages a fake camera and
 microphone. Out-of-process iframes get every setting but the pixel ratio,
