@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 749bc8e31ff5983c
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 900560b3b0fba05a
 "use strict";
 (() => {
   // src/dom.ts
@@ -1417,8 +1417,8 @@ ${inner}
     if (!visible(el)) {
       const box = el.getBoundingClientRect();
       if (box.width > 0 && box.height > 0) {
-        const hidden2 = (s) => s.visibility === "hidden" || s.visibility === "collapse";
-        return causeOn(el, "visibility: hidden", setter(el, hidden2));
+        const hidden3 = (s) => s.visibility === "hidden" || s.visibility === "collapse";
+        return causeOn(el, "visibility: hidden", setter(el, hidden3));
       }
       const none = closest(el, (_, s) => s.display === "none");
       if (none) return causeOn(el, "display: none", none);
@@ -1504,8 +1504,8 @@ ${inner}
   };
   async function checkActionable(el, needs) {
     if (!el.isConnected) return { check: "attached", why: "it was removed from the page" };
-    const hidden2 = invisible(el);
-    if (hidden2) return { check: "visible", why: hidden2 };
+    const hidden3 = invisible(el);
+    if (hidden3) return { check: "visible", why: hidden3 };
     await frame();
     const before2 = rect(el);
     await frame();
@@ -2053,9 +2053,9 @@ ${inner}
         if (c[3] >= 1) break;
       }
     }
-    let colour2 = [255, 255, 255, 1];
-    for (let i = layers.length - 1; i >= 0; i--) colour2 = over(layers[i], colour2);
-    return colour2;
+    let colour3 = [255, 255, 255, 1];
+    for (let i = layers.length - 1; i >= 0; i--) colour3 = over(layers[i], colour3);
+    return colour3;
   }
   function contrast(el) {
     const own = Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && n.data.trim());
@@ -2166,7 +2166,7 @@ ${inner}
     const els = [];
     const scope = root || document.documentElement;
     const all = [scope, ...descendants(scope)];
-    const hidden2 = new Map(all.map((el) => [el, hiddenForAria(el)]));
+    const hidden3 = new Map(all.map((el) => [el, hiddenForAria(el)]));
     for (const rule of rules) {
       const v = { rule: rule.id, wcag: rule.wcag, level: rule.level, help: rule.help, count: 0, nodes: [] };
       if (rule.page) {
@@ -2176,7 +2176,7 @@ ${inner}
         continue;
       }
       for (const el of all) {
-        if (rule.id === "aria-hidden-focus" ? !hidden2.get(el) || !visible(el) : hidden2.get(el)) continue;
+        if (rule.id === "aria-hidden-focus" ? !hidden3.get(el) || !visible(el) : hidden3.get(el)) continue;
         const found = rule.check?.(el);
         if (!found) continue;
         v.count++;
@@ -2422,10 +2422,10 @@ ${inner}
     const r = el.getBoundingClientRect();
     for (let a = parentOf(el); a; a = parentOf(a)) {
       const s = getComputedStyle(a);
-      const clips = (o) => o === "hidden" || o === "clip";
+      const clips2 = (o) => o === "hidden" || o === "clip";
       const b = a.getBoundingClientRect();
-      const outX = clips(s.overflowX) && (r.right <= b.left || r.left >= b.right);
-      const outY = clips(s.overflowY) && (r.bottom <= b.top || r.top >= b.bottom);
+      const outX = clips2(s.overflowX) && (r.right <= b.left || r.left >= b.right);
+      const outY = clips2(s.overflowY) && (r.bottom <= b.top || r.top >= b.bottom);
       if (outX || outY) {
         const overflow = outX ? s.overflowX : s.overflowY;
         return els.answer({ text: `clipped out of {el} (overflow: ${overflow})`, el: els.add(a) });
@@ -2460,6 +2460,498 @@ ${inner}
     }
     marks = /* @__PURE__ */ new Map();
     return els.answer({ moved });
+  }
+
+  // src/layout.ts
+  var px2 = (n) => Math.round(n);
+  var boxOf = (r) => [r.x, r.y, r.width, r.height];
+  var Els2 = class {
+    els = [];
+    add(el) {
+      const i = this.els.indexOf(el);
+      return i >= 0 ? i : this.els.push(el) - 1;
+    }
+  };
+  function keyOf(el, testid) {
+    try {
+      const found = JSON.parse(stable(el, testid));
+      if (found.locator) return found.locator;
+    } catch {
+    }
+    const parts = [];
+    for (let a = el; a && parts.length < 5; a = parentOf(a)) {
+      const t = tag(a);
+      if (t === "html" || t === "body") break;
+      const id = a.getAttribute("id");
+      if (id && /^[A-Za-z][\w-]*$/.test(id)) {
+        parts.unshift(`#${id}`);
+        break;
+      }
+      const cls = norm(a.getAttribute("class")).split(" ")[0];
+      let part = cls && /^[A-Za-z_][\w-]*$/.test(cls) ? `${t}.${cls}` : t;
+      const parent = a.parentElement;
+      if (parent) {
+        const same = Array.from(parent.children).filter((c) => tag(c) === t);
+        if (same.length > 1) part += `:nth-of-type(${same.indexOf(a) + 1})`;
+      }
+      parts.unshift(part);
+    }
+    return `css=${parts.join(" > ")}`;
+  }
+  var clips = (o) => o === "hidden" || o === "clip";
+  var scrolls2 = (o) => o === "auto" || o === "scroll" || o === "overlay";
+  function paddingBox(el) {
+    const r = el.getBoundingClientRect();
+    return [r.x + el.clientLeft, r.y + el.clientTop, el.clientWidth, el.clientHeight];
+  }
+  function intersect(a, b) {
+    const x = Math.max(a[0], b[0]);
+    const y = Math.max(a[1], b[1]);
+    const right = Math.min(a[0] + a[2], b[0] + b[2]);
+    const bottom = Math.min(a[1] + a[3], b[1] + b[3]);
+    return right > x && bottom > y ? [x, y, right - x, bottom - y] : null;
+  }
+  var area = (b) => b[2] * b[3];
+  var centre = (b) => [b[0] + b[2] / 2, b[1] + b[3] / 2];
+  function shownBox(el) {
+    let box = boxOf(el.getBoundingClientRect());
+    for (let a = parentOf(el); a && box; a = parentOf(a)) {
+      const t = tag(a);
+      if (t === "html" || t === "body") break;
+      const s = getComputedStyle(a);
+      if (s.overflowX === "visible" && s.overflowY === "visible") continue;
+      const p = paddingBox(a);
+      const limit = [
+        s.overflowX === "visible" ? -1e9 : p[0],
+        s.overflowY === "visible" ? -1e9 : p[1],
+        s.overflowX === "visible" ? 2e9 : p[2],
+        s.overflowY === "visible" ? 2e9 : p[3]
+      ];
+      box = intersect(box, limit);
+      if (s.position === "fixed") break;
+    }
+    return box;
+  }
+  function visuallyHidden2(el, style) {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 1 || r.height <= 1) return true;
+    const clip = style.clip.replace(/\s+/g, "");
+    if (style.position === "absolute" || style.position === "fixed") {
+      const m = /^rect\(([-\d.]+)px,?([-\d.]+)px,?([-\d.]+)px,?([-\d.]+)px\)$/.exec(clip);
+      if (m && (parseFloat(m[3]) - parseFloat(m[1]) <= 1 || parseFloat(m[2]) - parseFloat(m[4]) <= 1)) return true;
+    }
+    const path = style.clipPath.replace(/\s+/g, "");
+    return /^inset\((50|100)%\)$/.test(path) || /^circle\(0(px)?/.test(path) || /^polygon\(0(px)?0(px)?,0(px)?0(px)?/.test(path);
+  }
+  function rendered(root) {
+    const out = [];
+    const clear = /* @__PURE__ */ new Map();
+    const transparent = (el) => {
+      if (!el) return false;
+      const known = clear.get(el);
+      if (known !== void 0) return known;
+      const value2 = getComputedStyle(el).opacity === "0" || transparent(parentOf(el));
+      clear.set(el, value2);
+      return value2;
+    };
+    const all = root instanceof Document ? descendants(root) : [root, ...descendants(root)];
+    for (const el of all) {
+      const t = tag(el);
+      if (SKIP.has(t) || t === "html" || t === "body") continue;
+      const style = getComputedStyle(el);
+      if (style.display === "none" || style.visibility !== "visible") continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) continue;
+      if (transparent(el)) continue;
+      const role = roleOf(el) || "generic";
+      const parentStyle = parentOf(el) ? getComputedStyle(parentOf(el)) : null;
+      const tabindex = parseInt(el.getAttribute("tabindex") || "", 10);
+      const pointer = style.cursor === "pointer" && !(parentStyle && parentStyle.cursor === "pointer");
+      const clickable = el.hasAttribute("onclick") || tabindex >= 0 || pointer;
+      const interactive = role !== "iframe" && (INTERACTIVE.has(role) || clickable);
+      out.push({ el, style, role, interactive });
+    }
+    return out;
+  }
+  function hitAt(doc, x, y) {
+    let hit = doc.elementFromPoint(x, y);
+    while (hit && hit.shadowRoot) {
+      const inner = hit.shadowRoot.elementFromPoint(x, y);
+      if (!inner || inner === hit) break;
+      hit = inner;
+    }
+    return hit;
+  }
+  function ownText(el) {
+    const nodes = [];
+    for (let n = el.firstChild; n; n = n.nextSibling) {
+      if (n.nodeType === Node.TEXT_NODE && norm(n.data)) nodes.push(n);
+    }
+    return nodes;
+  }
+  function textBox(el) {
+    const nodes = ownText(el);
+    if (!nodes.length) return null;
+    let left = Infinity;
+    let top = Infinity;
+    let right = -Infinity;
+    let bottom = -Infinity;
+    const range = document.createRange();
+    for (const node of nodes) {
+      range.selectNodeContents(node);
+      for (const r of Array.from(range.getClientRects())) {
+        if (r.width < 1 || r.height < 1) continue;
+        left = Math.min(left, r.left);
+        top = Math.min(top, r.top);
+        right = Math.max(right, r.right);
+        bottom = Math.max(bottom, r.bottom);
+      }
+    }
+    range.detach();
+    return right > left && bottom > top ? [left, top, right - left, bottom - top] : null;
+  }
+  function colour2(s) {
+    const m = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+%?))?\s*\)$/.exec(s.trim());
+    if (!m) return null;
+    let a = m[4] === void 0 ? 1 : parseFloat(m[4]);
+    if (m[4] && m[4].endsWith("%")) a /= 100;
+    return [parseFloat(m[1]), parseFloat(m[2]), parseFloat(m[3]), a];
+  }
+  function opacity(el) {
+    let o = 1;
+    for (let a = el; a; a = parentOf(a)) o *= parseFloat(getComputedStyle(a).opacity) || 0;
+    return o;
+  }
+  var measured = [];
+  function layoutCheck(root, options) {
+    const kinds = new Set(options.kinds);
+    const els = new Els2();
+    const findings = [];
+    const seen = rendered(root || document);
+    const view = options.view || [0, 0, innerWidth, innerHeight];
+    const inView = (b) => {
+      const [x, y] = centre(b);
+      return x >= view[0] && y >= view[1] && x < view[0] + view[2] && y < view[1] + view[3];
+    };
+    const targets = seen.filter((s) => s.interactive && !visuallyHidden2(s.el, s.style));
+    const shown2 = /* @__PURE__ */ new Map();
+    const shownOf = (el) => {
+      if (!shown2.has(el)) shown2.set(el, shownBox(el));
+      return shown2.get(el);
+    };
+    if (kinds.has("covered")) {
+      for (const t of targets) {
+        const box = shownOf(t.el);
+        if (!box || !inView(box)) continue;
+        const [x, y] = centre(box);
+        const hit = hitAt(t.el.ownerDocument, x, y);
+        if (!hit || contains(t.el, hit) || contains(hit, t.el)) continue;
+        const labels = t.el.labels;
+        if (labels && Array.from(labels).some((l) => contains(l, hit))) continue;
+        const found = covering(t.el, hit);
+        const top = found.els[0];
+        if (!top) continue;
+        const others = [els.add(top)];
+        if (found.els[1]) others.push(els.add(found.els[1]));
+        findings.push({
+          kind: "covered",
+          el: els.add(t.el),
+          box: boxOf(t.el.getBoundingClientRect()),
+          others,
+          details: { at: [px2(x), px2(y)], dismiss: !!found.els[1] }
+        });
+      }
+    }
+    if (kinds.has("overlap")) {
+      const boxes = targets.map((t) => ({ el: t.el, box: shownOf(t.el) })).filter((b) => !!b.box).sort((a, b) => a.box[0] - b.box[0]);
+      for (let i = 0; i < boxes.length; i++) {
+        const a = boxes[i];
+        for (let j = i + 1; j < boxes.length && boxes[j].box[0] < a.box[0] + a.box[2]; j++) {
+          const b = boxes[j];
+          if (contains(a.el, b.el) || contains(b.el, a.el)) continue;
+          const both = intersect(a.box, b.box);
+          if (!both || area(both) <= 4 || area(both) < 0.1 * Math.min(area(a.box), area(b.box))) continue;
+          const [first, second] = a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? [a, b] : [b, a];
+          findings.push({
+            kind: "overlap",
+            el: els.add(first.el),
+            box: boxOf(first.el.getBoundingClientRect()),
+            others: [els.add(second.el)],
+            details: { width: px2(both[2]), height: px2(both[3]) }
+          });
+        }
+      }
+    }
+    if (kinds.has("clipped") || kinds.has("truncated")) {
+      for (const s of seen) {
+        if (visuallyHidden2(s.el, s.style)) continue;
+        const text2 = textBox(s.el);
+        if (!text2) continue;
+        for (let a = s.el; a; a = parentOf(a)) {
+          const t = tag(a);
+          if (t === "html" || t === "body") break;
+          const style = a === s.el ? s.style : getComputedStyle(a);
+          const cutX = clips(style.overflowX);
+          const cutY = clips(style.overflowY);
+          if (!cutX && !cutY) {
+            if (style.position === "fixed") break;
+            continue;
+          }
+          const p = paddingBox(a);
+          const x = cutX && (text2[0] < p[0] - 1 || text2[0] + text2[2] > p[0] + p[2] + 1);
+          const y = cutY && (text2[1] < p[1] - 1 || text2[1] + text2[3] > p[1] + p[3] + 1);
+          if (!x && !y) {
+            if (scrolls2(style.overflowX) || scrolls2(style.overflowY)) break;
+            continue;
+          }
+          const both = intersect(text2, p);
+          if (!both) break;
+          const axis = x ? "x" : "y";
+          const full = axis === "x" ? text2[2] : text2[3];
+          const part = axis === "x" ? both[2] : both[3];
+          const clamp = (st) => (st.webkitLineClamp || "none") !== "none";
+          const how = axis === "x" && style.textOverflow === "ellipsis" ? "ellipsis" : axis === "y" && (clamp(style) || clamp(s.style)) ? "line-clamp" : null;
+          const kind = how ? "truncated" : "clipped";
+          if (!kinds.has(kind)) break;
+          const details = {
+            axis,
+            shown: px2(part),
+            full: px2(full),
+            overflow: axis === "x" ? style.overflowX : style.overflowY,
+            own: a === s.el
+          };
+          if (how) {
+            details.how = how;
+            const whole = norm(s.el.textContent);
+            details.text = whole.length > 200 ? `${whole.slice(0, 199)}…` : whole;
+          }
+          findings.push({
+            kind,
+            el: els.add(s.el),
+            box: boxOf(s.el.getBoundingClientRect()),
+            others: a === s.el ? [] : [els.add(a)],
+            details
+          });
+          break;
+        }
+      }
+    }
+    const doc = document.documentElement;
+    const htmlStyle = getComputedStyle(doc);
+    const bodyStyle = document.body ? getComputedStyle(document.body) : null;
+    const viewportOverflow = (axis) => htmlStyle[axis] !== "visible" ? htmlStyle[axis] : bodyStyle ? bodyStyle[axis] : "visible";
+    const sideways = !clips(viewportOverflow("overflowX"));
+    const downwards = !clips(viewportOverflow("overflowY"));
+    if (kinds.has("overflow-x") && options.main && sideways && doc.scrollWidth > doc.clientWidth + 1) {
+      const past = (s) => {
+        const r = s.el.getBoundingClientRect();
+        return r.right + scrollX > doc.clientWidth + 1;
+      };
+      const within = (el) => {
+        for (let a = parentOf(el); a; a = parentOf(a)) {
+          const t = tag(a);
+          if (t === "html" || t === "body") return false;
+          const st = getComputedStyle(a);
+          if (st.overflowX !== "visible" || st.position === "fixed") return true;
+        }
+        return false;
+      };
+      const wide = seen.filter((s) => s.style.position !== "fixed" && past(s) && !within(s.el));
+      const outer = wide.filter((s) => !wide.some((o) => o !== s && contains(o.el, s.el)));
+      const named2 = outer.slice(0, 5);
+      if (named2.length) {
+        findings.push({
+          kind: "overflow-x",
+          el: els.add(named2[0].el),
+          box: boxOf(named2[0].el.getBoundingClientRect()),
+          others: named2.map((s) => els.add(s.el)),
+          details: {
+            width: doc.scrollWidth,
+            viewport: doc.clientWidth,
+            ends: named2.map((s) => px2(s.el.getBoundingClientRect().right + scrollX))
+          }
+        });
+      }
+    }
+    if (kinds.has("offscreen")) {
+      const width = sideways ? doc.scrollWidth : doc.clientWidth;
+      const height = downwards ? doc.scrollHeight : doc.clientHeight;
+      for (const t of targets) {
+        const r = t.el.getBoundingClientRect();
+        const fixed = t.style.position === "fixed";
+        const x = r.left + (fixed ? 0 : scrollX);
+        const y = r.top + (fixed ? 0 : scrollY);
+        const [w, h] = fixed ? [doc.clientWidth, doc.clientHeight] : [width, height];
+        if (!(x + r.width <= 0 || y + r.height <= 0 || x >= w || y >= h)) continue;
+        if (tag(t.el) === "a" && (t.el.getAttribute("href") || "").startsWith("#")) continue;
+        if (!shownOf(t.el)) continue;
+        findings.push({
+          kind: "offscreen",
+          el: els.add(t.el),
+          box: boxOf(r),
+          details: { x: px2(x), y: px2(y), width: px2(w), height: px2(h) }
+        });
+      }
+    }
+    if (kinds.has("small-target")) {
+      const min = options.minTarget;
+      const boxes = targets.map((t) => ({ t, box: shownOf(t.el) })).filter((b) => !!b.box);
+      const small = (b) => b[2] < min - 0.01 || b[3] < min - 0.01;
+      const reach = (p, b) => Math.hypot(Math.max(b[0] - p[0], 0, p[0] - b[0] - b[2]), Math.max(b[1] - p[1], 0, p[1] - b[1] - b[3]));
+      for (const { t, box } of boxes) {
+        const own = boxOf(t.el.getBoundingClientRect());
+        if (!small(own)) continue;
+        if (t.role === "link" && t.style.display === "inline") {
+          let block = parentOf(t.el);
+          while (block && getComputedStyle(block).display.startsWith("inline")) block = parentOf(block);
+          if (block && norm(block.textContent).length > norm(t.el.textContent).length) continue;
+        }
+        const c = centre(box);
+        const crowded = boxes.some(({ t: o, box: ob }) => {
+          if (o === t || contains(o.el, t.el) || contains(t.el, o.el)) return false;
+          if (reach(c, ob) < min / 2) return true;
+          return small(boxOf(o.el.getBoundingClientRect())) && Math.hypot(c[0] - centre(ob)[0], c[1] - centre(ob)[1]) < min;
+        });
+        if (!crowded) continue;
+        findings.push({
+          kind: "small-target",
+          el: els.add(t.el),
+          box: own,
+          details: { width: px2(own[2]), height: px2(own[3]), min }
+        });
+      }
+    }
+    const texts = [];
+    let skipped = 0;
+    measured = [];
+    if (kinds.has("contrast")) {
+      for (const s of seen) {
+        if (tag(s.el) === "input" || tag(s.el) === "textarea" || tag(s.el) === "select") continue;
+        if (visuallyHidden2(s.el, s.style)) continue;
+        const own = textBox(s.el);
+        if (!own) continue;
+        const shownText = intersect(own, shownOf(s.el) || [0, 0, 0, 0]);
+        const box = shownText && intersect(shownText, view);
+        if (!box || box[2] < 1 || box[3] < 1) continue;
+        const c = colour2(s.style.webkitTextFillColor || s.style.color);
+        if (!c) continue;
+        const a = c[3] * opacity(s.el);
+        if (a <= 0.01) continue;
+        if (texts.length >= options.texts) {
+          skipped++;
+          continue;
+        }
+        const size2 = parseFloat(s.style.fontSize) || 16;
+        const weight = parseInt(s.style.fontWeight, 10) || 400;
+        texts.push({ box, colour: [c[0], c[1], c[2], a], large: size2 >= 24 || size2 >= 18.66 && weight >= 700 });
+        measured.push(s.el);
+      }
+    }
+    return answer(els, options.testid, {
+      findings,
+      texts,
+      skipped,
+      scroll: [scrollX, scrollY]
+    });
+  }
+  function answer(els, testid, json) {
+    for (const [node] of stretched) node.data = originals.get(node) ?? node.data;
+    try {
+      const names = els.els.map(named);
+      const keys = els.els.map((el) => keyOf(el, testid));
+      return { json: JSON.stringify({ ...json, names, keys }), els: els.els };
+    } finally {
+      for (const [node, data] of stretched) node.data = data;
+    }
+  }
+  function textNames(indexes, testid) {
+    const els = new Els2();
+    const at = indexes.map((i) => measured[i] ? els.add(measured[i]) : -1);
+    return answer(els, testid, { at });
+  }
+  var hidden2 = null;
+  var HIDE_ROOTS = [];
+  async function hideText() {
+    showText();
+    const sheet = new CSSStyleSheet();
+    const all = ":is(*, #_#_#_#_#_#_)";
+    sheet.replaceSync(`${all}, ${all}::before, ${all}::after, ${all}::first-letter, ${all}::first-line,
+    ${all}::placeholder, ${all}::marker {
+    color: transparent !important; -webkit-text-fill-color: transparent !important;
+    -webkit-text-stroke-color: transparent !important; text-shadow: none !important;
+    text-decoration-color: transparent !important; caret-color: transparent !important;
+    transition: none !important; }`);
+    hidden2 = sheet;
+    const roots = [document];
+    for (const el of descendants(document)) if (el.shadowRoot) roots.push(el.shadowRoot);
+    for (const root of roots) {
+      root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
+      HIDE_ROOTS.push(root);
+    }
+    await frame();
+    await frame();
+  }
+  function showText() {
+    const sheet = hidden2;
+    hidden2 = null;
+    for (const root of HIDE_ROOTS.splice(0)) {
+      if (sheet) root.adoptedStyleSheets = root.adoptedStyleSheets.filter((s) => s !== sheet);
+    }
+  }
+  var stretched = [];
+  var originals = /* @__PURE__ */ new WeakMap();
+  async function stretchText(percent) {
+    unstretchText();
+    const roots = [document.documentElement];
+    for (const el of descendants(document)) if (el.shadowRoot) roots.push(el.shadowRoot);
+    const nodes = [];
+    for (const root of roots) {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n);
+    }
+    for (const node of nodes) {
+      const parent = node.parentElement;
+      if (!parent || SKIP.has(tag(parent)) || tag(parent) === "textarea" || tag(parent) === "option") continue;
+      const data = node.data;
+      const words = data.trim().split(/\s+/).filter(Boolean);
+      if (!words.length) continue;
+      const want = Math.ceil(data.trim().length * (1 + percent / 100));
+      let text2 = data.trim();
+      for (let i = 0; text2.length < want; i++) text2 += ` ${words[i % words.length]}`;
+      const lead = /^\s*/.exec(data)?.[0] || "";
+      const trail = /\s*$/.exec(data)?.[0] || "";
+      originals.set(node, data);
+      node.data = lead + text2 + trail;
+      stretched.push([node, node.data]);
+    }
+    await frame();
+    return stretched.length;
+  }
+  function unstretchText() {
+    for (const [node, data] of stretched) {
+      const original = originals.get(node);
+      if (original !== void 0 && node.data === data) node.data = original;
+    }
+    stretched = [];
+  }
+  async function scrollPage(x, y) {
+    scrollTo({ left: x, top: y, behavior: "instant" });
+    await frame();
+    return [scrollX, scrollY];
+  }
+  function pageExtent() {
+    const doc = document.scrollingElement || document.documentElement;
+    return [doc.scrollHeight, innerHeight, scrollX, scrollY];
+  }
+  function contentBox(el) {
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    const n = (v) => parseFloat(v) || 0;
+    const x = r.x + n(s.borderLeftWidth) + n(s.paddingLeft);
+    const y = r.y + n(s.borderTopWidth) + n(s.paddingTop);
+    const w = r.width - n(s.borderLeftWidth) - n(s.borderRightWidth) - n(s.paddingLeft) - n(s.paddingRight);
+    const h = r.height - n(s.borderTopWidth) - n(s.borderBottomWidth) - n(s.paddingTop) - n(s.paddingBottom);
+    return [x, y, Math.max(w, 0), Math.max(h, 0)];
   }
 
   // src/index.ts
@@ -2500,7 +2992,16 @@ ${inner}
     explainActionable,
     clipped,
     scrollMark,
-    scrolledSince
+    scrolledSince,
+    layoutCheck,
+    textNames,
+    hideText,
+    showText,
+    stretchText,
+    unstretchText,
+    scrollPage,
+    pageExtent,
+    contentBox
   };
   if (!globalThis.__ccdp) globalThis.__ccdp = api;
 })();

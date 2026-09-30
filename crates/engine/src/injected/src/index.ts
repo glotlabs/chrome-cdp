@@ -7,7 +7,7 @@
 // what keyboard and form actions ask it (5.3), where focus went for
 // the post-action report (5.5), what `expect` checks (plan 09), and the
 // stable locators `history --as-scenario` writes for refs (plan 11), and
-// what `why` explains (plan 16).
+// what `why` explains and what `layout` checks (plan 16).
 // Built into `ccdp.js` by `cargo xtask build-js`; the engine embeds that
 // file.
 
@@ -23,6 +23,9 @@ import { expectElements, expectNamed, expectPage } from './expect';
 import { a11y } from './a11y';
 import { stable } from './stable';
 import { clipped, explainActionable, scrolledSince, scrollMark } from './why';
+import {
+  contentBox, hideText, layoutCheck, pageExtent, scrollPage, showText, stretchText, textNames, unstretchText,
+} from './layout';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -67,6 +70,15 @@ const api = {
   clipped,
   scrollMark,
   scrolledSince,
+  layoutCheck,
+  textNames,
+  hideText,
+  showText,
+  stretchText,
+  unstretchText,
+  scrollPage,
+  pageExtent,
+  contentBox,
 };
 
 if (!globalThis.__ccdp) globalThis.__ccdp = api;
