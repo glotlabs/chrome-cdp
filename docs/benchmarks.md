@@ -187,7 +187,9 @@ and wall time the whole `claude` process. Each task runs
 `--check` runs no agent. For each task it checks that the verifier fails
 on the untouched task and passes after the task's known solution (a
 `batch` script, file edits or the expected answer), so a broken fixture or
-verifier shows up before a paid run. It needs no API access and is safe to
+verifier shows up before a paid run. A task whose fixture app has no
+`node_modules` (no Node, or no `cargo xtask apps`) is skipped and says
+so. It needs no API access and is safe to
 run anywhere.
 
 In CI, the `Agent benchmark` workflow (`.github/workflows/bench-agent.yml`)

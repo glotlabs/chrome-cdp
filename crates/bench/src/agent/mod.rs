@@ -207,7 +207,13 @@ pub fn check(opts: &Options) -> Result<(), String> {
     let tasks = select(&opts.tasks, opts.offline)?;
     let site = start_site()?;
     let mut broken = Vec::new();
+    let mut skipped = 0;
     for task in &tasks {
+        if let Some(why) = missing_link(task) {
+            crate::note(&format!("skip  {}: {why}", task.id));
+            skipped += 1;
+            continue;
+        }
         let outcome = check_one(task, &site, opts).unwrap_or_else(|e| Err(format!("error: {e}")));
         match outcome {
             Ok(()) => crate::note(&format!("ok    {}", task.id)),
@@ -218,7 +224,15 @@ pub fn check(opts: &Options) -> Result<(), String> {
         }
     }
     if broken.is_empty() {
-        crate::note(&format!("all {} tasks check out", tasks.len()));
+        crate::note(&format!(
+            "all {} tasks check out{}",
+            tasks.len() - skipped,
+            if skipped > 0 {
+                format!(" ({skipped} skipped)")
+            } else {
+                String::new()
+            }
+        ));
         Ok(())
     } else {
         Err(format!(
@@ -228,6 +242,24 @@ pub fn check(opts: &Options) -> Result<(), String> {
             broken.join(", ")
         ))
     }
+}
+
+/// Why `task` cannot be set up here: a `link` whose source is missing (a
+/// fixture app's `node_modules` on a machine without Node).
+fn missing_link(task: &Task) -> Option<String> {
+    let root = report::workspace_root();
+    task.setup
+        .link
+        .iter()
+        .find(|l| !root.join(&l.from).exists())
+        .map(|l| {
+            let hint = l
+                .hint
+                .as_deref()
+                .map(|h| format!("; {h}"))
+                .unwrap_or_default();
+            format!("{} is missing{hint}", l.from)
+        })
 }
 
 /// `Ok(Ok(()))` when the task checks out, `Ok(Err(why))` when not.
