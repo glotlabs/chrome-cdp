@@ -664,7 +664,7 @@ fn twenty_runs_record_the_same_steps_and_screenshots() {
         .unwrap()
         .map(|e| e.unwrap().path())
         .collect();
-    assert_eq!(tests.len(), 4, "{tests:?}");
+    assert_eq!(tests.len(), 5, "{tests:?}");
     for test in tests {
         let first = test.join("run-1");
         let steps = steps_without_timings(&first.join("steps.jsonl"));

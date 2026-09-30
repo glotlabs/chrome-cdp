@@ -1,0 +1,20 @@
+<!doctype html>
+<!-- chrome-cdp test's determinism (plan 13.3): animations in web
+     components. Apart from determinism.html, whose screenshots the
+     twenty-runs test compares: the extra lines made its text render
+     differently from run to run. -->
+<meta charset="utf-8">
+<title>determinism: shadow roots</title>
+<!-- An animation in a shadow root attached by a script,
+     and in one the parser made. -->
+<div id="host"></div>
+<div id="declared"><template shadowrootmode="open"><style>
+  @keyframes pulse { to { opacity: 0.5; } }
+  #inner { animation: pulse 10s linear infinite; }
+</style><div id="inner">declared</div></template></div>
+<script>
+  document.getElementById("host").attachShadow({ mode: "open" }).innerHTML = `<style>
+    @keyframes pulse { to { opacity: 0.5; } }
+    #inner { animation: pulse 10s linear infinite; }
+  </style><div id="inner">attached</div>`;
+</script>

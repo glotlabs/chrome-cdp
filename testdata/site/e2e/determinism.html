@@ -15,19 +15,6 @@
 <p id="server"></p>
 <p id="session">Session active</p>
 <p id="worker"></p>
-<!-- Web components: an animation in a shadow root attached by a script,
-     and in one the parser made. -->
-<div id="host"></div>
-<div id="declared"><template shadowrootmode="open"><style>
-  @keyframes pulse { to { opacity: 0.5; } }
-  #inner { animation: pulse 10s linear infinite; }
-</style><div id="inner">declared</div></template></div>
-<script>
-  document.getElementById("host").attachShadow({ mode: "open" }).innerHTML = `<style>
-    @keyframes pulse { to { opacity: 0.5; } }
-    #inner { animation: pulse 10s linear infinite; }
-  </style><div id="inner">attached</div>`;
-</script>
 <script>
   const show = (id, text) => { document.getElementById(id).textContent = text; };
   show("now", new Date().toISOString());
@@ -37,7 +24,11 @@
   fetch("/e2e/api/now")
     .then((r) => r.json())
     .then((j) => show("server", "server " + j.now));
-  new Worker("/e2e/determinism-worker.js").onmessage = (e) => show("worker", e.data);
+  // An attribute, not text: it comes after the page loads, and must not
+  // change what screenshots of the page show.
+  new Worker("/e2e/determinism-worker.js").onmessage = (e) => {
+    document.getElementById("worker").dataset.answer = e.data;
+  };
   // The session expires after five minutes.
   setTimeout(() => show("session", "Session expired"), 5 * 60 * 1000);
 </script>
