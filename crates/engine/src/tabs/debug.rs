@@ -36,6 +36,7 @@
 //! once and noted in the console.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Write as _;
 use std::hash::{BuildHasher as _, Hasher as _};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -823,16 +824,15 @@ async fn unbind(shared: &Shared, logpoints: &[Logpoint], timeout: Duration) {
 /// newline ends it, in case it ends in a `//` comment.
 fn condition(binding: &str, logpoints: &[(u32, &[String])]) -> String {
     let binding = serde_json::Value::from(binding);
-    let hits: String = logpoints
-        .iter()
-        .map(|(id, exprs)| {
-            let values: Vec<String> = exprs.iter().map(|e| format!("() => ({e}\n)")).collect();
-            format!(
-                "__ccdpLogpoint.hit({binding}, {id}, [{}]);\n",
-                values.join(", ")
-            )
-        })
-        .collect();
+    let mut hits = String::new();
+    for (id, exprs) in logpoints {
+        let values: Vec<String> = exprs.iter().map(|e| format!("() => ({e}\n)")).collect();
+        let _ = writeln!(
+            hits,
+            "__ccdpLogpoint.hit({binding}, {id}, [{}]);",
+            values.join(", ")
+        );
+    }
     format!("(() => {{\ntry {{\n{HELPER}\n{hits}}} catch (e) {{}}\nreturn false;\n}})()")
 }
 
