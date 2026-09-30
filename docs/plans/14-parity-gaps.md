@@ -1,6 +1,6 @@
 # Plan 14 — Parity gaps and small commands
 
-Status: IN PROGRESS (14.1-14.2 done)
+Status: IN PROGRESS (14.1-14.3 done)
 Depends on: v1 (plans 01–11). Track 3 of [plan 12](12-after-v1.md). Plan 13
 (every frame, every worker) is not required, but where it has landed, use its
 target graph instead of adding per-session code.
@@ -512,3 +512,46 @@ match with changed dynamic text, fail on a missing button, and survive
   resume`.
 - **14.2, skill.** `chrome-cdp skill` has no `time` line, and paused
   timers are for tests of countdowns and animations, so it gets none.
+- **14.3, clipboard permissions.** `clipboard` keeps granting
+  `clipboard-read` and `clipboard-write` with `Browser.setPermission`, as
+  for text, instead of `grantPermissions` with `clipboardReadWrite` and
+  `clipboardSanitizedWrite`: the effect is the same, and `permissions`
+  lists them. HTML and PNG are types Chrome sanitizes, so no unsanitized
+  write is needed; `read --type text/html` gets Chrome's sanitized HTML.
+- **14.3, the clipboard needs the front tab.** A page behind another
+  reads an empty clipboard even with focus emulated (headless included),
+  so `clipboard` brings its tab to the front for the call, and the active
+  tab back after a `--tab` of another one. This fixed a v1 read that came
+  back empty on a freshly opened tab.
+- **14.3, clipboard output.** `write` of text alone keeps its v1 line;
+  with `--html` or `--file` it names each type written. JSON `write`
+  adds `types`; `read` adds `type`, and `path` and `bytes` for an image.
+  `-o` with a text type is BadArgs (text is printed); an image without
+  `-o` is BadArgs, as planned. The `-o -` path follows `screenshot`'s.
+- **14.3, keyboard.** Held modifiers go with key, mouse, touch and drag
+  events (`press` chords start with them, so `press a` with Shift held
+  types `A`); `fill` ignores them, as Playwright's does. `type` types its
+  text as given: its keys carry the held modifier bits, and type nothing
+  with a modifier other than Shift held. `keyboard down` of a held key is
+  a warning, not an auto-repeat. A chord (`Shift+a`) is BadArgs with the
+  hint `press`. A click's `modifiers` in the output include held ones.
+- **14.3, directory upload.** Chrome sets `webkitRelativePath` only when
+  `DOM.setFileInputFiles` gets the directory itself (it lists it); given
+  the files, a `webkitdirectory` input keeps what it had. So `upload`
+  passes the directory, and walks it (sorted, no symlinks, at most 10,000
+  files) only to check it and report the files, each with a new
+  `relative_path` (`tree/sub/b.txt`, what the page sees); `data.directory`
+  names it. Chrome's own listing may differ for symlinks. A directory with
+  `--drop`, several paths with a directory, or an empty directory are
+  BadArgs.
+- **14.3, downloads.** `open --downloads-dir` prints `downloads: DIR`
+  (JSON `downloads_dir`). `downloads --clear` deletes the file of every
+  completed download in the list, wherever it was saved (an earlier
+  `--downloads-dir` too), and forgets canceled ones. The "list starts at"
+  line after a daemon upgrade is a warning (with the directory where the
+  earlier files still are), and JSON has `since`; it shows only when the
+  replaced daemon had a browser. Downloads kept in progress by `--clear`
+  are not covered by a test: the fixture server cannot hold a response
+  body open.
+- **14.3, golden runs.** `GOLDEN_CASES=word,word` runs only the golden
+  cases whose names hold one of the words, for iterating on a few.
