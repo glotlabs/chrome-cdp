@@ -184,6 +184,7 @@ events, like Playwright's actionability checks. `--force` skips the checks
 | `loc.check()` / `uncheck()` / `setChecked(b)` | `check LOC` / `uncheck LOC` (a no-op when it already is) | ✅ |
 | `loc.selectOption('blue')`, `selectOption(['a', 'b'])`, `{ label }` | `select LOC blue`, `select LOC a b` (a value, else a label) | ✅ |
 | `loc.setInputFiles('a.png')`, `[]` | `upload LOC a.png`, `upload LOC --clear`; a directory for a `webkitdirectory` input: `upload LOC ./photos` | ✅ |
+| `fill`, `check`, `selectOption` and `setInputFiles` on each field of a form | `fill-form LOC --values '{"Email": "ada@example.com", "Remember me": true}'` in one step (`--submit`; `forms` lists the fields and their names) | ✅ |
 | `page.waitForEvent('filechooser')` + `setFiles` | `upload 'role=button[name="Choose"]' a.png` (clicks it and answers the chooser) | ✅ |
 | `loc.dispatchEvent('drop', { dataTransfer })` (files dropped on a drop zone) | `upload LOC a.png --drop` (trusted drag events carrying the files) | ✅ |
 | `loc.dragTo(target)` | `drag LOC TARGET` (mouse events, or HTML5 drag and drop) | ✅ |
