@@ -8,6 +8,10 @@
 //! later on demand gets it at once. It holds the locator engine and the
 //! snapshot's DOM walker.
 //!
+//! The same sources hold the framework adapters `source` runs in the
+//! page's main world (`src/frameworks.ts`), built into `frameworks.js`
+//! and never installed (see `crate::source`).
+//!
 //! Functions that use it start with [`GUARD`]; [`call`] loads the bundle
 //! and calls again when the guard says it is missing.
 
@@ -109,14 +113,17 @@ mod tests {
     }
 
     #[test]
-    fn the_bundle_is_built_from_the_current_sources() {
+    fn the_bundles_are_built_from_the_current_sources() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/injected/src");
-        let first = BUNDLE.lines().next().unwrap();
-        let recorded = first.rsplit("sources: ").next().unwrap();
-        assert_eq!(
-            recorded,
-            format!("{:016x}", sources_hash(&dir)),
-            "src/injected/ccdp.js is out of date: run `cargo xtask build-js`"
-        );
+        let frameworks = include_str!("injected/frameworks.js");
+        for (name, bundle) in [("ccdp.js", BUNDLE), ("frameworks.js", frameworks)] {
+            let first = bundle.lines().next().unwrap();
+            let recorded = first.rsplit("sources: ").next().unwrap();
+            assert_eq!(
+                recorded,
+                format!("{:016x}", sources_hash(&dir)),
+                "src/injected/{name} is out of date: run `cargo xtask build-js`"
+            );
+        }
     }
 }

@@ -59,7 +59,8 @@ tasks:
                       its seeds and kept corpus; a crash fails the task
   gen-cdp [--check]   regenerate CDP types from the vendored protocol JSON
   build-js [--check]  typecheck and bundle the injected helper (needs Node's npx)
-                      into crates/engine/src/injected/ccdp.js
+                      into crates/engine/src/injected/ccdp.js, and the framework
+                      adapters into frameworks.js
   docs [--check]      regenerate the command reference in docs/commands/ from the
                       CLI's clap definitions (--check fails if it is out of date)
   apps [NAME...]      install and build the fixture apps of testdata/apps-src (all, or
@@ -833,6 +834,7 @@ fn apps(args: &[String]) -> Result {
 /// The injected helper bundle's TypeScript sources and built file.
 const INJECTED_DIR: &str = "crates/engine/src/injected";
 const INJECTED_OUT: &str = "ccdp.js";
+const FRAMEWORKS_OUT: &str = "frameworks.js";
 /// Pinned so the committed bundle builds the same everywhere.
 const ESBUILD: &str = "esbuild@0.28.2";
 const TYPESCRIPT: &str = "typescript@7.0.2";
@@ -879,12 +881,24 @@ fn build_js(args: &[String]) -> Result {
     run(Command::new("npx")
         .args(["--yes", "-p", TYPESCRIPT, "tsc", "-p", "tsconfig.json"])
         .current_dir(&dir))?;
-    let bundled = output(
-        Command::new("npx")
+    let hash = injected_hash(&dir.join("src"))?;
+    // The helper installed in chrome-cdp's isolated world, and the
+    // framework adapters the engine runs in the page's main world, each
+    // call as a local of its function (`__ccdpFrameworks`).
+    for (entry, out, global) in [
+        ("src/index.ts", INJECTED_OUT, None),
+        (
+            "src/frameworks.ts",
+            FRAMEWORKS_OUT,
+            Some("__ccdpFrameworks"),
+        ),
+    ] {
+        let mut esbuild = Command::new("npx");
+        esbuild
             .args([
                 "--yes",
                 ESBUILD,
-                "src/index.ts",
+                entry,
                 "--bundle",
                 "--format=iife",
                 "--target=chrome120",
@@ -892,25 +906,28 @@ fn build_js(args: &[String]) -> Result {
                 "--legal-comments=none",
                 "--log-level=warning",
             ])
-            .current_dir(&dir),
-    )?;
-    let hash = injected_hash(&dir.join("src"))?;
-    let built = format!(
-        "// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: {hash:016x}\n{bundled}"
-    );
-    let out = dir.join(INJECTED_OUT);
-    if check {
-        let committed = fs::read_to_string(&out).unwrap_or_default();
-        if committed != built {
-            return Err(format!(
-                "{} is not what its sources build; run `cargo xtask build-js`",
-                out.display()
-            ));
+            .current_dir(&dir);
+        if let Some(global) = global {
+            esbuild.arg(format!("--global-name={global}"));
         }
-        return Ok(());
+        let bundled = output(&mut esbuild)?;
+        let built = format!(
+            "// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: {hash:016x}\n{bundled}"
+        );
+        let out = dir.join(out);
+        if check {
+            let committed = fs::read_to_string(&out).unwrap_or_default();
+            if committed != built {
+                return Err(format!(
+                    "{} is not what its sources build; run `cargo xtask build-js`",
+                    out.display()
+                ));
+            }
+            continue;
+        }
+        fs::write(&out, built).map_err(|e| format!("write {}: {e}", out.display()))?;
+        eprintln!("wrote {}", out.display());
     }
-    fs::write(&out, built).map_err(|e| format!("write {}: {e}", out.display()))?;
-    eprintln!("wrote {}", out.display());
     Ok(())
 }
 
