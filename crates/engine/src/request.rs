@@ -1830,6 +1830,22 @@ pub struct HighlightRequest {
     pub timeout_ms: u64,
 }
 
+/// `source`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceRequest {
+    /// `--tab`: the tab to read; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    pub locator: String,
+    /// `--depth`: how many components around the element are listed.
+    pub depth: u32,
+    #[serde(default)]
+    pub strict_refs: bool,
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    pub timeout_ms: u64,
+}
+
 /// `inspect`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InspectRequest {
@@ -2128,6 +2144,9 @@ pub struct SnapshotRequest {
     /// config); `data-testid` if `None`.
     #[serde(default)]
     pub testid_attribute: Option<String>,
+    /// `--source`: each node with a ref gets its component and place.
+    #[serde(default)]
+    pub source: bool,
     pub timeout_ms: u64,
     /// The output budget (0 = none).
     pub max_chars: usize,

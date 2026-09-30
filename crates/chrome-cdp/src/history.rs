@@ -40,6 +40,7 @@ const READS: &[&str] = &[
     "routes",
     "screenshot",
     "snapshot",
+    "source",
     "tabs",
     "text",
     "value",

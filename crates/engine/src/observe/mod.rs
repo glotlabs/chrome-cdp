@@ -25,7 +25,7 @@ pub(crate) mod screenshot;
 mod sourcemaps;
 mod trace;
 
-pub(crate) use commands::{entry_text, regex_arg};
+pub(crate) use commands::{entry_text, regex_arg, shown_source};
 pub use eval::check_eval;
 pub(crate) use har::{HarRecording, iso8601};
 pub use network::RESOURCE_TYPES;

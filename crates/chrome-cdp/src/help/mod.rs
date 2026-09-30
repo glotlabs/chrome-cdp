@@ -90,7 +90,7 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
         "Reading the page",
         &[
             "snapshot", "find", "locator", "text", "markdown", "html", "attr", "value", "count",
-            "box",
+            "box", "source",
         ],
     ),
     (

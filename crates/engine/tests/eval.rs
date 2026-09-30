@@ -241,6 +241,7 @@ async fn elements_frames_and_worlds() {
             engine: None,
             strict_refs: false,
             testid_attribute: None,
+            source: false,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })
@@ -407,6 +408,7 @@ async fn returned_elements_get_refs() {
             engine: None,
             strict_refs: false,
             testid_attribute: None,
+            source: false,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })

@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
-use protocol::schema::SnapshotNode;
+use protocol::schema::{NodeSource, SnapshotNode};
 
 use super::tree::{Node, NodeKey};
 
@@ -112,16 +112,47 @@ fn states(node: &Node) -> Vec<&'static str> {
 
 /// The snapshot as text, after its header line.
 pub(crate) fn text(nodes: &[Node], out: &mut String) {
-    lines(nodes, 0, None, out);
+    lines(nodes, 0, None, &HashMap::new(), out);
 }
 
-fn lines(nodes: &[Node], depth: usize, parent: Option<u32>, out: &mut String) {
+/// [`text`] with `snapshot --source`'s suffixes, by ref number
+/// (`<CartItem src/components/CartItem.tsx:42>`).
+pub(crate) fn text_with_sources(nodes: &[Node], sources: &HashMap<u32, String>, out: &mut String) {
+    lines(nodes, 0, None, sources, out);
+}
+
+/// Sets `snapshot --source`'s sources on `nodes` (the `--json` form), by
+/// ref number.
+pub(crate) fn json_sources(nodes: &mut [SnapshotNode], sources: &HashMap<u32, NodeSource>) {
+    for node in nodes {
+        let number = node
+            .reference
+            .as_deref()
+            .and_then(|r| r.strip_prefix('e')?.parse().ok());
+        if let Some(source) = number.and_then(|n: u32| sources.get(&n)) {
+            node.source = Some(source.clone());
+        }
+        json_sources(&mut node.children, sources);
+    }
+}
+
+fn lines(
+    nodes: &[Node],
+    depth: usize,
+    parent: Option<u32>,
+    sources: &HashMap<u32, String>,
+    out: &mut String,
+) {
     let indent = "  ".repeat(depth);
     for node in nodes {
         out.push('\n');
         out.push_str(&indent);
         out.push_str("- ");
         out.push_str(&line(node));
+        if let Some(source) = node.reference.and_then(|r| sources.get(&r)) {
+            out.push(' ');
+            out.push_str(source);
+        }
         if node.more.is_some() {
             match parent {
                 Some(r) => {
@@ -139,7 +170,7 @@ fn lines(nodes: &[Node], depth: usize, parent: Option<u32>, out: &mut String) {
                 None => out.push_str(" (use a larger --depth)"),
             }
         }
-        lines(&node.children, depth + 1, node.reference, out);
+        lines(&node.children, depth + 1, node.reference, sources, out);
     }
 }
 
@@ -159,6 +190,7 @@ pub(crate) fn json(node: &Node) -> SnapshotNode {
         below: node.below,
         change: None,
         was: None,
+        source: None,
         children: node.children.iter().map(json).collect(),
     }
 }

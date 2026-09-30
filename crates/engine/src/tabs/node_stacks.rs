@@ -38,6 +38,7 @@ pub(super) fn setup_steps(
     };
     if stacks.wants(&new.url) {
         new.node_stacks = true;
+        new.node_stacks_since_load = true;
         steps.push(("DOM.enable", step(target.session.call(dom_enable()))));
         steps.push((
             "DOM.setNodeStackTracesEnabled",
@@ -70,7 +71,12 @@ pub(super) fn navigating(shared: &Arc<Shared>, session_id: &str, event: &RawEven
         let Some(target) = state.targets.get_mut(session_id) else {
             return;
         };
-        if !target.kind.is_host() || target.id != started.frame_id || target.node_stacks == want {
+        if !target.kind.is_host() || target.id != started.frame_id {
+            return;
+        }
+        // The new document is recorded from its start, or not at all.
+        target.node_stacks_since_load = want;
+        if target.node_stacks == want {
             return;
         }
         target.node_stacks = want;
@@ -110,6 +116,9 @@ impl Tabs {
                         return None;
                     }
                     target.node_stacks = want;
+                    // Its document was made before: its nodes so far
+                    // have no stacks.
+                    target.node_stacks_since_load = false;
                     let session = target.session.with_timeout(timeout);
                     Some(switch(&session, want, coverage.contains(id)))
                 })
@@ -133,6 +142,28 @@ impl Tabs {
     }
 }
 
+/// Whether Chrome records node stacks in a session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Recording {
+    Off,
+    /// On, but only since after its document began to load.
+    Later,
+    /// On since its document began to load.
+    SinceLoad,
+}
+
+impl Tabs {
+    /// Whether node stacks record in `session`, and since when.
+    pub(crate) fn node_stacks_recording(&self, session: &Session) -> Recording {
+        let id = session.id().unwrap_or_default();
+        match self.shared.lock().targets.get(id) {
+            Some(t) if t.node_stacks && t.node_stacks_since_load => Recording::SinceLoad,
+            Some(t) if t.node_stacks => Recording::Later,
+            _ => Recording::Off,
+        }
+    }
+}
+
 /// The stack that created the node `object_id` (an object of `session`,
 /// in any world), as Chrome recorded it; `None` if it has none (made
 /// before recording was on, or parsed from the HTML).
@@ -152,6 +183,40 @@ pub(crate) async fn node_stack(
         .call(dom::GetNodeStackTracesParams::new(node_id))
         .await?;
     Ok(stacks.creation)
+}
+
+/// [`node_stack`] for many nodes of `session` at once: the document is
+/// requested once (a second request would drop the node ids of the
+/// first), then each node's stack.
+pub(crate) async fn node_stacks_of(
+    session: &Session,
+    object_ids: &[String],
+) -> Vec<Option<runtime::StackTrace>> {
+    if object_ids.is_empty() {
+        return Vec::new();
+    }
+    let document = session.call(dom::GetDocumentParams {
+        depth: Some(0),
+        pierce: None,
+    });
+    if document.await.is_err() {
+        return vec![None; object_ids.len()];
+    }
+    let nodes = join_all(
+        object_ids
+            .iter()
+            .map(|id| session.call(dom::RequestNodeParams::new(id.clone()))),
+    )
+    .await;
+    join_all(nodes.into_iter().map(|node| async move {
+        let node_id = node.ok()?.node_id;
+        session
+            .call(dom::GetNodeStackTracesParams::new(node_id))
+            .await
+            .ok()?
+            .creation
+    }))
+    .await
 }
 
 /// Turns recording on (with `DOM`) or off (and `DOM` too, unless

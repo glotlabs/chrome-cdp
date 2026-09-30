@@ -20,7 +20,8 @@ use crate::errors::from_cdp;
 use crate::injected::{self, GUARD};
 use crate::locator::LocateOptions;
 use crate::request::{HighlightRequest, InspectRequest, SnapshotEngine, millis};
-use crate::tabs::tab_name;
+use crate::snapshot::Target;
+use crate::tabs::{Page, tab_name};
 use crate::{Engine, Running, Spec};
 
 /// An element as `__ccdp.acted` describes it.
@@ -57,36 +58,8 @@ impl Engine {
                 .locate_one(&running, &page, &locator, &options, Some(&retry), timeout)
                 .await?;
             let session = target.context.session.with_timeout(timeout);
-            let mut describe = runtime::CallFunctionOnParams::new(format!(
-                "function () {{ {GUARD} return globalThis.__ccdp.acted(this); }}"
-            ));
-            describe.object_id = Some(target.object_id.clone());
-            describe.return_by_value = Some(true);
-            let described = injected::call(&session, target.context.context_id, describe)
-                .await
-                .ok()
-                .and_then(|r| r.result.value)
-                .and_then(|v| serde_json::from_value::<Described>(v).ok())
-                .unwrap_or_default();
+            let element = self.name_target(&running, &page, &target, generation).await;
             let backend = target.key.backend;
-            // Its ref, given now if it has none (as actions do), unless a
-            // frame loaded a new document meanwhile.
-            let reference = running
-                .tabs
-                .snapshot_memory(page.id, |m| {
-                    m.refs.get(&target.key).or_else(|| {
-                        (Some(m.refs.generation()) == generation).then(|| {
-                            m.refs.assign_from(
-                                &target.key,
-                                &described.role,
-                                &described.name,
-                                SnapshotEngine::Dom,
-                            )
-                        })
-                    })
-                })
-                .flatten()
-                .map(|n| format!("e{n}"));
             let note = target.note.clone();
             target.release();
             // Shown where a human can see it.
@@ -113,12 +86,6 @@ impl Engine {
                 )
                 .await
                 .map_err(|e| from_cdp(&e, &self.session))?;
-            let element = ActedElement {
-                reference,
-                role: described.role,
-                name: described.name,
-                tag: described.tag,
-            };
             Ok((element, note, session))
         };
         let (element, note, session) =
@@ -170,6 +137,53 @@ impl Engine {
             ));
         }
         Ok(output)
+    }
+
+    /// How a located element is named in output: its role, name and tag,
+    /// and its ref, given now if it has none (as actions do), unless a
+    /// frame loaded a new document since `generation` (the tab's ref
+    /// generation before it was located).
+    pub(crate) async fn name_target(
+        &self,
+        running: &Running,
+        page: &Page,
+        target: &Target,
+        generation: Option<u64>,
+    ) -> ActedElement {
+        let session = &target.context.session;
+        let mut describe = runtime::CallFunctionOnParams::new(format!(
+            "function () {{ {GUARD} return globalThis.__ccdp.acted(this); }}"
+        ));
+        describe.object_id = Some(target.object_id.clone());
+        describe.return_by_value = Some(true);
+        let described = injected::call(session, target.context.context_id, describe)
+            .await
+            .ok()
+            .and_then(|r| r.result.value)
+            .and_then(|v| serde_json::from_value::<Described>(v).ok())
+            .unwrap_or_default();
+        let reference = running
+            .tabs
+            .snapshot_memory(page.id, |m| {
+                m.refs.get(&target.key).or_else(|| {
+                    (Some(m.refs.generation()) == generation).then(|| {
+                        m.refs.assign_from(
+                            &target.key,
+                            &described.role,
+                            &described.name,
+                            SnapshotEngine::Dom,
+                        )
+                    })
+                })
+            })
+            .flatten()
+            .map(|n| format!("e{n}"));
+        ActedElement {
+            reference,
+            role: described.role,
+            name: described.name,
+            tag: described.tag,
+        }
     }
 
     /// `inspect`: opens DevTools for the tab, in its own window.

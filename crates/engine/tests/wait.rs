@@ -730,6 +730,7 @@ async fn goto_settles_by_default() {
                 engine: None,
                 strict_refs: false,
                 testid_attribute: None,
+                source: false,
                 timeout_ms: TIMEOUT_MS,
                 max_chars: 0,
             })

@@ -483,6 +483,7 @@ impl Actor<'_> {
             engine: None,
             strict_refs: self.req.strict_refs,
             testid_attribute: self.req.testid_attribute.clone(),
+            source: false,
             timeout_ms: self.req.timeout_ms,
             max_chars,
         };

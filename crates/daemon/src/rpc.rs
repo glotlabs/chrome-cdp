@@ -79,6 +79,7 @@ pub const PERF: &str = "perf";
 pub const COVERAGE_START: &str = "coverage_start";
 pub const COVERAGE_STOP: &str = "coverage_stop";
 pub const HIGHLIGHT: &str = "highlight";
+pub const SOURCE: &str = "source";
 pub const INSPECT: &str = "inspect";
 
 /// `hello`: the first call on every connection.

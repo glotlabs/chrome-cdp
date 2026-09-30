@@ -496,6 +496,7 @@ async fn find_ranks_matches_and_gives_refs() {
             engine: None,
             strict_refs: false,
             testid_attribute: None,
+            source: false,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })

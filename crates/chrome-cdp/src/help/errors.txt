@@ -16,6 +16,8 @@ Exit 1, the action or check failed on the page:
   ExpectFailed      an expect assertion failed
   EvalError         the JavaScript threw
   NavigationFailed  the page could not load (DNS, refused, certificate)
+  NoSource          source found nothing that says where the element came
+                    from; the hint says why (not a dev build, no stack)
 Exit 2, the command line is wrong:
   BadArgs           a flag or argument; typos get "did you mean"
   BadLocator        the locator does not parse (help locators)

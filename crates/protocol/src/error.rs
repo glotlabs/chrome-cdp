@@ -35,6 +35,8 @@ pub enum ErrorKind {
     EvalError,
     /// Navigation failed (DNS, TLS, HTTP error page, …).
     NavigationFailed,
+    /// Nothing in the page says where an element came from (`source`).
+    NoSource,
 
     // Exit 2: the command line is wrong.
     /// Bad flags or arguments.
@@ -71,7 +73,7 @@ pub enum ErrorKind {
 
 impl ErrorKind {
     /// Every kind, in exit-code order.
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::NotFound,
         Self::Ambiguous,
         Self::Obscured,
@@ -81,6 +83,7 @@ impl ErrorKind {
         Self::ExpectFailed,
         Self::EvalError,
         Self::NavigationFailed,
+        Self::NoSource,
         Self::BadArgs,
         Self::BadLocator,
         Self::Timeout,
@@ -105,7 +108,8 @@ impl ErrorKind {
             | Self::RefDetached
             | Self::ExpectFailed
             | Self::EvalError
-            | Self::NavigationFailed => 1,
+            | Self::NavigationFailed
+            | Self::NoSource => 1,
             Self::BadArgs | Self::BadLocator => 2,
             Self::Timeout => 3,
             Self::ChromeNotFound

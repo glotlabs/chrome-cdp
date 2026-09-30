@@ -629,6 +629,10 @@ impl Daemon {
                 Ok(p) => output(Box::pin(self.engine.highlight(p)).await),
                 Err(e) => Err(e),
             },
+            rpc::SOURCE => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.source(p)).await),
+                Err(e) => Err(e),
+            },
             rpc::INSPECT => match params(req.params) {
                 Ok(p) => output(Box::pin(self.engine.inspect(p)).await),
                 Err(e) => Err(e),

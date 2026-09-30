@@ -156,6 +156,15 @@ impl SnapshotEngine {
 /// Checks a snapshot request's arguments (the `--scope` locator) without a
 /// browser, so the CLI can fail before it starts one.
 pub fn check_snapshot(req: &SnapshotRequest) -> Result<(), ErrorInfo> {
+    if req.source && req.diff {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            "--source cannot be used with --diff: a diff shows what changed, not where it came from",
+        )
+        .hint(Hint::text(
+            "run snapshot --source for the whole page, or chrome-cdp source <ref> for one element",
+        )));
+    }
     scope_locator(req.scope.as_deref(), &locate_options(req)).map(drop)
 }
 
@@ -231,6 +240,7 @@ impl Engine {
             .await?;
 
         let tab = tab_name(page.id);
+        let mut warnings = Vec::new();
         let mut text = format!(
             "page {tab} \"{}\" {}",
             capture.title.replace('"', "\\\""),
@@ -259,6 +269,29 @@ impl Engine {
                 changes.iter().map(render::diff_json).collect(),
                 Some(compared),
             )
+        } else if req.source {
+            let refs = refs_of(&shown);
+            let sources = self.node_sources(running, page, &refs, timeout).await;
+            let origin = crate::input::origin(&capture.url);
+            let suffixes = sources
+                .iter()
+                .map(|(r, source)| (*r, crate::source::node_source_text(source, origin)))
+                .collect();
+            render::text_with_sources(&shown, &suffixes, &mut text);
+            let mut nodes: Vec<SnapshotNode> = shown.iter().map(render::json).collect();
+            render::json_sources(&mut nodes, &sources);
+            if sources.is_empty()
+                && let Some((first, _)) = refs.first()
+            {
+                warnings.push(format!(
+                    "--source found nothing on this page (no framework's debug info, no node \
+                     stacks); {} says why",
+                    Cmd::new("source")
+                        .arg(format!("e{first}"))
+                        .scoped(&self.session)
+                ));
+            }
+            (nodes, None)
         } else {
             render::text(&shown, &mut text);
             (shown.iter().map(render::json).collect(), None)
@@ -277,6 +310,9 @@ impl Engine {
         let mut output = Output::typed(&data, text).limit(req.max_chars, more);
         if let Some(note) = note {
             output = output.warning(note);
+        }
+        for warning in warnings {
+            output = output.warning(warning);
         }
         Ok(output)
     }
@@ -389,6 +425,7 @@ impl Engine {
             engine: None,
             strict_refs: false,
             testid_attribute: None,
+            source: false,
             timeout_ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
             max_chars: 0,
         };
@@ -399,15 +436,7 @@ impl Engine {
         let tree = self
             .read_tree(running, page, &req, &view, None, mark)
             .await?;
-        let mut refs = Vec::new();
-        for node in &tree.shown {
-            node.walk(&mut |n| {
-                if let (Some(reference), Some(key)) = (n.reference, &n.key) {
-                    refs.push((reference, key.clone()));
-                }
-            });
-        }
-        Ok(refs)
+        Ok(refs_of(&tree.shown))
     }
 
     /// `page` as `expect-snapshot` compares it: the lines `snapshot -i`
@@ -447,6 +476,7 @@ impl Engine {
             engine: None,
             strict_refs: options.strict_refs,
             testid_attribute: options.testid_attribute.clone(),
+            source: false,
             timeout_ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
             max_chars: 0,
         };
@@ -500,6 +530,20 @@ impl Engine {
                 .why("shows what the page has now"),
         )
     }
+}
+
+/// The refs of `nodes` and their descendants, with their nodes, in page
+/// order.
+fn refs_of(nodes: &[Node]) -> Vec<(u32, NodeKey)> {
+    let mut refs = Vec::new();
+    for node in nodes {
+        node.walk(&mut |n| {
+            if let (Some(reference), Some(key)) = (n.reference, &n.key) {
+                refs.push((reference, key.clone()));
+            }
+        });
+    }
+    refs
 }
 
 /// Takes the refs off `nodes` and their descendants.

@@ -684,7 +684,8 @@ Examples:
   chrome-cdp snapshot --scope e12         # one part of the page
   chrome-cdp snapshot --scope '#results' --depth 3
   chrome-cdp snapshot --scope 'frame=payment'
-  chrome-cdp snapshot --diff              # what changed since the last one")]
+  chrome-cdp snapshot --diff              # what changed since the last one
+  chrome-cdp snapshot -i --source         # and where each came from")]
     Snapshot(SnapshotArgs),
 
     /// Search the page for elements by role, name or text; shows refs.
@@ -814,6 +815,26 @@ Examples:
   chrome-cdp box '#checkout' -q"
     )]
     BoundingBox(BoxArgs),
+
+    /// Print the file and line an element came from, and its components.
+    #[command(after_help = "\
+For the app's own dev build: the element's place (`at`) and the
+components around it, innermost first (`in`), each at the line of its
+file that renders the next step towards the element; then what answered.
+Places are files relative to the project root (the directory of
+chrome-cdp.toml or .git, or source_root) when chrome-cdp finds them on
+disk, else URLs. It asks, in order: the framework's debug info in the
+page (React 18 and 19, Vue 3, Svelte 5 dev builds; the page could fake
+it), the stack Chrome recorded when a script made the element (node
+stacks: on for localhost pages, see open --node-stacks), and the
+document's HTML. When nothing answers it fails with NoSource and says
+why. -q prints the place alone. Needs a running session.
+
+Examples:
+  chrome-cdp source e12
+  chrome-cdp source 'role=button[name=\"Add to cart\"]' --depth 3
+  $EDITOR \"$(chrome-cdp source e12 -q)\"")]
+    Source(SourceArgs),
 
     /// Print the page's readable content (or an element's) as Markdown.
     #[command(after_help = "\
@@ -2655,6 +2676,12 @@ pub(crate) struct SnapshotArgs {
     #[arg(long)]
     pub(crate) no_text: bool,
 
+    /// After each node with a ref, the component it is in and its place
+    /// in the source (`<CartItem src/components/CartItem.tsx:42>`), as
+    /// `source` finds them.
+    #[arg(long, conflicts_with = "diff")]
+    pub(crate) source: bool,
+
     /// How to read the page: ax (Chrome's accessibility tree, the
     /// default) or dom (chrome-cdp's DOM walker).
     #[arg(long, value_enum, value_name = "ENGINE")]
@@ -3333,6 +3360,21 @@ pub(crate) struct BoxArgs {
     /// The element: a ref (e12) or a locator that matches one.
     #[arg(value_name = "LOCATOR")]
     pub(crate) locator: String,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct SourceArgs {
+    /// The element: a ref (e12) or a locator that matches one.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: String,
+
+    /// List at most this many components around it; the rest are
+    /// counted.
+    #[arg(long, default_value_t = 8, value_name = "N")]
+    pub(crate) depth: u32,
 
     #[command(flatten)]
     pub(crate) refs: StrictRefsArgs,
@@ -6633,6 +6675,8 @@ mod tests {
         "network clear",
         "count",
         "box",
+        // The element and at most --depth components (default 8).
+        "source",
         "install",
         "uninstall",
         "extensions load",

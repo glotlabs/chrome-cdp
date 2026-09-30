@@ -143,6 +143,9 @@ pub(crate) struct Target {
     pub(crate) ready: bool,
     /// Chrome records node creation stacks in it (and `DOM` is on).
     pub(crate) node_stacks: bool,
+    /// ... and has since its top frame's document began to load, so a
+    /// node of it without a stack was parsed from the HTML.
+    pub(crate) node_stacks_since_load: bool,
 }
 
 impl Target {
@@ -170,6 +173,7 @@ impl Target {
             events: 0,
             ready: false,
             node_stacks: false,
+            node_stacks_since_load: false,
         }
     }
 

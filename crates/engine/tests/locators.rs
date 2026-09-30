@@ -109,6 +109,7 @@ async fn snapshot_with(engine: &Engine, all_refs: bool) -> SnapshotData {
             engine: None,
             strict_refs: false,
             testid_attribute: None,
+            source: false,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })

@@ -31,8 +31,9 @@ use engine::{
     HttpCredentials, ImageFormat, InspectRequest, LocatorRequest, NavigateRequest, Navigation,
     NetworkClearRequest, NetworkFramesRequest, NetworkRequest, NetworkShowRequest, OpenInitScript,
     OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest, RouteRequest, RoutesRequest,
-    ScreenshotRequest, SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest,
-    TabsRequest, TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest,
+    ScreenshotRequest, SnapshotRequest, SourceRequest, TabCloseRequest, TabNewRequest,
+    TabSelectRequest, TabsRequest, TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor,
+    WaitRequest,
 };
 use engine::{
     CookieFilter, CookieSpec, CookiesOp, CookiesRequest, StateLoadRequest, StateSaveRequest,
@@ -55,7 +56,7 @@ use crate::cli::{
     HistoryArgs, IdleArgs, ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand,
     InspectArgs, LocatorArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs,
     PermissionsArgs, PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs,
-    SessionsArgs, SnapshotArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg,
+    SessionsArgs, SnapshotArgs, SourceArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg,
     StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs,
     TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
@@ -911,6 +912,7 @@ pub(crate) fn snapshot(args: &SnapshotArgs, global: &GlobalArgs) -> Result<Outpu
         engine: args.engine.map(crate::cli::SnapshotEngineArg::to_engine),
         strict_refs: args.strict_refs,
         testid_attribute: global.testid_attribute.clone(),
+        source: args.source,
         timeout_ms: millis(ctx.timeout),
         max_chars: args.max_chars,
     };
@@ -2082,6 +2084,23 @@ pub(crate) fn highlight(args: &HighlightArgs, global: &GlobalArgs) -> Result<Out
     let mut client = running_session(&ctx)?;
     ctx.runtime
         .block_on(client.call_output(rpc::HIGHLIGHT, &request, ctx.timeout + QUICK))
+}
+
+/// `source`: needs a running session.
+pub(crate) fn source(args: &SourceArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let request = SourceRequest {
+        tab: ctx.tab.clone(),
+        locator: args.locator.clone(),
+        depth: args.depth,
+        strict_refs: args.refs.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(ctx.timeout),
+    };
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::SOURCE, &request, ctx.timeout + QUICK))
 }
 
 /// `inspect`: needs a running session.

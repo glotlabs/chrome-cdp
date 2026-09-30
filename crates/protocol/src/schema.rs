@@ -609,6 +609,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<BoxData>),
     },
     CommandSchema {
+        name: "source",
+        summary: "the file and line an element came from, and its components",
+        schema: || schema_for!(Envelope<SourceData>),
+    },
+    CommandSchema {
         name: "markdown",
         summary: "the page's readable content (or an element's) as Markdown",
         schema: || schema_for!(Envelope<MarkdownData>),
@@ -2831,8 +2836,24 @@ pub struct SnapshotNode {
     /// were (`unchecked`, `"Old name"`, `value="old"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub was: Option<String>,
+    /// `--source`: the component the node is in and its place, for nodes
+    /// with a ref (see `chrome-cdp source`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<NodeSource>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<SnapshotNode>,
+}
+
+/// Where a snapshot node came from (`snapshot --source`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NodeSource {
+    /// The innermost component around it, when a framework's debug info
+    /// names one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
+    /// Its own place, or the component's file when only that is known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place: Option<SourcePlace>,
 }
 
 /// `data` of `chrome-cdp find --json`.
@@ -3039,6 +3060,67 @@ pub struct ActedElement {
     pub name: String,
     /// Its tag name, lower case.
     pub tag: String,
+}
+
+/// `data` of `chrome-cdp source --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SourceData {
+    /// The tab, e.g. `t1`.
+    pub tab: String,
+    /// The element asked about.
+    pub element: ActedElement,
+    /// The element's own place; absent when only its components' are
+    /// known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<SourcePlace>,
+    /// The components around it, innermost first, at most `--depth`:
+    /// each one's file, at the place in it that renders the next step
+    /// towards the element.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub components: Vec<SourceComponent>,
+    /// How many more components are around it past `--depth`.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub more: u64,
+    /// What answered: `react`, `vue` or `svelte` (the framework's debug
+    /// info in the page, which the page could fake), `node_stack` (the
+    /// stack Chrome recorded when a script made the element), or `html`
+    /// (the element was parsed from the document's HTML).
+    pub via: String,
+    /// The framework's version, as the page gives it (`19`, `3.5.13`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+}
+
+/// A place in the page's source: a file and line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SourcePlace {
+    /// The source as the page or its source map names it: a path (as the
+    /// framework gives it) or a URL.
+    pub source: String,
+    /// 1-based.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    /// 1-based.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column: Option<u32>,
+    /// The file on disk (an absolute path), when chrome-cdp found it (see
+    /// `SourcePosition::file`). Text output shows it relative to the
+    /// project root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    /// The line was found by matching the element in the component's
+    /// template on disk (Vue keeps no lines), not given by the page.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub matched: bool,
+}
+
+/// A component around an element (`chrome-cdp source`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SourceComponent {
+    /// Its name, as the framework gives it (`CartItem`).
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place: Option<SourcePlace>,
 }
 
 /// A point in the tab's viewport, in CSS pixels.
