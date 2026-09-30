@@ -1,0 +1,12 @@
+$ chrome-cdp wait --hmr
+exit: 1
+--- stderr
+error: no hot-reload client on this page (not a Vite, webpack or Next.js dev server?)
+  page: <site>/index.html
+  hint: open the app from its dev server (npm run dev), or wait for what the edit changes: chrome-cdp wait --text '…'
+
+$ chrome-cdp wait --hmr --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"no hot-reload client on this page (not a Vite, webpack or Next.js dev server?)","hint":"open the app from its dev server (npm run dev), or wait for what the edit changes: chrome-cdp wait --text '…'","notes":[{"label":"page","text":"<site>/index.html"}],"details":{"reason":"no_client","url":"<site>/index.html"}}}
+

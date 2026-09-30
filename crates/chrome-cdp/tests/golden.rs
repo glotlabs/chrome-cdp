@@ -1406,6 +1406,28 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/network/frames.html"),
     },
     Case {
+        name: "wait-hmr",
+        args: &["wait", "--hmr"],
+        // The fake Vite page's button posts an update of its module: the
+        // first run gets the first, the --json run the second.
+        modes: &["", "--json"],
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/hmr/vite.html?channel=golden"],
+            &["wait", "--fn", "window.hmrConnected === true"],
+            &[
+                "eval",
+                "const edit = () => document.getElementById('edit').click(); \
+                 setTimeout(edit, 300); setTimeout(edit, 1500); 0",
+            ],
+        ]),
+    },
+    Case {
+        name: "wait-hmr-no-client",
+        args: &["wait", "--hmr"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/index.html"),
+    },
+    Case {
         name: "network-show-missing",
         args: &["network", "show", "#999"],
         modes: ERR,

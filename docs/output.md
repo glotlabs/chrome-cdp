@@ -29,7 +29,7 @@ what chrome-cdp promises to keep stable across releases.
 | `data` | `ok` is true | the result; its shape is the command's schema |
 | `error` | `ok` is false | `kind`, a one-line `message`, the next command to try in `hint`, labelled `notes`, structured `details` |
 | `warnings` | not empty | non-fatal notes (stderr in the text form) |
-| `events` | not empty | what happened in the browser while the command ran, each with a `type`: `tab_opened`, `dialog`, `download`, `navigated`, `console_error`, `logpoint`, `request_failed`, `focus_moved` |
+| `events` | not empty | what happened in the browser while the command ran, each with a `type`: `tab_opened`, `dialog`, `download`, `navigated`, `console_error`, `logpoint`, `hot_update`, `request_failed`, `focus_moved` |
 | `truncated` | not empty | each value in `data` cut to fit `--max-chars`: its JSON Pointer `path`, `kind` (`string` or `array`), the original `len` and what was `kept` |
 
 `--json` output stays valid JSON when it is bounded: strings are cut and

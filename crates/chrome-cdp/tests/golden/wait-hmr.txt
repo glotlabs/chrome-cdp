@@ -1,0 +1,10 @@
+$ chrome-cdp wait --hmr
+exit: 0
+--- stdout
+hot update applied (/hmr/src/cart.js) (<ms>)
+
+$ chrome-cdp wait --hmr --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"condition":"hmr","elapsed_ms":<ms>,"hot_update":{"client":"vite","files":[{"source":"/hmr/src/cart.js"}],"outcome":"applied"},"met":"hot update applied (/hmr/src/cart.js)","tab":"t1","url":"<site>/hmr/vite.html?channel=golden"}}
+

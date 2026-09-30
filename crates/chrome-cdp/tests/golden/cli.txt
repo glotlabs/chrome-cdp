@@ -142,6 +142,7 @@ command chrome-cdp wait
   flag --binding value=NAME
   flag --ws value=PATTERN
   flag --frame value=REGEX
+  flag --hmr
   flag --max-chars value=N
 command chrome-cdp expect
   arg LOCATOR

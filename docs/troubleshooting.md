@@ -8,7 +8,7 @@ for when it is not enough. Errors are grouped by exit code, as
 | Exit | Meaning | Kinds |
 |---|---|---|
 | 0 | success | |
-| 1 | the action or check failed on the page | [NotFound](#notfound), [Ambiguous](#ambiguous), [Obscured](#obscured), [NotEnabled](#notenabled), [RefStale](#refstale), [RefDetached](#refdetached), [ExpectFailed](#expectfailed), [EvalError](#evalerror), [NavigationFailed](#navigationfailed), [NoSource](#nosource) |
+| 1 | the action or check failed on the page | [NotFound](#notfound), [Ambiguous](#ambiguous), [Obscured](#obscured), [NotEnabled](#notenabled), [RefStale](#refstale), [RefDetached](#refdetached), [ExpectFailed](#expectfailed), [EvalError](#evalerror), [NavigationFailed](#navigationfailed), [NoSource](#nosource), [HotUpdateFailed](#hotupdatefailed) |
 | 2 | the command line is wrong | [BadArgs](#badargs), [BadLocator](#badlocator) |
 | 3 | something did not happen in time | [Timeout](#timeout) |
 | 4 | the browser, the daemon or the machine | [ChromeNotFound](#chromenotfound), [LaunchFailed](#launchfailed), [BrowserCrashed](#browsercrashed), [PageCrashed](#pagecrashed), [DaemonUnavailable](#daemonunavailable), [ProtocolError](#protocolerror), [InstallFailed](#installfailed) |
@@ -186,6 +186,27 @@ message says which of these it is (`details.reason` in `--json`):
 build, `no_framework` when the page has no React, Vue or Svelte app, and
 `no_component` when no component of a dev build rendered the element
 (`source` still finds where it came from).
+
+### HotUpdateFailed
+
+```
+error: hot update failed: [PARSE_ERROR] Unexpected token (src/components/CartItem.tsx:23)
+  client: vite
+  at: src/components/CartItem.tsx:23:8
+  hint: chrome-cdp wait --hmr   (after you fix it and save, waits for the next update)
+```
+
+`wait --hmr` saw the dev server (Vite, webpack-dev-server, Next.js) fail
+to build the edited file, or the page fail to run it: the page still runs
+the old code. The message is the compiler's, and the place is on disk
+when the file is under the project root. Fix it, save, and run the hint;
+it waits for the next update, not this one again. `details.hot_update`
+has the update as `--json` shows it.
+
+`wait --hmr` on a page with no hot-reload client fails at once with
+`NotFound` (`details.reason` is `no_client`): the page did not come from a
+dev server, or its client never connected. Open the app from its dev
+server's URL.
 
 ## Exit 2: the command line
 

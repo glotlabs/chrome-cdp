@@ -73,11 +73,21 @@ job that finishes, a WebSocket message), wait for the change itself:
 | `wait --response '**/api/save' --status 200` | a response since the previous command |
 | `wait --download` | a download since the previous command finished |
 | `wait --ws /live --frame price` | a WebSocket frame, sent or received since the previous command, on a socket whose URL matches (`--frame`: its text matches a regex) |
+| `wait --hmr` | the dev server's hot update (Vite, webpack-dev-server, Next.js) since the previous command applied, or its full reload loaded; a compile error fails it (below) |
 | `wait --fn 'window.app?.ready'` | a JavaScript expression is truthy |
 
-`wait --response`, `--download` and `--ws` also count what happened between
-the previous command and this one, so `click e6 && wait --response …`
-cannot miss a fast response.
+`wait --response`, `--download`, `--ws` and `--hmr` also count what
+happened between the previous command and this one, so `click e6 && wait
+--response …` cannot miss a fast response.
+
+After editing a file, `wait --hmr` says whether the page has the edit:
+`hot update applied (src/cart.ts)`, or `full reload (src/main.ts)` once the
+page loaded again. When the dev server cannot build it, the wait fails
+(`HotUpdateFailed`) with the compiler's message and place: `hot update
+failed: [PARSE_ERROR] Unexpected token (src/cart.ts:12)`. With several
+updates since the previous command it answers with the latest (the page's
+state), once updates were quiet for 200 ms, and never with one an earlier
+`wait --hmr` returned. A page with no hot-reload client fails at once.
 
 ```sh
 chrome-cdp click e6 && chrome-cdp wait --text 'Order placed'

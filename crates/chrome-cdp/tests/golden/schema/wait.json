@@ -315,6 +315,11 @@
           "type": "string"
         },
         {
+          "const": "HotUpdateFailed",
+          "description": "A dev server's hot update failed (`wait --hmr`): the page still\nruns the old code.",
+          "type": "string"
+        },
+        {
           "const": "BadArgs",
           "description": "Bad flags or arguments.",
           "type": "string"
@@ -701,6 +706,58 @@
           "type": "object"
         },
         {
+          "description": "A dev server's hot update reached the tab: while an action ran,\nor (on any command on the tab) since the tab's previous command.\nEach is reported once.",
+          "properties": {
+            "client": {
+              "description": "The dev server's client in the page: `vite`, `webpack`\n(webpack-dev-server) or `next` (Next.js).",
+              "type": "string"
+            },
+            "files": {
+              "description": "`applied`: the files updated; `full_reload`: the file that asked\nfor it. Left out when the dev server does not say.",
+              "items": {
+                "$ref": "#/$defs/HotFile"
+              },
+              "type": "array"
+            },
+            "message": {
+              "description": "`failed`: the error's first line, as the dev server gave it.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "outcome": {
+              "$ref": "#/$defs/HotOutcome"
+            },
+            "place": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SourcePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`failed`: where, when the error says (`source` as the dev server\nnames it)."
+            },
+            "tab": {
+              "description": "The tab, e.g. `t1`.",
+              "type": "string"
+            },
+            "type": {
+              "const": "hot_update",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tab",
+            "client",
+            "outcome"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Focus moved to an element of another form than before (or into a\nform, or out of one, or into another frame) that the action did not\nact on: a dialog or the next step of a flow took it.",
           "properties": {
             "element": {
@@ -730,6 +787,88 @@
           "type": "object"
         }
       ]
+    },
+    "HotFile": {
+      "description": "A file a hot update names.",
+      "properties": {
+        "file": {
+          "description": "The file on disk (an absolute path), when chrome-cdp found it\nunder the project root. Text output shows it relative to the root.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "As the dev server names it: `/src/cart.ts` (Vite),\n`./src/cart.ts` (webpack).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object"
+    },
+    "HotOutcome": {
+      "description": "How a hot update ended.",
+      "oneOf": [
+        {
+          "const": "applied",
+          "description": "The page runs the new code.",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "The dev server could not build it (a syntax error), or the page\ncould not run it: the page still runs the old code.",
+          "type": "string"
+        },
+        {
+          "const": "full_reload",
+          "description": "The dev server reloaded the page.",
+          "type": "string"
+        }
+      ]
+    },
+    "HotUpdate": {
+      "description": "A dev server's hot update as it reached a tab (`wait --hmr`, the\n`hot_update` event): the files it changed, the error it failed with,\nor the full reload it asked for.",
+      "properties": {
+        "client": {
+          "description": "The dev server's client in the page: `vite`, `webpack`\n(webpack-dev-server) or `next` (Next.js).",
+          "type": "string"
+        },
+        "files": {
+          "description": "`applied`: the files updated; `full_reload`: the file that asked\nfor it. Left out when the dev server does not say.",
+          "items": {
+            "$ref": "#/$defs/HotFile"
+          },
+          "type": "array"
+        },
+        "message": {
+          "description": "`failed`: the error's first line, as the dev server gave it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "outcome": {
+          "$ref": "#/$defs/HotOutcome"
+        },
+        "place": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourcePosition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`failed`: where, when the error says (`source` as the dev server\nnames it)."
+        }
+      },
+      "required": [
+        "client",
+        "outcome"
+      ],
+      "type": "object"
     },
     "Level": {
       "description": "How severe a console entry is, most severe first. `--level warn`\nshows `error` and `warn` entries.",
@@ -1070,7 +1209,7 @@
       "description": "`data` of `chrome-cdp wait --json`.",
       "properties": {
         "condition": {
-          "description": "What was waited for: `load`, `domcontentloaded`, `idle`, `settle`,\n`element`, `text`, `text_gone`, `url`, `fn`, `request`, `response`,\n`delay`, `download`, `console`, `binding` or `ws`.",
+          "description": "What was waited for: `load`, `domcontentloaded`, `idle`, `settle`,\n`element`, `text`, `text_gone`, `url`, `fn`, `request`, `response`,\n`delay`, `download`, `console`, `binding`, `ws` or `hmr`.",
           "type": "string"
         },
         "console": {
@@ -1109,6 +1248,17 @@
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        },
+        "hot_update": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HotUpdate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`--hmr`: the dev server's hot update the page got."
         },
         "met": {
           "description": "What held, in words: `text \"Welcome\" is visible`.",

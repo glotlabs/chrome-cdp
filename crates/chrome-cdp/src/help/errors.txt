@@ -19,6 +19,8 @@ Exit 1, the action or check failed on the page:
   NoSource          source or components found nothing that says where the
                     element came from; the hint says why (not a dev build,
                     no stack, no framework)
+  HotUpdateFailed   wait --hmr: the dev server could not build the edit (or
+                    the page could not run it); says where
 Exit 2, the command line is wrong:
   BadArgs           a flag or argument; typos get "did you mean"
   BadLocator        the locator does not parse (help locators)

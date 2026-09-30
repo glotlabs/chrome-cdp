@@ -1,6 +1,6 @@
 # Plan 15 — From page to source
 
-Status: IN PROGRESS (15.1-15.5 done)
+Status: IN PROGRESS (15.1-15.6 done)
 Depends on: v1 (plans 01-11), mainly 04 (refs), 05 (the action report)
 and 06 (console, network, source maps). Uses plan 13's target graph where
 it exists. Track 4 of [plan 12](12-after-v1.md).
@@ -544,7 +544,7 @@ test that needs Node is the gated real-Vite test.
       caller for thrown errors and rejected promises.
 - [x] `network show` prints a request's source-mapped initiator stack
       across async boundaries.
-- [ ] `wait --hmr` and the report lines tell applied, failed and full
+- [x] `wait --hmr` and the report lines tell applied, failed and full
       reloads apart for Vite and webpack (fake servers), and for a real
       Vite dev server (gated test).
 - [ ] Every place printed by this plan's commands, and by `errors` and
@@ -820,3 +820,67 @@ _(append here)_
   `--sourcemaps`, as `console` and `errors` have, for initiator stacks
   off localhost. No golden shows `network show`'s initiator stack (its
   timing line is not stable); the engine tests check its text.
+- 15.6: Message shapes were checked against Vite 8.3.1 (the fixture apps'
+  pin): the `vite-hmr` subprotocol; `update` with `updates[].path` and
+  `acceptedPath`; the client logs `[vite] hot updated: <acceptedPath>`
+  (`… via <path>` for a boundary) with `console.debug`, and `[vite] Failed
+  to reload <path>. …` (Vite before 6: `[hmr] …`) with `console.error`,
+  but then logs `hot updated` for the same module too, so a failure wins
+  its round; with the overlay on (the default) a compile error is only the
+  `error` frame. Vite 8 (oxc) sends no `err.loc`: the place is the
+  diagnostic header in the message (`╭─[ src/x.tsx?t=1:23:8 ]`), the file
+  is `err.id` without its query, and the first line is the one after
+  `Transform failed with 1 error:`. `full-reload` has `path: "*"` and the
+  edited file in `triggeredBy`; one with `ifFallback`, or for another
+  page's HTML, does not reload this page and is ignored.
+- 15.6: webpack-dev-server 5 and Next.js are not installed here: their
+  shapes come from their clients' sources as documented, not from a run.
+  webpack: a socket is its client when one of its first 4 messages is
+  `hot`, `liveReload` or `hash` (SockJS `a[…]` batches too); `invalid`
+  starts a round, `errors[0]` fails it (`message`, `moduleName`, `loc`
+  `12:5-9`), `static-changed` and `[HMR] … Need to do a full reload`
+  reload, and `[HMR] Updated modules:` / `[HMR]  - <module>` / `[HMR] App is
+  up to date.` apply. Next.js: the `/_next/webpack-hmr` socket; `building`,
+  `built`/`sync` with `errors`, `reloadPage`, `serverComponentChanges`, and
+  `[Fast Refresh] rebuilding|done|performing full reload`. The fake
+  webpack client stands for the manifest fetch with a `fake-modules`
+  message.
+- 15.6: A round starts with Vite's `update`, webpack's `invalid` or Next's
+  `building` and ends in one outcome; what else ends it merges into that
+  (a Vite update's files, the compile error and the client's "failed to
+  reload"). A full reload is done at the main frame's first `load` of
+  another document than the one it came in; reloads merge until then.
+  `building` is a state, not an outcome: a timeout names it. A tab keeps
+  32 outcomes.
+- 15.6: `wait --hmr` answers with the **latest** outcome since the previous
+  command began, not the first (after two saves, the page's state is the
+  second's), once updates stayed quiet for 200 ms (one save can make two
+  rounds; a Vite update's pending files get 500 ms), and never with one an
+  earlier `wait --hmr` returned: after a failure, the next wait is for the
+  fix. A full reload answers once loaded; the deadline passing during the
+  quiet time still answers.
+- 15.6: A failure is a new error kind, `HotUpdateFailed` (exit 1, additive),
+  with the compiler's line, the place (on disk under the project root), and
+  `details.hot_update`. No client is `NotFound` with `details.reason`
+  `no_client`: the page's client is known by its socket (or by a `[vite]`,
+  `[HMR]`, `[webpack-dev-server]` or `[Fast Refresh]` line of the current
+  document).
+- 15.6: "Any command warns once": every page command's `Engine::page`
+  notes the tab's outcomes after the last one a command reported
+  (`hmr::note_since_previous`), and the daemon runs each call in
+  `engine::noting` and adds them to its output as warnings and
+  `hot_update` events (to an error as `meanwhile:` notes). An action's
+  report lists what came while it ran as `! …` lines and marks them
+  reported. Outside `noting` (engine tests, the runner's internal calls)
+  nothing is reported. File names print as project paths when the file
+  is on disk, on any page (a dev server names its own files).
+- 15.6: The fake servers are `/hmr/vite?channel=…` and
+  `/hmr/webpack?channel=…` (one channel per test, since tests share one
+  server) and `POST /hmr/send?channel=…`; `testdata/site/hmr/vite.html`
+  and `webpack.html` log what the real clients log, and set
+  `hmrConnected` once greeted (a test that sends before Chrome reported the
+  socket would find no client). The gated test copies `react19` and
+  `shared/` to a temporary directory, links the app's `node_modules`, and
+  runs `node node_modules/vite/bin/vite.js`; it passes here. There is no
+  CI workflow any more (removed in `c5659a3`), so nothing sets
+  `CHROME_CDP_NODE_TESTS=1` yet.

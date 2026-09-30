@@ -98,8 +98,8 @@ holds: an element (`wait '#results'`, `wait .spinner --state hidden`,
 beacons and requests open over 10 s), `--settle`, a JavaScript expression
 (`--fn 'window.app.ready'`), or a request or response since the previous
 command (`--response '**/api/save' --status 200`), a WebSocket frame
-(`--ws /live --frame price`), or a download since the previous command
-(`--download`). On timeout (exit 3) it says what it saw
+(`--ws /live --frame price`), a download since the previous command
+(`--download`), or the dev server's hot update after an edit (`--hmr`). On timeout (exit 3) it says what it saw
 instead: how many elements matched, the requests still in flight, the URL,
 the last value, and the page.
 
@@ -281,12 +281,22 @@ clicked e6 button "Sign in"
 ```
 
 Also reported: `pushState` navigations (`(same document)`), dialogs the
-session answered, downloads, and focus moving to another form or into
-another frame (`! focus moved to e14 textbox "Code"`, `… in iframe "pay"`). Failed requests count only on the page's own
+session answered, downloads, logpoint hits, a dev server's hot updates
+(`! hot update applied (src/cart.ts)`, `! hot update failed: <message>
+(src/cart.ts:12)`, `! full reload (src/main.ts)`), and focus moving to
+another form or into another frame (`! focus moved to e14 textbox "Code"`,
+`… in iframe "pay"`). Failed requests count only on the page's own
 origin; `#42` is the request's id for `network show 42`. `--json` lists them all in `events`. `--no-wait-after` returns once
 the input is sent; `--snap` appends what changed on the page (`snapshot
 --diff -i`), and `snap_after_action = "diff"` in the config files makes that
 the default (`--no-snap` turns it off for one command).
+
+With a dev server (Vite, webpack-dev-server, Next.js), any command on a
+tab also warns, once, about the hot updates that came since the tab's
+previous command, the same lines as `warning:`s: an edit made between
+commands says whether the page caught up. `wait --hmr` waits for one
+([waiting.md](waiting.md)). chrome-cdp reads the dev server's own socket
+and console messages; nothing is injected into the page.
 
 ## Dialogs
 
