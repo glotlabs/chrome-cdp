@@ -1,0 +1,11 @@
+$ chrome-cdp snapshot --expand e4
+exit: 2
+--- stderr
+error: --expand e4: not a region; regions look like r4
+  hint: snapshot --fold or --budget N prints regions ([region r4]) where it folds
+
+$ chrome-cdp snapshot --expand e4 --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"--expand e4: not a region; regions look like r4","hint":"snapshot --fold or --budget N prints regions ([region r4]) where it folds"}}
+

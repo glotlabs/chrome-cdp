@@ -1052,6 +1052,43 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAfter(REMOUNTED),
     },
     Case {
+        name: "snapshot-fold",
+        args: &["snapshot", "--fold"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/snapshot/cards.html"),
+    },
+    Case {
+        name: "snapshot-budget",
+        args: &["snapshot", "--budget", "120"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/snapshot/login.html"),
+    },
+    Case {
+        name: "snapshot-expand",
+        args: &["snapshot", "--expand", "r1"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/snapshot/cards.html"],
+            &["snapshot", "--fold"],
+        ]),
+    },
+    Case {
+        name: "snapshot-expand-stale",
+        args: &["snapshot", "--expand", "r1"],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/snapshot/cards.html"],
+            &["snapshot", "--fold"],
+            &["reload"],
+        ]),
+    },
+    Case {
+        name: "snapshot-expand-bad",
+        args: &["snapshot", "--expand", "e4"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
         name: "snapshot-bad-scope",
         args: &["snapshot", "--scope", "Sign in"],
         modes: ERR,

@@ -1,0 +1,11 @@
+$ chrome-cdp snapshot --expand r1
+exit: 1
+--- stderr
+error: region r1 is from an earlier page of tab t1
+  hint: chrome-cdp snapshot --fold   (gives the page's regions now)
+
+$ chrome-cdp snapshot --expand r1 --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"RefStale","message":"region r1 is from an earlier page of tab t1","hint":"chrome-cdp snapshot --fold   (gives the page's regions now)","details":{"region":"r1"}}}
+

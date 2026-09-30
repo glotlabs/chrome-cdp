@@ -936,6 +936,49 @@
       ],
       "type": "object"
     },
+    "SnapshotFold": {
+      "description": "What a snapshot folded into one stub (`snapshot --fold`, `--budget`).",
+      "properties": {
+        "like": {
+          "description": "A run of siblings with the same shape as the node before this\nstub: how many were folded. `role` is theirs.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "nodes": {
+          "description": "How many nodes were folded.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "refs": {
+          "description": "How many of them have refs (they keep working).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "region": {
+          "description": "The region `snapshot --expand` takes, e.g. `r4`.",
+          "type": "string"
+        },
+        "tokens": {
+          "description": "Their estimated tokens (characters ÷ 4), were they shown.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "region",
+        "nodes",
+        "refs",
+        "tokens"
+      ],
+      "type": "object"
+    },
     "SnapshotNode": {
       "description": "One node of a snapshot, as one text line shows it:\n`role \"name\" [ref] (hN) value=\"…\" states… → href`.",
       "properties": {
@@ -964,6 +1007,17 @@
         "file": {
           "description": "A file input (`upload` sets it; a click opens a file chooser).",
           "type": "boolean"
+        },
+        "folded": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SnapshotFold"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`--fold` or `--budget`: what was folded in place of this node's\nchildren (it has none), or, with `like`, of the siblings after the\nnode before it. `snapshot --expand <region>` shows them."
         },
         "href": {
           "description": "A link's target; relative (`/pricing`) when on the frame's origin.",
@@ -1000,6 +1054,13 @@
         },
         "ref": {
           "description": "The ref commands take (`e12`); only on nodes an agent can act on,\nunless `--all-refs`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "region": {
+          "description": "`--expand`: the region this top-level node was expanded from.",
           "type": [
             "string",
             "null"

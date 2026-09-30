@@ -1,0 +1,439 @@
+$ chrome-cdp snapshot --expand r1
+exit: 0
+--- stdout
+page t1 "Products – Acme" <site>/snapshot/cards.html
+region r1
+- listitem
+  - img "Teapot 2"
+  - link "Teapot 2" [e11] → /products/2
+  - text "Stoneware, 300 ml, dishwasher safe"
+  - text "22 €"
+  - text "★ 4 · 16 reviews"
+  - button "Add to cart" [e12]
+- listitem
+  - img "Bowl 3"
+  - link "Bowl 3" [e13] → /products/3
+  - text "Stoneware, 350 ml, dishwasher safe"
+  - text "29 €"
+  - text "★ 3 · 19 reviews"
+  - button "Add to cart" [e14]
+- listitem
+  - img "Plate 4"
+  - link "Plate 4" [e15] → /products/4
+  - text "Stoneware, 200 ml, dishwasher safe"
+  - text "36 €"
+  - text "★ 3.5 · 22 reviews"
+  - button "Add to cart" [e16]
+- listitem
+  - img "Cup <uptime>"
+  - link "Cup <uptime>" [e17] → /products/5
+  - text "Stoneware, 250 ml, dishwasher safe"
+  - text "13 €"
+  - text "★ 4 · 25 reviews"
+  - button "Add to cart" [e18]
+- listitem
+  - img "Jug 6"
+  - link "Jug 6" [e19] → /products/6
+  - text "Stoneware, 300 ml, dishwasher safe"
+  - text "20 €"
+  - text "★ 3 · 28 reviews"
+  - button "Add to cart" [e20]
+- listitem
+  - img "Mug 7"
+  - link "Mug 7" [e21] → /products/7
+  - text "Stoneware, 350 ml, dishwasher safe"
+  - text "27 €"
+  - text "★ 3.5 · 31 reviews"
+  - button "Add to cart" [e22]
+- listitem
+  - img "Teapot 8"
+  - link "Teapot 8" [e23] → /products/8
+  - text "Stoneware, 200 ml, dishwasher safe"
+  - text "34 €"
+  - text "★ 4 · 34 reviews"
+  - button "Add to cart" [e24]
+- listitem
+  - img "Bowl 9"
+  - link "Bowl 9" [e25] → /products/9
+  - text "Stoneware, 250 ml, dishwasher safe"
+  - text "11 €"
+  - text "★ 3 · 37 reviews"
+  - button "Add to cart" [e26]
+- listitem
+  - img "Plate 10"
+  - link "Plate 10" [e27] → /products/10
+  - text "Stoneware, 300 ml, dishwasher safe"
+  - text "18 €"
+  - text "★ 3.5 · 40 reviews"
+  - button "Add to cart" [e28]
+- listitem
+  - img "Cup <uptime>"
+  - link "Cup <uptime>" [e29] → /products/11
+  - text "Stoneware, 350 ml, dishwasher safe"
+  - text "25 €"
+  - text "★ 4 · 43 reviews"
+  - button "Add to cart" [e30]
+- listitem
+  - img "Jug 12"
+  - link "Jug 12" [e31] → /products/12
+  - text "Stoneware, 200 ml, dishwasher safe"
+  - text "32 €"
+  - text "★ 3 · 46 reviews"
+  - button "Add to cart" [e32]
+- listitem
+  - img "Mug 13"
+  - link "Mug 13" [e33] → /products/13
+  - text "Stoneware, 250 ml, dishwasher safe"
+  - text "9 €"
+  - text "★ 3.5 · 49 reviews"
+  - button "Add to cart" [e34]
+- listitem
+  - img "Teapot 14"
+  - link "Teapot 14" [e35] → /products/14
+  - text "Stoneware, 300 ml, dishwasher safe"
+  - text "16 €"
+  - text "★ 4 · 52 reviews"
+  - button "Add to cart" [e36]
+- listitem
+  - img "Bowl 15"
+  - link "Bowl 15" [e37] → /products/15
+  - text "Stoneware, 350 ml, dishwasher safe"
+  - text "23 €"
+  - text "★ 3 · 55 reviews"
+  - button "Add to cart" [e38]
+- listitem
+  - img "Plate 16"
+  - link "Plate 16" [e39] → /products/16
+  - text "Stoneware, 200 ml, dishwasher safe"
+  - text "30 €"
+  - text "★ 3.5 · 58 reviews"
+  - button "Add to cart" [e40]
+- listitem
+  - img "Cup <uptime>"
+  - link "Cup <uptime>" [e41] → /products/17
+  - text "Stoneware, 250 ml, dishwasher safe"
+  - text "37 €"
+  - text "★ 4 · 61 reviews"
+  - button "Add to cart" [e42]
+- listitem
+  - img "Jug 18"
+  - link "Jug 18" [e43] → /products/18
+  - text "Stoneware, 300 ml, dishwasher safe"
+  - text "14 €"
+  - text "★ 3 · 64 reviews"
+  - button "Add to cart" [e44]
+- listitem
+  - img "Mug 19"
+  - link "Mug 19" [e45] → /products/19
+  - text "Stoneware, 350 ml, dishwasher safe"
+  - text "21 €"
+  - text "★ 3.5 · 67 reviews"
+  - button "Add to cart" [e46]
+- listitem
+  - img "Teapot 20"
+  - link "Teapot 20" [e47] → /products/20
+  - text "Stoneware, 200 ml, dishwasher safe"
+  - text "28 €"
+  - text "★ 4 · 70 reviews"
+  - button "Add to cart" [e48]
+- listitem
+  - img "Bowl 21"
+  - link "Bowl 21" [e49] → /products/21
+  - text "Stoneware, 250 ml, dishwasher safe"
+  - text "35 €"
+  - text "★ 3 · 73 reviews"
+  - button "Add to cart" [e50]
+- listitem
+  - img "Plate 22"
+  - link "Plate 22" [e51] → /products/22
+  - text "Stoneware, 300 ml, dishwasher safe"
+  - text "12 €"
+  - text "★ 3.5 · 76 reviews"
+  - button "Add to cart" [e52]
+- listitem
+  - img "Cup <uptime>"
+  - link "Cup <uptime>" [e53] → /products/23
+  - text "Stoneware, 350 ml, dishwasher safe"
+  - text "19 €"
+  - text "★ 4 · 79 reviews"
+  - button "Add to cart" [e54]
+- listitem
+  - img "Jug 24"
+  - link "Jug 24" [e55] → /products/24
+  - text "Stoneware, 200 ml, dishwasher safe"
+  - text "26 €"
+  - text "★ 3 · 82 reviews"
+  - button "Add to cart" [e56]
+- listitem
+  - img "Mug 25"
+  - link "Mug 25" [e57] → /products/25
+  - text "Stoneware, 250 ml, dishwasher safe"
+  - text "33 €"
+  - text "★ 3.5 · 85 reviews"
+  - button "Add to cart" [e58]
+- listitem
+  - img "Teapot 26"
+  - link "Teapot 26" [e59] → /products/26
+  - text "Stoneware, 300 ml, dishwasher safe"
+  - text "10 €"
+  - text "★ 4 · 88 reviews"
+  - button "Add to cart" [e60]
+- listitem
+  - img "Bowl 27"
+  - link "Bowl 27" [e61] → /products/27
+  - text "Stoneware, 350 ml, dishwasher safe"
+  - text "17 €"
+  - text "★ 3 · 91 reviews"
+  - button "Add to cart" [e62]
+- listitem
+  - img "Plate 28"
+  - link "Plate 28" [e63] → /products/28
+  - text "Stoneware, 200 ml, dishwasher safe"
+  - text "24 €"
+  - text "★ 3.5 · 94 reviews"
+  - button "Add to cart" [e64]
+- listitem
+  - img "Cup <uptime>"
+  - link "Cup <uptime>" [e65] → /products/29
+  - text "Stoneware, 250 ml, dishwasher safe"
+  - text "31 €"
+  - text "★ 4 · 97 reviews"
+  - button "Add to cart" [e66]
+- listitem
+  - img "Jug 30"
+  - link "Jug 30" [e67] → /products/30
+  - text "Stoneware, 300 ml, dishwasher safe"
+  - text "8 €"
+  - text "★ 3 · 100 reviews"
+  - button "Add to cart" [e68]
+- listitem
+  - img "Mug 31"
+  - link "Mug 31" [e69] → /products/31
+  - text "Stoneware, 350 ml, dishwasher safe"
+  - text "15 €"
+  - text "★ 3.5 · 103 reviews"
+  - button "Add to cart" [e70]
+- … 29 more listitem (use --expand r1 --all)
+
+$ chrome-cdp snapshot --expand r1 --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"engine":"ax","nodes":[{"children":[{"name":"Teapot 2","role":"img"},{"href":"/products/2","name":"Teapot 2","ref":"e11","role":"link"},{"name":"Stoneware, 300 ml, dishwasher safe","role":"text"},{"name":"22 €","role":"text"},{"name":"★ 4 · 16 reviews","role":"text"},{"name":"Add to cart","ref":"e12","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Bowl 3","role":"img"},{"href":"/products/3","name":"Bowl 3","ref":"e13","role":"link"},{"name":"Stoneware, 350 ml, dishwasher safe","role":"text"},{"name":"29 €","role":"text"},{"name":"★ 3 · 19 reviews","role":"text"},{"name":"Add to cart","ref":"e14","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Plate 4","role":"img"},{"href":"/products/4","name":"Plate 4","ref":"e15","role":"link"},{"name":"Stoneware, 200 ml, dishwasher safe","role":"text"},{"name":"36 €","role":"text"},{"name":"★ 3.5 · 22 reviews","role":"text"},{"name":"Add to cart","ref":"e16","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Cup <uptime>","role":"img"},{"href":"/products/5","name":"Cup <uptime>","ref":"e17","role":"link"},{"name":"Stoneware, 250 ml, dishwasher safe","role":"text"},{"name":"13 €","role":"text"},{"name":"★ 4 · 25 reviews","role":"text"},{"name":"Add to cart","ref":"e18","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Jug 6","role":"img"},{"href":"/products/6","name":"Jug 6","ref":"e19","role":"link"},{"name":"Stoneware, 300 ml, dishwasher safe","role":"text"},{"name":"20 €","role":"text"},{"name":"★ 3 · 28 reviews","role":"text"},{"name":"Add to cart","ref":"e20","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Mug 7","role":"img"},{"href":"/products/7","name":"Mug 7","ref":"e21","role":"link"},{"name":"Stoneware, 350 ml, dishwasher safe","role":"text"},{"name":"27 €","role":"text"},{"name":"★ 3.5 · 31 reviews","role":"text"},{"name":"Add to cart","ref":"e22","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Teapot 8","role":"img"},{"href":"/products/8","name":"Teapot 8","ref":"e23","role":"link"},{"name":"Stoneware, 200 ml, dishwasher safe","role":"text"},{"name":"34 €","role":"text"},{"name":"★ 4 · 34 reviews","role":"text"},{"name":"Add to cart","ref":"e24","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Bowl 9","role":"img"},{"href":"/products/9","name":"Bowl 9","ref":"e25","role":"link"},{"name":"Stoneware, 250 ml, dishwasher safe","role":"text"},{"name":"11 €","role":"text"},{"name":"★ 3 · 37 reviews","role":"text"},{"name":"Add to cart","ref":"e26","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Plate 10","role":"img"},{"href":"/products/10","name":"Plate 10","ref":"e27","role":"link"},{"name":"Stoneware, 300 ml, dishwasher safe","role":"text"},{"name":"18 €","role":"text"},{"name":"★ 3.5 · 40 reviews","role":"text"},{"name":"Add to cart","ref":"e28","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Cup <uptime>","role":"img"},{"href":"/products/11","name":"Cup <uptime>","ref":"e29","role":"link"},{"name":"Stoneware, 350 ml, dishwasher safe","role":"text"},{"name":"25 €","role":"text"},{"name":"★ 4 · 43 reviews","role":"text"},{"name":"Add to cart","ref":"e30","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Jug 12","role":"img"},{"href":"/products/12","name":"Jug 12","ref":"e31","role":"link"},{"name":"Stoneware, 200 ml, dishwasher safe","role":"text"},{"name":"32 €","role":"text"},{"name":"★ 3 · 46 reviews","role":"text"},{"name":"Add to cart","ref":"e32","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Mug 13","role":"img"},{"href":"/products/13","name":"Mug 13","ref":"e33","role":"link"},{"name":"Stoneware, 250 ml, dishwasher safe","role":"text"},{"name":"9 €","role":"text"},{"name":"★ 3.5 · 49 reviews","role":"text"},{"name":"Add to cart","ref":"e34","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Teapot 14","role":"img"},{"href":"/products/14","name":"Teapot 14","ref":"e35","role":"link"},{"name":"Stoneware, 300 ml, dishwasher safe","role":"text"},{"name":"16 €","role":"text"},{"name":"★ 4 · 52 reviews","role":"text"},{"name":"Add to cart","ref":"e36","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Bowl 15","role":"img"},{"href":"/products/15","name":"Bowl 15","ref":"e37","role":"link"},{"name":"Stoneware, 350 ml, dishwasher safe","role":"text"},{"name":"23 €","role":"text"},{"name":"★ 3 · 55 reviews","role":"text"},{"name":"Add to cart","ref":"e38","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Plate 16","role":"img"},{"href":"/products/16","name":"Plate 16","ref":"e39","role":"link"},{"name":"Stoneware, 200 ml, dishwasher safe","role":"text"},{"name":"30 €","role":"text"},{"name":"★ 3.5 · 58 reviews","role":"text"},{"name":"Add to cart","ref":"e40","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Cup <uptime>","role":"img"},{"href":"/products/17","name":"Cup <uptime>","ref":"e41","role":"link"},{"name":"Stoneware, 250 ml, dishwasher safe","role":"text"},{"name":"37 €","role":"text"},{"name":"★ 4 · 61 reviews","role":"text"},{"name":"Add to cart","ref":"e42","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Jug 18","role":"img"},{"href":"/products/18","name":"Jug 18","ref":"e43","role":"link"},{"name":"Stoneware, 300 ml, dishwasher safe","role":"text"},{"name":"14 €","role":"text"},{"name":"★ 3 · 64 reviews","role":"text"},{"name":"Add to cart","ref":"e44","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Mug 19","role":"img"},{"href":"/products/19","name":"Mug 19","ref":"e45","role":"link"},{"name":"Stoneware, 350 ml, dishwasher safe","role":"text"},{"name":"21 €","role":"text"},{"name":"★ 3.5 · 67 reviews","role":"text"},{"name":"Add to cart","ref":"e46","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Teapot 20","role":"img"},{"href":"/products/20","name":"Teapot 20","ref":"e47","role":"link"},{"name":"Stoneware, 200 ml, dishwasher safe","role":"text"},{"name":"28 €","role":"text"},{"name":"★ 4 · 70 reviews","role":"text"},{"name":"Add to cart","ref":"e48","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Bowl 21","role":"img"},{"href":"/products/21","name":"Bowl 21","ref":"e49","role":"link"},{"name":"Stoneware, 250 ml, dishwasher safe","role":"text"},{"name":"35 €","role":"text"},{"name":"★ 3 · 73 reviews","role":"text"},{"name":"Add to cart","ref":"e50","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Plate 22","role":"img"},{"href":"/products/22","name":"Plate 22","ref":"e51","role":"link"},{"name":"Stoneware, 300 ml, dishwasher safe","role":"text"},{"name":"12 €","role":"text"},{"name":"★ 3.5 · 76 reviews","role":"text"},{"name":"Add to cart","ref":"e52","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Cup <uptime>","role":"img"},{"href":"/products/23","name":"Cup <uptime>","ref":"e53","role":"link"},{"name":"Stoneware, 350 ml, dishwasher safe","role":"text"},{"name":"19 €","role":"text"},{"name":"★ 4 · 79 reviews","role":"text"},{"name":"Add to cart","ref":"e54","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Jug 24","role":"img"},{"href":"/products/24","name":"Jug 24","ref":"e55","role":"link"},{"name":"Stoneware, 200 ml, dishwasher safe","role":"text"},{"name":"26 €","role":"text"},{"name":"★ 3 · 82 reviews","role":"text"},{"name":"Add to cart","ref":"e56","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Mug 25","role":"img"},{"href":"/products/25","name":"Mug 25","ref":"e57","role":"link"},{"name":"Stoneware, 250 ml, dishwasher safe","role":"text"},{"name":"33 €","role":"text"},{"name":"★ 3.5 · 85 reviews","role":"text"},{"name":"Add to cart","ref":"e58","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Teapot 26","role":"img"},{"href":"/products/26","name":"Teapot 26","ref":"e59","role":"link"},{"name":"Stoneware, 300 ml, dishwasher safe","role":"text"},{"name":"10 €","role":"text"},{"name":"★ 4 · 88 reviews","role":"text"},{"name":"Add to cart","ref":"e60","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Bowl 27","role":"img"},{"href":"/products/27","name":"Bowl 27","ref":"e61","role":"link"},{"name":"Stoneware, 350 ml, dishwasher safe","role":"text"},{"name":"17 €","role":"text"},{"name":"★ 3 · 91 reviews","role":"text"},{"name":"Add to cart","ref":"e62","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Plate 28","role":"img"},{"href":"/products/28","name":"Plate 28","ref":"e63","role":"link"},{"name":"Stoneware, 200 ml, dishwasher safe","role":"text"},{"name":"24 €","role":"text"},{"name":"★ 3.5 · 94 reviews","role":"text"},{"name":"Add to cart","ref":"e64","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Cup <uptime>","role":"img"},{"href":"/products/29","name":"Cup <uptime>","ref":"e65","role":"link"},{"name":"Stoneware, 250 ml, dishwasher safe","role":"text"},{"name":"31 €","role":"text"},{"name":"★ 4 · 97 reviews","role":"text"},{"name":"Add to cart","ref":"e66","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Jug 30","role":"img"},{"href":"/products/30","name":"Jug 30","ref":"e67","role":"link"},{"name":"Stoneware, 300 ml, dishwasher safe","role":"text"},{"name":"8 €","role":"text"},{"name":"★ 3 · 100 reviews","role":"text"},{"name":"Add to cart","ref":"e68","role":"button"}],"region":"r1","role":"listitem"},{"children":[{"name":"Mug 31","role":"img"},{"href":"/products/31","name":"Mug 31","ref":"e69","role":"link"},{"name":"Stoneware, 350 ml, dishwasher safe","role":"text"},{"name":"15 €","role":"text"},{"name":"★ 3.5 · 103 reviews","role":"text"},{"name":"Add to cart","ref":"e70","role":"button"}],"region":"r1","role":"listitem"},{"more":29,"region":"r1","role":"listitem"}],"tab":"t1","title":"Products – Acme","url":"<site>/snapshot/cards.html"}}
+
+$ chrome-cdp snapshot --expand r1 -q
+exit: 0
+--- stdout
+page t1 "Products – Acme" <site>/snapshot/cards.html
+region r1
+- listitem
+  - img "Teapot 2"
+  - link "Teapot 2" [e11] → /products/2
+  - text "Stoneware, 300 ml, dishwasher safe"
+  - text "22 €"
+  - text "★ 4 · 16 reviews"
+  - button "Add to cart" [e12]
+- listitem
+  - img "Bowl 3"
+  - link "Bowl 3" [e13] → /products/3
+  - text "Stoneware, 350 ml, dishwasher safe"
+  - text "29 €"
+  - text "★ 3 · 19 reviews"
+  - button "Add to cart" [e14]
+- listitem
+  - img "Plate 4"
+  - link "Plate 4" [e15] → /products/4
+  - text "Stoneware, 200 ml, dishwasher safe"
+  - text "36 €"
+  - text "★ 3.5 · 22 reviews"
+  - button "Add to cart" [e16]
+- listitem
+  - img "Cup <uptime>"
+  - link "Cup <uptime>" [e17] → /products/5
+  - text "Stoneware, 250 ml, dishwasher safe"
+  - text "13 €"
+  - text "★ 4 · 25 reviews"
+  - button "Add to cart" [e18]
+- listitem
+  - img "Jug 6"
+  - link "Jug 6" [e19] → /products/6
+  - text "Stoneware, 300 ml, dishwasher safe"
+  - text "20 €"
+  - text "★ 3 · 28 reviews"
+  - button "Add to cart" [e20]
+- listitem
+  - img "Mug 7"
+  - link "Mug 7" [e21] → /products/7
+  - text "Stoneware, 350 ml, dishwasher safe"
+  - text "27 €"
+  - text "★ 3.5 · 31 reviews"
+  - button "Add to cart" [e22]
+- listitem
+  - img "Teapot 8"
+  - link "Teapot 8" [e23] → /products/8
+  - text "Stoneware, 200 ml, dishwasher safe"
+  - text "34 €"
+  - text "★ 4 · 34 reviews"
+  - button "Add to cart" [e24]
+- listitem
+  - img "Bowl 9"
+  - link "Bowl 9" [e25] → /products/9
+  - text "Stoneware, 250 ml, dishwasher safe"
+  - text "11 €"
+  - text "★ 3 · 37 reviews"
+  - button "Add to cart" [e26]
+- listitem
+  - img "Plate 10"
+  - link "Plate 10" [e27] → /products/10
+  - text "Stoneware, 300 ml, dishwasher safe"
+  - text "18 €"
+  - text "★ 3.5 · 40 reviews"
+  - button "Add to cart" [e28]
+- listitem
+  - img "Cup <uptime>"
+  - link "Cup <uptime>" [e29] → /products/11
+  - text "Stoneware, 350 ml, dishwasher safe"
+  - text "25 €"
+  - text "★ 4 · 43 reviews"
+  - button "Add to cart" [e30]
+- listitem
+  - img "Jug 12"
+  - link "Jug 12" [e31] → /products/12
+  - text "Stoneware, 200 ml, dishwasher safe"
+  - text "32 €"
+  - text "★ 3 · 46 reviews"
+  - button "Add to cart" [e32]
+- listitem
+  - img "Mug 13"
+  - link "Mug 13" [e33] → /products/13
+  - text "Stoneware, 250 ml, dishwasher safe"
+  - text "9 €"
+  - text "★ 3.5 · 49 reviews"
+  - button "Add to cart" [e34]
+- listitem
+  - img "Teapot 14"
+  - link "Teapot 14" [e35] → /products/14
+  - text "Stoneware, 300 ml, dishwasher safe"
+  - text "16 €"
+  - text "★ 4 · 52 reviews"
+  - button "Add to cart" [e36]
+- listitem
+  - img "Bowl 15"
+  - link "Bowl 15" [e37] → /products/15
+  - text "Stoneware, 350 ml, dishwasher safe"
+  - text "23 €"
+  - text "★ 3 · 55 reviews"
+  - button "Add to cart" [e38]
+- listitem
+  - img "Plate 16"
+  - link "Plate 16" [e39] → /products/16
+  - text "Stoneware, 200 ml, dishwasher safe"
+  - text "30 €"
+  - text "★ 3.5 · 58 reviews"
+  - button "Add to cart" [e40]
+- listitem
+  - img "Cup <uptime>"
+  - link "Cup <uptime>" [e41] → /products/17
+  - text "Stoneware, 250 ml, dishwasher safe"
+  - text "37 €"
+  - text "★ 4 · 61 reviews"
+  - button "Add to cart" [e42]
+- listitem
+  - img "Jug 18"
+  - link "Jug 18" [e43] → /products/18
+  - text "Stoneware, 300 ml, dishwasher safe"
+  - text "14 €"
+  - text "★ 3 · 64 reviews"
+  - button "Add to cart" [e44]
+- listitem
+  - img "Mug 19"
+  - link "Mug 19" [e45] → /products/19
+  - text "Stoneware, 350 ml, dishwasher safe"
+  - text "21 €"
+  - text "★ 3.5 · 67 reviews"
+  - button "Add to cart" [e46]
+- listitem
+  - img "Teapot 20"
+  - link "Teapot 20" [e47] → /products/20
+  - text "Stoneware, 200 ml, dishwasher safe"
+  - text "28 €"
+  - text "★ 4 · 70 reviews"
+  - button "Add to cart" [e48]
+- listitem
+  - img "Bowl 21"
+  - link "Bowl 21" [e49] → /products/21
+  - text "Stoneware, 250 ml, dishwasher safe"
+  - text "35 €"
+  - text "★ 3 · 73 reviews"
+  - button "Add to cart" [e50]
+- listitem
+  - img "Plate 22"
+  - link "Plate 22" [e51] → /products/22
+  - text "Stoneware, 300 ml, dishwasher safe"
+  - text "12 €"
+  - text "★ 3.5 · 76 reviews"
+  - button "Add to cart" [e52]
+- listitem
+  - img "Cup <uptime>"
+  - link "Cup <uptime>" [e53] → /products/23
+  - text "Stoneware, 350 ml, dishwasher safe"
+  - text "19 €"
+  - text "★ 4 · 79 reviews"
+  - button "Add to cart" [e54]
+- listitem
+  - img "Jug 24"
+  - link "Jug 24" [e55] → /products/24
+  - text "Stoneware, 200 ml, dishwasher safe"
+  - text "26 €"
+  - text "★ 3 · 82 reviews"
+  - button "Add to cart" [e56]
+- listitem
+  - img "Mug 25"
+  - link "Mug 25" [e57] → /products/25
+  - text "Stoneware, 250 ml, dishwasher safe"
+  - text "33 €"
+  - text "★ 3.5 · 85 reviews"
+  - button "Add to cart" [e58]
+- listitem
+  - img "Teapot 26"
+  - link "Teapot 26" [e59] → /products/26
+  - text "Stoneware, 300 ml, dishwasher safe"
+  - text "10 €"
+  - text "★ 4 · 88 reviews"
+  - button "Add to cart" [e60]
+- listitem
+  - img "Bowl 27"
+  - link "Bowl 27" [e61] → /products/27
+  - text "Stoneware, 350 ml, dishwasher safe"
+  - text "17 €"
+  - text "★ 3 · 91 reviews"
+  - button "Add to cart" [e62]
+- listitem
+  - img "Plate 28"
+  - link "Plate 28" [e63] → /products/28
+  - text "Stoneware, 200 ml, dishwasher safe"
+  - text "24 €"
+  - text "★ 3.5 · 94 reviews"
+  - button "Add to cart" [e64]
+- listitem
+  - img "Cup <uptime>"
+  - link "Cup <uptime>" [e65] → /products/29
+  - text "Stoneware, 250 ml, dishwasher safe"
+  - text "31 €"
+  - text "★ 4 · 97 reviews"
+  - button "Add to cart" [e66]
+- listitem
+  - img "Jug 30"
+  - link "Jug 30" [e67] → /products/30
+  - text "Stoneware, 300 ml, dishwasher safe"
+  - text "8 €"
+  - text "★ 3 · 100 reviews"
+  - button "Add to cart" [e68]
+- listitem
+  - img "Mug 31"
+  - link "Mug 31" [e69] → /products/31
+  - text "Stoneware, 350 ml, dishwasher safe"
+  - text "15 €"
+  - text "★ 3.5 · 103 reviews"
+  - button "Add to cart" [e70]
+- … 29 more listitem (use --expand r1 --all)
+

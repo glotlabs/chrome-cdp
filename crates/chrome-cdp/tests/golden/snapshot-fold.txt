@@ -1,0 +1,75 @@
+$ chrome-cdp snapshot --fold
+exit: 0
+--- stdout
+page t1 "Products – Acme" <site>/snapshot/cards.html
+- banner
+  - link "Acme" [e1] → /
+  - navigation "Main"
+    - link "Pricing" [e2] → /pricing
+    - link "Docs" [e3] → /docs
+- main
+  - heading "Products" (h1)
+  - status "Cart: empty"
+  - form "Filters"
+    - checkbox "In stock" [e4] unchecked
+    - checkbox "On sale" [e5] unchecked
+    - combobox "Sort" [e6] value="Price" collapsed
+      - option "Price" [e7] selected
+      - option "Name" [e8]
+  - list "Products"
+    - listitem
+      - img "Mug 1"
+      - link "Mug 1" [e9] → /products/1
+      - text "Stoneware, 250 ml, dishwasher safe"
+      - text "15 €"
+      - text "★ 3.5 · 13 reviews"
+      - button "Add to cart" [e10]
+    - … 59 more listitem like the one above [region r1]
+  - navigation "Pages"
+    - link "1" [e129] → /snapshot/cards.html?page=1
+    - link "2" [e130] → /snapshot/cards.html?page=2
+    - button "Next" [e131]
+- contentinfo "© 2026 Acme"
+--- stderr
+warning: parts of the page are folded; chrome-cdp snapshot --expand r1 shows one
+
+$ chrome-cdp snapshot --fold --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"engine":"ax","nodes":[{"children":[{"href":"/","name":"Acme","ref":"e1","role":"link"},{"children":[{"href":"/pricing","name":"Pricing","ref":"e2","role":"link"},{"href":"/docs","name":"Docs","ref":"e3","role":"link"}],"name":"Main","role":"navigation"}],"role":"banner"},{"children":[{"level":1,"name":"Products","role":"heading"},{"name":"Cart: empty","role":"status"},{"children":[{"name":"In stock","ref":"e4","role":"checkbox","states":["unchecked"]},{"name":"On sale","ref":"e5","role":"checkbox","states":["unchecked"]},{"children":[{"name":"Price","ref":"e7","role":"option","states":["selected"]},{"name":"Name","ref":"e8","role":"option"}],"name":"Sort","ref":"e6","role":"combobox","states":["collapsed"],"value":"Price"}],"name":"Filters","role":"form"},{"children":[{"children":[{"name":"Mug 1","role":"img"},{"href":"/products/1","name":"Mug 1","ref":"e9","role":"link"},{"name":"Stoneware, 250 ml, dishwasher safe","role":"text"},{"name":"15 €","role":"text"},{"name":"★ 3.5 · 13 reviews","role":"text"},{"name":"Add to cart","ref":"e10","role":"button"}],"role":"listitem"},{"folded":{"like":59,"nodes":413,"refs":118,"region":"r1","tokens":3234},"role":"listitem"}],"name":"Products","role":"list"},{"children":[{"href":"/snapshot/cards.html?page=1","name":"1","ref":"e129","role":"link"},{"href":"/snapshot/cards.html?page=2","name":"2","ref":"e130","role":"link"},{"name":"Next","ref":"e131","role":"button"}],"name":"Pages","role":"navigation"}],"role":"main"},{"name":"© 2026 Acme","role":"contentinfo"}],"tab":"t1","title":"Products – Acme","url":"<site>/snapshot/cards.html"},"warnings":["parts of the page are folded; chrome-cdp snapshot --expand r1 shows one"]}
+
+$ chrome-cdp snapshot --fold -q
+exit: 0
+--- stdout
+page t1 "Products – Acme" <site>/snapshot/cards.html
+- banner
+  - link "Acme" [e1] → /
+  - navigation "Main"
+    - link "Pricing" [e2] → /pricing
+    - link "Docs" [e3] → /docs
+- main
+  - heading "Products" (h1)
+  - status "Cart: empty"
+  - form "Filters"
+    - checkbox "In stock" [e4] unchecked
+    - checkbox "On sale" [e5] unchecked
+    - combobox "Sort" [e6] value="Price" collapsed
+      - option "Price" [e7] selected
+      - option "Name" [e8]
+  - list "Products"
+    - listitem
+      - img "Mug 1"
+      - link "Mug 1" [e9] → /products/1
+      - text "Stoneware, 250 ml, dishwasher safe"
+      - text "15 €"
+      - text "★ 3.5 · 13 reviews"
+      - button "Add to cart" [e10]
+    - … 59 more listitem like the one above [region r1]
+  - navigation "Pages"
+    - link "1" [e129] → /snapshot/cards.html?page=1
+    - link "2" [e130] → /snapshot/cards.html?page=2
+    - button "Next" [e131]
+- contentinfo "© 2026 Acme"
+--- stderr
+warning: parts of the page are folded; chrome-cdp snapshot --expand r1 shows one
+

@@ -1,11 +1,11 @@
 $ chrome-cdp -V
 exit: 2
 --- stderr
-error: config <tmp>/.chrome-cdp.toml: unknown field `sesion`, expected one of `session`, `timeout`, `base_url`, `testid_attribute`, `snap_after_action`, `node_stacks`, `source_root`, `e2e`
-  hint: fix or remove the key in <tmp>/.chrome-cdp.toml; known keys: session, timeout, base_url, testid_attribute, snap_after_action, node_stacks, source_root, and the [e2e] section
+error: config <tmp>/.chrome-cdp.toml: unknown field `sesion`, expected one of `session`, `timeout`, `base_url`, `testid_attribute`, `snap_after_action`, `node_stacks`, `source_root`, `snapshot_budget`, `e2e`
+  hint: fix or remove the key in <tmp>/.chrome-cdp.toml; known keys: session, timeout, base_url, testid_attribute, snap_after_action, node_stacks, source_root, snapshot_budget, and the [e2e] section
 
 $ chrome-cdp -V --json
 exit: 2
 --- stdout
-{"ok":false,"error":{"kind":"BadArgs","message":"config <tmp>/.chrome-cdp.toml: unknown field `sesion`, expected one of `session`, `timeout`, `base_url`, `testid_attribute`, `snap_after_action`, `node_stacks`, `source_root`, `e2e`","hint":"fix or remove the key in <tmp>/.chrome-cdp.toml; known keys: session, timeout, base_url, testid_attribute, snap_after_action, node_stacks, source_root, and the [e2e] section"}}
+{"ok":false,"error":{"kind":"BadArgs","message":"config <tmp>/.chrome-cdp.toml: unknown field `sesion`, expected one of `session`, `timeout`, `base_url`, `testid_attribute`, `snap_after_action`, `node_stacks`, `source_root`, `snapshot_budget`, `e2e`","hint":"fix or remove the key in <tmp>/.chrome-cdp.toml; known keys: session, timeout, base_url, testid_attribute, snap_after_action, node_stacks, source_root, snapshot_budget, and the [e2e] section"}}
 
