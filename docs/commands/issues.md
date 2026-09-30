@@ -57,7 +57,7 @@ is shown as `unknown-<code>`, severity info.
 | `ContentSecurityPolicyIssue` | `content-security-policy-<reason>` | error | the page's CSP blocked something (warning when report-only) |
 | `SharedArrayBufferIssue` | `shared-array-buffer-<reason>` | error | SharedArrayBuffer used without cross-origin isolation (warning when only warned) |
 | `CorsIssue` | `cors-<reason>` | error | CORS blocked a request (warning when only warned) |
-| `QuirksModeIssue` | `quirks-mode` | info | a document renders in quirks mode (no &lt;!DOCTYPE html&gt;) |
+| `QuirksModeIssue` | `quirks-mode` | info | a document renders in quirks mode (no &lt;!DOCTYPE html&gt;); quirks-mode-limited for limited-quirks mode |
 | `PartitioningBlobURLIssue` | `partitioning-blob-url-<reason>` | warning | a blob: URL was used across storage partitions |
 | `NavigatorUserAgentIssue` | `navigator-user-agent` | info | a script reads the reduced navigator.userAgent |
 | `GenericIssue` | `<reason>` | warning | form problems (labels, autocomplete, ids) and other findings, by reason |

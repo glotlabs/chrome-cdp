@@ -73,6 +73,7 @@ chrome-cdp expect '.row' count 3
 chrome-cdp expect '.spinner' visible --not
 chrome-cdp expect --url '**/dashboard'
 chrome-cdp expect --no-errors                     # no exception or console error
+chrome-cdp expect --no-issues                     # none of Chrome's issues (see `issues`)
 chrome-cdp expect --no-failed-requests --all-tabs  # in every tab, since each opened
 chrome-cdp expect --a11y                          # accessibility rules
 chrome-cdp expect request POST /api/orders --json-body '{"qty":2}'
