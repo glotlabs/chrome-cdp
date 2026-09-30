@@ -1632,6 +1632,23 @@ pub enum EmulationChange {
     TimeAdvance {
         ms: u64,
     },
+    /// Freezes the time at `epoch_ms` (the frozen time, else now) and
+    /// stops timers and animation frames (plan 14.2).
+    TimePause {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        epoch_ms: Option<i64>,
+    },
+    /// Moves the paused time on by `ms`, firing every callback due on the
+    /// way.
+    TimeRunFor {
+        ms: u64,
+    },
+    /// Moves the paused time on to `epoch_ms`, as `TimeRunFor`.
+    TimePauseAt {
+        epoch_ms: i64,
+    },
+    /// Lets paused timers run in real time again; the time stays frozen.
+    TimeResume,
     TimeReset,
 }
 

@@ -12,12 +12,12 @@ use std::fmt::Write as _;
 
 use cdp::domains::runtime;
 use protocol::schema::{
-    DeviceInfo, EmulateData, Emulation, FrozenTime, Geolocation, PermissionInfo, PermissionsData,
-    Throttle, Viewport,
+    ClockFired, DeviceInfo, EmulateData, Emulation, FrozenTime, Geolocation, PermissionInfo,
+    PermissionsData, Throttle, Viewport,
 };
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 
-use super::{Aspects, DEVICES, check_permission, device_viewport, find_device};
+use super::{Aspects, ClockMove, DEVICES, check_permission, device_viewport, find_device};
 use crate::context::Scoped as _;
 use crate::errors::from_cdp;
 use crate::observe::iso8601;
@@ -64,7 +64,8 @@ impl Engine {
         if geolocation {
             emulator.record_permission(scope, "geolocation", "granted", None);
         }
-        let aspects = Aspects::changed(&before, &after);
+        let mut aspects = Aspects::changed(&before, &after);
+        aspects.clock_move = clock_move(&req.change, &after);
         if let Some(running) = self.running_now() {
             if let Some(check) = intl_check(&req.change)
                 && !self.passes(&running, scope, &check, timeout).await
@@ -93,17 +94,30 @@ impl Engine {
             }
         }
         let mut warnings = Vec::new();
+        let mut fired = None;
         if let Some(running) = self.running_now() {
             warnings = self
                 .worker_warnings(&running, scope, &req.change, &before, timeout)
                 .await;
+            if aspects.clock {
+                let (moved, late) =
+                    clock_report(&running, scope, &before, &after, aspects, timeout).await;
+                warnings.extend(late);
+                fired = moved;
+            }
+        } else if aspects.clock_move != ClockMove::Set {
+            fired = Some(ClockFired::default());
         }
         let default_viewport = self.default_viewport();
-        let text = describe_change(&req.change, &after, default_viewport.as_ref());
+        let mut text = describe_change(&req.change, &after, default_viewport.as_ref());
+        if let Some(fired) = &fired {
+            let _ = write!(text, "\n{}", fired_line(fired));
+        }
         let data = EmulateData {
             emulation: after,
             default_viewport,
             devices: None,
+            fired,
         };
         Ok(warnings
             .into_iter()
@@ -127,7 +141,9 @@ impl Engine {
                 "Intl.DateTimeFormat().resolvedOptions().timeZone",
             ),
             EmulationChange::Locale { .. } => ("locale", "navigator.language"),
-            EmulationChange::TimeFreeze { .. } if before.time.is_none() => {
+            EmulationChange::TimeFreeze { .. } | EmulationChange::TimePause { .. }
+                if before.time.is_none() =>
+            {
                 let workers = running.tabs.in_workers(scope, "0", timeout).await.len();
                 if workers == 0 {
                     return Vec::new();
@@ -435,7 +451,7 @@ fn change(state: &mut Emulation, change: &EmulationChange, session: &str) -> Res
         EmulationChange::CpuThrottle { rate } => {
             state.cpu_throttle = rate.filter(|&r| r > 1.0);
         }
-        EmulationChange::TimeFreeze { epoch_ms } => state.time = Some(frozen(*epoch_ms)),
+        EmulationChange::TimeFreeze { epoch_ms } => state.time = Some(frozen(*epoch_ms, false)),
         EmulationChange::TimeAdvance { ms } => {
             let Some(time) = &state.time else {
                 return Err(ErrorInfo::new(
@@ -448,19 +464,178 @@ fn change(state: &mut Emulation, change: &EmulationChange, session: &str) -> Res
                 ));
             };
             let ms = i64::try_from(*ms).unwrap_or(i64::MAX);
-            state.time = Some(frozen(time.epoch_ms.saturating_add(ms)));
+            state.time = Some(frozen(time.epoch_ms.saturating_add(ms), time.paused));
+        }
+        EmulationChange::TimePause { epoch_ms } => {
+            let at = epoch_ms
+                .or(state.time.as_ref().map(|t| t.epoch_ms))
+                .unwrap_or_else(now_ms);
+            state.time = Some(frozen(at, true));
+        }
+        EmulationChange::TimeRunFor { ms } => {
+            let time = paused(state, "run-for", session)?;
+            let ms = i64::try_from(*ms).unwrap_or(i64::MAX);
+            state.time = Some(frozen(time.epoch_ms.saturating_add(ms), true));
+        }
+        EmulationChange::TimePauseAt { epoch_ms } => {
+            let time = paused(state, "pause-at", session)?;
+            if *epoch_ms < time.epoch_ms {
+                let asked = iso8601(u64::try_from(*epoch_ms).unwrap_or(0));
+                return Err(ErrorInfo::new(
+                    ErrorKind::BadArgs,
+                    format!(
+                        "{asked} is before the paused time {}: the clock only runs forward",
+                        time.iso
+                    ),
+                )
+                .hint(
+                    Hint::run(Cmd::new("time").arg("pause").arg(&asked).scoped(session))
+                        .why("sets the time without running timers"),
+                ));
+            }
+            state.time = Some(frozen(*epoch_ms, true));
+        }
+        EmulationChange::TimeResume => {
+            let Some(time) = &state.time else {
+                return Err(ErrorInfo::new(
+                    ErrorKind::BadArgs,
+                    "the time is not paused, so it cannot resume",
+                )
+                .hint(
+                    Hint::run(Cmd::new("time").arg("pause").scoped(session))
+                        .why("stops the time and timers at the current time"),
+                ));
+            };
+            state.time = Some(frozen(time.epoch_ms, false));
         }
         EmulationChange::TimeReset => state.time = None,
     }
     Ok(())
 }
 
-fn frozen(epoch_ms: i64) -> FrozenTime {
+fn frozen(epoch_ms: i64, paused: bool) -> FrozenTime {
     FrozenTime {
         epoch_ms,
         iso: iso8601(u64::try_from(epoch_ms).unwrap_or(0)),
+        paused,
     }
 }
+
+/// The paused time, for `time <command>`; an error if the clock is not
+/// paused.
+fn paused(state: &Emulation, command: &str, session: &str) -> Result<FrozenTime, ErrorInfo> {
+    match &state.time {
+        Some(time) if time.paused => Ok(time.clone()),
+        time => {
+            let why = if time.is_some() {
+                "the time is frozen but its timers run in real time"
+            } else {
+                "the time is not paused"
+            };
+            Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("{why}, so `time {command}` has nothing to run"),
+            )
+            .hint(
+                Hint::run(Cmd::new("time").arg("pause").scoped(session))
+                    .why("stops the time and timers where they are"),
+            ))
+        }
+    }
+}
+
+/// Now, in ms since the Unix epoch.
+fn now_ms() -> i64 {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    i64::try_from(now.as_millis()).unwrap_or(i64::MAX)
+}
+
+/// How `change` moves the clock's time in the documents (`after` is the
+/// state it leads to).
+fn clock_move(change: &EmulationChange, after: &Emulation) -> ClockMove {
+    let paused = after.time.as_ref().is_some_and(|t| t.paused);
+    match change {
+        EmulationChange::TimeRunFor { .. } | EmulationChange::TimePauseAt { .. } => ClockMove::Run,
+        EmulationChange::TimeAdvance { .. } if paused => ClockMove::Jump,
+        _ => ClockMove::Set,
+    }
+}
+
+/// After a change of the clock: what moving a paused one fired in every
+/// page, frame and worker, and the warnings (a runaway loop cut short,
+/// timers set before the clock came to a loaded page).
+async fn clock_report(
+    running: &Running,
+    scope: Option<&str>,
+    before: &Emulation,
+    after: &Emulation,
+    aspects: Aspects,
+    timeout: std::time::Duration,
+) -> (Option<ClockFired>, Vec<String>) {
+    let mut warnings = Vec::new();
+    let mut fired = None;
+    if aspects.clock_move != ClockMove::Set {
+        let counts = running
+            .tabs
+            .in_emulated(
+                scope,
+                "globalThis[Symbol.for('chrome-cdp.clock')]?.last ?? null",
+                timeout,
+            )
+            .await;
+        let mut total = ClockFired::default();
+        let mut capped = false;
+        for count in &counts {
+            let number = |key: &str| {
+                count
+                    .get(key)
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0)
+            };
+            total.timers += number("timers");
+            total.frames += number("frames");
+            capped |= count.get("capped") == Some(&serde_json::Value::Bool(true));
+        }
+        if capped {
+            warnings.push(format!(
+                "stopped after {RUN_LIMIT} callbacks in a page (a timer that sets itself again                  at once?); the rest stay queued for the next `time run-for`"
+            ));
+        }
+        fired = Some(total);
+    }
+    let was_paused = before.time.as_ref().is_some_and(|t| t.paused);
+    let is_paused = after.time.as_ref().is_some_and(|t| t.paused);
+    if is_paused && !was_paused {
+        let late = running
+            .tabs
+            .in_emulated(
+                scope,
+                "globalThis[Symbol.for('chrome-cdp.timers')]?.late === true",
+                timeout,
+            )
+            .await;
+        if late.contains(&serde_json::Value::Bool(true)) {
+            warnings.push("timers set before now keep running; reload for full control".to_owned());
+        }
+    }
+    (fired, warnings)
+}
+
+/// `ran 10 timers, 60 frames`.
+fn fired_line(fired: &ClockFired) -> String {
+    let count = |n: u64, what: &str| format!("{n} {what}{}", if n == 1 { "" } else { "s" });
+    format!(
+        "ran {}, {}",
+        count(fired.timers, "timer"),
+        count(fired.frames, "frame")
+    )
+}
+
+/// After how many callbacks one `time run-for` stops in a document
+/// (`RUN_LIMIT` in clock.js).
+const RUN_LIMIT: &str = "10,000";
 
 /// The text of a change: the lines of the settings it changed.
 fn describe_change(
@@ -505,6 +680,10 @@ fn describe_change(
         EmulationChange::CpuThrottle { .. } => vec![cpu_line(state)],
         EmulationChange::TimeFreeze { .. }
         | EmulationChange::TimeAdvance { .. }
+        | EmulationChange::TimePause { .. }
+        | EmulationChange::TimeRunFor { .. }
+        | EmulationChange::TimePauseAt { .. }
+        | EmulationChange::TimeResume
         | EmulationChange::TimeReset => vec![time_line(state)],
     };
     lines.join("\n")
@@ -667,6 +846,7 @@ fn cpu_line(state: &Emulation) -> String {
 
 fn time_line(state: &Emulation) -> String {
     match &state.time {
+        Some(time) if time.paused => format!("time paused at {} (timers stopped)", time.iso),
         Some(time) => format!("time frozen at {}", time.iso),
         None => "time: real".to_owned(),
     }
@@ -730,6 +910,7 @@ pub fn device_list() -> Output {
         emulation: Emulation::default(),
         default_viewport: None,
         devices: Some(devices),
+        fired: None,
     };
     Output::typed(&data, protocol::format::table(&rows)).quiet(quiet)
 }

@@ -559,6 +559,30 @@ impl Tabs {
         join_all(values).await.into_iter().flatten().collect()
     }
 
+    /// `expression`'s value in every page, iframe and worker session of
+    /// `scope` emulation reaches (a session's main frame only); those
+    /// that answer.
+    pub(crate) async fn in_emulated(
+        &self,
+        scope: Option<&str>,
+        expression: &str,
+        timeout: Duration,
+    ) -> Vec<serde_json::Value> {
+        let sessions: Vec<Session> = self
+            .shared
+            .lock()
+            .applies(Feature::Emulation)
+            .filter(|(_, t)| t.scope.as_deref() == scope)
+            .map(|(_, t)| t.session.with_timeout(timeout))
+            .collect();
+        let values = sessions.into_iter().map(|session| async move {
+            let mut params = runtime::EvaluateParams::new(expression.to_owned());
+            params.return_by_value = Some(true);
+            session.call(params).await.ok()?.result.value
+        });
+        join_all(values).await.into_iter().flatten().collect()
+    }
+
     /// Sends a change of the session's emulation (`aspects`) to every page,
     /// iframe and worker session (new ones get it during [`setup`]).
     /// Returns the errors Chrome gave.

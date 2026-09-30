@@ -19,13 +19,15 @@
 //! timers and page loads, and letting it advance fires timers at once.
 //! An init script replaces `Date` instead ([`clock_script`]); moving the
 //! frozen time on also runs the page's timers due by then (plan 11.6).
+//! `time pause` stops the timers and animation frames the script wrapped,
+//! and `time run-for` fires them in order (plan 14.2).
 
 pub(crate) mod commands;
 mod devices;
 
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use protocol::schema::{Emulation, PermissionInfo, Throttle, Viewport};
+use protocol::schema::{Emulation, FrozenTime, PermissionInfo, Throttle, Viewport};
 use protocol::suggest::{self, squash};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 
@@ -170,11 +172,38 @@ pub fn check_permission(name: &str, op: PermissionsOp, session: &str) -> Result<
     Err(info)
 }
 
-/// The frozen clock's init script for time `at` (ms since the epoch), or
-/// with `None` the script that takes it out of a document.
-pub(crate) fn clock_script(at: Option<i64>) -> String {
-    let at = at.map_or_else(|| "null".to_owned(), |ms| ms.to_string());
-    format!("{}({at});", include_str!("clock.js").trim_end())
+/// How a change of the clock moves the time in the documents that have it
+/// (plan 14.2).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum ClockMove {
+    /// Sets it: a frozen clock runs the timers due by then, each once; a
+    /// paused one fires nothing.
+    #[default]
+    Set,
+    /// `time run-for`/`pause-at`: fires every callback due on the way, in
+    /// order.
+    Run,
+    /// `time advance` while paused: fires each callback due by then once.
+    Jump,
+}
+
+/// The clock's init script for `time`, moving the time as `how` says in
+/// the documents that have it, or with `None` the script that takes it
+/// out of a document.
+pub(crate) fn clock_script(time: Option<&FrozenTime>, how: ClockMove) -> String {
+    let args = match time {
+        None => "null, null".to_owned(),
+        Some(time) => {
+            let mode = match how {
+                _ if !time.paused => "frozen",
+                ClockMove::Set => "paused",
+                ClockMove::Run => "run",
+                ClockMove::Jump => "jump",
+            };
+            format!("{}, \"{mode}\"", time.epoch_ms)
+        }
+    };
+    format!("{}({args});", include_str!("clock.js").trim_end())
 }
 
 /// The script that makes a worker's `navigator.userAgent` `agent`, or
@@ -202,6 +231,8 @@ pub(crate) struct Aspects {
     pub(crate) network: bool,
     pub(crate) cpu: bool,
     pub(crate) clock: bool,
+    /// How the clock's time moves, when it changes.
+    pub(crate) clock_move: ClockMove,
 }
 
 impl Aspects {
@@ -217,6 +248,7 @@ impl Aspects {
             network: before.offline != after.offline || before.throttle != after.throttle,
             cpu: before.cpu_throttle != after.cpu_throttle,
             clock: before.time != after.time,
+            clock_move: ClockMove::Set,
         }
     }
 

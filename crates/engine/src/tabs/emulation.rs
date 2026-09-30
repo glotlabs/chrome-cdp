@@ -34,7 +34,7 @@ use protocol::schema::{Emulation, Viewport};
 use super::features::Feature;
 use super::targets::TargetKind;
 use super::{Shared, Step, lock, step};
-use crate::emulate::{Aspects, agent_script, clock_script};
+use crate::emulate::{Aspects, ClockMove, agent_script, clock_script};
 
 /// The setup steps of a new page, iframe or worker session (of `kind`).
 pub(super) fn setup_steps(
@@ -58,11 +58,11 @@ pub(super) fn setup_steps(
     {
         steps.push((
             "the frozen clock",
-            evaluate(session, clock_script(Some(time.epoch_ms))),
+            evaluate(session, clock_script(Some(time), ClockMove::Set)),
         ));
     } else if let Some(time) = &state.time {
         let shared = shared.clone();
-        let add = add_clock(session, Some(time.epoch_ms));
+        let add = add_clock(session, clock_script(Some(time), ClockMove::Set));
         let session_id = session.id().unwrap_or_default().to_owned();
         steps.push((
             "the frozen clock",
@@ -114,18 +114,20 @@ pub(super) async fn apply(
         .map(|e| e.to_string())
         .collect();
     if aspects.clock {
-        let at = state.time.as_ref().map(|t| t.epoch_ms);
-        let clocks = targets
-            .into_iter()
-            .map(|(id, session, kind, old)| async move {
+        let script = clock_script(state.time.as_ref(), aspects.clock_move);
+        let on = state.time.is_some();
+        let clocks = targets.into_iter().map(|(id, session, kind, old)| {
+            let script = script.clone();
+            async move {
                 if kind.worker().is_some() {
-                    // A worker has no documents to come: the script sets the
-                    // time, or takes the clock out, where it runs.
-                    let set = evaluate(&session, clock_script(at)).await;
+                    // A worker has no documents to come: the script sets
+                    // the time, or takes the clock out, where it runs.
+                    let set = evaluate(&session, script).await;
                     return (id, set.map(|()| None));
                 }
-                (id, replace_clock(&session, old, at).await)
-            });
+                (id, replace_clock(&session, old, script, on).await)
+            }
+        });
         for (id, result) in join_all(clocks).await {
             match result {
                 Ok(identifier) => {
@@ -144,12 +146,14 @@ pub(super) async fn apply(
     errors
 }
 
-/// Takes the old clock script out and adds one for `at` (updating the
-/// documents there are), or with `None` takes the clock out of them.
+/// Takes the old clock script out and adds `script` (updating the
+/// documents there are); when the clock is not `on`, `script` takes it out
+/// of them and is removed too.
 async fn replace_clock(
     session: &Session,
     old: Option<String>,
-    at: Option<i64>,
+    script: String,
+    on: bool,
 ) -> cdp::Result<Option<String>> {
     if let Some(identifier) = old {
         session
@@ -158,8 +162,8 @@ async fn replace_clock(
             ))
             .await?;
     }
-    let identifier = add_clock(session, at).await?;
-    if at.is_some() {
+    let identifier = add_clock(session, script).await?;
+    if on {
         return Ok(Some(identifier));
     }
     // The script that took the clock out of the documents has done its
@@ -172,13 +176,13 @@ async fn replace_clock(
     Ok(None)
 }
 
-/// Adds the clock script for `at`, running it in the documents there are
-/// too; returns its id.
+/// Adds the clock's `script`, running it in the documents there are too;
+/// returns its id.
 fn add_clock(
     session: &Session,
-    at: Option<i64>,
+    script: String,
 ) -> impl Future<Output = cdp::Result<String>> + Send + 'static {
-    let mut params = page::AddScriptToEvaluateOnNewDocumentParams::new(clock_script(at));
+    let mut params = page::AddScriptToEvaluateOnNewDocumentParams::new(script);
     params.run_immediately = Some(true);
     let call = session.call(params);
     async move { Ok(call.await?.identifier) }

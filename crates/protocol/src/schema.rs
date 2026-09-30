@@ -449,6 +449,26 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<EmulateData>),
     },
     CommandSchema {
+        name: "time pause",
+        summary: "what the session emulates, after freezing the time and stopping timers",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
+        name: "time run-for",
+        summary: "what the session emulates, after running the paused timers for a while",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
+        name: "time pause-at",
+        summary: "what the session emulates, after running the paused timers up to a time",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
+        name: "time resume",
+        summary: "what the session emulates, after letting paused timers run in real time",
+        schema: || schema_for!(Envelope<EmulateData>),
+    },
+    CommandSchema {
         name: "time reset",
         summary: "what the session emulates, after giving pages the real time back",
         schema: || schema_for!(Envelope<EmulateData>),
@@ -2183,6 +2203,22 @@ pub struct FrozenTime {
     pub epoch_ms: i64,
     /// The same in ISO 8601 (UTC).
     pub iso: String,
+    /// Whether timers and animation frames are stopped too (`time
+    /// pause`) until `time run-for`, `pause-at` or `resume`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub paused: bool,
+}
+
+/// What moving a paused clock on fired (`time run-for`, `pause-at`, and
+/// `advance` while paused), in every page, frame and worker.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ClockFired {
+    /// `setTimeout` and `setInterval` callbacks run (each interval tick
+    /// counts).
+    pub timers: u64,
+    /// Animation frames run (each runs every `requestAnimationFrame`
+    /// callback queued for it).
+    pub frames: u64,
 }
 
 /// What the session emulates (plan 07). Every field left out (or
@@ -2244,6 +2280,9 @@ pub struct EmulateData {
     /// With `emulate --list`: the devices.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub devices: Option<Vec<DeviceInfo>>,
+    /// After moving a paused clock on: what it fired.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fired: Option<ClockFired>,
 }
 
 /// A permission the session set (`permissions`).

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Timers</title>
+</head>
+<body>
+<h1>Timers</h1>
+<!-- A countdown (an interval), a debounced save (a timeout) and an
+     animation frame counter, for the paused clock (plan 14.2). -->
+<p>Countdown: <output id="countdown">50</output></p>
+<label>Note <input id="note"></label>
+<p>Saved: <output id="saved">nothing</output></p>
+<p>Frames: <output id="frames">0</output></p>
+<script>
+  window.log = [];
+  window.left = 50;
+  const countdown = setInterval(() => {
+    left -= 1;
+    document.getElementById("countdown").textContent = String(left);
+    if (left === 0) clearInterval(countdown);
+  }, 100);
+
+  let debounce = null;
+  function typed(value) {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => {
+      document.getElementById("saved").textContent = value;
+      log.push("saved " + value);
+    }, 300);
+  }
+  document.getElementById("note").addEventListener("input", (e) => typed(e.target.value));
+
+  window.frames_ = 0;
+  window.frameTimes = [];
+  function frame(time) {
+    frames_ += 1;
+    if (frameTimes.length < 5) frameTimes.push(time);
+    document.getElementById("frames").textContent = String(frames_);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+</script>
+</body>
+</html>
