@@ -327,6 +327,13 @@ impl Engine {
         let wanted = parse_viewports(&req.viewports)?;
         let overrides = wanted.iter().any(|(_, v)| v.is_some());
         let mut warnings = Vec::new();
+        // Another viewport, or longer text, moves the page's scroll: it is
+        // put back at the end.
+        let main = self.main_place(running, page, timeout).await?;
+        let extent = self
+            .layout_call(&main, "pageExtent", Vec::new(), timeout)
+            .await?;
+        let [_, _, x0, y0]: [f64; 4] = serde_json::from_value(extent).unwrap_or([0.0; 4]);
         let result = async {
             let mut runs = Vec::new();
             for (name, viewport) in &wanted {
@@ -367,7 +374,11 @@ impl Engine {
                 return Err(from_cdp(&e, &self.session));
             }
         }
+        let back = self
+            .layout_call(&main, "scrollPage", vec![json!(x0), json!(y0)], timeout)
+            .await;
         let runs = result?;
+        back?;
         let url = running
             .tabs
             .frames(page.id)
@@ -865,6 +876,26 @@ impl Engine {
         })
     }
 
+    /// The tab's main frame, as a place to run the bundle in.
+    async fn main_place(
+        &self,
+        running: &Running,
+        page: &Page,
+        timeout: Duration,
+    ) -> Result<Place, ErrorInfo> {
+        let (id, context) = self
+            .frame_and_context(running, page, None, World::Isolated, timeout)
+            .await?;
+        Ok(Place {
+            id,
+            context,
+            root: None,
+            offset: (0.0, 0.0),
+            view: None,
+            main: true,
+        })
+    }
+
     /// The frames to check, with where each is in the tab's viewport:
     /// the scope's frame alone, or the main frame and every iframe that
     /// has a box.
@@ -875,17 +906,7 @@ impl Engine {
         scope: Option<&Target>,
         timeout: Duration,
     ) -> Result<Vec<Place>, ErrorInfo> {
-        let (main_id, context) = self
-            .frame_and_context(running, page, None, World::Isolated, timeout)
-            .await?;
-        let mut places = vec![Place {
-            id: main_id.clone(),
-            context,
-            root: None,
-            offset: (0.0, 0.0),
-            view: None,
-            main: true,
-        }];
+        let mut places = vec![self.main_place(running, page, timeout).await?];
         let size = self.viewport_size(running, page, timeout).await?;
         places[0].view = Some([0.0, 0.0, f64::from(size.0), f64::from(size.1)]);
         let frames = running.tabs.frames(page.id);
