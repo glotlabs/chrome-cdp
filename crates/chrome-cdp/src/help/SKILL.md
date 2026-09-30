@@ -1,6 +1,6 @@
 ---
 name: chrome-cdp
-description: Drive a real Chrome browser from the shell with chrome-cdp. Open pages, read them as an accessibility tree with refs, click, fill and type, check console errors and network requests, assert what the page shows, take screenshots, mock requests, and write and run E2E tests against a mocked or real backend. Use it to look at, operate, test or debug a web page or web app.
+description: Drive a real Chrome browser from the shell with chrome-cdp. Open pages, read them as an accessibility tree with refs, click, fill and type, check console errors and network requests, find the source line behind an element, assert what the page shows, take screenshots, mock requests, and write and run E2E tests against a mocked or real backend. Use it to look at, operate, test or debug a web page or web app.
 ---
 
 # chrome-cdp
@@ -74,6 +74,18 @@ locators in single quotes.
 - Long output is cut, with a line saying how to get more. Prefer
   `snapshot -i`, `--scope e12`, `find`, or `text <loc>`.
 - Exit codes: 0 ok, 1 action failed, 2 usage, 3 timeout, 4 browser, 5 dialog.
+
+## Find the code behind it
+
+On a local dev server the page knows its sources; don't grep for them:
+
+- `chrome-cdp source e12`: the file:line that rendered it, and its
+  components (`components e12`: their props and state).
+- `chrome-cdp debug log src/cart.ts:42 total item.qty`: log values each
+  time that line runs, no code edits; the next action prints them.
+- `chrome-cdp errors --locals`: the variables where an error was thrown.
+- After an edit, `chrome-cdp wait --hmr` until the page has it (or the
+  compile error).
 
 ## E2E tests with mocks
 
