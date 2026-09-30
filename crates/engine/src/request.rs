@@ -2038,6 +2038,66 @@ impl WhyFor {
     }
 }
 
+/// `layout`, and `expect --layout` (with `baseline`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LayoutRequest {
+    /// `--tab`: the tab to check; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// Check only inside the element this locator matches.
+    #[serde(default)]
+    pub locator: Option<String>,
+    /// `--viewports`: `mobile`, `tablet`, `desktop` or `WxH`, as typed;
+    /// the tab's own viewport when empty.
+    #[serde(default)]
+    pub viewports: Vec<String>,
+    /// `--only`: the kinds to check; all when empty.
+    #[serde(default)]
+    pub only: Vec<String>,
+    /// `--all`: list info findings too.
+    #[serde(default)]
+    pub all: bool,
+    /// `--full`: look for covered elements and low contrast over the
+    /// whole page, a viewport at a time, not only in view.
+    #[serde(default)]
+    pub full: bool,
+    /// `--min-target`: the least width and height of a target, in CSS
+    /// pixels (24 if `None`).
+    #[serde(default)]
+    pub min_target: Option<u32>,
+    /// `--stretch-text`: also check with text this many percent longer,
+    /// and report what only that finds.
+    #[serde(default)]
+    pub stretch_text: Option<u32>,
+    #[serde(default)]
+    pub strict_refs: bool,
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    #[serde(default)]
+    pub max_chars: usize,
+    /// `expect --layout --baseline NAME`: fail on error findings the
+    /// baseline does not list.
+    #[serde(default)]
+    pub baseline: Option<LayoutBaseline>,
+}
+
+/// The baseline of `expect --layout`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LayoutBaseline {
+    /// Its name, as typed.
+    pub name: String,
+    /// The file, absolute (`<dir>/layout/<NAME>.txt`).
+    pub path: PathBuf,
+    /// `--update`: write the findings to it instead of comparing.
+    #[serde(default)]
+    pub update: bool,
+    /// `--dir` as typed, for hints that repeat the command.
+    #[serde(default)]
+    pub dir: Option<String>,
+}
+
 /// `inspect`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InspectRequest {

@@ -165,6 +165,7 @@ impl Engine {
                     count,
                     elapsed_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
                     retries: tries - 1,
+                    layout: None,
                 };
                 return Ok(Output::typed(&data, text)
                     .quiet(seen.text)

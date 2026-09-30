@@ -644,6 +644,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<WhyData>),
     },
     CommandSchema {
+        name: "layout",
+        summary: "what looks broken: covered, overlapping, clipped, off-screen, too small, low contrast",
+        schema: || schema_for!(Envelope<LayoutData>),
+    },
+    CommandSchema {
         name: "markdown",
         summary: "the page's readable content (or an element's) as Markdown",
         schema: || schema_for!(Envelope<MarkdownData>),
@@ -3373,6 +3378,104 @@ pub struct WhyVerdict {
     pub fails: Option<String>,
 }
 
+/// `data` of `chrome-cdp layout --json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LayoutData {
+    /// The tab, e.g. `t1`.
+    pub tab: String,
+    /// The page's URL.
+    pub url: String,
+    /// The locator the check was limited to (`layout LOCATOR`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locator: Option<String>,
+    /// `--stretch-text`: how many percent longer the text was made for a
+    /// second run, whose new findings have `stretched`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stretch_text: Option<u32>,
+    /// One per viewport checked (`--viewports`), in the order given; the
+    /// tab's own viewport without it.
+    pub viewports: Vec<LayoutViewport>,
+}
+
+/// What `layout` found at one viewport.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LayoutViewport {
+    /// `mobile`, `tablet`, `desktop`, or the size as given (`390x844`);
+    /// without `--viewports`, the preset of the tab's size, else its size.
+    pub name: String,
+    /// In CSS pixels.
+    pub width: u32,
+    pub height: u32,
+    /// How many error findings there are.
+    pub errors: u64,
+    /// How many info findings there are (listed only with `--all`).
+    pub info: u64,
+    /// Sorted by kind (in the order of `layout --help`), then top to
+    /// bottom, left to right.
+    pub findings: Vec<LayoutFinding>,
+}
+
+/// One thing that looks broken.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LayoutFinding {
+    /// `covered`, `overlap`, `clipped`, `truncated`, `overflow-x`,
+    /// `offscreen`, `small-target` or `contrast`.
+    pub kind: String,
+    pub severity: LayoutSeverity,
+    /// What `expect --layout` baselines hold: `<kind> <viewport> <stable
+    /// locator>` (`covered` and `overlap` add the other element's).
+    pub key: String,
+    /// The line of the text output, after the kind.
+    pub message: String,
+    /// The element the finding is about.
+    pub element: WhyElement,
+    /// Its box in CSS pixels of the page (the main document, scroll
+    /// included; an iframe's elements moved into it).
+    #[serde(rename = "box")]
+    pub area: LayoutBox,
+    /// Per kind: the covering element, the shown and full sizes, the
+    /// contrast ratio and colours, …
+    pub details: Map<String, Value>,
+    /// Found only with the text stretched (`--stretch-text`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub stretched: bool,
+    /// The iframe it is in, when not the main frame: its frame id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<String>,
+}
+
+/// How much a finding counts: errors are shown by default and fail
+/// `expect --layout`; info is shown with `--all`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum LayoutSeverity {
+    Error,
+    Info,
+}
+
+/// A box in CSS pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LayoutBox {
+    pub x: i64,
+    pub y: i64,
+    pub width: i64,
+    pub height: i64,
+}
+
+/// `expect --layout`: the baseline and what differed from it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExpectLayout {
+    /// The baseline file, absolute.
+    pub baseline: String,
+    pub result: BaselineResult,
+    /// The keys of the error findings on the page.
+    pub findings: Vec<String>,
+    /// Keys the baseline lists that were not found (the file can lose
+    /// them).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stale: Vec<String>,
+}
+
 /// A place in the page's source: a file and line.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SourcePlace {
@@ -4085,6 +4188,9 @@ pub struct ExpectData {
     pub elapsed_ms: u64,
     /// How many times it was checked again before it held.
     pub retries: u64,
+    /// `expect --layout`: the baseline and the findings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layout: Option<ExpectLayout>,
 }
 
 /// `data` of `chrome-cdp mark --json`.

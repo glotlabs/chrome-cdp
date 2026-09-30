@@ -46,6 +46,7 @@ mod inject;
 mod injected;
 mod input;
 mod interrupt;
+mod layout;
 mod locator;
 mod navigate;
 mod network;
@@ -91,6 +92,7 @@ pub use hmr::{Notices, noting};
 pub use inject::commands::script_line as init_script_line;
 pub use inject::{MAX_SCRIPT, check_binding_name};
 pub use input::{ActionPoint, Checks, check_action, parse_modifiers};
+pub use layout::check_layout;
 pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, is_ref, parse_locator};
 pub use navigate::normalize_url;
 pub use observe::{RESOURCE_TYPES, check_eval, check_screenshot};
@@ -108,17 +110,17 @@ pub use request::{
     ExtensionsRequest, FindRequest, FramesRequest, HarContent, HarExportRequest, HarStartRequest,
     HarStopRequest, HighlightRequest, HttpCredentials, HttpRequest, ImageFormat,
     InitScriptAddRequest, InitScriptListRequest, InitScriptRemoveRequest, InspectRequest,
-    KeyboardOp, LocalsMode, LocatorRequest, Margins, MarkRequest, Matcher, MockExplainRequest,
-    MockListRequest, MockLogRequest, MockOffRequest, MockSeedRequest, MockStateCheck,
-    MockStateRequest, MockTestTag, MockUseRequest, MockWsSendRequest, Modifier, MouseOp,
-    NavigateRequest, Navigation, NetworkClearRequest, NetworkFramesRequest, NetworkRequest,
-    NetworkShowRequest, NodeStacks, OpenInitScript, OpenRequest, PaperFormat, PdfRequest,
-    PerfRequest, PermissionsOp, PermissionsRequest, Read, ReadRequest, RequestCheck, RouteAction,
-    RouteBody, RouteRequest, RouteSpec, RoutesRequest, ScreenshotRequest, ScrollTo, ShotScale,
-    Since, SnapshotEngine, SnapshotRequest, SourceRequest, StateLoadRequest, StateSaveRequest,
-    StatusRange, StorageArea, StorageOp, StorageRequest, TabCloseRequest, TabNewRequest,
-    TabSelectRequest, TabsRequest, Target, TraceStartRequest, TraceStopRequest, UnrouteRequest,
-    WaitFor, WaitRequest, WaitUntil, WhyFor, WhyRequest,
+    KeyboardOp, LayoutBaseline, LayoutRequest, LocalsMode, LocatorRequest, Margins, MarkRequest,
+    Matcher, MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest, MockSeedRequest,
+    MockStateCheck, MockStateRequest, MockTestTag, MockUseRequest, MockWsSendRequest, Modifier,
+    MouseOp, NavigateRequest, Navigation, NetworkClearRequest, NetworkFramesRequest,
+    NetworkRequest, NetworkShowRequest, NodeStacks, OpenInitScript, OpenRequest, PaperFormat,
+    PdfRequest, PerfRequest, PermissionsOp, PermissionsRequest, Read, ReadRequest, RequestCheck,
+    RouteAction, RouteBody, RouteRequest, RouteSpec, RoutesRequest, ScreenshotRequest, ScrollTo,
+    ShotScale, Since, SnapshotEngine, SnapshotRequest, SourceRequest, StateLoadRequest,
+    StateSaveRequest, StatusRange, StorageArea, StorageOp, StorageRequest, TabCloseRequest,
+    TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest, TraceStopRequest,
+    UnrouteRequest, WaitFor, WaitRequest, WaitUntil, WhyFor, WhyRequest,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use state::{OriginState, StateCookie, StorageState};

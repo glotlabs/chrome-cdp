@@ -293,6 +293,7 @@ impl Engine {
                 count: Some(0),
                 elapsed_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
                 retries: 0,
+                layout: None,
             };
             let text = format!("passed: {assertion} ({})", format::duration(elapsed));
             return Ok(Output::typed(&data, text)

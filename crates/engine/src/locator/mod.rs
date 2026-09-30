@@ -22,5 +22,6 @@ mod until;
 pub use parse::{DEFAULT_TESTID_ATTRIBUTE, Locator, parse_locator};
 pub use resolve::LocateOptions;
 pub(crate) use resolve::{Called, FrameOnly, Place, Want, bad_locator, read_listed, release};
+pub(crate) use stable::frame_step;
 pub use stable::is_ref;
 pub(crate) use until::until_found;

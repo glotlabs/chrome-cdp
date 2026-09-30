@@ -11,10 +11,10 @@
 //! A failure is `ExpectFailed` (exit 1) with what was expected, what was
 //! seen (after how long and how many tries), the element, and a hint.
 
-mod baseline;
+pub(crate) mod baseline;
 mod mock_state;
 mod page;
-mod pixels;
+pub(crate) mod pixels;
 mod requests;
 mod template;
 
@@ -882,6 +882,7 @@ impl Engine {
             count: passed.count,
             elapsed_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
             retries: passed.retries,
+            layout: None,
         };
         let text = format!("passed: {assertion_text} ({})", format::duration(elapsed));
         let output = Output::typed(&data, text)

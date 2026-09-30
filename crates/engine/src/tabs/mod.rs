@@ -707,6 +707,28 @@ impl Tabs {
         emulation::restore_viewport(&self.shared, &session).await
     }
 
+    /// Makes `page` look like `viewport` (size, pixel ratio, mobile mode
+    /// and touch) until [`Tabs::end_viewport_override`].
+    pub(crate) async fn override_viewport(
+        &self,
+        page: &Page,
+        viewport: &Viewport,
+        timeout: Duration,
+    ) -> cdp::Result<()> {
+        let session = page.session.with_timeout(timeout);
+        emulation::override_viewport(&self.shared, &session, viewport).await
+    }
+
+    /// Gives `page` back the viewport and touch it emulates (or none).
+    pub(crate) async fn end_viewport_override(
+        &self,
+        page: &Page,
+        timeout: Duration,
+    ) -> cdp::Result<()> {
+        let session = page.session.with_timeout(timeout);
+        emulation::end_override(&self.shared, &session).await
+    }
+
     /// The viewport of pages without their own, if there is one.
     pub(crate) fn default_viewport(&self) -> Option<Viewport> {
         self.shared.default_viewport.clone()

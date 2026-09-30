@@ -744,7 +744,7 @@ fn unresolved(err: ErrorInfo) -> Result<Report, ErrorInfo> {
 
 /// The elements a page answer names, with refs (given now, unless a
 /// frame loaded a new document since `generation`).
-fn refer_all(
+pub(crate) fn refer_all(
     running: &Running,
     page: &Page,
     names: &[Candidate],

@@ -59,6 +59,8 @@ mod geometry;
 mod report;
 mod why;
 
+pub(crate) use why::{element_text, refer_all};
+
 /// How long to wait before each retry; the last one repeats.
 const RETRY_DELAYS: [Duration; 5] = [
     Duration::ZERO,
@@ -179,16 +181,16 @@ struct Failed {
 }
 
 #[derive(Debug, Default, Deserialize)]
-struct Candidate {
+pub(crate) struct Candidate {
     #[serde(default)]
-    role: String,
+    pub(crate) role: String,
     #[serde(default)]
-    name: String,
+    pub(crate) name: String,
     #[serde(default)]
-    tag: String,
+    pub(crate) tag: String,
     /// Its first class, which names an element without a role.
     #[serde(default)]
-    cls: String,
+    pub(crate) cls: String,
 }
 
 /// `covering()`'s answer.

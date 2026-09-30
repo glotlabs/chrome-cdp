@@ -415,6 +415,37 @@ pub(super) async fn restore_viewport(shared: &Shared, session: &Session) -> cdp:
     }
 }
 
+/// Makes the page look like `viewport` for a while (`layout
+/// --viewports`): its size, pixel ratio, mobile mode and touch, as the
+/// `viewport` command would, but for this page only.
+pub(super) async fn override_viewport(
+    shared: &Shared,
+    session: &Session,
+    viewport: &Viewport,
+) -> cdp::Result<()> {
+    if shared.default_viewport.is_some() {
+        grow_window(session, viewport).await?;
+    }
+    session.call(metrics(viewport)).await?;
+    set_touch(session, viewport.touch).await
+}
+
+/// Gives the page back the viewport and touch it emulates (or none),
+/// after [`override_viewport`].
+pub(super) async fn end_override(shared: &Shared, session: &Session) -> cdp::Result<()> {
+    restore_viewport(shared, session).await?;
+    let touch = page_viewport(shared, session).is_some_and(|v| v.touch);
+    set_touch(session, touch).await
+}
+
+async fn set_touch(session: &Session, touch: bool) -> cdp::Result<()> {
+    let mut params = SetTouchEmulationEnabledParams::new(touch);
+    if touch {
+        params.max_touch_points = Some(5);
+    }
+    session.call(params).await.map(drop)
+}
+
 /// `Emulation.setDeviceMetricsOverride` for `viewport`; a mobile screen
 /// is turned the way its viewport is.
 fn metrics(viewport: &Viewport) -> SetDeviceMetricsOverrideParams {

@@ -67,6 +67,27 @@ impl Image {
         Ok(out)
     }
 
+    /// The pixel at `x, y` (inside the image).
+    pub(crate) fn at(&self, x: u32, y: u32) -> [u8; 4] {
+        let i = (y as usize * self.width as usize + x as usize) * 4;
+        [
+            self.rgba[i],
+            self.rgba[i + 1],
+            self.rgba[i + 2],
+            self.rgba[i + 3],
+        ]
+    }
+
+    /// An image of `width` x `height` pixels from RGBA bytes (for tests).
+    #[cfg(test)]
+    pub(crate) fn from_rgba(width: u32, height: u32, rgba: Vec<u8>) -> Self {
+        Self {
+            width,
+            height,
+            rgba,
+        }
+    }
+
     fn pixels(&self) -> impl Iterator<Item = [u8; 4]> + '_ {
         self.rgba.as_chunks::<4>().0.iter().copied()
     }

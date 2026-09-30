@@ -101,13 +101,13 @@ impl Reads {
 
 /// Checks `expect-snapshot`'s arguments without a browser.
 pub fn check_expect_snapshot(req: &ExpectSnapshotRequest) -> Result<(), ErrorInfo> {
-    check_name(&req.name, "expect-snapshot")?;
+    check_name(&req.name, Cmd::new("expect-snapshot").arg("login-form"))?;
     scope_locator(req.scope.as_deref(), &snapshot_options(req)).map(drop)
 }
 
 /// Checks `expect-screenshot`'s arguments without a browser.
 pub fn check_expect_screenshot(req: &ExpectScreenshotRequest) -> Result<(), ErrorInfo> {
-    check_name(&req.name, "expect-screenshot")?;
+    check_name(&req.name, Cmd::new("expect-screenshot").arg("login-form"))?;
     if !(0.0..=1.0).contains(&req.threshold) {
         return Err(ErrorInfo::new(
             ErrorKind::BadArgs,
@@ -123,8 +123,9 @@ pub fn check_expect_screenshot(req: &ExpectScreenshotRequest) -> Result<(), Erro
 }
 
 /// A baseline's name: words of letters, digits, `-`, `_` and `.`,
-/// separated by `/` for folders.
-fn check_name(name: &str, command: &str) -> Result<(), ErrorInfo> {
+/// separated by `/` for folders. `example` is the command with a good
+/// one.
+pub(crate) fn check_name(name: &str, example: Cmd) -> Result<(), ErrorInfo> {
     let word_ok = |w: &str| {
         !w.is_empty()
             && !w.starts_with('.')
@@ -141,7 +142,7 @@ fn check_name(name: &str, command: &str) -> Result<(), ErrorInfo> {
              and / for folders"
         ),
     )
-    .hint(Hint::run(Cmd::new(command).arg("login-form"))))
+    .hint(Hint::run(example)))
 }
 
 fn snapshot_options(req: &ExpectSnapshotRequest) -> LocateOptions {
@@ -215,7 +216,7 @@ fn screenshot_command(req: &ExpectScreenshotRequest) -> Cmd {
 }
 
 /// The file at `path`, or `None` if there is none.
-fn read_file(path: &Path) -> Result<Option<Vec<u8>>, ErrorInfo> {
+pub(crate) fn read_file(path: &Path) -> Result<Option<Vec<u8>>, ErrorInfo> {
     match fs::read(path) {
         Ok(bytes) => Ok(Some(bytes)),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
@@ -228,7 +229,7 @@ fn read_file(path: &Path) -> Result<Option<Vec<u8>>, ErrorInfo> {
 
 /// Replaces the file at `path` (its directories made first) in one step,
 /// so a reader never sees half of it.
-fn write_file(path: &Path, bytes: &[u8]) -> Result<(), ErrorInfo> {
+pub(crate) fn write_file(path: &Path, bytes: &[u8]) -> Result<(), ErrorInfo> {
     let failed = |e: &io::Error| save::failed(path, e);
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).map_err(|e| save::failed(dir, &e))?;
@@ -864,10 +865,14 @@ mod tests {
     #[test]
     fn names_are_words_and_folders() {
         for ok in ["login", "login-form", "checkout/step_2", "v1.2"] {
-            assert!(check_name(ok, "expect-snapshot").is_ok(), "{ok}");
+            assert!(
+                check_name(ok, protocol::Cmd::new("expect-snapshot").arg("login-form")).is_ok(),
+                "{ok}"
+            );
         }
         for bad in ["", "a b", "../x", "a//b", "/abs", ".hidden", "a/"] {
-            let err = check_name(bad, "expect-snapshot").unwrap_err();
+            let err = check_name(bad, protocol::Cmd::new("expect-snapshot").arg("login-form"))
+                .unwrap_err();
             assert_eq!(
                 err.hint.as_deref(),
                 Some("chrome-cdp expect-snapshot login-form"),

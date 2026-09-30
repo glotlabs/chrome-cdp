@@ -217,7 +217,7 @@ impl Engine {
 /// The `frame=` step that finds frame `id` among `frames` (a tab's), and
 /// no other: its name, else its URL's path and query, else its path.
 /// `frame=` looks in the whole tab, so the innermost frame is enough.
-fn frame_step(frames: &[FrameInfo], id: &str) -> Option<String> {
+pub(crate) fn frame_step(frames: &[FrameInfo], id: &str) -> Option<String> {
     let frame = frames.iter().find(|f| f.id == id)?;
     let path = frame
         .url
