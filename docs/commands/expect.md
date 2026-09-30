@@ -4,7 +4,7 @@
 Assert something about the page, retrying until it holds: an element's state, text, value, count, …
 
 ```text
-chrome-cdp expect [OPTIONS] <LOCATOR|--url <PATTERN>|--title <TEXT>|--no-errors|--no-issues|--no-failed-requests|--a11y|--layout> [MATCHER] [VALUE]...
+chrome-cdp expect [OPTIONS] <LOCATOR|--url <PATTERN>|--title <TEXT>|--no-errors|--no-issues|--no-failed-requests|--a11y|--perf <BUDGETS>|--layout> [MATCHER] [VALUE]...
 ```
 
 Arguments:
@@ -34,6 +34,8 @@ Options:
 - `--origin <ORIGIN>`: --no-failed-requests: only requests to this origin; `self` is the page's
 - `--a11y`: Check the page and its iframes (or LOCATOR's element) against built-in accessibility rules
 - `--level <LEVEL>`: --a11y: the WCAG level to check (one of `A`, `AA`)
+- `--perf <BUDGETS>`: Check `perf`'s numbers against budgets, all of which must hold: 'lcp&lt;2.5s cls&lt;0.1 tbt&lt;200', or good (the Web Vitals thresholds)
+- `--perf-missing <WHAT>`: --perf: what a metric not measured yet (INP before an interaction) does (one of `fail`, `ok`)
 - `--layout`: Check the page's layout (see `layout`) or LOCATOR's element: fail on error findings the --baseline does not list
 - `--baseline <NAME>`: --layout: the baseline, &lt;dir&gt;/layout/&lt;NAME&gt;.txt (one finding key per line)
 - `--update`: --layout: write the findings to the baseline instead of comparing
@@ -79,7 +81,18 @@ Page checks:
   --a11y [--level A]   built-in accessibility rules (WCAG A and AA), in
                        the page and its iframes, or the element LOCATOR
                        names
-The last three look once: what they find does not go away by waiting.
+  --perf BUDGETS       `perf`'s numbers within every budget, e.g.
+                       'lcp<2.5s cls<0.1 tbt<200': <metric><op><value>,
+                       op <, <=, > or >=; ttfb, fcp, dcl, load, lcp, inp,
+                       tbt in ms (or 2.5s), cls a score, requests and
+                       elements counts, transfer and heap in bytes (or kb,
+                       mb, gb); `good` is lcp<=2500 cls<=0.1 inp<=200. Waits
+                       for load, then reads once; the failure lists every
+                       budget and the throttling. A metric not measured
+                       yet (inp before an interaction) fails, unless
+                       --perf-missing ok
+From --no-errors to --perf, they look once: what they find does not go
+away by waiting.
   --layout --baseline NAME   no error finding of `layout` (in the page, or
                        LOCATOR's element) that .chrome-cdp/layout/NAME.txt
                        does not list; retried like the matchers. --update
@@ -116,6 +129,7 @@ Examples:
   chrome-cdp expect --no-failed-requests --all-tabs
   chrome-cdp expect --no-issues --min-severity error
   chrome-cdp expect --a11y --level A
+  chrome-cdp expect --perf 'lcp<2.5s cls<0.1 tbt<200'
   chrome-cdp expect --layout --baseline cart --viewports mobile,desktop
   chrome-cdp expect mock-state todos count 4
   chrome-cdp expect request POST /api/orders --json-body '{"qty":2}' --count 1

@@ -167,6 +167,8 @@ command chrome-cdp expect
   flag --origin value=ORIGIN
   flag --a11y
   flag --level value=LEVEL values=A|AA
+  flag --perf value=BUDGETS
+  flag --perf-missing value=WHAT values=fail|ok
   flag --layout
   flag --baseline value=NAME
   flag --update

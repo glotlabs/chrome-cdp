@@ -2067,6 +2067,7 @@ INP (once the page had an interaction, and which one was slowest), total
 blocking time from long tasks, and the element count, listeners and JS
 heap. LCP, CLS and INP are rated good, needs improvement or poor by the
 Web Vitals thresholds. Interact first to measure INP. -q prints the LCP.
+`expect --perf 'lcp<2.5s tbt<200'` fails when a number is over budget.
 Needs a running session.
 
 Examples:

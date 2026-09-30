@@ -758,6 +758,17 @@
           ],
           "description": "`expect --layout`: the baseline and the findings."
         },
+        "perf": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExpectPerf"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`expect --perf`: every budget with what was measured."
+        },
         "retries": {
           "description": "How many times it was checked again before it held.",
           "format": "uint64",
@@ -807,6 +818,32 @@
         "baseline",
         "result",
         "findings"
+      ],
+      "type": "object"
+    },
+    "ExpectPerf": {
+      "description": "`expect --perf`: every budget with what was measured, and the\nthrottling it was measured under. A failure's `details.perf` has it\ntoo.",
+      "properties": {
+        "budgets": {
+          "description": "The budgets, in the order typed (`good` expanded).",
+          "items": {
+            "$ref": "#/$defs/PerfBudgetCheck"
+          },
+          "type": "array"
+        },
+        "throttling": {
+          "$ref": "#/$defs/PerfThrottling",
+          "description": "The network and CPU throttling (`throttle`, `cpu-throttle`)."
+        },
+        "url": {
+          "description": "The page measured.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "budgets",
+        "throttling"
       ],
       "type": "object"
     },
@@ -1113,6 +1150,88 @@
         "ok",
         "data"
       ],
+      "type": "object"
+    },
+    "PerfBudgetCheck": {
+      "description": "One budget of `expect --perf`.",
+      "properties": {
+        "budget": {
+          "description": "The budget, as typed: `lcp<2.5s`.",
+          "type": "string"
+        },
+        "element": {
+          "description": "LCP's element, e.g. `img#hero`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "held": {
+          "description": "Whether the budget held.",
+          "type": "boolean"
+        },
+        "limit": {
+          "description": "The limit, in `unit`.",
+          "format": "double",
+          "type": "number"
+        },
+        "metric": {
+          "description": "`ttfb`, `fcp`, `dcl`, `load`, `lcp`, `cls`, `inp`, `tbt`,\n`requests`, `transfer`, `elements` or `heap`.",
+          "type": "string"
+        },
+        "missing": {
+          "description": "Why the metric is not measured, and what to do (`interact\nfirst`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "description": "`<`, `<=`, `>` or `>=`.",
+          "type": "string"
+        },
+        "unit": {
+          "description": "`ms`, `bytes`, `count`, or empty for CLS (a score).",
+          "type": "string"
+        },
+        "value": {
+          "description": "What was measured, in `unit`; absent when the metric is not\nmeasured yet.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "budget",
+        "metric",
+        "op",
+        "limit",
+        "unit",
+        "held"
+      ],
+      "type": "object"
+    },
+    "PerfThrottling": {
+      "description": "The throttling `expect --perf` measured under.",
+      "properties": {
+        "cpu": {
+          "description": "`cpu-throttle`'s slowdown (4 is 4x slower); absent when off.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "network": {
+          "description": "`throttle`'s preset (`slow-3g`) or settings; absent when off.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
       "type": "object"
     },
     "Severity": {

@@ -821,6 +821,22 @@ const CASES: &[Case] = &[
         fixture: Fixture::None,
     },
     Case {
+        name: "expect-perf-fails",
+        args: &[
+            "expect",
+            "--perf",
+            "elements<5 requests<=10 cls<0.1 inp<200",
+        ],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/perf/long-tasks.html"),
+    },
+    Case {
+        name: "expect-perf-bad-budget",
+        args: &["expect", "--perf", "lpc<2.5s cls<0.1"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
         name: "expect-no-errors-fails",
         args: &["expect", "--no-errors"],
         modes: ERR,

@@ -18,7 +18,7 @@ around it. **The v1 gate: no ❌ in an agent-critical row.** A test
 (`crates/chrome-cdp/tests/parity.rs`) holds the tables to that, checks the
 counts below, and checks that every command a row names exists.
 
-Today: 134 rows; 120 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
+Today: 136 rows; 122 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
 
 ## Navigation
 
@@ -188,6 +188,7 @@ Today: 134 rows; 120 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
 | `toPass`, plain-value `expect` | the shell compares `-q` output | ➖ | no |
 | — | `expect --no-errors`, `expect --no-failed-requests`, `expect --a11y` | ✅ | no |
 | — | `issues` shows Chrome's own findings about the page, as DevTools' Issues panel does (mixed content, CORS and CSP blocks, cookie problems, deprecations, form problems), from its iframes and workers too, each with a stable rule id and severity; `expect --no-issues` fails on them | ✅ | no |
+| — | `expect --perf 'lcp<2.5s cls<0.1 tbt<200'` checks `perf`'s numbers (TTFB, FCP, load, the Web Vitals, blocking time, requests, bytes, elements, heap) against budgets after load (`expect --perf good`: the Web Vitals thresholds); the failure lists every budget with its value and the throttling | ✅ | no |
 | — | `layout` lints how the page looks (covered, overlapping, clipped, off-screen and too small elements, sideways scrolling, contrast on pixels), per `--viewports`; `expect --layout --baseline NAME` fails on findings the baseline does not list | ✅ | no |
 | — | `compare A B` diffs two pages (URLs on two origins, tabs, sessions or `snapshot --json` files) by structure, and with `--visual` their pixels as named regions and a diff image; `--exit-code` exits 1 when they differ | ✅ | no |
 | — | `explore URL` maps an app (links, and with `--click-buttons` buttons, tabs and menus; never forms or destructive controls unless told) in a context of its own: its states, how to reach each (`-o DIR` writes a `.cdp` scenario per state), and each state's console errors, failed requests, broken links and `--layout` findings; `--exit-code` exits 1 on a problem | ✅ | no |

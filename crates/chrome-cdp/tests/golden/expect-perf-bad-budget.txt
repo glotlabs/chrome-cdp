@@ -1,0 +1,12 @@
+$ chrome-cdp expect --perf 'lpc<2.5s cls<0.1'
+exit: 2
+--- stderr
+error: --perf: `lpc` is not a metric
+  metrics: ttfb, fcp, dcl, load, lcp, cls, inp, tbt, requests, transfer, elements, heap
+  hint: chrome-cdp expect --perf 'lcp<2.5s cls<0.1'   (did you mean this?)
+
+$ chrome-cdp expect --perf 'lpc<2.5s cls<0.1' --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"--perf: `lpc` is not a metric","hint":"chrome-cdp expect --perf 'lcp<2.5s cls<0.1'   (did you mean this?)","notes":[{"label":"metrics","text":"ttfb, fcp, dcl, load, lcp, cls, inp, tbt, requests, transfer, elements, heap"}]}}
+

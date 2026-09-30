@@ -1,0 +1,18 @@
+$ chrome-cdp expect --perf 'elements<5 requests<=10 cls<0.1 inp<200'
+exit: 1
+--- stderr
+error: expect failed: --perf 'elements<5 requests<=10 cls<0.1 inp<200'
+  expected: every budget to hold: elements < 5, requests <= 10, cls < 0.1, inp < 200ms
+  actual: 1 budget over, 1 not measured (of 4)
+  elements: 9 > 5 ✗
+  requests: 1 < 10 ✓
+  cls: 0 < 0.1 ✓
+  inp: not measured ✗ (no interaction yet; interact first)
+  throttling: none
+  hint: interact with the page first (click, fill, press), then expect again; or --perf-missing ok
+
+$ chrome-cdp expect --perf 'elements<5 requests<=10 cls<0.1 inp<200' --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect failed: --perf 'elements<5 requests<=10 cls<0.1 inp<200'","hint":"interact with the page first (click, fill, press), then expect again; or --perf-missing ok","notes":[{"label":"expected","text":"every budget to hold: elements < 5, requests <= 10, cls < 0.1, inp < 200ms"},{"label":"actual","text":"1 budget over, 1 not measured (of 4)"},{"label":"elements","text":"9 > 5 ✗"},{"label":"requests","text":"1 < 10 ✓"},{"label":"cls","text":"0 < 0.1 ✓"},{"label":"inp","text":"not measured ✗ (no interaction yet; interact first)"},{"label":"throttling","text":"none"}],"details":{"assertion":"--perf 'elements<5 requests<=10 cls<0.1 inp<200'","expected":"every budget to hold: elements < 5, requests <= 10, cls < 0.1, inp < 200ms","perf":{"budgets":[{"budget":"elements<5","held":false,"limit":5.0,"metric":"elements","op":"<","unit":"count","value":9.0},{"budget":"requests<=10","held":true,"limit":10.0,"metric":"requests","op":"<=","unit":"count","value":1.0},{"budget":"cls<0.1","held":true,"limit":0.1,"metric":"cls","op":"<","unit":"","value":0.0},{"budget":"inp<200","held":false,"limit":200.0,"metric":"inp","missing":"no interaction yet; interact first","op":"<","unit":"ms"}],"throttling":{},"url":"<site>/perf/long-tasks.html"}}}}
+

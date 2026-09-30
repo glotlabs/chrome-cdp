@@ -12,7 +12,7 @@ browser, tabs and refs between commands. Output is compact text; add
 ## Workflow
 
 1. **Open**: `chrome-cdp open http://localhost:3000` starts headless Chrome
-   (if not running). Then use `chrome-cdp goto <url>`.
+   (if not running). Then `chrome-cdp goto <url>`.
 2. **Look**: `chrome-cdp snapshot -i` lists what you can act on, with refs:
    ```
    page t1 "Login" http://localhost:3000/login
@@ -66,7 +66,7 @@ locators in single quotes.
   checks and the report. Use `click`, `fill`, `select`, `check`, `press`.
 - `Obscured`: something covers the element (a cookie banner, a modal). The
   hint names a button to close it; run that first.
-- `Ambiguous`: the locator matched several; the error lists their refs.
+- `Ambiguous`: the locator matched several; the error lists them.
 - A popup opens a new tab but stays in the background: `chrome-cdp tabs`,
   then `chrome-cdp tab t2`.
 - An `alert`/`confirm` blocks the page (exit 5): `chrome-cdp dialog accept`.
@@ -141,7 +141,7 @@ fill-form --values '{"Email":"a@b"}'  fill a whole form; see forms
 upload <loc> <file...> [--drop] file inputs; --drop for drop zones
 wait <loc> | --text t | --url u | --idle
 expect <loc> visible|text t|value v|count n [--not]   assert, retrying
-expect --url u | --no-errors | --no-issues | --no-failed-requests | --a11y
+expect --url u | --no-errors | --no-issues | --no-failed-requests | --a11y | --perf good
 expect-snapshot <name>         snapshot -i vs a stored baseline; a diff if not
 screenshot [loc] [--full [loc]] [-o f.png]   --full loc: all of a scrolling container
 errors | console | issues | network [--failed]
