@@ -346,11 +346,11 @@ fn history_keeps_fill_form_as_one_line_that_replays() {
 
     // The line replays on a fresh page.
     forms.open("two-forms.html");
-    let script: String = scenario
-        .lines()
-        .skip(1)
-        .map(|l| format!("{}\n", l.trim()))
-        .collect();
+    let script: String = scenario.lines().skip(1).fold(String::new(), |mut out, l| {
+        out.push_str(l.trim());
+        out.push('\n');
+        out
+    });
     std::fs::write(forms.dir.join("replay.cdp"), script).unwrap();
     forms.ok(&["run", "replay.cdp"]);
     assert_eq!(
