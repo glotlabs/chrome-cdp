@@ -928,7 +928,7 @@ pub(crate) fn snapshot(args: &SnapshotArgs, global: &GlobalArgs) -> Result<Outpu
     // what bounds the output.
     let max_chars = match budget {
         Some(tokens) if args.max_chars == crate::cli::SNAPSHOT_MAX_CHARS => {
-            args.max_chars.max(tokens.saturating_mul(4))
+            args.max_chars.max(tokens.saturating_mul(3))
         }
         _ => args.max_chars,
     };

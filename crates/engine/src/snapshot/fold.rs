@@ -54,10 +54,11 @@ pub(crate) struct Frame<'a> {
     pub(crate) regions: &'a [u32],
 }
 
-/// Estimated tokens: characters ÷ 4, a fixed rule so the output is
-/// deterministic.
+/// Estimated tokens: characters ÷ 3, a fixed rule so the output is
+/// deterministic. Snapshot text has about 3 characters a token (refs,
+/// quotes and marks split finely), so ÷ 4 undercounted by a third.
 pub(crate) fn tokens(chars: usize) -> usize {
-    chars.div_ceil(4)
+    chars.div_ceil(3)
 }
 
 /// What a tab's snapshot memory gives folding.
@@ -674,7 +675,7 @@ mod tests {
             "
 - heading \"Shop\"
 - main
-  - region \"Offers\" [region r2: 49 nodes, 24 refs, ~317 tokens]
+  - region \"Offers\" [region r2: 49 nodes, 24 refs, ~423 tokens]
   - navigation \"Pages\"
     - button \"Next\" [e25]"
         );

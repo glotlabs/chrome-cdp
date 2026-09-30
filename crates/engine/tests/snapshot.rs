@@ -854,9 +854,9 @@ fn folded(fold: bool, budget: Option<usize>) -> SnapshotRequest {
     }
 }
 
-/// Estimated tokens, as `--budget` counts them: characters ÷ 4.
+/// Estimated tokens, as `--budget` counts them: characters ÷ 3.
 fn estimated(text: &str) -> usize {
-    text.chars().count().div_ceil(4)
+    text.chars().count().div_ceil(3)
 }
 
 /// The refs (`e12`) and regions (`r4`) a snapshot's text shows.

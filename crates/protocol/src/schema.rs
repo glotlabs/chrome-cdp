@@ -3073,7 +3073,7 @@ pub struct SnapshotFold {
     pub nodes: u32,
     /// How many of them have refs (they keep working).
     pub refs: u32,
-    /// Their estimated tokens (characters ÷ 4), were they shown.
+    /// Their estimated tokens (characters ÷ 3), were they shown.
     pub tokens: u32,
     /// A run of siblings with the same shape as the node before this
     /// stub: how many were folded. `role` is theirs.

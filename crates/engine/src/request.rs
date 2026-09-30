@@ -2609,7 +2609,7 @@ pub struct SnapshotRequest {
     #[serde(default)]
     pub fold: bool,
     /// `--budget`: fold regions until the text is at most this many
-    /// estimated tokens (characters ÷ 4); `None` or 0 for no budget.
+    /// estimated tokens (characters ÷ 3); `None` or 0 for no budget.
     #[serde(default)]
     pub budget: Option<usize>,
     /// `--expand`: show these regions (`r4`) of the last folded snapshot.

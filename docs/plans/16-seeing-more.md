@@ -284,8 +284,9 @@ until it fits:
     - button "Next" [e7]
 ```
 
-- Tokens are estimated as characters ÷ 4 (a fixed rule, so the output is
-  deterministic; the token suite measures the real count).
+- Tokens are estimated as characters ÷ 3 (a fixed rule, so the output is
+  deterministic; the token suite measures the real count). See the
+  decisions log: ÷ 4 undercounted.
 - A region is a node with 20 or more nodes below it. Landmarks, lists,
   tables, grids, trees, listboxes, menus, dialogs, forms and groups
   fold first; then any node, largest first.

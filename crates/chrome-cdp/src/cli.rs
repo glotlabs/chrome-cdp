@@ -2979,7 +2979,7 @@ pub(crate) struct SnapshotArgs {
     pub(crate) fold: bool,
 
     /// Fold parts of the page until the output is at most this many
-    /// tokens (characters ÷ 4): runs of alike siblings, then regions (big
+    /// tokens (characters ÷ 3): runs of alike siblings, then regions (big
     /// lists, tables, sections) as one line each; 0 = none.
     /// `snapshot_budget` in the config sets a default.
     #[arg(long, value_name = "TOKENS")]
