@@ -2334,6 +2334,24 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/actions/files.html"),
     },
     Case {
+        name: "upload-directory",
+        args: &["upload", "#folder", "{files}/tree"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/actions/folder.html"),
+    },
+    Case {
+        name: "upload-directory-into-files",
+        args: &["upload", "#files", "{files}/tree"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/actions/folder.html"),
+    },
+    Case {
+        name: "upload-files-into-directory",
+        args: &["upload", "#folder", "{files}/hello.txt"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/actions/folder.html"),
+    },
+    Case {
         name: "upload-no-chooser",
         args: &["upload", "#nothing", "{files}/hello.txt"],
         modes: ERR,

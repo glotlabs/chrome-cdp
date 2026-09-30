@@ -81,7 +81,7 @@ Today: 129 rows; 111 ✅, 13 🟡, 0 ❌, 5 ➖. No row is ❌.
 | `keyboard.down` / `up` | `keyboard down Shift`, `keyboard up Shift` / `--all`: held modifiers go with later clicks, keys, `mouse` and `drag` | ✅ | no |
 | `check`, `uncheck`, `setChecked` | `check LOC`, `uncheck LOC` (a no-op when already so) | ✅ | yes |
 | `selectOption` | `select LOC value…` (a value, else a label) | ✅ | yes |
-| `setInputFiles`, the file chooser | `upload LOC file…` (an input, or a button that opens the chooser), `upload LOC --clear`; `upload LOC file… --drop` for a drop zone | ✅ | yes |
+| `setInputFiles`, the file chooser | `upload LOC file…` (an input, or a button that opens the chooser), `upload LOC --clear`; `upload LOC DIR` for a `webkitdirectory` input; `upload LOC file… --drop` for a drop zone | ✅ | yes |
 | `dragTo` | `drag LOC TARGET` (mouse events, or HTML5 drag and drop) | ✅ | yes |
 | `tap` | `tap LOC` (with touch emulation) | ✅ | no |
 | `focus`, `blur` | `focus LOC`, `blur LOC` | ✅ | yes |

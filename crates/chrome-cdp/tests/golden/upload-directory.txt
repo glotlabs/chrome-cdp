@@ -1,0 +1,15 @@
+$ chrome-cdp upload '#folder' <files>/tree
+exit: 0
+--- stdout
+uploaded directory tree (3 files) to e1 button "Folder": tree/a.txt (6B), tree/sub/b.txt (5B), tree/sub/deeper/c.md (8B)
+
+$ chrome-cdp upload '#folder' <files>/tree --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"chooser":false,"directory":"<files>/tree","drop":false,"element":{"name":"Folder","ref":"e1","role":"button","tag":"input"},"files":[{"name":"a.txt","path":"<files>/tree/a.txt","relative_path":"tree/a.txt","size":6},{"name":"b.txt","path":"<files>/tree/sub/b.txt","relative_path":"tree/sub/b.txt","size":5},{"name":"c.md","path":"<files>/tree/sub/deeper/c.md","relative_path":"tree/sub/deeper/c.md","size":8}],"locator":"#folder","tab":"t1"}}
+
+$ chrome-cdp upload '#folder' <files>/tree -q
+exit: 0
+--- stdout
+e1
+

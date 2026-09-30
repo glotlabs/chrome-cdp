@@ -1,0 +1,26 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Folder upload</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  label { display: block; margin: 4px 8px; }
+</style>
+<!-- A directory input (webkitdirectory) and a plain multiple file input.
+     Each change lists the input's files into #listing, one per line:
+     input id, webkitRelativePath (or the name when it is empty) and size. -->
+<label>Folder <input id="folder" type="file" webkitdirectory></label>
+<label>Files <input id="files" type="file" multiple></label>
+<button id="pick">Pick a folder</button>
+<pre id="listing"></pre>
+<script>
+  for (const input of document.querySelectorAll('input[type=file]')) {
+    input.addEventListener('change', () => {
+      document.getElementById('listing').textContent = [...input.files]
+        .map((f) => `${input.id} ${f.webkitRelativePath || f.name} ${f.size}`)
+        .join('\n');
+    });
+  }
+  document.getElementById('pick').addEventListener('click', () => {
+    document.getElementById('folder').click();
+  });
+</script>

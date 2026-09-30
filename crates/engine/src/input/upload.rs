@@ -16,6 +16,7 @@
 //! fires and `upload` fails.
 
 use std::fmt::Write as _;
+use std::path::Path;
 use std::time::Duration;
 
 use cdp::domains::dom::{ResolveNodeParams, SetFileInputFilesParams};
@@ -65,13 +66,21 @@ struct Probe {
     multiple: bool,
     #[serde(default)]
     disabled: bool,
+    /// It takes a directory (`webkitdirectory`).
+    #[serde(default)]
+    directory: bool,
 }
 
 /// Is `this` a file input or a label of one, and what does it take.
 const PROBE: &str = "function () {\n\
     const input = this.localName === 'label' && this.control ? this.control : this;\n\
     const file = input.localName === 'input' && input.type === 'file';\n\
-    return { file, multiple: file && input.multiple, disabled: file && input.disabled };\n\
+    return {\n\
+        file,\n\
+        multiple: file && input.multiple,\n\
+        disabled: file && input.disabled,\n\
+        directory: file && input.webkitdirectory,\n\
+    };\n\
 }";
 
 /// The file input of `this` (itself, or the control of a label).
@@ -116,42 +125,134 @@ const DROPPED: &str = "function () {\n\
 /// `dragOperationsMask`: copy, as files dragged from the desktop offer.
 const DRAG_COPY: i64 = 1;
 
+/// At most this many files go up in one directory.
+const MAX_DIRECTORY_FILES: usize = 10_000;
+
+/// What `upload` gives the page: files, or one directory's.
+#[derive(Debug, Default)]
+pub(super) struct Upload {
+    /// The files (a directory's, recursively, sorted by relative path).
+    files: Vec<UploadedFile>,
+    /// The directory, for a `webkitdirectory` input (absolute).
+    directory: Option<String>,
+}
+
+impl Upload {
+    /// The paths `DOM.setFileInputFiles` takes: the directory itself
+    /// (Chrome lists it and sets each file's `webkitRelativePath`), or
+    /// the files.
+    fn paths(&self) -> Vec<String> {
+        match &self.directory {
+            Some(directory) => vec![directory.clone()],
+            None => paths(&self.files),
+        }
+    }
+}
+
 /// Checks the files of `upload` without a browser: they are there and are
-/// files. Paths must be absolute (the CLI makes them so).
-pub(super) fn check_files(files: &[String]) -> Result<Vec<UploadedFile>, ErrorInfo> {
-    files
-        .iter()
-        .map(|path| {
-            let bad = |why: &str| {
-                ErrorInfo::new(ErrorKind::BadArgs, format!("{path} {why}"))
-                    .hint(Hint::text("upload takes the paths of files that exist"))
-                    .details(json!({ "path": path }))
-            };
-            let as_path = std::path::Path::new(path);
-            if !as_path.is_absolute() {
-                return Err(bad("is not an absolute path"));
+/// files, or they are one directory (with at most
+/// [`MAX_DIRECTORY_FILES`] files). Paths must be absolute (the CLI makes
+/// them so).
+pub(super) fn check_files(files: &[String]) -> Result<Upload, ErrorInfo> {
+    let bad = |path: &str, why: &str| {
+        ErrorInfo::new(ErrorKind::BadArgs, format!("{path} {why}"))
+            .hint(Hint::text("upload takes the paths of files that exist"))
+            .details(json!({ "path": path }))
+    };
+    let mut checked = Vec::new();
+    for path in files {
+        let as_path = Path::new(path);
+        if !as_path.is_absolute() {
+            return Err(bad(path, "is not an absolute path"));
+        }
+        let meta = std::fs::metadata(as_path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                bad(path, "does not exist")
+            } else {
+                bad(path, &format!("cannot be read: {e}"))
             }
-            let meta = std::fs::metadata(as_path).map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    bad("does not exist")
-                } else {
-                    bad(&format!("cannot be read: {e}"))
-                }
-            })?;
+        })?;
+        if meta.is_dir() {
+            if files.len() > 1 {
+                return Err(bad(
+                    path,
+                    "is a directory; upload takes one directory alone, or files",
+                ));
+            }
+            return directory(path);
+        }
+        checked.push(UploadedFile {
+            path: path.clone(),
+            name: file_name(as_path),
+            size: meta.len(),
+            relative_path: None,
+        });
+    }
+    Ok(Upload {
+        files: checked,
+        directory: None,
+    })
+}
+
+/// The last part of `path`.
+fn file_name(path: &Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// The files of directory `path`, recursively, sorted by their path in
+/// it; symbolic links are not followed (nor uploaded).
+fn directory(path: &str) -> Result<Upload, ErrorInfo> {
+    let root = Path::new(path);
+    let base = file_name(root);
+    let failed = |at: &Path, e: &std::io::Error| {
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("cannot read {}: {e}", at.display()),
+        )
+    };
+    let mut files = Vec::new();
+    let mut dirs = vec![root.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).map_err(|e| failed(&dir, &e))? {
+            let entry = entry.map_err(|e| failed(&dir, &e))?;
+            let at = entry.path();
+            let meta = entry.metadata().map_err(|e| failed(&at, &e))?;
             if meta.is_dir() {
-                return Err(bad("is a directory; upload takes files"));
+                dirs.push(at);
+            } else if meta.is_file() {
+                if files.len() == MAX_DIRECTORY_FILES {
+                    return Err(ErrorInfo::new(
+                        ErrorKind::BadArgs,
+                        format!("{path} has more than {MAX_DIRECTORY_FILES} files"),
+                    )
+                    .hint(Hint::text("upload a smaller directory"))
+                    .details(json!({ "path": path, "limit": MAX_DIRECTORY_FILES })));
+                }
+                let inside = at.strip_prefix(root).unwrap_or(&at);
+                let relative = Path::new(&base).join(inside);
+                files.push(UploadedFile {
+                    path: at.to_string_lossy().into_owned(),
+                    name: file_name(&at),
+                    size: meta.len(),
+                    relative_path: Some(relative.to_string_lossy().into_owned()),
+                });
             }
-            let name = as_path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            Ok(UploadedFile {
-                path: path.clone(),
-                name,
-                size: meta.len(),
-            })
-        })
-        .collect()
+        }
+    }
+    if files.is_empty() {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("{path} is a directory with no files"),
+        )
+        .details(json!({ "path": path })));
+    }
+    files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    Ok(Upload {
+        files,
+        directory: Some(path.to_owned()),
+    })
 }
 
 impl Actor<'_> {
@@ -168,7 +269,7 @@ impl Actor<'_> {
             unreachable!("not upload")
         };
         let files = if *clear {
-            Vec::new()
+            Upload::default()
         } else {
             check_files(files)?
         };
@@ -214,9 +315,9 @@ impl Actor<'_> {
                 )
                 .details(json!({ "locator": locator, "check": "enabled" })));
             }
-            if !probe.multiple && files.len() > 1 {
+            if let Err(err) = self.takes(locator, &element, &probe, &files) {
                 target.release();
-                return Err(self.one_file(locator, &element, files.len()));
+                return Err(err);
             }
             let set = self.input_of(&target).await;
             let set = match set {
@@ -258,7 +359,7 @@ impl Actor<'_> {
         &self,
         context: &FrameContext,
         input: String,
-        files: &[UploadedFile],
+        files: &Upload,
     ) -> Result<Filled, ErrorInfo> {
         let session = context.session.with_timeout(self.timeout);
         let mut params =
@@ -276,7 +377,7 @@ impl Actor<'_> {
                 return Err(from_cdp(&e, self.session()));
             }
         };
-        let result = if files.is_empty() {
+        let result = if files.files.is_empty() {
             // `DOM.setFileInputFiles` ignores an empty list.
             let mut params = runtime::CallFunctionOnParams::new(CLEAR.to_owned());
             params.object_id = Some(input.clone());
@@ -286,7 +387,7 @@ impl Actor<'_> {
                 .await
                 .map(|r| r.result.value == Some(serde_json::Value::Bool(true)))
         } else {
-            let mut params = SetFileInputFilesParams::new(paths(files));
+            let mut params = SetFileInputFilesParams::new(files.paths());
             params.object_id = Some(input.clone());
             session.call(params).await.map(|_| true)
         };
@@ -300,7 +401,7 @@ impl Actor<'_> {
     async fn upload_through_chooser(
         &self,
         locator: &str,
-        files: Vec<UploadedFile>,
+        files: Upload,
         force: bool,
     ) -> Result<Output, ErrorInfo> {
         let parsed = self.parse(locator)?;
@@ -351,9 +452,6 @@ impl Actor<'_> {
                     .why("the page's file input, if it has one"),
                 ));
             };
-            if chooser.mode == FileChooserOpenedMode::SelectSingle && files.len() > 1 {
-                return Err(self.one_file(locator, &element, files.len()));
-            }
             let input = session
                 .call(ResolveNodeParams {
                     node_id: None,
@@ -371,6 +469,26 @@ impl Actor<'_> {
                         "finding the file chooser's input gave nothing",
                     )
                 })?;
+            let mut params = runtime::CallFunctionOnParams::new(PROBE.to_owned());
+            params.object_id = Some(input.clone());
+            params.return_by_value = Some(true);
+            let probe = session.call(params).await.map(|r| {
+                r.result
+                    .value
+                    .and_then(|v| serde_json::from_value::<Probe>(v).ok())
+                    .unwrap_or_default()
+            });
+            let checked = match probe {
+                Ok(mut probe) => {
+                    probe.multiple = chooser.mode != FileChooserOpenedMode::SelectSingle;
+                    self.takes(locator, &element, &probe, &files)
+                }
+                Err(e) => Err(from_cdp(&e, self.session())),
+            };
+            if let Err(err) = checked {
+                release(&context, input);
+                return Err(err);
+            }
             self.fill_input(&context, input, &files).await
         }
         .await;
@@ -389,9 +507,19 @@ impl Actor<'_> {
     async fn drop_files(
         &self,
         locator: &str,
-        files: Vec<UploadedFile>,
+        files: Upload,
         force: bool,
     ) -> Result<Output, ErrorInfo> {
+        if let Some(directory) = &files.directory {
+            return Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("{directory} is a directory; --drop drops files"),
+            )
+            .hint(Hint::text(
+                "pass the files, or upload the directory into a webkitdirectory input",
+            ))
+            .details(json!({ "path": directory })));
+        }
         let parsed = self.parse(locator)?;
         let checks = Checks {
             force,
@@ -408,7 +536,7 @@ impl Actor<'_> {
             let session = self.page.session.with_timeout(self.timeout);
             let data = DragData {
                 items: Vec::new(),
-                files: Some(paths(&files)),
+                files: Some(files.paths()),
                 drag_operations_mask: DRAG_COPY,
             };
             for kind in [
@@ -447,10 +575,11 @@ impl Actor<'_> {
         &self,
         locator: &str,
         element: ActedElement,
-        files: Vec<UploadedFile>,
+        upload: Upload,
         via: Via,
         filled: &Filled,
     ) -> Output {
+        let Upload { files, directory } = upload;
         let described = describe(&element);
         let refused: Vec<&str> = files
             .iter()
@@ -475,7 +604,14 @@ impl Actor<'_> {
                 Via::Chooser => ("uploaded", "through the file chooser of"),
                 Via::Drop => ("dropped", "on"),
             };
-            if files.len() == 1 {
+            if let Some(directory) = &directory {
+                let plural = if files.len() == 1 { "" } else { "s" };
+                format!(
+                    "{verb} directory {} ({} file{plural}) {how} {described}: {listed}",
+                    file_name(Path::new(directory)),
+                    files.len()
+                )
+            } else if files.len() == 1 {
                 format!("{verb} {listed} {how} {described}")
             } else {
                 format!("{verb} {} files {how} {described}: {listed}", files.len())
@@ -492,11 +628,51 @@ impl Actor<'_> {
             files,
             chooser: via == Via::Chooser,
             drop: via == Via::Drop,
+            directory,
         };
         let output = Output::typed(&data, text).quiet(quiet);
         match warning {
             Some(warning) => output.warning(warning),
             None => output,
+        }
+    }
+
+    /// Checks that the input `probe` describes takes what `files` is:
+    /// a directory for a `webkitdirectory` input, files for another, one
+    /// file for a single one.
+    fn takes(
+        &self,
+        locator: &str,
+        element: &ActedElement,
+        probe: &Probe,
+        files: &Upload,
+    ) -> Result<(), ErrorInfo> {
+        let described = describe(element);
+        match (&files.directory, probe.directory) {
+            (Some(directory), false) => Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("{directory} is a directory, and {described} takes files"),
+            )
+            .hint(Hint::text("this input takes files; pass the files"))
+            .details(json!({ "locator": locator, "path": directory }))),
+            (None, true) if !files.files.is_empty() => Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("{described} takes a directory, not files"),
+            )
+            .hint(
+                Hint::run(
+                    Cmd::new("upload")
+                        .arg(locator)
+                        .raw("<directory>")
+                        .scoped(self.session()),
+                )
+                .why("this input takes a directory"),
+            )
+            .details(json!({ "locator": locator, "files": files.files.len() }))),
+            (None, _) if !probe.multiple && files.files.len() > 1 => {
+                Err(self.one_file(locator, element, files.files.len()))
+            }
+            _ => Ok(()),
         }
     }
 
@@ -640,7 +816,10 @@ fn file_list(files: &[UploadedFile]) -> String {
     let mut text = files
         .iter()
         .take(SHOWN_FILES)
-        .map(|f| format!("{} ({})", f.name, protocol::format::size(f.size)))
+        .map(|f| {
+            let name = f.relative_path.as_deref().unwrap_or(&f.name);
+            format!("{name} ({})", protocol::format::size(f.size))
+        })
         .collect::<Vec<_>>()
         .join(", ");
     if files.len() > SHOWN_FILES {
@@ -658,6 +837,7 @@ mod tests {
             path: format!("/tmp/{name}"),
             name: name.to_owned(),
             size,
+            relative_path: None,
         }
     }
 
@@ -691,8 +871,47 @@ mod tests {
         let err = check_files(std::slice::from_ref(&missing)).unwrap_err();
         assert_eq!(err.message, format!("{missing} does not exist"));
         assert_eq!(err.exit_code(), 2);
-        let dir = std::env::temp_dir().to_string_lossy().into_owned();
-        let err = check_files(std::slice::from_ref(&dir)).unwrap_err();
-        assert!(err.message.ends_with("is a directory; upload takes files"));
+    }
+
+    #[test]
+    fn a_directory_goes_alone_with_its_files_sorted() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("photos");
+        std::fs::create_dir_all(root.join("b/c")).unwrap();
+        std::fs::write(root.join("z.txt"), "z").unwrap();
+        std::fs::write(root.join("b/c/y.txt"), "yy").unwrap();
+        std::fs::write(root.join("b/x.txt"), "xxx").unwrap();
+        std::os::unix::fs::symlink(root.join("z.txt"), root.join("link.txt")).unwrap();
+        let path = root.to_string_lossy().into_owned();
+        let upload = check_files(std::slice::from_ref(&path)).unwrap();
+        assert_eq!(upload.directory.as_deref(), Some(path.as_str()));
+        assert_eq!(upload.paths(), std::slice::from_ref(&path));
+        let listed: Vec<(&str, &str, u64)> = upload
+            .files
+            .iter()
+            .map(|f| (f.relative_path.as_deref().unwrap(), f.name.as_str(), f.size))
+            .collect();
+        assert_eq!(
+            listed,
+            [
+                ("photos/b/c/y.txt", "y.txt", 2),
+                ("photos/b/x.txt", "x.txt", 3),
+                ("photos/z.txt", "z.txt", 1),
+            ]
+        );
+
+        let file = root.join("z.txt").to_string_lossy().into_owned();
+        let err = check_files(&[path.clone(), file]).unwrap_err();
+        assert!(
+            err.message
+                .ends_with("is a directory; upload takes one directory alone, or files"),
+            "{}",
+            err.message
+        );
+        let empty = dir.path().join("empty");
+        std::fs::create_dir(&empty).unwrap();
+        let empty = empty.to_string_lossy().into_owned();
+        let err = check_files(std::slice::from_ref(&empty)).unwrap_err();
+        assert_eq!(err.message, format!("{empty} is a directory with no files"));
     }
 }

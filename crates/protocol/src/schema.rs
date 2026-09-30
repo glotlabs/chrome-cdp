@@ -3079,6 +3079,10 @@ pub struct UploadedFile {
     pub name: String,
     /// Its size in bytes.
     pub size: u64,
+    /// In a directory upload, its `webkitRelativePath`: the directory's
+    /// name and the path in it, e.g. `photos/2024/a.jpg`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relative_path: Option<String>,
 }
 
 /// `data` of `chrome-cdp upload --json`.
@@ -3099,6 +3103,10 @@ pub struct UploadData {
     /// drags them from the desktop, instead of going into a file input.
     #[serde(default)]
     pub drop: bool,
+    /// The directory uploaded into a `webkitdirectory` input (absolute);
+    /// `files` are its files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub directory: Option<String>,
 }
 
 /// `data` of `chrome-cdp clipboard read --json`.

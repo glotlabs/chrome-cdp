@@ -1025,13 +1025,16 @@ else is clicked like click does, and the files go to the file chooser
 that opens. --drop drops the files on the element instead, as a user
 drags them in from the desktop (dragenter, dragover and drop, with the
 files in dataTransfer.files), for drop zones with no file input; it
-fails if the page takes no drop there. Paths are relative to the
-current directory. --clear leaves the input with no files. Needs a
-running session.
+fails if the page takes no drop there. A folder input (webkitdirectory)
+takes one directory instead: its files, the page seeing each one's path
+in it (webkitRelativePath, e.g. photos/2024/a.jpg). Paths are relative
+to the current directory. --clear leaves the input with no files. Needs
+a running session.
 
 Examples:
   chrome-cdp upload e5 ./avatar.png
   chrome-cdp upload 'label=Attachments' a.pdf b.pdf
+  chrome-cdp upload 'label=Folder' ./photos        # a webkitdirectory input
   chrome-cdp upload 'role=button[name=\"Choose files\"]' report.csv
   chrome-cdp upload 'text=Drop files here' photo.jpg --drop
   chrome-cdp upload e5 --clear")]
@@ -2335,7 +2338,7 @@ pub(crate) struct UploadArgs {
     #[arg(value_name = "LOCATOR")]
     pub(crate) locator: String,
 
-    /// The files to upload.
+    /// The files to upload, or one directory for a folder input.
     #[arg(
         value_name = "FILE",
         num_args = 1..,

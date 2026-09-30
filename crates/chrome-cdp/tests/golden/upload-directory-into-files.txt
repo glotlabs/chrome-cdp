@@ -1,0 +1,11 @@
+$ chrome-cdp upload '#files' <files>/tree
+exit: 2
+--- stderr
+error: <files>/tree is a directory, and e1 button "Files" takes files
+  hint: this input takes files; pass the files
+
+$ chrome-cdp upload '#files' <files>/tree --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"<files>/tree is a directory, and e1 button \"Files\" takes files","hint":"this input takes files; pass the files","details":{"locator":"#files","path":"<files>/tree"}}}
+

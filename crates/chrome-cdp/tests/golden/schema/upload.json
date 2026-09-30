@@ -7,6 +7,13 @@
           "description": "Whether the files went through a file chooser that clicking\n`element` opened (else straight into the input).",
           "type": "boolean"
         },
+        "directory": {
+          "description": "The directory uploaded into a `webkitdirectory` input (absolute);\n`files` are its files.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "drop": {
           "default": false,
           "description": "Whether the files were dropped on `element` (`--drop`), as a user\ndrags them from the desktop, instead of going into a file input.",
@@ -870,6 +877,13 @@
         "path": {
           "description": "Its absolute path.",
           "type": "string"
+        },
+        "relative_path": {
+          "description": "In a directory upload, its `webkitRelativePath`: the directory's\nname and the path in it, e.g. `photos/2024/a.jpg`.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "size": {
           "description": "Its size in bytes.",

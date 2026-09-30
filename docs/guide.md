@@ -227,7 +227,9 @@ the input a `<label>` names) its files, and the page gets `input` and
 fills the chooser instead. `--drop` drops the files on the element with
 drag events instead, for a drop zone with no file input: the page reads
 them from the drop's `dataTransfer.files`, and `upload` fails if it takes
-no drop there. `--clear` empties the input. `clipboard read`
+no drop there. A folder input (`webkitdirectory`) takes one directory:
+`upload 'label=Folder' ./photos` gives it the files, each with its path
+in the directory (`webkitRelativePath`). `--clear` empties the input. `clipboard read`
 and `clipboard write <text>` use the page's clipboard API (the page must be
 on https or localhost, and keeps the clipboard permission): read what a
 page's Copy button copied, or write text and `press Mod+V` to paste it.

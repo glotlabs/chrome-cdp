@@ -1,0 +1,11 @@
+$ chrome-cdp upload '#folder' <files>/hello.txt
+exit: 2
+--- stderr
+error: e1 button "Folder" takes a directory, not files
+  hint: chrome-cdp upload '#folder' <directory>   (this input takes a directory)
+
+$ chrome-cdp upload '#folder' <files>/hello.txt --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"e1 button \"Folder\" takes a directory, not files","hint":"chrome-cdp upload '#folder' <directory>   (this input takes a directory)","details":{"files":1,"locator":"#folder"}}}
+

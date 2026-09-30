@@ -723,3 +723,92 @@ async fn reads_and_writes_html_and_images() {
     std::fs::remove_file(path).unwrap();
     engine.close().await;
 }
+
+/// The lines of `#listing` once it has `count` of them (the folder
+/// fixture lists an input's files on change).
+async fn listing(engine: &Engine, count: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    for _ in 0..40 {
+        lines = text(engine, "#listing")
+            .await
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        if lines.len() == count {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    lines
+}
+
+#[tokio::test]
+async fn uploads_directories_into_directory_inputs() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "files-folder").await;
+    goto(&engine, &site.url("/actions/folder.html")).await;
+
+    // The page sees each file with its path in the directory.
+    let out = act(&engine, upload("#folder", &["tree"])).await;
+    assert_eq!(
+        out.text,
+        "uploaded directory tree (3 files) to e1 button \"Folder\": \
+         tree/a.txt (6B), tree/sub/b.txt (5B), tree/sub/deeper/c.md (8B)"
+    );
+    assert_eq!(out.data["directory"], json!(file("tree")));
+    assert_eq!(out.data["files"][1]["name"], json!("b.txt"));
+    assert_eq!(
+        out.data["files"][1]["relative_path"],
+        json!("tree/sub/b.txt")
+    );
+    assert_eq!(out.data["files"][1]["path"], json!(file("tree/sub/b.txt")));
+    assert_eq!(
+        listing(&engine, 3).await,
+        [
+            "folder tree/a.txt 6",
+            "folder tree/sub/b.txt 5",
+            "folder tree/sub/deeper/c.md 8",
+        ]
+    );
+
+    // A directory input takes no files; a file input no directory.
+    let err = fails(&engine, upload("#folder", &["hello.txt"])).await;
+    assert_eq!(err.kind, ErrorKind::BadArgs);
+    assert_eq!(
+        err.message,
+        "e1 button \"Folder\" takes a directory, not files"
+    );
+    let err = fails(&engine, upload("#files", &["tree"])).await;
+    assert_eq!(err.kind, ErrorKind::BadArgs);
+    assert_eq!(
+        err.message,
+        format!(
+            "{} is a directory, and e2 button \"Files\" takes files",
+            file("tree")
+        )
+    );
+    assert_eq!(
+        err.hint.as_deref(),
+        Some("this input takes files; pass the files")
+    );
+
+    // Through the file chooser a button opens, too.
+    act(&engine, clear("#folder")).await;
+    let out = act(&engine, upload("#pick", &["tree/sub"])).await;
+    assert!(
+        out.text
+            .starts_with("uploaded directory sub (2 files) through the file chooser of"),
+        "{}",
+        out.text
+    );
+    assert_eq!(
+        listing(&engine, 2).await,
+        ["folder sub/b.txt 5", "folder sub/deeper/c.md 8"]
+    );
+
+    // Dropping a directory is not supported.
+    let err = fails(&engine, drop("#listing", &["tree"])).await;
+    assert_eq!(err.kind, ErrorKind::BadArgs);
+    engine.close().await;
+}
