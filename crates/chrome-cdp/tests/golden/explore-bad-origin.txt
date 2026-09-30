@@ -1,0 +1,11 @@
+$ chrome-cdp explore <site>/explore/ --origin example.com
+exit: 2
+--- stderr
+error: --origin example.com: not an origin
+  hint: an origin is a scheme, host and port: --origin https://api.example.com
+
+$ chrome-cdp explore <site>/explore/ --origin example.com --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"--origin example.com: not an origin","hint":"an origin is a scheme, host and port: --origin https://api.example.com"}}
+

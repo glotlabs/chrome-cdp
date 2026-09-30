@@ -1,0 +1,11 @@
+$ chrome-cdp explore <site>/explore/ --screenshots
+exit: 2
+--- stderr
+error: --screenshots saves them in -o DIR
+  hint: chrome-cdp explore --screenshots -o map
+
+$ chrome-cdp explore <site>/explore/ --screenshots --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"--screenshots saves them in -o DIR","hint":"chrome-cdp explore --screenshots -o map"}}
+

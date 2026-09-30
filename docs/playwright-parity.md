@@ -18,7 +18,7 @@ around it. **The v1 gate: no ❌ in an agent-critical row.** A test
 (`crates/chrome-cdp/tests/parity.rs`) holds the tables to that, checks the
 counts below, and checks that every command a row names exists.
 
-Today: 133 rows; 119 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
+Today: 134 rows; 120 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
 
 ## Navigation
 

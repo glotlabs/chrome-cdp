@@ -2437,6 +2437,30 @@ const CASES: &[Case] = &[
         fixture: Fixture::None,
     },
     Case {
+        name: "explore",
+        args: &["explore", "{site}/explore/"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "explore-screenshots-without-dir",
+        args: &["explore", "{site}/explore/", "--screenshots"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "explore-bad-origin",
+        args: &["explore", "{site}/explore/", "--origin", "example.com"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "explore-bad-include",
+        args: &["explore", "--include", "/items/(/"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
         name: "layout-bad-kind",
         args: &["layout", "--only", "overlaps"],
         modes: ERR,
@@ -3623,6 +3647,20 @@ impl Normalizer {
             ("\"tries\":", &digits, "<n>"),
             ("ms, ", &digits, "<n>"),
             ("\"time_ms\":", &digits, "<ms>"),
+            // How long `explore` took (after its `budget`; other
+            // commands' durations are kept).
+            ("},\"duration_ms\":", &digits, "<ms>"),
+            // How long `explore` took: `63 actions, 41s (stopped: …)`.
+            (
+                " actions, ",
+                &|c: char| c.is_ascii_digit() || matches!(c, '.' | 'm' | 's'),
+                "<time>",
+            ),
+            (
+                " action, ",
+                &|c: char| c.is_ascii_digit() || matches!(c, '.' | 'm' | 's'),
+                "<time>",
+            ),
             // A navigation's or wait's time: `"Title" (412ms)`.
             (
                 " (",
@@ -3819,7 +3857,12 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
     let site = Fixtures::shared();
     norm = norm
         .with(Path::new(site.a()), "<site>")
-        .with(Path::new(site.b()), "<site-b>");
+        .with(Path::new(site.b()), "<site-b>")
+        // `explore` names other origins' hosts.
+        .with(
+            Path::new(site.b().trim_start_matches("http://")),
+            "<host-b>",
+        );
     // Sockets' URLs (plan 11.9).
     norm = norm.with(Path::new(&site.a().replacen("http", "ws", 1)), "<ws-site>");
     let files = upload_files();

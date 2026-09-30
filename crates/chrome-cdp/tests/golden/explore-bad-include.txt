@@ -1,0 +1,11 @@
+$ chrome-cdp explore --include '/items/(/'
+exit: 2
+--- stderr
+error: --include: `/items/(/` is not a valid regular expression: error: unclosed group
+  hint: fix the expression, or use a glob like **/api/* or a part of the URL
+
+$ chrome-cdp explore --include '/items/(/' --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"--include: `/items/(/` is not a valid regular expression: error: unclosed group","hint":"fix the expression, or use a glob like **/api/* or a part of the URL"}}
+
