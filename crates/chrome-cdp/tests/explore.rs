@@ -8,6 +8,7 @@
 
 mod common;
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use common::{Sandbox, chrome_path, code, stderr, stdout};
@@ -101,11 +102,12 @@ fn maps_the_fixture_and_leaves_the_agents_tabs_alone() {
         let args = [&["explore", url.as_str()][..], extra].concat();
         let out = session.run(&args);
         assert_eq!(code(&out), 0, "{}", stderr(&out));
-        outputs.push_str(&format!(
-            "$ chrome-cdp {}\n{}\n",
+        let _ = writeln!(
+            outputs,
+            "$ chrome-cdp {}\n{}",
             normalize(&args.join(" ")),
             normalize(&stdout(&out))
-        ));
+        );
     }
     let file = expected_file();
     if std::env::var_os("UPDATE_GOLDEN").is_some_and(|v| !v.is_empty() && v != "0") {
