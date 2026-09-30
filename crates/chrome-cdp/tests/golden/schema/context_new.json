@@ -291,7 +291,7 @@
         },
         {
           "const": "NoSource",
-          "description": "Nothing in the page says where an element came from (`source`).",
+          "description": "Nothing in the page says where an element came from (`source`, `components`).",
           "type": "string"
         },
         {

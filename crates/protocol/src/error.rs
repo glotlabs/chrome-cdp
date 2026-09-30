@@ -35,7 +35,7 @@ pub enum ErrorKind {
     EvalError,
     /// Navigation failed (DNS, TLS, HTTP error page, …).
     NavigationFailed,
-    /// Nothing in the page says where an element came from (`source`).
+    /// Nothing in the page says where an element came from (`source`, `components`).
     NoSource,
 
     // Exit 2: the command line is wrong.
