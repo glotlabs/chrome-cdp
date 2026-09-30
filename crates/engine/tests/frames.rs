@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use browser::Host;
-use engine::{CdpRequest, Engine, FrameInfo, OpenRequest, Target, World};
+use engine::{CdpRequest, Engine, FrameInfo, FramesRequest, OpenRequest, Target, World};
 use fixtures::Fixtures;
 use protocol::ErrorKind;
 use serde_json::{Value, json};
@@ -372,7 +372,10 @@ impl Drop for DebugChrome {
 
 /// A Chrome started with a DevTools port on `url`, and that port.
 fn debug_chrome(path: &std::path::Path, url: &str) -> (DebugChrome, String) {
-    let profile = std::env::temp_dir().join(format!("engine-frames-{}", std::process::id()));
+    // One profile per Chrome: tests run in parallel.
+    static STARTED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = STARTED.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let profile = std::env::temp_dir().join(format!("engine-frames-{}-{n}", std::process::id()));
     let _ = std::fs::remove_dir_all(&profile);
     std::fs::create_dir_all(&profile).unwrap();
     let child = std::process::Command::new(path)
@@ -469,5 +472,67 @@ async fn frames_that_existed_before_connecting_are_found() {
         assert_ne!(title, json!(""), "{frame:?}");
     }
     engine.close().await;
+    drop(chrome);
+}
+
+/// `frames` on the target matrix: its frames in the order of their
+/// <iframe> elements, then its workers, the same after each of 10
+/// `connect`s to a browser whose page was there first.
+#[tokio::test]
+async fn frames_lists_frames_and_workers_the_same_after_each_connect() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let (chrome, port) = debug_chrome(&path, &site.url("/targets/matrix.html"));
+    let list = async |engine: &Engine| {
+        engine
+            .list_frames(FramesRequest {
+                tab: None,
+                timeout_ms: TIMEOUT_MS,
+                max_chars: 0,
+            })
+            .await
+            .unwrap_or_else(|e| panic!("frames: {}", e.to_text()))
+    };
+    let mut first: Option<(String, Value)> = None;
+    for run in 0..10 {
+        let engine = connect(&port).await;
+        // Every frame and worker is there (the service worker last).
+        let out = eventually("the matrix's targets", async || {
+            let ready = eval(&engine, None, World::Main, "document.title").await;
+            let out = list(&engine).await;
+            (ready == json!("Targets: ready") && out.text.contains("service worker")).then_some(out)
+        })
+        .await;
+        match &first {
+            None => {
+                let (a, b) = (site.a(), site.b());
+                assert_eq!(
+                    out.text,
+                    format!(
+                        "frame main {a}/targets/matrix.html
+  iframe \"same\" {a}/targets/frame.html?who=same
+  iframe \"oopif\" {b}/targets/frame.html?who=oopif&workers=1 (out of process)
+    dedicated worker {b}/targets/dedicated.js?who=oopif-dedicated
+  dedicated worker {a}/targets/dedicated.js?who=dedicated
+shared worker {a}/targets/shared.js?who=shared
+shared worker {b}/targets/shared.js?who=oopif-shared
+service worker {a}/targets/sw.js"
+                    )
+                );
+                let data: protocol::schema::FramesData =
+                    serde_json::from_value(out.data.clone()).unwrap();
+                let oopif = &data.frames[2];
+                assert!(oopif.oopif && oopif.name == "oopif", "{oopif:?}");
+                let dedicated = &data.workers[1];
+                assert_eq!(dedicated.frame.as_ref(), Some(&oopif.id), "{dedicated:?}");
+                first = Some((out.text, out.data));
+            }
+            Some((text, data)) => {
+                assert_eq!(&out.text, text, "run {run}");
+                assert_eq!(&out.data, data, "run {run}");
+            }
+        }
+        engine.close().await;
+    }
     drop(chrome);
 }
