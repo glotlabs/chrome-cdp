@@ -20,7 +20,9 @@ mod websocket;
 
 use std::time::Duration;
 
-use protocol::schema::{ConsoleEntry, DownloadInfo, RequestInfo, WaitData, WaitWebSocket};
+use protocol::schema::{
+    ConsoleEntry, DownloadInfo, HotOutcome, HotUpdate, RequestInfo, WaitData, WaitWebSocket,
+};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde_json::{Map, Value, json};
 use tokio::time::Instant;
@@ -95,6 +97,8 @@ pub(crate) enum Condition {
         pattern: UrlPattern,
         frame: Option<regex::Regex>,
     },
+    /// A dev server's hot update (see [`crate::hmr`]).
+    Hmr,
     /// `expect`'s polled checks (plan 09): `check` (see `expect.ts`) on
     /// what `locator` matches, or on the page without one. It is met when
     /// the check passes, or fails with `not`; `absent` is whether it
@@ -222,6 +226,7 @@ impl Condition {
                     .map(|f| crate::observe::regex_arg("--frame", f))
                     .transpose()?,
             },
+            WaitFor::Hmr => Self::Hmr,
         })
     }
 
@@ -266,6 +271,7 @@ impl Condition {
                 binding: Some(_), ..
             } => "binding",
             Self::WebSocket { .. } => "ws",
+            Self::Hmr => "hmr",
             Self::Expect { .. } => "expect",
         }
     }
@@ -329,6 +335,7 @@ impl Condition {
                     pattern.to_string()
                 )
             }
+            Self::Hmr => "a hot update".into(),
             Self::Expect { .. } => "the assertion".into(),
         }
     }
@@ -347,6 +354,8 @@ pub(crate) struct Met {
     pub(crate) console: Option<ConsoleEntry>,
     /// `--ws`: the frame.
     pub(crate) websocket: Option<WaitWebSocket>,
+    /// `--hmr`: the hot update.
+    pub(crate) hot_update: Option<HotUpdate>,
     /// `e6 re-resolved by role+name` when a ref's element was found again.
     pub(crate) note: Option<String>,
 }
@@ -370,12 +379,12 @@ pub(crate) struct Unmet {
 }
 
 impl Unmet {
-    fn note(mut self, label: &'static str, text: impl Into<String>) -> Self {
+    pub(crate) fn note(mut self, label: &'static str, text: impl Into<String>) -> Self {
         self.notes.push((label, text.into()));
         self
     }
 
-    fn observed(mut self, key: &str, value: impl Into<Value>) -> Self {
+    pub(crate) fn observed(mut self, key: &str, value: impl Into<Value>) -> Self {
         self.observed.insert(key.to_owned(), value.into());
         self
     }
@@ -449,9 +458,12 @@ impl Engine {
         }
         let mark = running.tabs.mark();
         let start = Instant::now();
-        let met = if let Condition::Console { .. } | Condition::WebSocket { .. } = &condition {
-            // Reading the console or the network log takes no tab lock,
-            // and a dialog does not stop it: an action can run meanwhile.
+        let met = if let Condition::Console { .. } | Condition::WebSocket { .. } | Condition::Hmr =
+            &condition
+        {
+            // Reading the console, the network log or the hot updates
+            // takes no tab lock, and a dialog does not stop it: an action
+            // can run meanwhile.
             self.wait_until(&running, &page, &condition, start, timeout, &req)
                 .await?
         } else {
@@ -499,6 +511,18 @@ impl Engine {
                     ..
                 },
             ) => ws.frame.payload().unwrap_or_default().to_owned(),
+            (
+                _,
+                Met {
+                    hot_update: Some(update),
+                    ..
+                },
+            ) => match update.outcome {
+                HotOutcome::Applied => "applied",
+                HotOutcome::Failed => "failed",
+                HotOutcome::FullReload => "full_reload",
+            }
+            .to_owned(),
             (_, Met { value: Some(v), .. }) => v.to_string(),
             (_, Met { count: Some(n), .. }) => n.to_string(),
             _ => String::new(),
@@ -526,6 +550,7 @@ impl Engine {
             download: met.download.clone(),
             console: met.console,
             websocket: met.websocket,
+            hot_update: met.hot_update,
         };
         let mut output = Output::typed(&data, text)
             .quiet(quiet)
@@ -659,6 +684,7 @@ impl Engine {
                 self.websocket_until(running, page, pattern, frame.as_ref(), deadline)
                     .await?
             }
+            Condition::Hmr => self.hmr_until(running, page, deadline).await?,
             Condition::Load { .. }
             | Condition::Element { .. }
             | Condition::Text { .. }
@@ -811,6 +837,9 @@ impl Engine {
             Condition::WebSocket { .. } => Hint::run(again).why(
                 "only frames since the previous command began count; run the action that sends one first",
             ),
+            Condition::Hmr => Hint::run(again).why(
+                "only hot updates since the previous command began count; save the file, then wait",
+            ),
             Condition::Download if unmet.observed.get("download") == Some(&Value::Null) => {
                 Hint::run(again).why(
                     "only downloads since the previous command count; run the action that starts it first",
@@ -872,6 +901,7 @@ fn retry(condition: &WaitFor, tab: Option<&str>) -> Cmd {
         WaitFor::Download => cmd.switch("download"),
         WaitFor::Console { pattern } => cmd.flag("console", pattern),
         WaitFor::Binding { name } => cmd.flag("binding", name),
+        WaitFor::Hmr => cmd.switch("hmr"),
         WaitFor::WebSocket { pattern, frame } => {
             let cmd = cmd.flag("ws", pattern);
             match frame {

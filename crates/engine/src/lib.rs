@@ -40,6 +40,7 @@ mod errors;
 mod expect;
 mod extensions;
 mod frames;
+mod hmr;
 mod http;
 mod inject;
 mod injected;
@@ -86,6 +87,7 @@ pub use expect::{
     MATCHERS, check_expect, check_expect_screenshot, check_expect_snapshot, parse_matcher,
 };
 pub use frames::{FrameInfo, WORLD_NAME, World};
+pub use hmr::{Notices, noting};
 pub use inject::commands::script_line as init_script_line;
 pub use inject::{MAX_SCRIPT, check_binding_name};
 pub use input::{ActionPoint, Checks, check_action, parse_modifiers};

@@ -560,6 +560,9 @@ pub enum WaitFor {
         #[serde(default)]
         frame: Option<String>,
     },
+    /// `--hmr`: the dev server's hot update since the previous command
+    /// began (the latest, once settled), or the next one.
+    Hmr,
 }
 
 /// The state `wait <locator>` waits for.

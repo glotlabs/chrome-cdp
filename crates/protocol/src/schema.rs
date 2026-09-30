@@ -3875,7 +3875,7 @@ pub struct WaitData {
     pub tab: String,
     /// What was waited for: `load`, `domcontentloaded`, `idle`, `settle`,
     /// `element`, `text`, `text_gone`, `url`, `fn`, `request`, `response`,
-    /// `delay`, `download`, `console`, `binding` or `ws`.
+    /// `delay`, `download`, `console`, `binding`, `ws` or `hmr`.
     pub condition: String,
     /// What held, in words: `text "Welcome" is visible`.
     pub met: String,
@@ -3902,6 +3902,56 @@ pub struct WaitData {
     /// `--ws`: the frame that matched, and its socket.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub websocket: Option<WaitWebSocket>,
+    /// `--hmr`: the dev server's hot update the page got.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hot_update: Option<HotUpdate>,
+}
+
+/// A dev server's hot update as it reached a tab (`wait --hmr`, the
+/// `hot_update` event): the files it changed, the error it failed with,
+/// or the full reload it asked for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HotUpdate {
+    /// The dev server's client in the page: `vite`, `webpack`
+    /// (webpack-dev-server) or `next` (Next.js).
+    pub client: String,
+    pub outcome: HotOutcome,
+    /// `applied`: the files updated; `full_reload`: the file that asked
+    /// for it. Left out when the dev server does not say.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<HotFile>,
+    /// `failed`: the error's first line, as the dev server gave it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// `failed`: where, when the error says (`source` as the dev server
+    /// names it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place: Option<SourcePosition>,
+}
+
+/// How a hot update ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HotOutcome {
+    /// The page runs the new code.
+    Applied,
+    /// The dev server could not build it (a syntax error), or the page
+    /// could not run it: the page still runs the old code.
+    Failed,
+    /// The dev server reloaded the page.
+    FullReload,
+}
+
+/// A file a hot update names.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HotFile {
+    /// As the dev server names it: `/src/cart.ts` (Vite),
+    /// `./src/cart.ts` (webpack).
+    pub source: String,
+    /// The file on disk (an absolute path), when chrome-cdp found it
+    /// under the project root. Text output shows it relative to the root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
 }
 
 /// The frame `wait --ws` waited for.
@@ -4137,6 +4187,15 @@ pub enum Event {
         tab: String,
         #[serde(flatten)]
         hit: LogpointHit,
+    },
+    /// A dev server's hot update reached the tab: while an action ran,
+    /// or (on any command on the tab) since the tab's previous command.
+    /// Each is reported once.
+    HotUpdate {
+        /// The tab, e.g. `t1`.
+        tab: String,
+        #[serde(flatten)]
+        update: HotUpdate,
     },
     /// Focus moved to an element of another form than before (or into a
     /// form, or out of one, or into another frame) that the action did not

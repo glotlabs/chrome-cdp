@@ -53,6 +53,7 @@ impl Engine {
         }
         .map_err(|e| self.tab_error(running, e))?;
         running.tabs.begin_command(page.id);
+        crate::hmr::note_since_previous(running, page.id);
         Ok(page)
     }
 
@@ -284,6 +285,7 @@ impl Engine {
                 format!("request failed: {id}{method} {} ({why})", path_of(url))
             }
             Event::Logpoint { hit, .. } => super::hit_text(hit),
+            Event::HotUpdate { update, .. } => crate::hmr::line(update),
             Event::FocusMoved {
                 tab,
                 element,

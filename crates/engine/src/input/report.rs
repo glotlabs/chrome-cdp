@@ -12,9 +12,9 @@
 //!
 //! Then it adds a line for each thing that happened, and only then: a
 //! navigation (`→ navigated to …`), a new tab, a dialog answered, a
-//! download, a new console error, a logpoint's hit (plan 15.4), a failed
-//! request to the page's own origin, or focus moving to another form
-//! (`! …`). `--json` lists them
+//! download, a new console error, a logpoint's hit (plan 15.4), a dev
+//! server's hot update (plan 15.6), a failed request to the page's own
+//! origin, or focus moving to another form (`! …`). `--json` lists them
 //! in `events`. `--snap` appends `snapshot --diff -i`.
 
 use std::time::Duration;
@@ -75,6 +75,8 @@ pub(super) struct Before {
     watch: Watch,
     /// The tab's network and console log marks.
     logs: (u64, u64),
+    /// The tab's last hot update's number.
+    hmr: u64,
     /// The main frame's origin before the action.
     origin: Option<String>,
 }
@@ -84,6 +86,11 @@ impl Actor<'_> {
     pub(super) async fn before(&self) -> Before {
         let watch = Watch::new(&self.page.session, &self.page.target_id);
         let logs = self.running.tabs.log_marks(self.page.id);
+        let hmr = self
+            .running
+            .tabs
+            .hot_updates(self.page.id, |h| h.seq())
+            .unwrap_or(0);
         let origin = self
             .running
             .tabs
@@ -96,6 +103,7 @@ impl Actor<'_> {
             start: Instant::now(),
             watch,
             logs,
+            hmr,
             origin,
         }
     }
@@ -188,6 +196,7 @@ impl Actor<'_> {
         let origins = origins(&before, &events);
         events.extend(self.console_errors(&before).await);
         events.extend(self.logpoint_hits(&before));
+        events.extend(self.hot_updates(&before));
         events.extend(self.failed_requests(&before, &origins, &events));
         if !leaving && let Some((element, frame)) = self.focus_moved().await {
             events.push(Event::FocusMoved {
@@ -368,6 +377,18 @@ impl Actor<'_> {
                 tab: self.tab(),
                 hit,
             })
+            .collect()
+    }
+
+    /// The dev server's hot updates since the action began (reported:
+    /// the next command does not warn about them).
+    fn hot_updates(&self, before: &Before) -> Vec<Event> {
+        let tab = self.tab();
+        self.running
+            .tabs
+            .report_hot_updates(self.page.id, before.hmr)
+            .iter()
+            .map(|outcome| crate::hmr::event(&tab, outcome))
             .collect()
     }
 

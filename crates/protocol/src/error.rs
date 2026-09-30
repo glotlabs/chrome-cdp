@@ -37,6 +37,9 @@ pub enum ErrorKind {
     NavigationFailed,
     /// Nothing in the page says where an element came from (`source`, `components`).
     NoSource,
+    /// A dev server's hot update failed (`wait --hmr`): the page still
+    /// runs the old code.
+    HotUpdateFailed,
 
     // Exit 2: the command line is wrong.
     /// Bad flags or arguments.
@@ -73,7 +76,7 @@ pub enum ErrorKind {
 
 impl ErrorKind {
     /// Every kind, in exit-code order.
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 22] = [
         Self::NotFound,
         Self::Ambiguous,
         Self::Obscured,
@@ -84,6 +87,7 @@ impl ErrorKind {
         Self::EvalError,
         Self::NavigationFailed,
         Self::NoSource,
+        Self::HotUpdateFailed,
         Self::BadArgs,
         Self::BadLocator,
         Self::Timeout,
@@ -109,7 +113,8 @@ impl ErrorKind {
             | Self::ExpectFailed
             | Self::EvalError
             | Self::NavigationFailed
-            | Self::NoSource => 1,
+            | Self::NoSource
+            | Self::HotUpdateFailed => 1,
             Self::BadArgs | Self::BadLocator => 2,
             Self::Timeout => 3,
             Self::ChromeNotFound

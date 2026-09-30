@@ -76,6 +76,7 @@ use crate::input::{Key, Pointer};
 use crate::network::{Exchange, Failure, Idle, InFlight, Network};
 use crate::observe::SourceMaps;
 use crate::observe::console::{self, Console, ConsoleError, FromWorker};
+use crate::observe::hmr::{HotUpdates, Outcome};
 use crate::observe::netlog::{self, NetLog};
 use crate::request::{DialogPolicy, HttpCredentials, NodeStacks};
 use crate::route::Router;
@@ -368,6 +369,10 @@ struct Tab {
     console_marks: (u64, u64),
     /// The same for its network log's changes (`wait --ws`).
     netlog_marks: (u64, u64),
+    /// Its dev server's hot updates (see [`crate::observe::hmr`]).
+    hmr: HotUpdates,
+    /// The same marks for its hot updates (`wait --hmr`).
+    hmr_marks: (u64, u64),
     /// The network and console marks when the main frame's document
     /// committed: where `expect --no-errors` starts by default.
     document_marks: (u64, u64),
@@ -413,6 +418,8 @@ impl Tab {
             event_marks: (0, 0),
             console_marks: (0, 0),
             netlog_marks: (0, 0),
+            hmr: HotUpdates::default(),
+            hmr_marks: (0, 0),
             dialog: None,
             crashed: None,
             snapshot: SnapshotMemory::default(),
@@ -1380,7 +1387,64 @@ impl Tabs {
             tab.event_marks = (tab.event_marks.1, seq);
             tab.console_marks = (tab.console_marks.1, tab.console.seq());
             tab.netlog_marks = (tab.netlog_marks.1, tab.netlog.changes());
+            tab.hmr_marks = (tab.hmr_marks.1, tab.hmr.seq());
         }
+    }
+
+    /// The last hot update's number when the page command before the
+    /// current one on tab `id` began: `wait --hmr` also accepts one that
+    /// came while that command ran.
+    pub(crate) fn previous_hmr_mark(&self, id: u32) -> u64 {
+        self.shared
+            .lock()
+            .tabs
+            .get(&id)
+            .map_or(0, |t| t.hmr_marks.0)
+    }
+
+    /// Calls `f` with tab `id`'s hot updates (`None` if the tab is gone).
+    pub(crate) fn hot_updates<R>(
+        &self,
+        id: u32,
+        f: impl FnOnce(&mut HotUpdates) -> R,
+    ) -> Option<R> {
+        self.shared
+            .lock()
+            .tabs
+            .get_mut(&id)
+            .map(|tab| f(&mut tab.hmr))
+    }
+
+    /// Tab `id`'s hot updates after number `after` that no command
+    /// reported yet, oldest first; they count as reported from now on.
+    pub(crate) fn report_hot_updates(&self, id: u32, after: u64) -> Vec<Outcome> {
+        self.hot_updates(id, |hmr| {
+            let after = after.max(hmr.reported);
+            let found: Vec<Outcome> = hmr.since(after).cloned().collect();
+            hmr.reported = hmr.reported.max(hmr.seq());
+            found
+        })
+        .unwrap_or_default()
+    }
+
+    /// Waits until tab `id`'s hot updates changed after their change
+    /// count `after` (or the tab is gone), or until `at`; `false` if
+    /// `deadline` passed first.
+    pub(crate) async fn hot_updates_changed(
+        &self,
+        id: u32,
+        after: u64,
+        at: Option<Instant>,
+        deadline: Instant,
+    ) -> bool {
+        self.watch(deadline, |state, now| match state.tabs.get(&id) {
+            Some(tab) if tab.hmr.changes() <= after && at.is_none_or(|at| now < at) => {
+                Check::Later(at)
+            }
+            _ => Check::Done(()),
+        })
+        .await
+        .is_some()
     }
 
     /// The network log's change count when the page command before the
@@ -2192,6 +2256,8 @@ fn frame_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event:
                 // A new document: the page runs again after a crash.
                 tab.crashed = None;
                 tab.document_marks = (tab.network.seq(), tab.console.seq());
+                tab.hmr
+                    .navigated(session_id, &e.frame.loader_id, &e.frame.url);
             }
             let gone = if e.r#type == page::NavigationType::BackForwardCacheRestore {
                 frames.restored(session_id, &e.frame)
@@ -2212,6 +2278,9 @@ fn frame_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event:
         page::LifecycleEvent::NAME => decode::<page::LifecycleEvent>(event).map(|e| {
             tab.netlog
                 .lifecycle(&e.frame_id, &e.loader_id, &e.name, e.timestamp);
+            if e.frame_id == tab.target_id {
+                tab.hmr.lifecycle(&e.loader_id, &e.name);
+            }
         }),
         page::FrameDetached::NAME => decode::<page::FrameDetached>(event).map(|e| {
             let swap = e.reason == page::FrameDetachedReason::Swap;
@@ -2245,7 +2314,8 @@ fn network_event(shared: &Shared, session_id: &str, tab: u32, method: &str, even
         let logged = t
             .netlog
             .event(session_id, method, &event.params, capacity, None);
-        followed || logged
+        let hot = t.hmr.network(session_id, method, &event.params);
+        followed || logged || hot
     });
     if followed {
         shared.bump();
@@ -2269,6 +2339,12 @@ fn console_event(shared: &Shared, session_id: &str, tab: u32, event: &RawEvent) 
             && let Some(entry) = t.console.last_mut()
         {
             locals::attach(entry, found);
+        }
+        if logged
+            && event.method == runtime::ConsoleApiCalled::NAME
+            && let Some(entry) = t.console.last_mut()
+        {
+            t.hmr.console(&entry.text);
         }
         logged
     });

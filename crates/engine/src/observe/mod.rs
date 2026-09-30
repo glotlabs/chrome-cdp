@@ -16,6 +16,7 @@ mod devtools;
 mod eval;
 pub(crate) mod format;
 mod har;
+pub(crate) mod hmr;
 pub(crate) mod netlog;
 mod network;
 mod pdf;
