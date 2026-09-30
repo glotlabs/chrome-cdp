@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Compare: cart</title>
+<!-- compare (plan 16, 16.5): a.html and b.html differ in exactly one
+     heading's text, an added button, a removed link, a moved block (a
+     remove and an add in the snapshot) and a colour only --visual sees.
+     Everything is placed absolutely, so the moved block does not shift
+     what lies between; the removed link and the added button share a
+     place. Keep the two files alike in everything else. -->
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  .at { position: absolute; left: 16px; margin: 0; }
+  h1 { top: 16px; font-size: 28px; }
+  .offers { top: 400px; width: 360px; height: 40px; background: #fde68a; }
+  ul { top: 150px; padding-left: 20px; }
+  .total { top: 230px; color: #b91c1c; }
+  .next { top: 280px; }
+  .buy { top: 340px; }
+  nav { position: absolute; left: 600px; top: 16px; }
+</style>
+<nav aria-label="Main"><a href="/compare/a.html">Home</a> <a href="/compare/help.html">Help</a></nav>
+<main>
+  <h1 class="at">Your cart (3)</h1>
+  <ul class="at"><li>Tea</li><li>Coffee</li></ul>
+  <p class="at total">Total: $12</p>
+  <button class="at next">Apply coupon</button>
+  <button class="at buy">Check out</button>
+  <section class="at offers" aria-label="Offers"><p>Free shipping over $50</p></section>
+</main>
