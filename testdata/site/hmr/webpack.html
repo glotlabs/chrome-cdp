@@ -10,7 +10,8 @@ webpack-dev-server 5's client and webpack's HMR runtime log:
 <code>hash</code> applies the modules a <code>fake-modules</code> message
 named (a real client fetches the update's manifest instead) and logs
 <code>[HMR] Updated modules:</code>, <code>errors</code> logs the compile
-errors, and <code>static-changed</code> reloads.</p>
+errors, and <code>static-changed</code> reloads. <code>hmrConnected</code>
+is set once the socket greeted.</p>
 <script type="module">
   import './src/cart.js';
   const channel = new URLSearchParams(location.search).get('channel') ?? '';
@@ -37,6 +38,7 @@ errors, and <code>static-changed</code> reloads.</p>
       case 'ok':
         if (applied === null) {
           applied = hash;
+          window.hmrConnected = true;
           console.log('[HMR] Waiting for update signal from WDS...');
           break;
         }
