@@ -886,6 +886,12 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/expect/a11y-frames.html"),
     },
     Case {
+        name: "expect-a11y-aria",
+        args: &["expect", "--a11y"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/a11y/aria-valid-attr-value.html"),
+    },
+    Case {
         name: "mark",
         args: &["mark", "before-save"],
         modes: ALL,
