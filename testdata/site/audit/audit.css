@@ -1,0 +1,4 @@
+/* The audit fixtures' styles: in a file, since their CSP allows no
+   inline styles. */
+body { font: 16px/1.4 sans-serif; margin: 2rem; }
+.cut { width: 60px; overflow: hidden; white-space: nowrap; }

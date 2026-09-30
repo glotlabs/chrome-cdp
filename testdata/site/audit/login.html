@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A page of the audit fixtures.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; form-action *">
+  <title>Log in</title>
+  <link rel="stylesheet" href="audit.css">
+</head>
+<body>
+  <main>
+    <h1>Log in</h1>
+    <!-- On an http: host that is not this machine: the password crosses
+         the network in clear, and the form sends it to http:. -->
+    <form id="login" aria-label="Log in" method="post" action="http://api.audit.test/login">
+      <label for="user">User</label> <input id="user" name="user" autocomplete="username">
+      <label for="pass">Password</label>
+      <input id="pass" name="pass" type="password" autocomplete="current-password">
+      <button>Log in</button>
+    </form>
+  </main>
+</body>
+</html>
