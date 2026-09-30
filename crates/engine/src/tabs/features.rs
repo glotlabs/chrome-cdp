@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use cdp::Session;
-use cdp::domains::{network, page, runtime};
+use cdp::domains::{audits, network, page, runtime};
 
 use super::targets::{KindSet, Target, TargetKind};
 use super::{
@@ -34,6 +34,8 @@ pub(crate) enum Feature {
     /// `Runtime` and `Log`: execution contexts, the console, uncaught
     /// exceptions and the browser's messages.
     Runtime,
+    /// `Audits`: Chrome's issues (see [`observe::issues`]).
+    Audits,
     /// `Network`: requests, for network idle, waits and the network log,
     /// in frames and workers.
     Network,
@@ -61,9 +63,10 @@ pub(crate) enum Feature {
 }
 
 /// Every feature, in the order a new target gets their steps.
-pub(crate) const REGISTRY: [Feature; 10] = [
+pub(crate) const REGISTRY: [Feature; 11] = [
     Feature::Base,
     Feature::Runtime,
+    Feature::Audits,
     Feature::Network,
     Feature::World,
     Feature::Inject,
@@ -88,6 +91,7 @@ impl Feature {
         match self {
             Self::Base => "base",
             Self::Runtime => "runtime",
+            Self::Audits => "audits",
             Self::Network => "network",
             Self::World => "world",
             Self::Inject => "inject",
@@ -106,7 +110,9 @@ impl Feature {
             // gets the mock shim.
             // Emulation: what means something in a worker (see
             // `emulation`).
+            // Chrome raises issues in workers too (deprecations, CORS).
             Self::Runtime
+            | Self::Audits
             | Self::Network
             | Self::Inject
             | Self::Emulation
@@ -165,6 +171,11 @@ impl Feature {
                     step(session.call(cdp::domains::log::EnableParams::default())),
                 ));
             }
+            // Issues from now on, and those raised before (replayed).
+            Self::Audits => steps.push((
+                "Audits.enable",
+                step(session.call(audits::EnableParams::default())),
+            )),
             Self::Network => network_steps(shared, session, steps),
             Self::World => world_steps(shared, target, steps),
             // `init-script` and `expose` (see `inject`).
@@ -306,6 +317,7 @@ mod tests {
             [
                 "base      xx....",
                 "runtime   xxxxx.",
+                "audits    xxxxx.",
                 "network   xxxxx.",
                 "world     xx....",
                 "inject    xxxxx.",

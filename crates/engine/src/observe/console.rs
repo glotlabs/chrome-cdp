@@ -248,7 +248,7 @@ pub(crate) fn is_page_error(entry: &ConsoleEntry) -> bool {
     entry.source == "exception" || (entry.source == "console" && entry.level == Level::Error)
 }
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))

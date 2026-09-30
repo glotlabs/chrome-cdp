@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Cookies</title>
+</head>
+<body>
+  <p>The frame of the other site sets a cookie without SameSite, in a
+  cross-site context: Chrome keeps it from being set.</p>
+  <iframe src="{{ORIGIN_B}}/issues/data.json?set-cookie=sid%3D1" title="cookie"></iframe>
+</body>
+</html>

@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use browser::{Chrome, ProfileChoice};
-use protocol::schema::{Geolocation, Media, Throttle, Viewport};
+use protocol::schema::{Geolocation, Media, Severity, Throttle, Viewport};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -962,6 +962,32 @@ pub enum Since {
     Ago { ms: u64 },
     /// After the tab's `mark <name>`.
     Mark { name: String },
+}
+
+/// `issues`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IssuesRequest {
+    /// `--tab`: the tab to read; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// `--all-tabs`: every tab of the session (or context).
+    #[serde(default)]
+    pub all_tabs: bool,
+    /// `--since`: where to start.
+    #[serde(default)]
+    pub since: Since,
+    /// `--grep`: only issues whose rule, message or URL match.
+    #[serde(default)]
+    pub grep: Option<String>,
+    /// `--limit`: the newest this many (0 = all).
+    pub limit: usize,
+    /// `--min-severity`: the least severe shown.
+    pub min_severity: Severity,
+    /// `--follow`: with nothing to show, wait this long for an issue.
+    #[serde(default)]
+    pub wait_ms: u64,
+    pub timeout_ms: u64,
+    pub max_chars: usize,
 }
 
 /// `console` and `errors`.

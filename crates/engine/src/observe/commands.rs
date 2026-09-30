@@ -350,7 +350,7 @@ impl Engine {
 }
 
 /// `--grep`'s pattern, or a usage error.
-fn grep_regex(pattern: &str) -> Result<Regex, ErrorInfo> {
+pub(super) fn grep_regex(pattern: &str) -> Result<Regex, ErrorInfo> {
     regex_arg("--grep", pattern)
 }
 
@@ -370,7 +370,7 @@ pub(crate) fn regex_arg(flag: &str, pattern: &str) -> Result<Regex, ErrorInfo> {
     })
 }
 
-fn now_ms() -> u64 {
+pub(super) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
@@ -390,12 +390,7 @@ fn select(
     } else {
         console.cursors.console
     };
-    let (base, since_ms) = match req.since {
-        // A mark is a `Seq` by now.
-        Since::Last | Since::Mark { .. } => (cursor, 0),
-        Since::Seq { seq } => (seq, 0),
-        Since::Ago { ms } => (0, now_ms.saturating_sub(ms)),
-    };
+    let (base, since_ms) = window(&req.since, cursor, now_ms);
     let wanted = |e: &&ConsoleEntry| {
         e.seq > base
             && e.time_ms >= since_ms
@@ -409,15 +404,8 @@ fn select(
             })
     };
     let mut entries: Vec<ConsoleEntry> = console.entries().filter(wanted).cloned().collect();
-    let skipped = match req.limit {
-        0 => 0,
-        limit => entries.len().saturating_sub(limit),
-    };
-    entries.drain(..skipped);
-    let dropped = match req.since {
-        Since::Ago { .. } => 0,
-        _ => console.evicted().saturating_sub(base),
-    };
+    let skipped = keep_newest(&mut entries, req.limit);
+    let dropped = dropped_after(&req.since, console.evicted(), base);
     let shown = entries.last().map_or(0, |e| e.seq);
     let cursor = cursor.max(shown);
     if req.errors {
@@ -432,6 +420,37 @@ fn select(
         base,
         cursor,
         latest: console.seq(),
+    }
+}
+
+/// Where a read of a tab's log starts (`--since`, a mark being a `Seq` by
+/// now): after entry `base`, and for `--since 30s` not before `since_ms`.
+/// `cursor` is the command's read cursor.
+pub(super) fn window(since: &Since, cursor: u64, now_ms: u64) -> (u64, u64) {
+    match since {
+        Since::Last | Since::Mark { .. } => (cursor, 0),
+        Since::Seq { seq } => (*seq, 0),
+        Since::Ago { ms } => (0, now_ms.saturating_sub(*ms)),
+    }
+}
+
+/// Keeps the newest `limit` of `entries` (all for 0): how many older
+/// ones it left out.
+pub(super) fn keep_newest<T>(entries: &mut Vec<T>, limit: usize) -> usize {
+    let skipped = match limit {
+        0 => 0,
+        limit => entries.len().saturating_sub(limit),
+    };
+    entries.drain(..skipped);
+    skipped
+}
+
+/// How many entries after `base` a log that dropped up to `evicted` lost
+/// before they were read (none counted for `--since 30s`).
+pub(super) fn dropped_after(since: &Since, evicted: u64, base: u64) -> u64 {
+    match since {
+        Since::Ago { .. } => 0,
+        _ => evicted.saturating_sub(base),
     }
 }
 
@@ -451,7 +470,7 @@ fn is_error(entry: &ConsoleEntry, page_origin: Option<&str>) -> bool {
 }
 
 /// `--since` as typed for a hint: where a selection started.
-fn since_arg(since: &Since, base: u64) -> String {
+pub(super) fn since_arg(since: &Since, base: u64) -> String {
     match since {
         Since::Ago { ms } => format!("{ms}ms"),
         _ => base.to_string(),

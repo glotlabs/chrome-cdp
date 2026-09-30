@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Mixed content</title>
+</head>
+<body>
+  <p>An https page that loads a script over http: blocked. The http origin
+  is mixed.test, which the test maps to this machine (127.0.0.1 itself
+  counts as secure, so it is never mixed content).</p>
+  <script>
+    const http = 'http://mixed.test:' + new URL('{{ORIGIN_A}}').port;
+    const script = document.createElement('script');
+    script.src = http + '/issues/mixed.js';
+    document.head.append(script);
+  </script>
+</body>
+</html>

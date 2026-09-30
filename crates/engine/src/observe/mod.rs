@@ -17,6 +17,8 @@ mod eval;
 pub(crate) mod format;
 mod har;
 pub(crate) mod hmr;
+mod issue_commands;
+pub(crate) mod issues;
 pub(crate) mod netlog;
 mod network;
 mod pdf;

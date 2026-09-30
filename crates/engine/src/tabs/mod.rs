@@ -59,7 +59,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
-use cdp::domains::{browser, page, runtime, security, target};
+use cdp::domains::{audits, browser, page, runtime, security, target};
 use cdp::{Connection, Event as _, LosslessEventStream, RawEvent, Session};
 use futures_util::future::join_all;
 use protocol::schema::{Event, HeldKeys, TabInfo, Viewport, Worker, WorkerInfo, WorkerKind};
@@ -77,6 +77,7 @@ use crate::network::{Exchange, Failure, Idle, InFlight, Network};
 use crate::observe::SourceMaps;
 use crate::observe::console::{self, Console, ConsoleError, FromWorker};
 use crate::observe::hmr::{HotUpdates, Outcome};
+use crate::observe::issues::{self, Issues};
 use crate::observe::netlog::{self, NetLog};
 use crate::request::{DialogPolicy, HttpCredentials, NodeStacks};
 use crate::route::Router;
@@ -380,6 +381,9 @@ struct Tab {
     console: Console,
     /// Its network log, also that of its OOPIF sessions.
     netlog: NetLog,
+    /// Chrome's issues about it, also those of its OOPIF sessions and
+    /// workers (see [`crate::observe::issues`]).
+    issues: Issues,
     /// The network log's marks when the page command before the current
     /// one, and the current one, began.
     command_marks: (u64, u64),
@@ -432,6 +436,7 @@ impl Tab {
             network: Network::default(),
             netlog: NetLog::of_page(&info.target_id),
             console: Console::default(),
+            issues: Issues::default(),
             command_marks: (0, 0),
             document_marks: (0, 0),
             marks: HashMap::new(),
@@ -458,6 +463,9 @@ pub(crate) struct Marks {
     pub(crate) network: u64,
     pub(crate) console: u64,
     pub(crate) netlog: u64,
+    /// Its issues' sequence (`issues --since`, `expect --no-issues
+    /// --since`).
+    pub(crate) issues: u64,
     /// When it was set (ms since the Unix epoch), for the other tabs'
     /// requests (`expect request --since`).
     pub(crate) time_ms: u64,
@@ -1611,6 +1619,7 @@ impl Tabs {
             network: tab.network.seq(),
             console: tab.console.seq(),
             netlog: tab.netlog.seq(),
+            issues: tab.issues.seq(),
             time_ms: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX)),
@@ -1660,6 +1669,26 @@ impl Tabs {
             .map(|tab| f(&mut tab.console))
     }
 
+    /// Calls `f` with tab `id`'s issues and the URL of its main frame
+    /// (`None` if the tab is gone).
+    pub(crate) fn issues<R>(&self, id: u32, f: impl FnOnce(&mut Issues, &str) -> R) -> Option<R> {
+        self.shared.lock().tabs.get_mut(&id).map(|tab| {
+            let page_url = tab.frames.main_url().to_owned();
+            f(&mut tab.issues, &page_url)
+        })
+    }
+
+    /// Waits until tab `id` has an issue after mark `after` (or the tab
+    /// is gone); `false` if `deadline` passed first.
+    pub(crate) async fn issue_raised(&self, id: u32, after: u64, deadline: Instant) -> bool {
+        self.watch(deadline, |state, _| match state.tabs.get(&id) {
+            Some(tab) if tab.issues.seq() <= after => Check::Later(None),
+            _ => Check::Done(()),
+        })
+        .await
+        .is_some()
+    }
+
     /// Waits until tab `id`'s console has an entry after mark `after` (or
     /// the tab is gone); `false` if `deadline` passed first.
     pub(crate) async fn console_logged(&self, id: u32, after: u64, deadline: Instant) -> bool {
@@ -1699,6 +1728,32 @@ impl Tabs {
             .targets
             .get(session_id)
             .map(|t| t.session.clone())
+    }
+
+    /// Tab `id`'s page and iframe sessions, the page's first: each with
+    /// its target id (its root frame's id).
+    pub(crate) fn host_sessions(&self, id: u32) -> Vec<(Session, String)> {
+        let state = self.shared.lock();
+        let mut hosts: Vec<(Session, String)> = state
+            .targets
+            .values()
+            .filter(|t| {
+                matches!(t.kind, TargetKind::Page | TargetKind::Iframe) && t.tab() == Some(id)
+            })
+            .map(|t| (t.session.clone(), t.id.clone()))
+            .collect();
+        hosts.sort_by_key(|(_, target)| state.tabs.get(&id).is_none_or(|t| t.target_id != *target));
+        hosts
+    }
+
+    /// The target id of session `session_id` (for a page or iframe
+    /// session, its root frame's id).
+    pub(crate) fn target_of(&self, session_id: &str) -> Option<String> {
+        self.shared
+            .lock()
+            .targets
+            .get(session_id)
+            .map(|t| t.id.clone())
     }
 
     /// The requests that keep tab `id`'s network busy now.
@@ -2180,6 +2235,11 @@ async fn watch_host(
                     console_event(&shared, &session_id, tab, &event);
                 }
             }
+            audits::IssueAdded::NAME => {
+                if let Some(tab) = tab {
+                    issue_event(&shared, &session_id, tab, &event);
+                }
+            }
             page::JavascriptDialogOpening::NAME => {
                 if let Some(tab) = tab {
                     dialogs::opening(&shared, &session, tab, &event);
@@ -2298,6 +2358,7 @@ fn frame_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event:
                 // A new document: the page runs again after a crash.
                 tab.crashed = None;
                 tab.document_marks = (tab.network.seq(), tab.console.seq());
+                tab.issues.navigated();
                 tab.hmr
                     .navigated(session_id, &e.frame.loader_id, &e.frame.url);
             }
@@ -2444,6 +2505,65 @@ fn worker_console_event(shared: &Shared, session_id: &str, event: &RawEvent) {
     }
 }
 
+/// Adds an issue Chrome raised in page or iframe session `session_id` to
+/// tab `tab`'s issues.
+fn issue_event(shared: &Shared, session_id: &str, tab: u32, event: &RawEvent) {
+    let raised = issues::parse(&event.params);
+    let added = shared.lock().tabs.get_mut(&tab).is_some_and(|t| {
+        let page_url = t.frames.main_url();
+        t.issues
+            .add(raised, session_id, page_url, None, issues::CAPACITY);
+        true
+    });
+    if added {
+        shared.bump();
+    }
+}
+
+/// Adds an issue Chrome raised in worker session `session_id` to the
+/// issues of each tab it belongs to, as [`worker_console_event`] does
+/// with its console; one with no such tab is dropped and counted.
+fn worker_issue_event(shared: &Shared, session_id: &str, event: &RawEvent) {
+    let raised = issues::parse(&event.params);
+    let mut guard = shared.lock();
+    let state = &mut *guard;
+    let Some(target) = state.targets.get_mut(session_id) else {
+        return;
+    };
+    let Some(worker) = target.worker() else {
+        return;
+    };
+    target.events += 1;
+    let once =
+        (target.kind != TargetKind::DedicatedWorker).then(|| (target.id.clone(), target.events));
+    let tabs = state.console_tabs_of(&state.targets[session_id]);
+    if tabs.is_empty() {
+        state.dropped += 1;
+    }
+    let from = FromWorker {
+        worker: &worker,
+        once: once.as_ref().map(|(id, n)| (id.as_str(), *n)),
+    };
+    let mut added = false;
+    for id in tabs {
+        if let Some(t) = state.tabs.get_mut(&id) {
+            let page_url = t.frames.main_url();
+            t.issues.add(
+                raised.clone(),
+                session_id,
+                page_url,
+                Some(from),
+                issues::CAPACITY,
+            );
+            added = true;
+        }
+    }
+    drop(guard);
+    if added {
+        shared.bump();
+    }
+}
+
 /// For an uncaught exception of session `session_id`, the locals read at
 /// its pause, or why it has none (see [`locals`]).
 fn exception_locals(
@@ -2496,6 +2616,7 @@ async fn watch_worker(shared: Arc<Shared>, mut events: LosslessEventStream, sess
             | "Runtime.exceptionThrown"
             | "Runtime.exceptionRevoked"
             | "Log.entryAdded" => worker_console_event(&shared, &session_id, &event),
+            audits::IssueAdded::NAME => worker_issue_event(&shared, &session_id, &event),
             _ => {}
         }
     }

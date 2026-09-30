@@ -284,6 +284,7 @@ impl Engine {
                 let id = id.map(|id| format!("#{id} ")).unwrap_or_default();
                 format!("request failed: {id}{method} {} ({why})", path_of(url))
             }
+            Event::Issue(issue) => format!("issue: {} {}", issue.rule, issue.message),
             Event::Logpoint { hit, .. } => super::hit_text(hit),
             Event::HotUpdate { update, .. } => crate::hmr::line(update),
             Event::FocusMoved {

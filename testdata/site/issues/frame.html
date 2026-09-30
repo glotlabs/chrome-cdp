@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Issues in a frame</title>
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self'">
+  <script src="frame.js"></script>
+</head>
+<body>
+  <p>A frame of another site.</p>
+  <script>document.title = 'inline ran';</script>
+</body>
+</html>

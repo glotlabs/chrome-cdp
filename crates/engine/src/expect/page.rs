@@ -266,7 +266,7 @@ impl Engine {
 
     /// The tabs `--all-tabs` looks at: the session's, or its context's,
     /// in order.
-    fn all_tabs(&self, running: &Running) -> Result<Vec<u32>, ErrorInfo> {
+    pub(crate) fn all_tabs(&self, running: &Running) -> Result<Vec<u32>, ErrorInfo> {
         let scope = self.context_key()?;
         let mut tabs = running.tabs.tab_ids_in(scope.as_deref());
         tabs.sort_unstable();

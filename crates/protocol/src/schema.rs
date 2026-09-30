@@ -234,6 +234,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<ConsoleData>),
     },
     CommandSchema {
+        name: "issues",
+        summary: "Chrome's own findings about the tab (its Issues panel) the agent has not seen yet (or --since)",
+        schema: || schema_for!(Envelope<IssuesData>),
+    },
+    CommandSchema {
         name: "network",
         summary: "the tab's requests the agent has not seen yet (or --since), oldest first",
         schema: || schema_for!(Envelope<NetworkData>),
@@ -1626,6 +1631,151 @@ pub struct ConsoleEntry {
     /// locals: why (`the page is not on localhost`, …).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub no_locals: Option<String>,
+}
+
+/// How severe a finding is, most severe first (plan 17): `error` breaks
+/// something for some users or leaks data, `warning` will break or
+/// degrade, `info` is worth knowing. `--min-severity warning` shows
+/// `error` and `warning`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum Severity {
+    Error,
+    Warning,
+    Info,
+}
+
+impl Severity {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Error => "error",
+            Self::Warning => "warning",
+            Self::Info => "info",
+        }
+    }
+
+    /// `E`, `W` or `I`: the first column of a finding's line.
+    pub fn letter(self) -> char {
+        match self {
+            Self::Error => 'E',
+            Self::Warning => 'W',
+            Self::Info => 'I',
+        }
+    }
+}
+
+/// `data` of `chrome-cdp issues --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct IssuesData {
+    /// The tab read, e.g. `t1`; empty with `--all-tabs`.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub tab: String,
+    /// The issues shown, oldest first. An issue raised again moves to the
+    /// end with a higher `count`.
+    pub issues: Vec<Issue>,
+    /// Issues after the starting point that `--min-severity` hides.
+    pub hidden: usize,
+    /// Older issues that matched but `--limit` left out.
+    pub skipped: usize,
+    /// Issues the tab's buffer dropped before anyone read them.
+    pub dropped: u64,
+    /// The read cursor now: the next `--since last` shows issues after
+    /// this sequence number (the tab's; 0 with `--all-tabs`).
+    pub cursor: u64,
+}
+
+/// One of Chrome's own findings about a page (`Audits.issueAdded`, the
+/// DevTools Issues panel), in the shape every page finding has (plan
+/// 17): same `rule` and `key`, same finding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Issue {
+    /// Its place in the tab's issues; later ones are larger
+    /// (`--since <seq>`).
+    pub seq: u64,
+    /// When the daemon received it (its last occurrence), in ms since the
+    /// Unix epoch.
+    pub time_ms: u64,
+    /// The tab, e.g. `t1`.
+    pub tab: String,
+    /// Always `issues`: the audit category it belongs to.
+    pub category: String,
+    /// A stable id: the kebab-case of Chrome's code and of its reason,
+    /// e.g. `mixed-content-blocked`,
+    /// `cookie-exclude-same-site-unspecified-treated-as-lax`;
+    /// `unknown-<code>` for a code this chrome-cdp does not know.
+    pub rule: String,
+    pub severity: Severity,
+    /// Chrome's `InspectorIssueCode`, e.g. `MixedContentIssue`.
+    pub code: String,
+    /// What is wrong, in one line.
+    pub message: String,
+    /// What it is about.
+    pub target: FindingTarget,
+    /// Its identity across runs, ports and reloads:
+    /// `issues/<rule>/<where>`, where is the element's stable locator
+    /// (else its role and name), the URL without query (`self/…` on the
+    /// page's own origin), the cookie's name and domain, or the page's
+    /// path. No refs, request ids or ports.
+    pub key: String,
+    /// How many times Chrome raised it (occurrences with the same rule
+    /// and key are one issue).
+    pub count: u32,
+    /// A page that explains it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docs: Option<String>,
+}
+
+/// What a finding is about. Every field is optional: a finding names
+/// what it knows.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FindingTarget {
+    /// The element's ref, e.g. `e12`, while its document lives.
+    #[serde(rename = "ref", default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
+    /// The element's role and name: `textbox "Email"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element: Option<String>,
+    /// The element's stable locator, for scripts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locator: Option<String>,
+    /// The request's id in the tab's network log (`network show <id>`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<u64>,
+    /// The URL it is about: a request's, a blocked resource's, a
+    /// document's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// The cookie it is about.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cookie: Option<FindingCookie>,
+    /// The script and line (1-based) it comes from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<SourceLine>,
+    /// The frame it is in, when that is not the tab's main frame (what
+    /// `--frame` takes; `frames` lists them).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame: Option<String>,
+    /// The worker it came from, if a worker's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worker: Option<Worker>,
+}
+
+/// A cookie a finding is about.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FindingCookie {
+    pub name: String,
+    pub domain: String,
+    pub path: String,
+}
+
+/// A place in a script: its URL, line and column (1-based).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SourceLine {
+    pub url: String,
+    pub line: u32,
+    pub column: u32,
 }
 
 /// A logpoint was hit (`chrome-cdp debug log`): the line ran, and these
@@ -4847,6 +4997,9 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         original: Option<SourcePosition>,
     },
+    /// Chrome raised an issue of severity `error` (see `issues`) after
+    /// the command began: mixed content blocked, a CORS or CSP block, …
+    Issue(Box<Issue>),
     /// A request of the page to its own origin failed after the command
     /// began: an HTTP status of 400 or more, or no response.
     RequestFailed {
