@@ -1,0 +1,8 @@
+why #clipped button "Clipped" [e20] (for click)
+✓ resolve    1 match
+✓ visible    W×H at X,Y
+✓ stable
+✓ enabled
+✗ in view    clipped out of section.box [e21] (overflow: hidden)
+- hit test   not in view
+→ click would wait until the timeout: out of view

@@ -2341,6 +2341,18 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/source/fake-svelte.html"),
     },
     Case {
+        name: "why",
+        args: &["why", "#grandchild"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/why/cases.html"),
+    },
+    Case {
+        name: "why-ambiguous",
+        args: &["why", "role=button[name=\"Twin\"]", "--for", "hover"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/why/cases.html"),
+    },
+    Case {
         name: "source-production-build",
         args: &["source", "role=button >> nth=0"],
         modes: ERR,

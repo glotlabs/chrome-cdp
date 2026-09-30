@@ -1,0 +1,8 @@
+why #far button "Far" [e24] (for click)
+✓ resolve    1 match
+✓ visible    W×H at X,Y
+✓ stable
+✓ enabled
+✓ in view    after scrolling the page by Npx
+✓ hit test   reaches it at X,Y
+→ click would act now

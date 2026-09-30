@@ -1,0 +1,4 @@
+why #file-off button "Old receipt" [e27] (for upload)
+✓ resolve    1 match
+✗ enabled    the disabled attribute
+→ upload would wait until the timeout: disabled

@@ -1,0 +1,8 @@
+why #no-pointer button "Ghost" [e14] (for click)
+✓ resolve    1 match
+✓ visible    W×H at X,Y
+✓ stable
+✓ enabled
+✓ in view
+✗ hit test   pointer-events: none on section.ghost [e15]
+→ click would wait until the timeout: pointer-events: none on section.ghost [e15]

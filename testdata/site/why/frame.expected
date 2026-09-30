@@ -1,0 +1,8 @@
+why frame=pay >> #pay button "Pay in frame" [e26] (for click)
+✓ resolve    1 match
+✓ visible    W×H at X,Y
+✓ stable
+✓ enabled
+✓ in view
+✓ hit test   reaches it at X,Y
+→ click would act now

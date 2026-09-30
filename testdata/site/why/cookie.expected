@@ -1,0 +1,8 @@
+why #cookie button "Pay" [e2] (for click)
+✓ resolve    1 match
+✓ visible    W×H at X,Y
+✓ stable
+✓ enabled
+✓ in view
+✗ hit test   covered by div.cookie-banner [e3]; its button "Accept" [e4] likely dismisses it
+→ click would wait until the timeout: covered by div.cookie-banner [e3]

@@ -1,0 +1,8 @@
+why #far button "Far" [e25] (for click)
+✓ resolve    1 match
+✓ visible    W×H at X,Y
+✓ stable
+✓ enabled
+- in view    its box is at x=X y=Y, the viewport is WxH; not scrolled (--no-scroll)
+- hit test   not in view
+→ click would act now, unless in view or hit test fails

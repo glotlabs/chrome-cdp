@@ -1,0 +1,8 @@
+why #behind button "Delete" [e12] (for click)
+✓ resolve    1 match
+✓ visible    W×H at X,Y
+✓ stable
+✗ enabled    inert while the modal dialog "Confirm" [e13] is open
+✓ in view
+✗ hit test   covered by the backdrop of dialog "Confirm" [e13]
+→ click would wait until the timeout: inert; covered by the backdrop of dialog "Confirm" [e13]

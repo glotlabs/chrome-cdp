@@ -1,0 +1,19 @@
+$ chrome-cdp why 'role=button[name="Twin"]' --for hover
+exit: 0
+--- stdout
+why role=button[name="Twin"] (for hover)
+✗ resolve    2 elements match role=button[name="Twin"]: e1, e2
+    e1: button "Twin"
+    e2: button "Twin"
+→ hover would fail at once: 2 elements match role=button[name="Twin"]: e1, e2
+
+$ chrome-cdp why 'role=button[name="Twin"]' --for hover --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"checks":[{"candidates":[{"name":"Twin","ref":"e1","role":"button","tag":""},{"name":"Twin","ref":"e2","role":"button","tag":""}],"name":"resolve","status":"failed","why":"2 elements match role=button[name=\"Twin\"]: e1, e2"}],"for":"hover","locator":"role=button[name=\"Twin\"]","tab":"t1","verdict":{"acts_now":false,"fails":"2 elements match role=button[name=\"Twin\"]: e1, e2"}}}
+
+$ chrome-cdp why 'role=button[name="Twin"]' --for hover -q
+exit: 0
+--- stdout
+hover would fail at once: 2 elements match role=button[name="Twin"]: e1, e2
+

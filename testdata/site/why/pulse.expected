@@ -1,0 +1,8 @@
+why #pulse button "Pulse" [e16] (for click)
+✓ resolve    1 match
+✓ visible    W×H at X,Y
+✗ stable     moved Npx between two frames (animation "pulse" on it)
+✓ enabled
+✓ in view
+✓ hit test   reaches it at X,Y
+→ click would wait until the timeout: not stable

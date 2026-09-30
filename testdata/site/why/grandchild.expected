@@ -1,0 +1,8 @@
+why #grandchild button "Folded" [e17] (for click)
+✓ resolve    1 match
+✗ visible    display: none on section.folded [e18]
+✓ stable
+✓ enabled
+- in view    not visible
+- hit test   not in view
+→ click would wait until the timeout: not visible

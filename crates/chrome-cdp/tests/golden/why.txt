@@ -1,0 +1,22 @@
+$ chrome-cdp why '#grandchild'
+exit: 0
+--- stdout
+why #grandchild button "Folded" [e1] (for click)
+✓ resolve    1 match
+✗ visible    display: none on section.folded [e2]
+✓ stable
+✓ enabled
+- in view    not visible
+- hit test   not in view
+→ click would wait until the timeout: not visible
+
+$ chrome-cdp why '#grandchild' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"checks":[{"name":"resolve","status":"ok","why":"1 match"},{"element":{"class":"folded","name":"Folded","ref":"e2","role":"generic","tag":"section"},"name":"visible","status":"failed","why":"display: none on section.folded [e2]"},{"name":"stable","status":"ok"},{"name":"enabled","status":"ok"},{"name":"in view","status":"skipped","why":"not visible"},{"name":"hit test","status":"skipped","why":"not in view"}],"element":{"name":"Folded","ref":"e1","role":"button","tag":"button"},"for":"click","locator":"#grandchild","tab":"t1","verdict":{"acts_now":false,"waits":["visible"]}}}
+
+$ chrome-cdp why '#grandchild' -q
+exit: 0
+--- stdout
+click would wait until the timeout: not visible
+

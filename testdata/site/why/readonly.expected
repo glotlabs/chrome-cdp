@@ -1,0 +1,8 @@
+why #readonly textbox "Order number" [e22] (for fill)
+✓ resolve    1 match
+✓ visible    W×H at X,Y
+✓ stable
+✓ enabled
+✗ editable   the readonly attribute
+✓ in view
+→ fill would wait until the timeout: read-only

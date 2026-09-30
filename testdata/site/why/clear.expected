@@ -1,0 +1,8 @@
+why #clear button "Clear" [e19] (for click)
+✓ resolve    1 match
+✗ visible    opacity: 0
+✓ stable
+✓ enabled
+✓ in view
+✓ hit test   reaches it at X,Y
+→ click would wait until the timeout: not visible

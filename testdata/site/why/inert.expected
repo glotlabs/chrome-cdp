@@ -1,0 +1,8 @@
+why #inert button "Asleep" [e10] (for click)
+✓ resolve    1 match
+✓ visible    W×H at X,Y
+✓ stable
+✗ enabled    inert on section [e11]
+✓ in view
+✗ hit test   clicks pass through it
+→ click would wait until the timeout: inert; clicks pass through it

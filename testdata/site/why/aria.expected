@@ -1,0 +1,8 @@
+why #aria button "Unlock" [e8] (for click)
+✓ resolve    1 match
+✓ visible    W×H at X,Y
+✓ stable
+✗ enabled    aria-disabled="true" on group "Locked" [e9]
+✓ in view
+✓ hit test   reaches it at X,Y
+→ click would wait until the timeout: disabled

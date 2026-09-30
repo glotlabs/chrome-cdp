@@ -1,0 +1,67 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Why</title>
+<!-- One element per case of `why` (plan 16, milestone 16.1); each case's
+     golden output is why/<id>.expected. The modal dialog case is on
+     modal.html, since an open modal makes the whole page inert. -->
+<style>
+  body { margin: 0; padding: 8px; font: 16px sans-serif; }
+  section { margin: 8px 0; }
+  .slot { position: relative; width: 320px; height: 48px; }
+  .cookie-banner { position: absolute; inset: 0; background: #eee; }
+  .ghost { pointer-events: none; }
+  @keyframes pulse { from { transform: translateX(0); } to { transform: translateX(40px); } }
+  #pulse { animation: pulse 0.5s linear infinite alternate; }
+  .folded { display: none; }
+  #clear { opacity: 0; }
+  .box { position: relative; width: 200px; height: 40px; overflow: hidden; }
+  #clipped { position: absolute; left: -300px; top: 0; }
+  .spacer { height: 3000px; }
+</style>
+<p id="log"></p>
+
+<section><button id="fine">Fine</button></section>
+
+<section class="slot">
+  <button id="cookie">Pay</button>
+  <div class="cookie-banner">We use cookies <button id="accept" onclick="this.parentElement.remove()">Accept</button></div>
+</section>
+
+<section>
+  <fieldset disabled><legend>Shipping</legend><button id="fieldset">Ship</button></fieldset>
+</section>
+
+<section aria-disabled="true" role="group" aria-label="Locked"><button id="aria">Unlock</button></section>
+
+<section inert><button id="inert">Asleep</button></section>
+
+<section class="ghost"><button id="no-pointer">Ghost</button></section>
+
+<section><button id="pulse">Pulse</button></section>
+
+<section class="folded"><div><button id="grandchild">Folded</button></div></section>
+
+<section><button id="clear">Clear</button></section>
+
+<section class="box"><button id="clipped">Clipped</button></section>
+
+<section><input id="readonly" aria-label="Order number" value="A-1042" readonly> <input id="name" aria-label="Name"></section>
+
+<section><select id="size" aria-label="Size"><option>S</option><option>M</option></select> <label><input id="agree" type="checkbox"> Agree</label></section>
+
+<section><input id="file" type="file" aria-label="Receipt"> <input id="file-off" type="file" aria-label="Old receipt" disabled></section>
+
+<section><button class="twin">Twin</button> <button class="twin">Twin</button></section>
+
+<section><iframe name="pay" title="Pay" src="{{ORIGIN_B}}/why/frame.html" style="width: 300px; height: 80px"></iframe></section>
+
+<div class="spacer"></div>
+<section><button id="far">Far</button></section>
+
+<script>
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[id]');
+    const log = document.getElementById('log');
+    if (el && el !== log) log.textContent = (log.textContent + ' ' + el.id).trim();
+  });
+</script>

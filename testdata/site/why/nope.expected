@@ -1,0 +1,3 @@
+why #nope (for click)
+✗ resolve    no element matches #nope
+→ click would wait until the timeout: no element matches

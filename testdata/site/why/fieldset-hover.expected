@@ -1,0 +1,7 @@
+why #fieldset button "Ship" [e7] (for hover)
+✓ resolve    1 match
+✓ visible    W×H at X,Y
+✓ stable
+✓ in view
+✓ hit test   reaches it at X,Y
+→ hover would act now

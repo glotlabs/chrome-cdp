@@ -1,0 +1,8 @@
+why #fieldset button "Ship" [e5] (for click)
+✓ resolve    1 match
+✓ visible    W×H at X,Y
+✓ stable
+✗ enabled    inside the disabled group "Shipping" [e6]
+✓ in view
+✓ hit test   reaches it at X,Y
+→ click would wait until the timeout: disabled

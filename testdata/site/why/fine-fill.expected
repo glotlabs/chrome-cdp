@@ -1,0 +1,8 @@
+why #fine button "Fine" [e23] (for fill)
+✓ resolve    1 match
+✓ visible    W×H at X,Y
+✓ stable
+✓ enabled
+✗ editable   it is not an input, textarea or contenteditable element
+✓ in view
+→ fill would fail at once: it is not an input, textarea or contenteditable element

@@ -1,0 +1,11 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Why: modal</title>
+<!-- A button behind an open modal <dialog>, which makes it inert. -->
+<style>body { margin: 8px; font: 16px sans-serif; }</style>
+<button id="behind">Delete</button>
+<dialog id="confirm" aria-label="Confirm">
+  <p>Are you sure?</p>
+  <button id="close" onclick="this.closest('dialog').close()">Close</button>
+</dialog>
+<script>document.getElementById('confirm').showModal();</script>
