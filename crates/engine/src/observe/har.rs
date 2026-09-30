@@ -300,13 +300,24 @@ impl Engine {
         let mut records = Vec::new();
         let mut dropped = 0;
         for &(id, mark) in tabs {
-            let Some((mut taken, lost)) = running.tabs.netlog(id, |log| {
+            let Some((mut taken, lost, earlier)) = running.tabs.netlog(id, |log| {
                 let taken: Vec<Record> = log
                     .records()
                     .filter(|r| r.entry.id > mark && keep(r))
                     .cloned()
                     .collect();
-                (taken, log.evicted().max(log.cleared()).saturating_sub(mark))
+                // The document the tab showed at the mark, if the log
+                // still has its request.
+                let earlier = log
+                    .records()
+                    .rev()
+                    .find(|r| r.entry.id <= mark && r.navigation.is_some())
+                    .map(|r| r.entry.url.clone());
+                (
+                    taken,
+                    log.evicted().max(log.cleared()).saturating_sub(mark),
+                    earlier,
+                )
             }) else {
                 continue;
             };
@@ -336,9 +347,10 @@ impl Engine {
                 };
                 // The tab's title is its current document's; an earlier
                 // one is named by its URL.
-                let title = match &page.document {
-                    Some(document) if n != last => document.clone(),
-                    _ => title.clone(),
+                let title = match (&page.document, &earlier) {
+                    _ if n == last => title.clone(),
+                    (Some(document), _) | (None, Some(document)) => document.clone(),
+                    (None, None) => String::new(),
                 };
                 pages.push(HarPage {
                     started_date_time: iso8601(page.started_ms),

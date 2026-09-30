@@ -312,6 +312,23 @@ async fn har_records_every_tab_from_the_start() {
     engine.close().await;
 }
 
+/// Fetches `path` in the page, and waits for the answer.
+async fn fetch(engine: &Engine, path: &str) {
+    engine
+        .wait(WaitRequest {
+            condition: WaitFor::Function {
+                expression: format!("fetch('{path}').then(() => true)"),
+            },
+            tab: None,
+            strict_refs: false,
+            testid_attribute: None,
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 1000,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("fetch {path}: {}", e.to_text()));
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn har_makes_a_page_of_each_navigation() {
     let Some(path) = chrome_path() else { return };
@@ -320,7 +337,9 @@ async fn har_makes_a_page_of_each_navigation() {
     let engine = start(&path, "record-har-pages").await;
     goto(&engine, &site.url("/har/index.html")).await;
     har_start(&engine, HarContent::Omit).await;
-    // nav-1 goes on to nav-2 and nav-3 by itself, which fetches.
+    // A request of the page loaded before the start, then nav-1, which
+    // goes on to nav-2 and nav-3 by itself, which fetches.
+    fetch(&engine, "/items?n=2").await;
     goto(&engine, &site.url("/har/nav-1.html")).await;
     engine
         .wait(WaitRequest {
@@ -341,9 +360,18 @@ async fn har_makes_a_page_of_each_navigation() {
     let file = dir.path().join("pages.har");
     let (data, har, _) = har_stop(&engine, &file).await;
     validate_har(&har);
-    assert_eq!(data.pages, ["t1_1", "t1_2", "t1_3"]);
+    assert_eq!(data.pages, ["t1_1", "t1_2", "t1_3", "t1_4"]);
     let pages = har["log"]["pages"].as_array().unwrap();
-    for (page, n) in pages.iter().zip(1..) {
+    // The page loaded before: no navigation, no timings, named by its URL.
+    assert!(
+        pages[0]["title"]
+            .as_str()
+            .unwrap()
+            .ends_with("/har/index.html")
+    );
+    assert_eq!(pages[0]["pageTimings"]["onLoad"], -1.0);
+    assert_eq!(data.page_details[0].url, None);
+    for (page, n) in pages[1..].iter().zip(2..) {
         let timings = &page["pageTimings"];
         let dcl = timings["onContentLoad"].as_f64().unwrap();
         let load = timings["onLoad"].as_f64().unwrap();
@@ -355,39 +383,31 @@ async fn har_makes_a_page_of_each_navigation() {
     // An earlier document is named by its URL (the current one by the
     // tab's title).
     assert!(
-        pages[0]["title"]
+        pages[1]["title"]
             .as_str()
             .unwrap()
             .ends_with("/har/nav-1.html")
     );
     let pageref = |url_end: &str| entry(&har, url_end)["pageref"].clone();
-    assert_eq!(pageref("/har/nav-1.html"), "t1_1");
-    assert_eq!(pageref("/har/nav-2.html"), "t1_2");
-    assert_eq!(pageref("/har/nav-3.html"), "t1_3");
-    assert_eq!(pageref("/items?n=1"), "t1_3");
+    assert_eq!(pageref("/items?n=2"), "t1_1");
+    assert_eq!(pageref("/har/nav-1.html"), "t1_2");
+    assert_eq!(pageref("/har/nav-2.html"), "t1_3");
+    assert_eq!(pageref("/har/nav-3.html"), "t1_4");
+    assert_eq!(pageref("/items?n=1"), "t1_4");
     let details: Vec<(&str, usize)> = data
         .page_details
         .iter()
         .map(|p| (p.id.as_str(), p.entries))
         .collect();
-    assert_eq!(details, [("t1_1", 1), ("t1_2", 1), ("t1_3", 2)]);
-    assert!(data.page_details.iter().all(|p| p.load_ms.is_some()));
+    assert_eq!(
+        details,
+        [("t1_1", 1), ("t1_2", 1), ("t1_3", 1), ("t1_4", 2)]
+    );
+    assert!(data.page_details[1..].iter().all(|p| p.load_ms.is_some()));
 
     // A tab that did not navigate keeps one page, named after it.
     har_start(&engine, HarContent::Omit).await;
-    engine
-        .wait(WaitRequest {
-            condition: WaitFor::Function {
-                expression: "fetch('/items?n=2').then(() => true)".to_owned(),
-            },
-            tab: None,
-            strict_refs: false,
-            testid_attribute: None,
-            timeout_ms: TIMEOUT_MS,
-            max_chars: 1000,
-        })
-        .await
-        .unwrap();
+    fetch(&engine, "/items?n=2").await;
     let (data, har, _) = har_stop(&engine, &dir.path().join("one.har")).await;
     assert_eq!(data.pages, ["t1"]);
     let timings = &har["log"]["pages"][0]["pageTimings"];
