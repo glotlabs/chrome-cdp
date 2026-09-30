@@ -569,6 +569,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<DebugClearData>),
     },
     CommandSchema {
+        name: "debug locals",
+        summary: "where local variables are captured at uncaught errors",
+        schema: || schema_for!(Envelope<DebugLocalsData>),
+    },
+    CommandSchema {
         name: "highlight",
         summary: "the element highlighted in the page, and for how long",
         schema: || schema_for!(Envelope<HighlightData>),
@@ -1587,6 +1592,10 @@ pub struct ConsoleEntry {
     /// A logpoint's hit (`source` is `logpoint`): its values.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logpoint: Option<LogpointHit>,
+    /// With `--locals`, for an uncaught exception whose frames have no
+    /// locals: why (`the page is not on localhost`, …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub no_locals: Option<String>,
 }
 
 /// A logpoint was hit (`chrome-cdp debug log`): the line ran, and these
@@ -1624,7 +1633,7 @@ pub struct LogpointValue {
 }
 
 /// One frame of a stack trace.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct StackFrame {
     /// The function; empty at a script's top level.
     pub function: String,
@@ -1641,6 +1650,28 @@ pub struct StackFrame {
     /// `SourcePosition::file`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
+    /// In a request's initiator stack: the frame is the first of an async
+    /// parent, and this is what scheduled the code before it
+    /// (`Promise.then`, `setTimeout`, `await`, …).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub async_boundary: Option<String>,
+    /// The frame's local variables when an uncaught error went through it
+    /// (`errors --locals`, `console --locals`): its `local`, `closure`
+    /// and `block` scopes, at most 10, innermost scope first. Only the
+    /// top 3 frames have them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locals: Option<Vec<Local>>,
+}
+
+/// A local variable of a stack frame, at an uncaught error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Local {
+    pub name: String,
+    /// Its value, previewed in the page as a logpoint's values are (at
+    /// most 2 levels deep, strings cut at 80 characters, collections over
+    /// 5 entries counted, functions as `ƒ`); `<ReferenceError: …>` when
+    /// it could not be read (a `let` before its line ran).
+    pub value: String,
 }
 
 /// A place in an original source file, from a source map.
@@ -1825,6 +1856,12 @@ pub struct Initiator {
     /// The function that sent it, for a script.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub function: Option<String>,
+    /// The script's stack when it sent it (at most 8 frames, innermost
+    /// first), across async boundaries (`StackFrame::async_boundary`).
+    /// `network show` resolves it with source maps; the `network` list
+    /// resolves its first frame.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stack: Vec<StackFrame>,
 }
 
 /// A WebSocket's frames, summed up.
@@ -2696,6 +2733,17 @@ pub struct DebugClearData {
     /// Whether the debugger is still on in some tab (it is turned off
     /// when nothing needs it).
     pub debugger: bool,
+}
+
+/// `data` of `chrome-cdp debug locals --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DebugLocalsData {
+    /// Where uncaught errors get their frames' local variables: `on`
+    /// (every page, iframe and worker), `off`, or `localhost` (documents
+    /// and workers on this machine, the default).
+    pub locals: String,
+    /// The pages, iframes and workers that capture them now.
+    pub capturing: usize,
 }
 
 /// A logpoint (`chrome-cdp debug log`): a source line that logs its

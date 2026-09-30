@@ -624,6 +624,8 @@ impl Engine {
                         column: f.column,
                         original: None,
                         file: None,
+                        async_boundary: None,
+                        locals: None,
                     })
                     .collect()
             })
@@ -1110,6 +1112,8 @@ mod tests {
                 file: None,
             }),
             file: None,
+            async_boundary: None,
+            locals: None,
         }
     }
 

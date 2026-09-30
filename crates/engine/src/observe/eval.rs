@@ -657,6 +657,8 @@ impl Run<'_> {
                 column: u32::try_from(column + 1).unwrap_or(u32::MAX),
                 original: None,
                 file: None,
+                async_boundary: None,
+                locals: None,
             });
         }
         let mut frames: Vec<&mut StackFrame> = stack.iter_mut().collect();

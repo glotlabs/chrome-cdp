@@ -20,12 +20,12 @@ use base64::Engine as _;
 use cdp::domains::network as cdp_network;
 use protocol::schema::{
     Body, NetworkClearData, NetworkData, NetworkEntry, NetworkFramesData, NetworkShowData,
-    RequestState, WebSocketFrame,
+    RequestState, StackFrame, WebSocketFrame,
 };
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format as units};
 use tokio::time::Instant;
 
-use super::commands::{regex_arg, shown_url};
+use super::commands::{frame_place, regex_arg, shown_url};
 use super::netlog::{NetLog, Record};
 use super::save;
 use crate::Engine;
@@ -133,7 +133,7 @@ impl Engine {
         let page_origin = page_origin(&running, page.id);
         let filter = Filter { req: &req, url };
         let deadline = Instant::now() + Duration::from_millis(req.wait_ms);
-        let selection = loop {
+        let mut selection = loop {
             let (selection, changes) = running
                 .tabs
                 .netlog(page.id, |log| {
@@ -151,6 +151,14 @@ impl Engine {
                 break selection;
             }
         };
+        // Each request's innermost initiator frame, in its original source.
+        let mut firsts: Vec<&mut StackFrame> = selection
+            .requests
+            .iter_mut()
+            .filter_map(|e| e.initiator.as_mut()?.stack.first_mut())
+            .collect();
+        self.map_stack(&running, &page, &mut firsts, false, millis(req.timeout_ms))
+            .await;
         Ok(self.network_output(&page, &req, selection, page_origin.as_deref()))
     }
 
@@ -328,6 +336,11 @@ impl Engine {
             earlier_frames: 0,
         };
         data.earlier_frames = data.frames.first().map_or(0, |f| f.n - 1);
+        if let Some(initiator) = &mut data.request.initiator {
+            let mut stack: Vec<&mut StackFrame> = initiator.stack.iter_mut().collect();
+            self.map_stack(&running, &page, &mut stack, false, timeout)
+                .await;
+        }
         if req.headers {
             data.request_headers = Some(record.request_headers.clone());
             data.response_headers = Some(record.response_headers.clone());
@@ -919,7 +932,47 @@ fn entry_line(entry: &NetworkEntry, page_origin: Option<&str>) -> String {
     if let Some(worker) = &entry.worker {
         let _ = write!(line, " {}", worker.label());
     }
+    // Where the page's code sent it, when a source map says.
+    if let Some(frame) = entry
+        .initiator
+        .as_ref()
+        .and_then(|i| i.stack.first())
+        .filter(|f| f.original.is_some())
+    {
+        let (place, at, _) = frame_place(frame, page_origin);
+        let _ = write!(line, " from {place}:{at}");
+    }
     line
+}
+
+/// An initiator's stack, a frame a line, its places aligned, with a line
+/// at each async boundary:
+///
+/// ```text
+///   fetchCart  src/api.ts:12:10
+///   -- async Promise.then --
+///   onClick    src/components/CartItem.tsx:57:5
+/// ```
+fn initiator_stack(text: &mut String, stack: &[StackFrame], page_origin: Option<&str>) {
+    let name = |f: &StackFrame| {
+        if f.function.is_empty() {
+            "(anonymous)".to_owned()
+        } else {
+            f.function.clone()
+        }
+    };
+    let width = stack
+        .iter()
+        .map(|f| name(f).chars().count())
+        .max()
+        .unwrap_or(0);
+    for frame in stack {
+        if let Some(boundary) = &frame.async_boundary {
+            let _ = writeln!(text, "  -- async {boundary} --");
+        }
+        let (place, line, column) = frame_place(frame, page_origin);
+        let _ = writeln!(text, "  {:width$}  {place}:{line}:{column}", name(frame));
+    }
 }
 
 /// `network show`'s text form.
@@ -1007,7 +1060,10 @@ fn show_text(
     if !sizes.is_empty() {
         let _ = writeln!(text, "{}", sizes.join(", "));
     }
-    if let Some(initiator) = &entry.initiator {
+    if let Some(initiator) = entry.initiator.as_ref().filter(|i| !i.stack.is_empty()) {
+        let _ = writeln!(text, "initiator: {}", initiator.kind);
+        initiator_stack(&mut text, &initiator.stack, page_origin);
+    } else if let Some(initiator) = &entry.initiator {
         let mut s = format!("initiator: {}", initiator.kind);
         if let Some(url) = &initiator.url {
             let _ = write!(s, " {}", shown_url(url, page_origin));

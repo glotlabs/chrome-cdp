@@ -285,6 +285,8 @@ pub(crate) fn parse_stack(stack: &str) -> Vec<StackFrame> {
                 column: caps[4].parse().ok()?,
                 original: None,
                 file: None,
+                async_boundary: None,
+                locals: None,
             })
         })
         .collect()
@@ -306,6 +308,8 @@ pub(crate) fn stack_frames(stack: &Value) -> Vec<StackFrame> {
                 column: one_based(&f["columnNumber"])?,
                 original: None,
                 file: None,
+                async_boundary: None,
+                locals: None,
             })
         })
         .collect()

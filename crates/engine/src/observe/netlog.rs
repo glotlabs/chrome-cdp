@@ -30,7 +30,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
 use protocol::schema::{
-    Header, Initiator, NetworkEntry, RequestState, Timing, WebSocketFrame, WebSocketSummary, Worker,
+    Header, Initiator, NetworkEntry, RequestState, StackFrame, Timing, WebSocketFrame,
+    WebSocketSummary, Worker,
 };
 use serde_json::Value;
 
@@ -62,6 +63,9 @@ const RAW_SEARCH: usize = 200;
 const FRAMES: usize = 500;
 const FRAME_TEXT: usize = 200;
 const FRAME_HEX: usize = 32;
+
+/// How many frames of a request's initiator stack are kept.
+const INITIATOR_FRAMES: usize = 8;
 
 /// One request as the log keeps it.
 #[derive(Debug, Clone)]
@@ -727,19 +731,14 @@ fn request(session: &str, id: &str, params: &Value) -> Record {
 /// What sent a request, from its `Network.Initiator`.
 fn initiator(initiator: &Value) -> Option<Initiator> {
     let kind = initiator["type"].as_str()?;
+    let stack = initiator_stack(&initiator["stack"]);
     // The innermost frame, of the stack or of the async stack it
     // continues.
-    let mut stack = &initiator["stack"];
-    let mut frame = None;
-    while stack.is_object() && frame.is_none() {
-        frame = stack["callFrames"].as_array().and_then(|f| f.first());
-        stack = &stack["parent"];
-    }
-    let (url, line, function) = match frame {
+    let (url, line, function) = match stack.first() {
         Some(frame) => (
-            non_empty(&frame["url"]),
-            one_based(&frame["lineNumber"]),
-            non_empty(&frame["functionName"]),
+            Some(frame.url.clone()),
+            Some(frame.line),
+            Some(frame.function.clone()).filter(|f| !f.is_empty()),
         ),
         None => (
             non_empty(&initiator["url"]),
@@ -752,7 +751,34 @@ fn initiator(initiator: &Value) -> Option<Initiator> {
         url,
         line,
         function,
+        stack,
     })
+}
+
+/// The frames of an initiator's `Runtime.StackTrace` and its async
+/// parents, innermost first, at most [`INITIATOR_FRAMES`]: the first
+/// frame of each parent names the boundary before it (its
+/// `description`, `Promise.then`, `setTimeout`, …).
+fn initiator_stack(mut stack: &Value) -> Vec<StackFrame> {
+    let mut frames: Vec<StackFrame> = Vec::new();
+    let mut boundary: Option<String> = None;
+    while stack.is_object() && frames.len() < INITIATOR_FRAMES {
+        let mut these = format::stack_frames(stack);
+        if let Some(first) = these.first_mut()
+            && !frames.is_empty()
+        {
+            first.async_boundary = Some(boundary.take().unwrap_or_else(|| "async".to_owned()));
+        }
+        frames.extend(these);
+        stack = &stack["parent"];
+        // An async parent's `description` says what scheduled it; one
+        // with no frames passes its boundary on.
+        if let Some(description) = non_empty(&stack["description"]) {
+            boundary = Some(description);
+        }
+    }
+    frames.truncate(INITIATOR_FRAMES);
+    frames
 }
 
 /// A request's phases from its `Network.ResourceTiming` (ms after
@@ -869,6 +895,61 @@ mod tests {
 
     fn event(log: &mut NetLog, method: &str, params: &Value) -> bool {
         log.event("s1", method, params, CAP, None)
+    }
+
+    /// An initiator keeps its stack across async parents, the first frame
+    /// of each marked with its boundary, at most 8 frames.
+    #[test]
+    fn initiator_stacks_cross_async_boundaries() {
+        let frame = |f: &str, line: u32| json!({ "functionName": f, "url": "http://x/app.js", "lineNumber": line, "columnNumber": 4 });
+        let initiator = super::initiator(&json!({
+            "type": "script",
+            "stack": {
+                "callFrames": [frame("fetchCart", 11), frame("load", 20)],
+                "parent": {
+                    "description": "Promise.then",
+                    "callFrames": [],
+                    "parent": {
+                        "description": "setTimeout",
+                        "callFrames": [frame("onClick", 30), frame("", 1)],
+                        "parent": {
+                            "description": "await",
+                            "callFrames": (0..9).map(|i| frame("deep", i)).collect::<Vec<_>>(),
+                        },
+                    },
+                },
+            },
+        }))
+        .unwrap();
+        assert_eq!(initiator.function.as_deref(), Some("fetchCart"));
+        assert_eq!(initiator.line, Some(12));
+        let stack: Vec<(&str, Option<&str>)> = initiator
+            .stack
+            .iter()
+            .map(|f| (f.function.as_str(), f.async_boundary.as_deref()))
+            .collect();
+        assert_eq!(
+            stack,
+            [
+                ("fetchCart", None),
+                ("load", None),
+                ("onClick", Some("setTimeout")),
+                ("", None),
+                ("deep", Some("await")),
+                ("deep", None),
+                ("deep", None),
+                ("deep", None),
+            ]
+        );
+        // No stack: the document's place.
+        let parser =
+            super::initiator(&json!({ "type": "parser", "url": "http://x/", "lineNumber": 4 }))
+                .unwrap();
+        assert_eq!(
+            (parser.url.as_deref(), parser.line),
+            (Some("http://x/"), Some(5))
+        );
+        assert!(parser.stack.is_empty());
     }
 
     /// The main frame's document requests are navigations, with their
