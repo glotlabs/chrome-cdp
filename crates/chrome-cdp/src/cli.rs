@@ -1500,6 +1500,47 @@ Examples:
   chrome-cdp issues --follow --timeout 1m           # keep printing new ones")]
     Issues(IssuesArgs),
 
+    /// Audit the page in one report: Chrome's issues, accessibility,
+    /// layout, errors, failed requests, security and metadata.
+    #[command(after_help = "\
+Runs every check chrome-cdp has over the active tab (or --tab) and prints
+one report, most severe first, then by category:
+  issues    Chrome's own findings (see `issues`) since the page loaded
+  a11y      the accessibility rules of expect --a11y, level AA (A is an
+            error, AA a warning)
+  layout    `layout`'s findings at the tab's viewport
+  console   uncaught exceptions (error) and console errors (warning)
+  network   failed requests and 4xx/5xx responses (error from the page's
+            origin, else warning)
+  security  http: pages (not localhost), password fields and forms on
+            http:, no Content-Security-Policy, no HSTS on https:, cookies
+            without Secure, HttpOnly (session-like names) or SameSite
+  meta      no <title>, no lang, no or zoom-blocking viewport meta,
+            no description (info), noindex (info)
+A LOCATOR checks inside that element what can be scoped: a11y, layout and
+the forms of security (--category adds the others, page-wide). It waits
+for the page's load event first.
+
+Each finding has a key (`a11y/image-alt/#logo`, `security/no-csp//cart`)
+that stays the same across runs, ports and reloads. --baseline accepts
+findings by key: a JSON file (NAME is <dir>/audit/NAME.json, <dir> being
+--dir or the project's .chrome-cdp; `chrome-cdp schema audit-baseline`
+has its format). Accepted findings are hidden (--show-accepted lists
+them), entries that no longer match are listed as stale, and --update
+writes the current findings into the file, keeping notes. It exits 0
+whatever it finds; expect --audit fails on findings the baseline does
+not accept. -q prints the number of findings shown. docs/audits.md has
+the details; the rules are listed below.
+
+Examples:
+  chrome-cdp audit
+  chrome-cdp audit --min-severity error
+  chrome-cdp audit --category security,meta --min-severity info
+  chrome-cdp audit 'role=main' --category a11y
+  chrome-cdp audit --baseline checkout --update     # accept what it finds
+  chrome-cdp audit --baseline e2e/audit/checkout.json --show-accepted")]
+    Audit(AuditArgs),
+
     /// Show the page's requests, or one in full, or clear the log.
     #[command(
         args_conflicts_with_subcommands = true,
@@ -4121,6 +4162,93 @@ pub(crate) struct IssuesArgs {
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct AuditArgs {
+    /// Check inside this element what can be scoped (a11y, layout, the
+    /// forms of security): a ref (e12) or a locator that matches one.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: Option<String>,
+
+    #[command(flatten)]
+    pub(crate) flags: AuditFlags,
+
+    /// The least severe findings shown.
+    #[arg(long, value_enum, default_value_t = SeverityArg::Warning, value_name = "SEVERITY")]
+    pub(crate) min_severity: SeverityArg,
+
+    /// Also list the findings the baseline accepts, marked (accepted).
+    #[arg(long, requires = "baseline")]
+    pub(crate) show_accepted: bool,
+
+    /// Every tab of the session (or context).
+    #[arg(long)]
+    pub(crate) all_tabs: bool,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+/// What `audit` and `expect --audit` share.
+#[derive(Debug, Args)]
+pub(crate) struct AuditFlags {
+    /// The categories to check (comma-separated or repeated); all by
+    /// default, or with a LOCATOR those it can scope.
+    #[arg(
+        long = "category",
+        value_enum,
+        value_delimiter = ',',
+        value_name = "CATEGORY"
+    )]
+    pub(crate) categories: Vec<AuditCategoryArg>,
+
+    /// The accepted findings: a .json file, or NAME for <dir>/audit/NAME.json.
+    #[arg(long, value_name = "FILE|NAME")]
+    pub(crate) baseline: Option<String>,
+
+    /// Write the findings into the baseline (keeping its notes; dropping
+    /// stale entries).
+    #[arg(long, requires = "baseline")]
+    pub(crate) update: bool,
+
+    /// Where a baseline NAME is (default: .chrome-cdp in the project;
+    /// e2e under `chrome-cdp test`).
+    #[arg(long, value_name = "DIR", requires = "baseline")]
+    pub(crate) dir: Option<PathBuf>,
+}
+
+impl AuditFlags {
+    /// The categories as the engine takes them.
+    pub(crate) fn category_names(&self) -> Vec<String> {
+        self.categories
+            .iter()
+            .filter_map(|c| c.to_possible_value().map(|v| v.get_name().to_owned()))
+            .collect()
+    }
+}
+
+/// `audit --category`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum AuditCategoryArg {
+    /// Chrome's issues (see `issues`).
+    Issues,
+    /// The accessibility rules of expect --a11y, level AA.
+    A11y,
+    /// `layout`'s findings.
+    Layout,
+    /// Uncaught exceptions and console errors.
+    Console,
+    /// Failed requests and 4xx/5xx responses.
+    Network,
+    /// http:, CSP, HSTS, cookies and forms.
+    Security,
+    /// Title, lang, viewport, description and robots.
+    Meta,
 }
 
 /// `--min-severity`.
@@ -6819,7 +6947,7 @@ pub(crate) struct WaitCmdArgs {
     group(
         ArgGroup::new("assertion")
             .required(true)
-            .args(["target", "url", "title", "no_errors", "no_issues", "no_failed_requests", "a11y", "perf", "layout"])
+            .args(["target", "url", "title", "no_errors", "no_issues", "no_failed_requests", "a11y", "perf", "layout", "audit"])
             .multiple(true)
     )
 )]
@@ -6875,8 +7003,9 @@ pub(crate) struct ExpectArgs {
     #[arg(long, conflicts_with_all = ["matcher", "no_errors", "no_failed_requests", "a11y"])]
     pub(crate) no_issues: bool,
 
-    /// --no-issues: the least severe issues that fail it.
-    #[arg(long, value_enum, value_name = "SEVERITY", requires = "no_issues")]
+    /// --no-issues and --audit: the least severe issues (findings) that
+    /// fail it.
+    #[arg(long, value_enum, value_name = "SEVERITY")]
     pub(crate) min_severity: Option<SeverityArg>,
 
     /// --no-errors, --no-issues and --no-failed-requests: in every tab of
@@ -6951,18 +7080,39 @@ pub(crate) struct ExpectArgs {
     pub(crate) layout: bool,
 
     /// --layout: the baseline, <dir>/layout/<NAME>.txt (one finding key
-    /// per line).
-    #[arg(long, value_name = "NAME", requires = "layout")]
+    /// per line). --audit: the accepted findings, a .json file or NAME for
+    /// <dir>/audit/NAME.json.
+    #[arg(long, value_name = "NAME")]
     pub(crate) baseline: Option<String>,
 
-    /// --layout: write the findings to the baseline instead of comparing.
-    #[arg(long, requires = "layout")]
+    /// --layout and --audit: write the findings to the baseline instead
+    /// of comparing.
+    #[arg(long, requires = "baseline")]
     pub(crate) update: bool,
 
-    /// --layout: the baselines' directory (default: .chrome-cdp in the
-    /// project).
-    #[arg(long, value_name = "DIR", requires = "layout")]
+    /// --layout and --audit: the baselines' directory (default:
+    /// .chrome-cdp in the project).
+    #[arg(long, value_name = "DIR", requires = "baseline")]
     pub(crate) dir: Option<PathBuf>,
+
+    /// Audit the page (see `audit`), or LOCATOR's element: fail on
+    /// findings at --min-severity or above that the --baseline does not
+    /// accept (any, without one).
+    #[arg(
+        long,
+        conflicts_with_all = ["matcher", "url", "title", "no_errors", "no_issues", "no_failed_requests", "a11y", "perf", "layout"]
+    )]
+    pub(crate) audit: bool,
+
+    /// --audit: the categories to check (comma-separated or repeated).
+    #[arg(
+        long = "category",
+        value_enum,
+        value_delimiter = ',',
+        value_name = "CATEGORY",
+        requires = "audit"
+    )]
+    pub(crate) categories: Vec<AuditCategoryArg>,
 
     #[command(flatten)]
     pub(crate) layout_flags: LayoutFlags,

@@ -798,6 +798,36 @@ pub(crate) fn expect(
     if args.layout {
         return expect_layout(args, global);
     }
+    if args.audit {
+        return expect_audit(args, global);
+    }
+    let shared = [
+        (args.baseline.is_some(), "--baseline"),
+        (args.update, "--update"),
+        (args.dir.is_some(), "--dir"),
+    ];
+    if let Some((_, flag)) = shared.into_iter().find(|(given, _)| *given) {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("{flag} is for expect --layout and expect --audit"),
+        )
+        .hint(Hint::run(
+            Cmd::new("expect")
+                .switch("audit")
+                .flag("baseline", "checkout"),
+        )));
+    }
+    if args.min_severity.is_some() && !args.no_issues {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            "--min-severity is for expect --no-issues and expect --audit",
+        )
+        .hint(Hint::run(
+            Cmd::new("expect")
+                .switch("no-issues")
+                .flag("min-severity", "error"),
+        )));
+    }
     if let Some(flag) = args.layout_flags.given() {
         return Err(ErrorInfo::new(
             ErrorKind::BadArgs,
@@ -2352,6 +2382,131 @@ fn expect_layout(args: &crate::cli::ExpectArgs, global: &GlobalArgs) -> Result<O
     let mut client = running_session(&ctx)?;
     ctx.runtime
         .block_on(client.call_output(rpc::LAYOUT, &request, ctx.timeout + QUICK))
+}
+
+/// What `audit` and `expect --audit` send.
+#[allow(clippy::too_many_arguments)]
+fn audit_request(
+    locator: Option<&String>,
+    flags: &crate::cli::AuditFlags,
+    min_severity: protocol::schema::Severity,
+    show_accepted: bool,
+    all_tabs: bool,
+    expect: bool,
+    strict_refs: bool,
+    max_chars: usize,
+    ctx: &Ctx,
+    global: &GlobalArgs,
+) -> Result<engine::AuditRequest, ErrorInfo> {
+    let baseline = match &flags.baseline {
+        Some(name) => Some(engine::AuditBaseline {
+            path: crate::expect::audit_baseline(flags.dir.as_deref(), name)?,
+            name: name.clone(),
+            update: flags.update,
+            create: expect && crate::expect::create_missing(),
+            dir: flags.dir.as_ref().map(|d| d.display().to_string()),
+        }),
+        None => None,
+    };
+    Ok(engine::AuditRequest {
+        tab: ctx.tab.clone(),
+        all_tabs,
+        locator: locator.cloned(),
+        categories: flags.category_names(),
+        min_severity,
+        baseline,
+        show_accepted,
+        expect,
+        strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(ctx.timeout),
+        max_chars,
+    })
+}
+
+/// How long an audit may take: each category waits up to the timeout,
+/// and `--all-tabs` audits tab after tab.
+fn audit_wait(ctx: &Ctx, all_tabs: bool) -> Duration {
+    let per_tab = ctx.timeout.saturating_mul(4);
+    if all_tabs {
+        per_tab.saturating_mul(8) + QUICK
+    } else {
+        per_tab + QUICK
+    }
+}
+
+/// `audit`: needs a running session.
+pub(crate) fn audit(
+    args: &crate::cli::AuditArgs,
+    global: &GlobalArgs,
+) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let request = audit_request(
+        args.locator.as_ref(),
+        &args.flags,
+        args.min_severity.to_severity(),
+        args.show_accepted,
+        args.all_tabs,
+        false,
+        args.refs.strict_refs,
+        args.max_chars,
+        &ctx,
+        global,
+    )?;
+    engine::check_audit(&request)?;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::AUDIT, &request, audit_wait(&ctx, args.all_tabs)))
+}
+
+/// `expect --audit`: needs a running session.
+fn expect_audit(args: &crate::cli::ExpectArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    if let Some(matcher) = &args.matcher {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("--audit audits the page; it takes no matcher, got {matcher:?}"),
+        )
+        .hint(Hint::run(
+            Cmd::new("expect")
+                .switch("audit")
+                .flag("baseline", "checkout"),
+        )));
+    }
+    if let Some(flag) = args.layout_flags.given() {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("{flag} is for layout and expect --layout"),
+        )
+        .hint(Hint::run(Cmd::new("expect").switch("audit"))));
+    }
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::with_default(global, crate::expect::EXPECT_TIMEOUT)?;
+    let flags = crate::cli::AuditFlags {
+        categories: args.categories.clone(),
+        baseline: args.baseline.clone(),
+        update: args.update,
+        dir: args.dir.clone(),
+    };
+    let request = audit_request(
+        args.target.as_ref(),
+        &flags,
+        args.min_severity.map_or(
+            protocol::schema::Severity::Warning,
+            crate::cli::SeverityArg::to_severity,
+        ),
+        false,
+        false,
+        true,
+        args.strict_refs,
+        args.max_chars,
+        &ctx,
+        global,
+    )?;
+    engine::check_audit(&request)?;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::AUDIT, &request, audit_wait(&ctx, false)))
 }
 
 /// `forms`: needs a running session.

@@ -1,5 +1,7 @@
 //! The files `fmt` and `lint` look at (plan 11, milestone 11.12): `.cdp`
-//! files, and mock files (the `.toml` files of the mocks directory).
+//! files, mock files (the `.toml` files of the mocks directory), and for
+//! `lint` audit baselines (the `.json` files of `e2e/audit/` and
+//! `.chrome-cdp/audit/`, plan 17).
 
 use std::path::{Path, PathBuf};
 
@@ -19,13 +21,18 @@ pub(crate) struct Files {
     pub(crate) cdp: Vec<PathBuf>,
     /// Mock files (absolute), sorted.
     pub(crate) mocks: Vec<PathBuf>,
+    /// Audit baselines (absolute), sorted; `fmt` leaves them alone.
+    pub(crate) audits: Vec<PathBuf>,
 }
 
 impl Files {
     pub(crate) fn len(&self) -> usize {
-        self.cdp.len() + self.mocks.len()
+        self.cdp.len() + self.mocks.len() + self.audits.len()
     }
 }
+
+/// The folders of audit baselines below a project root.
+const AUDIT_DIRS: [&str; 2] = ["e2e/audit", ".chrome-cdp/audit"];
 
 /// The files of `paths` (files or folders); without any, the project's:
 /// every `.cdp` file below its root and every mock file.
@@ -40,14 +47,26 @@ pub(crate) fn find(paths: &[PathBuf]) -> Result<Files, ErrorInfo> {
     let mut files = Files {
         cdp: Vec::new(),
         mocks: Vec::new(),
+        audits: Vec::new(),
         config,
     };
     let mocks_dir = canonical(&files.config.mocks);
     let artifacts = canonical(&files.config.artifacts);
+    let audit_dirs: Vec<PathBuf> = AUDIT_DIRS
+        .iter()
+        .map(|d| canonical(&files.config.root.join(d)))
+        .collect();
+    let dirs = Dirs {
+        mocks: &mocks_dir,
+        audits: &audit_dirs,
+    };
     if paths.is_empty() {
         let root = files.config.root.clone();
-        walk(&root, &artifacts, &mut |path| {
-            files.add(path, &mocks_dir, false)
+        walk(&root, &artifacts, &mut |path| files.add(path, &dirs, false));
+        // `.chrome-cdp` is hidden, so the walk leaves it out.
+        let hidden = root.join(AUDIT_DIRS[1]);
+        walk(&hidden, &artifacts, &mut |path| {
+            files.add(path, &dirs, false)
         });
         if files.len() == 0 {
             return Err(ErrorInfo::new(
@@ -63,7 +82,7 @@ pub(crate) fn find(paths: &[PathBuf]) -> Result<Files, ErrorInfo> {
         let path = cwd.join(path);
         if path.is_dir() {
             let before = files.len();
-            walk(&path, &artifacts, &mut |p| files.add(p, &mocks_dir, false));
+            walk(&path, &artifacts, &mut |p| files.add(p, &dirs, false));
             if files.len() == before {
                 return Err(ErrorInfo::new(
                     ErrorKind::NotFound,
@@ -74,13 +93,16 @@ pub(crate) fn find(paths: &[PathBuf]) -> Result<Files, ErrorInfo> {
                 )));
             }
         } else if path.is_file() {
-            if !files.add(path.clone(), &mocks_dir, true) {
+            if !files.add(path.clone(), &dirs, true) {
                 return Err(ErrorInfo::new(
                     ErrorKind::BadArgs,
-                    format!("{} is not a .cdp or mock (.toml) file", path.display()),
+                    format!(
+                        "{} is not a .cdp, mock (.toml) or audit baseline (.json) file",
+                        path.display()
+                    ),
                 )
                 .hint(Hint::text(
-                    "name .cdp scenario or step files, or mock files",
+                    "name .cdp scenario or step files, mock files or audit baselines",
                 )));
             }
         } else {
@@ -91,24 +113,38 @@ pub(crate) fn find(paths: &[PathBuf]) -> Result<Files, ErrorInfo> {
             .hint(Hint::text("paths are relative to the current directory")));
         }
     }
-    for list in [&mut files.cdp, &mut files.mocks] {
+    for list in [&mut files.cdp, &mut files.mocks, &mut files.audits] {
         list.sort();
         list.dedup();
     }
     Ok(files)
 }
 
+/// Where mock files and audit baselines are.
+struct Dirs<'a> {
+    mocks: &'a Path,
+    audits: &'a [PathBuf],
+}
+
 impl Files {
-    /// Adds `path` if it is a `.cdp` file or a mock file (a `.toml` file
-    /// below `mocks_dir`, or any `.toml` file when `named`); whether it did.
-    fn add(&mut self, path: PathBuf, mocks_dir: &Path, named: bool) -> bool {
+    /// Adds `path` if it is a `.cdp` file, a mock file (a `.toml` file
+    /// below the mocks directory, or any `.toml` file when `named`) or an
+    /// audit baseline (a `.json` file below an audit directory, or any
+    /// when `named`); whether it did.
+    fn add(&mut self, path: PathBuf, dirs: &Dirs<'_>, named: bool) -> bool {
         match path.extension().and_then(|e| e.to_str()) {
             Some("cdp") => {
                 self.cdp.push(path);
                 true
             }
-            Some("toml") if named || canonical(&path).starts_with(mocks_dir) => {
+            Some("toml") if named || canonical(&path).starts_with(dirs.mocks) => {
                 self.mocks.push(path);
+                true
+            }
+            Some("json")
+                if named || dirs.audits.iter().any(|d| canonical(&path).starts_with(d)) =>
+            {
+                self.audits.push(path);
                 true
             }
             _ => false,

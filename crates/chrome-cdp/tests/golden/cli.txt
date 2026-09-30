@@ -173,6 +173,8 @@ command chrome-cdp expect
   flag --baseline value=NAME
   flag --update
   flag --dir value=DIR
+  flag --audit
+  flag --category value=CATEGORY values=issues|a11y|layout|console|network|security|meta repeatable
   flag --viewports value=LIST repeatable
   flag --only value=KINDS repeatable
   flag --full
@@ -462,6 +464,17 @@ command chrome-cdp issues
   flag --follow -f
   flag --min-severity value=SEVERITY values=error|warning|info
   flag --all-tabs
+  flag --max-chars value=N
+command chrome-cdp audit
+  arg LOCATOR
+  flag --category value=CATEGORY values=issues|a11y|layout|console|network|security|meta repeatable
+  flag --baseline value=FILE|NAME
+  flag --update
+  flag --dir value=DIR
+  flag --min-severity value=SEVERITY values=error|warning|info
+  flag --show-accepted
+  flag --all-tabs
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
   flag --max-chars value=N
 command chrome-cdp network
   flag --failed

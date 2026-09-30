@@ -139,6 +139,7 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
             "expect",
             "expect-snapshot",
             "expect-screenshot",
+            "audit",
             "mark",
             "init",
             "test",

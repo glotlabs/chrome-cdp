@@ -66,7 +66,7 @@ pub(crate) fn run(args: &FmtArgs) -> Result<Output, ErrorInfo> {
         return Err(cannot_format(first, &problems));
     }
     let data = FmtData {
-        files: files.len(),
+        files: files.cdp.len() + files.mocks.len(),
         changed: changed.clone(),
         check: args.check,
         diff: (!diff.is_empty()).then(|| diff.clone()),
@@ -94,7 +94,7 @@ pub(crate) fn run(args: &FmtArgs) -> Result<Output, ErrorInfo> {
     let _ = write!(
         text,
         "{}, {}",
-        plural(files.len(), "file", "files"),
+        plural(files.cdp.len() + files.mocks.len(), "file", "files"),
         if args.check {
             "all formatted".to_owned()
         } else {

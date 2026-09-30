@@ -24,6 +24,10 @@ use crate::script::{self as lines, Problem};
 /// to the project root.
 pub(super) const SNAPSHOTS: &str = "e2e/snapshots";
 
+/// The folder whose `audit/` holds `expect --audit` baselines
+/// (`e2e/audit/<name>.json`), relative to the project root.
+pub(super) const AUDITS: &str = "e2e";
+
 /// A checked step.
 #[derive(Debug, Clone)]
 pub(super) struct Prepared {
@@ -85,6 +89,9 @@ pub(super) struct Plan {
     pub(super) debug: bool,
     /// `expect-snapshot` baselines' directory.
     pub(super) snapshots: PathBuf,
+    /// What `expect --audit`'s `--dir` is: its baselines are in its
+    /// `audit/`.
+    pub(super) audits: PathBuf,
     /// What every test's context gets before its steps (11.6).
     pub(super) determinism: Fixed,
     /// The backend the run uses (11.11).
@@ -267,6 +274,7 @@ impl Plan {
         let retries = args.retries.unwrap_or(backend.retries);
         let repeat = args.repeat.unwrap_or(1);
         let snapshots = config.root.join(SNAPSHOTS);
+        let audits = config.root.join(AUDITS);
         let determinism = backend.determinism.resolve();
         Ok(Self {
             config,
@@ -278,6 +286,7 @@ impl Plan {
             repeat,
             debug: args.debug,
             snapshots,
+            audits,
             determinism,
             backend,
             run,

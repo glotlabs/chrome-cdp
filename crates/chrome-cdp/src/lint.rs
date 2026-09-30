@@ -75,10 +75,39 @@ fn lint(args: &LintArgs, global: &GlobalArgs) -> Result<LintData, ErrorInfo> {
         let checked = crate::mock::check_files(&files.config, &files.mocks, openapi.as_deref())?;
         problems.extend(checked.problems.iter().map(from_mock));
     }
+    for path in &files.audits {
+        problems.extend(audit_baseline(path));
+    }
     Ok(data(
-        files.cdp.iter().chain(&files.mocks).map(PathBuf::as_path),
+        files
+            .cdp
+            .iter()
+            .chain(&files.mocks)
+            .chain(&files.audits)
+            .map(PathBuf::as_path),
         problems,
     ))
+}
+
+/// The problem of audit baseline `path`, if it has one: not JSON, a field
+/// that does not exist, a bad version or key, a key twice.
+fn audit_baseline(path: &Path) -> Option<LintProblem> {
+    let problem = |line, col, message: String| LintProblem {
+        file: normal(&absolute(path)).display().to_string(),
+        line,
+        col,
+        severity: "error".to_owned(),
+        rule: "audit-baseline".to_owned(),
+        message,
+        hint: Some("chrome-cdp schema audit-baseline has its format".to_owned()),
+    };
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) => return Some(problem(1, 1, format!("cannot read it: {e}"))),
+    };
+    engine::parse_audit_baseline(&text)
+        .err()
+        .map(|p| problem(p.line, p.column, p.message))
 }
 
 /// The lint `test` runs before it starts: `scenarios`' rules for backend

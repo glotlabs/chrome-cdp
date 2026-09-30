@@ -370,6 +370,17 @@ pub(crate) fn layout_baseline(dir: Option<&Path>, name: &str) -> Result<PathBuf,
     baseline_path(dir.as_deref(), "layout", name, ".txt", ".txt")
 }
 
+/// An audit baseline: a `.json` file as given (relative to the current
+/// directory), else NAME's file, `<dir>/audit/<NAME>.json`, `<dir>` being
+/// `--dir` or the project's `.chrome-cdp`.
+pub(crate) fn audit_baseline(dir: Option<&Path>, name: &str) -> Result<PathBuf, ErrorInfo> {
+    if Path::new(name).extension().is_some_and(|e| e == "json") {
+        return input::absolute_path(Path::new(name)).map(PathBuf::from);
+    }
+    let dir = dir.map(|d| d.join("audit"));
+    baseline_path(dir.as_deref(), "audit", name, ".json", ".json")
+}
+
 /// `expect-screenshot`'s baseline: `<name>-<os>.png`, one per platform,
 /// since fonts render differently on each.
 pub(crate) fn screenshot_baseline(dir: Option<&Path>, name: &str) -> Result<PathBuf, ErrorInfo> {

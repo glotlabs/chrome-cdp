@@ -963,6 +963,10 @@ impl Runner<'_> {
                 args.update |= self.options.update_snapshots;
                 args.dir.get_or_insert_with(|| self.plan.snapshots.clone());
             }
+            Some(Command::Expect(args)) if args.audit && args.baseline.is_some() => {
+                args.update |= self.options.update_snapshots;
+                args.dir.get_or_insert_with(|| self.plan.audits.clone());
+            }
             _ => {}
         }
         let screenshot = matches!(cli.command, Some(Command::ExpectScreenshot(_)));

@@ -184,6 +184,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             &cli.global,
         ),
         Some(Command::Issues(args)) => session::issues(&args, &cli.global),
+        Some(Command::Audit(args)) => session::audit(&args, &cli.global),
         Some(Command::Network(args)) => session::network(&args, &cli.global),
         Some(Command::Route(args)) => session::route(&args, &cli.global),
         Some(Command::Block(args)) => session::block(&args, &cli.global),

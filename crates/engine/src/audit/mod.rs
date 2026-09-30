@@ -75,6 +75,16 @@ const GROUP: &str = "chrome-cdp-audit";
 /// locator.
 pub fn check_audit(req: &AuditRequest) -> Result<(), ErrorInfo> {
     categories(req)?;
+    if let Some(b) = &req.baseline
+        && !std::path::Path::new(&b.name)
+            .extension()
+            .is_some_and(|e| e == "json")
+    {
+        crate::expect::baseline::check_name(
+            &b.name,
+            Cmd::new("audit").flag("baseline", "checkout"),
+        )?;
+    }
     if let Some(locator) = &req.locator {
         options(req).parse(locator)?;
     }

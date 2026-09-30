@@ -22,9 +22,15 @@ pub(crate) fn run(args: &SchemaArgs) -> Result<Output, ErrorInfo> {
     if name == SCENARIO {
         return Ok(typed(scenario()));
     }
+    if name == AUDIT_BASELINE {
+        return Ok(typed(schema::audit_baseline_schema()));
+    }
     let Some(entry) = schema::command(&name) else {
         let info = ErrorInfo::new(ErrorKind::BadArgs, format!("no schema for `{name}`"));
-        let names = COMMANDS.iter().map(|c| c.name).chain([MOCKS, SCENARIO]);
+        let names = COMMANDS
+            .iter()
+            .map(|c| c.name)
+            .chain([MOCKS, SCENARIO, AUDIT_BASELINE]);
         let close = suggest::similar(&name, names, 3);
         return Err(match close.first() {
             Some(first) => info
@@ -45,6 +51,11 @@ const MOCKS_SUMMARY: &str = "not a command: the mock file format (plan 11), for 
 /// Not a command: what a `.cdp` file may hold.
 const SCENARIO: &str = "scenario";
 const SCENARIO_SUMMARY: &str = "not a command: the .cdp format's directives, commands with their flags, and variables, for editors and agents";
+
+/// Not a command: the audit baseline file format.
+const AUDIT_BASELINE: &str = "audit-baseline";
+const AUDIT_BASELINE_SUMMARY: &str =
+    "not a command: an audit baseline file, the findings `audit --baseline` accepts (plan 17)";
 
 /// Commands a script line cannot run.
 const NOT_IN_SCRIPTS: &[&str] = &["batch", "run", "test"];
@@ -203,7 +214,11 @@ fn list() -> Output {
     let entries: Vec<(&str, &str)> = COMMANDS
         .iter()
         .map(|c| (c.name, c.summary))
-        .chain([(MOCKS, MOCKS_SUMMARY), (SCENARIO, SCENARIO_SUMMARY)])
+        .chain([
+            (MOCKS, MOCKS_SUMMARY),
+            (SCENARIO, SCENARIO_SUMMARY),
+            (AUDIT_BASELINE, AUDIT_BASELINE_SUMMARY),
+        ])
         .collect();
     let rows: Vec<_> = entries.iter().map(|(n, s)| vec![*n, *s]).collect();
     let names: Vec<_> = entries.iter().map(|(n, _)| *n).collect();

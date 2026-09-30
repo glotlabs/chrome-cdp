@@ -1882,6 +1882,11 @@ pub struct AuditBaselineFile {
     pub accepted: Vec<AcceptedFinding>,
 }
 
+/// The JSON Schema of an audit baseline file (`schema audit-baseline`).
+pub fn audit_baseline_schema() -> Value {
+    serde_json::to_value(schema_for!(AuditBaselineFile)).unwrap_or_default()
+}
+
 /// A finding a baseline accepts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
