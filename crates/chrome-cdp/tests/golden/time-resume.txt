@@ -1,0 +1,15 @@
+$ chrome-cdp time resume
+exit: 0
+--- stdout
+time frozen at 2026-01-31T09:30:00.000Z
+
+$ chrome-cdp time resume --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"default_viewport":{"dpr":1.0,"height":800,"mobile":false,"touch":false,"width":1280},"emulation":{"time":{"epoch_ms":1769851800000,"iso":"2026-01-31T09:30:00.000Z"}}}}
+
+$ chrome-cdp time resume -q
+exit: 0
+--- stdout
+time frozen at 2026-01-31T09:30:00.000Z
+

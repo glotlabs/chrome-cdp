@@ -2513,6 +2513,40 @@ const CASES: &[Case] = &[
         fixture: Fixture::Session,
     },
     Case {
+        name: "time-pause",
+        args: &["time", "pause", "2026-01-31T09:30:00Z"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "time-run-for",
+        args: &["time", "run-for", "1s"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/emulate/timers.html"],
+            &["time", "pause", "2026-01-31T09:30:00Z"],
+            &["goto", "{site}/emulate/timers.html"],
+        ]),
+    },
+    Case {
+        name: "time-run-for-unpaused",
+        args: &["time", "run-for", "1s"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "time-pause-at-past",
+        args: &["time", "pause-at", "2026-01-31T09:00:00Z"],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(&[&["open"], &["time", "pause", "2026-01-31T09:30:00Z"]]),
+    },
+    Case {
+        name: "time-resume",
+        args: &["time", "resume"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[&["open"], &["time", "pause", "2026-01-31T09:30:00Z"]]),
+    },
+    Case {
         name: "permissions",
         args: &["permissions"],
         modes: ALL,

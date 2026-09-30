@@ -30,6 +30,28 @@
       ],
       "type": "object"
     },
+    "ClockFired": {
+      "description": "What moving a paused clock on fired (`time run-for`, `pause-at`, and\n`advance` while paused), in every page, frame and worker.",
+      "properties": {
+        "frames": {
+          "description": "Animation frames run (each runs every `requestAnimationFrame`\ncallback queued for it).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "timers": {
+          "description": "`setTimeout` and `setInterval` callbacks run (each interval tick\ncounts).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "timers",
+        "frames"
+      ],
+      "type": "object"
+    },
     "DeviceInfo": {
       "description": "A device `emulate` can be (`emulate --list`).",
       "properties": {
@@ -130,6 +152,17 @@
         "emulation": {
           "$ref": "#/$defs/Emulation",
           "description": "Everything the session emulates now."
+        },
+        "fired": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClockFired"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "After moving a paused clock on: what it fired."
         }
       },
       "required": [
@@ -709,6 +742,10 @@
         "iso": {
           "description": "The same in ISO 8601 (UTC).",
           "type": "string"
+        },
+        "paused": {
+          "description": "Whether timers and animation frames are stopped too (`time\npause`) until `time run-for`, `pause-at` or `resume`.",
+          "type": "boolean"
         }
       },
       "required": [

@@ -264,17 +264,24 @@ pub(crate) fn cpu_throttle(args: &CpuThrottleArgs) -> Result<EmulationChange, Er
     }
 }
 
-/// `time freeze [TIME]`, `time advance DURATION`, `time reset`.
+/// `time <command>`'s TIME, with an example of `command` in the error.
+fn parse_time(text: &str, command: &str) -> Result<i64, ErrorInfo> {
+    protocol::format::parse_time(text).map_err(|message| {
+        bad(
+            message,
+            Cmd::new("time").arg(command).arg("2026-01-31T09:30:00Z"),
+        )
+    })
+}
+
+/// `time freeze [TIME]`, `time advance DURATION`, `time pause [TIME]`,
+/// `time run-for DURATION`, `time pause-at TIME`, `time resume`, `time
+/// reset`.
 pub(crate) fn time(command: &TimeCommand) -> Result<EmulationChange, ErrorInfo> {
     Ok(match command {
         TimeCommand::Freeze(args) => {
             let epoch_ms = if let Some(text) = &args.time {
-                protocol::format::parse_time(text).map_err(|message| {
-                    bad(
-                        message,
-                        Cmd::new("time").arg("freeze").arg("2026-01-31T09:30:00Z"),
-                    )
-                })?
+                parse_time(text, "freeze")?
             } else {
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -284,6 +291,18 @@ pub(crate) fn time(command: &TimeCommand) -> Result<EmulationChange, ErrorInfo> 
             EmulationChange::TimeFreeze { epoch_ms }
         }
         TimeCommand::Advance(args) => EmulationChange::TimeAdvance { ms: args.by },
+        TimeCommand::Pause(args) => EmulationChange::TimePause {
+            epoch_ms: args
+                .time
+                .as_deref()
+                .map(|text| parse_time(text, "pause"))
+                .transpose()?,
+        },
+        TimeCommand::RunFor(args) => EmulationChange::TimeRunFor { ms: args.by },
+        TimeCommand::PauseAt(args) => EmulationChange::TimePauseAt {
+            epoch_ms: parse_time(&args.time, "pause-at")?,
+        },
+        TimeCommand::Resume => EmulationChange::TimeResume,
         TimeCommand::Reset => EmulationChange::TimeReset,
     })
 }

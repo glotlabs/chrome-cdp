@@ -129,7 +129,7 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`offline`](offline.md) | Take the network away (requests fail, navigator.onLine is false) |
 | [`throttle`](throttle.md) | Slow the network: a preset, or latency and bandwidth |
 | [`cpu-throttle`](cpu-throttle.md) | Slow the CPU down by a factor (4 = four times slower) |
-| [`time`](time.md) | Freeze the time pages see, move it on, or give the real one back |
+| [`time`](time.md) | Freeze or pause the time pages see, move it on, or give the real one back |
 | [`permissions`](permissions.md) | List, grant, deny or reset permissions (geolocation, camera, …) |
 
 ## Cookies and storage

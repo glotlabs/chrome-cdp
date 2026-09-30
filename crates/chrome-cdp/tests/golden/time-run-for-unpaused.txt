@@ -1,0 +1,11 @@
+$ chrome-cdp time run-for 1s
+exit: 2
+--- stderr
+error: the time is not paused, so `time run-for` has nothing to run
+  hint: chrome-cdp time pause   (stops the time and timers where they are)
+
+$ chrome-cdp time run-for 1s --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"the time is not paused, so `time run-for` has nothing to run","hint":"chrome-cdp time pause   (stops the time and timers where they are)"}}
+

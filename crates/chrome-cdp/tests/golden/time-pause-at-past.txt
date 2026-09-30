@@ -1,0 +1,11 @@
+$ chrome-cdp time pause-at 2026-01-31T09:00:00Z
+exit: 2
+--- stderr
+error: 2026-01-31T09:00:00.000Z is before the paused time 2026-01-31T09:30:00.000Z: the clock only runs forward
+  hint: chrome-cdp time pause 2026-01-31T09:00:00.000Z   (sets the time without running timers)
+
+$ chrome-cdp time pause-at 2026-01-31T09:00:00Z --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"2026-01-31T09:00:00.000Z is before the paused time 2026-01-31T09:30:00.000Z: the clock only runs forward","hint":"chrome-cdp time pause 2026-01-31T09:00:00.000Z   (sets the time without running timers)"}}
+

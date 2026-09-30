@@ -1484,7 +1484,7 @@ Examples:
     )]
     State(StateArgs),
 
-    /// Freeze the time pages see, move it on, or give the real one back.
+    /// Freeze or pause the time pages see, move it on, or give the real one back.
     #[command(
         subcommand_required = true,
         arg_required_else_help = true,
@@ -1498,10 +1498,15 @@ performance.now() on and runs the setTimeout and setInterval callbacks due
 by then (each once), so expiry, polling and debounce can be tested without
 waiting. It is an init script that replaces `Date`, not Chrome's virtual
 time, which stalls page loads.
+`time pause` stops timers and animation frames as well, and `time run-for`
+fires them in order, each interval tick and a frame every 16ms, like
+Playwright's clock.runFor.
 
 Examples:
   chrome-cdp time freeze 2026-01-31T09:30:00Z
   chrome-cdp time advance 90s
+  chrome-cdp time pause
+  chrome-cdp time run-for 1s
   chrome-cdp time reset"
     )]
     Time(TimeArgs),
@@ -4565,13 +4570,57 @@ Examples:
     /// Move the frozen time on, running the timers due by then.
     #[command(after_help = "\
 Timers set before the time was frozen in a page that was already open are
-not run early.
+not run early. While paused (`time pause`), it fires each callback due by
+then once, where `time run-for` fires every interval tick and frame.
 
 Examples:
   chrome-cdp time advance 90s
   chrome-cdp time advance 2h
   chrome-cdp time advance 1500        # ms")]
     Advance(TimeAdvanceArgs),
+
+    /// Freeze the time and stop timers and animation frames.
+    #[command(after_help = "\
+TIME is ISO 8601 (UTC unless it has an offset) or ms since 1970; without it,
+the frozen time, or now. While paused, setTimeout, setInterval and
+requestAnimationFrame callbacks are queued and performance.now() stands
+still, until `time run-for`, `pause-at` or `resume`. Timers a page set
+before the clock came to it keep running: reload for full control.
+
+Examples:
+  chrome-cdp time pause
+  chrome-cdp time pause 2026-01-31T09:30:00Z
+  chrome-cdp time run-for 5s")]
+    Pause(TimePauseArgs),
+
+    /// Move the paused time on, firing every callback due, in order.
+    #[command(after_help = "\
+Each interval tick fires (100ms over 1s: 10 times), animation frames run
+every 16ms, and callbacks set on the way run when they are due. It stops
+after 10,000 callbacks, leaving the rest queued. `time advance` while
+paused fires each due callback only once.
+
+Examples:
+  chrome-cdp time run-for 1s
+  chrome-cdp time run-for 15m
+  chrome-cdp time run-for 500        # ms")]
+    RunFor(TimeRunForArgs),
+
+    /// Run the paused time on to TIME, as run-for, then stay paused.
+    #[command(after_help = "\
+TIME is ISO 8601 (UTC unless it has an offset) or ms since 1970, and not
+before the paused time.
+
+Examples:
+  chrome-cdp time pause-at 2026-01-31T10:00:00Z")]
+    PauseAt(TimePauseAtArgs),
+
+    /// Let paused timers run in real time again; the time stays frozen.
+    #[command(after_help = "\
+Examples:
+  chrome-cdp time resume
+  chrome-cdp time reset              # the real time, too")]
+    Resume,
 
     /// Give pages the real time back.
     #[command(after_help = "\
@@ -4585,6 +4634,27 @@ pub(crate) struct TimeFreezeArgs {
     /// ISO 8601, e.g. 2026-01-31T09:30:00Z, or ms since 1970.
     #[arg(value_name = "TIME")]
     pub(crate) time: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct TimePauseArgs {
+    /// ISO 8601, e.g. 2026-01-31T09:30:00Z, or ms since 1970.
+    #[arg(value_name = "TIME")]
+    pub(crate) time: Option<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct TimeRunForArgs {
+    /// How far: 1500 (ms), 90s, 15m, 2h, 7d.
+    #[arg(value_name = "DURATION", value_parser = parse_advance)]
+    pub(crate) by: u64,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct TimePauseAtArgs {
+    /// ISO 8601, e.g. 2026-01-31T10:00:00Z, or ms since 1970.
+    #[arg(value_name = "TIME")]
+    pub(crate) time: String,
 }
 
 #[derive(Debug, Args)]
@@ -5985,6 +6055,10 @@ mod tests {
         "permissions reset",
         "time freeze",
         "time advance",
+        "time pause",
+        "time run-for",
+        "time pause-at",
+        "time resume",
         "time reset",
         "schema",
         "route",

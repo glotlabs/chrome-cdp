@@ -569,6 +569,13 @@ command chrome-cdp time freeze
   arg TIME
 command chrome-cdp time advance
   arg DURATION required
+command chrome-cdp time pause
+  arg TIME
+command chrome-cdp time run-for
+  arg DURATION required
+command chrome-cdp time pause-at
+  arg TIME required
+command chrome-cdp time resume
 command chrome-cdp time reset
 command chrome-cdp screenshot
   arg LOCATOR

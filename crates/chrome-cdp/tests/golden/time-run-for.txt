@@ -1,0 +1,17 @@
+$ chrome-cdp time run-for 1s
+exit: 0
+--- stdout
+time paused at 2026-01-31T09:30:01.000Z (timers stopped)
+ran 10 timers, 62 frames
+
+$ chrome-cdp time run-for 1s --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"default_viewport":{"dpr":1.0,"height":800,"mobile":false,"touch":false,"width":1280},"emulation":{"time":{"epoch_ms":1769851802000,"iso":"2026-01-31T09:30:02.000Z","paused":true}},"fired":{"frames":63,"timers":10}}}
+
+$ chrome-cdp time run-for 1s -q
+exit: 0
+--- stdout
+time paused at 2026-01-31T09:30:03.000Z (timers stopped)
+ran 10 timers, 62 frames
+
