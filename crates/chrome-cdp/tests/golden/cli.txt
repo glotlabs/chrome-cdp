@@ -139,6 +139,8 @@ command chrome-cdp wait
   flag --download
   flag --console value=REGEX
   flag --binding value=NAME
+  flag --ws value=PATTERN
+  flag --frame value=REGEX
   flag --max-chars value=N
 command chrome-cdp expect
   arg LOCATOR
@@ -387,6 +389,13 @@ command chrome-cdp network show
   flag --request-body
   flag --output -o value=PATH
   flag --max-chars value=N
+command chrome-cdp network frames
+  arg ID required
+  flag --grep value=REGEX
+  flag --dir value=DIR values=sent|received
+  flag --limit value=N
+  flag --follow -f
+  flag --max-chars value=N
 command chrome-cdp network clear
 command chrome-cdp route
   arg PATTERN required
@@ -504,6 +513,8 @@ command chrome-cdp init-script remove
   flag --all
 command chrome-cdp expose
   arg NAME multiple
+  flag --returns value=JSON
+  flag --returns-seq value=JSON-ARRAY
 command chrome-cdp unexpose
   arg NAME multiple
   flag --all
