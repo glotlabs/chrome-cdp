@@ -19,7 +19,7 @@ file into a scenario.
 | `test.skip`, `test.fixme`, `test.only` | `@skip "why"`, `@only` |
 | tags, `--grep` | `@tags smoke`, `--tags smoke,!slow`, `--grep` |
 | `test.use({ viewport })`, `devices[…]` | `@viewport 390x844`, `@device "iPhone 15"` |
-| `test.use({ storageState })` | `state load ../state/user.json` in `@before` |
+| `test.use({ storageState })` | `state load e2e/state/user.json` in `@before` (relative to where `test` runs) |
 | `test.setTimeout`, `retries` | `@timeout 60s`, `@retries 2`, `--retries` |
 | `workers`, `--shard` | `jobs` in `[e2e]`, `--jobs`, `--shard 2/4` |
 | `--repeat-each` | `--repeat 20` (and flaky tests are always reported) |

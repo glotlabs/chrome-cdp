@@ -11,7 +11,7 @@ its mocks. This page is the reference; plan 11 has the design.
 @tags smoke checkout
 
 @before
-  state load ../state/user.json
+  state load e2e/state/user.json  # relative to where `test` runs
   goto /
 
 @test "lists products"
