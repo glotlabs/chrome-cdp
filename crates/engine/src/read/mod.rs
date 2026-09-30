@@ -107,7 +107,9 @@ impl Engine {
                 reader(timeout).run().await
             }
         };
-        let output = self.unless_blocked(&running, &page, mark, read).await?;
+        let output = self
+            .unless_blocked(&running, &page, mark, Box::pin(read))
+            .await?;
         Ok(self.report_events(&running, mark, output, None).await)
     }
 }
