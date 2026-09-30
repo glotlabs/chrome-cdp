@@ -14,6 +14,7 @@
 //! go too; a step that gave none this time keeps its old one.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use clap::{CommandFactory as _, FromArgMatches as _};
@@ -152,7 +153,7 @@ pub(super) fn key(step: &Prepared, word: usize, scenario: &Scenario, root: &Path
     } else {
         format!("{}:", relative(root, file))
     };
-    key.push_str(&format!("{}:{text}", step.line.span.line));
+    let _ = write!(key, "{}:{text}", step.line.span.line);
     let params: Vec<String> = w
         .parts
         .iter()
@@ -169,7 +170,7 @@ pub(super) fn key(step: &Prepared, word: usize, scenario: &Scenario, root: &Path
         })
         .collect();
     if !params.is_empty() {
-        key.push_str(&format!(" [{}]", params.join(", ")));
+        let _ = write!(key, " [{}]", params.join(", "));
     }
     key
 }

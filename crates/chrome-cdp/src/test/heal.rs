@@ -225,14 +225,17 @@ pub(super) struct Planned {
     pub(super) left_out: BTreeMap<(usize, usize), String>,
 }
 
+/// Heals of one word: by test, heal index, and the heal.
+type Heals<'a> = Vec<(usize, usize, &'a Heal)>;
+
 /// The patch of the heals of each test (by the plan's index, with
 /// whether the test passed). A heal is left out when its test failed,
 /// its locator comes from a variable, or another test healed the same
 /// word differently (then neither goes in). `root` is the project root.
 pub(super) fn plan(tests: &[(usize, bool, &[Heal])], root: &Path) -> Planned {
     let mut planned = Planned::default();
-    // By file and word: the heals of it.
-    let mut words: BTreeMap<(String, usize), Vec<(usize, usize, &Heal)>> = BTreeMap::new();
+    // By file and word: the heals of it (test, heal, the heal).
+    let mut words: BTreeMap<(String, usize), Heals<'_>> = BTreeMap::new();
     for &(test, passed, heals) in tests {
         for (n, heal) in heals.iter().enumerate() {
             if !passed {
