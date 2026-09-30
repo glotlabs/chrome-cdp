@@ -1,0 +1,15 @@
+$ chrome-cdp audit --min-severity info
+exit: 0
+--- stdout
+audit: <site>/audit/clean.html — no findings
+
+$ chrome-cdp audit --min-severity info --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"accepted":0,"categories":["issues","a11y","layout","console","network","security","meta"],"errors":0,"findings":[],"hidden":0,"info":0,"min_severity":"info","tab":"t1","url":"<site>/audit/clean.html","warnings":0}}
+
+$ chrome-cdp audit --min-severity info -q
+exit: 0
+--- stdout
+0
+

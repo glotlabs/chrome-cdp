@@ -30,6 +30,60 @@
       ],
       "type": "object"
     },
+    "AuditBaselineResult": {
+      "description": "What happened to an audit baseline.",
+      "oneOf": [
+        {
+          "const": "compared",
+          "description": "The findings were compared with it.",
+          "type": "string"
+        },
+        {
+          "const": "missing",
+          "description": "There is none yet: every finding is new.",
+          "type": "string"
+        },
+        {
+          "const": "created",
+          "description": "There was none; the findings were written as one.",
+          "type": "string"
+        },
+        {
+          "const": "updated",
+          "description": "`--update` wrote the findings into it.",
+          "type": "string"
+        },
+        {
+          "const": "unchanged",
+          "description": "`--update` found it holding the findings already.",
+          "type": "string"
+        }
+      ]
+    },
+    "AuditBaselineState": {
+      "description": "An audit baseline as `audit` and `expect --audit` used it.",
+      "properties": {
+        "path": {
+          "description": "The file, absolute.",
+          "type": "string"
+        },
+        "result": {
+          "$ref": "#/$defs/AuditBaselineResult"
+        },
+        "stale": {
+          "description": "Keys the baseline accepts that no finding has any more (of the\ncategories checked): `--update` drops them.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "path",
+        "result"
+      ],
+      "type": "object"
+    },
     "BaselineResult": {
       "description": "What `expect-snapshot` and `expect-screenshot` did with the baseline.",
       "oneOf": [
@@ -718,6 +772,40 @@
         }
       ]
     },
+    "ExpectAudit": {
+      "description": "`expect --audit`: the findings, and the baseline they were compared\nwith.",
+      "properties": {
+        "accepted": {
+          "description": "How many of them the baseline accepts.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "baseline": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AuditBaselineState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The baseline, if one was given."
+        },
+        "findings": {
+          "description": "The keys of the findings at `--min-severity` or above, accepted\nones included.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "findings",
+        "accepted"
+      ],
+      "type": "object"
+    },
     "ExpectData": {
       "description": "`data` of `chrome-cdp expect --json`: the assertion held.",
       "properties": {
@@ -727,6 +815,17 @@
         "assertion": {
           "description": "The assertion as typed after `expect`: `'role=alert' text Saved`.",
           "type": "string"
+        },
+        "audit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExpectAudit"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`expect --audit`: the findings and the baseline."
         },
         "count": {
           "description": "How many elements matched (element matchers), or were found.",

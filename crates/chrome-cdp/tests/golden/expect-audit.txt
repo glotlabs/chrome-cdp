@@ -1,0 +1,23 @@
+$ chrome-cdp expect --audit
+exit: 1
+--- stderr
+error: expect --audit failed: 7 findings (no baseline)
+  page: <site>/audit/golden.html
+  found: 2 errors, 5 warnings
+  new:
+    errors
+      a11y/image-alt                     img [e1] has no alt text  (WCAG 1.1.1 A)
+      network/http-error                 GET /audit/missing.json 404
+    warnings
+      issues/deprecation-unload-handler  unload event listeners are deprecated; use pagehide  (/audit/unload.js:2)
+      layout/clipped                     paragraph "A label far too long for its box" [e2]: 60px of 206px shown (overflow: hidden on it)
+      console/console-error              Cart failed to load  (/audit/console.js:3)
+      security/no-csp                    the document has no Content-Security-Policy
+      meta/no-viewport                   there is no <meta name=viewport>
+  hint: chrome-cdp expect --audit --baseline golden --update   (accepts them, if they are fine), or fix them
+
+$ chrome-cdp expect --audit --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect --audit failed: 7 findings (no baseline)","hint":"chrome-cdp expect --audit --baseline golden --update   (accepts them, if they are fine), or fix them","notes":[{"label":"page","text":"<site>/audit/golden.html"},{"label":"found","text":"2 errors, 5 warnings"},{"label":"new","text":"errors\n  a11y/image-alt                     img [e1] has no alt text  (WCAG 1.1.1 A)\n  network/http-error                 GET /audit/missing.json 404\nwarnings\n  issues/deprecation-unload-handler  unload event listeners are deprecated; use pagehide  (/audit/unload.js:2)\n  layout/clipped                     paragraph \"A label far too long for its box\" [e2]: 60px of 206px shown (overflow: hidden on it)\n  console/console-error              Cart failed to load  (/audit/console.js:3)\n  security/no-csp                    the document has no Content-Security-Policy\n  meta/no-viewport                   there is no <meta name=viewport>"}],"details":{"assertion":"--audit","baseline":null,"elapsed_ms":<ms>,"found":["a11y/image-alt/img","network/http-error/GET self/audit/missing.json","issues/deprecation-unload-handler/self/audit/unload.js:2","layout/clipped/text=\"A label far too long for its box\"","console/console-error/self/audit/console.js:3 Cart failed to load","security/no-csp//audit/golden.html","meta/no-viewport//audit/golden.html"],"new":[{"category":"a11y","count":1,"key":"a11y/image-alt/img","message":"img [e1] has no alt text","rule":"image-alt","severity":"error","target":{"element":"img","ref":"e1"},"wcag":"1.1.1 A"},{"category":"network","count":1,"key":"network/http-error/GET self/audit/missing.json","message":"GET /audit/missing.json 404","rule":"http-error","severity":"error","target":{"request_id":6,"url":"<site>/audit/missing.json"}},{"category":"issues","count":1,"docs":"https://chromestatus.com/features","key":"issues/deprecation-unload-handler/self/audit/unload.js:2","message":"unload event listeners are deprecated; use pagehide  (/audit/unload.js:2)","rule":"deprecation-unload-handler","severity":"warning","target":{"source":{"column":9,"line":2,"url":"<site>/audit/unload.js"}}},{"category":"layout","count":1,"key":"layout/clipped/text=\"A label far too long for its box\"","message":"paragraph \"A label far too long for its box\" [e2]: 60px of 206px shown (overflow: hidden on it)","rule":"clipped","severity":"warning","target":{"element":"paragraph \"A label far too long for its box\"","ref":"e2"}},{"category":"console","count":1,"key":"console/console-error/self/audit/console.js:3 Cart failed to load","message":"Cart failed to load  (/audit/console.js:3)","rule":"console-error","severity":"warning","target":{}},{"category":"security","count":1,"key":"security/no-csp//audit/golden.html","message":"the document has no Content-Security-Policy","rule":"no-csp","severity":"warning","target":{}},{"category":"meta","count":1,"key":"meta/no-viewport//audit/golden.html","message":"there is no <meta name=viewport>","rule":"no-viewport","severity":"warning","target":{}}],"url":"<site>/audit/golden.html"}}}
+

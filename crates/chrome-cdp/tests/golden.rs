@@ -1398,6 +1398,24 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/issues/golden.html"),
     },
     Case {
+        name: "audit",
+        args: &["audit"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/audit/golden.html"),
+    },
+    Case {
+        name: "audit-clean",
+        args: &["audit", "--min-severity", "info"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/audit/clean.html"),
+    },
+    Case {
+        name: "expect-audit",
+        args: &["expect", "--audit"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/audit/golden.html"),
+    },
+    Case {
         name: "network-failed",
         args: &["network", "--failed", "--status", "4xx", "--since", "0"],
         modes: ALL,
