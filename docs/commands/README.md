@@ -47,6 +47,7 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`count`](count.md) | Count the elements a locator matches (0 is not an error) |
 | [`box`](box.md) | Print an element's box in the viewport: x, y, width and height |
 | [`why`](why.md) | Explain why an action on an element would wait or fail, check by check, without acting |
+| [`forms`](forms.md) | List the page's forms: each field's name, kind, state, value and validation message |
 | [`layout`](layout.md) | Lint what the page looks like: covered, overlapping, clipped, off-screen and too small elements, sideways scrolling, low contrast |
 | [`source`](source.md) | Print the file and line an element came from, and its components |
 | [`components`](components.md) | Print the page's component tree, or the component that rendered an element, with its props and state |
@@ -60,6 +61,7 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`hover`](hover.md) | Move the mouse over an element (menus, tooltips) |
 | [`tap`](tap.md) | Tap an element with a touch (needs touch emulation) |
 | [`fill`](fill.md) | Replace a field's content with text, in one input event |
+| [`fill-form`](fill-form.md) | Fill a form from a JSON object in one step: keys name fields, values pick the action |
 | [`type`](type.md) | Type text key by key, as a user does (fill is faster) |
 | [`press`](press.md) | Press keys or shortcuts: Enter, Control+A, "Mod+A Backspace" |
 | [`select`](select.md) | Choose options of a &lt;select&gt; by value or label |

@@ -18,7 +18,7 @@ around it. **The v1 gate: no ❌ in an agent-critical row.** A test
 (`crates/chrome-cdp/tests/parity.rs`) holds the tables to that, checks the
 counts below, and checks that every command a row names exists.
 
-Today: 131 rows; 117 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
+Today: 132 rows; 118 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
 
 ## Navigation
 
@@ -90,6 +90,7 @@ Today: 131 rows; 117 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
 | `dispatchEvent` | `eval --in LOC 'el => el.dispatchEvent(…)'` | 🟡 | no |
 | clipboard | `clipboard read`, `clipboard write TEXT` | ✅ | no |
 | `highlight` | `highlight LOC` | ✅ | no |
+| — | `forms` lists each form's fields (name, kind, state, value, validation message); `fill-form --values JSON` fills a whole form by field names in one step (`--submit`) | ✅ | no |
 
 ## Reading the page
 

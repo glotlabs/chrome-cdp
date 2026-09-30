@@ -20,8 +20,8 @@ browser, tabs and refs between commands. Output is compact text; add
    - textbox "Password" [e7] (password)
    - button "Sign in" [e8]
    ```
-   Drop `-i` for the whole tree with text. `find <words>` searches for
-   elements; `text` and `markdown` read the content, iframes included.
+   Drop `-i` for the whole tree. `find <words>` searches for elements;
+   `text` and `markdown` read the content, iframes included.
 3. **Act by ref**: `chrome-cdp fill e6 ada@example.com`, `chrome-cdp click e8`.
    Actions wait until the element is visible, enabled and not covered,
    scroll it into view, and act like a real user.
@@ -135,9 +135,9 @@ value <loc> | attr <loc> <a>   a field's value | an attribute
 click | dblclick | hover <loc>
 fill <loc> <text>              set a field (type <text> types key by key)
 press Enter | 'Control+A'      keys and shortcuts
-keyboard down Shift           hold a key across commands; keyboard up --all
-select <loc> <value>           a <select> option
-check | uncheck <loc>          checkboxes and radios
+keyboard down Shift           hold a key; keyboard up --all
+select <loc> <v> | check <loc>  an option; a checkbox or radio (uncheck)
+fill-form --values '{"Email":"a@b"}'  fill a whole form; see forms
 upload <loc> <file...> [--drop] file inputs; --drop for drop zones
 wait <loc> | --text t | --url u | --idle
 expect <loc> visible|text t|value v|count n [--not]   assert, retrying
