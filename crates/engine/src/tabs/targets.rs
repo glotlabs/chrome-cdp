@@ -139,6 +139,8 @@ pub(crate) struct Target {
     /// A worker's console events so far: numbers each, the same in every
     /// tab it goes to.
     pub(crate) events: u64,
+    /// Set up and resumed: an out-of-process iframe's frames are known.
+    pub(crate) ready: bool,
 }
 
 impl Target {
@@ -164,6 +166,7 @@ impl Target {
             interception: None,
             injected: HashMap::new(),
             events: 0,
+            ready: false,
         }
     }
 

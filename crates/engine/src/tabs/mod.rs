@@ -465,14 +465,35 @@ impl Tabs {
             .call(target::SetDiscoverTargetsParams::new(true))
             .await?;
         browser.call(auto_attach()).await?;
-        let pages: Vec<String> = browser
+        let infos = browser
             .call(target::GetTargetsParams::default())
             .await?
-            .target_infos
-            .into_iter()
-            .filter(is_tab)
-            .map(|t| t.target_id)
+            .target_infos;
+        let pages: Vec<String> = infos
+            .iter()
+            .filter(|t| is_tab(t))
+            .map(|t| t.target_id.clone())
             .collect();
+        // Their out-of-process iframes (nested ones too), which their own
+        // sessions attach: `frames` right after `connect` lists them.
+        let mut iframes: Vec<String> = Vec::new();
+        loop {
+            let before = iframes.len();
+            for info in &infos {
+                let Some(parent) = &info.parent_id else {
+                    continue;
+                };
+                if info.r#type == "iframe"
+                    && !iframes.contains(&info.target_id)
+                    && (pages.contains(parent) || iframes.contains(parent))
+                {
+                    iframes.push(info.target_id.clone());
+                }
+            }
+            if iframes.len() == before {
+                break;
+            }
+        }
         let ready = self
             .wait(timeout, |state| {
                 pages.iter().all(|target_id| {
@@ -480,6 +501,11 @@ impl Tabs {
                         .tabs
                         .values()
                         .any(|t| t.ready && &t.target_id == target_id)
+                }) && iframes.iter().all(|target_id| {
+                    state
+                        .targets
+                        .values()
+                        .any(|t| t.ready && &t.id == target_id)
                 })
             })
             .await;
@@ -2413,6 +2439,7 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent<'_>) {
             shared.spawn(watch_worker(shared.clone(), events, session_id.clone()));
         }
     }
+    let session_id = session_id.clone();
     let waiting = attached.waiting_for_debugger;
     let task_shared = shared.clone();
     shared.spawn(async move {
@@ -2423,6 +2450,10 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent<'_>) {
             tab,
         };
         setup(&task_shared, target, waiting).await;
+        if let Some(target) = task_shared.lock().targets.get_mut(&session_id) {
+            target.ready = true;
+        }
+        task_shared.bump();
         if let Some(id) = new_tab {
             if let Some(front) = front_after_popup(&task_shared, id) {
                 let front = front.with_timeout(SETUP_TIMEOUT);
