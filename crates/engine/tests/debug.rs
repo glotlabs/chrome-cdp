@@ -609,3 +609,40 @@ async fn bad_input_is_refused() {
     assert_eq!(err.message, "no logpoint 7; the session has none");
     engine.close().await;
 }
+
+/// Two logpoints on one line share its breakpoint: both log, and
+/// clearing one leaves the other.
+#[tokio::test(flavor = "multi_thread")]
+async fn two_logpoints_on_one_line() {
+    let Some(chrome) = chrome_path() else { return };
+    let engine = start(&chrome, "debug-shared").await;
+    open_app(&engine, "plain").await;
+    let line = line_of("plain", "src/cart.ts", "clicks += 1");
+    let (_, first) = log(&engine, "plain", "src/cart.ts", line, &["what"], 1000)
+        .await
+        .unwrap();
+    let (_, second) = log(&engine, "plain", "src/cart.ts", line, &["clicks"], 1000)
+        .await
+        .unwrap();
+    assert_eq!(
+        (first.state.as_str(), second.state.as_str()),
+        ("bound", "bound")
+    );
+    let clicked = in_app("plain", click(&engine, "testid=add-1")).await;
+    assert!(
+        clicked
+            .text
+            .contains(&format!("! logpoint 1 src/cart.ts:{line}: what=\"add\"\n! logpoint 2 src/cart.ts:{line}: clicks=0")),
+        "{}",
+        clicked.text
+    );
+    let (output, cleared) = clear(&engine, Some(1)).await;
+    assert_eq!((cleared.remaining, cleared.debugger), (1, true));
+    assert_eq!(output.text, "cleared logpoint 1; 1 left");
+    let clicked = in_app("plain", click(&engine, "testid=add-1")).await;
+    let hits = hits(&clicked);
+    assert_eq!(hits.len(), 1, "{}", clicked.text);
+    assert_eq!(hits[0].id, 2);
+    assert_eq!(hits[0].values[0].value.as_deref(), Some("1"));
+    engine.close().await;
+}

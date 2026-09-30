@@ -17,7 +17,9 @@
 //! The breakpoint's condition runs `logpoint.js` (see
 //! `injected/src/logpoint.ts`): it previews each expression's value in
 //! its own `try`, sends them on the binding and returns `false`, so the
-//! page never stops.
+//! page never stops. V8 names a breakpoint by its URL, line and column,
+//! so the logpoints at one place share one, whose condition runs each;
+//! it is set again when one comes or goes ([`replace`]).
 //!
 //! **Scripts loaded later.** While Debugger is on, each script with a
 //! source map pauses before it runs
@@ -55,6 +57,9 @@ use crate::observe::{Mapped, RESOLVE_LIMIT};
 use crate::places;
 use crate::request::DebugLogRequest;
 
+/// How long taking out a logpoint that reached its limit may take.
+const STOP_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// How often `debug log` looks whether its logpoint's binds ended.
 const BUSY_POLL: Duration = Duration::from_millis(10);
 
@@ -73,6 +78,23 @@ pub(super) struct Debugging {
     /// The project root of the latest `debug` command: places in hits
     /// and notes print relative to it.
     root: Option<PathBuf>,
+    /// The breakpoints set, by where they are. The logpoints at one
+    /// place share one (V8 names a breakpoint by its URL, line and
+    /// column, so a second one there fails), whose condition runs each.
+    placed: HashMap<Spot, Placed>,
+    /// Held while a breakpoint is set again (see [`replace`]).
+    changing: Arc<tokio::sync::Mutex<()>>,
+}
+
+/// Where a breakpoint is: a session, a script's URL, and the 0-based
+/// line and column in it.
+type Spot = (String, String, u32, u32);
+
+/// A breakpoint and the logpoints it runs.
+#[derive(Debug)]
+struct Placed {
+    breakpoint: String,
+    ids: Vec<u32>,
 }
 
 impl Default for Debugging {
@@ -86,6 +108,8 @@ impl Default for Debugging {
             logpoints: BTreeMap::new(),
             sessions: HashMap::new(),
             root: None,
+            placed: HashMap::new(),
+            changing: Arc::default(),
         }
     }
 }
@@ -130,11 +154,12 @@ struct Logpoint {
     busy: HashSet<(String, String)>,
 }
 
+/// A script a logpoint is set in, and where in it.
 #[derive(Debug, Clone)]
 struct Bound {
     session: String,
     url: String,
-    breakpoint: String,
+    spot: Spot,
 }
 
 /// What `debug log` asks for.
@@ -425,7 +450,9 @@ async fn sync(shared: &Arc<Shared>, timeout: Duration) -> cdp::Result<()> {
             .filter(|id| !wanted.contains_key(*id))
             .filter_map(|id| state.targets.get(id).map(|t| t.session.clone()))
             .collect();
+        // Turning Debugger off removes a session's breakpoints.
         debug.sessions.retain(|id, _| wanted.contains_key(id));
+        debug.placed.retain(|spot, _| wanted.contains_key(&spot.0));
         for logpoint in debug.logpoints.values_mut() {
             logpoint.bound.retain(|b| wanted.contains_key(&b.session));
         }
@@ -617,11 +644,10 @@ fn matching(shared: &Shared, id: u32, candidates: &[Candidate]) -> Vec<Candidate
 /// there already; the first script fixes its source.
 async fn bind(shared: &Arc<Shared>, id: u32, candidate: &Candidate, deadline: Instant) {
     let key = (candidate.session_id.clone(), candidate.url.clone());
-    let (line, column, condition) = {
+    let (line, column) = {
         let mut guard = shared.lock();
         let debug = &mut guard.debug;
         let root = debug.root.clone();
-        let binding = debug.binding.clone();
         let Some(logpoint) = debug.logpoints.get_mut(&id) else {
             return;
         };
@@ -640,11 +666,7 @@ async fn bind(shared: &Arc<Shared>, id: u32, candidate: &Candidate, deadline: In
             logpoint.source = Some(source.to_owned());
             logpoint.source_file = places::to_disk(source, root.as_deref());
         }
-        (
-            logpoint.line,
-            logpoint.column,
-            condition(&binding, id, &logpoint.exprs),
-        )
+        (logpoint.line, logpoint.column)
     };
     let place = match &candidate.mapped {
         Some(mapped) => mapped
@@ -652,102 +674,166 @@ async fn bind(shared: &Arc<Shared>, id: u32, candidate: &Candidate, deadline: In
             .map(|g| (g.line, g.column, g.original_line)),
         None => Some((line - 1, column.map_or(0, |c| c.saturating_sub(1)), line)),
     };
-    let set = match place {
-        Some((generated_line, generated_column, original_line)) => {
-            let left = deadline.saturating_duration_since(Instant::now());
-            let session = candidate
-                .session
-                .with_timeout(left.max(Duration::from_secs(1)));
-            let mut params = debugger::SetBreakpointByUrlParams::new(i64::from(generated_line));
-            params.url = Some(candidate.url.clone());
-            params.column_number = Some(i64::from(generated_column));
-            params.condition = Some(condition);
-            match session.call(params).await {
-                Ok(set) => {
-                    // Where V8 put it (the next place it can stop at), in
-                    // the original source.
-                    let used = set
-                        .locations
-                        .first()
-                        .zip(candidate.mapped.as_ref())
-                        .and_then(|(at, mapped)| {
-                            let line = u32::try_from(at.line_number).ok()?.checked_add(1)?;
-                            let column = u32::try_from(at.column_number?).ok()?.checked_add(1)?;
-                            let back = mapped.lookup(line, column)?;
-                            (places::without_query(&back.source)
-                                == places::without_query(&candidate.source))
-                            .then_some(back.line)
-                        })
-                        .unwrap_or(original_line);
-                    Some((set.breakpoint_id, used))
-                }
-                Err(e) => {
-                    tracing::debug!("setting logpoint {id} in {} failed: {e}", candidate.url);
-                    None
-                }
+    let mut set = None;
+    if let Some((generated_line, generated_column, original_line)) = place {
+        let left = deadline.saturating_duration_since(Instant::now());
+        let session = candidate
+            .session
+            .with_timeout(left.max(Duration::from_secs(1)));
+        let spot = (
+            key.0.clone(),
+            key.1.clone(),
+            generated_line,
+            generated_column,
+        );
+        match replace(shared, &session, &spot, Some(id), None).await {
+            Ok(at) => {
+                // Where V8 put it (the next place it can stop at), in the
+                // original source.
+                let used = at
+                    .as_ref()
+                    .zip(candidate.mapped.as_ref())
+                    .and_then(|(at, mapped)| {
+                        let line = u32::try_from(at.line_number).ok()?.checked_add(1)?;
+                        let column = u32::try_from(at.column_number?).ok()?.checked_add(1)?;
+                        let back = mapped.lookup(line, column)?;
+                        (places::without_query(&back.source)
+                            == places::without_query(&candidate.source))
+                        .then_some(back.line)
+                    })
+                    .unwrap_or(original_line);
+                set = Some((spot, used));
+            }
+            Err(e) => {
+                tracing::debug!("setting logpoint {id} in {} failed: {e}", candidate.url);
             }
         }
-        None => None,
+    }
+    let cleared = {
+        let mut guard = shared.lock();
+        match guard.debug.logpoints.get_mut(&id) {
+            None => true,
+            Some(logpoint) => {
+                logpoint.busy.remove(&key);
+                if let Some((spot, used)) = &set {
+                    if logpoint.bound.is_empty() {
+                        logpoint.bound_line = (*used != logpoint.line).then_some(*used);
+                    }
+                    logpoint.bound.push(Bound {
+                        session: key.0.clone(),
+                        url: key.1.clone(),
+                        spot: spot.clone(),
+                    });
+                }
+                false
+            }
+        }
     };
-    let mut guard = shared.lock();
-    let Some(logpoint) = guard.debug.logpoints.get_mut(&id) else {
+    if cleared && let Some((spot, _)) = set {
         // Cleared meanwhile.
-        if let Some((breakpoint, _)) = set {
-            remove_breakpoint(shared, &candidate.session, breakpoint);
-        }
-        return;
-    };
-    logpoint.busy.remove(&key);
-    if let Some((breakpoint, used)) = set {
-        if logpoint.bound.is_empty() {
-            logpoint.bound_line = (used != logpoint.line).then_some(used);
-        }
-        logpoint.bound.push(Bound {
-            session: key.0,
-            url: key.1,
-            breakpoint,
-        });
+        let _ = replace(shared, &candidate.session, &spot, None, Some(id)).await;
     }
 }
 
-fn remove_breakpoint(shared: &Shared, session: &Session, breakpoint: String) {
-    let call = session.call(debugger::RemoveBreakpointParams::new(breakpoint));
-    shared.spawn(async move {
-        let _ = call.await;
-    });
+/// Sets the breakpoint at `spot` again for its logpoints, with `add`
+/// added and `remove` taken out (and removes it when none is left):
+/// where V8 put it, if set.
+async fn replace(
+    shared: &Shared,
+    session: &Session,
+    spot: &Spot,
+    add: Option<u32>,
+    remove: Option<u32>,
+) -> cdp::Result<Option<debugger::Location>> {
+    let changing = shared.lock().debug.changing.clone();
+    let _changing = changing.lock().await;
+    let (old, ids, condition) = {
+        let mut state = shared.lock();
+        let debug = &mut state.debug;
+        let old = debug.placed.remove(spot);
+        let mut ids: Vec<u32> = old.as_ref().map(|p| p.ids.clone()).unwrap_or_default();
+        ids.extend(add.filter(|id| !ids.contains(id)));
+        ids.retain(|id| Some(*id) != remove && debug.logpoints.get(id).is_some_and(|l| !l.stopped));
+        let logpoints: Vec<(u32, &[String])> = ids
+            .iter()
+            .filter_map(|id| Some((*id, debug.logpoints.get(id)?.exprs.as_slice())))
+            .collect();
+        let condition = condition(&debug.binding, &logpoints);
+        (old.map(|p| p.breakpoint), ids, condition)
+    };
+    if let Some(old) = old
+        && let Err(e) = session
+            .call(debugger::RemoveBreakpointParams::new(old))
+            .await
+    {
+        tracing::debug!("removing a logpoint's breakpoint failed: {e}");
+    }
+    if ids.is_empty() {
+        return Ok(None);
+    }
+    let mut params = debugger::SetBreakpointByUrlParams::new(i64::from(spot.2));
+    params.url = Some(spot.1.clone());
+    params.column_number = Some(i64::from(spot.3));
+    params.condition = Some(condition);
+    match session.call(params).await {
+        Ok(set) => {
+            shared.lock().debug.placed.insert(
+                spot.clone(),
+                Placed {
+                    breakpoint: set.breakpoint_id,
+                    ids,
+                },
+            );
+            Ok(set.locations.into_iter().next())
+        }
+        Err(e) => {
+            // The others there lost it too.
+            let mut state = shared.lock();
+            for logpoint in state.debug.logpoints.values_mut() {
+                logpoint.bound.retain(|b| &b.spot != spot);
+            }
+            Err(e)
+        }
+    }
 }
 
-/// Removes the breakpoints of `logpoints`.
+/// Takes `logpoints` out of the breakpoints they are set in.
 async fn unbind(shared: &Shared, logpoints: &[Logpoint], timeout: Duration) {
-    let calls: Vec<_> = {
+    let spots: Vec<(Session, Spot, u32)> = {
         let state = shared.lock();
         logpoints
             .iter()
-            .flat_map(|l| &l.bound)
-            .filter_map(|b| {
+            .flat_map(|l| l.bound.iter().map(move |b| (l.id, b)))
+            .filter_map(|(id, b)| {
                 let session = state.targets.get(&b.session)?.session.with_timeout(timeout);
-                Some(session.call(debugger::RemoveBreakpointParams::new(b.breakpoint.clone())))
+                Some((session, b.spot.clone(), id))
             })
             .collect()
     };
-    for result in join_all(calls).await {
-        if let Err(e) = result {
-            tracing::debug!("removing a logpoint's breakpoint failed: {e}");
+    for (session, spot, id) in spots {
+        if let Err(e) = replace(shared, &session, &spot, None, Some(id)).await {
+            tracing::debug!("taking logpoint {id} out of its breakpoint failed: {e}");
         }
     }
 }
 
-/// The condition of logpoint `id`'s breakpoints: it sends `exprs`'
-/// values on `binding` and returns `false`. Each expression is a closure
-/// over the paused code's scope; a newline ends it, in case it ends in a
-/// `//` comment.
-fn condition(binding: &str, id: u32, exprs: &[String]) -> String {
-    let values: Vec<String> = exprs.iter().map(|e| format!("() => ({e}\n)")).collect();
-    format!(
-        "(() => {{\ntry {{\n{HELPER}\n__ccdpLogpoint.hit({}, {id}, [{}]);\n}} catch (e) {{}}\nreturn false;\n}})()",
-        serde_json::Value::from(binding),
-        values.join(", ")
-    )
+/// The condition of a breakpoint of `logpoints` (ids and expressions):
+/// each sends its expressions' values on `binding`, and it returns
+/// `false`. Each expression is a closure over the paused code's scope; a
+/// newline ends it, in case it ends in a `//` comment.
+fn condition(binding: &str, logpoints: &[(u32, &[String])]) -> String {
+    let binding = serde_json::Value::from(binding);
+    let hits: String = logpoints
+        .iter()
+        .map(|(id, exprs)| {
+            let values: Vec<String> = exprs.iter().map(|e| format!("() => ({e}\n)")).collect();
+            format!(
+                "__ccdpLogpoint.hit({binding}, {id}, [{}]);\n",
+                values.join(", ")
+            )
+        })
+        .collect();
+    format!("(() => {{\ntry {{\n{HELPER}\n{hits}}} catch (e) {{}}\nreturn false;\n}})()")
 }
 
 /// Records a script session `session_id` reported, if Debugger is on
@@ -1044,10 +1130,11 @@ pub(super) fn hit(shared: &Arc<Shared>, event: &RawEvent) {
     entry.logpoint = Some(hit);
     let stopped = logpoint.hits >= logpoint.limit;
     let mut notes = vec![entry];
-    let mut gone = Vec::new();
+    let mut gone = None;
     if stopped {
         logpoint.stopped = true;
-        gone = std::mem::take(&mut logpoint.bound);
+        gone = Some(logpoint.clone());
+        logpoint.bound.clear();
         let text = format!(
             "logpoint {} stopped after {} hits (its --limit); chrome-cdp debug clear {} removes it",
             logpoint.id, logpoint.hits, logpoint.id
@@ -1067,17 +1154,13 @@ pub(super) fn hit(shared: &Arc<Shared>, event: &RawEvent) {
             tab.console.log(note, capacity);
         }
     }
-    for bound in gone {
-        if let Some(target) = state.targets.get(&bound.session) {
-            remove_breakpoint(shared, &target.session, bound.breakpoint);
-        }
-    }
     drop(guard);
     shared.bump();
-    if stopped {
+    if let Some(gone) = gone {
         let shared2 = shared.clone();
         shared.spawn(async move {
-            let _ = sync(&shared2, Duration::from_secs(10)).await;
+            unbind(&shared2, &[gone], STOP_TIMEOUT).await;
+            let _ = sync(&shared2, STOP_TIMEOUT).await;
         });
     }
 }
@@ -1122,6 +1205,7 @@ pub(super) fn tab_gone(state: &mut State, tab: u32) {
 /// Session `session_id` went away.
 pub(super) fn detached(state: &mut State, session_id: &str) {
     state.debug.sessions.remove(session_id);
+    state.debug.placed.retain(|spot, _| spot.0 != session_id);
     for logpoint in state.debug.logpoints.values_mut() {
         logpoint.bound.retain(|b| b.session != session_id);
     }
@@ -1160,8 +1244,15 @@ mod tests {
 
     #[test]
     fn conditions_end_each_expression_on_its_own_line() {
-        let text = condition("b", 3, &["a // why".into(), "b".into()]);
-        assert!(text.contains("__ccdpLogpoint.hit(\"b\", 3, [() => (a // why\n), () => (b\n)]);"));
+        let three = ["a // why".to_owned(), "b".to_owned()];
+        let text = condition("b", &[(3, &three), (4, &[])]);
+        assert!(
+            text.contains(
+                "__ccdpLogpoint.hit(\"b\", 3, [() => (a // why\n), () => (b\n)]);\n\
+                 __ccdpLogpoint.hit(\"b\", 4, []);\n} catch"
+            ),
+            "{text}"
+        );
         assert!(text.ends_with("return false;\n})()"));
     }
 }
