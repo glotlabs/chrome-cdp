@@ -291,6 +291,12 @@ pub(crate) fn step(line: &Line, vars: &dyn Resolve, global: &GlobalArgs) -> Resu
         ));
     }
     check_locators(&matches).map_err(problem)?;
+    // What clap cannot check: expect --perf's budgets.
+    if let Some(Command::Expect(args)) = &cli.command
+        && let Some(budgets) = &args.perf
+    {
+        engine::check_perf_budgets(budgets).map_err(problem)?;
+    }
     inherit(&mut cli.global, &matches, global);
     Ok(Step {
         cli,

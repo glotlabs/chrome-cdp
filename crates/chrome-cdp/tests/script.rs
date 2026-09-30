@@ -83,6 +83,22 @@ fn a_bad_script_fails_before_anything_runs() {
     // `open` did not run: no daemon started.
     assert!(sandbox.daemons().is_empty());
 
+    // So does a budget of expect --perf that is not one.
+    let out = batch(
+        &sandbox,
+        &[],
+        "open
+expect --perf 'lpc<2.5s'
+",
+    );
+    assert_eq!(code(&out), 2);
+    assert!(
+        stderr(&out).starts_with("error: <stdin>:2:1: --perf: `lpc` is not a metric\n"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(sandbox.daemons().is_empty());
+
     // One error envelope with every problem in `details`.
     let out = batch(&sandbox, &["--json"], "clik e6\nfill e1 'ada\n");
     assert_eq!(code(&out), 2);
@@ -452,4 +468,28 @@ fn a_converted_playwright_test_passes_with_chrome_cdp_test() {
         "{text}"
     );
     assert!(text.contains("\n2 tests: 2 passed ("), "{text}");
+}
+
+#[test]
+fn expect_perf_is_a_step_like_any_other() {
+    let Some(chrome) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let out = sandbox.run(&["open", &site.url("/perf/long-tasks.html")]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let script = "expect --perf 'elements<5000 cls<1'\nexpect --perf 'elements<5'\n";
+    let out = batch(&sandbox, &[], script);
+    assert_eq!(code(&out), 1, "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(
+        text.starts_with("[1/2] expect --perf 'elements<5000 cls<1' ✓\npassed: --perf "),
+        "{text}"
+    );
+    assert!(
+        text.ends_with("[2/2] expect --perf 'elements<5' ✗\n"),
+        "{text}"
+    );
+    let err = stderr(&out);
+    assert!(err.contains("  elements: 9 > 5 ✗\n"), "{err}");
+    assert!(err.contains("  throttling: none\n"), "{err}");
 }

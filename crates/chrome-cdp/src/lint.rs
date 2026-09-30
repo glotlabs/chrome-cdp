@@ -597,12 +597,6 @@ impl Linter {
         facts.expect = matches
             .subcommand_name()
             .is_some_and(|n| n.starts_with("expect"));
-        if let Some(Command::Expect(args)) = &checked.cli.command
-            && let Some(budgets) = &args.perf
-            && let Err(e) = engine::check_perf_budgets(budgets)
-        {
-            self.push(&line.span, "error", "bad-args", e.message, e.hint);
-        }
         let mut locators = crate::script::locator_values(&matches);
         if let Some(Command::Wait(args)) = &checked.cli.command
             && let Some(target) = &args.target
