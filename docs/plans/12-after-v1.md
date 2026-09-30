@@ -211,7 +211,7 @@ it.
   (React, Vue, Svelte adapters), bounded like every output. For "why
   does this show 3 items?".
 - **Logpoints: printf debugging without editing code.**
-  `debug log src/cart.ts:42 total items.length` sets a
+  `debug log src/cart.ts:42 'total, items.length'` sets a
   `Debugger.setBreakpointByUrl` whose condition logs and returns
   `false`, mapped through the source map. The values land in `console`
   and in the next action's report. `debug clear`. The agent learns the
@@ -517,6 +517,3 @@ _(append here)_
   frameworks, not examples to copy. The agent benchmark's four
   find-the-code tasks record files read; running them (the "measured"
   part) is deferred: benchmarks run after all plans.
-- Track 4: `debug log` takes one expression per argument (`total
-  items.length`); `'total, items.length'` is one JavaScript comma
-  expression and logs only its last value.

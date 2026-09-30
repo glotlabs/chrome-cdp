@@ -931,3 +931,8 @@ _(append here)_
   and the like (a pipeline once), in their own column, so "files read"
   keeps the planned meaning and an arm that reads through Bash is not
   undercounted.
+- Close-out: `debug log src/cart.ts:42 'total, items.length'` (plan 12's
+  form) logged only `items.length` under the whole text as its label: a
+  JavaScript comma expression. An expression's top-level commas now split
+  it into expressions (not in brackets, strings or template literals;
+  `(a, b)` keeps the operator).

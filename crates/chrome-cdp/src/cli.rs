@@ -5585,13 +5585,15 @@ logpoint binds when a script with it loads (a lazy chunk, a reload).
 
 Each EXPR is one JavaScript expression, run in the scope of the line
 (before it runs) and shown with its text as the label; one that throws
-shows its error in its place. Values are previewed in the page: 2 levels
+shows its error in its place. Top-level commas split an EXPR: 'total,
+items.length' is two (parentheses keep the comma operator: '(a, b)'). Values are previewed in the page: 2 levels
 deep, strings cut at 80 characters, collections over 5 entries counted.
 `-` reads one expression from stdin. A session has at most 20 logpoints.
 -q prints the logpoint's id.
 
 Examples:
   chrome-cdp debug log src/cart.ts:42 total 'items.length'
+  chrome-cdp debug log src/cart.ts:42 'total, item.qty'
   chrome-cdp debug log src/cart.ts:42:7 item
   chrome-cdp debug log src/App.tsx:30             # was the line reached?
   chrome-cdp debug log src/cart.ts:42 total --limit 5")]

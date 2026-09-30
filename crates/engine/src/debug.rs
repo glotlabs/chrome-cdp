@@ -42,14 +42,14 @@ impl Engine {
             .page(id, timeout)
             .await
             .map_err(|e| self.tab_error(&running, e))?;
-        self.check_exprs(&running, &page, &req.exprs, timeout)
-            .await?;
+        let exprs: Vec<String> = req.exprs.iter().flat_map(|e| split_commas(e)).collect();
+        self.check_exprs(&running, &page, &exprs, timeout).await?;
         let spec = Spec {
             path: req.path.clone(),
             file: req.file.as_ref().map(PathBuf::from),
             line: req.line,
             column: req.column,
-            exprs: req.exprs.clone(),
+            exprs,
             limit: req.limit,
         };
         let logpoint = running
@@ -252,6 +252,44 @@ impl Engine {
     }
 }
 
+/// The expressions in `expr`: its parts at top-level commas
+/// (`'total, items.length'` is two), or `expr` itself. A top-level comma
+/// operator is not what a logpoint's author means (it logs only the last
+/// value); `(a, b)` keeps one. Commas in brackets, strings and template
+/// literals do not split, and neither does an empty part (`a,`: the
+/// compile check reports it).
+fn split_commas(expr: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let (mut depth, mut quote, mut escaped, mut start) = (0i32, None, false, 0);
+    for (i, c) in expr.char_indices() {
+        if let Some(q) = quote {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == q {
+                quote = None;
+            }
+            continue;
+        }
+        match c {
+            '\'' | '"' | '`' => quote = Some(c),
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(expr[start..i].trim());
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(expr[start..].trim());
+    if parts.len() == 1 || parts.iter().any(|p| p.is_empty()) {
+        return vec![expr.to_owned()];
+    }
+    parts.into_iter().map(str::to_owned).collect()
+}
+
 /// `debug log`'s text: where the logpoint is bound, or that it is
 /// pending.
 fn log_text(logpoint: &Logpoint, page_origin: Option<&str>) -> String {
@@ -347,7 +385,22 @@ fn locals_text(setting: Option<bool>, session: &str) -> String {
 mod tests {
     use protocol::schema::Logpoint;
 
-    use super::{list_line, log_text};
+    use super::{list_line, log_text, split_commas};
+
+    #[test]
+    fn top_level_commas_split_expressions() {
+        let split = |e: &str| split_commas(e);
+        assert_eq!(split("total, items.length"), ["total", "items.length"]);
+        assert_eq!(split("items.length"), ["items.length"]);
+        assert_eq!(split("(a, b)"), ["(a, b)"]);
+        assert_eq!(
+            split("f(a, b), [1, 2], {x: 1, y}"),
+            ["f(a, b)", "[1, 2]", "{x: 1, y}"]
+        );
+        assert_eq!(split("'a,b', `${x, y}`"), ["'a,b'", "`${x, y}`"]);
+        assert_eq!(split(r#""a\",b", c"#), [r#""a\",b""#, "c"]);
+        assert_eq!(split("a,"), ["a,"]);
+    }
 
     fn logpoint() -> Logpoint {
         Logpoint {
