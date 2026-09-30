@@ -3,6 +3,7 @@
 //! tabs it opened.
 
 use std::fmt::Write as _;
+use std::path::Path;
 use std::time::Duration;
 
 use protocol::schema::{DownloadInfo, Event, TabCloseData, TabData, TabInfo, TabsData};
@@ -15,6 +16,7 @@ use crate::downloads;
 use crate::errors::from_cdp;
 use crate::frames::iframe_label;
 use crate::interrupt::{describe, describe_kind};
+use crate::places;
 use crate::request::{
     Navigation, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, WaitUntil, millis,
 };
@@ -239,15 +241,27 @@ impl Engine {
                 url,
                 line,
                 worker,
+                original,
                 ..
             } => {
-                let place = url
-                    .as_deref()
-                    .map(|url| {
-                        let file = file_name(url);
-                        line.map_or_else(|| format!(" ({file})"), |l| format!(" ({file}:{l})"))
-                    })
-                    .unwrap_or_default();
+                let place = match original {
+                    // The original place: the file on disk, relative to
+                    // the project root, if found.
+                    Some(o) => {
+                        let file = match &o.file {
+                            Some(file) => places::shown(Path::new(file), places::root().as_deref()),
+                            None => file_name(&o.source).to_owned(),
+                        };
+                        format!(" ({file}:{})", o.line)
+                    }
+                    None => url
+                        .as_deref()
+                        .map(|url| {
+                            let file = file_name(url);
+                            line.map_or_else(|| format!(" ({file})"), |l| format!(" ({file}:{l})"))
+                        })
+                        .unwrap_or_default(),
+                };
                 let from = worker
                     .as_ref()
                     .map(|w| format!(" {}", w.label()))

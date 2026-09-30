@@ -21,8 +21,10 @@ Options:
 Every tab records its console from the moment it opens (the newest 1,000
 entries; see `open --console-buffer`). By default only entries this command
 has not shown before are printed, so running it again shows what is new.
-Stack frames of localhost pages are resolved with source maps. Workers log
-here too, marked `[dedicated worker w.js]`; a shared or service worker's
+Stack frames of localhost pages are resolved with source maps, and shown
+as files of your project when they are there (src/cart.ts:12, relative to
+the directory with chrome-cdp.toml or .git, or `source_root` in the
+config; `chrome-cdp help config`). Workers log here too, marked `[dedicated worker w.js]`; a shared or service worker's
 messages are in every tab with a frame on its origin.
 
 Examples:

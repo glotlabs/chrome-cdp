@@ -35,6 +35,7 @@ Options:
 - `--http-credentials-origin <ORIGIN>`: Send --http-credentials only to this origin (e.g. https://app.test); other origins' challenges are cancelled, so a third-party frame or a redirect elsewhere never gets them (env `CHROME_CDP_HTTP_CREDENTIALS_ORIGIN`)
 - `--console-buffer <N>`: How many console entries each tab keeps (default 1,000). The session keeps this setting (env `CHROME_CDP_CONSOLE_BUFFER`)
 - `--network-buffer <N>`: How many requests each tab's network log keeps (default 2,000). The session keeps this setting (env `CHROME_CDP_NETWORK_BUFFER`)
+- `--node-stacks <WHERE>`: Where Chrome records the stack that creates each DOM node, to tell which line of the page's code made an element. Recording costs page time, so by default only pages on this machine get it (`node_stacks` in the config sets the default). The session keeps this setting; it applies to a running browser too, for the nodes made from then on (one of `on`, `off`, `localhost`; env `CHROME_CDP_NODE_STACKS`)
 - `--idle-timeout <DURATION>`: Close the browser and stop the daemon after this long without commands, e.g. 10m or 2h; 0 means never. Default 30m (env `CHROME_CDP_IDLE_TIMEOUT`)
 
 ```text
@@ -57,6 +58,7 @@ Examples:
   chrome-cdp open --dialogs dismiss                 # answer every dialog with Cancel
   chrome-cdp open --downloads-dir ./downloads       # downloads land there
   chrome-cdp open --http-credentials ada:s3cret http://localhost:8080/admin
+  chrome-cdp open --node-stacks on https://staging.app.test   # record who made each node
   chrome-cdp open --extension ./my-extension         # prints its chrome-extension:// origin
 ```
 

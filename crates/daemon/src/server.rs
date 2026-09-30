@@ -302,16 +302,17 @@ impl Daemon {
             req.method.as_str(),
             rpc::ACT | rpc::EXPECT | rpc::WAIT | rpc::EXPECT_SNAPSHOT | rpc::EXPECT_SCREENSHOT
         );
+        let root = req.root.clone().map(std::path::PathBuf::from);
         let (refs, result) = engine::in_context(
             context.clone(),
-            Box::pin(async {
+            Box::pin(engine::in_root(root, async {
                 // A ref's element may be gone once the command ran.
                 let refs = match &line {
                     Some(words) if kept => self.stable_locators(words).await,
                     _ => Vec::new(),
                 };
                 (refs, self.call(req, &mut exit).await)
-            }),
+            })),
         )
         .await;
         if let Some(words) = line {
@@ -749,6 +750,9 @@ fn keep_settings(launch: &mut OpenRequest, newer: &OpenRequest) {
     }
     if newer.bypass_service_worker.is_some() {
         launch.bypass_service_worker = newer.bypass_service_worker;
+    }
+    if newer.node_stacks.is_some() {
+        launch.node_stacks = newer.node_stacks;
     }
     if newer.dialogs.is_some() {
         launch.dialogs = newer.dialogs;

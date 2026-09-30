@@ -52,6 +52,7 @@ command chrome-cdp open
   flag --http-credentials-origin value=ORIGIN env=CHROME_CDP_HTTP_CREDENTIALS_ORIGIN
   flag --console-buffer value=N env=CHROME_CDP_CONSOLE_BUFFER
   flag --network-buffer value=N env=CHROME_CDP_NETWORK_BUFFER
+  flag --node-stacks value=WHERE values=on|off|localhost env=CHROME_CDP_NODE_STACKS
   flag --idle-timeout value=DURATION env=CHROME_CDP_IDLE_TIMEOUT
 command chrome-cdp connect
   arg ENDPOINT required

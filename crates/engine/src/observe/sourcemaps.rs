@@ -133,6 +133,7 @@ impl Mapped {
             line: token.get_src_line().checked_add(1)?,
             column: token.get_src_col().checked_add(1)?,
             name: token.get_name().map(str::to_owned),
+            file: None,
         })
     }
 }

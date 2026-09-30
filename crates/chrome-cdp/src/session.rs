@@ -77,6 +77,8 @@ struct Ctx {
     context: Option<String>,
     /// `base_url` from the config.
     base_url: Option<String>,
+    /// `node_stacks` from the config: `open --node-stacks`' default.
+    node_stacks: Option<engine::NodeStacks>,
 }
 
 impl Ctx {
@@ -108,6 +110,7 @@ impl Ctx {
             tab: global.tab.clone(),
             context: global.context.clone(),
             base_url: global.base_url.clone(),
+            node_stacks: global.node_stacks,
         })
     }
 
@@ -243,6 +246,10 @@ fn open_in(
         follow_popups: args.follow_popups.then_some(true),
         ignore_https_errors: args.ignore_https_errors.then_some(true),
         bypass_service_worker: args.bypass_service_worker.then_some(true),
+        node_stacks: args
+            .node_stacks
+            .map(crate::cli::NodeStacks::to_engine)
+            .or(ctx.node_stacks),
         device: args.device.clone(),
         state: read.state.map(|state| StateLoadRequest {
             timeout_ms: millis(ctx.timeout),
@@ -312,6 +319,9 @@ fn keep_previous_options(request: &mut OpenRequest, previous: &OpenRequest) {
     }
     if request.bypass_service_worker.is_none() {
         request.bypass_service_worker = previous.bypass_service_worker;
+    }
+    if request.node_stacks.is_none() {
+        request.node_stacks = previous.node_stacks;
     }
     if request.device.is_none() {
         request.device.clone_from(&previous.device);
@@ -2400,6 +2410,7 @@ fn auto_open(ctx: &Ctx, session: &mut Session) -> Result<Vec<String>, ErrorInfo>
         let mut warnings = chrome.warnings.clone();
         let request = OpenRequest {
             chrome: Some(chrome),
+            node_stacks: previous.node_stacks.or(ctx.node_stacks),
             replaced_daemon: session
                 .replaced
                 .as_ref()

@@ -141,6 +141,8 @@ pub(crate) struct Target {
     pub(crate) events: u64,
     /// Set up and resumed: an out-of-process iframe's frames are known.
     pub(crate) ready: bool,
+    /// Chrome records node creation stacks in it (and `DOM` is on).
+    pub(crate) node_stacks: bool,
 }
 
 impl Target {
@@ -167,6 +169,7 @@ impl Target {
             injected: HashMap::new(),
             events: 0,
             ready: false,
+            node_stacks: false,
         }
     }
 

@@ -185,7 +185,7 @@ impl Actor<'_> {
         }
         events.extend(self.engine.events_since(self.running, mark, None).await);
         let origins = origins(&before, &events);
-        events.extend(self.console_errors(&before));
+        events.extend(self.console_errors(&before).await);
         events.extend(self.failed_requests(&before, &origins, &events));
         if !leaving && let Some((element, frame)) = self.focus_moved().await {
             events.push(Event::FocusMoved {
@@ -344,22 +344,16 @@ impl Actor<'_> {
         }
     }
 
-    /// The console errors logged since the action began.
-    fn console_errors(&self, before: &Before) -> Vec<Event> {
-        self.running
+    /// The console errors logged since the action began, at their
+    /// original places.
+    async fn console_errors(&self, before: &Before) -> Vec<Event> {
+        let errors = self
+            .running
             .tabs
-            .console_errors_since(self.page.id, before.logs.1)
-            .into_iter()
-            .map(|e| Event::ConsoleError {
-                tab: self.tab(),
-                message: e.message,
-                url: e.url,
-                line: e.line,
-                column: e.column,
-                uncaught: e.uncaught,
-                worker: e.worker.clone(),
-            })
-            .collect()
+            .console_errors_since(self.page.id, before.logs.1);
+        self.engine
+            .console_error_events(self.running, self.page, errors)
+            .await
     }
 
     /// The requests to one of `origins` that failed since the action

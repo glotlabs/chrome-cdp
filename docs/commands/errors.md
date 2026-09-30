@@ -20,7 +20,8 @@ Options:
 The first thing to run when an action did not do what you expected. Like
 `console`, it shows only what it has not shown before; `--since 0` shows
 every error the tab kept. Stack frames of localhost pages are resolved with
-source maps, so they point at your original source files.
+source maps, so they point at your original source files, shown relative
+to your project (src/cart.ts:18:22) when they are there.
 
 Examples:
   chrome-cdp errors

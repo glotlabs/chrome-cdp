@@ -42,6 +42,11 @@ pub struct Request {
     /// first call carries them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<Vec<String>>,
+    /// The project root of the CLI (plan 15): places in the page's code
+    /// print as paths relative to it when the file is there. Like
+    /// `--context` it travels beside the params.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<String>,
 }
 
 impl Request {
@@ -54,6 +59,7 @@ impl Request {
             params,
             context: None,
             line: None,
+            root: None,
         }
     }
 

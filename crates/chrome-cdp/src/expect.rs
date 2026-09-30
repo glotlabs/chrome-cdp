@@ -308,17 +308,9 @@ fn mock_state(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
 /// (`chrome-cdp.toml` or `.chrome-cdp.toml`), `.chrome-cdp/` or `.git`,
 /// else of `cwd`.
 fn project_baselines(cwd: &Path, kind: &str) -> PathBuf {
-    let root = cwd
-        .ancestors()
-        .find(|dir| {
-            e2e::config::PROJECT_FILES
-                .iter()
-                .any(|name| dir.join(name).is_file())
-                || dir.join(".chrome-cdp").is_dir()
-                || dir.join(".git").exists()
-        })
-        .unwrap_or(cwd);
-    root.join(".chrome-cdp").join(kind)
+    crate::config::project_root(cwd)
+        .join(".chrome-cdp")
+        .join(kind)
 }
 
 /// The baseline file of `name`: in `dir` (`--dir`) or the project's

@@ -45,6 +45,17 @@ thread_local! {
     static LINE: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
 }
 
+thread_local! {
+    /// The project root every call carries (see `Request::root`).
+    static ROOT: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Sets the project root the calls of this thread carry, so the daemon
+/// prints places in the page's code as paths relative to it.
+pub fn set_project_root(root: Option<String>) {
+    ROOT.with(|r| *r.borrow_mut() = root);
+}
+
 /// Sets the words of the command about to run on this thread (`None`
 /// for one that is not to be kept in the history). Its first call to a
 /// daemon carries them, with the password of `--http-credentials` hidden.
@@ -137,6 +148,7 @@ impl Client {
         let mut request = Request::new(id, method, params).in_context(self.context.clone());
         if method != rpc::HELLO {
             request.line = LINE.with(|line| line.borrow_mut().take());
+            request.root = ROOT.with(|root| root.borrow().clone());
         }
         let mut line = serde_json::to_vec(&request).unwrap_or_default();
         line.push(b'\n');

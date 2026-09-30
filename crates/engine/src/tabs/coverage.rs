@@ -44,6 +44,19 @@ pub(super) struct Measuring {
     watchers: Vec<AbortHandle>,
 }
 
+impl Measuring {
+    /// Whether it measures on session `id` (with `DOM` on in a page or
+    /// iframe).
+    pub(super) fn uses(&self, id: &str) -> bool {
+        self.sessions.contains_key(id)
+    }
+
+    /// The ids of the sessions it measures on.
+    pub(super) fn session_ids(&self) -> Vec<String> {
+        self.sessions.keys().cloned().collect()
+    }
+}
+
 impl Drop for Measuring {
     fn drop(&mut self) {
         for watcher in &self.watchers {
@@ -184,6 +197,7 @@ impl Tabs {
                         id: id.clone(),
                         session: session.with_timeout(timeout),
                         host: target.kind.is_host(),
+                        keep_dom: target.node_stacks,
                         frame: (target.kind == TargetKind::Iframe).then(|| target.id.clone()),
                         worker: target.worker(),
                         documents,
@@ -233,7 +247,12 @@ impl Tabs {
             }
         });
         let taken = join_all(takes).await;
-        join_all(sessions.iter().map(|of| off(&of.session, of.host))).await;
+        join_all(
+            sessions
+                .iter()
+                .map(|of| off(&of.session, of.host, of.keep_dom)),
+        )
+        .await;
         let mut all_sheets = std::mem::take(&mut *lock(&measuring.sheets));
         let mut measured: Vec<Measured> = Vec::new();
         let mut scripts_of: Vec<Vec<profiler::ScriptCoverage>> = vec![Vec::new(); sessions.len()];
@@ -290,6 +309,8 @@ struct Of {
     session: Session,
     /// A page's or iframe's: it has `CSS`.
     host: bool,
+    /// Node stacks record in it: `DOM` stays on.
+    keep_dom: bool,
     /// An out-of-process iframe's frame id.
     frame: Option<String>,
     worker: Option<Worker>,
@@ -391,20 +412,18 @@ pub(super) fn setup_steps(
 }
 
 /// Turns the domains coverage turned on (in a page or iframe if `host`)
-/// off again.
-async fn off(session: &Session, host: bool) {
+/// off again; `DOM` stays on if `keep_dom` (node stacks need it).
+async fn off(session: &Session, host: bool, keep_dom: bool) {
     let stop = session.call(profiler::StopPreciseCoverageParams {});
     let disable = session.call(profiler::DisableParams {});
-    let css = host.then(|| {
-        (
-            session.call(css::DisableParams {}),
-            session.call(dom::DisableParams {}),
-        )
-    });
+    let css = host.then(|| session.call(css::DisableParams {}));
+    let dom = (host && !keep_dom).then(|| session.call(dom::DisableParams {}));
     let _ = stop.await;
     let _ = disable.await;
-    if let Some((css, dom)) = css {
+    if let Some(css) = css {
         let _ = css.await;
+    }
+    if let Some(dom) = dom {
         let _ = dom.await;
     }
 }

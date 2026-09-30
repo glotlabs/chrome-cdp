@@ -69,6 +69,13 @@ fn main() -> ExitCode {
     if let Err(info) = config::apply(&mut cli.global, &matches) {
         return ExitCode::from(output::print(mode, Err(info)));
     }
+    // Places in the page's code print relative to the project (plan 15).
+    daemon::client::set_project_root(
+        cli.global
+            .source_root
+            .as_ref()
+            .map(|root| root.to_string_lossy().into_owned()),
+    );
     // `batch`, `run` and `test` print each step or test as it ends.
     match &cli.command {
         Some(Command::Batch(args)) => return ExitCode::from(script::batch(args, &cli.global)),

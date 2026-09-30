@@ -133,8 +133,11 @@ impl Engine {
                 if running.highlights.load(Ordering::Relaxed) == generation {
                     let _ = session.call_raw("Overlay.hideHighlight", json!({})).await;
                     let _ = session.call_raw("Overlay.disable", json!({})).await;
-                    // `coverage` needs `DOM` on until it stops.
-                    if !running.tabs.coverage_uses(&session) {
+                    // `coverage` needs `DOM` on until it stops, node
+                    // stacks while they record.
+                    if !running.tabs.coverage_uses(&session)
+                        && !running.tabs.node_stacks_use(&session)
+                    {
                         let _ = session.call(dom::DisableParams {}).await;
                     }
                 }

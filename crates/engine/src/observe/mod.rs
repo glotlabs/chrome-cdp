@@ -31,5 +31,5 @@ pub(crate) use har::{HarRecording, iso8601};
 pub use network::RESOURCE_TYPES;
 pub(crate) use perf::OBSERVER as PERF_OBSERVER;
 pub use screenshot::check_screenshot;
-pub(crate) use sourcemaps::SourceMaps;
+pub(crate) use sourcemaps::{SourceMaps, is_local};
 pub(crate) use trace::TraceRecording;

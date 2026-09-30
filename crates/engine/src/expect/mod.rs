@@ -958,7 +958,9 @@ impl Engine {
                     }
                 }
             }
-            Assertion::NoErrors { since } => self.no_errors(running, page, req, since.as_deref()),
+            Assertion::NoErrors { since } => {
+                self.no_errors(running, page, req, since.as_deref()).await
+            }
             Assertion::NoFailedRequests { since, origin } => {
                 self.no_failed_requests(running, page, req, since.as_deref(), origin.as_deref())
             }

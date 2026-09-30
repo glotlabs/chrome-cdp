@@ -19,7 +19,9 @@ use cdp::Session;
 use cdp::domains::{network, page, runtime};
 
 use super::targets::{KindSet, Target, TargetKind};
-use super::{Shared, State, Step, auto_attach, coverage, emulation, fetch, inject, seed, step};
+use super::{
+    Shared, State, Step, auto_attach, coverage, emulation, fetch, inject, node_stacks, seed, step,
+};
 use crate::{frames, injected, observe};
 
 /// A feature: something every target of some kinds gets.
@@ -50,10 +52,13 @@ pub(crate) enum Feature {
     /// JavaScript and CSS coverage, while `coverage start` measures the
     /// target's tab (see [`coverage`]); workers have no CSS.
     Coverage,
+    /// Node creation stacks, for documents `--node-stacks` covers (see
+    /// [`node_stacks`]).
+    NodeStacks,
 }
 
 /// Every feature, in the order a new target gets their steps.
-pub(crate) const REGISTRY: [Feature; 8] = [
+pub(crate) const REGISTRY: [Feature; 9] = [
     Feature::Base,
     Feature::Runtime,
     Feature::Network,
@@ -62,6 +67,7 @@ pub(crate) const REGISTRY: [Feature; 8] = [
     Feature::Fetch,
     Feature::Emulation,
     Feature::Coverage,
+    Feature::NodeStacks,
 ];
 
 /// A new target, paused, as the features see it.
@@ -84,6 +90,7 @@ impl Feature {
             Self::Fetch => "fetch",
             Self::Emulation => "emulation",
             Self::Coverage => "coverage",
+            Self::NodeStacks => "stacks",
         }
     }
 
@@ -105,7 +112,7 @@ impl Feature {
                 TargetKind::SharedWorker,
                 TargetKind::ServiceWorker,
             ]),
-            Self::Base | Self::World => KindSet::HOSTS,
+            Self::Base | Self::World | Self::NodeStacks => KindSet::HOSTS,
         }
     }
 
@@ -160,6 +167,8 @@ impl Feature {
             Self::Emulation => emulation::setup_steps(shared, session, target.kind, steps),
             // Only while it measures the target's tab.
             Self::Coverage => coverage::setup_steps(shared, target, steps),
+            // Where `--node-stacks` wants them (see `node_stacks`).
+            Self::NodeStacks => node_stacks::setup_steps(shared, target, steps),
         }
     }
 }
@@ -293,6 +302,7 @@ mod tests {
                 "fetch     xx.xx.",
                 "emulation xxxxx.",
                 "coverage  xxxxx.",
+                "stacks    xx....",
             ]
         );
     }

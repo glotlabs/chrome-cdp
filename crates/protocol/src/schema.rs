@@ -1574,6 +1574,11 @@ pub struct StackFrame {
     /// (`--sourcemaps`, on by default for localhost pages).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub original: Option<SourcePosition>,
+    /// The script on disk (an absolute path), when it has no source map
+    /// and chrome-cdp found it under the project root (see
+    /// `SourcePosition::file`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
 }
 
 /// A place in an original source file, from a source map.
@@ -1589,6 +1594,13 @@ pub struct SourcePosition {
     /// The original name at that place, if the map has one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// The source on disk (an absolute path), when chrome-cdp found it:
+    /// `source` as a path, or its path's longest end that is a file under
+    /// the project root (the directory of `chrome-cdp.toml`, `.git`, …,
+    /// or `source_root` in the config). Text output shows it relative to
+    /// the root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
 }
 
 /// `data` of `chrome-cdp network --json`.
@@ -3724,6 +3736,10 @@ pub enum Event {
         /// The worker it came from, if a worker's.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         worker: Option<Worker>,
+        /// Where it came from in the original source, when a source map
+        /// says so (localhost pages), with the file on disk if found.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        original: Option<SourcePosition>,
     },
     /// A request of the page to its own origin failed after the command
     /// began: an HTTP status of 400 or more, or no response.

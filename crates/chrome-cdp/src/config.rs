@@ -19,6 +19,13 @@
 //! (plan 05) is `"diff"` to have every action add `snapshot --diff -i`
 //! (as `--snap` does; `--no-snap` beats it), or `"off"`.
 //!
+//! `node_stacks` (plan 15) is `open --node-stacks`' default: `"on"`,
+//! `"off"` or `"localhost"`. `source_root` is the project root that
+//! places in the page's code print relative to (`src/cart.ts:12`); a
+//! relative path is relative to the config file's directory. Without it,
+//! the root is the nearest directory up with a project config,
+//! `.chrome-cdp/` or `.git` ([`project_root`]).
+//!
 //! The project config's `[e2e]` section (plan 11) is read and checked by
 //! the commands that test (`e2e::Config`), not here, so a mistake in it
 //! does not stop `click`. Its `base_url` is also the `goto /path` base
@@ -35,7 +42,8 @@ use serde::Deserialize;
 use crate::cli::{GlobalArgs, parse_duration};
 
 /// The keys a config file may set.
-pub(crate) const KEYS: &str = "session, timeout, base_url, testid_attribute, snap_after_action";
+pub(crate) const KEYS: &str =
+    "session, timeout, base_url, testid_attribute, snap_after_action, node_stacks, source_root";
 
 /// One config file as written.
 #[derive(Debug, Default, Deserialize)]
@@ -46,6 +54,8 @@ struct File {
     base_url: Option<String>,
     testid_attribute: Option<String>,
     snap_after_action: Option<String>,
+    node_stacks: Option<String>,
+    source_root: Option<String>,
     /// Checked by `e2e::Config`; only its `base_url` is read here.
     e2e: Option<toml::Table>,
 }
@@ -59,6 +69,10 @@ struct Settings {
     testid_attribute: Option<String>,
     /// `snap_after_action`: `diff` is true, `off` false.
     snap_after_action: Option<bool>,
+    node_stacks: Option<engine::NodeStacks>,
+    /// Absolute: a relative `source_root` is joined to the file's
+    /// directory.
+    source_root: Option<PathBuf>,
 }
 
 impl Settings {
@@ -70,6 +84,8 @@ impl Settings {
             base_url: over.base_url.or(self.base_url),
             testid_attribute: over.testid_attribute.or(self.testid_attribute),
             snap_after_action: over.snap_after_action.or(self.snap_after_action),
+            node_stacks: over.node_stacks.or(self.node_stacks),
+            source_root: over.source_root.or(self.source_root),
         }
     }
 }
@@ -113,7 +129,27 @@ pub(crate) fn apply(global: &mut GlobalArgs, matches: &ArgMatches) -> Result<(),
         _ => settings.testid_attribute,
     };
     global.snap_after_action = settings.snap_after_action.unwrap_or(false);
+    global.node_stacks = settings.node_stacks;
+    global.source_root = settings
+        .source_root
+        .or_else(|| cwd.as_deref().map(project_root));
     Ok(())
+}
+
+/// The project a command runs in: the nearest directory up from `cwd`
+/// with a project config (`chrome-cdp.toml` or `.chrome-cdp.toml`),
+/// `.chrome-cdp/` or `.git`, else `cwd`.
+pub(crate) fn project_root(cwd: &Path) -> PathBuf {
+    cwd.ancestors()
+        .find(|dir| {
+            e2e::config::PROJECT_FILES
+                .iter()
+                .any(|name| dir.join(name).is_file())
+                || dir.join(".chrome-cdp").is_dir()
+                || dir.join(".git").exists()
+        })
+        .unwrap_or(cwd)
+        .to_path_buf()
 }
 
 /// The user config path, whether or not it exists.
@@ -143,10 +179,14 @@ fn load(path: &Path, scope: Scope) -> Result<Option<Settings>, ErrorInfo> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(bad(path, &format!("cannot read it: {e}"))),
     };
-    parse(&text, scope).map(Some).map_err(|msg| bad(path, &msg))
+    let dir = path.parent().unwrap_or(Path::new("."));
+    parse(&text, scope, dir)
+        .map(Some)
+        .map_err(|msg| bad(path, &msg))
 }
 
-fn parse(text: &str, scope: Scope) -> Result<Settings, String> {
+/// Parses a config file in directory `dir`.
+fn parse(text: &str, scope: Scope, dir: &Path) -> Result<Settings, String> {
     let file: File = toml::from_str(text).map_err(|e| {
         // toml's message is multi-line with a source excerpt; the first line
         // plus the key is enough for a one-line error.
@@ -193,12 +233,41 @@ fn parse(text: &str, scope: Scope) -> Result<Settings, String> {
             ));
         }
     };
+    let node_stacks = match file.node_stacks.as_deref() {
+        None => None,
+        Some("on") => Some(engine::NodeStacks::On),
+        Some("off") => Some(engine::NodeStacks::Off),
+        Some("localhost") => Some(engine::NodeStacks::Localhost),
+        Some(other) => {
+            return Err(format!(
+                "node_stacks: `{other}` is not \"on\", \"off\" or \"localhost\""
+            ));
+        }
+    };
+    let source_root = match file.source_root {
+        Some(root) if root.trim().is_empty() => {
+            return Err("source_root: empty; give a directory".to_owned());
+        }
+        Some(root) => {
+            let root = dir.join(root.trim());
+            if !root.is_dir() {
+                return Err(format!(
+                    "source_root: {} is not a directory",
+                    root.display()
+                ));
+            }
+            Some(root.canonicalize().unwrap_or(root))
+        }
+        None => None,
+    };
     Ok(Settings {
         session: file.session,
         timeout,
         base_url,
         testid_attribute,
         snap_after_action,
+        node_stacks,
+        source_root,
     })
 }
 
@@ -233,7 +302,7 @@ mod tests {
     use super::{Scope, Settings};
 
     fn parse(text: &str) -> Result<Settings, String> {
-        super::parse(text, Scope::Project)
+        super::parse(text, Scope::Project, std::path::Path::new("/"))
     }
 
     #[test]
@@ -249,7 +318,21 @@ mod tests {
                 base_url: Some("http://localhost:3000".into()),
                 testid_attribute: None,
                 snap_after_action: None,
+                node_stacks: None,
+                source_root: None,
             }
+        );
+        assert_eq!(
+            parse("node_stacks = \"on\"").unwrap().node_stacks,
+            Some(engine::NodeStacks::On)
+        );
+        assert_eq!(
+            parse("node_stacks = \"localhost\"").unwrap().node_stacks,
+            Some(engine::NodeStacks::Localhost)
+        );
+        assert_eq!(
+            parse("node_stacks = \"all\"").unwrap_err(),
+            "node_stacks: `all` is not \"on\", \"off\" or \"localhost\""
         );
         assert_eq!(
             parse("snap_after_action = \"diff\"")
@@ -320,8 +403,40 @@ mod tests {
         // The rest of [e2e] is `e2e::Config`'s to check.
         assert!(parse("[e2e]\nretires = 1\n").is_ok());
         assert_eq!(
-            super::parse(e2e, Scope::User).unwrap_err(),
+            super::parse(e2e, Scope::User, std::path::Path::new("/")).unwrap_err(),
             "[e2e] belongs in the project's chrome-cdp.toml, not the user config"
         );
+    }
+
+    #[test]
+    fn source_root_is_relative_to_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("web/src")).unwrap();
+        let root = super::parse("source_root = \"web\"", Scope::Project, dir.path())
+            .unwrap()
+            .source_root
+            .unwrap();
+        assert_eq!(root, dir.path().join("web").canonicalize().unwrap());
+        let missing = super::parse("source_root = \"nope\"", Scope::Project, dir.path());
+        assert!(missing.unwrap_err().ends_with("nope is not a directory"));
+    }
+
+    #[test]
+    fn the_project_root_is_the_nearest_marked_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("app/.git")).unwrap();
+        std::fs::create_dir_all(root.join("app/web/src")).unwrap();
+        assert_eq!(
+            super::project_root(&root.join("app/web/src")),
+            root.join("app")
+        );
+        std::fs::write(root.join("app/web/chrome-cdp.toml"), "").unwrap();
+        assert_eq!(
+            super::project_root(&root.join("app/web/src")),
+            root.join("app/web")
+        );
+        // Nothing marks a project: the directory itself.
+        assert_eq!(super::project_root(root), root);
     }
 }

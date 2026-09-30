@@ -14,6 +14,11 @@ Support/chrome-cdp/config.toml). Keys (unknown keys are errors):
   base_url = "http://localhost:3000"   so `goto /login` works
   testid_attribute = "data-test" what testid= reads (data-testid)
   snap_after_action = "diff"     every action adds --snap ("off")
+  node_stacks = "on"             open --node-stacks ("off", "localhost")
+  source_root = "web"            where places in the page's code are
+                                 looked up (src/cart.ts:12); relative to
+                                 the file. Default: the nearest directory
+                                 up with a project config or .git
 
 The project config's [e2e] section sets up testing (`chrome-cdp init e2e`
 writes one). Paths are relative to the file; its base_url is also the
@@ -78,8 +83,8 @@ Environment variables:
   CHROME_CDP_CFT_URL                    a Chrome for Testing index mirror
   CHROME_CDP_AUTO_INSTALL, CHROME_CDP_IDLE_TIMEOUT,
   CHROME_CDP_HTTP_CREDENTIALS, CHROME_CDP_HTTP_CREDENTIALS_ORIGIN,
-  CHROME_CDP_CONSOLE_BUFFER,
-  CHROME_CDP_NETWORK_BUFFER             open's flags of those names
+  CHROME_CDP_CONSOLE_BUFFER, CHROME_CDP_NETWORK_BUFFER,
+  CHROME_CDP_NODE_STACKS                open's flags of those names
 
 Examples:
   printf 'base_url = "http://localhost:3000"\n' > chrome-cdp.toml

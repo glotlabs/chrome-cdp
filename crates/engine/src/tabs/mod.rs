@@ -46,6 +46,7 @@ mod fetch;
 mod inject;
 mod locks;
 mod mock_shim;
+pub(crate) mod node_stacks;
 pub(crate) mod tap;
 mod targets;
 
@@ -73,7 +74,7 @@ use crate::input::{Key, Pointer};
 use crate::network::{Exchange, Failure, Idle, InFlight, Network};
 use crate::observe::console::{self, Console, ConsoleError, FromWorker};
 use crate::observe::netlog::{self, NetLog};
-use crate::request::{DialogPolicy, HttpCredentials};
+use crate::request::{DialogPolicy, HttpCredentials, NodeStacks};
 use crate::route::Router;
 use crate::snapshot::{FrameSource, Memory as SnapshotMemory};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
@@ -153,6 +154,8 @@ pub(crate) struct Settings {
     /// Whether requests skip service workers without routes too (`open
     /// --bypass-service-worker`).
     bypass_service_worker: AtomicBool,
+    /// Where node creation stacks are recorded (`open --node-stacks`).
+    node_stacks: Mutex<NodeStacks>,
     /// The routing rules (plan 07).
     pub(crate) routes: Router,
     /// What pages emulate, and the permissions (plan 07).
@@ -238,6 +241,14 @@ impl Settings {
 
     fn bypass_service_worker(&self) -> bool {
         self.bypass_service_worker.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn set_node_stacks(&self, stacks: NodeStacks) {
+        *lock(&self.node_stacks) = stacks;
+    }
+
+    pub(crate) fn node_stacks(&self) -> NodeStacks {
+        *lock(&self.node_stacks)
     }
 
     pub(crate) fn set_follow_popups(&self, follow: bool) {
@@ -2067,6 +2078,9 @@ async fn watch_host(
                 }
             }
             method => {
+                if method == page::FrameStartedNavigating::NAME {
+                    node_stacks::navigating(&shared, &session_id, &event);
+                }
                 if let Some(tab) = tab {
                     frame_event(&shared, &session_id, tab, method, &event);
                 }

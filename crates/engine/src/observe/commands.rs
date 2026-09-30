@@ -13,18 +13,20 @@
 
 use std::collections::HashSet;
 use std::fmt::Write as _;
+use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use protocol::schema::{ConsoleData, ConsoleEntry, Level, StackFrame, Worker};
+use protocol::schema::{ConsoleData, ConsoleEntry, Event, Level, StackFrame, Worker};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use regex::Regex;
 use tokio::time::Instant;
 
-use super::console::Console;
+use super::console::{Console, ConsoleError};
 use super::format::{self, frame_text};
 use super::sourcemaps::{RESOLVE_LIMIT, is_local};
 use crate::context::Scoped as _;
 use crate::input::origin;
+use crate::places;
 use crate::request::{ConsoleRequest, Since, millis};
 use crate::tabs::commands::path_of;
 use crate::tabs::{Page, TabError, parse_tab_id, tab_name};
@@ -35,6 +37,9 @@ const SHOWN_TEXT: usize = 500;
 
 /// How many lines of an entry's text the text form shows.
 const SHOWN_LINES: usize = 10;
+
+/// How long source-mapping the console errors of a report may take.
+const REPORT_MAP_WAIT: Duration = Duration::from_millis(500);
 
 /// What one call picked from the buffer.
 #[derive(Debug)]
@@ -112,8 +117,9 @@ impl Engine {
 
     /// Resolves `stack`'s frames with source maps, if `sourcemaps` is set
     /// or the page is on localhost, within `timeout` (at most
-    /// [`RESOLVE_LIMIT`]).
-    pub(super) async fn map_stack(
+    /// [`RESOLVE_LIMIT`]), and finds their files under the project root
+    /// (see [`places`]).
+    pub(crate) async fn map_stack(
         &self,
         running: &Running,
         page: &Page,
@@ -133,6 +139,16 @@ impl Engine {
             .sourcemaps
             .resolve(&page.session, &frame_id, &documents, stack, deadline)
             .await;
+        let root = places::root();
+        for frame in stack.iter_mut() {
+            let found = |source: &str| {
+                places::to_disk(source, root.as_deref()).map(|f| f.to_string_lossy().into_owned())
+            };
+            match &mut frame.original {
+                Some(original) => original.file = found(&original.source),
+                None => frame.file = found(&frame.url),
+            }
+        }
     }
 
     fn console_output(
@@ -224,6 +240,37 @@ impl Engine {
 }
 
 impl Engine {
+    /// The `console_error` events of `errors`, logged in tab `page`, each
+    /// with its original place when a source map gives it within
+    /// [`REPORT_MAP_WAIT`] (maps are cached after the first lookup, so
+    /// an action's report never waits long on them).
+    pub(crate) async fn console_error_events(
+        &self,
+        running: &Running,
+        page: &Page,
+        errors: Vec<ConsoleError>,
+    ) -> Vec<Event> {
+        let mut frames: Vec<Option<StackFrame>> = errors.iter().map(|e| e.frame.clone()).collect();
+        let mut stack: Vec<&mut StackFrame> = frames.iter_mut().flatten().collect();
+        self.map_stack(running, page, &mut stack, false, REPORT_MAP_WAIT)
+            .await;
+        let tab = tab_name(page.id);
+        errors
+            .into_iter()
+            .zip(frames)
+            .map(|(e, frame)| Event::ConsoleError {
+                tab: tab.clone(),
+                message: e.message,
+                url: e.url,
+                line: e.line,
+                column: e.column,
+                uncaught: e.uncaught,
+                worker: e.worker,
+                original: frame.and_then(|f| f.original),
+            })
+            .collect()
+    }
+
     /// Adds to a timeout error on tab `id` how many errors `errors` has
     /// not shown yet (a note and `details.console_errors`): the page may
     /// have failed instead of getting where it was going.
@@ -394,22 +441,35 @@ pub(super) fn shown_url<'a>(url: &'a str, page_origin: Option<&str>) -> &'a str 
 }
 
 /// A frame's place, the original one if a source map gave it:
-/// `render (/src/app.ts:12:5)`. The function keeps its generated name: a
+/// `render (src/app.ts:12:5)`. The function keeps its generated name: a
 /// map names identifiers, not the function around them.
 pub(super) fn frame_line(frame: &StackFrame, page_origin: Option<&str>) -> String {
-    match &frame.original {
-        Some(original) => frame_text(
-            &frame.function,
-            shown_url(&original.source, page_origin),
-            original.line,
-            original.column,
-        ),
-        None => frame_text(
-            &frame.function,
-            shown_url(&frame.url, page_origin),
-            frame.line,
-            frame.column,
-        ),
+    let (place, line, column) = frame_place(frame, page_origin);
+    frame_text(&frame.function, &place, line, column)
+}
+
+/// Where a frame is, as text shows it: the original place if a source
+/// map gave one, else the script's; as the file on disk (relative to the
+/// project root) when there is one, else the URL (without the page's
+/// origin).
+pub(crate) fn frame_place(frame: &StackFrame, page_origin: Option<&str>) -> (String, u32, u32) {
+    let (source, file, line, column) = match &frame.original {
+        Some(o) => (&o.source, &o.file, o.line, o.column),
+        None => (&frame.url, &frame.file, frame.line, frame.column),
+    };
+    (
+        shown_source(source, file.as_deref(), page_origin),
+        line,
+        column,
+    )
+}
+
+/// A source as text shows it: its `file` on disk relative to the
+/// project root, else its URL without the page's origin.
+pub(crate) fn shown_source(source: &str, file: Option<&str>, page_origin: Option<&str>) -> String {
+    match file {
+        Some(file) => places::shown(Path::new(file), places::root().as_deref()),
+        None => shown_url(source, page_origin).to_owned(),
     }
 }
 
@@ -445,10 +505,10 @@ pub(crate) fn entry_text(text: &mut String, entry: &ConsoleEntry, page_origin: O
     let stack = entry.level == Level::Error && !entry.stack.is_empty();
     if !stack {
         let place = match (entry.stack.first(), &entry.url) {
-            (Some(frame), _) => Some(match &frame.original {
-                Some(o) => format!("{}:{}", shown_url(&o.source, page_origin), o.line),
-                None => format!("{}:{}", shown_url(&frame.url, page_origin), frame.line),
-            }),
+            (Some(frame), _) => {
+                let (place, line, _) = frame_place(frame, page_origin);
+                Some(format!("{place}:{line}"))
+            }
             (None, Some(url)) => Some(match entry.line {
                 Some(line) => format!("{}:{line}", shown_url(url, page_origin)),
                 None => shown_url(url, page_origin).to_owned(),
@@ -618,6 +678,7 @@ mod tests {
             line,
             column: 5,
             original: None,
+            file: None,
         }
     }
 
@@ -646,6 +707,7 @@ mod tests {
             line: 12,
             column: 7,
             name: None,
+            file: None,
         });
         entry_text(&mut text, &error, Some("http://x"));
         let log = ConsoleEntry {

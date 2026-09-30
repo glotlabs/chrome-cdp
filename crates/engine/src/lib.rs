@@ -48,11 +48,13 @@ mod navigate;
 mod network;
 mod observe;
 mod pattern;
+mod places;
 mod raw;
 mod read;
 mod request;
 mod route;
 mod snapshot;
+mod source;
 mod state;
 mod tabs;
 mod wait;
@@ -88,6 +90,7 @@ pub use input::{ActionPoint, Checks, check_action, parse_modifiers};
 pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, is_ref, parse_locator};
 pub use navigate::normalize_url;
 pub use observe::{RESOURCE_TYPES, check_eval, check_screenshot};
+pub use places::in_root;
 pub use raw::check_cdp;
 pub use read::check_read;
 pub use request::{
@@ -103,13 +106,13 @@ pub use request::{
     KeyboardOp, LocatorRequest, Margins, MarkRequest, Matcher, MockExplainRequest, MockListRequest,
     MockLogRequest, MockOffRequest, MockSeedRequest, MockStateCheck, MockStateRequest, MockTestTag,
     MockUseRequest, MockWsSendRequest, Modifier, MouseOp, NavigateRequest, Navigation,
-    NetworkClearRequest, NetworkFramesRequest, NetworkRequest, NetworkShowRequest, OpenInitScript,
-    OpenRequest, PaperFormat, PdfRequest, PerfRequest, PermissionsOp, PermissionsRequest, Read,
-    ReadRequest, RequestCheck, RouteAction, RouteBody, RouteRequest, RouteSpec, RoutesRequest,
-    ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest,
-    StateLoadRequest, StateSaveRequest, StatusRange, StorageArea, StorageOp, StorageRequest,
-    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest,
-    TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WaitUntil,
+    NetworkClearRequest, NetworkFramesRequest, NetworkRequest, NetworkShowRequest, NodeStacks,
+    OpenInitScript, OpenRequest, PaperFormat, PdfRequest, PerfRequest, PermissionsOp,
+    PermissionsRequest, Read, ReadRequest, RequestCheck, RouteAction, RouteBody, RouteRequest,
+    RouteSpec, RoutesRequest, ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine,
+    SnapshotRequest, StateLoadRequest, StateSaveRequest, StatusRange, StorageArea, StorageOp,
+    StorageRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target,
+    TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use state::{OriginState, StateCookie, StorageState};
@@ -367,6 +370,9 @@ impl Engine {
         if let Some(bypass) = req.bypass_service_worker {
             self.settings.set_bypass_service_worker(bypass);
         }
+        if let Some(stacks) = req.node_stacks {
+            self.settings.set_node_stacks(stacks);
+        }
         let mut warnings = Vec::new();
         let current = match &*self.lock_state() {
             State::Running(running) => Some(running.clone()),
@@ -392,6 +398,9 @@ impl Engine {
                 }
                 if req.http_credentials.is_some() || req.bypass_service_worker.is_some() {
                     running.tabs.apply_interception(timeout, true).await;
+                }
+                if req.node_stacks.is_some() {
+                    running.tabs.apply_node_stacks(timeout).await;
                 }
                 if req.downloads_dir.is_some()
                     && let Err(why) = running.tabs.manage_downloads(timeout).await

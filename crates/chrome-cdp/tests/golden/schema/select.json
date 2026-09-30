@@ -468,6 +468,17 @@
               "description": "The message's first line, e.g. `TypeError: x is undefined`.",
               "type": "string"
             },
+            "original": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SourcePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Where it came from in the original source, when a source map\nsays so (localhost pages), with the file on disk if found."
+            },
             "tab": {
               "description": "The tab, e.g. `t1`.",
               "type": "string"
@@ -816,6 +827,46 @@
       },
       "required": [
         "role"
+      ],
+      "type": "object"
+    },
+    "SourcePosition": {
+      "description": "A place in an original source file, from a source map.",
+      "properties": {
+        "column": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "file": {
+          "description": "The source on disk (an absolute path), when chrome-cdp found it:\n`source` as a path, or its path's longest end that is a file under\nthe project root (the directory of `chrome-cdp.toml`, `.git`, …,\nor `source_root` in the config). Text output shows it relative to\nthe root.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line": {
+          "description": "1-based.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "description": "The original name at that place, if the map has one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "The source file as the map names it, resolved against the map's\nURL (`http://localhost:5173/src/app.ts`) unless it has its own\nscheme (`webpack://app/./src/app.ts`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "line",
+        "column"
       ],
       "type": "object"
     },

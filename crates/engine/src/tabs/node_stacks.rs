@@ -1,0 +1,189 @@
+//! Node creation stacks as a feature of the registry (plan 15, milestone
+//! 15.1): Chrome records the JavaScript stack that created each DOM node
+//! (`DOM.setNodeStackTracesEnabled`), so `source` can say which line of
+//! the page's code made an element.
+//!
+//! Chrome only records while `DOM` is on in the session, and only for
+//! nodes made after that, so pages and iframes get it before they run a
+//! script ([`setup_steps`]). Recording costs page time per node, so with
+//! `open --node-stacks localhost` (the default) it is on only for
+//! documents on this machine: a session's top frame turns it on or off
+//! as each navigation starts ([`navigating`]), before the new document
+//! runs anything. `open --node-stacks` on a running browser brings every
+//! page and iframe in line ([`Tabs::apply_node_stacks`]).
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use cdp::domains::{dom, page, runtime};
+use cdp::{RawEvent, Session};
+use futures_util::future::join_all;
+use serde::Deserialize as _;
+
+use super::features::NewTarget;
+use super::{Shared, Step, Tabs, step};
+
+/// A new page's or iframe's steps: recording on, if its document gets
+/// it.
+pub(super) fn setup_steps(
+    shared: &Arc<Shared>,
+    target: NewTarget<'_>,
+    steps: &mut Vec<(&'static str, Step)>,
+) {
+    let stacks = shared.settings.node_stacks();
+    let mut state = shared.lock();
+    let id = target.session.id().unwrap_or_default();
+    let Some(new) = state.targets.get_mut(id) else {
+        return;
+    };
+    if stacks.wants(&new.url) {
+        new.node_stacks = true;
+        steps.push(("DOM.enable", step(target.session.call(dom_enable()))));
+        steps.push((
+            "DOM.setNodeStackTracesEnabled",
+            step(
+                target
+                    .session
+                    .call(dom::SetNodeStackTracesEnabledParams::new(true)),
+            ),
+        ));
+    }
+}
+
+/// A frame of session `session_id` started navigating: if it is the
+/// session's top frame, recording follows where it goes.
+pub(super) fn navigating(shared: &Arc<Shared>, session_id: &str, event: &RawEvent) {
+    let Ok(started) = page::FrameStartedNavigating::deserialize(&event.params) else {
+        return;
+    };
+    let same_document = matches!(
+        started.navigation_type,
+        page::FrameStartedNavigatingNavigationType::SameDocument
+            | page::FrameStartedNavigatingNavigationType::HistorySameDocument
+    );
+    if same_document {
+        return;
+    }
+    let want = shared.settings.node_stacks().wants(&started.url);
+    let (session, keep_dom) = {
+        let mut state = shared.lock();
+        let Some(target) = state.targets.get_mut(session_id) else {
+            return;
+        };
+        if !target.kind.is_host() || target.id != started.frame_id || target.node_stacks == want {
+            return;
+        }
+        target.node_stacks = want;
+        let session = target.session.clone();
+        let keep_dom = state.coverage.as_ref().is_some_and(|c| c.uses(session_id));
+        (session, keep_dom)
+    };
+    // Sent now, before the new document can run a script.
+    let sent = switch(&session.with_timeout(super::SETUP_TIMEOUT), want, keep_dom);
+    shared.spawn(async move {
+        if let Err(e) = sent.await {
+            tracing::debug!("turning node stacks {} failed: {e}", on_off(want));
+        }
+    });
+}
+
+impl Tabs {
+    /// Brings every page and iframe in line with the session's
+    /// `--node-stacks` (after `open` changed it). Recording turned on
+    /// covers the nodes made from now on.
+    pub(crate) async fn apply_node_stacks(&self, timeout: Duration) {
+        let stacks = self.shared.settings.node_stacks();
+        let changes: Vec<_> = {
+            let mut state = self.shared.lock();
+            let coverage: Vec<String> = state
+                .coverage
+                .as_ref()
+                .map(super::coverage::Measuring::session_ids)
+                .unwrap_or_default();
+            state
+                .targets
+                .iter_mut()
+                .filter(|(_, t)| t.kind.is_host())
+                .filter_map(|(id, target)| {
+                    let want = stacks.wants(&target.url);
+                    if target.node_stacks == want {
+                        return None;
+                    }
+                    target.node_stacks = want;
+                    let session = target.session.with_timeout(timeout);
+                    Some(switch(&session, want, coverage.contains(id)))
+                })
+                .collect()
+        };
+        for result in join_all(changes).await {
+            if let Err(e) = result {
+                tracing::debug!("changing node stacks failed: {e}");
+            }
+        }
+    }
+
+    /// Whether `DOM` must stay on in `session`: node stacks record there.
+    pub(crate) fn node_stacks_use(&self, session: &Session) -> bool {
+        let id = session.id().unwrap_or_default();
+        self.shared
+            .lock()
+            .targets
+            .get(id)
+            .is_some_and(|t| t.node_stacks)
+    }
+}
+
+/// The stack that created the node `object_id` (an object of `session`,
+/// in any world), as Chrome recorded it; `None` if it has none (made
+/// before recording was on, or parsed from the HTML).
+pub(crate) async fn node_stack(
+    session: &Session,
+    object_id: &str,
+) -> cdp::Result<Option<runtime::StackTrace>> {
+    // Node ids need the document requested first.
+    let document = session.call(dom::GetDocumentParams {
+        depth: Some(0),
+        pierce: None,
+    });
+    let node = session.call(dom::RequestNodeParams::new(object_id.to_owned()));
+    document.await?;
+    let node_id = node.await?.node_id;
+    let stacks = session
+        .call(dom::GetNodeStackTracesParams::new(node_id))
+        .await?;
+    Ok(stacks.creation)
+}
+
+/// Turns recording on (with `DOM`) or off (and `DOM` too, unless
+/// `keep_dom`) in `session`; both calls are sent before this returns.
+fn switch(
+    session: &Session,
+    on: bool,
+    keep_dom: bool,
+) -> impl Future<Output = cdp::Result<()>> + Send + use<> {
+    let dom = if on {
+        Some(step(session.call(dom_enable())))
+    } else {
+        None
+    };
+    let record = session.call(dom::SetNodeStackTracesEnabledParams::new(on));
+    let off = (!on && !keep_dom).then(|| step(session.call(dom::DisableParams {})));
+    async move {
+        if let Some(dom) = dom {
+            dom.await?;
+        }
+        record.await?;
+        if let Some(off) = off {
+            off.await?;
+        }
+        Ok(())
+    }
+}
+
+fn dom_enable() -> dom::EnableParams {
+    dom::EnableParams::default()
+}
+
+fn on_off(on: bool) -> &'static str {
+    if on { "on" } else { "off" }
+}

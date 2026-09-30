@@ -81,6 +81,11 @@ pub struct OpenRequest {
     /// keeps the session's setting (off at first).
     #[serde(default)]
     pub bypass_service_worker: Option<bool>,
+    /// `--node-stacks`: where Chrome records the stack that created each
+    /// DOM node (for `source`); `None` keeps the session's setting
+    /// ([`NodeStacks::Localhost`] at first).
+    #[serde(default)]
+    pub node_stacks: Option<NodeStacks>,
     /// `--device`: emulate this device (as `emulate <device>`) before
     /// loading `url`.
     #[serde(default)]
@@ -154,6 +159,41 @@ impl DialogPolicy {
             Self::Accept => "accept",
             Self::Dismiss => "dismiss",
             Self::Manual => "manual",
+        }
+    }
+}
+
+/// Where Chrome records the stack that created each DOM node (`open
+/// --node-stacks`, plan 15). It costs the page time per node made, so it
+/// is on only for pages on this machine by default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NodeStacks {
+    /// Every page.
+    On,
+    /// No page.
+    Off,
+    /// Pages on `localhost`, `*.localhost` and loopback addresses.
+    #[default]
+    Localhost,
+}
+
+impl NodeStacks {
+    /// The `--node-stacks` value.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::On => "on",
+            Self::Off => "off",
+            Self::Localhost => "localhost",
+        }
+    }
+
+    /// Whether a document at `url` gets node stacks.
+    pub(crate) fn wants(self, url: &str) -> bool {
+        match self {
+            Self::On => true,
+            Self::Off => false,
+            Self::Localhost => crate::observe::is_local(url),
         }
     }
 }

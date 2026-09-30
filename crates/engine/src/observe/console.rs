@@ -52,6 +52,8 @@ pub(crate) struct ConsoleError {
     pub(crate) uncaught: bool,
     /// The worker it came from, if a worker's.
     pub(crate) worker: Option<Worker>,
+    /// The innermost frame of its stack (or its place), to source-map.
+    pub(crate) frame: Option<StackFrame>,
     /// For a shared or service worker's, which is in several tabs: the
     /// worker's target id and the event's number in it, the same in
     /// every tab.
@@ -190,6 +192,16 @@ impl Console {
                         .worker_kind
                         .zip(e.worker.clone())
                         .map(|(kind, url)| Worker { kind, url }),
+                    frame: e.stack.first().cloned().or_else(|| {
+                        Some(StackFrame {
+                            function: String::new(),
+                            url: e.url.clone()?,
+                            line: e.line?,
+                            column: e.column.unwrap_or(1),
+                            original: None,
+                            file: None,
+                        })
+                    }),
                     once: s.once.clone(),
                 }
             })
@@ -332,6 +344,7 @@ fn exception(details: &Value) -> ConsoleEntry {
             line,
             column,
             original: None,
+            file: None,
         });
     }
     entry

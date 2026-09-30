@@ -114,6 +114,16 @@ pub(crate) struct GlobalArgs {
     /// `snapshot --diff -i` unless `--no-snap`.
     #[arg(skip)]
     pub(crate) snap_after_action: bool,
+
+    /// `node_stacks` in the config files: `open --node-stacks`' default.
+    #[arg(skip)]
+    pub(crate) node_stacks: Option<engine::NodeStacks>,
+
+    /// The project root places in the page's code print relative to:
+    /// `source_root` in the config files, else the nearest directory up
+    /// with a project config or `.git`, else the current one.
+    #[arg(skip)]
+    pub(crate) source_root: Option<PathBuf>,
 }
 
 /// The timeout of navigation and of commands without their own default.
@@ -228,6 +238,7 @@ Examples:
   chrome-cdp open --dialogs dismiss                 # answer every dialog with Cancel
   chrome-cdp open --downloads-dir ./downloads       # downloads land there
   chrome-cdp open --http-credentials ada:s3cret http://localhost:8080/admin
+  chrome-cdp open --node-stacks on https://staging.app.test   # record who made each node
   chrome-cdp open --extension ./my-extension         # prints its chrome-extension:// origin")]
     Open(OpenArgs),
 
@@ -1137,8 +1148,10 @@ Examples:
 Every tab records its console from the moment it opens (the newest 1,000
 entries; see `open --console-buffer`). By default only entries this command
 has not shown before are printed, so running it again shows what is new.
-Stack frames of localhost pages are resolved with source maps. Workers log
-here too, marked `[dedicated worker w.js]`; a shared or service worker's
+Stack frames of localhost pages are resolved with source maps, and shown
+as files of your project when they are there (src/cart.ts:12, relative to
+the directory with chrome-cdp.toml or .git, or `source_root` in the
+config; `chrome-cdp help config`). Workers log here too, marked `[dedicated worker w.js]`; a shared or service worker's
 messages are in every tab with a frame on its origin.
 
 Examples:
@@ -1154,7 +1167,8 @@ Examples:
 The first thing to run when an action did not do what you expected. Like
 `console`, it shows only what it has not shown before; `--since 0` shows
 every error the tab kept. Stack frames of localhost pages are resolved with
-source maps, so they point at your original source files.
+source maps, so they point at your original source files, shown relative
+to your project (src/cart.ts:18:22) when they are there.
 
 Examples:
   chrome-cdp errors
@@ -2399,8 +2413,39 @@ pub(crate) struct OpenArgs {
     )]
     pub(crate) network_buffer: Option<u64>,
 
+    /// Where Chrome records the stack that creates each DOM node, to tell
+    /// which line of the page's code made an element. Recording costs
+    /// page time, so by default only pages on this machine get it
+    /// (`node_stacks` in the config sets the default). The session keeps
+    /// this setting; it applies to a running browser too, for the nodes
+    /// made from then on.
+    #[arg(long, env = "CHROME_CDP_NODE_STACKS", value_enum, value_name = "WHERE")]
+    pub(crate) node_stacks: Option<NodeStacks>,
+
     #[command(flatten)]
     pub(crate) idle: IdleArgs,
+}
+
+/// Where node creation stacks are recorded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum NodeStacks {
+    /// Every page.
+    On,
+    /// No page.
+    Off,
+    /// Pages on localhost, *.localhost and loopback addresses (the
+    /// default).
+    Localhost,
+}
+
+impl NodeStacks {
+    pub(crate) fn to_engine(self) -> engine::NodeStacks {
+        match self {
+            Self::On => engine::NodeStacks::On,
+            Self::Off => engine::NodeStacks::Off,
+            Self::Localhost => engine::NodeStacks::Localhost,
+        }
+    }
 }
 
 /// How the session answers JavaScript dialogs.

@@ -560,6 +560,17 @@
               "description": "The message's first line, e.g. `TypeError: x is undefined`.",
               "type": "string"
             },
+            "original": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SourcePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Where it came from in the original source, when a source map\nsays so (localhost pages), with the file on disk if found."
+            },
             "tab": {
               "description": "The tab, e.g. `t1`.",
               "type": "string"
@@ -765,6 +776,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "file": {
+          "description": "The source on disk (an absolute path), when chrome-cdp found it:\n`source` as a path, or its path's longest end that is a file under\nthe project root (the directory of `chrome-cdp.toml`, `.git`, …,\nor `source_root` in the config). Text output shows it relative to\nthe root.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "line": {
           "description": "1-based.",
           "format": "uint32",
@@ -797,6 +815,13 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "file": {
+          "description": "The script on disk (an absolute path), when it has no source map\nand chrome-cdp found it under the project root (see\n`SourcePosition::file`).",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "function": {
           "description": "The function; empty at a script's top level.",

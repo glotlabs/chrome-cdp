@@ -122,7 +122,7 @@ impl Engine {
 
     /// `--no-errors`: no uncaught exception or console error since the
     /// page loaded (or `since`).
-    pub(super) fn no_errors(
+    pub(super) async fn no_errors(
         &self,
         running: &Running,
         page: &Page,
@@ -140,21 +140,11 @@ impl Engine {
             });
         }
         let tab = tab_name(page.id);
-        let events: Vec<Event> = errors
-            .iter()
-            .map(|e| Event::ConsoleError {
-                tab: tab.clone(),
-                message: e.message.clone(),
-                url: e.url.clone(),
-                line: e.line,
-                column: e.column,
-                uncaught: e.uncaught,
-                worker: e.worker.clone(),
-            })
-            .collect();
+        let count = errors.len();
+        let events: Vec<Event> = self.console_error_events(running, page, errors).await;
         let mut failed = Failed {
             expected: format!("{} {when}", expected(req, None)),
-            actual: plural(errors.len(), "error", "errors"),
+            actual: plural(count, "error", "errors"),
             ..Failed::default()
         };
         for event in events.iter().take(LISTED) {
@@ -162,11 +152,10 @@ impl Engine {
             let line = line.strip_prefix("console error: ").unwrap_or(&line);
             failed.notes.push(("error".into(), line.to_owned()));
         }
-        if errors.len() > LISTED {
-            failed.notes.push((
-                "error".into(),
-                format!("… and {} more", errors.len() - LISTED),
-            ));
+        if count > LISTED {
+            failed
+                .notes
+                .push(("error".into(), format!("… and {} more", count - LISTED)));
         }
         failed.details.insert("errors".into(), json!(events));
         let mut cmd = Cmd::new("errors").flag("since", console.to_string());
@@ -205,6 +194,7 @@ impl Engine {
                     column: e.column,
                     uncaught: e.uncaught,
                     worker: e.worker,
+                    original: None,
                 });
             }
         }
