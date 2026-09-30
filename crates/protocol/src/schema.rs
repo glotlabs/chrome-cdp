@@ -639,6 +639,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<ComponentsData>),
     },
     CommandSchema {
+        name: "why",
+        summary: "why an action on an element would wait or fail, check by check",
+        schema: || schema_for!(Envelope<WhyData>),
+    },
+    CommandSchema {
         name: "markdown",
         summary: "the page's readable content (or an element's) as Markdown",
         schema: || schema_for!(Envelope<MarkdownData>),
@@ -3271,6 +3276,101 @@ pub struct SourceData {
     /// The framework's version, as the page gives it (`19`, `3.5.13`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<String>,
+}
+
+/// `data` of `chrome-cdp why --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WhyData {
+    /// The tab, e.g. `t1`.
+    pub tab: String,
+    /// The locator, as given.
+    pub locator: String,
+    /// The action whose checks ran (`--for`): `click`, `hover`, `fill`,
+    /// `type`, `check`, `select`, `upload` or `drag`.
+    #[serde(rename = "for")]
+    pub action: String,
+    /// The element the locator matched; absent when it matched none, or
+    /// several.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element: Option<WhyElement>,
+    /// The checks the action needs, in the pipeline's order: `resolve`,
+    /// `visible`, `stable`, `enabled`, `editable`, `in view`, `hit test`.
+    /// Only `resolve` when the locator did not match one element.
+    pub checks: Vec<WhyCheck>,
+    pub verdict: WhyVerdict,
+}
+
+/// An element `why` names: the one it checked, or one that causes a
+/// failed check (the covering banner, the disabled fieldset).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WhyElement {
+    /// Its ref, e.g. `e6` (absent if the page changed before one could
+    /// be given).
+    #[serde(rename = "ref", default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
+    /// Its role (`generic` for none).
+    pub role: String,
+    /// Its accessible name (or text), cut to 60 characters.
+    pub name: String,
+    /// Its tag name, lower case.
+    pub tag: String,
+    /// Its first class, which names an element without a role
+    /// (`div.cookie-banner`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub class: String,
+}
+
+/// One check of the actionability pipeline, as `why` ran it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WhyCheck {
+    /// `resolve`, `visible`, `stable`, `enabled`, `editable`, `in view`
+    /// or `hit test`.
+    pub name: String,
+    pub status: WhyStatus,
+    /// What it saw: the cause when it failed (`display: none on
+    /// div.panel [e7]`), a detail when it passed (`120×32 at 40,610`),
+    /// or why it was skipped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<String>,
+    /// The element that causes the failure, when it is not the checked
+    /// one: the ancestor with `display: none`, the disabled fieldset,
+    /// what covers it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element: Option<WhyElement>,
+    /// `hit test`: a button in what covers it that likely dismisses it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dismiss: Option<WhyElement>,
+    /// `resolve`: the elements an ambiguous locator matches (at most 5).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidates: Vec<WhyElement>,
+    /// `resolve`: the locator engine's notes on a failed match.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+/// A check's outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum WhyStatus {
+    Ok,
+    Failed,
+    /// Not run: `--no-scroll` left the element out of view, or an
+    /// earlier failure leaves nothing to test.
+    Skipped,
+}
+
+/// What the action would do now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WhyVerdict {
+    /// Every check passed: the action would act at once.
+    pub acts_now: bool,
+    /// The failed checks the action would wait on, until its timeout.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waits: Vec<String>,
+    /// Why the action would fail at once, without waiting: a gone ref,
+    /// an ambiguous locator, an element that can never take text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fails: Option<String>,
 }
 
 /// A place in the page's source: a file and line.

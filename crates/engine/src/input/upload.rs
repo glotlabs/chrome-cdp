@@ -72,7 +72,7 @@ struct Probe {
 }
 
 /// Is `this` a file input or a label of one, and what does it take.
-const PROBE: &str = "function () {\n\
+pub(crate) const PROBE: &str = "function () {\n\
     const input = this.localName === 'label' && this.control ? this.control : this;\n\
     const file = input.localName === 'input' && input.type === 'file';\n\
     return {\n\

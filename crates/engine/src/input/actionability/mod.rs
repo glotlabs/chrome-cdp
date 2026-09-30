@@ -57,6 +57,7 @@ use geometry::{bounds, centre, is_below, local_root, offset, origin, out_of_view
 
 mod geometry;
 mod report;
+mod why;
 
 /// How long to wait before each retry; the last one repeats.
 const RETRY_DELAYS: [Duration; 5] = [
@@ -153,6 +154,7 @@ struct Listed {
     role: String,
     name: String,
     tag: String,
+    class: String,
 }
 
 /// The outcome of one run that did not pass.
@@ -184,6 +186,9 @@ struct Candidate {
     name: String,
     #[serde(default)]
     tag: String,
+    /// Its first class, which names an element without a role.
+    #[serde(default)]
+    cls: String,
 }
 
 /// `covering()`'s answer.
@@ -426,18 +431,40 @@ impl Engine {
                 why: failed.why,
             }));
         }
+        self.land(running, page, target, checks, generation, true, timeout)
+            .await
+    }
+
+    /// Steps 6-7 on an element that passed the checks in the page: scrolls
+    /// it into view (unless `scroll` is false: `why --no-scroll`), and
+    /// returns the point to act at, in the tab's viewport, once the hit
+    /// test there finds it. `generation` is the tab's ref generation when
+    /// the run began.
+    #[allow(clippy::too_many_arguments)]
+    async fn land(
+        &self,
+        running: &Running,
+        page: &Page,
+        target: &Target,
+        checks: Checks,
+        generation: Option<u64>,
+        scroll: bool,
+        timeout: Duration,
+    ) -> Result<(f64, f64), Attempt> {
         let session = target.context.session.with_timeout(timeout);
         let object_id = Some(target.object_id.clone());
-        let scrolled = session
-            .call(dom::ScrollIntoViewIfNeededParams {
-                object_id: object_id.clone(),
-                ..dom::ScrollIntoViewIfNeededParams::default()
-            })
-            .await;
-        if let Err(err) = scrolled
-            && !checks.force
-        {
-            return Err(self.no_box(&err));
+        if scroll {
+            let scrolled = session
+                .call(dom::ScrollIntoViewIfNeededParams {
+                    object_id: object_id.clone(),
+                    ..dom::ScrollIntoViewIfNeededParams::default()
+                })
+                .await;
+            if let Err(err) = scrolled
+                && !checks.force
+            {
+                return Err(self.no_box(&err));
+            }
         }
         let quads = session
             .call(dom::GetContentQuadsParams {
@@ -509,18 +536,23 @@ impl Engine {
                 let (dx, dy) = origin(&model.content);
                 let (bx, by) = origin(&model.border);
                 let [left, top, right, bottom] = bounds;
-                let scrolled = session
-                    .call(dom::ScrollIntoViewIfNeededParams {
-                        object_id: Some(owner.object_id.clone()),
-                        rect: Some(dom::Rect {
-                            x: left + dx - bx,
-                            y: top + dy - by,
-                            width: (right - left).max(1.0),
-                            height: (bottom - top).max(1.0),
-                        }),
-                        ..dom::ScrollIntoViewIfNeededParams::default()
-                    })
-                    .await;
+                let scrolled = if scroll {
+                    session
+                        .call(dom::ScrollIntoViewIfNeededParams {
+                            object_id: Some(owner.object_id.clone()),
+                            rect: Some(dom::Rect {
+                                x: left + dx - bx,
+                                y: top + dy - by,
+                                width: (right - left).max(1.0),
+                                height: (bottom - top).max(1.0),
+                            }),
+                            ..dom::ScrollIntoViewIfNeededParams::default()
+                        })
+                        .await
+                        .map(|_| ())
+                } else {
+                    Ok(())
+                };
                 if let Err(err) = scrolled
                     && !checks.force
                 {
@@ -767,6 +799,7 @@ impl Engine {
                 role: c.role,
                 name: c.name,
                 tag: c.tag,
+                class: c.cls,
             })
         };
         Err(Attempt::Retry(Failure::Obscured(Box::new(Obscured {

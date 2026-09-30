@@ -118,7 +118,7 @@ pub use request::{
     Since, SnapshotEngine, SnapshotRequest, SourceRequest, StateLoadRequest, StateSaveRequest,
     StatusRange, StorageArea, StorageOp, StorageRequest, TabCloseRequest, TabNewRequest,
     TabSelectRequest, TabsRequest, Target, TraceStartRequest, TraceStopRequest, UnrouteRequest,
-    WaitFor, WaitRequest, WaitUntil,
+    WaitFor, WaitRequest, WaitUntil, WhyFor, WhyRequest,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use state::{OriginState, StateCookie, StorageState};

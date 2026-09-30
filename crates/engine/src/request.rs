@@ -1957,6 +1957,85 @@ pub enum LocalsMode {
     Localhost,
 }
 
+/// `why`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WhyRequest {
+    /// `--tab`: the tab to look in; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    pub locator: String,
+    /// `--for`: the action whose checks run.
+    #[serde(rename = "for", default)]
+    pub action: WhyFor,
+    /// `--no-scroll`: leave the page where it is; an element out of view
+    /// is not hit-tested.
+    #[serde(default)]
+    pub no_scroll: bool,
+    #[serde(default)]
+    pub strict_refs: bool,
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    pub timeout_ms: u64,
+}
+
+/// The action `why` checks for: each needs its own checks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WhyFor {
+    #[default]
+    Click,
+    Hover,
+    Fill,
+    Type,
+    Check,
+    Select,
+    Upload,
+    Drag,
+}
+
+impl WhyFor {
+    pub const ALL: [Self; 8] = [
+        Self::Click,
+        Self::Hover,
+        Self::Fill,
+        Self::Type,
+        Self::Check,
+        Self::Select,
+        Self::Upload,
+        Self::Drag,
+    ];
+
+    /// The action's command name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Click => "click",
+            Self::Hover => "hover",
+            Self::Fill => "fill",
+            Self::Type => "type",
+            Self::Check => "check",
+            Self::Select => "select",
+            Self::Upload => "upload",
+            Self::Drag => "drag",
+        }
+    }
+
+    /// The `--for` value of an action command's errors: `why <loc> --for
+    /// <it>` explains them. `None` for commands `why` does not cover.
+    pub fn of_command(command: &str) -> Option<Self> {
+        Some(match command {
+            "click" | "dblclick" | "tap" => Self::Click,
+            "hover" => Self::Hover,
+            "fill" => Self::Fill,
+            "type" => Self::Type,
+            "check" | "uncheck" => Self::Check,
+            "select" => Self::Select,
+            "upload" => Self::Upload,
+            "drag" => Self::Drag,
+            _ => return None,
+        })
+    }
+}
+
 /// `inspect`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InspectRequest {
