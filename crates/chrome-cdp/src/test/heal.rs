@@ -445,6 +445,35 @@ mod tests {
     }
 
     #[test]
+    fn medium_matches_need_heal_medium() {
+        assert!(Level::High.accepts("high"));
+        assert!(!Level::High.accepts("medium"));
+        assert!(Level::Medium.accepts("medium"));
+        assert!(!Level::Medium.accepts("low"));
+        let medium = HealCandidate {
+            locator: Some("#b".into()),
+            element: "button \"B\"".into(),
+            confidence: 0.7,
+            level: "medium".into(),
+            reasons: vec!["same role".into()],
+        };
+        let hint = |heal| {
+            explain(
+                ErrorInfo::new(protocol::ErrorKind::NotFound, "no element").hint("x"),
+                &medium,
+                "chrome-cdp test a.cdp:1",
+                heal,
+            )
+            .hint
+        };
+        let medium_hint = "run it with --heal=medium to use it (chrome-cdp test a.cdp:1 --heal=medium), or change the locator";
+        assert_eq!(hint(None).as_deref(), Some(medium_hint));
+        assert_eq!(hint(Some(Level::High)).as_deref(), Some(medium_hint));
+        // --heal=medium tried it: the hint is the step's own.
+        assert_eq!(hint(Some(Level::Medium)).as_deref(), Some("x"));
+    }
+
+    #[test]
     fn a_likely_element_is_named_with_a_hint() {
         let best = HealCandidate {
             locator: Some("role=button[name=\"Add to basket\"]".into()),
