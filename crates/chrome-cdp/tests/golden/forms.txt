@@ -1,0 +1,32 @@
+$ chrome-cdp forms
+exit: 0
+--- stdout
+form "Checkout" [e1] → POST /api/orders (16 fields, 2 required empty)
+  textbox "Email" [e2] (email) required value=""
+  textbox "Full name:" [e3] value=""
+  textbox "Card number *" [e4] required value="" invalid: "Please enter a valid card number."
+  combobox "Country" [e5] value="Choose…" options: Choose…, Norway, Sweden, Denmark, Finland
+  textbox "Delivery date" [e6] (date) value=""
+  colorwell "Wrapping colour" [e7] value="#000000"
+  slider "Tip" [e8] value="5"
+  spinbutton "Quantity" [e9] value="1"
+  textbox "Notes" [e10] value=""
+  listbox "Extras" [e11] selected: none options: Insurance, Gift receipt, SMS updates
+  listbox "Delivery days" [e12] selected: none options: Monday, Wednesday, Friday
+  checkbox "Save card" [e13] unchecked
+  switch "Newsletter" [e14] unchecked
+  radiogroup "Shipping": radio "Standard" [e16] checked, radio "Express" [e17]
+  file "Receipt" [e18] accept=.pdf
+  combobox "City" [e19] value=""
+  button "Pay" [e20] (submit)
+
+$ chrome-cdp forms --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"forms":[{"action":"/api/orders","count":16,"element":{"name":"Checkout","ref":"e1","role":"form","tag":"form"},"fields":[{"element":{"name":"Email","ref":"e2","role":"textbox","tag":"input"},"empty":true,"html_name":"email","kind":"email","required":true,"value":""},{"element":{"name":"Full name:","ref":"e3","role":"textbox","tag":"input"},"empty":true,"html_name":"fullname","kind":"text","placeholder":"Ada Lovelace","value":""},{"element":{"name":"Card number *","ref":"e4","role":"textbox","tag":"input"},"empty":true,"html_name":"card","id":"card","invalid":true,"kind":"text","message":"Please enter a valid card number.","required":true,"value":""},{"element":{"name":"Country","ref":"e5","role":"combobox","tag":"select"},"empty":true,"html_name":"country","id":"country","kind":"select","options":["Choose…","Norway","Sweden","Denmark","Finland"],"value":"Choose…"},{"element":{"name":"Delivery date","ref":"e6","role":"textbox","tag":"input"},"empty":true,"html_name":"delivery","kind":"date","value":""},{"element":{"name":"Wrapping colour","ref":"e7","role":"colorwell","tag":"input"},"html_name":"colour","kind":"color","value":"#000000"},{"element":{"name":"Tip","ref":"e8","role":"slider","tag":"input"},"html_name":"tip","kind":"range","value":"5"},{"element":{"name":"Quantity","ref":"e9","role":"spinbutton","tag":"input"},"html_name":"quantity","kind":"number","value":"1"},{"element":{"name":"Notes","ref":"e10","role":"textbox","tag":"textarea"},"empty":true,"html_name":"notes","kind":"textarea","value":""},{"element":{"name":"Extras","ref":"e11","role":"listbox","tag":"select"},"empty":true,"html_name":"extras","kind":"select","multiple":true,"options":["Insurance","Gift receipt","SMS updates"]},{"custom":true,"element":{"name":"Delivery days","ref":"e12","role":"listbox","tag":"ul"},"empty":true,"id":"days","kind":"listbox","multiple":true,"options":["Monday","Wednesday","Friday"]},{"checked":false,"element":{"name":"Save card","ref":"e13","role":"checkbox","tag":"input"},"empty":true,"html_name":"save","kind":"checkbox"},{"checked":false,"custom":true,"element":{"name":"Newsletter","ref":"e14","role":"switch","tag":"button"},"empty":true,"id":"news","kind":"switch"},{"element":{"name":"Shipping","ref":"e15","role":"group","tag":"fieldset"},"html_name":"shipping","kind":"radiogroup","radios":[{"checked":true,"element":{"name":"Standard","ref":"e16","role":"radio","tag":"input"},"value":"standard"},{"checked":false,"element":{"name":"Express","ref":"e17","role":"radio","tag":"input"},"value":"express"}],"value":"Standard"},{"accept":".pdf","element":{"name":"Receipt","ref":"e18","role":"button","tag":"input"},"empty":true,"html_name":"receipt","kind":"file"},{"element":{"name":"City","ref":"e19","role":"combobox","tag":"input"},"empty":true,"id":"city","kind":"text","value":""},{"element":{"name":"Pay","ref":"e20","role":"button","tag":"button"},"kind":"submit","submit":true}],"kind":"form","method":"POST","required_empty":2}],"tab":"t1"}}
+
+$ chrome-cdp forms -q
+exit: 0
+--- stdout
+2
+

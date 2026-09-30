@@ -1,0 +1,14 @@
+$ chrome-cdp fill-form 'role=form[name="Log in"]' --values '{"Email": "ada@example.com", "Pasword": "s3cret"}'
+exit: 1
+--- stderr
+error: "Pasword" matches no field
+  Pasword: did you mean: "Password"
+  fields: "Email", "Password", "Remember me"
+  filled: filled textbox "Email" [e2]
+  hint: chrome-cdp forms e1   (lists the form's fields; use a field's name, or its ref with fill)
+
+$ chrome-cdp fill-form 'role=form[name="Log in"]' --values '{"Email": "ada@example.com", "Pasword": "s3cret"}' --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"\"Pasword\" matches no field","hint":"chrome-cdp forms e1   (lists the form's fields; use a field's name, or its ref with fill)","notes":[{"label":"Pasword: did you mean","text":"\"Password\""},{"label":"fields","text":"\"Email\", \"Password\", \"Remember me\""},{"label":"filled","text":"filled textbox \"Email\" [e2]"}],"details":{"filled":[{"action":"fill","element":{"name":"Email","ref":"e2","role":"textbox","tag":"input"},"key":"Email"}],"form":{"name":"Log in","ref":"e1","role":"form","tag":"form"},"tab":"t1","unmatched":[{"key":"Pasword"}]}}}
+

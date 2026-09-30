@@ -1,0 +1,13 @@
+$ chrome-cdp fill-form --values '{"Email": "ada@example.com"}'
+exit: 1
+--- stderr
+error: the page has several forms (2): name the one to fill
+  e1: form "Log in" (3 fields, 2 required empty)
+  e2: form "Newsletter" → GET /subscribe (1 field)
+  hint: chrome-cdp fill-form e1 --values '{"Email":"ada@example.com"}'
+
+$ chrome-cdp fill-form --values '{"Email": "ada@example.com"}' --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"Ambiguous","message":"the page has several forms (2): name the one to fill","hint":"chrome-cdp fill-form e1 --values '{\"Email\":\"ada@example.com\"}'","notes":[{"label":"e1","text":"form \"Log in\" (3 fields, 2 required empty)"},{"label":"e2","text":"form \"Newsletter\" → GET /subscribe (1 field)"}],"details":{"candidates":[{"name":"Log in","ref":"e1","role":"form","tag":"form"},{"name":"Newsletter","ref":"e2","role":"form","tag":"form"}]}}}
+

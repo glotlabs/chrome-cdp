@@ -1,0 +1,11 @@
+$ chrome-cdp fill-form 'role=form[name="Log in"]' --values '{"Remember me": "yes"}'
+exit: 2
+--- stderr
+error: "Remember me" is checkbox "Remember me" [e4]: give true or false, not "yes"
+  hint: text fields take strings or numbers, checkboxes true or false, a select or radio group a label, a file input a path or an array of paths
+
+$ chrome-cdp fill-form 'role=form[name="Log in"]' --values '{"Remember me": "yes"}' --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"\"Remember me\" is checkbox \"Remember me\" [e4]: give true or false, not \"yes\"","hint":"text fields take strings or numbers, checkboxes true or false, a select or radio group a label, a file input a path or an array of paths"}}
+

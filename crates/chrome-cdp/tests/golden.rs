@@ -2455,6 +2455,63 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/why/cases.html"),
     },
     Case {
+        name: "forms",
+        args: &["forms"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/forms/checkout.html"),
+    },
+    Case {
+        name: "forms-two",
+        args: &["forms"],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/forms/two-forms.html"),
+    },
+    Case {
+        name: "fill-form",
+        args: &[
+            "fill-form",
+            "role=form[name=\"Log in\"]",
+            "--values",
+            r#"{"Email": "ada@example.com", "Remember me": true}"#,
+        ],
+        modes: ALL,
+        fixture: Fixture::SessionAt("/forms/two-forms.html"),
+    },
+    Case {
+        name: "fill-form-ambiguous",
+        args: &["fill-form", "--values", r#"{"Email": "ada@example.com"}"#],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/forms/two-forms.html"),
+    },
+    Case {
+        name: "fill-form-unmatched",
+        args: &[
+            "fill-form",
+            "role=form[name=\"Log in\"]",
+            "--values",
+            r#"{"Email": "ada@example.com", "Pasword": "s3cret"}"#,
+        ],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/forms/two-forms.html"),
+    },
+    Case {
+        name: "fill-form-bad-value",
+        args: &[
+            "fill-form",
+            "role=form[name=\"Log in\"]",
+            "--values",
+            r#"{"Remember me": "yes"}"#,
+        ],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/forms/two-forms.html"),
+    },
+    Case {
+        name: "fill-form-not-an-object",
+        args: &["fill-form", "--values", "[1, 2]"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
         name: "source-production-build",
         args: &["source", "role=button >> nth=0"],
         modes: ERR,

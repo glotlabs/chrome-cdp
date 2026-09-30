@@ -1,0 +1,23 @@
+$ chrome-cdp forms
+exit: 0
+--- stdout
+form "Log in" [e1] (3 fields, 2 required empty)
+  textbox "Email" [e4] (email) required value=""
+  textbox "Password" [e5] (password) required value=""
+  checkbox "Remember me" [e6] unchecked
+  button "Sign in" [e7] (submit)
+form "Newsletter" [e2] → GET /subscribe (1 field)
+  textbox "Your email" [e8] (email) value=""
+fields outside a form (1 field)
+  searchbox "Filter" [e3] value=""
+
+$ chrome-cdp forms --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"forms":[{"count":3,"element":{"name":"Log in","ref":"e1","role":"form","tag":"form"},"fields":[{"element":{"name":"Email","ref":"e4","role":"textbox","tag":"input"},"empty":true,"html_name":"email","kind":"email","required":true,"value":""},{"element":{"name":"Password","ref":"e5","role":"textbox","tag":"input"},"empty":true,"html_name":"password","kind":"password","required":true,"secret":true},{"checked":false,"element":{"name":"Remember me","ref":"e6","role":"checkbox","tag":"input"},"empty":true,"html_name":"remember","kind":"checkbox"},{"element":{"name":"Sign in","ref":"e7","role":"button","tag":"button"},"kind":"submit","submit":true}],"kind":"form","required_empty":2},{"action":"/subscribe","count":1,"element":{"name":"Newsletter","ref":"e2","role":"form","tag":"form"},"fields":[{"element":{"name":"Your email","ref":"e8","role":"textbox","tag":"input"},"empty":true,"html_name":"subscriber","kind":"email","placeholder":"you@example.com","value":""}],"kind":"form","method":"GET","required_empty":0},{"count":1,"fields":[{"element":{"name":"Filter","ref":"e3","role":"searchbox","tag":"input"},"empty":true,"id":"filter","kind":"search","value":""}],"kind":"outside","required_empty":0}],"tab":"t1"}}
+
+$ chrome-cdp forms -q
+exit: 0
+--- stdout
+2
+

@@ -1,0 +1,16 @@
+$ chrome-cdp fill-form 'role=form[name="Log in"]' --values '{"Email": "ada@example.com", "Remember me": true}'
+exit: 0
+--- stdout
+filled textbox "Email" [e2]
+checked checkbox "Remember me" [e4]
+
+$ chrome-cdp fill-form 'role=form[name="Log in"]' --values '{"Email": "ada@example.com", "Remember me": true}' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"filled":[{"action":"fill","element":{"name":"Email","ref":"e2","role":"textbox","tag":"input"},"key":"Email"},{"action":"check","element":{"name":"Remember me","ref":"e4","role":"checkbox","tag":"input"},"key":"Remember me"}],"form":{"name":"Log in","ref":"e1","role":"form","tag":"form"},"tab":"t1"}}
+
+$ chrome-cdp fill-form 'role=form[name="Log in"]' --values '{"Email": "ada@example.com", "Remember me": true}' -q
+exit: 0
+--- stdout
+2
+

@@ -1,0 +1,11 @@
+$ chrome-cdp fill-form --values '[1, 2]'
+exit: 2
+--- stderr
+error: the values are not a JSON object of field names to values: invalid type: sequence, expected a JSON object of field names to values at line 1 column 0
+  hint: chrome-cdp fill-form --values '{"Email": "ada@example.com", "Remember me": true}'
+
+$ chrome-cdp fill-form --values '[1, 2]' --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"the values are not a JSON object of field names to values: invalid type: sequence, expected a JSON object of field names to values at line 1 column 0","hint":"chrome-cdp fill-form --values '{\"Email\": \"ada@example.com\", \"Remember me\": true}'"}}
+
