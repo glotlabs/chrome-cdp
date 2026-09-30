@@ -1,0 +1,11 @@
+$ chrome-cdp compare tab:t1 tab:t2 --visual --threshold 2
+exit: 2
+--- stderr
+error: --threshold must be from 0 to 1, got 2
+  hint: 0.1 is the default; lower counts fainter changes
+
+$ chrome-cdp compare tab:t1 tab:t2 --visual --threshold 2 --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"--threshold must be from 0 to 1, got 2","hint":"0.1 is the default; lower counts fainter changes"}}
+

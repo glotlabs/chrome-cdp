@@ -1,0 +1,23 @@
+$ chrome-cdp compare <site>/compare/a.html <site-b>/compare/b.html
+exit: 0
+--- stdout
+compare <site>/compare/a.html ↔ <site-b>/compare/b.html
+snapshot: 5 changes
+  - main
+~   - heading "Your cart (3)" (h1) (was "Your cart (2)")
+-   - region "Offers"
+-   - link "Continue shopping" → /compare/a.html
++   - button "Apply coupon"
++   - region "Offers"
++     - text "Free shipping over $50"
+
+$ chrome-cdp compare <site>/compare/a.html <site-b>/compare/b.html --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"a":{"side":"<site>/compare/a.html","title":"Compare: cart","url":"<site>/compare/a.html"},"b":{"side":"<site-b>/compare/b.html","title":"Compare: cart","url":"<site-b>/compare/b.html"},"differs":true,"snapshot":{"changes":5,"diff":[{"children":[{"change":"changed","level":1,"name":"Your cart (3)","role":"heading","was":"\"Your cart (2)\""},{"change":"removed","name":"Offers","role":"region"},{"change":"removed","href":"/compare/a.html","name":"Continue shopping","role":"link"},{"change":"added","name":"Apply coupon","role":"button"},{"change":"added","children":[{"change":"added","name":"Free shipping over $50","role":"text"}],"name":"Offers","role":"region"}],"role":"main"}]}}}
+
+$ chrome-cdp compare <site>/compare/a.html <site-b>/compare/b.html -q
+exit: 0
+--- stdout
+5
+

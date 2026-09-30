@@ -1,0 +1,9 @@
+$ chrome-cdp compare tab:t1 <site-b>/compare/b.html -i --exit-code
+exit: 1
+--- stdout
+compare tab:t1 (<site>/compare/a.html) ↔ <site-b>/compare/b.html
+snapshot: 2 changes
+  - main
+-   - link "Continue shopping" → /compare/a.html
++   - button "Apply coupon"
+

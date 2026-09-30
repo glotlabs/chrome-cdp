@@ -1,0 +1,11 @@
+$ chrome-cdp compare <scripts>/compare-a.json tab:t1 --visual
+exit: 2
+--- stderr
+error: --visual needs a live page: <scripts>/compare-a.json is a snapshot file
+  hint: compare a URL, tab:<id> or session:<name> with --visual, or leave --visual out
+
+$ chrome-cdp compare <scripts>/compare-a.json tab:t1 --visual --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"--visual needs a live page: <scripts>/compare-a.json is a snapshot file","hint":"compare a URL, tab:<id> or session:<name> with --visual, or leave --visual out"}}
+

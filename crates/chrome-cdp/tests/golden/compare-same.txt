@@ -1,0 +1,6 @@
+$ chrome-cdp compare tab:t1 <site>/compare/a.html --exit-code
+exit: 0
+--- stdout
+compare tab:t1 (<site>/compare/a.html) ↔ <site>/compare/a.html
+snapshot: no changes
+

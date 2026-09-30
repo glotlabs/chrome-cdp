@@ -2390,6 +2390,53 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/layout/small.html"),
     },
     Case {
+        name: "compare",
+        args: &[
+            "compare",
+            "{site}/compare/a.html",
+            "{site_b}/compare/b.html",
+        ],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "compare-interactive",
+        args: &[
+            "compare",
+            "tab:t1",
+            "{site_b}/compare/b.html",
+            "-i",
+            "--exit-code",
+        ],
+        modes: &[""],
+        fixture: Fixture::SessionAt("/compare/a.html"),
+    },
+    Case {
+        name: "compare-same",
+        args: &["compare", "tab:t1", "{site}/compare/a.html", "--exit-code"],
+        modes: &[""],
+        fixture: Fixture::SessionAt("/compare/a.html"),
+    },
+    Case {
+        name: "compare-file-visual",
+        args: &["compare", "{scripts}/compare-a.json", "tab:t1", "--visual"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
+        name: "compare-bad-threshold",
+        args: &[
+            "compare",
+            "tab:t1",
+            "tab:t2",
+            "--visual",
+            "--threshold",
+            "2",
+        ],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
         name: "layout-bad-kind",
         args: &["layout", "--only", "overlaps"],
         modes: ERR,
@@ -3809,6 +3856,7 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
                 None => (*a).to_owned(),
             })
             .map(|a| a.replace("{site}", site.a()))
+            .map(|a| a.replace("{site_b}", site.b()))
             .map(|a| a.replace("{files}", &files.display().to_string()))
             .map(|a| a.replace("{scripts}", &scripts.display().to_string()))
             .map(|a| a.replace("{mocks}", &mocks.display().to_string()))
