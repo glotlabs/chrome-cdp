@@ -27,13 +27,14 @@ use engine::{
     Action, ActionRequest, CdpRequest, ClipboardOp, ClipboardRequest, ComponentsRequest,
     ConnectRequest, ConsoleRequest, ContextCloseRequest, ContextListRequest, ContextNewRequest,
     CoverageStartRequest, CoverageStopRequest, DebugClearRequest, DebugListRequest,
-    DebugLogRequest, DialogRequest, DownloadsRequest, ElementState, EvalRequest, FindRequest,
-    FramesRequest, HarStartRequest, HarStopRequest, HighlightRequest, HttpCredentials, ImageFormat,
-    InspectRequest, LocatorRequest, NavigateRequest, Navigation, NetworkClearRequest,
-    NetworkFramesRequest, NetworkRequest, NetworkShowRequest, OpenInitScript, OpenRequest,
-    PdfRequest, PerfRequest, Read, ReadRequest, RouteRequest, RoutesRequest, ScreenshotRequest,
-    SnapshotRequest, SourceRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
-    TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest,
+    DebugLocalsRequest, DebugLogRequest, DialogRequest, DownloadsRequest, ElementState,
+    EvalRequest, FindRequest, FramesRequest, HarStartRequest, HarStopRequest, HighlightRequest,
+    HttpCredentials, ImageFormat, InspectRequest, LocalsMode, LocatorRequest, NavigateRequest,
+    Navigation, NetworkClearRequest, NetworkFramesRequest, NetworkRequest, NetworkShowRequest,
+    OpenInitScript, OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest, RouteRequest,
+    RoutesRequest, ScreenshotRequest, SnapshotRequest, SourceRequest, TabCloseRequest,
+    TabNewRequest, TabSelectRequest, TabsRequest, TraceStartRequest, TraceStopRequest,
+    UnrouteRequest, WaitFor, WaitRequest,
 };
 use engine::{
     CookieFilter, CookieSpec, CookiesOp, CookiesRequest, StateLoadRequest, StateSaveRequest,
@@ -54,8 +55,8 @@ use crate::cli::{
     DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, ExtensionStorageAreaArg,
     ExtensionStorageCommand, ExtensionsArgs, ExtensionsCommand, FindArgs, FrameDirArg, FramesArgs,
     GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs,
-    ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs, LocatorArgs,
-    LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs,
+    ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs, LocalsArg,
+    LocatorArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs,
     PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs,
     SnapshotArgs, SourceArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg,
     StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs,
@@ -2037,7 +2038,8 @@ pub(crate) fn perf(global: &GlobalArgs) -> Result<Output, ErrorInfo> {
         .block_on(client.call_output(rpc::PERF, &request, ctx.timeout + QUICK))
 }
 
-/// `debug log`, `debug list` and `debug clear`: need a running session.
+/// `debug log`, `debug list`, `debug clear` and `debug locals`: need a
+/// running session.
 pub(crate) fn debug(args: &DebugArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     check_tab(global.tab.as_deref())?;
     let (method, request) = match &args.command {
@@ -2081,6 +2083,17 @@ pub(crate) fn debug(args: &DebugArgs, global: &GlobalArgs) -> Result<Output, Err
             rpc::DEBUG_CLEAR,
             serde_json::to_value(DebugClearRequest {
                 id: if clear.all { None } else { clear.id },
+                timeout_ms: 0,
+            }),
+        ),
+        DebugCommand::Locals(locals) => (
+            rpc::DEBUG_LOCALS,
+            serde_json::to_value(DebugLocalsRequest {
+                set: locals.mode.map(|m| match m {
+                    LocalsArg::On => LocalsMode::On,
+                    LocalsArg::Off => LocalsMode::Off,
+                    LocalsArg::Localhost => LocalsMode::Localhost,
+                }),
                 timeout_ms: 0,
             }),
         ),
@@ -2293,6 +2306,7 @@ pub(crate) fn console(
         limit: read.limit,
         wait_ms: 0,
         sourcemaps: read.sourcemaps,
+        locals: read.locals,
         timeout_ms: millis(ctx.timeout),
         max_chars: read.max_chars,
     };

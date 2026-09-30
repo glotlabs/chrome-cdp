@@ -1204,7 +1204,8 @@ Stack frames of localhost pages are resolved with source maps, and shown
 as files of your project when they are there (src/cart.ts:12, relative to
 the directory with chrome-cdp.toml or .git, or `source_root` in the
 config; `chrome-cdp help config`). Workers log here too, marked `[dedicated worker w.js]`; a shared or service worker's
-messages are in every tab with a frame on its origin.
+messages are in every tab with a frame on its origin. `--locals` shows the
+variables of each uncaught error's top frames, as `errors --locals` does.
 
 Examples:
   chrome-cdp console
@@ -1222,8 +1223,15 @@ every error the tab kept. Stack frames of localhost pages are resolved with
 source maps, so they point at your original source files, shown relative
 to your project (src/cart.ts:18:22) when they are there.
 
+`--locals` shows, under each of an uncaught error's top 3 frames, its local
+variables when the error was thrown (`item = undefined, qty = 2`): the
+page pauses at uncaught errors for up to 200ms to read them, on localhost
+pages by default (`debug locals on|off` changes that). An error without
+them says why.
+
 Examples:
   chrome-cdp errors
+  chrome-cdp errors --locals                     # and each frame's variables
   chrome-cdp errors --since 0 --limit 5
   chrome-cdp errors --sourcemaps --tab t2")]
     Errors(ErrorsArgs),
@@ -1235,9 +1243,11 @@ Examples:
 Every tab records its requests from the moment it opens (the newest 2,000;
 see `open --network-buffer`). By default only requests this command has not
 shown before are printed; one shown while pending is shown again when it
-ends. Each line reads: #id METHOD STATUS URL TYPE SIZE TIME. Requests of
-the tab's workers are in it too, marked with the worker, e.g. `[service
-worker sw.js]`; a shared or service worker's go to every tab of its origin.
+ends. Each line reads: #id METHOD STATUS URL TYPE SIZE TIME, and on
+localhost pages where in your source a script sent it (`from
+src/api.ts:12`). Requests of the tab's workers are in it too, marked with
+the worker, e.g. `[service worker sw.js]`; a shared or service worker's go
+to every tab of its origin.
 
 Examples:
   chrome-cdp network
@@ -1837,15 +1847,20 @@ logs the expressions' values without stopping: in `console`, and in the
 report of the action that ran it (`! logpoint 1 src/cart.ts:42: total=12`).
 It is set again after a reload, and in scripts loaded later. `debug list`
 shows the logpoints and their hits; `debug clear` removes them and turns
-the debugger off when none is left. While one is set, a `debugger;`
-statement does not stop the page: it is resumed and noted in the console.
-Needs a running session.
+the debugger off when nothing else needs it. While the debugger is on, a
+`debugger;` statement does not stop the page: it is resumed and noted in
+the console.
+
+`debug locals on|off|localhost` says where uncaught errors keep their
+frames' local variables for `errors --locals` (localhost pages by default;
+the debugger is on there for them). Needs a running session.
 
 Examples:
   chrome-cdp debug log src/cart.ts:42 total items.length
   chrome-cdp click e12                   # ! logpoint 1 src/cart.ts:42: total=12, items.length=3
   chrome-cdp debug list
-  chrome-cdp debug clear --all"
+  chrome-cdp debug clear --all
+  chrome-cdp debug locals off"
     )]
     Debug(DebugArgs),
 
@@ -3525,6 +3540,12 @@ pub(crate) struct LogReadArgs {
     #[arg(long)]
     pub(crate) sourcemaps: bool,
 
+    /// Show the local variables of the top 3 frames of each uncaught
+    /// error, read when it was thrown (localhost pages; see `debug
+    /// locals`).
+    #[arg(long)]
+    pub(crate) locals: bool,
+
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
@@ -3568,6 +3589,11 @@ pub(crate) enum NetworkCommand {
     /// Show one request in full: status, sizes, timing, initiator, and
     /// its headers and bodies on request.
     #[command(after_help = "\
+A request a script sent shows the script's stack when it sent it (8
+frames at most), across `await`s, promises and timers (`-- async
+Promise.then --`; recorded where the debugger is on: localhost pages, see
+`debug locals`), resolved with source maps on localhost pages.
+
 Bodies are fetched from Chrome only when asked for. Chrome keeps them while
 its buffer has room and the page that loaded them is open; if it no longer
 has one, the output says so. JSON bodies are pretty-printed.
@@ -5566,12 +5592,49 @@ Examples:
 
     /// Remove a logpoint, or all of them.
     #[command(after_help = "\
-When no logpoint is left, the debugger is turned off in the tab.
+When no logpoint is left, the debugger is turned off in the tab, unless
+locals capture keeps it on (see `debug locals`).
 
 Examples:
   chrome-cdp debug clear 1
   chrome-cdp debug clear --all")]
     Clear(DebugClearArgs),
+
+    /// Say where uncaught errors keep their local variables, or change it.
+    #[command(after_help = "\
+Where locals capture is on, the page pauses at each uncaught error (a
+thrown error or a rejected promise nobody handles) for up to 200ms while
+chrome-cdp reads the local, closure and block variables of its top 3
+frames (10 each at most, previewed like logpoint values), then resumes.
+`errors --locals` and `console --locals` show them. At most 10 errors a
+second are read; the rest say so.
+
+  on         every page, iframe and worker of the session
+  off        none
+  localhost  documents and workers on this machine (the default)
+
+With no argument, it says where it is on. -q prints the setting.
+
+Examples:
+  chrome-cdp debug locals
+  chrome-cdp debug locals on      # a staging site too
+  chrome-cdp debug locals off")]
+    Locals(DebugLocalsArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct DebugLocalsArgs {
+    /// on, off or localhost; none to show the setting.
+    #[arg(value_enum, value_name = "on|off|localhost")]
+    pub(crate) mode: Option<LocalsArg>,
+}
+
+/// `debug locals`' setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum LocalsArg {
+    On,
+    Off,
+    Localhost,
 }
 
 #[derive(Debug, Args)]

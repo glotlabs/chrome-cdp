@@ -641,6 +641,10 @@ impl Daemon {
                 Ok(p) => output(Box::pin(self.engine.debug_clear(p)).await),
                 Err(e) => Err(e),
             },
+            rpc::DEBUG_LOCALS => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.debug_locals(p)).await),
+                Err(e) => Err(e),
+            },
             rpc::SOURCE => match params(req.params) {
                 Ok(p) => output(Box::pin(self.engine.source(p)).await),
                 Err(e) => Err(e),

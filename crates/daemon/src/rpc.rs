@@ -81,6 +81,7 @@ pub const COVERAGE_STOP: &str = "coverage_stop";
 pub const DEBUG_LOG: &str = "debug_log";
 pub const DEBUG_LIST: &str = "debug_list";
 pub const DEBUG_CLEAR: &str = "debug_clear";
+pub const DEBUG_LOCALS: &str = "debug_locals";
 pub const HIGHLIGHT: &str = "highlight";
 pub const SOURCE: &str = "source";
 pub const COMPONENTS: &str = "components";
