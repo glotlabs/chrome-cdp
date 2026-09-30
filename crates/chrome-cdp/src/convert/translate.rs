@@ -2125,33 +2125,55 @@ fn clock(env: &Env, method: &str, args: &[Expr]) -> Out {
                 Some(e) => e,
                 None => return why("clock.install without a time: time freeze <ISO time>"),
             };
-            let t = match time {
-                Expr::Call(callee, a) if callee.path().as_deref() == Some("Date") => {
-                    plain(env, need(a.first(), "a date")?)?
-                }
-                other => {
-                    plain(env, other).map_err(|_| Why("a date computed at run time".into()))?
-                }
-            };
+            let t = clock_time(env, time)?;
             Ok(vec![cmd(["time", "freeze"]).arg(t).line()])
         }
-        "fastForward" => {
-            let by = match need(args.first(), "a time")? {
-                Expr::Num(_) => duration(&args[0])?,
-                other => {
-                    let s = plain(env, other)?;
-                    // `mm:ss` or `hh:mm:ss`.
-                    let parts: Vec<u64> = s.split(':').filter_map(|p| p.parse().ok()).collect();
-                    let secs = parts.iter().fold(0, |acc, p| acc * 60 + p);
-                    if parts.len() < 2 {
-                        return why(format!("the time {s}"));
-                    }
-                    format!("{secs}s")
-                }
-            };
-            Ok(vec![cmd(["time", "advance"]).arg(by).line()])
+        "fastForward" => Ok(vec![
+            cmd(["time", "advance"])
+                .arg(clock_duration(env, args)?)
+                .line(),
+        ]),
+        "runFor" => Ok(vec![
+            cmd(["time", "run-for"])
+                .arg(clock_duration(env, args)?)
+                .line(),
+        ]),
+        // Playwright's pauseAt jumps there from a running clock too; ours
+        // runs a paused one there, so `time pause` is the safe translation.
+        "pauseAt" => {
+            let t = clock_time(env, need(args.first(), "a time")?)?;
+            Ok(vec![cmd(["time", "pause"]).arg(t).line()])
         }
-        other => why(format!("clock.{other}: only time freeze and advance")),
+        "resume" => Ok(vec![cmd(["time", "resume"]).line()]),
+        other => why(format!(
+            "clock.{other}: only time freeze, advance, pause, run-for and resume"
+        )),
+    }
+}
+
+/// A clock method's time: a string, or `new Date(…)` of one.
+fn clock_time(env: &Env, time: &Expr) -> Result<String, Why> {
+    match time {
+        Expr::Call(callee, a) if callee.path().as_deref() == Some("Date") => {
+            plain(env, need(a.first(), "a date")?)
+        }
+        other => plain(env, other).map_err(|_| Why("a date computed at run time".into())),
+    }
+}
+
+/// `fastForward`'s and `runFor`'s duration: ms, or `mm:ss`/`hh:mm:ss`.
+fn clock_duration(env: &Env, args: &[Expr]) -> Result<String, Why> {
+    match need(args.first(), "a time")? {
+        Expr::Num(_) => duration(&args[0]),
+        other => {
+            let s = plain(env, other)?;
+            let parts: Vec<u64> = s.split(':').filter_map(|p| p.parse().ok()).collect();
+            let secs = parts.iter().fold(0, |acc, p| acc * 60 + p);
+            if parts.len() < 2 {
+                return Err(Why(format!("the time {s}")));
+            }
+            Ok(format!("{secs}s"))
+        }
     }
 }
 

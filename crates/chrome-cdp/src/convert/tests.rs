@@ -331,6 +331,13 @@ const CASES: &[(&str, &str)] = &[
         "time freeze 2026-01-31T09:30:00Z",
     ),
     ("await page.clock.fastForward('01:30');", "time advance 90s"),
+    (
+        "await page.clock.pauseAt(new Date('2026-01-31T10:00:00Z'));",
+        "time pause 2026-01-31T10:00:00Z",
+    ),
+    ("await page.clock.runFor(2000);", "time run-for 2s"),
+    ("await page.clock.runFor('00:30');", "time run-for 30s"),
+    ("await page.clock.resume();", "time resume"),
     // Assertions.
     (
         "await expect(page.locator('#a')).toBeVisible();",
