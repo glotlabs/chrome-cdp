@@ -454,6 +454,7 @@ async fn errors_and_failed_requests_since_the_page_or_a_mark() {
     let no_failed = |origin: Option<&str>| Expectation::NoFailedRequests {
         since: None,
         origin: origin.map(str::to_owned),
+        all_tabs: false,
     };
 
     goto(&engine, &site.url("/expect/index.html")).await;

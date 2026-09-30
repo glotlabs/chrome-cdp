@@ -162,6 +162,7 @@ fn the_assertion_reads_as_typed() {
         Expectation::NoFailedRequests {
             since: Some("before".into()),
             origin: Some("self".into()),
+            all_tabs: false,
         },
         false,
     );
@@ -215,6 +216,7 @@ fn bad_arguments_fail_before_the_browser() {
             Expectation::NoFailedRequests {
                 since: None,
                 origin: Some("nowhere".into()),
+                all_tabs: false,
             },
             false,
         ),

@@ -18,6 +18,7 @@ use crate::frames::{World, iframe_label};
 use crate::injected::{self, GUARD};
 use crate::input::origin;
 use crate::locator::{LocateOptions, Locator, read_listed};
+use crate::network::Failure;
 use crate::request::{A11yLevel, ExpectRequest, SnapshotEngine};
 use crate::tabs::{FrameContext, Page, parse_tab_id, tab_name};
 use crate::{Engine, Running};
@@ -183,9 +184,7 @@ impl Engine {
     pub(super) fn no_errors_in_all_tabs(&self, req: &ExpectRequest) -> Result<Output, ErrorInfo> {
         let start = Instant::now();
         let running = self.running()?;
-        let scope = self.context_key()?;
-        let mut tabs = running.tabs.tab_ids_in(scope.as_deref());
-        tabs.sort_unstable();
+        let tabs = self.all_tabs(&running)?;
         // A shared or service worker's error is in each tab of its
         // origin: counted once, in the first.
         let mut seen = HashSet::new();
@@ -209,8 +208,91 @@ impl Engine {
                 });
             }
         }
+        let first = events.first().map(|e| event_tab(e).to_owned());
+        let hint = first.map(|first| {
+            let mut cmd = Cmd::new("errors");
+            if running.tabs.active() != parse_tab_id(&first).ok() {
+                cmd = cmd.flag("tab", &first);
+            }
+            Hint::run(cmd.scoped(&self.session)).why("shows them with their stacks")
+        });
+        let found = Found {
+            events,
+            one: "error",
+            many: "errors",
+            label: "error",
+            prefix: "console error: ",
+            key: "errors",
+            hint,
+        };
+        self.in_all_tabs(req, start, found)
+    }
+
+    /// `--no-failed-requests --all-tabs`: no request failed or got a
+    /// status of 400 or more in any tab of the session (or context) since
+    /// it opened; only those to `origin_filter` if given (`self`: each
+    /// tab's page's origin).
+    pub(super) fn no_failed_requests_in_all_tabs(
+        &self,
+        req: &ExpectRequest,
+        origin_filter: Option<&str>,
+    ) -> Result<Output, ErrorInfo> {
+        let start = Instant::now();
+        let running = self.running()?;
+        let tabs = self.all_tabs(&running)?;
+        // A shared or service worker's request is in each tab of its
+        // origin: counted once, in the first.
+        let mut seen = HashSet::new();
+        let mut events: Vec<Event> = Vec::new();
+        for &id in &tabs {
+            let wanted = wanted_origin(&running, id, origin_filter);
+            for f in running.tabs.failures_since(id, 0) {
+                if !wanted.as_deref().is_none_or(|w| origin(&f.url) == Some(w))
+                    || is_favicon(&f.url)
+                    || !seen.insert((f.session.clone(), f.request_id.clone()))
+                {
+                    continue;
+                }
+                events.push(failure_event(&running, id, &f));
+            }
+        }
+        let hint = events.iter().find_map(|e| match e {
+            Event::RequestFailed {
+                tab, id: Some(id), ..
+            } => Some(self.network_show_hint(&running, tab, *id)),
+            _ => None,
+        });
+        let found = Found {
+            events,
+            one: "failed request",
+            many: "failed requests",
+            label: "failed",
+            prefix: "request failed: ",
+            key: "requests",
+            hint: hint.or_else(|| Some(self.network_failed_hint())),
+        };
+        self.in_all_tabs(req, start, found)
+    }
+
+    /// The tabs `--all-tabs` looks at: the session's, or its context's,
+    /// in order.
+    fn all_tabs(&self, running: &Running) -> Result<Vec<u32>, ErrorInfo> {
+        let scope = self.context_key()?;
+        let mut tabs = running.tabs.tab_ids_in(scope.as_deref());
+        tabs.sort_unstable();
+        Ok(tabs)
+    }
+
+    /// The outcome of an `--all-tabs` check that found `found`.
+    fn in_all_tabs(
+        &self,
+        req: &ExpectRequest,
+        start: Instant,
+        found: Found,
+    ) -> Result<Output, ErrorInfo> {
         let assertion = assertion_text(req);
         let expected = format!("{} in any tab", expected(req, None));
+        let events = found.events;
         if events.is_empty() {
             let elapsed = start.elapsed();
             let data = ExpectData {
@@ -232,34 +314,42 @@ impl Engine {
             format!("expect failed: {assertion}"),
         )
         .note("expected", &expected)
-        .note("actual", plural(events.len(), "error", "errors"));
+        .note("actual", plural(events.len(), found.one, found.many));
         for event in events.iter().take(LISTED) {
             let line = self.event_line(event);
-            let line = line.strip_prefix("console error: ").unwrap_or(&line);
-            let tab = match event {
-                Event::ConsoleError { tab, .. } => tab.as_str(),
-                _ => "",
-            };
-            info = info.note("error", format!("{tab}: {line}"));
+            let line = line.strip_prefix(found.prefix).unwrap_or(&line);
+            info = info.note(found.label, format!("{}: {line}", event_tab(event)));
         }
         if events.len() > LISTED {
-            info = info.note("error", format!("… and {} more", events.len() - LISTED));
+            info = info.note(found.label, format!("… and {} more", events.len() - LISTED));
         }
-        let first = match &events[0] {
-            Event::ConsoleError { tab, .. } => tab.clone(),
-            _ => String::new(),
-        };
-        let mut cmd = Cmd::new("errors");
-        if running.tabs.active() != parse_tab_id(&first).ok() {
-            cmd = cmd.flag("tab", &first);
+        if let Some(hint) = found.hint {
+            info = info.hint(hint);
         }
-        Err(info
-            .hint(Hint::run(cmd.scoped(&self.session)).why("shows them with their stacks"))
-            .details(json!({
-                "assertion": assertion,
-                "expected": expected,
-                "errors": events,
-            })))
+        Err(info.details(json!({
+            "assertion": assertion,
+            "expected": expected,
+            found.key: events,
+        })))
+    }
+
+    /// `network show ID` (with `--tab` unless `tab` is the active one).
+    fn network_show_hint(&self, running: &Running, tab: &str, id: u64) -> Hint {
+        let mut cmd = Cmd::new("network").arg("show").arg(id.to_string());
+        if running.tabs.active() != parse_tab_id(tab).ok() {
+            cmd = cmd.flag("tab", tab);
+        }
+        Hint::run(cmd.scoped(&self.session)).why("the first one, with its headers and body")
+    }
+
+    /// `network --failed --since 0`.
+    fn network_failed_hint(&self) -> Hint {
+        Hint::run(
+            Cmd::new("network")
+                .switch("failed")
+                .flag("since", "0")
+                .scoped(&self.session),
+        )
     }
 
     /// `--no-failed-requests`: no request failed or got a status of 400
@@ -275,17 +365,7 @@ impl Engine {
         origin_filter: Option<&str>,
     ) -> Result<Passed, ErrorInfo> {
         let ((network, _), when) = self.since(running, page, since)?;
-        let main_url = running
-            .tabs
-            .frames(page.id)
-            .first()
-            .map(|f| f.url.clone())
-            .unwrap_or_default();
-        let wanted = match origin_filter {
-            Some("self") => Some(origin(&main_url).unwrap_or_default().to_owned()),
-            Some(other) => origin(other).map(str::to_owned),
-            None => None,
-        };
+        let wanted = wanted_origin(running, page.id, origin_filter);
         let failures: Vec<_> = running
             .tabs
             .failures_since(page.id, network)
@@ -304,18 +384,7 @@ impl Engine {
         let tab = tab_name(page.id);
         let events: Vec<Event> = failures
             .iter()
-            .map(|f| Event::RequestFailed {
-                tab: tab.clone(),
-                id: running
-                    .tabs
-                    .netlog(page.id, |log| log.id_of(&f.session, &f.request_id))
-                    .flatten(),
-                method: f.method.clone(),
-                url: f.url.clone(),
-                resource_type: f.kind.clone(),
-                status: f.status,
-                error: f.error.clone(),
-            })
+            .map(|f| failure_event(running, page.id, f))
             .collect();
         let mut failed = Failed {
             expected: format!("{} {when}", expected(req, None)),
@@ -339,19 +408,8 @@ impl Engine {
             _ => None,
         });
         failed.hint = Some(match first {
-            Some(id) => {
-                let mut cmd = Cmd::new("network").arg("show").arg(id.to_string());
-                if running.tabs.active() != Some(page.id) {
-                    cmd = cmd.flag("tab", &tab);
-                }
-                Hint::run(cmd.scoped(&self.session)).why("the first one, with its headers and body")
-            }
-            None => Hint::run(
-                Cmd::new("network")
-                    .switch("failed")
-                    .flag("since", "0")
-                    .scoped(&self.session),
-            ),
+            Some(id) => self.network_show_hint(running, &tab, id),
+            None => self.network_failed_hint(),
         });
         Err(self.one_shot_failure(page, req, failed))
     }
@@ -634,5 +692,61 @@ fn plural(n: usize, one: &str, many: &str) -> String {
         format!("1 {one}")
     } else {
         format!("{n} {many}")
+    }
+}
+
+/// What an `--all-tabs` check found, and how its failure says it.
+struct Found {
+    events: Vec<Event>,
+    /// `error` and `errors`.
+    one: &'static str,
+    many: &'static str,
+    /// Each listed event's note label, and what its line starts with.
+    label: &'static str,
+    prefix: &'static str,
+    /// The events' key in `details`.
+    key: &'static str,
+    hint: Option<Hint>,
+}
+
+/// The tab an error or failed request was in.
+fn event_tab(event: &Event) -> &str {
+    match event {
+        Event::ConsoleError { tab, .. } | Event::RequestFailed { tab, .. } => tab,
+        _ => "",
+    }
+}
+
+/// The origin `--origin` keeps requests to in tab `id` (`self`: its
+/// page's), if given.
+fn wanted_origin(running: &Running, id: u32, origin_filter: Option<&str>) -> Option<String> {
+    match origin_filter {
+        Some("self") => {
+            let main_url = running
+                .tabs
+                .frames(id)
+                .first()
+                .map(|f| f.url.clone())
+                .unwrap_or_default();
+            Some(origin(&main_url).unwrap_or_default().to_owned())
+        }
+        Some(other) => origin(other).map(str::to_owned),
+        None => None,
+    }
+}
+
+/// Failed request `f` of tab `id`, as an event.
+fn failure_event(running: &Running, id: u32, f: &Failure) -> Event {
+    Event::RequestFailed {
+        tab: tab_name(id),
+        id: running
+            .tabs
+            .netlog(id, |log| log.id_of(&f.session, &f.request_id))
+            .flatten(),
+        method: f.method.clone(),
+        url: f.url.clone(),
+        resource_type: f.kind.clone(),
+        status: f.status,
+        error: f.error.clone(),
     }
 }

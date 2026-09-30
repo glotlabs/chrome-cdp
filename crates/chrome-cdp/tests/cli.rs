@@ -673,3 +673,68 @@ fn cdp_output_is_bounded() {
     );
     assert!(v.get("truncated").is_none());
 }
+
+/// `expect --no-failed-requests --all-tabs` (plan 14, milestone 14.5):
+/// every tab, each since it opened.
+#[test]
+fn no_failed_requests_in_any_tab() {
+    let Some(chrome) = chrome_path() else { return };
+    let site = fixtures::Fixtures::shared();
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let all_tabs = ["expect", "--no-failed-requests", "--all-tabs"];
+    let out = sandbox.run(&["open", &site.url("/expect/index.html")]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    // The browser's own /favicon.ico request (a 404 here) does not count.
+    let out = sandbox.run(&all_tabs);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert!(
+        stdout(&out).starts_with("passed: --no-failed-requests --all-tabs ("),
+        "{}",
+        stdout(&out)
+    );
+
+    // A 404 in a second tab; the first stays active.
+    let missing = site.url("/expect/missing.json");
+    let out = sandbox.run(&["tab", "new", &missing]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["tab", "t1"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["expect", "--no-failed-requests"]);
+    assert_eq!(code(&out), 0, "only t1: {}", stderr(&out));
+    let out = sandbox.run(&all_tabs);
+    assert_eq!(code(&out), 1, "{}", stderr(&out));
+    let err = stderr(&out);
+    assert!(
+        err.contains("  expected: no failed requests in any tab\n"),
+        "{err}"
+    );
+    assert!(err.contains("  actual: 1 failed request\n"), "{err}");
+    assert!(
+        err.contains("  failed: t2: #1 GET /expect/missing.json (404)\n"),
+        "{err}"
+    );
+    assert!(
+        err.contains("hint: chrome-cdp network show 1 --tab t2"),
+        "{err}"
+    );
+    let out = sandbox.run(&[&all_tabs[..], &["--json"]].concat());
+    let error = &json_out(&out)["error"];
+    assert_eq!(error["details"]["requests"][0]["tab"], "t2");
+    assert_eq!(error["details"]["requests"][0]["status"], 404);
+    // --origin keeps to one origin, in each tab.
+    let out = sandbox.run(&[&all_tabs[..], &["--origin", "https://example.com"]].concat());
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+
+    // It looks at every tab since it opened: no --since, no --tab; and
+    // it is for the two log checks only.
+    let out = sandbox.run(&[&all_tabs[..], &["--tab", "t2"]].concat());
+    assert_eq!(code(&out), 2, "{}", stderr(&out));
+    let out = sandbox.run(&["expect", "--all-tabs", "--url", "x"]);
+    assert_eq!(code(&out), 2, "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("--all-tabs is for --no-errors and --no-failed-requests"),
+        "{}",
+        stderr(&out)
+    );
+    assert_eq!(code(&sandbox.run(&["close"])), 0);
+}

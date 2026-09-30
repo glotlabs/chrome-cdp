@@ -538,7 +538,8 @@ Page checks:
                        --all-tabs: in any tab since it opened)
   --no-failed-requests no request failed or got a 4xx/5xx since then
                        (--origin self: only to the page's origin; the
-                       browser's own /favicon.ico does not count)
+                       browser's own /favicon.ico does not count;
+                       --all-tabs: in any tab since it opened)
   --a11y [--level A]   built-in accessibility rules (WCAG A and AA), in
                        the page and its iframes, or the element LOCATOR
                        names
@@ -571,6 +572,7 @@ Examples:
   chrome-cdp expect css=h1 text '/^Welcome, \\w+$/'
   chrome-cdp expect --url '**/dashboard'
   chrome-cdp expect --no-errors --since before-save
+  chrome-cdp expect --no-failed-requests --all-tabs
   chrome-cdp expect --a11y --level A
   chrome-cdp expect mock-state todos count 4
   chrome-cdp expect request POST /api/orders --json-body '{\"qty\":2}' --count 1
@@ -5761,9 +5763,9 @@ pub(crate) struct ExpectArgs {
     #[arg(long, conflicts_with_all = ["matcher", "no_failed_requests", "a11y"])]
     pub(crate) no_errors: bool,
 
-    /// --no-errors: in every tab of the session (or --context), each
-    /// since it opened, whatever it loaded since.
-    #[arg(long, requires = "no_errors", conflicts_with = "since")]
+    /// --no-errors and --no-failed-requests: in every tab of the session
+    /// (or --context), each since it opened, whatever it loaded since.
+    #[arg(long, conflicts_with = "since")]
     pub(crate) all_tabs: bool,
 
     /// No request failed or got a status of 400 or more since the page

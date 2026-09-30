@@ -671,12 +671,15 @@ pub enum Expectation {
     },
     /// `--no-failed-requests`: no request failed or got a status of 400
     /// or more since `since`; only those to `origin` (`self`: the page's)
-    /// if given.
+    /// if given; with `all_tabs`, in every tab of the session (or
+    /// context) since it opened.
     NoFailedRequests {
         #[serde(default)]
         since: Option<String>,
         #[serde(default)]
         origin: Option<String>,
+        #[serde(default)]
+        all_tabs: bool,
     },
     /// `--a11y`: the built-in accessibility rules of `level`, in the
     /// page or the first element `scope` matches.

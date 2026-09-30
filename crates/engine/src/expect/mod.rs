@@ -335,21 +335,18 @@ impl Assertion {
             },
             Expectation::NoErrors { since, all_tabs } => {
                 no_not("--no-errors")?;
-                if *all_tabs && (since.is_some() || req.tab.is_some()) {
-                    return Err(ErrorInfo::new(
-                        ErrorKind::BadArgs,
-                        "--all-tabs looks at every tab since it opened; it takes no --since or --tab",
-                    )
-                    .hint(Hint::run(
-                        Cmd::new("expect").switch("no-errors").switch("all-tabs"),
-                    )));
-                }
+                check_all_tabs("no-errors", *all_tabs, since.as_deref(), req)?;
                 Self::NoErrors {
                     since: since.clone(),
                 }
             }
-            Expectation::NoFailedRequests { since, origin } => {
+            Expectation::NoFailedRequests {
+                since,
+                origin,
+                all_tabs,
+            } => {
                 no_not("--no-failed-requests")?;
+                check_all_tabs("no-failed-requests", *all_tabs, since.as_deref(), req)?;
                 if let Some(origin) = origin
                     && origin != "self"
                     && crate::input::origin(origin).is_none()
@@ -426,6 +423,26 @@ impl Assertion {
 }
 
 /// Arguments of a matcher that can never hold.
+/// `--all-tabs` (of `--FLAG`) looks at every tab since it opened: it
+/// takes no `--since` or `--tab`.
+fn check_all_tabs(
+    flag: &str,
+    all_tabs: bool,
+    since: Option<&str>,
+    req: &ExpectRequest,
+) -> Result<(), ErrorInfo> {
+    if all_tabs && (since.is_some() || req.tab.is_some()) {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            "--all-tabs looks at every tab since it opened; it takes no --since or --tab",
+        )
+        .hint(Hint::run(
+            Cmd::new("expect").switch(flag).switch("all-tabs"),
+        )));
+    }
+    Ok(())
+}
+
 fn check_matcher(matcher: &Matcher) -> Result<(), ErrorInfo> {
     let bad = |message: String| Err(ErrorInfo::new(ErrorKind::BadArgs, message));
     match matcher {
@@ -643,8 +660,15 @@ fn command(req: &ExpectRequest) -> Cmd {
                 cmd = cmd.flag("since", since);
             }
         }
-        Expectation::NoFailedRequests { since, origin } => {
+        Expectation::NoFailedRequests {
+            since,
+            origin,
+            all_tabs,
+        } => {
             cmd = cmd.switch("no-failed-requests");
+            if *all_tabs {
+                cmd = cmd.switch("all-tabs");
+            }
             if let Some(origin) = origin {
                 cmd = cmd.flag("origin", origin);
             }
@@ -823,8 +847,16 @@ impl Engine {
         if let Expectation::Request(check) = &req.expectation {
             return self.expect_request(&req, check).await;
         }
-        if let Expectation::NoErrors { all_tabs: true, .. } = &req.expectation {
-            return self.no_errors_in_all_tabs(&req);
+        match &req.expectation {
+            Expectation::NoErrors { all_tabs: true, .. } => {
+                return self.no_errors_in_all_tabs(&req);
+            }
+            Expectation::NoFailedRequests {
+                all_tabs: true,
+                origin,
+                ..
+            } => return self.no_failed_requests_in_all_tabs(&req, origin.as_deref()),
+            _ => {}
         }
         let running = self.running()?;
         let timeout = millis(req.timeout_ms);

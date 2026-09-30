@@ -22,7 +22,7 @@ Options:
 - `--url <PATTERN>`: The page URL matches: a part of it, a glob (\* and \*\*) or /regex/
 - `--title <TEXT>`: The page title contains this (all of it with --exact), or matches /regex/
 - `--no-errors`: No uncaught exception or console error since the page loaded (or --since)
-- `--all-tabs`: --no-errors: in every tab of the session (or --context), each since it opened, whatever it loaded since
+- `--all-tabs`: --no-errors and --no-failed-requests: in every tab of the session (or --context), each since it opened, whatever it loaded since
 - `--no-failed-requests`: No request failed or got a status of 400 or more since the page loaded (or --since)
 - `--since <MARK>`: --no-errors, --no-failed-requests and `request`: only after this mark (see `mark`), not since the page loaded
 - `--count <N>`: `request`: exactly this many such requests
@@ -60,7 +60,8 @@ Page checks:
                        --all-tabs: in any tab since it opened)
   --no-failed-requests no request failed or got a 4xx/5xx since then
                        (--origin self: only to the page's origin; the
-                       browser's own /favicon.ico does not count)
+                       browser's own /favicon.ico does not count;
+                       --all-tabs: in any tab since it opened)
   --a11y [--level A]   built-in accessibility rules (WCAG A and AA), in
                        the page and its iframes, or the element LOCATOR
                        names
@@ -93,6 +94,7 @@ Examples:
   chrome-cdp expect css=h1 text '/^Welcome, \w+$/'
   chrome-cdp expect --url '**/dashboard'
   chrome-cdp expect --no-errors --since before-save
+  chrome-cdp expect --no-failed-requests --all-tabs
   chrome-cdp expect --a11y --level A
   chrome-cdp expect mock-state todos count 4
   chrome-cdp expect request POST /api/orders --json-body '{"qty":2}' --count 1

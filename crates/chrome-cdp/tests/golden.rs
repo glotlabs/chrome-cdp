@@ -808,6 +808,16 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/expect/errors.html"),
     },
     Case {
+        name: "expect-no-failed-requests-all-tabs",
+        args: &["expect", "--no-failed-requests", "--all-tabs"],
+        modes: ERR,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/expect/index.html"],
+            &["tab", "new", "{site}/expect/missing.json"],
+            &["tab", "t1"],
+        ]),
+    },
+    Case {
         name: "expect-no-errors-since-mark",
         args: &["expect", "--no-errors", "--since", "loaded"],
         modes: ALL,

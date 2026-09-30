@@ -73,6 +73,16 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
             ),
         ));
     }
+    if args.all_tabs && !(args.no_errors || args.no_failed_requests) {
+        return Err(bad_args(
+            "--all-tabs is for --no-errors and --no-failed-requests",
+            Hint::run(
+                Cmd::new("expect")
+                    .switch("no-failed-requests")
+                    .switch("all-tabs"),
+            ),
+        ));
+    }
     if args.exact && args.matcher.is_none() && args.title.is_none() {
         return Err(bad_args(
             "--exact is for the text matcher and --title",
@@ -110,6 +120,7 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
         return Ok(Expectation::NoFailedRequests {
             since: args.since.clone(),
             origin: args.origin.clone(),
+            all_tabs: args.all_tabs,
         });
     }
     if args.a11y {

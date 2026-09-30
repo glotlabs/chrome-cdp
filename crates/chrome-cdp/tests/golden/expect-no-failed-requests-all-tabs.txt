@@ -1,0 +1,14 @@
+$ chrome-cdp expect --no-failed-requests --all-tabs
+exit: 1
+--- stderr
+error: expect failed: --no-failed-requests --all-tabs
+  expected: no failed requests in any tab
+  actual: 1 failed request
+  failed: t2: #1 GET /expect/missing.json (404)
+  hint: chrome-cdp network show 1 --tab t2   (the first one, with its headers and body)
+
+$ chrome-cdp expect --no-failed-requests --all-tabs --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"ExpectFailed","message":"expect failed: --no-failed-requests --all-tabs","hint":"chrome-cdp network show 1 --tab t2   (the first one, with its headers and body)","notes":[{"label":"expected","text":"no failed requests in any tab"},{"label":"actual","text":"1 failed request"},{"label":"failed","text":"t2: #1 GET /expect/missing.json (404)"}],"details":{"assertion":"--no-failed-requests --all-tabs","expected":"no failed requests in any tab","requests":[{"id":1,"method":"GET","resource_type":"Document","status":404,"tab":"t2","type":"request_failed","url":"<site>/expect/missing.json"}]}}}
+
