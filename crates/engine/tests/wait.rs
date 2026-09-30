@@ -275,6 +275,46 @@ async fn text_appears_and_goes() {
     engine.close().await;
 }
 
+/// Without `--in`, `--text` and `--text-gone` read every frame, a
+/// cross-site one too, and the timeout says which were read.
+#[tokio::test]
+async fn text_in_every_frame() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path).await;
+    goto(&engine, &site.url("/wait/framed.html")).await;
+    let (_, output) = met(&engine, text("Other ready")).await;
+    assert!(
+        output
+            .text
+            .starts_with("text \"Other ready\" is visible in iframe \"other\" ("),
+        "{}",
+        output.text
+    );
+    let gone = |text: &str| WaitFor::Text {
+        text: text.to_owned(),
+        within: None,
+        gone: true,
+    };
+    let (_, output) = met(&engine, gone("Loading frame")).await;
+    assert!(output.text.starts_with("text \"Loading frame\" is gone ("));
+
+    let err = times_out(&engine, text("Nowhere")).await;
+    let shown = err.to_text();
+    assert!(
+        shown.contains("read: main frame, iframe \"same\", iframe \"other\"\n"),
+        "{shown}"
+    );
+    let err = times_out(&engine, gone("Same ready")).await;
+    let shown = err.to_text();
+    assert!(shown.contains("still in: iframe \"same\"\n"), "{shown}");
+    let frames = &err.details.unwrap()["observed"]["frames"];
+    assert_eq!(frames[1]["frame"], "iframe \"same\"");
+    assert_eq!(frames[1]["found"], true);
+    assert_eq!(frames[2]["found"], false);
+    engine.close().await;
+}
+
 #[tokio::test]
 async fn a_wait_carries_on_across_navigations() {
     let Some(path) = chrome_path() else { return };

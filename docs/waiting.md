@@ -64,8 +64,8 @@ job that finishes, a WebSocket message), wait for the change itself:
 | Command | Returns when |
 |---|---|
 | `wait <loc>` | the element is visible (`--state hidden\|attached\|detached\|enabled` for the others) |
-| `wait --text 'Saved'` | the text appears anywhere (`--in <loc>` for one part of the page) |
-| `wait --text-gone 'Loading'` | the text is gone |
+| `wait --text 'Saved'` | the text appears anywhere, in any frame (`--in <loc>` for one part of the page) |
+| `wait --text-gone 'Loading'` | the text is gone from every frame |
 | `wait --url /dashboard` | the URL matches (a part, a glob, or a `/regex/`) |
 | `wait --load` | the page reached its load event |
 | `wait --idle` | no requests for 500 ms (not counting WebSockets, beacons and requests open over 10 s) |

@@ -1,0 +1,11 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Frame that says something</title>
+<!-- ?after=<ms>&say=<text>: shows "Loading frame" until then, then the text. -->
+<p id="status">Loading frame</p>
+<script>
+  const params = new URLSearchParams(location.search);
+  setTimeout(() => {
+    document.getElementById('status').textContent = params.get('say') || 'Ready';
+  }, Number(params.get('after') || 0));
+</script>

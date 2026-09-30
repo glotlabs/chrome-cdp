@@ -10,13 +10,14 @@ use std::time::Duration;
 
 use cdp::CdpError;
 use cdp::domains::runtime;
+use futures_util::future::select_all;
 use protocol::{ErrorInfo, ErrorKind, Hint};
 use serde_json::{Value, json};
 use tokio::time::Instant;
 
 use super::{Condition, Met, Unmet};
 use crate::errors::from_cdp;
-use crate::frames::World;
+use crate::frames::{World, iframe_label};
 use crate::injected;
 use crate::locator::{FrameOnly, LocateOptions, Locator, Place, bad_locator};
 use crate::request::ElementState;
@@ -56,6 +57,11 @@ impl Engine {
         options: &LocateOptions,
         deadline: Instant,
     ) -> Result<Result<Met, Unmet>, ErrorInfo> {
+        if matches!(condition, Condition::Text { within: None, .. }) {
+            return self
+                .probe_text_in_frames(running, page, condition, deadline)
+                .await;
+        }
         let (_, expression) = spec(condition, None);
         let world = if expression.is_some() {
             World::Main
@@ -192,6 +198,155 @@ impl Engine {
         })
     }
 
+    /// `wait --text` and `--text-gone` without `--in`: probes every frame
+    /// of `page` (each in its own isolated world, through its own
+    /// session), a round of at most [`TEXT_ROUND`] at a time, so frames
+    /// that attach meanwhile are read too. The text is there when a frame
+    /// has it; gone when no frame has it in the same round.
+    async fn probe_text_in_frames(
+        &self,
+        running: &Running,
+        page: &Page,
+        condition: &Condition,
+        deadline: Instant,
+    ) -> Result<Result<Met, Unmet>, ErrorInfo> {
+        let Condition::Text { gone, .. } = condition else {
+            unreachable!("not a text condition")
+        };
+        let declaration = PROBE_JS.replace("__FN__", "null");
+        let (spec, _) = spec(condition, None);
+        // What each frame last said: its label, and whether it had the text.
+        let mut read: Vec<(String, bool)> = Vec::new();
+        let mut unanswered;
+        loop {
+            unanswered = None;
+            let left = deadline.saturating_duration_since(Instant::now());
+            let (main, context) = match self
+                .frame_and_context(
+                    running,
+                    page,
+                    None,
+                    World::Isolated,
+                    left.max(Duration::from_millis(1)),
+                )
+                .await
+            {
+                Ok(found) => found,
+                Err(e) if e.kind == ErrorKind::Timeout => {
+                    if read.is_empty() {
+                        return Ok(Err(unmet(condition, &json!({ "document": "none" }))));
+                    }
+                    break;
+                }
+                Err(e) => return Err(e),
+            };
+            let mut places = vec![("main frame".to_owned(), main, context)];
+            for frame in running.tabs.frames(page.id).into_iter().skip(1) {
+                if let Ok(context) = running
+                    .tabs
+                    .context(page.id, &frame.id, World::Isolated, CHILD_CONTEXT_WAIT)
+                    .await
+                {
+                    places.push((iframe_label(&frame), frame.id, context));
+                }
+            }
+            let budget = TEXT_ROUND.min(deadline.saturating_duration_since(Instant::now()));
+            let probes = places
+                .into_iter()
+                .enumerate()
+                .map(|(i, (label, _, context))| {
+                    let mut params = runtime::CallFunctionOnParams::new(declaration.clone());
+                    params.arguments = Some(vec![
+                        argument(spec.clone()),
+                        argument(json!(u64::try_from(budget.as_millis()).unwrap_or(u64::MAX))),
+                        argument(Value::Null),
+                    ]);
+                    params.return_by_value = Some(true);
+                    params.await_promise = Some(true);
+                    Box::pin(async move {
+                        let result = injected::call(
+                            &context.session.with_timeout(budget + CALL_SLACK),
+                            context.context_id,
+                            params,
+                        )
+                        .await;
+                        (i, label, context, result)
+                    })
+                });
+            // The text is there as soon as one frame has it; gone once
+            // every frame said so.
+            let mut pending: Vec<_> = probes.collect();
+            let mut round = Vec::new();
+            while !pending.is_empty() {
+                let ((i, label, context, result), _, rest) = select_all(pending).await;
+                pending = rest;
+                let value = match result {
+                    Ok(result) => result.result.value.unwrap_or(Value::Null),
+                    Err(e) if is_gone(&e) => {
+                        running.tabs.forget_context(page.id, &context);
+                        continue;
+                    }
+                    Err(CdpError::Timeout { .. }) => {
+                        unanswered = Some(label);
+                        continue;
+                    }
+                    Err(e @ CdpError::Disconnected { .. }) => {
+                        return Err(from_cdp(&e, &self.session));
+                    }
+                    // A frame going away as it is read.
+                    Err(_) => continue,
+                };
+                if let Some(fatal) = value["fatal"].as_str() {
+                    return Err(bad_selector(condition, fatal));
+                }
+                let found = value["observed"]["found"].as_bool().unwrap_or(false);
+                if found && !gone {
+                    let mut met = met(condition, Probed::default());
+                    if label != "main frame" {
+                        met.text = format!("{} in {label}", met.text);
+                    }
+                    return Ok(Ok(met));
+                }
+                round.push((i, label, found));
+            }
+            if !round.is_empty() {
+                round.sort_by_key(|(i, _, _)| *i);
+                read = round
+                    .into_iter()
+                    .map(|(_, label, found)| (label, found))
+                    .collect();
+            }
+            if *gone && !read.is_empty() && read.iter().all(|(_, found)| !found) {
+                return Ok(Ok(met(condition, Probed::default())));
+            }
+            if Instant::now() >= deadline {
+                break;
+            }
+        }
+        let frames: Vec<Value> = read
+            .iter()
+            .map(|(label, found)| json!({ "frame": label, "found": found }))
+            .collect();
+        let found: Vec<&str> = read
+            .iter()
+            .filter(|(_, found)| *found)
+            .map(|(label, _)| label.as_str())
+            .collect();
+        let observed = json!({ "found": !found.is_empty(), "frames": frames });
+        let mut unmet = unmet(condition, &observed);
+        if read.len() > 1 {
+            let labels: Vec<&str> = read.iter().map(|(label, _)| label.as_str()).collect();
+            unmet = unmet.note("read", labels.join(", "));
+            if *gone {
+                unmet = unmet.note("still in", found.join(", "));
+            }
+        }
+        if let Some(label) = unanswered {
+            unmet = unmet.note("not answering", format!("{label} (a script may be busy)"));
+        }
+        Ok(Err(unmet))
+    }
+
     /// Waits up to `max` for `page`'s DOM to go `quiet` without a
     /// change; `false` if it did not (or there was no document).
     pub(super) async fn dom_quiet(
@@ -319,6 +474,14 @@ enum At {
     /// The locator's frame or ref element is not there: what was observed.
     Absent(Value),
 }
+
+/// How long a round of `wait --text` in every frame probes before it
+/// looks for frames again.
+const TEXT_ROUND: Duration = Duration::from_millis(250);
+
+/// How long a child frame may take to have a context before a round of
+/// `wait --text` goes on without it (it is still loading).
+const CHILD_CONTEXT_WAIT: Duration = Duration::from_millis(200);
 
 /// How often a probe looks again for a frame or element that is absent.
 const ABSENT_POLL: Duration = Duration::from_millis(100);

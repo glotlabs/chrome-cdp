@@ -1,0 +1,8 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Text in frames</title>
+<p>Outside the frames.</p>
+<!-- Each frame says something after a while; the second is cross-site
+     (out of process). -->
+<iframe name="same" title="Same" src="/wait/frame.html?after=300&say=Same%20ready"></iframe>
+<iframe name="other" title="Other" src="{{ORIGIN_B}}/wait/frame.html?after=600&say=Other%20ready"></iframe>

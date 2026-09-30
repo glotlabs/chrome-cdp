@@ -474,8 +474,8 @@ Give exactly one condition. It is checked against the active tab (or
                       role=button[name=\"…\"], label=…, frame=… >> …;
                       --state visible (default), hidden, attached,
                       detached or enabled
-  --text, --text-gone visible text anywhere (or --in <LOCATOR>); spaces
-                      are collapsed, case counts
+  --text, --text-gone visible text anywhere, iframes included (or only
+                      --in <LOCATOR>); spaces are collapsed, case counts
   --url               the page URL: a part of it, a glob (* and **) or
                       /regex/
   --load, --domcontentloaded, --idle (no requests for 500ms, not counting
