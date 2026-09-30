@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: cd1296402e75968e
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 2002db9f620dffbd
 "use strict";
 (() => {
   // src/dom.ts
@@ -2922,7 +2922,7 @@ ${inner}
       document.activeElement.blur();
     }
   }
-  function a11y(root, level2, page = true) {
+  function a11y(root, level2, page = true, perRule = LISTED3) {
     const rules = RULES.filter((r) => level2 === "AA" || r.level === "A");
     const violations = [];
     const els = [];
@@ -2941,7 +2941,7 @@ ${inner}
         if (why) violations.push({ ...v, count: 1, page: why });
         continue;
       }
-      const listed2 = rule.ax ? AX_LISTED : LISTED3;
+      const listed2 = rule.ax ? Math.max(AX_LISTED, perRule) : perRule;
       for (const el of all) {
         if (rule.id === "aria-hidden-focus" ? !hidden3.get(el) || !visible(el) : hidden3.get(el)) continue;
         const found = rule.check?.(el, ctx);
@@ -2959,6 +2959,54 @@ ${inner}
   }
   function a11yRefocus() {
     refocus(focusBefore);
+  }
+
+  // src/audit.ts
+  var FORMS = 50;
+  function metaNamed(doc, name) {
+    for (const meta of Array.from(doc.querySelectorAll("meta[name]"))) {
+      if ((meta.getAttribute("name") || "").trim().toLowerCase() === name) {
+        return meta.getAttribute("content") || "";
+      }
+    }
+    return null;
+  }
+  function auditPage(root) {
+    const doc = document;
+    const scope = root || doc;
+    const csp = Array.from(doc.querySelectorAll("meta[http-equiv]")).some(
+      (m) => (m.getAttribute("http-equiv") || "").trim().toLowerCase() === "content-security-policy"
+    );
+    const els = [];
+    const forms = [];
+    const all = Array.from(scope.querySelectorAll("form"));
+    if (root && root.tagName.toLowerCase() === "form") all.unshift(root);
+    for (const form of all.slice(0, FORMS)) {
+      const f = form;
+      forms.push({
+        candidate: describe(f),
+        method: (f.getAttribute("method") || "get").toLowerCase(),
+        // `form.action` resolves against the base URL; an input named
+        // `action` shadows it.
+        action: typeof f.action === "string" ? f.action : new URL(f.getAttribute("action") || "", doc.baseURI).href,
+        index: els.length
+      });
+      els.push(f);
+    }
+    const password = scope.querySelector("input[type=password i]") !== null;
+    const title = doc.querySelector("title") ? doc.title.trim() : null;
+    const html2 = doc.documentElement;
+    const json = {
+      title,
+      lang: html2 && html2.hasAttribute("lang") ? (html2.getAttribute("lang") || "").trim() : null,
+      viewport: metaNamed(doc, "viewport"),
+      description: metaNamed(doc, "description"),
+      robots: metaNamed(doc, "robots"),
+      csp_meta: csp,
+      password,
+      forms
+    };
+    return { json: JSON.stringify(json), els };
   }
 
   // src/stable.ts
@@ -4253,6 +4301,7 @@ ${inner}
     expectNamed,
     a11y,
     a11yRefocus,
+    auditPage,
     stable,
     explainActionable,
     clipped,

@@ -9,7 +9,7 @@
 // stable locators `history --as-scenario` writes for refs (plan 11), and
 // what `why` explains, what `layout` checks, the forms `forms` and
 // `fill-form` list, what `compare` names and what `explore` follows
-// (plan 16).
+// (plan 16), and what `audit` reads of a document (plan 17).
 // Built into `ccdp.js` by `cargo xtask build-js`; the engine embeds that
 // file.
 
@@ -23,6 +23,7 @@ import { caretToEnd, checkState, fieldValue, fillPrepare, focused, hasFocus, rea
 import { acted, focusMark, focusMoved } from './report';
 import { expectElements, expectNamed, expectPage } from './expect';
 import { a11y, a11yRefocus } from './a11y';
+import { auditPage } from './audit';
 import { stable } from './stable';
 import { clipped, explainActionable, scrolledSince, scrollMark } from './why';
 import {
@@ -71,6 +72,7 @@ const api = {
   expectNamed,
   a11y,
   a11yRefocus,
+  auditPage,
   stable,
   explainActionable,
   clipped,

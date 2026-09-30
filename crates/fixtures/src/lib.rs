@@ -31,6 +31,8 @@
 //!   (`Content-Disposition`), so Chrome downloads it.
 //! - `?set-cookie=<cookie>` (percent-encoded) sends it as a `Set-Cookie`
 //!   header, for a cookie scripts cannot set (`HttpOnly`).
+//! - `?header=<Name: value>` (percent-encoded, repeatable) adds that
+//!   response header, e.g. a `Content-Security-Policy`.
 //! - Paths under `/auth/` need HTTP basic auth as [`AUTH_USER`] with
 //!   [`AUTH_PASSWORD`]; without it they answer 401 with a
 //!   `WWW-Authenticate` challenge.
@@ -481,6 +483,17 @@ async fn respond(site: &Site, origin: &str, req: &Request<Incoming>) -> Response
     {
         response.headers_mut().append(SET_COOKIE, value);
     }
+    for header in params(query, "header") {
+        let header = percent_decode(header);
+        if let Some((name, value)) = header.split_once(':')
+            && let (Ok(name), Ok(value)) = (
+                hyper::header::HeaderName::from_bytes(name.trim().as_bytes()),
+                HeaderValue::from_str(value.trim()),
+            )
+        {
+            response.headers_mut().append(name, value);
+        }
+    }
     if let Some(name) = param(query, "download")
         && let Ok(value) = HeaderValue::from_str(&format!("attachment; filename=\"{name}\""))
     {
@@ -787,6 +800,15 @@ fn param<'a>(query: &'a str, name: &str) -> Option<&'a str> {
         .split('&')
         .filter_map(|pair| pair.split_once('='))
         .find(|(key, _)| *key == name)
+        .map(|(_, value)| value)
+}
+
+/// Every value of query parameter `name`, in order.
+fn params<'a>(query: &'a str, name: &'a str) -> impl Iterator<Item = &'a str> {
+    query
+        .split('&')
+        .filter_map(|pair| pair.split_once('='))
+        .filter(move |(key, _)| *key == name)
         .map(|(_, value)| value)
 }
 

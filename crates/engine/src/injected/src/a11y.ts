@@ -611,8 +611,11 @@ function refocus(el: Element | null) {
  * elements in `els` (each node's `index`), for refs. Page rules (the
  * title, `lang`, the viewport, the main landmark) only check a page's
  * document (`page`), not an iframe's. `focus-visible` focuses elements
- * one by one; focus goes back where it was. */
-export function a11y(root: Element | null, level: 'A' | 'AA', page = true): { json: string; els: Element[] } {
+ * one by one; focus goes back where it was. Each rule lists up to
+ * `perRule` elements (`audit` asks for more than `expect --a11y`). */
+export function a11y(
+  root: Element | null, level: 'A' | 'AA', page = true, perRule = LISTED,
+): { json: string; els: Element[] } {
   const rules = RULES.filter((r) => level === 'AA' || r.level === 'A');
   const violations: Violation[] = [];
   const els: Element[] = [];
@@ -631,7 +634,7 @@ export function a11y(root: Element | null, level: 'A' | 'AA', page = true): { js
       if (why) violations.push({ ...v, count: 1, page: why });
       continue;
     }
-    const listed = rule.ax ? AX_LISTED : LISTED;
+    const listed = rule.ax ? Math.max(AX_LISTED, perRule) : perRule;
     for (const el of all) {
       // Only aria-hidden-focus looks at what is hidden from assistive tech.
       if (rule.id === 'aria-hidden-focus' ? !hidden.get(el) || !visible(el) : hidden.get(el)) continue;
