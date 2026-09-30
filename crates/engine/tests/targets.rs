@@ -449,6 +449,7 @@ async fn network(engine: &Engine) -> NetworkData {
             since: Since::Seq { seq: 0 },
             limit: 0,
             wait_ms: 0,
+            sourcemaps: false,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })

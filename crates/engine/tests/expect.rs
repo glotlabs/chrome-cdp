@@ -521,6 +521,7 @@ async fn errors_and_failed_requests_since_the_page_or_a_mark() {
             since,
             limit: 0,
             wait_ms: 0,
+            sourcemaps: false,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })

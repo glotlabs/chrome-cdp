@@ -3592,7 +3592,8 @@ pub(crate) enum NetworkCommand {
 A request a script sent shows the script's stack when it sent it (8
 frames at most), across `await`s, promises and timers (`-- async
 Promise.then --`; recorded where the debugger is on: localhost pages, see
-`debug locals`), resolved with source maps on localhost pages.
+`debug locals`), resolved with source maps on localhost pages (and
+elsewhere with --sourcemaps).
 
 Bodies are fetched from Chrome only when asked for. Chrome keeps them while
 its buffer has room and the page that loaded them is open; if it no longer
@@ -3670,6 +3671,11 @@ pub(crate) struct NetworkListArgs {
     #[arg(short, long)]
     pub(crate) follow: bool,
 
+    /// Resolve initiator stacks with the scripts' source maps (always on
+    /// for localhost pages).
+    #[arg(long)]
+    pub(crate) sourcemaps: bool,
+
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
@@ -3697,6 +3703,11 @@ pub(crate) struct NetworkShowArgs {
     /// bytes) and print its path, instead of showing it.
     #[arg(short, long, value_name = "PATH")]
     pub(crate) output: Option<PathBuf>,
+
+    /// Resolve initiator stacks with the scripts' source maps (always on
+    /// for localhost pages).
+    #[arg(long)]
+    pub(crate) sourcemaps: bool,
 
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]

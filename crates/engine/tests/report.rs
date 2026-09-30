@@ -274,6 +274,7 @@ async fn console_errors_and_failed_requests_are_reported() {
             body: false,
             request_body: false,
             output: None,
+            sourcemaps: false,
             timeout_ms: 5_000,
             max_chars: 0,
         })

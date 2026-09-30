@@ -106,6 +106,7 @@ fn request() -> NetworkRequest {
         since: Since::Last,
         limit: 50,
         wait_ms: 0,
+        sourcemaps: false,
         timeout_ms: TIMEOUT_MS,
         max_chars: 0,
     }
@@ -136,6 +137,7 @@ fn show_request(id: u64) -> NetworkShowRequest {
         body: false,
         request_body: false,
         output: None,
+        sourcemaps: false,
         timeout_ms: TIMEOUT_MS,
         max_chars: 0,
     }
@@ -245,7 +247,7 @@ async fn requests_and_their_bodies() {
     assert!(out.text.contains("\n    \"id\": 1,\n"), "{}", out.text);
     assert!(
         out.text
-            .contains("initiator: script /network/app.js:6 (loadItems)"),
+            .contains("initiator: script\n  loadItems  /network/app.js:6:3\n  onclick    /network/index.html:13:44\n"),
         "{}",
         out.text
     );

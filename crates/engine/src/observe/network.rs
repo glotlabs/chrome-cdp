@@ -157,8 +157,14 @@ impl Engine {
             .iter_mut()
             .filter_map(|e| e.initiator.as_mut()?.stack.first_mut())
             .collect();
-        self.map_stack(&running, &page, &mut firsts, false, millis(req.timeout_ms))
-            .await;
+        self.map_stack(
+            &running,
+            &page,
+            &mut firsts,
+            req.sourcemaps,
+            millis(req.timeout_ms),
+        )
+        .await;
         Ok(self.network_output(&page, &req, selection, page_origin.as_deref()))
     }
 
@@ -338,7 +344,7 @@ impl Engine {
         data.earlier_frames = data.frames.first().map_or(0, |f| f.n - 1);
         if let Some(initiator) = &mut data.request.initiator {
             let mut stack: Vec<&mut StackFrame> = initiator.stack.iter_mut().collect();
-            self.map_stack(&running, &page, &mut stack, false, timeout)
+            self.map_stack(&running, &page, &mut stack, req.sourcemaps, timeout)
                 .await;
         }
         if req.headers {
@@ -1279,6 +1285,7 @@ mod tests {
             since: Since::Last,
             limit: 50,
             wait_ms: 0,
+            sourcemaps: false,
             timeout_ms: 1000,
             max_chars: 0,
         }

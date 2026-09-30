@@ -674,6 +674,7 @@ async fn requests(engine: &Engine, app: &str, suffix: &str) -> (String, NetworkD
             since: Since::Seq { seq: 0 },
             limit: 0,
             wait_ms: 0,
+            sourcemaps: false,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         }),
@@ -702,6 +703,7 @@ async fn show(engine: &Engine, app: &str, id: u64) -> (String, NetworkShowData) 
             body: false,
             request_body: false,
             output: None,
+            sourcemaps: false,
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         }),
@@ -749,17 +751,14 @@ async fn a_request_s_initiator_is_its_source_stack() {
         );
         assert_eq!(original.line, fetch_line);
         assert!(
-            text.contains(&format!("initiator: script\n  fetchCart")),
+            text.contains("initiator: script\n  fetchCart"),
             "{app}: {text}"
         );
         assert!(
             text.contains(&format!("src/api.ts:{fetch_line}:")),
             "{app}: {text}"
         );
-        assert!(
-            text.contains(&format!("  {handler}:")) || text.contains(&format!(" {handler}:")),
-            "{app}: {text}"
-        );
+        assert!(text.contains(&format!(" {handler}:")), "{app}: {text}");
         engine.close().await;
     }
 }
@@ -991,7 +990,7 @@ async fn rejections_and_other_pages() {
         .iter()
         .filter(|e| e.text.contains("reading 'x'"))
         .collect();
-    assert!(remote.len() >= 1, "{text}");
+    assert!(!remote.is_empty(), "{text}");
     assert!(
         remote.iter().all(|e| e.no_locals.as_deref()
             == Some("the page is not on localhost; chrome-cdp debug locals on")),

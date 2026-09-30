@@ -1064,6 +1064,10 @@ pub struct NetworkRequest {
     /// request (or the end of one shown pending) before answering.
     #[serde(default)]
     pub wait_ms: u64,
+    /// `--sourcemaps`: resolve initiator stacks with source maps (always
+    /// on for localhost pages).
+    #[serde(default)]
+    pub sourcemaps: bool,
     pub timeout_ms: u64,
     /// The output budget (0 = none).
     pub max_chars: usize,
@@ -1089,6 +1093,10 @@ pub struct NetworkShowRequest {
     /// absolute path instead of showing it.
     #[serde(default)]
     pub output: Option<PathBuf>,
+    /// `--sourcemaps`: resolve initiator stacks with source maps (always
+    /// on for localhost pages).
+    #[serde(default)]
+    pub sourcemaps: bool,
     pub timeout_ms: u64,
     /// The output budget (0 = none).
     pub max_chars: usize,
