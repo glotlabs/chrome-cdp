@@ -670,6 +670,72 @@ async fn annotate_labels_refs() {
     engine.close().await;
 }
 
+/// The text of each page of a PDF Chrome printed: its content streams'
+/// `Tj` strings (glyph ids in hex), through the fonts' `ToUnicode` maps.
+/// The maps are merged, which holds while the text is in one font.
+fn pdf_text(pdf: &[u8]) -> Vec<String> {
+    use std::io::Read as _;
+    let hex = regex::Regex::new(r"<([0-9A-Fa-f]+)>\s*Tj").unwrap();
+    let pair =
+        regex::Regex::new(r"<([0-9A-Fa-f]+)>[ \t]*<([0-9A-Fa-f]+)>(?:[ \t]*<([0-9A-Fa-f]+)>)?")
+            .unwrap();
+    let mut streams = Vec::new();
+    let mut rest = pdf;
+    while let Some(at) = rest.windows(7).position(|w| w == b"stream\n") {
+        let body = &rest[at + 7..];
+        let end = body.windows(9).position(|w| w == b"endstream").unwrap();
+        let mut out = String::new();
+        if flate2::read::ZlibDecoder::new(&body[..end])
+            .read_to_string(&mut out)
+            .is_ok()
+        {
+            streams.push(out);
+        }
+        rest = &body[end + 9..];
+    }
+    let code = |h: &str| u32::from_str_radix(h, 16).unwrap();
+    let mut glyphs = std::collections::HashMap::new();
+    for cmap in streams.iter().filter(|s| s.contains("begincmap")) {
+        for section in cmap.split("beginbf").skip(1) {
+            let body = section.split("endbf").next().unwrap();
+            for c in pair.captures_iter(body) {
+                let (lo, second) = (code(&c[1]), code(&c[2]));
+                match c.get(3) {
+                    // bfrange: lo hi first-char.
+                    Some(first) => {
+                        for (i, glyph) in (lo..=second).enumerate() {
+                            let ch = code(first.as_str()) + u32::try_from(i).unwrap();
+                            glyphs.insert(glyph, char::from_u32(ch).unwrap());
+                        }
+                    }
+                    None => {
+                        glyphs.insert(lo, char::from_u32(second).unwrap());
+                    }
+                }
+            }
+        }
+    }
+    streams
+        .iter()
+        .filter(|s| !s.contains("begincmap") && s.contains("Tj"))
+        .map(|s| {
+            hex.captures_iter(s)
+                .flat_map(|c| {
+                    c[1].as_bytes()
+                        .chunks(4)
+                        .map(|g| {
+                            glyphs
+                                .get(&code(std::str::from_utf8(g).unwrap()))
+                                .copied()
+                                .unwrap_or('?')
+                        })
+                        .collect::<Vec<char>>()
+                })
+                .collect()
+        })
+        .collect()
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn pdf_prints_the_page() {
     let Some(chrome) = chrome_path() else { return };
@@ -686,6 +752,9 @@ async fn pdf_prints_the_page() {
         margin: Some(Margins::parse("0").unwrap()),
         pages: None,
         css_page_size: false,
+        header: None,
+        footer: None,
+        scale: None,
         timeout_ms: TIMEOUT_MS,
     };
     let output = engine.pdf(pdf(PaperFormat::A4, false, None)).await.unwrap();
@@ -741,6 +810,32 @@ async fn pdf_prints_the_page() {
             "{}",
             err.message
         );
+    }
+
+    // A footer with the page number, no default header, half the scale:
+    // half as many pages (the page numbers count every page, not only
+    // those printed).
+    let output = engine
+        .pdf(PdfRequest {
+            pages: Some("1-3".to_owned()),
+            margin: Some(Margins::parse("2cm").unwrap()),
+            scale: Some(0.5),
+            footer: Some(
+                r#"<div style="font-size:10px;width:100%;text-align:center">Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>"#
+                    .to_owned(),
+            ),
+            ..pdf(PaperFormat::A4, false, None)
+        })
+        .await
+        .unwrap();
+    let data: PdfData = serde_json::from_value(output.data.clone()).unwrap();
+    assert_eq!(data.pages, Some(3), "{}", output.text);
+    assert!(output.text.contains(", scale 0.5, "), "{}", output.text);
+    let pages = pdf_text(&std::fs::read(&data.path).unwrap());
+    assert_eq!(pages.len(), 3, "{pages:?}");
+    for (n, text) in pages.iter().enumerate() {
+        assert!(text.contains(&format!("Page {} of 11", n + 1)), "{pages:?}");
+        assert!(!text.contains("Tall page"), "a default header: {pages:?}");
     }
 
     // The page's `@page` size (4in, 288pt), else A4's paper (596pt wide),

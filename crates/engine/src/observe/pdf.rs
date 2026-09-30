@@ -20,6 +20,9 @@ use crate::request::{PdfRequest, millis};
 use crate::tabs::tab_name;
 use crate::{Engine, Spec};
 
+/// A header or footer template that prints nothing.
+const EMPTY_TEMPLATE: &str = "<span></span>";
+
 impl Engine {
     /// `pdf`: the active tab (or `--tab`) printed to a PDF file.
     pub async fn pdf(&self, req: PdfRequest) -> Result<Output, ErrorInfo> {
@@ -33,6 +36,12 @@ impl Engine {
         let mark = running.tabs.mark();
         let _tab = self.tabs.lock(&page.target_id).await;
         let (width, height) = req.format.inches();
+        let header_footer = req.header.is_some() || req.footer.is_some();
+        // An empty template prints nothing; Chrome's default (the date
+        // and title, the URL and page number) is not wanted with the other.
+        let template = |t: &Option<String>| {
+            header_footer.then(|| t.clone().unwrap_or_else(|| EMPTY_TEMPLATE.to_owned()))
+        };
         let params = cdp_page::PrintToPdfParams {
             // The paper is given upright; Chrome turns it for `landscape`.
             landscape: Some(req.landscape),
@@ -45,6 +54,10 @@ impl Engine {
             margin_left: req.margin.map(|m| m.left),
             page_ranges: req.pages.clone(),
             prefer_css_page_size: Some(req.css_page_size),
+            display_header_footer: header_footer.then_some(true),
+            header_template: template(&req.header),
+            footer_template: template(&req.footer),
+            scale: req.scale,
             ..cdp_page::PrintToPdfParams::default()
         };
         let print = async {
@@ -92,11 +105,14 @@ impl Engine {
         }
         let _ = write!(
             text,
-            "{}{}, {}",
+            "{}{}",
             req.format.as_str(),
             if req.landscape { " landscape" } else { "" },
-            format::size(bytes.len() as u64)
         );
+        if let Some(scale) = req.scale.filter(|s| (s - 1.0).abs() > f64::EPSILON) {
+            let _ = write!(text, ", scale {scale}");
+        }
+        let _ = write!(text, ", {}", format::size(bytes.len() as u64));
         let data = PdfData {
             tab: tab_name(page.id),
             path: path_text.clone(),

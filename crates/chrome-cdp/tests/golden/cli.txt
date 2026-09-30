@@ -632,6 +632,9 @@ command chrome-cdp pdf
   flag --margin value=LENGTHS
   flag --pages value=RANGES
   flag --css-page-size
+  flag --header value=HTML|@FILE
+  flag --footer value=HTML|@FILE
+  flag --scale value=FACTOR
 command chrome-cdp eval
   arg JS required
   flag --in value=LOCATOR

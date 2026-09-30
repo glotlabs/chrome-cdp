@@ -1,0 +1,11 @@
+$ chrome-cdp pdf --scale 3
+exit: 2
+--- stderr
+error: invalid value '3' for '--scale <FACTOR>': `3` is not a scale from 0.1 to 2 (1 is the page's size)
+  hint: chrome-cdp pdf --help
+
+$ chrome-cdp pdf --scale 3 --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"invalid value '3' for '--scale <FACTOR>': `3` is not a scale from 0.1 to 2 (1 is the page's size)","hint":"chrome-cdp pdf --help"}}
+

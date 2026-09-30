@@ -1,0 +1,15 @@
+$ chrome-cdp pdf --pages 1-2 --scale 0.5 --margin 2cm --footer '<div style='\''font-size:10px'\''>Page <span class=pageNumber></span></div>'
+exit: 0
+--- stdout
+<sandbox>/run/chrome-cdp/default/pdfs/1.pdf: 2 pages, Letter, scale 0.5, 12KB
+
+$ chrome-cdp pdf --pages 1-2 --scale 0.5 --margin 2cm --footer '<div style='\''font-size:10px'\''>Page <span class=pageNumber></span></div>' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"bytes":12678,"landscape":false,"pages":2,"paper":"Letter","path":"<sandbox>/run/chrome-cdp/default/pdfs/2.pdf","tab":"t1"}}
+
+$ chrome-cdp pdf --pages 1-2 --scale 0.5 --margin 2cm --footer '<div style='\''font-size:10px'\''>Page <span class=pageNumber></span></div>' -q
+exit: 0
+--- stdout
+<sandbox>/run/chrome-cdp/default/pdfs/3.pdf
+

@@ -1612,12 +1612,20 @@ stdout. Chrome prints the page as its print dialog would: with the print
 media styles, on pages of --format paper. Chrome prints only when headless.
 Needs a running session.
 
+--header and --footer print an HTML template on each page, in the margin
+(make it wide enough). Chrome fills elements of class pageNumber,
+totalPages, date, title and url, and prints the templates in a tiny font
+unless they set one.
+
 Examples:
   chrome-cdp pdf
   chrome-cdp pdf -o invoice.pdf --format A4 --background
   chrome-cdp pdf --landscape --margin 1cm
   chrome-cdp pdf --margin 10mm,15mm           # top and bottom, left and right
-  chrome-cdp pdf --pages 1-3,5 --css-page-size")]
+  chrome-cdp pdf --pages 1-3,5 --css-page-size
+  chrome-cdp pdf --scale 0.8
+  chrome-cdp pdf --margin 2cm --footer '<div style=\"font-size:10px;width:100%;text-align:center\">Page <span class=pageNumber></span> of <span class=totalPages></span></div>'
+  chrome-cdp pdf --margin 2cm --header @header.html")]
     Pdf(PdfArgs),
 
     /// Run JavaScript in the page and print its value.
@@ -5297,6 +5305,21 @@ pub(crate) struct PdfArgs {
     /// --format.
     #[arg(long)]
     pub(crate) css_page_size: bool,
+
+    /// Print this HTML at the top of each page, or @FILE's. Chrome fills
+    /// elements of class pageNumber, totalPages, date, title and url. Give
+    /// it a font size: Chrome's default is tiny.
+    #[arg(long, value_name = "HTML|@FILE")]
+    pub(crate) header: Option<String>,
+
+    /// Print this HTML at the bottom of each page, or @FILE's (as
+    /// --header).
+    #[arg(long, value_name = "HTML|@FILE")]
+    pub(crate) footer: Option<String>,
+
+    /// Scale the page: 0.1 to 2. Default 1.
+    #[arg(long, value_parser = parse_scale, value_name = "FACTOR")]
+    pub(crate) scale: Option<f64>,
 }
 
 /// `pdf --format`.
@@ -5332,6 +5355,16 @@ impl PaperArg {
 /// Parses `pdf --margin`.
 fn parse_margin(s: &str) -> Result<engine::Margins, String> {
     engine::Margins::parse(s)
+}
+
+/// Parses `pdf --scale`: 0.1 to 2, as Chrome takes.
+fn parse_scale(s: &str) -> Result<f64, String> {
+    match s.trim().parse::<f64>() {
+        Ok(scale) if (0.1..=2.0).contains(&scale) => Ok(scale),
+        _ => Err(format!(
+            "`{s}` is not a scale from 0.1 to 2 (1 is the page's size)"
+        )),
+    }
 }
 
 /// Parses one of `network --type`'s resource types.

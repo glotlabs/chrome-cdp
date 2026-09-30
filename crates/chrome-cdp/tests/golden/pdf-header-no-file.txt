@@ -1,0 +1,11 @@
+$ chrome-cdp pdf --header @no-such-header.html
+exit: 2
+--- stderr
+error: --header @no-such-header.html: cannot read it: No such file or directory (os error 2)
+  hint: --header takes the HTML itself, or @FILE for a file holding it
+
+$ chrome-cdp pdf --header @no-such-header.html --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"--header @no-such-header.html: cannot read it: No such file or directory (os error 2)","hint":"--header takes the HTML itself, or @FILE for a file holding it"}}
+

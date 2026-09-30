@@ -1239,6 +1239,17 @@ pub(crate) fn pdf(args: &PdfArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
         margin: args.margin,
         pages: args.pages.clone(),
         css_page_size: args.css_page_size,
+        header: args
+            .header
+            .as_deref()
+            .map(|t| pdf_template(t, "--header"))
+            .transpose()?,
+        footer: args
+            .footer
+            .as_deref()
+            .map(|t| pdf_template(t, "--footer"))
+            .transpose()?,
+        scale: args.scale,
         timeout_ms: millis(ctx.timeout),
     };
     let mut client = running_session(&ctx)?;
@@ -1250,6 +1261,22 @@ pub(crate) fn pdf(args: &PdfArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
     } else {
         Ok(output)
     }
+}
+
+/// A `pdf --header`/`--footer` template: the HTML given, or `@FILE`'s.
+fn pdf_template(template: &str, flag: &str) -> Result<String, ErrorInfo> {
+    let Some(path) = template.strip_prefix('@') else {
+        return Ok(template.to_owned());
+    };
+    std::fs::read_to_string(path).map_err(|e| {
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("{flag} @{path}: cannot read it: {e}"),
+        )
+        .hint(Hint::text(format!(
+            "{flag} takes the HTML itself, or @FILE for a file holding it"
+        )))
+    })
 }
 
 /// `route`: needs a running session.

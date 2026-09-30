@@ -1987,6 +1987,16 @@ pub struct PdfRequest {
     /// `--css-page-size`: the page's CSS `@page` size wins over `format`.
     #[serde(default)]
     pub css_page_size: bool,
+    /// `--header` and `--footer`: HTML templates printed on each page
+    /// (Chrome fills elements of class `pageNumber`, `totalPages`, `date`,
+    /// `title` and `url`). Either turns both on; the other is left empty.
+    #[serde(default)]
+    pub header: Option<String>,
+    #[serde(default)]
+    pub footer: Option<String>,
+    /// `--scale`: how much to scale the page (0.1 to 2); 1 if `None`.
+    #[serde(default)]
+    pub scale: Option<f64>,
     pub timeout_ms: u64,
 }
 

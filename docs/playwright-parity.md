@@ -123,7 +123,7 @@ Today: 130 rows; 112 ✅, 13 🟡, 0 ❌, 5 ➖. No row is ❌.
 |---|---|---|---|
 | `page.screenshot` (`fullPage`, `mask`, `type`, `quality`, `omitBackground`, `scale`) | `screenshot -o PATH --full --mask LOC --format jpeg --quality 70 --omit-background --scale device` | ✅ | yes |
 | `locator.screenshot` | `screenshot LOC` | ✅ | yes |
-| `page.pdf` | `pdf -o PATH --format A4 --landscape --margin 1cm` | ✅ | no |
+| `page.pdf` (`headerTemplate`, `footerTemplate`, `scale`) | `pdf -o PATH --format A4 --landscape --margin 1cm --footer HTML --scale 0.8` | ✅ | no |
 | `recordVideo` | not in v1: `test --trace` takes a screenshot after every step, and a failed test's `report.md` has the page | ➖ | no |
 
 ## Console, errors and network
