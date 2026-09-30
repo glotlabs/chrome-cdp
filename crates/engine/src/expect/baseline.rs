@@ -380,9 +380,13 @@ impl Engine {
             Outcome::Matched(text) => (text, true),
             Outcome::Read { last, steady } if store => (last, steady),
             Outcome::Read { last, .. } => {
-                let baseline = baseline.map(|b| (b.text.clone(), b.project(&last)));
-                let (expected, actual) = baseline.unwrap_or_default();
-                return Err(self.snapshot_differs(&page, &req, &expected, &actual, &reads));
+                // Not storing: there is a baseline.
+                let empty = SnapshotBaseline {
+                    text: String::new(),
+                    template: None,
+                };
+                let baseline = baseline.as_ref().unwrap_or(&empty);
+                return Err(self.snapshot_differs(&page, &req, baseline, &last, &reads));
             }
         };
         let lines = count_lines(&text);
@@ -526,17 +530,18 @@ impl Engine {
         .details(json!({ "baseline": path.display().to_string() }))
     }
 
-    /// `ExpectFailed` with the diff from the baseline to the page (`actual`
-    /// in the baseline's terms, for a template).
+    /// `ExpectFailed` with the diff from the baseline to the page (in the
+    /// baseline's terms, for a template).
     fn snapshot_differs(
         &self,
         page: &Page,
         req: &ExpectSnapshotRequest,
-        baseline: &str,
+        baseline: &SnapshotBaseline,
         actual: &str,
         reads: &Reads,
     ) -> ErrorInfo {
-        let (diff, added, removed) = unified_diff(baseline, actual, "baseline", "page");
+        let projected = baseline.project(actual);
+        let (diff, added, removed) = unified_diff(&baseline.text, &projected, "baseline", "page");
         let hint = match self.unread_errors(page.id) {
             Some((unread, cmd)) => Hint::run(cmd).why(format!(
                 "{unread} console {} not shown yet; the page may have failed",
