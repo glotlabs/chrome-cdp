@@ -503,8 +503,9 @@ match with changed dynamic text, fail on a missing button, and survive
 - **14.2, the "timers set before now" warning** comes from the clock
   marking a document it reached after it started loading (not
   `about:blank`), so it also shows for a page frozen after it loaded.
-- **14.2, `resume`** hands queued animation frames to the browser under
-  new ids: `cancelAnimationFrame` with the old id no longer cancels one.
+- **14.2, `resume`** hands queued animation frames to the browser, which
+  gives them new ids; `cancelAnimationFrame` stays wrapped, mapping the
+  old ids, until those frames have run.
 - **14.2, `convert`.** Playwright's `clock.pauseAt(t)` also jumps a
   running clock there, while `time pause-at` needs a paused one, so it
   becomes `time pause T`; `runFor` becomes `time run-for`, `resume` `time

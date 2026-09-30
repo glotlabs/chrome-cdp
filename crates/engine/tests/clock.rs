@@ -222,6 +222,18 @@ async fn paused_timers_run_only_when_told() {
 
     // resume: timers and frames run in real time, and Date stays frozen.
     let frozen = now + 500;
+    // A frame queued while paused can still be cancelled right after the
+    // resume (resumed here in the page, to cancel in the same task).
+    eval(
+        &engine,
+        &format!(
+            "window.queuedRan = false; \
+             const queued = requestAnimationFrame(() => {{ queuedRan = true; }}); \
+             globalThis[Symbol.for('chrome-cdp.clock')].set({frozen}, 'frozen'); \
+             cancelAnimationFrame(queued); 0"
+        ),
+    )
+    .await;
     let (data, _) = clock(&engine, EmulationChange::TimeResume).await;
     assert!(!data.emulation.time.as_ref().unwrap().paused);
     let frames = eval(&engine, "frames_").await.as_i64().unwrap();
@@ -230,9 +242,15 @@ async fn paused_timers_run_only_when_told() {
     assert!(eval(&engine, "left").await.as_i64().unwrap() < left);
     assert!(eval(&engine, "frames_").await.as_i64().unwrap() > frames);
     assert_eq!(eval(&engine, "Date.now()").await, json!(frozen));
+    assert_eq!(eval(&engine, "queuedRan").await, json!(false));
+    // The real functions are back once the handed-over frames have run.
     assert_eq!(
-        eval(&engine, "window.requestAnimationFrame.name").await,
-        json!("requestAnimationFrame")
+        eval(
+            &engine,
+            "[requestAnimationFrame, cancelAnimationFrame].map((f) => f.toString().includes('[native code]'))"
+        )
+        .await,
+        json!([true, true])
     );
     let err = time(&engine, EmulationChange::TimeRunFor { ms: 10 })
         .await

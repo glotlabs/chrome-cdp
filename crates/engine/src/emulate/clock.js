@@ -205,6 +205,25 @@
     function cancelAnimationFrame(id) {
       if (!frames.delete(id)) realCancelFrame.call(globalThis, id);
     }
+    // The frames queued while paused that `resume` gave the browser: our
+    // id to the browser's.
+    const handed = new Map();
+    function handOver(id) {
+      handed.delete(id);
+      if (!handed.size && globalThis.cancelAnimationFrame === cancelHanded) {
+        globalThis.cancelAnimationFrame = realCancelFrame;
+      }
+    }
+    const cancelHanded = {
+      cancelAnimationFrame(id) {
+        if (handed.has(id)) {
+          realCancelFrame.call(globalThis, handed.get(id));
+          handOver(id);
+        } else {
+          realCancelFrame.call(globalThis, id);
+        }
+      },
+    }.cancelAnimationFrame;
     // Runs a callback; what it throws is reported as the browser would,
     // and does not stop the others.
     function call(callback, self, args) {
@@ -271,7 +290,8 @@
         }
       },
       // Timers run in real time again, from where they stopped; the queued
-      // frames go to the browser (under new ids).
+      // frames go to the browser, which gives them new ids, so
+      // cancelAnimationFrame stays wrapped until they have run.
       resume() {
         if (stopped === null) return;
         skew = stopped - realNow();
@@ -279,9 +299,15 @@
         for (const timer of pending.values()) arm(timer, timer.due - vnow());
         if (typeof realRequestFrame === "function") {
           globalThis.requestAnimationFrame = realRequestFrame;
-          globalThis.cancelAnimationFrame = realCancelFrame;
-          for (const frame of frames.values()) realRequestFrame.call(globalThis, frame.callback);
+          for (const [id, frame] of frames) {
+            const real = realRequestFrame.call(globalThis, (time) => {
+              handOver(id);
+              frame.callback.call(globalThis, time);
+            });
+            handed.set(id, real);
+          }
           frames.clear();
+          globalThis.cancelAnimationFrame = handed.size ? cancelHanded : realCancelFrame;
         }
       },
       // Moves on by `ms` while paused, firing every callback due on the
