@@ -73,6 +73,10 @@ pub(crate) struct Record {
     pub(crate) post_data: Option<String>,
     pub(crate) has_post_data: bool,
     pub(crate) frames: VecDeque<WebSocketFrame>,
+    /// For a request of the main frame's document (each hop of its
+    /// redirects), the navigation it starts: `har stop` makes a page of
+    /// each.
+    pub(crate) navigation: Option<Navigation>,
     /// Whether the headers are the raw ones of the `…ExtraInfo` events.
     raw_request: bool,
     raw_response: bool,
@@ -82,9 +86,24 @@ pub(crate) struct Record {
     headers_end: Option<f64>,
 }
 
+/// A navigation of the main frame, as its document's request saw it.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Navigation {
+    /// The document's loader id.
+    pub(crate) loader: String,
+    /// When its `DOMContentLoaded` and `load` events fired, on Chrome's
+    /// monotonic clock (seconds; see [`Record::started`]). Only the last
+    /// hop of a redirect gets them.
+    pub(crate) dom_content_loaded: Option<f64>,
+    pub(crate) load: Option<f64>,
+}
+
 /// The network log of one tab.
 #[derive(Debug, Default)]
 pub(crate) struct NetLog {
+    /// The main frame's id (the page's target id): its document requests
+    /// are navigations.
+    main_frame: String,
     records: VecDeque<Record>,
     /// The live records by session and request id.
     live: HashMap<(String, String), u64>,
@@ -117,6 +136,35 @@ struct Pending {
 }
 
 impl NetLog {
+    /// The log of a page whose main frame is `main_frame`.
+    pub(crate) fn of_page(main_frame: &str) -> Self {
+        Self {
+            main_frame: main_frame.to_owned(),
+            ..Self::default()
+        }
+    }
+
+    /// Notes a `Page.lifecycleEvent` of frame `frame`: the main frame's
+    /// `DOMContentLoaded` and `load` go to its navigation's record.
+    pub(crate) fn lifecycle(&mut self, frame: &str, loader: &str, name: &str, timestamp: f64) {
+        if frame != self.main_frame {
+            return;
+        }
+        let Some(navigation) = self
+            .records
+            .iter_mut()
+            .rev()
+            .find_map(|r| r.navigation.as_mut().filter(|n| n.loader == loader))
+        else {
+            return;
+        };
+        match name {
+            "DOMContentLoaded" => navigation.dom_content_loaded = Some(timestamp),
+            "load" => navigation.load = Some(timestamp),
+            _ => {}
+        }
+    }
+
     /// The id of the last record.
     pub(crate) fn seq(&self) -> u64 {
         self.seq
@@ -232,6 +280,16 @@ impl NetLog {
                     }
                 }
                 let mut record = request(session, id, params);
+                if record.entry.kind == "document"
+                    && !self.main_frame.is_empty()
+                    && params["frameId"].as_str() == Some(self.main_frame.as_str())
+                    && let Some(loader) = params["loaderId"].as_str()
+                {
+                    record.navigation = Some(Navigation {
+                        loader: loader.to_owned(),
+                        ..Navigation::default()
+                    });
+                }
                 record.set_raw_request(self.take_request(&key));
                 record.entry.worker = worker.cloned();
                 self.push(key, record, capacity);
@@ -419,11 +477,17 @@ impl Record {
             post_data: None,
             has_post_data: false,
             frames: VecDeque::new(),
+            navigation: None,
             raw_request: false,
             raw_response: false,
             started: None,
             headers_end: None,
         }
+    }
+
+    /// When it started, on Chrome's monotonic clock (seconds).
+    pub(crate) fn started(&self) -> Option<f64> {
+        self.started
     }
 
     /// Applies an event about this record; `false` if it is not one the
@@ -770,6 +834,41 @@ mod tests {
 
     fn event(log: &mut NetLog, method: &str, params: &Value) -> bool {
         log.event("s1", method, params, CAP, None)
+    }
+
+    /// The main frame's document requests are navigations, with their
+    /// lifecycle times; an iframe's are not.
+    #[test]
+    fn main_frame_documents_are_navigations() {
+        let mut log = NetLog::of_page("F1");
+        let document = |id: &str, frame: &str, url: &str| {
+            json!({
+                "requestId": id, "loaderId": id, "frameId": frame, "type": "Document",
+                "timestamp": 10.0, "request": { "method": "GET", "url": url, "headers": {} },
+            })
+        };
+        assert!(event(
+            &mut log,
+            "Network.requestWillBeSent",
+            &document("L1", "F1", "http://x/")
+        ));
+        assert!(event(
+            &mut log,
+            "Network.requestWillBeSent",
+            &document("L2", "F2", "http://x/f")
+        ));
+        log.lifecycle("F1", "L1", "DOMContentLoaded", 10.25);
+        log.lifecycle("F2", "L2", "load", 10.5);
+        log.lifecycle("F1", "L1", "load", 10.5);
+        let records: Vec<&Record> = log.records().collect();
+        let navigation = records[0].navigation.as_ref().unwrap();
+        assert_eq!(navigation.loader, "L1");
+        assert_eq!(
+            (navigation.dom_content_loaded, navigation.load),
+            (Some(10.25), Some(10.5))
+        );
+        assert_eq!(records[0].started(), Some(10.0));
+        assert!(records[1].navigation.is_none());
     }
 
     /// A worker's script is requested on its page's session and answered

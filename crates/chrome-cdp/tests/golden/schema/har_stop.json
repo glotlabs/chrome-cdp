@@ -554,6 +554,56 @@
         }
       ]
     },
+    "HarPageInfo": {
+      "description": "A page of a HAR file (`har stop`).",
+      "properties": {
+        "dom_content_loaded_ms": {
+          "description": "When `DOMContentLoaded` fired, in ms since the page started.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "entries": {
+          "description": "How many requests it has.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "description": "Its id in the file, e.g. `t1` or `t1_2`.",
+          "type": "string"
+        },
+        "load_ms": {
+          "description": "When `load` fired, in ms since the page started.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tab": {
+          "description": "The tab it is of.",
+          "type": "string"
+        },
+        "url": {
+          "description": "The URL of the document whose navigation started it; absent for\nthe requests of a document that loaded before the recording.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "tab",
+        "entries"
+      ],
+      "type": "object"
+    },
     "HarStopData": {
       "description": "`data` of `chrome-cdp har stop --json`.",
       "properties": {
@@ -597,8 +647,15 @@
           "minimum": 0,
           "type": "integer"
         },
+        "page_details": {
+          "description": "Each page of `pages`, with its requests and load times.",
+          "items": {
+            "$ref": "#/$defs/HarPageInfo"
+          },
+          "type": "array"
+        },
         "pages": {
-          "description": "The tabs they came from (the HAR's pages), e.g. `t1`.",
+          "description": "The HAR's pages, e.g. `t1`: one per tab, or `t1_1`, `t1_2`, … for a\ntab that navigated while recording (one per document).",
           "items": {
             "type": "string"
           },

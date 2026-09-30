@@ -11,7 +11,7 @@ use browser::Host;
 use engine::{
     Action, ActionRequest, Button, CoverageStartRequest, CoverageStopRequest, Engine, HarContent,
     HarStartRequest, HarStopRequest, NavigateRequest, Navigation, OpenRequest, TabNewRequest,
-    TraceStartRequest, TraceStopRequest, WaitUntil,
+    TraceStartRequest, TraceStopRequest, WaitFor, WaitRequest, WaitUntil,
 };
 use fixtures::Fixtures;
 use protocol::ErrorKind;
@@ -309,6 +309,95 @@ async fn har_records_every_tab_from_the_start() {
     let post = entry(&har, "/items?n=2");
     assert!(post["response"]["content"].get("text").is_none());
     assert!(post["response"]["content"]["size"].as_i64().unwrap() > 0);
+    engine.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn har_makes_a_page_of_each_navigation() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let dir = tempfile::tempdir().unwrap();
+    let engine = start(&path, "record-har-pages").await;
+    goto(&engine, &site.url("/har/index.html")).await;
+    har_start(&engine, HarContent::Omit).await;
+    // nav-1 goes on to nav-2 and nav-3 by itself, which fetches.
+    goto(&engine, &site.url("/har/nav-1.html")).await;
+    engine
+        .wait(WaitRequest {
+            condition: WaitFor::Text {
+                text: "fetched".to_owned(),
+                within: None,
+                gone: false,
+            },
+            tab: None,
+            strict_refs: false,
+            testid_attribute: None,
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 1000,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("wait: {}", e.to_text()));
+
+    let file = dir.path().join("pages.har");
+    let (data, har, _) = har_stop(&engine, &file).await;
+    validate_har(&har);
+    assert_eq!(data.pages, ["t1_1", "t1_2", "t1_3"]);
+    let pages = har["log"]["pages"].as_array().unwrap();
+    for (page, n) in pages.iter().zip(1..) {
+        let timings = &page["pageTimings"];
+        let dcl = timings["onContentLoad"].as_f64().unwrap();
+        let load = timings["onLoad"].as_f64().unwrap();
+        assert!(
+            dcl >= 0.0 && load >= dcl && load < 10_000.0,
+            "t1_{n}: {page}"
+        );
+    }
+    // An earlier document is named by its URL (the current one by the
+    // tab's title).
+    assert!(
+        pages[0]["title"]
+            .as_str()
+            .unwrap()
+            .ends_with("/har/nav-1.html")
+    );
+    let pageref = |url_end: &str| entry(&har, url_end)["pageref"].clone();
+    assert_eq!(pageref("/har/nav-1.html"), "t1_1");
+    assert_eq!(pageref("/har/nav-2.html"), "t1_2");
+    assert_eq!(pageref("/har/nav-3.html"), "t1_3");
+    assert_eq!(pageref("/items?n=1"), "t1_3");
+    let details: Vec<(&str, usize)> = data
+        .page_details
+        .iter()
+        .map(|p| (p.id.as_str(), p.entries))
+        .collect();
+    assert_eq!(details, [("t1_1", 1), ("t1_2", 1), ("t1_3", 2)]);
+    assert!(data.page_details.iter().all(|p| p.load_ms.is_some()));
+
+    // A tab that did not navigate keeps one page, named after it.
+    har_start(&engine, HarContent::Omit).await;
+    engine
+        .wait(WaitRequest {
+            condition: WaitFor::Function {
+                expression: "fetch('/items?n=2').then(() => true)".to_owned(),
+            },
+            tab: None,
+            strict_refs: false,
+            testid_attribute: None,
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 1000,
+        })
+        .await
+        .unwrap();
+    let (data, har, _) = har_stop(&engine, &dir.path().join("one.har")).await;
+    assert_eq!(data.pages, ["t1"]);
+    let timings = &har["log"]["pages"][0]["pageTimings"];
+    assert_eq!(
+        (
+            timings["onContentLoad"].as_f64(),
+            timings["onLoad"].as_f64()
+        ),
+        (Some(-1.0), Some(-1.0))
+    );
     engine.close().await;
 }
 

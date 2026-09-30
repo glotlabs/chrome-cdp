@@ -13,14 +13,16 @@
 //!
 //! The file follows <http://www.softwareishard.com/blog/har-12-spec/>,
 //! with DevTools' `_resourceType`, `_transferSize`, `_error` and
-//! `_webSocketMessages` extensions. Each tab is a page.
+//! `_webSocketMessages` extensions. Each tab is a page (`t1`), or, when
+//! its main frame navigated while recording, each document is one
+//! (`t1_1`, `t1_2`, …), with its `DOMContentLoaded` and `load` times.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::time::Duration;
 
 use cdp::domains::network as cdp_network;
-use protocol::schema::{HarStartData, HarStopData, Header, RequestState};
+use protocol::schema::{HarPageInfo, HarStartData, HarStopData, Header, RequestState};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde::Serialize;
 use serde_json::json;
@@ -172,6 +174,7 @@ impl Engine {
             "har",
         )?;
         let page_names: Vec<String> = har.log.pages.iter().map(|p| p.id.clone()).collect();
+        let page_details: Vec<HarPageInfo> = har.log.pages.iter().map(HarPage::info).collect();
         // Saved: the recording is over (a failed save leaves it running,
         // so it can be saved elsewhere).
         *lock(&running.har) = None;
@@ -197,12 +200,19 @@ impl Engine {
             );
         }
         let _ = write!(text, ", {}", format::size(json.len() as u64));
+        // A tab that navigated has a page per document: each on a line.
+        if page_details.iter().any(|p| p.id != p.tab) {
+            for page in &page_details {
+                let _ = write!(text, "\n  {}", page_line(page));
+            }
+        }
         let duration_ms = now_ms().saturating_sub(recording.started_ms);
         let data = HarStopData {
             path: path_text.clone(),
             bytes: json.len() as u64,
             entries: entry_count,
             pages: page_names,
+            page_details,
             content: recording.content.as_str().to_owned(),
             bodies,
             missing_bodies: missing,
@@ -315,14 +325,32 @@ impl Engine {
                     }
                 })
                 .unwrap_or_default();
-            let first = taken.iter().map(|r| r.entry.time_ms).min().unwrap_or(0);
-            pages.push(HarPage {
-                started_date_time: iso8601(first),
-                id: tab_name(id),
-                title,
-                page_timings: PageTimings {},
-            });
-            records.extend(taken.drain(..).map(|r| (id, r)));
+            let tab_pages = split_pages(&taken);
+            let single = tab_pages.len() == 1;
+            let last = tab_pages.len() - 1;
+            for (n, page) in tab_pages.into_iter().enumerate() {
+                let name = if single {
+                    tab_name(id)
+                } else {
+                    format!("{}_{}", tab_name(id), n + 1)
+                };
+                // The tab's title is its current document's; an earlier
+                // one is named by its URL.
+                let title = match &page.document {
+                    Some(document) if n != last => document.clone(),
+                    _ => title.clone(),
+                };
+                pages.push(HarPage {
+                    started_date_time: iso8601(page.started_ms),
+                    id: name.clone(),
+                    title,
+                    page_timings: page.timings,
+                    tab: id,
+                    document: page.document,
+                    entries: page.records,
+                });
+                records.extend(taken.drain(..page.records).map(|r| (name.clone(), r)));
+            }
         }
         records.sort_by_key(|(_, r)| (r.entry.time_ms, r.entry.id));
         let mut fetched: Vec<Fetched> = Vec::with_capacity(records.len());
@@ -339,7 +367,7 @@ impl Engine {
         let entries: Vec<HarEntry> = records
             .iter()
             .zip(fetched)
-            .map(|((id, record), fetched)| {
+            .map(|((page, record), fetched)| {
                 match &fetched.response {
                     Some(Ok(_)) => bodies += 1,
                     Some(Err(())) => missing += 1,
@@ -348,7 +376,7 @@ impl Engine {
                 if record.entry.state == RequestState::Pending {
                     pending += 1;
                 }
-                entry(*id, record, fetched)
+                entry(page, record, fetched)
             })
             .collect();
         Collected {
@@ -452,7 +480,7 @@ fn lock<T>(m: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 /// One HAR entry from `record` of tab `tab`.
 // Times in ms and s fit well within f64.
 #[allow(clippy::cast_precision_loss)]
-fn entry(tab: u32, record: &Record, fetched: Fetched) -> HarEntry {
+fn entry(page: &str, record: &Record, fetched: Fetched) -> HarEntry {
     let e = &record.entry;
     let http_version = e.protocol.as_deref().map(http_version).unwrap_or_default();
     let request_mime = header(&record.request_headers, "content-type").unwrap_or_default();
@@ -525,7 +553,7 @@ fn entry(tab: u32, record: &Record, fetched: Fetched) -> HarEntry {
             .collect()
     });
     HarEntry {
-        pageref: tab_name(tab),
+        pageref: page.to_owned(),
         started_date_time: iso8601(e.time_ms),
         time: e.duration_ms.unwrap_or(0) as f64,
         request: HarRequest {
@@ -713,12 +741,134 @@ struct HarPage {
     id: String,
     title: String,
     page_timings: PageTimings,
+    /// For `har stop`'s output: its tab, the document that started it,
+    /// and how many entries it has.
+    #[serde(skip)]
+    tab: u32,
+    #[serde(skip)]
+    document: Option<String>,
+    #[serde(skip)]
+    entries: usize,
 }
 
-/// No `onContentLoad`/`onLoad`: they are per navigation, and a page here
-/// is a tab.
-#[derive(Serialize)]
-struct PageTimings {}
+/// When `DOMContentLoaded` and `load` fired, in ms since the page
+/// started; -1 when unknown.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PageTimings {
+    on_content_load: f64,
+    on_load: f64,
+}
+
+impl PageTimings {
+    const UNKNOWN: Self = Self {
+        on_content_load: -1.0,
+        on_load: -1.0,
+    };
+}
+
+impl HarPage {
+    // Whole ms, checked not negative, well within u64.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    fn info(&self) -> HarPageInfo {
+        let ms = |t: f64| (t >= 0.0).then_some(t as u64);
+        HarPageInfo {
+            id: self.id.clone(),
+            tab: tab_name(self.tab),
+            url: self.document.clone(),
+            entries: self.entries,
+            dom_content_loaded_ms: ms(self.page_timings.on_content_load),
+            load_ms: ms(self.page_timings.on_load),
+        }
+    }
+}
+
+/// `t1_2 http://…/b.html: 3 requests, DOMContentLoaded 40ms, load 52ms`.
+fn page_line(page: &HarPageInfo) -> String {
+    let mut line = page.id.clone();
+    let _ = write!(
+        line,
+        " {}: {} {}",
+        page.url.as_deref().unwrap_or("(loaded before har start)"),
+        format::thousands(page.entries),
+        if page.entries == 1 {
+            "request"
+        } else {
+            "requests"
+        }
+    );
+    if let Some(ms) = page.dom_content_loaded_ms {
+        let _ = write!(
+            line,
+            ", DOMContentLoaded {}",
+            format::duration(Duration::from_millis(ms))
+        );
+    }
+    if let Some(ms) = page.load_ms {
+        let _ = write!(
+            line,
+            ", load {}",
+            format::duration(Duration::from_millis(ms))
+        );
+    }
+    line
+}
+
+/// A HAR page of one tab: its records from `records` on.
+#[derive(Debug)]
+struct TabPage {
+    /// How many of the tab's records (in order) are in it.
+    records: usize,
+    started_ms: u64,
+    /// The URL of the document that started it, if a navigation did.
+    document: Option<String>,
+    timings: PageTimings,
+}
+
+/// Splits a tab's records (in log order) into its pages: one per
+/// navigation of the main frame, and one for the records before the
+/// first when the document they belong to loaded earlier.
+fn split_pages(records: &[Record]) -> Vec<TabPage> {
+    let mut pages: Vec<TabPage> = Vec::new();
+    let mut loader: Option<&str> = None;
+    let mut started: Option<f64> = None;
+    for record in records {
+        match &record.navigation {
+            Some(navigation) if loader != Some(navigation.loader.as_str()) => {
+                loader = Some(&navigation.loader);
+                started = record.started();
+                pages.push(TabPage {
+                    records: 0,
+                    started_ms: record.entry.time_ms,
+                    document: Some(record.entry.url.clone()),
+                    timings: PageTimings::UNKNOWN,
+                });
+            }
+            _ if pages.is_empty() => pages.push(TabPage {
+                records: 0,
+                started_ms: record.entry.time_ms,
+                document: None,
+                timings: PageTimings::UNKNOWN,
+            }),
+            _ => {}
+        }
+        let Some(page) = pages.last_mut() else {
+            continue;
+        };
+        page.records += 1;
+        // A redirect's last hop has the document's events.
+        if let (Some(navigation), Some(started)) = (&record.navigation, started) {
+            let since = |at: Option<f64>| at.map(|at| ((at - started) * 1000.0).max(0.0).round());
+            if let Some(ms) = since(navigation.dom_content_loaded) {
+                page.timings.on_content_load = ms;
+            }
+            if let Some(ms) = since(navigation.load) {
+                page.timings.on_load = ms;
+            }
+        }
+    }
+    pages
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

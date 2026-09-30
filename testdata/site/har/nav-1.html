@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Nav 1</title>
+  <link rel="icon" href="data:,">
+</head>
+<body>
+  <h1>Nav 1</h1>
+  <!-- Navigates on by itself once loaded: a HAR page per document. -->
+  <script>
+    addEventListener('load', () => setTimeout(() => { location.href = 'nav-2.html'; }, 50));
+  </script>
+</body>
+</html>

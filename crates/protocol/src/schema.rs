@@ -1935,8 +1935,12 @@ pub struct HarStopData {
     pub bytes: u64,
     /// How many requests it has.
     pub entries: usize,
-    /// The tabs they came from (the HAR's pages), e.g. `t1`.
+    /// The HAR's pages, e.g. `t1`: one per tab, or `t1_1`, `t1_2`, … for a
+    /// tab that navigated while recording (one per document).
     pub pages: Vec<String>,
+    /// Each page of `pages`, with its requests and load times.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub page_details: Vec<HarPageInfo>,
     /// `embed` or `omit`.
     pub content: String,
     /// Response bodies in the file.
@@ -1948,6 +1952,27 @@ pub struct HarStopData {
     pub dropped: u64,
     /// How long it recorded, in ms.
     pub duration_ms: u64,
+}
+
+/// A page of a HAR file (`har stop`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct HarPageInfo {
+    /// Its id in the file, e.g. `t1` or `t1_2`.
+    pub id: String,
+    /// The tab it is of.
+    pub tab: String,
+    /// The URL of the document whose navigation started it; absent for
+    /// the requests of a document that loaded before the recording.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// How many requests it has.
+    pub entries: usize,
+    /// When `DOMContentLoaded` fired, in ms since the page started.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dom_content_loaded_ms: Option<u64>,
+    /// When `load` fired, in ms since the page started.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load_ms: Option<u64>,
 }
 
 /// A routing rule (`route`, `block`; plan 07).

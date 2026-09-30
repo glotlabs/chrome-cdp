@@ -382,7 +382,7 @@ impl Tab {
             ready: false,
             frames: FrameTree::new(&info.target_id, session_id),
             network: Network::default(),
-            netlog: NetLog::default(),
+            netlog: NetLog::of_page(&info.target_id),
             console: Console::default(),
             command_marks: (0, 0),
             document_marks: (0, 0),
@@ -2122,6 +2122,10 @@ fn frame_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event:
                 tab.snapshot.refs.route_changed(&e.frame_id);
             })
         }
+        page::LifecycleEvent::NAME => decode::<page::LifecycleEvent>(event).map(|e| {
+            tab.netlog
+                .lifecycle(&e.frame_id, &e.loader_id, &e.name, e.timestamp);
+        }),
         page::FrameDetached::NAME => decode::<page::FrameDetached>(event).map(|e| {
             let swap = e.reason == page::FrameDetachedReason::Swap;
             frames.detached(&e.frame_id, swap);

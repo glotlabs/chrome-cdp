@@ -1655,8 +1655,10 @@ Examples:
         after_help = "\
 `har start` marks where each tab's network log is; `har stop` writes the
 requests since then, of every tab (or of --tab), as a HAR 1.2 file that
-DevTools, Charles or a HAR viewer can open. Response bodies go in unless
-`--content omit`. Needs a running session.
+DevTools, Charles or a HAR viewer can open. Each tab is a page, or each
+document for a tab that navigated meanwhile (t1_1, t1_2, …), with its
+DOMContentLoaded and load times. Response bodies go in unless `--content
+omit`. Needs a running session.
 
 Examples:
   chrome-cdp har start
@@ -5062,8 +5064,10 @@ Examples:
     /// Save the requests recorded since `har start` to a HAR file.
     #[command(after_help = "\
 Prints the file's path (-q: only the path); the file goes to the session's
-hars/ directory (1.har, 2.har, …) unless -o names one. Bodies Chrome no
-longer has are left out, with a warning.
+hars/ directory (1.har, 2.har, …) unless -o names one, and its pages: a
+line for each when a tab navigated (t1_2 http://…/b.html: 3 requests,
+DOMContentLoaded 40ms, load 52ms). Bodies Chrome no longer has are left
+out, with a warning.
 
 Examples:
   chrome-cdp har stop -o checkout.har
