@@ -1,0 +1,88 @@
+# A redesign of examples/e2e-shop (plan 18, milestone 18.2): what
+# `chrome-cdp test --heal` is tested on, in crates/chrome-cdp/tests/e2e_shop.rs.
+# Each substitution applies to a copy of what the shop serves (its dist/),
+# and must find `from` exactly `count` times (1 if not given). The names
+# in `from` are the minified ones of the committed build: after the shop's
+# dist/ is rebuilt, the test names the substitution that no longer applies,
+# and it gets the new names here.
+#
+# What changes, and what heal should make of it:
+# - class names, all of them (button -> btn, product -> product-card, and a
+#   generated one): no locator uses them;
+# - "Add to cart" -> "Add to basket", same test id: healed;
+# - the sign-in form's "Sign in" -> "Sign in now", same test id: healed (a
+#   step file's line, included by several tests);
+# - test id price -> product-price, the rest the same: healed;
+# - "Sign out" moves into a nav "Account", "Place order" into a region
+#   "Payment" with a new test id: their locators still work;
+# - the 404 page's "Back to products" link is gone, and a footer has an
+#   "All products" link on every page: NOT healed (too low), the test fails.
+
+[[js]]
+from = 'className:`button button-primary`,"data-testid":`add-to-cart`'
+to = 'className:`btn btn--primary css-1q2w3e`,"data-testid":`add-to-cart`'
+
+[[js]]
+from = 'children:`Add to cart`}'
+to = 'children:`Add to basket`}'
+
+[[js]]
+from = 'className:`button button-primary`,"data-testid":`sign-in`,children:`Sign in`'
+to = 'className:`btn btn--primary`,"data-testid":`sign-in`,children:`Sign in now`'
+
+[[js]]
+from = '"data-testid":`price`'
+to = '"data-testid":`product-price`'
+
+[[js]]
+from = '[`Signed in as `,e.email,` `,(0,_.jsx)(`button`,{className:`button`,'
+to = '[`Signed in as `,e.email,` `,(0,_.jsx)(`nav`,{"aria-label":`Account`,children:(0,_.jsx)(`button`,{className:`btn`,'
+
+[[js]]
+from = 'children:`Sign out`})]'
+to = 'children:`Sign out`})})]'
+
+[[js]]
+from = '(0,_.jsx)(`button`,{className:`button button-primary`,"data-testid":`place-order`,'
+to = '(0,_.jsx)(`section`,{"aria-label":`Payment`,children:(0,_.jsx)(`button`,{className:`btn btn--primary`,"data-testid":`checkout-submit`,'
+
+[[js]]
+from = ':`Place order`})'
+to = ':`Place order`})})'
+
+[[js]]
+from = ',(0,_.jsx)(x,{to:`/`,children:`Back to products`})'
+to = ''
+
+[[js]]
+from = '(0,_.jsx)(`main`,{children:te(e,o)})'
+to = '(0,_.jsx)(`main`,{children:te(e,o)}),(0,_.jsx)(`footer`,{children:(0,_.jsx)(x,{to:`/`,children:`All products`})})'
+
+[[js]]
+from = 'className:`button button-small`'
+to = 'className:`btn btn--small`'
+
+[[js]]
+from = 'className:`product`'
+to = 'className:`product-card`'
+
+[[js]]
+from = 'className:`button`'
+to = 'className:`btn`'
+count = 3
+
+[[css]]
+from = '.button{'
+to = '.btn{'
+
+[[css]]
+from = '.button-primary{'
+to = '.btn--primary{'
+
+[[css]]
+from = '.button-small{'
+to = '.btn--small{'
+
+[[css]]
+from = '.product{'
+to = '.product-card{'

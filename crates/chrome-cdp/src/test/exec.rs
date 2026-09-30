@@ -1189,7 +1189,9 @@ impl Runner<'_> {
             None => key.clone(),
         };
         let heal = Heal {
-            file: word.span.file.to_string(),
+            file: fingerprints::normalize(Path::new(&*word.span.file))
+                .display()
+                .to_string(),
             line: word.span.line,
             start: word.span.start,
             end: word.span.end,

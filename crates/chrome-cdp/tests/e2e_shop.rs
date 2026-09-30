@@ -3,7 +3,8 @@
 //! against the real API (`fixtures::Shop`, `--backend local`), the mocks
 //! match that API (`--verify-mocks`), its deliberately failing fixture
 //! gets the unmatched-request diagnostics, and `fmt --check` and `lint`
-//! pass on it.
+//! pass on it. Its committed fingerprints are what a run writes, and a
+//! redesign of it (`testdata/heal/redesign.toml`) is healed (plan 18.2).
 //!
 //! Needs a real Chrome (`CHROME_PATH`; skipped without it unless
 //! `CHROME_CDP_REQUIRE_CHROME` is set). Each test copies the example to a
@@ -46,7 +47,14 @@ impl Example {
     }
 
     fn cli(&self, args: &[&str]) -> Output {
-        common::run(self.sandbox.cli().current_dir(&self.root).args(args))
+        // Fingerprints are written unless CI is set.
+        common::run(
+            self.sandbox
+                .cli()
+                .current_dir(&self.root)
+                .env_remove("CI")
+                .args(args),
+        )
     }
 
     fn json(&self, args: &[&str]) -> Value {
@@ -104,6 +112,197 @@ fn the_shop_passes_against_the_mocks() {
     let value = example.json(&["test", "--jobs", "4"]);
     assert_eq!(counts(&value), (17, 0, 0), "{value:#}");
     assert!(example.sandbox.daemons().is_empty());
+    // The run writes the fingerprints the example has, byte for byte.
+    let committed = crate::example().join("e2e/fingerprints");
+    let written = example.root.join("e2e/fingerprints");
+    let names = files(&committed, &committed);
+    assert_eq!(names.len(), 7, "{names:?}");
+    assert_eq!(files(&written, &written).len(), names.len());
+    for name in names {
+        assert_eq!(
+            std::fs::read_to_string(written.join(&name)).unwrap(),
+            std::fs::read_to_string(committed.join(&name)).unwrap(),
+            "e2e/fingerprints/{name} differs from what a run writes: run `chrome-cdp test` in examples/e2e-shop"
+        );
+    }
+}
+
+/// Applies `testdata/heal/redesign.toml` to the example's `dist/` at
+/// `root`.
+fn redesign(root: &Path) {
+    #[derive(serde::Deserialize)]
+    struct Substitution {
+        from: String,
+        to: String,
+        count: Option<usize>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Redesign {
+        js: Vec<Substitution>,
+        css: Vec<Substitution>,
+    }
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/heal/redesign.toml");
+    let redesign: Redesign = toml::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    for (extension, substitutions) in [("js", redesign.js), ("css", redesign.css)] {
+        let assets = root.join("dist/assets");
+        let file = std::fs::read_dir(&assets)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| p.extension().is_some_and(|e| e == extension))
+            .unwrap();
+        let mut text = std::fs::read_to_string(&file).unwrap();
+        for s in substitutions {
+            let found = text.matches(&s.from).count();
+            assert_eq!(
+                found,
+                s.count.unwrap_or(1),
+                "testdata/heal/redesign.toml: `{}` is in the shop's {extension} {found} times; \
+                 update it for the rebuilt dist/",
+                s.from
+            );
+            text = text.replace(&s.from, &s.to);
+        }
+        std::fs::write(&file, text).unwrap();
+    }
+}
+
+/// The results of a `--json` run, by test name.
+fn tests_by_name(value: &Value) -> std::collections::BTreeMap<String, Value> {
+    let data = if value["ok"] == Value::Bool(true) {
+        &value["data"]
+    } else {
+        &value["error"]["details"]
+    };
+    data["tests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| (t["name"].as_str().unwrap().to_owned(), t.clone()))
+        .collect()
+}
+
+/// The test whose element the redesign removed.
+const REMOVED: &str = "an unknown product is not found";
+
+#[test]
+fn a_redesign_is_healed() {
+    let Some(chrome) = chrome_path() else { return };
+    let example = Example::new(Sandbox::with_chrome(&chrome));
+    redesign(&example.root);
+    let run = ["test", "--jobs", "4", "--timeout", "3s"];
+
+    // Without --heal: the tests fail, and each names the element its
+    // broken locator's fingerprint matches now.
+    let value = example.json(&run);
+    assert_eq!(counts(&value), (6, 11, 0), "{value:#}");
+    for (name, test) in tests_by_name(&value) {
+        if test["status"] != "failed" {
+            continue;
+        }
+        let likely = &test["error"]["likely"];
+        let level = if name == REMOVED { "low" } else { "high" };
+        assert_eq!(likely["level"], level, "{name}: {test:#}");
+        let label = if name == REMOVED {
+            "closest element now"
+        } else {
+            "likely the same element now"
+        };
+        assert!(
+            test["error"]["error"]["notes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|n| n["label"] == label),
+            "{name}: {test:#}"
+        );
+        let report = std::fs::read_to_string(test["error"]["report"].as_str().unwrap()).unwrap();
+        assert!(
+            report.contains("\n## Likely the same element\n"),
+            "{report}"
+        );
+    }
+
+    // --heal: every test whose element is still there passes.
+    let out = example.cli(&run.iter().copied().chain(["--heal"]).collect::<Vec<_>>());
+    let text = stdout(&out);
+    assert_eq!(out.status.code(), Some(1), "{text}");
+    assert!(text.contains("17 tests: 16 passed, 1 failed ("), "{text}");
+    assert!(
+        text.contains(
+            "    healed e2e/scenarios/cart.cdp:5: role=button[name=\"Add to cart\"] -> role=button[name=\"Add to basket\"] (0.84: same testid, role, container and tag; similar name)\n"
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains("      closest element now: link \""),
+        "{text}"
+    );
+    assert!(text.contains("too low to heal"), "{text}");
+    let patch_path = example.root.join("e2e/.results/heal.patch");
+    assert!(
+        text.contains(&format!(
+            "heal.patch: {} (8 locators; --heal --write applies it)\n",
+            patch_path.display()
+        )),
+        "{text}"
+    );
+    let patch = std::fs::read_to_string(&patch_path).unwrap();
+    for line in [
+        "+++ b/e2e/scenarios/cart.cdp\n",
+        "+  click 'role=button[name=\"Add to basket\"]'\n",
+        "+++ b/e2e/steps/sign-in.cdp\n",
+        "+click 'role=button[name=\"Sign in now\"]'\n",
+        "+  click 'role=button[name=\"Sign in now\"]'\n",
+        "+  expect testid=product-price text $89.00\n",
+        "+  expect testid=product-price text $79.00\n",
+        "+  expect testid=product-price text ${var:keyboard_price}\n",
+    ] {
+        assert!(patch.contains(line), "{line}: {patch}");
+    }
+    assert!(!patch.contains("Back to products"), "{patch}");
+    assert!(!patch.contains("Place order"), "its locator works: {patch}");
+    let removed = std::fs::read_to_string(
+        example
+            .root
+            .join("e2e/.results/products.cdp/an-unknown-product-is-not-found/report.md"),
+    )
+    .unwrap();
+    assert!(removed.contains("Too low to heal"), "{removed}");
+
+    // --heal --write fixes the files; then the suite passes without it.
+    let value = example.json(
+        &run.iter()
+            .copied()
+            .chain(["--heal", "--write"])
+            .collect::<Vec<_>>(),
+    );
+    let written = value["error"]["details"]["heal"]["written"]
+        .as_array()
+        .unwrap();
+    assert_eq!(written.len(), 6, "{value:#}");
+    let value = example.json(&run);
+    assert_eq!(counts(&value), (16, 1, 0), "{value:#}");
+    assert_eq!(
+        value["error"]["details"]["tests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["status"] == "failed")
+            .unwrap()["name"],
+        REMOVED
+    );
+    // The fingerprints follow the new locators; no password anywhere.
+    let cart = std::fs::read_to_string(example.root.join("e2e/fingerprints/cart.json")).unwrap();
+    assert!(
+        cart.contains("\"5:role=button[name=\\\"Add to basket\\\"]\": {"),
+        "{cart}"
+    );
+    assert!(!cart.contains("Add to cart\\\"]\""), "{cart}");
+    for file in files(&example.root, &example.root.join("e2e/fingerprints")) {
+        let text = std::fs::read_to_string(example.root.join(&file)).unwrap();
+        assert!(!text.contains("\"secret\""), "{file}: {text}");
+    }
+    assert!(!patch.contains("secret"), "{patch}");
 }
 
 #[test]

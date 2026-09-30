@@ -561,7 +561,7 @@ fn healing(
         }
     }
     // Only the mocks' data stays the same from run to run.
-    let ci = std::env::var_os("CI").is_some_and(|v| !v.is_empty());
+    let ci = !crate::expect::create_missing();
     if plan.config.fingerprints.write(ci) && !plan.real() {
         let taken = options
             .taken
