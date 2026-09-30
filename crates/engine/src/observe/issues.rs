@@ -1386,7 +1386,10 @@ mod tests {
             &json!({ "type": "UnloadHandler", "sourceCodeLocation": { "url": "http://x.test/app.js", "lineNumber": 11, "columnNumber": 2 } }),
         ));
         assert_eq!(deprecation.rule, "deprecation-unload-handler");
-        assert_eq!(deprecation.message, "unload handler is deprecated");
+        assert_eq!(
+            deprecation.message,
+            "unload event listeners are deprecated; use pagehide"
+        );
 
         let unknown = parse(&json!({ "issue": { "code": "BrandNewIssue", "details": {} } }));
         assert_eq!(unknown.rule, "unknown-brand-new");
@@ -1456,7 +1459,7 @@ mod tests {
                 .count,
             1
         );
-        assert_eq!(issues.seq(), 52);
+        assert_eq!(issues.seq(), 51);
     }
 
     #[test]

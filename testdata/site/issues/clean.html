@@ -9,5 +9,13 @@
     <label for="name">Name</label>
     <input id="name" name="name" autocomplete="name">
   </form>
+  <!-- Clean until clicked: then a request to the other site, which sends
+       no CORS headers, is blocked. -->
+  <button id="load" type="button">Load prices</button>
+  <script>
+    document.getElementById('load').addEventListener('click', () => {
+      fetch('{{ORIGIN_B}}/issues/data.json?from=click').catch(() => {});
+    });
+  </script>
 </body>
 </html>

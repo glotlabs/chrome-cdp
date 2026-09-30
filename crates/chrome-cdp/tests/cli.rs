@@ -734,7 +734,8 @@ fn no_failed_requests_in_any_tab() {
     let out = sandbox.run(&["expect", "--all-tabs", "--url", "x"]);
     assert_eq!(code(&out), 2, "{}", stderr(&out));
     assert!(
-        stderr(&out).contains("--all-tabs is for --no-errors and --no-failed-requests"),
+        stderr(&out)
+            .contains("--all-tabs is for --no-errors, --no-issues and --no-failed-requests"),
         "{}",
         stderr(&out)
     );

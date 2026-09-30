@@ -24,7 +24,7 @@ use crate::tabs::{FrameContext, Page, parse_tab_id, tab_name};
 use crate::{Engine, Running};
 
 /// How many errors, failed requests or violations a failure lists.
-const LISTED: usize = 5;
+pub(super) const LISTED: usize = 5;
 
 /// How many elements `a11y.ts` lists per rule (its `LISTED`) and in all.
 const PER_RULE: usize = 5;
@@ -274,7 +274,7 @@ impl Engine {
     }
 
     /// The outcome of an `--all-tabs` check that found `found`.
-    fn in_all_tabs(
+    pub(super) fn in_all_tabs(
         &self,
         req: &ExpectRequest,
         start: Instant,
@@ -665,7 +665,12 @@ impl Engine {
     }
 
     /// The failure of a check that looks once (no timeout to report).
-    fn one_shot_failure(&self, page: &Page, req: &ExpectRequest, failed: Failed) -> ErrorInfo {
+    pub(super) fn one_shot_failure(
+        &self,
+        page: &Page,
+        req: &ExpectRequest,
+        failed: Failed,
+    ) -> ErrorInfo {
         self.failure(page, req, failed, None)
     }
 }
@@ -687,23 +692,24 @@ fn plural(n: usize, one: &str, many: &str) -> String {
 }
 
 /// What an `--all-tabs` check found, and how its failure says it.
-struct Found {
-    events: Vec<Event>,
+pub(super) struct Found {
+    pub(super) events: Vec<Event>,
     /// `error` and `errors`.
-    one: &'static str,
-    many: &'static str,
+    pub(super) one: &'static str,
+    pub(super) many: &'static str,
     /// Each listed event's note label, and what its line starts with.
-    label: &'static str,
-    prefix: &'static str,
+    pub(super) label: &'static str,
+    pub(super) prefix: &'static str,
     /// The events' key in `details`.
-    key: &'static str,
-    hint: Option<Hint>,
+    pub(super) key: &'static str,
+    pub(super) hint: Option<Hint>,
 }
 
 /// The tab an error or failed request was in.
-fn event_tab(event: &Event) -> &str {
+pub(super) fn event_tab(event: &Event) -> &str {
     match event {
         Event::ConsoleError { tab, .. } | Event::RequestFailed { tab, .. } => tab,
+        Event::Issue(issue) => &issue.tab,
         _ => "",
     }
 }

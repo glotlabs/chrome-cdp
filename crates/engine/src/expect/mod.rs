@@ -12,6 +12,7 @@
 //! seen (after how long and how many tries), the element, and a hint.
 
 pub(crate) mod baseline;
+mod issues;
 mod mock_state;
 mod page;
 
@@ -26,7 +27,7 @@ use std::fmt::Write as _;
 use std::time::Duration;
 
 use cdp::domains::runtime;
-use protocol::schema::{ExpectData, MarkData};
+use protocol::schema::{ExpectData, MarkData, Severity};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format, suggest};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -283,6 +284,10 @@ enum Assertion {
     NoErrors {
         since: Option<String>,
     },
+    NoIssues {
+        since: Option<String>,
+        min: Severity,
+    },
     NoFailedRequests {
         since: Option<String>,
         origin: Option<String>,
@@ -341,6 +346,18 @@ impl Assertion {
                 check_all_tabs("no-errors", *all_tabs, since.as_deref(), req)?;
                 Self::NoErrors {
                     since: since.clone(),
+                }
+            }
+            Expectation::NoIssues {
+                since,
+                all_tabs,
+                min_severity,
+            } => {
+                no_not("--no-issues")?;
+                check_all_tabs("no-issues", *all_tabs, since.as_deref(), req)?;
+                Self::NoIssues {
+                    since: since.clone(),
+                    min: *min_severity,
                 }
             }
             Expectation::NoFailedRequests {
@@ -566,6 +583,11 @@ fn expected(req: &ExpectRequest, level_rules: Option<(usize, A11yLevel)>) -> Str
         Expectation::Url { pattern } => format!("a URL matching {pattern:?}"),
         Expectation::Title { text, exact } => format!("title {}", shown_pattern(text, *exact)),
         Expectation::NoErrors { .. } => "no uncaught exceptions or console errors".into(),
+        Expectation::NoIssues { min_severity, .. } => match min_severity {
+            Severity::Error => "no issues of severity error".into(),
+            Severity::Warning => "no issues of severity warning or error".into(),
+            Severity::Info => "no issues".into(),
+        },
         Expectation::NoFailedRequests { origin, .. } => match origin.as_deref() {
             Some("self") => "no failed requests to the page's origin".into(),
             Some(origin) => format!("no failed requests to {origin}"),
@@ -658,6 +680,22 @@ fn command(req: &ExpectRequest) -> Cmd {
             cmd = cmd.switch("no-errors");
             if *all_tabs {
                 cmd = cmd.switch("all-tabs");
+            }
+            if let Some(since) = since {
+                cmd = cmd.flag("since", since);
+            }
+        }
+        Expectation::NoIssues {
+            since,
+            all_tabs,
+            min_severity,
+        } => {
+            cmd = cmd.switch("no-issues");
+            if *all_tabs {
+                cmd = cmd.switch("all-tabs");
+            }
+            if *min_severity != Severity::Warning {
+                cmd = cmd.flag("min-severity", min_severity.as_str());
             }
             if let Some(since) = since {
                 cmd = cmd.flag("since", since);
@@ -854,6 +892,11 @@ impl Engine {
             Expectation::NoErrors { all_tabs: true, .. } => {
                 return self.no_errors_in_all_tabs(&req);
             }
+            Expectation::NoIssues {
+                all_tabs: true,
+                min_severity,
+                ..
+            } => return self.no_issues_in_all_tabs(&req, *min_severity).await,
             Expectation::NoFailedRequests {
                 all_tabs: true,
                 origin,
@@ -872,7 +915,7 @@ impl Engine {
         let passed = {
             let _tab = self.tabs.lock(&page.target_id).await;
             let check = self.assert(&running, &page, &assertion, &req, &options, timeout);
-            self.unless_blocked(&running, &page, mark, check).await?
+            Box::pin(self.unless_blocked(&running, &page, mark, check)).await?
         };
         let elapsed = start.elapsed();
         let assertion_text = assertion_text(&req);
@@ -963,6 +1006,10 @@ impl Engine {
             }
             Assertion::NoErrors { since } => {
                 self.no_errors(running, page, req, since.as_deref()).await
+            }
+            Assertion::NoIssues { since, min } => {
+                self.no_issues(running, page, req, since.as_deref(), *min, timeout)
+                    .await
             }
             Assertion::NoFailedRequests { since, origin } => {
                 self.no_failed_requests(running, page, req, since.as_deref(), origin.as_deref())

@@ -720,6 +720,18 @@ pub enum Expectation {
         #[serde(default)]
         all_tabs: bool,
     },
+    /// `--no-issues`: no issue of Chrome's (`issues`) of `min_severity`
+    /// or more since `since` (a mark; the current document if `None`);
+    /// with `all_tabs`, in every tab of the session (or context) since it
+    /// opened.
+    NoIssues {
+        #[serde(default)]
+        since: Option<String>,
+        #[serde(default)]
+        all_tabs: bool,
+        #[serde(default = "warning")]
+        min_severity: Severity,
+    },
     /// `--no-failed-requests`: no request failed or got a status of 400
     /// or more since `since`; only those to `origin` (`self`: the page's)
     /// if given; with `all_tabs`, in every tab of the session (or
@@ -962,6 +974,11 @@ pub enum Since {
     Ago { ms: u64 },
     /// After the tab's `mark <name>`.
     Mark { name: String },
+}
+
+/// The default `--min-severity`.
+fn warning() -> Severity {
+    Severity::Warning
 }
 
 /// `issues`.

@@ -563,6 +563,9 @@ Page checks:
   --no-errors          no uncaught exception or console.error since the
                        page loaded (or --since <mark>; see `mark`; or
                        --all-tabs: in any tab since it opened)
+  --no-issues          no issue of Chrome's (`issues`) of severity warning
+                       or error since then (--min-severity error|info;
+                       --since, --all-tabs as for --no-errors)
   --no-failed-requests no request failed or got a 4xx/5xx since then
                        (--origin self: only to the page's origin; the
                        browser's own /favicon.ico does not count;
@@ -605,6 +608,7 @@ Examples:
   chrome-cdp expect --url '**/dashboard'
   chrome-cdp expect --no-errors --since before-save
   chrome-cdp expect --no-failed-requests --all-tabs
+  chrome-cdp expect --no-issues --min-severity error
   chrome-cdp expect --a11y --level A
   chrome-cdp expect --layout --baseline cart --viewports mobile,desktop
   chrome-cdp expect mock-state todos count 4
@@ -6798,7 +6802,7 @@ pub(crate) struct WaitCmdArgs {
     group(
         ArgGroup::new("assertion")
             .required(true)
-            .args(["target", "url", "title", "no_errors", "no_failed_requests", "a11y", "layout"])
+            .args(["target", "url", "title", "no_errors", "no_issues", "no_failed_requests", "a11y", "layout"])
             .multiple(true)
     )
 )]
@@ -6836,12 +6840,12 @@ pub(crate) struct ExpectArgs {
     pub(crate) max: Option<u64>,
 
     /// The page URL matches: a part of it, a glob (* and **) or /regex/.
-    #[arg(long, value_name = "PATTERN", conflicts_with_all = ["matcher", "title", "no_errors", "no_failed_requests", "a11y"])]
+    #[arg(long, value_name = "PATTERN", conflicts_with_all = ["matcher", "title", "no_errors", "no_issues", "no_failed_requests", "a11y"])]
     pub(crate) url: Option<String>,
 
     /// The page title contains this (all of it with --exact), or matches
     /// /regex/.
-    #[arg(long, value_name = "TEXT", conflicts_with_all = ["matcher", "no_errors", "no_failed_requests", "a11y"])]
+    #[arg(long, value_name = "TEXT", conflicts_with_all = ["matcher", "no_errors", "no_issues", "no_failed_requests", "a11y"])]
     pub(crate) title: Option<String>,
 
     /// No uncaught exception or console error since the page loaded (or
@@ -6849,8 +6853,18 @@ pub(crate) struct ExpectArgs {
     #[arg(long, conflicts_with_all = ["matcher", "no_failed_requests", "a11y"])]
     pub(crate) no_errors: bool,
 
-    /// --no-errors and --no-failed-requests: in every tab of the session
-    /// (or --context), each since it opened, whatever it loaded since.
+    /// No issue of Chrome's (see `issues`) of --min-severity or above
+    /// since the page loaded (or --since).
+    #[arg(long, conflicts_with_all = ["matcher", "no_errors", "no_failed_requests", "a11y"])]
+    pub(crate) no_issues: bool,
+
+    /// --no-issues: the least severe issues that fail it.
+    #[arg(long, value_enum, value_name = "SEVERITY", requires = "no_issues")]
+    pub(crate) min_severity: Option<SeverityArg>,
+
+    /// --no-errors, --no-issues and --no-failed-requests: in every tab of
+    /// the session (or --context), each since it opened, whatever it
+    /// loaded since.
     #[arg(long, conflicts_with = "since")]
     pub(crate) all_tabs: bool,
 
@@ -6859,8 +6873,8 @@ pub(crate) struct ExpectArgs {
     #[arg(long, conflicts_with_all = ["matcher", "a11y"])]
     pub(crate) no_failed_requests: bool,
 
-    /// --no-errors, --no-failed-requests and `request`: only after this
-    /// mark (see `mark`), not since the page loaded.
+    /// --no-errors, --no-issues, --no-failed-requests and `request`: only
+    /// after this mark (see `mark`), not since the page loaded.
     #[arg(long, value_name = "MARK")]
     pub(crate) since: Option<String>,
 
@@ -6901,7 +6915,7 @@ pub(crate) struct ExpectArgs {
     #[arg(
         long,
         requires = "baseline",
-        conflicts_with_all = ["matcher", "url", "title", "no_errors", "no_failed_requests", "a11y"]
+        conflicts_with_all = ["matcher", "url", "title", "no_errors", "no_issues", "no_failed_requests", "a11y"]
     )]
     pub(crate) layout: bool,
 

@@ -12,16 +12,17 @@
 //!
 //! Then it adds a line for each thing that happened, and only then: a
 //! navigation (`→ navigated to …`), a new tab, a dialog answered, a
-//! download, a new console error, a logpoint's hit (plan 15.4), a dev
-//! server's hot update (plan 15.6), a failed request to the page's own
-//! origin, or focus moving to another form (`! …`). `--json` lists them
+//! download, a new console error, a new issue of Chrome's of severity
+//! error (plan 17.1), a logpoint's hit (plan 15.4), a dev server's hot
+//! update (plan 15.6), a failed request to the page's own origin, or
+//! focus moving to another form (`! …`). `--json` lists them
 //! in `events`. `--snap` appends `snapshot --diff -i`.
 
 use std::time::Duration;
 
 use cdp::domains::runtime;
 use futures_util::future::join_all;
-use protocol::schema::Event;
+use protocol::schema::{Event, Severity};
 use protocol::{Cmd, ErrorInfo, Output};
 use serde_json::Value;
 use tokio::time::Instant;
@@ -75,6 +76,8 @@ pub(super) struct Before {
     watch: Watch,
     /// The tab's network and console log marks.
     logs: (u64, u64),
+    /// The tab's last issue's number.
+    issues: u64,
     /// The tab's last hot update's number.
     hmr: u64,
     /// The main frame's origin before the action.
@@ -86,6 +89,11 @@ impl Actor<'_> {
     pub(super) async fn before(&self) -> Before {
         let watch = Watch::new(&self.page.session, &self.page.target_id);
         let logs = self.running.tabs.log_marks(self.page.id);
+        let issues = self
+            .running
+            .tabs
+            .issues(self.page.id, |issues, _| issues.seq())
+            .unwrap_or(0);
         let hmr = self
             .running
             .tabs
@@ -103,6 +111,7 @@ impl Actor<'_> {
             start: Instant::now(),
             watch,
             logs,
+            issues,
             hmr,
             origin,
         }
@@ -195,6 +204,7 @@ impl Actor<'_> {
         events.extend(self.engine.events_since(self.running, mark, None).await);
         let origins = origins(&before, &events);
         events.extend(self.console_errors(&before).await);
+        events.extend(self.issues(&before).await);
         events.extend(self.logpoint_hits(&before));
         events.extend(self.hot_updates(&before));
         events.extend(self.failed_requests(&before, &origins, &events));
@@ -367,6 +377,17 @@ impl Actor<'_> {
             .await
     }
 
+    /// Chrome's issues of severity error raised since the action began
+    /// (a blocked request, a CSP violation).
+    async fn issues(&self, before: &Before) -> Vec<Event> {
+        self.engine
+            .issues_since(self.running, self.page, before.issues, Severity::Error)
+            .await
+            .into_iter()
+            .map(|(issue, _)| Event::Issue(Box::new(issue)))
+            .collect()
+    }
+
     /// The logpoint hits (`debug log`) logged since the action began.
     fn logpoint_hits(&self, before: &Before) -> Vec<Event> {
         self.running
@@ -462,10 +483,11 @@ impl Actor<'_> {
     /// requests each.
     fn lines(&self, events: &[Event]) -> Vec<String> {
         let mut lines = Vec::new();
-        let (mut errors, mut hits, mut failures) = (0, 0, 0);
+        let (mut errors, mut issues, mut hits, mut failures) = (0, 0, 0, 0);
         for event in events {
             let count = match event {
                 Event::ConsoleError { .. } => Some(&mut errors),
+                Event::Issue(_) => Some(&mut issues),
                 Event::Logpoint { .. } => Some(&mut hits),
                 Event::RequestFailed { .. } => Some(&mut failures),
                 _ => None,
@@ -484,6 +506,11 @@ impl Actor<'_> {
         }
         for (count, what, cmd) in [
             (errors, "console errors", Cmd::new("errors")),
+            (
+                issues,
+                "issues",
+                Cmd::new("issues").flag("min-severity", "error"),
+            ),
             (hits, "logpoint hits", Cmd::new("console")),
             (
                 failures,

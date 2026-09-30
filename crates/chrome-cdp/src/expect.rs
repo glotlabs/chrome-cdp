@@ -9,7 +9,7 @@ use std::time::Duration;
 use engine::{A11yLevel, Expectation, MockStateCheck, RequestCheck};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 
-use crate::cli::{A11yLevelArg, ExpectArgs};
+use crate::cli::{A11yLevelArg, ExpectArgs, SeverityArg};
 use crate::input;
 
 /// How long `expect` retries unless `--timeout` says otherwise
@@ -26,6 +26,7 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
         (args.url.is_some(), "--url"),
         (args.title.is_some(), "--title"),
         (args.no_errors, "--no-errors"),
+        (args.no_issues, "--no-issues"),
         (args.no_failed_requests, "--no-failed-requests"),
     ]
     .into_iter()
@@ -63,9 +64,9 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
             ),
         ));
     }
-    if args.since.is_some() && !(args.no_errors || args.no_failed_requests) {
+    if args.since.is_some() && !(args.no_errors || args.no_issues || args.no_failed_requests) {
         return Err(bad_args(
-            "--since is for --no-errors and --no-failed-requests",
+            "--since is for --no-errors, --no-issues and --no-failed-requests",
             Hint::run(
                 Cmd::new("expect")
                     .switch("no-errors")
@@ -73,9 +74,9 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
             ),
         ));
     }
-    if args.all_tabs && !(args.no_errors || args.no_failed_requests) {
+    if args.all_tabs && !(args.no_errors || args.no_issues || args.no_failed_requests) {
         return Err(bad_args(
-            "--all-tabs is for --no-errors and --no-failed-requests",
+            "--all-tabs is for --no-errors, --no-issues and --no-failed-requests",
             Hint::run(
                 Cmd::new("expect")
                     .switch("no-failed-requests")
@@ -114,6 +115,15 @@ pub(crate) fn expectation(args: &ExpectArgs) -> Result<Expectation, ErrorInfo> {
         return Ok(Expectation::NoErrors {
             since: args.since.clone(),
             all_tabs: args.all_tabs,
+        });
+    }
+    if args.no_issues {
+        return Ok(Expectation::NoIssues {
+            since: args.since.clone(),
+            all_tabs: args.all_tabs,
+            min_severity: args
+                .min_severity
+                .map_or(protocol::schema::Severity::Warning, SeverityArg::to_severity),
         });
     }
     if args.no_failed_requests {

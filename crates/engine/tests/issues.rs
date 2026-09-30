@@ -9,10 +9,14 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use browser::Host;
-use engine::{Engine, IssuesRequest, NavigateRequest, Navigation, OpenRequest, Since, WaitUntil};
+use engine::{
+    Action, ActionRequest, Button, Engine, ExpectRequest, Expectation, IssuesRequest, MarkRequest,
+    NavigateRequest, Navigation, OpenRequest, Since, WaitUntil,
+};
 use fixtures::Fixtures;
-use protocol::Output;
+use protocol::schema::Event;
 use protocol::schema::{Issue, IssuesData, Severity, WorkerKind};
+use protocol::{ErrorKind, Output};
 
 const TIMEOUT_MS: u64 = 30_000;
 
@@ -451,6 +455,139 @@ async fn issues_raised_before_connecting_are_replayed() {
     assert!(
         issues.iter().any(|i| i.rule.starts_with("deprecation-")),
         "{issues:#?}"
+    );
+    engine.close().await;
+}
+
+fn expect(expectation: Expectation) -> ExpectRequest {
+    ExpectRequest {
+        expectation,
+        not: false,
+        tab: None,
+        strict_refs: false,
+        testid_attribute: None,
+        timeout_ms: TIMEOUT_MS,
+        max_chars: 0,
+    }
+}
+
+fn no_issues(since: Option<&str>, all_tabs: bool, min_severity: Severity) -> Expectation {
+    Expectation::NoIssues {
+        since: since.map(str::to_owned),
+        all_tabs,
+        min_severity,
+    }
+}
+
+/// `expect --no-issues` passes on a clean page and fails once an action
+/// raised one, listing it; `--since` a mark and `--min-severity` narrow
+/// it. The action's report says so (`! issue: …`).
+#[tokio::test]
+async fn expect_no_issues_and_the_action_report() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "issues-expect").await;
+    goto(&engine, &site.url("/issues/clean.html")).await;
+    let passed = engine
+        .expect(expect(no_issues(None, false, Severity::Warning)))
+        .await
+        .unwrap_or_else(|e| panic!("{}", e.to_text()));
+    assert!(
+        passed.text.starts_with("passed: --no-issues ("),
+        "{}",
+        passed.text
+    );
+
+    let clicked = engine
+        .act(ActionRequest {
+            action: Action::Click {
+                locator: "#load".to_owned(),
+                button: Button::Left,
+                count: 1,
+                modifiers: Vec::new(),
+                position: None,
+                force: false,
+                dblclick: false,
+            },
+            tab: None,
+            strict_refs: false,
+            testid_attribute: None,
+            timeout_ms: TIMEOUT_MS,
+            no_wait_after: false,
+            snap: false,
+            max_chars: 20_000,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("click: {}", e.to_text()));
+    assert!(
+        clicked
+            .text
+            .lines()
+            .any(|l| l.starts_with("! issue: cors-missing-allow-origin-header http://localhost:")),
+        "{}",
+        clicked.text
+    );
+    assert!(
+        clicked.events.iter().any(|e| matches!(
+            e,
+            Event::Issue(i) if i.rule == "cors-missing-allow-origin-header" && i.target.request_id.is_some()
+        )),
+        "{:?}",
+        clicked.events
+    );
+
+    let err = engine
+        .expect(expect(no_issues(None, false, Severity::Error)))
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::ExpectFailed);
+    let text = err.to_text();
+    assert!(
+        text.contains("expect failed: --no-issues --min-severity error"),
+        "{text}"
+    );
+    assert!(
+        text.contains("expected: no issues of severity error since the page loaded"),
+        "{text}"
+    );
+    assert!(
+        text.contains("issue: cors-missing-allow-origin-header"),
+        "{text}"
+    );
+    assert!(
+        text.contains(
+            "hint: chrome-cdp issues --since 0 --min-severity error --session issues-expect"
+        ),
+        "{text}"
+    );
+
+    // After a mark: nothing new.
+    engine
+        .mark(MarkRequest {
+            name: "after-click".into(),
+            tab: None,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap();
+    engine
+        .expect(expect(no_issues(
+            Some("after-click"),
+            false,
+            Severity::Warning,
+        )))
+        .await
+        .unwrap_or_else(|e| panic!("{}", e.to_text()));
+
+    // --all-tabs: any tab, since it opened.
+    let err = engine
+        .expect(expect(no_issues(None, true, Severity::Warning)))
+        .await
+        .unwrap_err();
+    let text = err.to_text();
+    assert!(
+        text.contains("issue: t1: cors-missing-allow-origin-header"),
+        "{text}"
     );
     engine.close().await;
 }
