@@ -106,6 +106,9 @@ enum Probe {
     TimeFreeze,
     /// `time advance` moves its frozen `Date.now()` on.
     TimeAdvance,
+    /// `time pause` stops its timers, and `time run-for` fires them when
+    /// due.
+    TimeRunFor,
     /// The test runner's determinism script seeds its `Math.random`.
     Determinism,
     /// `offline` fails its `fetch`.
@@ -237,6 +240,11 @@ const ROWS: &[Row] = &[
     Row {
         feature: "time advance",
         probe: Probe::TimeAdvance,
+        cells: [Check, Check, Check, Check, Check, Check],
+    },
+    Row {
+        feature: "time run-for",
+        probe: Probe::TimeRunFor,
         cells: [Check, Check, Check, Check, Check, Check],
     },
     Row {
@@ -782,6 +790,18 @@ async fn probe(engine: &Arc<Engine>, probe: Probe, who: &str) -> Result<(), Stri
             (report["now"] == json!(FROZEN_MS + 60_000))
                 .then_some(())
                 .ok_or_else(|| format!("Date.now() {}", report["now"]))
+        }
+        Probe::TimeRunFor => {
+            emulate(engine, EmulationChange::TimePause { epoch_ms: None }).await;
+            let set = ask(engine, who, "timer-start").await;
+            emulate(engine, EmulationChange::TimeRunFor { ms: 299_999 }).await;
+            let early = ask(engine, who, "timer-fired").await;
+            emulate(engine, EmulationChange::TimeRunFor { ms: 1 }).await;
+            let fired = ask(engine, who, "timer-fired").await;
+            emulate(engine, EmulationChange::TimeResume).await;
+            (set == json!("set") && early == json!(false) && fired == json!(true))
+                .then_some(())
+                .ok_or_else(|| format!("timer {set}, early {early}, then {fired}"))
         }
         Probe::Listen => {
             // The page asks the target to fetch, as the listened call.

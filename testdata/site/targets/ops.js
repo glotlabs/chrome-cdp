@@ -90,6 +90,14 @@ async function targetRun(who, op) {
       const { headers } = await response.json();
       return { userAgent: headers['user-agent'], language: headers['accept-language'] };
     }
+    case 'timer-start':
+      // A timer due in five minutes, which only a paused clock's
+      // `time run-for` fires in time.
+      self.timerFired = false;
+      setTimeout(() => { self.timerFired = true; }, 300000);
+      return 'set';
+    case 'timer-fired':
+      return self.timerFired ?? null;
     case 'report':
       return {
         userAgent: navigator.userAgent,
