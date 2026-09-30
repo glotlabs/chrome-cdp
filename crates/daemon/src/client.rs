@@ -45,6 +45,25 @@ thread_local! {
     static LINE: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
 }
 
+thread_local! {
+    /// The locator whose element the calls of this thread ask the daemon
+    /// to fingerprint (`test`'s steps, plan 18.2), and the last
+    /// fingerprint an answer carried.
+    static FINGERPRINT: std::cell::RefCell<(Option<String>, Option<protocol::schema::Fingerprint>)> =
+        const { std::cell::RefCell::new((None, None)) };
+}
+
+/// Makes the calls of this thread ask for the fingerprint of the element
+/// `locator` finds (`None`: stop asking), and forgets the last one.
+pub fn ask_fingerprint(locator: Option<String>) {
+    FINGERPRINT.with(|f| *f.borrow_mut() = (locator, None));
+}
+
+/// The fingerprint the last answer on this thread carried, if any.
+pub fn take_fingerprint() -> Option<protocol::schema::Fingerprint> {
+    FINGERPRINT.with(|f| f.borrow_mut().1.take())
+}
+
 /// The project root every call carries (see `Request::root`). It is the
 /// process's, not a thread's: `test` runs its jobs on threads of their own.
 static ROOT: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
@@ -184,6 +203,7 @@ impl Client {
                     .read()
                     .unwrap_or_else(std::sync::PoisonError::into_inner),
             );
+            request.fingerprint = FINGERPRINT.with(|f| f.borrow().0.clone());
         }
         let mut line = serde_json::to_vec(&request).unwrap_or_default();
         line.push(b'\n');
@@ -218,7 +238,10 @@ impl Client {
             Ok(Ok(None)) => return Err(lost("it closed the connection".into())),
             Ok(Ok(Some(line))) => line,
         };
-        let response = protocol::rpc::decode_response(&line).map_err(lost)?;
+        let mut response = protocol::rpc::decode_response(&line).map_err(lost)?;
+        if let Some(fingerprint) = response.fingerprint.take() {
+            FINGERPRINT.with(|f| f.borrow_mut().1 = Some(*fingerprint));
+        }
         response
             .into_result()
             .map_err(protocol::rpc::RpcError::into_error_info)

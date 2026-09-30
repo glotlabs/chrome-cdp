@@ -898,6 +898,7 @@ impl Runner<'_> {
                 via: Vec::new(),
                 error,
                 report: None,
+                likely: None,
             })
         })
     }
@@ -1319,6 +1320,7 @@ fn failure(step: &Prepared, part: Part, error: ErrorInfo) -> Box<TestFailure> {
         via: step.via.iter().map(ToString::to_string).collect(),
         error,
         report: None,
+        likely: None,
     })
 }
 
@@ -1403,5 +1405,6 @@ fn setup_failure(at: &str, step: &str, error: ErrorInfo) -> Box<TestFailure> {
         via: Vec::new(),
         error,
         report: None,
+        likely: None,
     })
 }

@@ -52,6 +52,12 @@ pub struct Request {
     /// Beside the params, like `root`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub testid_attribute: Option<String>,
+    /// The locator of a `test` step whose element the daemon should
+    /// fingerprint (plan 18.2): the one it acts on, read before the
+    /// action, or the one it checked. The answer carries it in
+    /// [`Response::fingerprint`]. Beside the params, like `root`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
 }
 
 impl Request {
@@ -66,6 +72,7 @@ impl Request {
             line: None,
             root: None,
             testid_attribute: None,
+            fingerprint: None,
         }
     }
 
@@ -90,6 +97,10 @@ pub struct Response {
     /// The failure.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<RpcError>,
+    /// The element [`Request::fingerprint`] asked for, when it found one.
+    /// The CLI's renderers never see it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<Box<crate::schema::Fingerprint>>,
 }
 
 impl Response {
@@ -100,6 +111,7 @@ impl Response {
             id: Some(id),
             result: Some(result),
             error: None,
+            fingerprint: None,
         }
     }
 
@@ -110,6 +122,7 @@ impl Response {
             id,
             result: None,
             error: Some(error),
+            fingerprint: None,
         }
     }
 

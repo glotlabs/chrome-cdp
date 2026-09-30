@@ -1300,6 +1300,23 @@ pub struct HarExportRequest {
     pub timeout_ms: u64,
 }
 
+/// What `test` asks when a step's locator found nothing (plan 18.2): the
+/// elements of the page that best match the step's fingerprint.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HealMatchRequest {
+    /// The tab; the active one if `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// The step's locator: its `frame=` steps name the frame to look in,
+    /// and it says how many elements it finds now.
+    pub locator: String,
+    pub fingerprint: protocol::schema::Fingerprint,
+    /// The attribute test ids are read from; `data-testid` if `None`.
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    pub timeout_ms: u64,
+}
+
 /// `trace start`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TraceStartRequest {

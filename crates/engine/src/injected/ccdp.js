@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 2002db9f620dffbd
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 3d63949d0b4f9c72
 "use strict";
 (() => {
   // src/dom.ts
@@ -1965,13 +1965,13 @@ ${inner}
       }
       case "value":
       case "values": {
-        const read = value(el);
-        if (read.error) return { pass: false, invalid: read.error, count };
+        const read2 = value(el);
+        if (read2.error) return { pass: false, invalid: read2.error, count };
         if (m === "value") {
-          const actual2 = Array.isArray(read.value) ? read.value.join(", ") : read.value || "";
+          const actual2 = Array.isArray(read2.value) ? read2.value.join(", ") : read2.value || "";
           return one2(test(spec.pattern)(actual2), "", cut4(actual2));
         }
-        const actual = Array.isArray(read.value) ? read.value : [read.value || ""];
+        const actual = Array.isArray(read2.value) ? read2.value : [read2.value || ""];
         const want = [...spec.values || []].sort();
         const have = [...actual].sort();
         return one2(want.length === have.length && want.every((v, i) => v === have[i]), "", actual);
@@ -4266,6 +4266,100 @@ ${inner}
     return JSON.stringify(out);
   }
 
+  // src/fingerprint.ts
+  var LONGEST2 = 80;
+  var CLASSES = 20;
+  var MOST = 400;
+  var CONTAINERS = /* @__PURE__ */ new Set([
+    "dialog",
+    "alertdialog",
+    "form",
+    "listitem",
+    "row",
+    "region",
+    "banner",
+    "main",
+    "navigation",
+    "contentinfo",
+    "complementary",
+    "search"
+  ]);
+  var FAMILIES = [["button", "link"], ["textbox", "searchbox", "combobox"]];
+  var cut6 = (s, n) => s.length > n ? s.slice(0, n) : s;
+  function containerOf(el) {
+    for (let a2 = parentOf(el); a2; a2 = parentOf(a2)) {
+      const role = roleOf(a2);
+      if (!role || !CONTAINERS.has(role)) continue;
+      const name = cut6(role === "row" || role === "listitem" ? norm(textOf(a2, null, 0)) : nameOf(a2, role), 40);
+      return [a2, name ? { role, name } : { role }];
+    }
+    return null;
+  }
+  function features(el, testid, texts) {
+    const out = { tag: tag(el) };
+    const role = roleOf(el);
+    if (role && role !== "generic" && role !== "none") {
+      out.role = role;
+      const name = cut6(norm(nameOf(el, role)), LONGEST2);
+      if (name) out.name = name;
+    }
+    const type = el.getAttribute("type");
+    if (type) out.type = type.toLowerCase();
+    const id = el.getAttribute(testid);
+    if (id) out.testid = id;
+    if (el.id) out.id = el.id;
+    const label = labelsOf(el).map(norm).find((l) => l);
+    if (label) out.label = cut6(label, LONGEST2);
+    const placeholder = norm(el.getAttribute("placeholder"));
+    if (placeholder) out.placeholder = cut6(placeholder, LONGEST2);
+    const text2 = cut6(norm(texts.of(el)), LONGEST2);
+    if (text2) out.text = text2;
+    const classes = Array.from(el.classList).slice(0, CLASSES);
+    if (classes.length) out.classes = classes;
+    const found = containerOf(el);
+    if (found) out.container = found[1];
+    if (out.role) {
+      const scope = found ? found[0] : el.ownerDocument;
+      const index = descendants(scope).filter((e) => roleOf(e) === out.role).indexOf(el);
+      if (index >= 0) out.index = index;
+    }
+    return out;
+  }
+  function fingerprint(el, testid) {
+    const attribute = testid || "data-testid";
+    const out = features(el, attribute, new Texts());
+    out.page = el.ownerDocument.location ? el.ownerDocument.location.pathname : "";
+    const found = JSON.parse(stable(el, attribute, true));
+    const candidates2 = (found.candidates || []).filter((c) => c.count === 1).map((c) => c.locator).slice(0, 5);
+    if (candidates2.length) out.candidates = candidates2;
+    return JSON.stringify(out);
+  }
+  var read = [];
+  function akin(a2, b) {
+    if (!a2 || !b) return false;
+    return a2 === b || FAMILIES.some((f) => f.includes(a2) && f.includes(b));
+  }
+  function healCandidates(fp, testid, steps) {
+    const attribute = testid || "data-testid";
+    const found = steps ? query(steps, null).length : 0;
+    const texts = new Texts();
+    read = [];
+    const elements = [];
+    for (const el of descendants(document)) {
+      if (read.length >= MOST) break;
+      const could = akin(roleOf(el), fp.role) || tag(el) === fp.tag || !!fp.testid && el.getAttribute(attribute) === fp.testid || !!fp.id && el.id === fp.id;
+      if (!could || !visible(el)) continue;
+      elements.push({ i: read.length, ...features(el, attribute, texts) });
+      read.push(el);
+    }
+    return JSON.stringify({ found, elements });
+  }
+  function healStable(i, testid) {
+    const el = read[i];
+    if (!el || !el.isConnected) return JSON.stringify({ reason: "it is gone" });
+    return stable(el, testid || "data-testid");
+  }
+
   // src/index.ts
   var api = {
     version: 1,
@@ -4319,7 +4413,10 @@ ${inner}
     formsList,
     pickOption,
     elementsAt,
-    exploreCandidates
+    exploreCandidates,
+    fingerprint,
+    healCandidates,
+    healStable
   };
   if (!globalThis.__ccdp) globalThis.__ccdp = api;
 })();

@@ -443,8 +443,10 @@ mod tests {
                 via: Vec::new(),
                 error: ErrorInfo::new(ErrorKind::NotFound, "no element matches text=Buy & more"),
                 report: Some("/r/report.md".into()),
+                likely: None,
             }),
             backend: None,
+            healed: Vec::new(),
         }
     }
 
@@ -465,6 +467,7 @@ mod tests {
             backends: Vec::new(),
             verify: None,
             recorded: Vec::new(),
+            heal: None,
             tests,
         }
     }

@@ -177,6 +177,7 @@ fn combine(runs: &[(Plan, TestRunData)], duration: Duration, args: &TestArgs) ->
             .collect(),
         verify: None,
         recorded: Vec::new(),
+        heal: None,
     }
 }
 

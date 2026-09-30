@@ -73,6 +73,8 @@ pub const EVAL: &str = "eval";
 pub const HAR_START: &str = "har_start";
 pub const HAR_STOP: &str = "har_stop";
 pub const HAR_EXPORT: &str = "har_export";
+/// `test`'s heal (plan 18.2): the elements that best match a fingerprint.
+pub const HEAL_MATCH: &str = "heal_match";
 pub const HISTORY: &str = "history";
 pub const TRACE_START: &str = "trace_start";
 pub const TRACE_STOP: &str = "trace_stop";

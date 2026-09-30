@@ -396,6 +396,18 @@ impl Engine {
                     .await
                     .map_err(|e| from_cdp(&e, &self.session))?
                     .backend_node_id;
+                // `test` wants the element a step's locator finds before
+                // the step acts on it (plan 18.2).
+                self.note_fingerprint(
+                    running,
+                    page,
+                    locator,
+                    &place.context,
+                    &object_id,
+                    &place.frame,
+                    timeout,
+                )
+                .await;
                 return Ok(Target {
                     key: NodeKey {
                         frame: place.frame.clone(),

@@ -309,7 +309,11 @@ impl Daemon {
         );
         let root = req.root.clone().map(std::path::PathBuf::from);
         let testid = req.testid_attribute.clone();
-        let (refs, result) = engine::in_context(
+        let wanted = req
+            .fingerprint
+            .clone()
+            .map(|locator| (locator, testid.clone()));
+        let (refs, (result, fingerprint)) = engine::in_context(
             context.clone(),
             Box::pin(engine::in_root(root, async {
                 // A ref's element may be gone once the command ran.
@@ -317,8 +321,14 @@ impl Daemon {
                     Some(words) if kept => self.stable_locators(words, testid.as_deref()).await,
                     _ => Vec::new(),
                 };
-                let (result, notices) = Box::pin(engine::noting(self.call(req, &mut exit))).await;
-                (refs, with_notices(result, notices))
+                let call = engine::noting(self.call(req, &mut exit));
+                let ((result, notices), fingerprint) = Box::pin(self.engine.fingerprinting(
+                    wanted,
+                    call,
+                    |(result, _)| result.is_ok(),
+                ))
+                .await;
+                (refs, (with_notices(result, notices), fingerprint))
             })),
         )
         .await;
@@ -336,10 +346,11 @@ impl Daemon {
             });
             lock_ignoring_poison(&self.history).push(words, context, error, refs);
         }
-        let response = match result {
+        let mut response = match result {
             Ok(value) => Response::ok(id, value),
             Err(error) => Response::err(Some(id), error),
         };
+        response.fingerprint = fingerprint.map(Box::new);
         (response, exit)
     }
 
@@ -621,6 +632,10 @@ impl Daemon {
                 }
                 Ok(json!(Output::typed(&data, String::new())))
             }
+            rpc::HEAL_MATCH => match params(req.params) {
+                Ok(p) => output(self.engine.heal_match(p).await),
+                Err(e) => Err(e),
+            },
             rpc::HAR_EXPORT => match params(req.params) {
                 Ok(p) => output(Box::pin(self.engine.har_export(p)).await),
                 Err(e) => Err(e),

@@ -42,6 +42,7 @@ mod errors;
 mod expect;
 mod explore;
 mod extensions;
+mod fingerprint;
 mod frames;
 mod hmr;
 mod http;
@@ -98,6 +99,7 @@ pub use expect::{
     parse_matcher, perf_metrics,
 };
 pub use explore::check_explore;
+pub use fingerprint::score as fingerprint_score;
 pub use frames::{FrameInfo, WORLD_NAME, World};
 pub use hmr::{Notices, noting};
 pub use inject::commands::script_line as init_script_line;
@@ -122,7 +124,7 @@ pub use request::{
     ExpectScreenshotRequest, ExpectSnapshotRequest, Expectation, ExploreRequest, ExposeRequest,
     ExtensionStorageArea, ExtensionStorageOp, ExtensionsOp, ExtensionsRequest, FillFormRequest,
     FindRequest, FormsRequest, FramesRequest, HarContent, HarExportRequest, HarStartRequest,
-    HarStopRequest, HighlightRequest, HttpCredentials, HttpRequest, ImageFormat,
+    HarStopRequest, HealMatchRequest, HighlightRequest, HttpCredentials, HttpRequest, ImageFormat,
     InitScriptAddRequest, InitScriptListRequest, InitScriptRemoveRequest, InspectRequest,
     IssuesRequest, KeyboardOp, LayoutBaseline, LayoutRequest, LocalsMode, LocatorRequest, Margins,
     MarkRequest, Matcher, MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest,

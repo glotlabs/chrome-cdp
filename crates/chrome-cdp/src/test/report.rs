@@ -122,6 +122,7 @@ pub(super) fn data(
         backends: Vec::new(),
         verify: None,
         recorded: Vec::new(),
+        heal: None,
     }
 }
 
@@ -147,6 +148,7 @@ fn result(plan: &Plan, test: &Planned, outcome: &Outcome) -> TestResult {
         artifacts: outcome.artifacts.as_ref().map(|d| d.display().to_string()),
         error: outcome.failure.as_deref().cloned(),
         backend: None,
+        healed: Vec::new(),
     }
 }
 
@@ -318,6 +320,7 @@ pub(super) fn listed(plan: &Plan, shard: Option<&str>, max_chars: usize) -> Outp
             artifacts: None,
             error: None,
             backend: None,
+            healed: Vec::new(),
         });
     }
     let skipped = tests.iter().filter(|t| t.status == "skipped").count();
@@ -350,6 +353,7 @@ pub(super) fn listed(plan: &Plan, shard: Option<&str>, max_chars: usize) -> Outp
         backends: Vec::new(),
         verify: None,
         recorded: Vec::new(),
+        heal: None,
     };
     Output::typed(&data, text)
         .quiet(quiet.join("\n"))

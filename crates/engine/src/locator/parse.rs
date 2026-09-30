@@ -186,6 +186,32 @@ impl Locator {
         &self.steps[head..]
     }
 
+    /// Its leading `frame=` steps alone, when it has some and no ref:
+    /// what names the frame its other steps look in.
+    pub(crate) fn frame_head(&self) -> Option<Locator> {
+        let head: Vec<Step> = self
+            .steps
+            .iter()
+            .take_while(|s| matches!(s, Step::Frame { .. }))
+            .cloned()
+            .collect();
+        if head.is_empty() || self.has_ref() {
+            return None;
+        }
+        let source = head
+            .iter()
+            .filter_map(|s| match s {
+                Step::Frame { query } => Some(format!("frame={query}")),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join(" >> ");
+        Some(Locator {
+            steps: head,
+            source,
+        })
+    }
+
     /// Whether it starts from a ref (`e12`): session-only, so never in a
     /// committed scenario.
     pub fn has_ref(&self) -> bool {

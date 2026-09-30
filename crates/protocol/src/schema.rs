@@ -5930,6 +5930,9 @@ pub struct TestRunData {
     /// `--record-mocks`: the mock set written for each passed test.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recorded: Vec<MockRecordData>,
+    /// `--heal`: the patch of the healed locators.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heal: Option<TestHealData>,
 }
 
 /// What `chrome-cdp test --verify-mocks` found: every real answer to a
@@ -6051,6 +6054,131 @@ pub struct TestResult {
     /// `--backend all`: the backend of this run of the test.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend: Option<String>,
+    /// `--heal` (plan 18.2): the steps whose locator found nothing and ran
+    /// with the element their fingerprint matched instead.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub healed: Vec<TestHeal>,
+}
+
+/// A step `test --heal` ran with another locator.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TestHeal {
+    /// The file that holds the step (a step file for an `@include`d
+    /// one), relative to the current directory.
+    pub file: String,
+    pub line: u32,
+    /// The locator as the step has it.
+    pub from: String,
+    /// The locator it ran with.
+    pub to: String,
+    /// 0 to 1: how well the element matched the fingerprint, lowered when
+    /// another element came close.
+    pub confidence: f64,
+    /// What matched and what did not: `same testid`, `name differs`, ….
+    pub reasons: Vec<String>,
+    /// Why `heal.patch` leaves it out: the locator comes from a variable,
+    /// another test healed the line differently, or the test failed after
+    /// the heal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unpatched: Option<String>,
+}
+
+/// What a step's locator found when it last passed (plan 18.2): enough to
+/// find the element again once the locator no longer does. `test` keeps
+/// them in `e2e/fingerprints`. It holds nothing that changes between two
+/// runs of an unchanged app (no boxes, positions or times).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Fingerprint {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub role: String,
+    /// The accessible name.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub tag: String,
+    /// The `type` attribute.
+    #[serde(default, rename = "type", skip_serializing_if = "String::is_empty")]
+    pub kind: String,
+    /// The test id (of the project's `testid_attribute`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub testid: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub id: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub label: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub placeholder: String,
+    /// Its text, whitespace collapsed, at most 80 characters.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub text: String,
+    /// Up to 5 class names, less generated-looking ones (`css-1x2y3z`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub classes: Vec<String>,
+    /// The nearest named container: a dialog, form, list item, row,
+    /// region or landmark.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container: Option<FingerprintContainer>,
+    /// Its place among the elements of its role in the container (0 is
+    /// the first).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub index: Option<u32>,
+    /// The page's path as a template: numbers, UUIDs and long hex runs
+    /// become `:id` (`/products/:id`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub page: String,
+    /// The stable locators that find it alone, best first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidates: Vec<String>,
+}
+
+/// A fingerprint's container.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FingerprintContainer {
+    pub role: String,
+    /// Its accessible name; a list item's or row's text.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+}
+
+/// An element of the page matched against a step's fingerprint.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct HealCandidate {
+    /// Its most robust locator (the best candidate's only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub locator: Option<String>,
+    /// `button "Add to basket"`.
+    pub element: String,
+    /// 0 to 1: its score over the most it could have had, lowered when
+    /// the runner-up is close.
+    pub confidence: f64,
+    /// `high` (0.8 and up), `medium` (0.6 and up) or `low`.
+    pub level: String,
+    /// What matched and what did not: `same testid`, `name differs`, ….
+    pub reasons: Vec<String>,
+}
+
+/// What the page holds now for a fingerprint: how many elements the
+/// step's locator finds, and the elements that match the fingerprint
+/// best, best first.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct HealMatchData {
+    pub found: usize,
+    pub candidates: Vec<HealCandidate>,
+}
+
+/// What `test --heal` did for the run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TestHealData {
+    /// `<artifacts>/heal.patch` (absolute): a unified diff of the scenario
+    /// and step files, one hunk per healed locator. Absent when no test
+    /// that healed passed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub patch: Option<String>,
+    /// How many locators the patch changes.
+    pub changes: usize,
+    /// `--write`: the files it changed (absolute).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub written: Vec<String>,
 }
 
 /// The step a test failed at, and its error.
@@ -6076,4 +6204,8 @@ pub struct TestFailure {
     /// around it, console errors and failed requests.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report: Option<String>,
+    /// The step's locator found nothing: the element its fingerprint
+    /// matches best now (plan 18.2), healed or not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub likely: Option<HealCandidate>,
 }

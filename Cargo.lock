@@ -340,6 +340,7 @@ dependencies = [
  "serde_json",
  "similar",
  "sourcemap",
+ "strsim",
  "tempfile",
  "tokio",
  "tracing",

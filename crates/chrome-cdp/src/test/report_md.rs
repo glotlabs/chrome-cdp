@@ -443,6 +443,7 @@ mod tests {
             .note("covering", "div \"We use cookies\" [e88]")
             .hint("chrome-cdp click e89"),
             report: None,
+            likely: None,
         };
         let steps: Vec<StepRecord> = (1..=5)
             .map(|n| step(n, n < 5, &format!("step {n}")))
@@ -516,6 +517,7 @@ mod tests {
             via: Vec::new(),
             error: ErrorInfo::new(ErrorKind::NotFound, "nothing matches text=Go"),
             report: None,
+            likely: None,
         };
         let mut steps: Vec<StepRecord> = (1..=3).map(|n| step(n, n < 3, "x")).collect();
         steps[1].masked = 1;

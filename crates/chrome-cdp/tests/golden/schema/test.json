@@ -796,6 +796,45 @@
       },
       "type": "object"
     },
+    "HealCandidate": {
+      "description": "An element of the page matched against a step's fingerprint.",
+      "properties": {
+        "confidence": {
+          "description": "0 to 1: its score over the most it could have had, lowered when\nthe runner-up is close.",
+          "format": "double",
+          "type": "number"
+        },
+        "element": {
+          "description": "`button \"Add to basket\"`.",
+          "type": "string"
+        },
+        "level": {
+          "description": "`high` (0.8 and up), `medium` (0.6 and up) or `low`.",
+          "type": "string"
+        },
+        "locator": {
+          "description": "Its most robust locator (the best candidate's only).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasons": {
+          "description": "What matched and what did not: `same testid`, `name differs`, ….",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "element",
+        "confidence",
+        "level",
+        "reasons"
+      ],
+      "type": "object"
+    },
     "HotFile": {
       "description": "A file a hot update names.",
       "properties": {
@@ -1292,6 +1331,17 @@
             "null"
           ]
         },
+        "likely": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HealCandidate"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The step's locator found nothing: the element its fingerprint\nmatches best now (plan 18.2), healed or not."
+        },
         "report": {
           "description": "The failure's `report.md` (absolute): the step, the error, the page\naround it, console errors and failed requests.",
           "type": [
@@ -1315,6 +1365,85 @@
         "at",
         "step",
         "error"
+      ],
+      "type": "object"
+    },
+    "TestHeal": {
+      "description": "A step `test --heal` ran with another locator.",
+      "properties": {
+        "confidence": {
+          "description": "0 to 1: how well the element matched the fingerprint, lowered when\nanother element came close.",
+          "format": "double",
+          "type": "number"
+        },
+        "file": {
+          "description": "The file that holds the step (a step file for an `@include`d\none), relative to the current directory.",
+          "type": "string"
+        },
+        "from": {
+          "description": "The locator as the step has it.",
+          "type": "string"
+        },
+        "line": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reasons": {
+          "description": "What matched and what did not: `same testid`, `name differs`, ….",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "to": {
+          "description": "The locator it ran with.",
+          "type": "string"
+        },
+        "unpatched": {
+          "description": "Why `heal.patch` leaves it out: the locator comes from a variable,\nanother test healed the line differently, or the test failed after\nthe heal.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "file",
+        "line",
+        "from",
+        "to",
+        "confidence",
+        "reasons"
+      ],
+      "type": "object"
+    },
+    "TestHealData": {
+      "description": "What `test --heal` did for the run.",
+      "properties": {
+        "changes": {
+          "description": "How many locators the patch changes.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "patch": {
+          "description": "`<artifacts>/heal.patch` (absolute): a unified diff of the scenario\nand step files, one hunk per healed locator. Absent when no test\nthat healed passed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "written": {
+          "description": "`--write`: the files it changed (absolute).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "changes"
       ],
       "type": "object"
     },
@@ -1365,6 +1494,13 @@
         "file": {
           "description": "The scenario file, relative to the current directory.",
           "type": "string"
+        },
+        "healed": {
+          "description": "`--heal` (plan 18.2): the steps whose locator found nothing and ran\nwith the element their fingerprint matched instead.",
+          "items": {
+            "$ref": "#/$defs/TestHeal"
+          },
+          "type": "array"
         },
         "line": {
           "description": "The line of its `@test`; `file:line` runs it alone.",
@@ -1459,6 +1595,17 @@
           "format": "uint",
           "minimum": 0,
           "type": "integer"
+        },
+        "heal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TestHealData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`--heal`: the patch of the healed locators."
         },
         "listed": {
           "description": "`--list`: the tests were listed, not run.",

@@ -9,7 +9,8 @@
 // stable locators `history --as-scenario` writes for refs (plan 11), and
 // what `why` explains, what `layout` checks, the forms `forms` and
 // `fill-form` list, what `compare` names and what `explore` follows
-// (plan 16), and what `audit` reads of a document (plan 17).
+// (plan 16), what `audit` reads of a document (plan 17), and the
+// fingerprints `test` keeps of the elements its steps found (plan 18).
 // Built into `ccdp.js` by `cargo xtask build-js`; the engine embeds that
 // file.
 
@@ -32,6 +33,7 @@ import {
 import { formsList, pickOption } from './forms';
 import { elementsAt } from './compare';
 import { exploreCandidates } from './explore';
+import { fingerprint, healCandidates, healStable } from './fingerprint';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -91,6 +93,9 @@ const api = {
   pickOption,
   elementsAt,
   exploreCandidates,
+  fingerprint,
+  healCandidates,
+  healStable,
 };
 
 if (!globalThis.__ccdp) globalThis.__ccdp = api;
