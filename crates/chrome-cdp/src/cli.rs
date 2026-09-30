@@ -566,6 +566,11 @@ Page checks:
                        the page and its iframes, or the element LOCATOR
                        names
 The last three look once: what they find does not go away by waiting.
+  --layout --baseline NAME   no error finding of `layout` (in the page, or
+                       LOCATOR's element) that .chrome-cdp/layout/NAME.txt
+                       does not list; retried like the matchers. --update
+                       writes the findings to it; layout's --viewports,
+                       --only, --full, --min-target and --stretch-text apply
 
 Mock state (expect mock-state <NAME> <CHECK>), retried like the matchers:
   count <N> (or --min/--max)   items of a collection (or a list value)
@@ -596,6 +601,7 @@ Examples:
   chrome-cdp expect --no-errors --since before-save
   chrome-cdp expect --no-failed-requests --all-tabs
   chrome-cdp expect --a11y --level A
+  chrome-cdp expect --layout --baseline cart --viewports mobile,desktop
   chrome-cdp expect mock-state todos count 4
   chrome-cdp expect request POST /api/orders --json-body '{\"qty\":2}' --count 1
   chrome-cdp expect no-request DELETE '/api/cart/**'")]
@@ -847,6 +853,43 @@ Examples:
   chrome-cdp why '#email' --for fill
   chrome-cdp why 'role=button[name=\"Pay\"]' --no-scroll")]
     Why(WhyArgs),
+
+    /// Lint what the page looks like: covered, overlapping, clipped,
+    /// off-screen and too small elements, sideways scrolling, low
+    /// contrast.
+    #[command(after_help = "\
+Reads geometry and computed styles in the page and its iframes (or
+inside the element LOCATOR names) and prints one line per finding,
+naming elements as the snapshot does, with refs:
+  covered       an interactive element whose centre something else
+                covers (in view; --full scrolls down the whole page)
+  overlap       two interactive elements whose boxes overlap
+  clipped       text cut off by overflow: hidden or clip
+  truncated     text cut on purpose, by an ellipsis or a line clamp
+                (info: listed with --all)
+  overflow-x    the page scrolls sideways, and what sticks out
+  offscreen     an interactive element no scroll can reach
+  small-target  an interactive element under 24x24 px (WCAG 2.5.8; a
+                link in a line of text, or one with room around it, is
+                fine; --min-target changes 24)
+  contrast      text below 4.5:1 (3:1 when large) against the pixels
+                behind it, so text on images and gradients counts
+--only takes some of these. --viewports mobile,tablet,desktop (or sizes,
+390x844) checks at each size (mobile and tablet with touch), waiting for
+the page to settle each time, and gives the tab its viewport back after.
+--stretch-text 40 checks again with every text 40% longer, as a
+translation might make it, and reports what only that finds. The page,
+its scroll and its text are left as they were. It exits 0 whatever it
+finds; expect --layout fails on new findings. -q prints the number of
+errors. Needs a running session.
+
+Examples:
+  chrome-cdp layout
+  chrome-cdp layout --only covered,clipped --all
+  chrome-cdp layout --viewports mobile,tablet,desktop
+  chrome-cdp layout 'role=main' --stretch-text 40
+  chrome-cdp layout --full --min-target 44")]
+    Layout(LayoutArgs),
 
     /// Print the file and line an element came from, and its components.
     #[command(after_help = "\
@@ -3437,6 +3480,72 @@ impl WhyForArg {
             Self::Upload => engine::WhyFor::Upload,
             Self::Drag => engine::WhyFor::Drag,
         }
+    }
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct LayoutArgs {
+    /// Check only inside this element: a ref (e12) or a locator that
+    /// matches one.
+    #[arg(value_name = "LOCATOR")]
+    pub(crate) locator: Option<String>,
+
+    #[command(flatten)]
+    pub(crate) flags: LayoutFlags,
+
+    /// List info findings too (text truncated on purpose).
+    #[arg(long)]
+    pub(crate) all: bool,
+
+    #[command(flatten)]
+    pub(crate) refs: StrictRefsArgs,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+/// The flags `layout` and `expect --layout` share.
+#[derive(Debug, Default, Args)]
+pub(crate) struct LayoutFlags {
+    /// Check at each of these viewports: mobile, tablet, desktop or WxH,
+    /// comma-separated.
+    #[arg(long, value_name = "LIST", value_delimiter = ',')]
+    pub(crate) viewports: Vec<String>,
+
+    /// Check only these kinds, comma-separated: covered, overlap,
+    /// clipped, truncated, overflow-x, offscreen, small-target, contrast.
+    #[arg(long, value_name = "KINDS", value_delimiter = ',')]
+    pub(crate) only: Vec<String>,
+
+    /// Look for covered elements and low contrast down the whole page, a
+    /// viewport at a time, not only in view.
+    #[arg(long)]
+    pub(crate) full: bool,
+
+    /// The least width and height of a target, in CSS pixels (default
+    /// 24).
+    #[arg(long, value_name = "PX")]
+    pub(crate) min_target: Option<u32>,
+
+    /// Check again with every text this many percent longer, and report
+    /// what only that finds.
+    #[arg(long, value_name = "PCT")]
+    pub(crate) stretch_text: Option<u32>,
+}
+
+impl LayoutFlags {
+    /// The first flag given, for an error that says it needs --layout.
+    pub(crate) fn given(&self) -> Option<&'static str> {
+        [
+            (!self.viewports.is_empty(), "--viewports"),
+            (!self.only.is_empty(), "--only"),
+            (self.full, "--full"),
+            (self.min_target.is_some(), "--min-target"),
+            (self.stretch_text.is_some(), "--stretch-text"),
+        ]
+        .into_iter()
+        .find_map(|(given, flag)| given.then_some(flag))
     }
 }
 
@@ -6267,7 +6376,7 @@ pub(crate) struct WaitCmdArgs {
     group(
         ArgGroup::new("assertion")
             .required(true)
-            .args(["target", "url", "title", "no_errors", "no_failed_requests", "a11y"])
+            .args(["target", "url", "title", "no_errors", "no_failed_requests", "a11y", "layout"])
             .multiple(true)
     )
 )]
@@ -6364,6 +6473,32 @@ pub(crate) struct ExpectArgs {
     /// --a11y: the WCAG level to check.
     #[arg(long, value_enum, value_name = "LEVEL", requires = "a11y")]
     pub(crate) level: Option<A11yLevelArg>,
+
+    /// Check the page's layout (see `layout`) or LOCATOR's element: fail
+    /// on error findings the --baseline does not list.
+    #[arg(
+        long,
+        requires = "baseline",
+        conflicts_with_all = ["matcher", "url", "title", "no_errors", "no_failed_requests", "a11y"]
+    )]
+    pub(crate) layout: bool,
+
+    /// --layout: the baseline, <dir>/layout/<NAME>.txt (one finding key
+    /// per line).
+    #[arg(long, value_name = "NAME", requires = "layout")]
+    pub(crate) baseline: Option<String>,
+
+    /// --layout: write the findings to the baseline instead of comparing.
+    #[arg(long, requires = "layout")]
+    pub(crate) update: bool,
+
+    /// --layout: the baselines' directory (default: .chrome-cdp in the
+    /// project).
+    #[arg(long, value_name = "DIR", requires = "layout")]
+    pub(crate) dir: Option<PathBuf>,
+
+    #[command(flatten)]
+    pub(crate) layout_flags: LayoutFlags,
 
     /// A ref whose element is gone fails, instead of being re-resolved
     /// to the one element with its role and name.

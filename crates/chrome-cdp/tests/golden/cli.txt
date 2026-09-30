@@ -165,6 +165,15 @@ command chrome-cdp expect
   flag --origin value=ORIGIN
   flag --a11y
   flag --level value=LEVEL values=A|AA
+  flag --layout
+  flag --baseline value=NAME
+  flag --update
+  flag --dir value=DIR
+  flag --viewports value=LIST repeatable
+  flag --only value=KINDS repeatable
+  flag --full
+  flag --min-target value=PX
+  flag --stretch-text value=PCT
   flag --strict-refs env=CHROME_CDP_STRICT_REFS
   flag --max-chars value=N
 command chrome-cdp mark
@@ -241,6 +250,16 @@ command chrome-cdp why
   flag --for value=ACTION values=click|hover|fill|type|check|select|upload|drag
   flag --no-scroll
   flag --strict-refs env=CHROME_CDP_STRICT_REFS
+command chrome-cdp layout
+  arg LOCATOR
+  flag --viewports value=LIST repeatable
+  flag --only value=KINDS repeatable
+  flag --full
+  flag --min-target value=PX
+  flag --stretch-text value=PCT
+  flag --all
+  flag --strict-refs env=CHROME_CDP_STRICT_REFS
+  flag --max-chars value=N
 command chrome-cdp source
   arg LOCATOR required
   flag --depth value=N

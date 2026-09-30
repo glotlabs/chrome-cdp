@@ -29,12 +29,12 @@ use engine::{
     CoverageStartRequest, CoverageStopRequest, DebugClearRequest, DebugListRequest,
     DebugLocalsRequest, DebugLogRequest, DialogRequest, DownloadsRequest, ElementState,
     EvalRequest, FindRequest, FramesRequest, HarStartRequest, HarStopRequest, HighlightRequest,
-    HttpCredentials, ImageFormat, InspectRequest, LocalsMode, LocatorRequest, NavigateRequest,
-    Navigation, NetworkClearRequest, NetworkFramesRequest, NetworkRequest, NetworkShowRequest,
-    OpenInitScript, OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest, RouteRequest,
-    RoutesRequest, ScreenshotRequest, SnapshotRequest, SourceRequest, TabCloseRequest,
-    TabNewRequest, TabSelectRequest, TabsRequest, TraceStartRequest, TraceStopRequest,
-    UnrouteRequest, WaitFor, WaitRequest, WhyRequest,
+    HttpCredentials, ImageFormat, InspectRequest, LayoutRequest, LocalsMode, LocatorRequest,
+    NavigateRequest, Navigation, NetworkClearRequest, NetworkFramesRequest, NetworkRequest,
+    NetworkShowRequest, OpenInitScript, OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest,
+    RouteRequest, RoutesRequest, ScreenshotRequest, SnapshotRequest, SourceRequest,
+    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, TraceStartRequest,
+    TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WhyRequest,
 };
 use engine::{
     CookieFilter, CookieSpec, CookiesOp, CookiesRequest, StateLoadRequest, StateSaveRequest,
@@ -55,10 +55,10 @@ use crate::cli::{
     DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, ExtensionStorageAreaArg,
     ExtensionStorageCommand, ExtensionsArgs, ExtensionsCommand, FindArgs, FrameDirArg, FramesArgs,
     GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs,
-    ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs, LocalsArg,
-    LocatorArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs,
-    PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs,
-    SnapshotArgs, SourceArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg,
+    ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs, LayoutArgs,
+    LocalsArg, LocatorArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs,
+    PermissionsArgs, PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs,
+    SessionsArgs, SnapshotArgs, SourceArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg,
     StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs,
     TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, WhyArgs, parse_duration,
 };
@@ -788,6 +788,21 @@ pub(crate) fn expect(
     args: &crate::cli::ExpectArgs,
     global: &GlobalArgs,
 ) -> Result<Output, ErrorInfo> {
+    if args.layout {
+        return expect_layout(args, global);
+    }
+    if let Some(flag) = args.layout_flags.given() {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("{flag} is for layout and expect --layout"),
+        )
+        .hint(Hint::run(
+            Cmd::new("expect")
+                .switch("layout")
+                .flag("baseline", "cart")
+                .raw(flag),
+        )));
+    }
     let expectation = crate::expect::expectation(args)?;
     check_tab(global.tab.as_deref())?;
     let ctx = Ctx::with_default(global, crate::expect::EXPECT_TIMEOUT)?;
@@ -2237,6 +2252,87 @@ pub(crate) fn why(args: &WhyArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
     let mut client = running_session(&ctx)?;
     ctx.runtime
         .block_on(client.call_output(rpc::WHY, &request, ctx.timeout + QUICK))
+}
+
+/// `layout`'s request, from its flags; `baseline` for `expect --layout`.
+fn layout_request(
+    locator: Option<&String>,
+    flags: &crate::cli::LayoutFlags,
+    all: bool,
+    strict_refs: bool,
+    max_chars: usize,
+    ctx: &Ctx,
+    global: &GlobalArgs,
+) -> LayoutRequest {
+    LayoutRequest {
+        tab: ctx.tab.clone(),
+        locator: locator.cloned(),
+        viewports: flags.viewports.clone(),
+        only: flags.only.clone(),
+        all,
+        full: flags.full,
+        min_target: flags.min_target,
+        stretch_text: flags.stretch_text,
+        strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(ctx.timeout),
+        max_chars,
+        baseline: None,
+    }
+}
+
+/// `layout`: needs a running session.
+pub(crate) fn layout(args: &LayoutArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::new(global)?;
+    let request = layout_request(
+        args.locator.as_ref(),
+        &args.flags,
+        args.all,
+        args.refs.strict_refs,
+        args.max_chars,
+        &ctx,
+        global,
+    );
+    engine::check_layout(&request)?;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::LAYOUT, &request, ctx.timeout + QUICK))
+}
+
+/// `expect --layout --baseline NAME`: needs a running session.
+fn expect_layout(args: &crate::cli::ExpectArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    if let Some(matcher) = &args.matcher {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("--layout checks the layout; it takes no matcher, got {matcher:?}"),
+        )
+        .hint(Hint::run(
+            Cmd::new("expect").switch("layout").flag("baseline", "cart"),
+        )));
+    }
+    let name = args.baseline.clone().unwrap_or_default();
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::with_default(global, crate::expect::EXPECT_TIMEOUT)?;
+    let mut request = layout_request(
+        args.target.as_ref(),
+        &args.layout_flags,
+        false,
+        args.strict_refs,
+        args.max_chars,
+        &ctx,
+        global,
+    );
+    request.baseline = Some(engine::LayoutBaseline {
+        path: crate::expect::layout_baseline(args.dir.as_deref(), &name)?,
+        name,
+        update: args.update,
+        dir: args.dir.as_ref().map(|d| d.display().to_string()),
+    });
+    engine::check_layout(&request)?;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::LAYOUT, &request, ctx.timeout + QUICK))
 }
 
 /// `inspect`: needs a running session.

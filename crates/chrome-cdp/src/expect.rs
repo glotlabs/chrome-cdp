@@ -343,6 +343,13 @@ pub(crate) fn snapshot_baseline(dir: Option<&Path>, name: &str) -> Result<PathBu
     baseline_path(dir, "snapshots", name, ".txt", ".txt")
 }
 
+/// `expect --layout`'s baseline: `<dir>/layout/<name>.txt`, `<dir>` being
+/// `--dir` or the project's `.chrome-cdp`.
+pub(crate) fn layout_baseline(dir: Option<&Path>, name: &str) -> Result<PathBuf, ErrorInfo> {
+    let dir = dir.map(|d| d.join("layout"));
+    baseline_path(dir.as_deref(), "layout", name, ".txt", ".txt")
+}
+
 /// `expect-screenshot`'s baseline: `<name>-<os>.png`, one per platform,
 /// since fonts render differently on each.
 pub(crate) fn screenshot_baseline(dir: Option<&Path>, name: &str) -> Result<PathBuf, ErrorInfo> {

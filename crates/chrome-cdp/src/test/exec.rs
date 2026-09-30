@@ -959,6 +959,10 @@ impl Runner<'_> {
                 args.update |= self.options.update_snapshots;
                 args.dir.get_or_insert_with(|| self.plan.snapshots.clone());
             }
+            Some(Command::Expect(args)) if args.layout => {
+                args.update |= self.options.update_snapshots;
+                args.dir.get_or_insert_with(|| self.plan.snapshots.clone());
+            }
             _ => {}
         }
         let screenshot = matches!(cli.command, Some(Command::ExpectScreenshot(_)));

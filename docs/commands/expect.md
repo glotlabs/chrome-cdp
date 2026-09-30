@@ -4,7 +4,7 @@
 Assert something about the page, retrying until it holds: an element's state, text, value, count, …
 
 ```text
-chrome-cdp expect [OPTIONS] <LOCATOR|--url <PATTERN>|--title <TEXT>|--no-errors|--no-failed-requests|--a11y> [MATCHER] [VALUE]...
+chrome-cdp expect [OPTIONS] <LOCATOR|--url <PATTERN>|--title <TEXT>|--no-errors|--no-failed-requests|--a11y|--layout> [MATCHER] [VALUE]...
 ```
 
 Arguments:
@@ -32,6 +32,15 @@ Options:
 - `--origin <ORIGIN>`: --no-failed-requests: only requests to this origin; `self` is the page's
 - `--a11y`: Check the page and its iframes (or LOCATOR's element) against built-in accessibility rules
 - `--level <LEVEL>`: --a11y: the WCAG level to check (one of `A`, `AA`)
+- `--layout`: Check the page's layout (see `layout`) or LOCATOR's element: fail on error findings the --baseline does not list
+- `--baseline <NAME>`: --layout: the baseline, &lt;dir&gt;/layout/&lt;NAME&gt;.txt (one finding key per line)
+- `--update`: --layout: write the findings to the baseline instead of comparing
+- `--dir <DIR>`: --layout: the baselines' directory (default: .chrome-cdp in the project)
+- `--viewports <LIST>`: Check at each of these viewports: mobile, tablet, desktop or WxH, comma-separated
+- `--only <KINDS>`: Check only these kinds, comma-separated: covered, overlap, clipped, truncated, overflow-x, offscreen, small-target, contrast
+- `--full`: Look for covered elements and low contrast down the whole page, a viewport at a time, not only in view
+- `--min-target <PX>`: The least width and height of a target, in CSS pixels (default 24)
+- `--stretch-text <PCT>`: Check again with every text this many percent longer, and report what only that finds
 - `--strict-refs`: A ref whose element is gone fails, instead of being re-resolved to the one element with its role and name (env `CHROME_CDP_STRICT_REFS`)
 - `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
 
@@ -66,6 +75,11 @@ Page checks:
                        the page and its iframes, or the element LOCATOR
                        names
 The last three look once: what they find does not go away by waiting.
+  --layout --baseline NAME   no error finding of `layout` (in the page, or
+                       LOCATOR's element) that .chrome-cdp/layout/NAME.txt
+                       does not list; retried like the matchers. --update
+                       writes the findings to it; layout's --viewports,
+                       --only, --full, --min-target and --stretch-text apply
 
 Mock state (expect mock-state <NAME> <CHECK>), retried like the matchers:
   count <N> (or --min/--max)   items of a collection (or a list value)
@@ -96,6 +110,7 @@ Examples:
   chrome-cdp expect --no-errors --since before-save
   chrome-cdp expect --no-failed-requests --all-tabs
   chrome-cdp expect --a11y --level A
+  chrome-cdp expect --layout --baseline cart --viewports mobile,desktop
   chrome-cdp expect mock-state todos count 4
   chrome-cdp expect request POST /api/orders --json-body '{"qty":2}' --count 1
   chrome-cdp expect no-request DELETE '/api/cart/**'

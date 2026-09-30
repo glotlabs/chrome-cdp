@@ -100,6 +100,7 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
             "count",
             "box",
             "why",
+            "layout",
             "source",
             "components",
         ],

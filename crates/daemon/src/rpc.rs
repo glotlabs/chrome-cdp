@@ -85,6 +85,7 @@ pub const DEBUG_LOCALS: &str = "debug_locals";
 pub const HIGHLIGHT: &str = "highlight";
 pub const SOURCE: &str = "source";
 pub const WHY: &str = "why";
+pub const LAYOUT: &str = "layout";
 pub const COMPONENTS: &str = "components";
 pub const INSPECT: &str = "inspect";
 
