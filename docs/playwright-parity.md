@@ -186,6 +186,7 @@ Today: 130 rows; 115 ✅, 10 🟡, 0 ❌, 5 ➖. No row is ❌.
 | `expect.soft`, `expect.poll` | `run --continue`; `wait --fn` | 🟡 | no |
 | `toPass`, plain-value `expect` | the shell compares `-q` output | ➖ | no |
 | — | `expect --no-errors`, `expect --no-failed-requests`, `expect --a11y` | ✅ | no |
+| — | `layout` lints how the page looks (covered, overlapping, clipped, off-screen and too small elements, sideways scrolling, contrast on pixels), per `--viewports`; `expect --layout --baseline NAME` fails on findings the baseline does not list | ✅ | no |
 
 ## Test runner
 
