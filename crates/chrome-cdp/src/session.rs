@@ -1477,29 +1477,78 @@ fn read_script(path: &Path) -> Result<String, ErrorInfo> {
     std::fs::read_to_string(path).map_err(|e| cannot(&e))
 }
 
+/// What `expose` or `unexpose` does to its names.
+#[derive(Clone, Copy)]
+pub(crate) enum Exposing<'a> {
+    /// `expose`, with `--returns` or `--returns-seq` (JSON, unchecked).
+    Add {
+        returns: Option<&'a str>,
+        returns_seq: Option<&'a str>,
+    },
+    /// `unexpose`, `--all` or not.
+    Remove { all: bool },
+}
+
 /// `expose` and `unexpose`: need a running session.
 pub(crate) fn expose(
     names: &[String],
-    remove: bool,
-    all: bool,
+    what: Exposing<'_>,
     global: &GlobalArgs,
 ) -> Result<Output, ErrorInfo> {
     check_tab(global.tab.as_deref())?;
     for name in names {
         engine::check_binding_name(name)?;
     }
+    let (remove, all, returns) = match what {
+        Exposing::Add {
+            returns,
+            returns_seq,
+        } => (false, false, expose_returns(returns, returns_seq)?),
+        Exposing::Remove { all } => (true, all, Vec::new()),
+    };
     let ctx = Ctx::new(global)?;
     let mut client = running_session(&ctx)?;
     let request = ExposeRequest {
         names: names.to_vec(),
         remove,
         all,
+        returns,
         timeout_ms: millis(ctx.timeout),
     };
     let output =
         ctx.runtime
             .block_on(client.call_output(rpc::EXPOSE, &request, ctx.timeout + QUICK))?;
     Ok(every_tab(output, &ctx, "exposed functions"))
+}
+
+/// The answers of `expose --returns JSON` (`[JSON]`) or `--returns-seq
+/// JSON-ARRAY`.
+fn expose_returns(returns: Option<&str>, seq: Option<&str>) -> Result<Vec<Value>, ErrorInfo> {
+    let (flag, text) = match (returns, seq) {
+        (Some(text), _) => ("--returns", text),
+        (None, Some(text)) => ("--returns-seq", text),
+        (None, None) => return Ok(Vec::new()),
+    };
+    let value: Value = serde_json::from_str(text).map_err(|e| {
+        bad_args(format!("{flag} is not valid JSON: {e}")).hint(Hint::text(
+            "quote it for the shell, e.g. --returns '{\"ok\": true}'; a string is '\"text\"'",
+        ))
+    })?;
+    if returns.is_some() {
+        return Ok(vec![value]);
+    }
+    match value {
+        Value::Array(values) if !values.is_empty() => Ok(values),
+        Value::Array(_) => Err(bad_args("--returns-seq needs at least one value")
+            .hint(Hint::text("e.g. --returns-seq '[1, 2, 3]'"))),
+        other => Err(bad_args(format!(
+            "--returns-seq must be a JSON array, not {}",
+            json_type(&other)
+        ))
+        .hint(Hint::text(
+            "wrap the values in an array, e.g. --returns-seq '[1, 2, 3]', or give one with --returns",
+        ))),
+    }
 }
 
 /// The emulation commands (`emulate`, `viewport`, `geo`, …): need a

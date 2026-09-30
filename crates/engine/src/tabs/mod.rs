@@ -1991,10 +1991,15 @@ async fn watch_host(
             "Runtime.bindingCalled" if event.params["name"] == MOCK_BINDING => {
                 mock_shim::called(&shared, &session_id, tab, &event);
             }
+            "Runtime.bindingCalled" => {
+                inject::answer(&shared, &session_id, &event);
+                if let Some(tab) = tab {
+                    console_event(&shared, tab, &event);
+                }
+            }
             "Runtime.consoleAPICalled"
             | "Runtime.exceptionThrown"
             | "Runtime.exceptionRevoked"
-            | "Runtime.bindingCalled"
             | "Log.entryAdded" => {
                 if let Some(tab) = tab {
                     console_event(&shared, tab, &event);

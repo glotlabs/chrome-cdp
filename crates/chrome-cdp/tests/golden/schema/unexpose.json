@@ -570,11 +570,36 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "returns": {
+          "description": "The functions of `bindings` whose calls get answers (`expose\n--returns`), with them.",
+          "items": {
+            "$ref": "#/$defs/ExposeReturns"
+          },
+          "type": "array"
         }
       },
       "required": [
         "changed",
         "bindings"
+      ],
+      "type": "object"
+    },
+    "ExposeReturns": {
+      "description": "What the calls of a function exposed with `--returns` or\n`--returns-seq` get.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "values": {
+          "description": "The answers in call order; the last one answers every later call.",
+          "items": true,
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "values"
       ],
       "type": "object"
     },

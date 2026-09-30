@@ -1341,9 +1341,18 @@ as `binding NAME(args)`, the arguments as JSON, so `console` shows what
 the page reported. Without NAME, lists the exposed functions. `unexpose`
 takes them away.
 
+The promise resolves to undefined, or with --returns to that JSON value.
+--returns-seq gives the calls its values in call order (counted across
+the session's tabs), the last one for every later call. The answer is
+data, not code: for logic in the page, use eval or init-script. Exposing
+a NAME again with other answers starts its sequence over.
+
 Examples:
   chrome-cdp expose onCheckout
   chrome-cdp console --grep 'binding onCheckout'
+  chrome-cdp expose getConfig --returns '{\"flags\":[\"beta\"]}'
+  chrome-cdp expose nextToken --returns-seq '[\"a\",\"b\",null]'
+  chrome-cdp wait --binding onCheckout
   chrome-cdp expose")]
     Expose(ExposeArgs),
 
@@ -4316,6 +4325,25 @@ pub(crate) struct ExposeArgs {
     /// Global function names (letters, digits, _ and $).
     #[arg(value_name = "NAME")]
     pub(crate) names: Vec<String>,
+
+    /// Each call's promise resolves to this JSON value.
+    #[arg(
+        long,
+        value_name = "JSON",
+        requires = "names",
+        allow_hyphen_values = true
+    )]
+    pub(crate) returns: Option<String>,
+
+    /// The calls get these values in call order, the last one from then
+    /// on (a JSON array).
+    #[arg(
+        long,
+        value_name = "JSON-ARRAY",
+        requires = "names",
+        conflicts_with = "returns"
+    )]
+    pub(crate) returns_seq: Option<String>,
 }
 
 #[derive(Debug, Args)]

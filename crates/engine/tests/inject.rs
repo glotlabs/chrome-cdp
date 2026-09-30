@@ -180,10 +180,26 @@ async fn try_expose(
             names: names.iter().map(|&s| s.to_owned()).collect(),
             remove,
             all,
+            returns: Vec::new(),
             timeout_ms: TIMEOUT_MS,
         })
         .await?;
     Ok(serde_json::from_value(out.data).unwrap())
+}
+
+/// `expose NAME --returns-seq` with `returns` (`--returns X` is `[X]`).
+async fn expose_returning(engine: &Engine, name: &str, returns: Vec<Value>) -> ExposeData {
+    let out = engine
+        .expose(ExposeRequest {
+            names: vec![name.to_owned()],
+            remove: false,
+            all: false,
+            returns,
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("expose {name}: {}", e.to_text()));
+    serde_json::from_value(out.data).unwrap()
 }
 
 async fn expose(engine: &Engine, names: &[&str], remove: bool) -> ExposeData {
@@ -520,5 +536,91 @@ async fn functions_are_exposed_and_taken_away_while_pages_run() {
     let data = try_expose(&engine, &[], true, true).await.unwrap();
     assert!(data.bindings.is_empty());
     assert_eq!(eval(&engine, "typeof done").await, json!("undefined"));
+    engine.close().await;
+}
+
+/// `expose --returns`: page code that awaits the function gets the fixed
+/// value; `--returns-seq` gives the calls its values in order, the last
+/// repeating, across reloads. The calls are still logged, and exposing
+/// the name again with other answers starts over.
+#[tokio::test]
+async fn exposed_functions_return_their_answers() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "inject-expose-returns").await;
+    goto(&engine, &site.url("/inject/first.html")).await;
+
+    let data = expose_returning(&engine, "getConfig", vec![json!({"flags": ["beta"]})]).await;
+    assert_eq!(data.changed, ["getConfig"]);
+    assert_eq!(data.returns.len(), 1);
+    assert_eq!(data.returns[0].values, [json!({"flags": ["beta"]})]);
+    assert_eq!(
+        eval(&engine, "(async () => (await getConfig('x')).flags[0])()").await,
+        json!("beta")
+    );
+    assert_eq!(
+        eval(
+            &engine,
+            "Promise.all([getConfig(), getConfig()]).then(a => a.length)"
+        )
+        .await,
+        json!(2)
+    );
+    let calls = eventually("the calls", async || {
+        Some(binding_calls(&engine, None).await).filter(|c| c.len() == 3)
+    })
+    .await;
+    assert_eq!(calls[0], r#"binding getConfig("x")"#);
+
+    let data = expose_returning(
+        &engine,
+        "nextToken",
+        vec![json!("a"), json!("b"), json!(null)],
+    )
+    .await;
+    assert_eq!(data.bindings, ["getConfig", "nextToken"]);
+    assert_eq!(
+        eval(
+            &engine,
+            "(async () => [await nextToken(), await nextToken()])()"
+        )
+        .await,
+        json!(["a", "b"])
+    );
+    // The sequence is the session's, not the document's.
+    reload(&engine).await;
+    assert_eq!(
+        eval(
+            &engine,
+            "(async () => [await nextToken(), await nextToken()])()"
+        )
+        .await,
+        json!([null, null])
+    );
+
+    // The same answers again change nothing; others start over.
+    let data = expose_returning(
+        &engine,
+        "nextToken",
+        vec![json!("a"), json!("b"), json!(null)],
+    )
+    .await;
+    assert!(data.changed.is_empty());
+    let data = expose_returning(&engine, "nextToken", vec![json!(1), json!(2)]).await;
+    assert_eq!(data.changed, ["nextToken"]);
+    assert_eq!(
+        eval(
+            &engine,
+            "(async () => [await nextToken(), await nextToken(), await nextToken()])()"
+        )
+        .await,
+        json!([1, 2, 2])
+    );
+    // Without answers again: it resolves at once to undefined.
+    expose(&engine, &["nextToken"], false).await;
+    assert_eq!(
+        eval(&engine, "nextToken().then(v => v === undefined)").await,
+        json!(true)
+    );
     engine.close().await;
 }

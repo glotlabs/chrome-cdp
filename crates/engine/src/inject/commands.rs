@@ -12,7 +12,8 @@ use std::time::Duration;
 
 use cdp::domains::runtime;
 use protocol::schema::{
-    ExposeData, InitScriptAddData, InitScriptInfo, InitScriptRemoveData, InitScriptsData,
+    ExposeData, ExposeReturns, InitScriptAddData, InitScriptInfo, InitScriptRemoveData,
+    InitScriptsData,
 };
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 
@@ -283,15 +284,25 @@ impl Engine {
                 })?
             }
         } else {
-            injections.expose(scope, &req.names)
+            injections.expose(scope, &req.names, &req.returns)
         };
         if !changed.is_empty() {
             self.apply_injections(false, millis(req.timeout_ms)).await;
         }
-        let bindings = injections.bindings(scope);
-        let text = expose_text(&req, &changed, &bindings, &self.session);
+        let exposed = injections.bindings(scope);
+        let text = expose_text(&req, &changed, &exposed, &self.session);
+        let bindings: Vec<String> = exposed.iter().map(|(n, _)| n.clone()).collect();
         let quiet = bindings.join("\n");
-        let data = ExposeData { changed, bindings };
+        let returns = exposed
+            .into_iter()
+            .filter(|(_, values)| !values.is_empty())
+            .map(|(name, values)| ExposeReturns { name, values })
+            .collect();
+        let data = ExposeData {
+            changed,
+            bindings,
+            returns,
+        };
         Ok(Output::typed(&data, text).quiet(quiet))
     }
 
@@ -348,9 +359,10 @@ pub fn script_line(script: &InitScriptInfo) -> String {
 fn expose_text(
     req: &ExposeRequest,
     changed: &[String],
-    bindings: &[String],
+    exposed: &[(String, Vec<serde_json::Value>)],
     session: &str,
 ) -> String {
+    let bindings: Vec<&str> = exposed.iter().map(|(n, _)| n.as_str()).collect();
     let mut text = String::new();
     if req.remove {
         if changed.is_empty() {
@@ -377,7 +389,14 @@ fn expose_text(
                 Cmd::new("expose").arg("<name>").scoped(session)
             );
         } else {
-            text = bindings.join("\n");
+            let lines: Vec<String> = exposed
+                .iter()
+                .map(|(name, values)| match values.is_empty() {
+                    true => name.clone(),
+                    false => format!("{name} {}", returns_text(values)),
+                })
+                .collect();
+            text = lines.join("\n");
         }
         return text;
     }
@@ -388,9 +407,13 @@ fn expose_text(
         .map(String::as_str)
         .collect();
     if !changed.is_empty() {
+        let returns = match req.returns.is_empty() {
+            true => String::new(),
+            false => format!(" ({})", returns_text(&req.returns)),
+        };
         let _ = writeln!(
             text,
-            "exposed {}; each call is logged as binding {}(args) in {}",
+            "exposed {}{returns}; each call is logged as binding {}(args) in {}",
             changed.join(", "),
             changed[0],
             Cmd::new("console").scoped(session)
@@ -400,4 +423,19 @@ fn expose_text(
         let _ = writeln!(text, "already exposed: {}", already.join(", "));
     }
     text.trim_end().to_owned()
+}
+
+/// `returns 42`, or `returns 1, 2, then 3 on every later call`.
+fn returns_text(values: &[serde_json::Value]) -> String {
+    match values {
+        [] => String::new(),
+        [one] => format!("returns {one}"),
+        [first @ .., last] => {
+            let first: Vec<String> = first.iter().map(ToString::to_string).collect();
+            format!(
+                "returns {}, then {last} on every later call",
+                first.join(", ")
+            )
+        }
+    }
 }

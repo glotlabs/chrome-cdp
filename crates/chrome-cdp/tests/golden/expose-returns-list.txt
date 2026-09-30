@@ -1,0 +1,11 @@
+$ chrome-cdp expose
+exit: 0
+--- stdout
+onSave
+getConfig returns {"beta":true}
+
+$ chrome-cdp expose --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"bindings":["onSave","getConfig"],"changed":[],"returns":[{"name":"getConfig","values":[{"beta":true}]}]}}
+

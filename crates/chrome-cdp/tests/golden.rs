@@ -1530,6 +1530,28 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionPerMode,
     },
     Case {
+        name: "expose-returns",
+        args: &["expose", "nextToken", "--returns-seq", r#"["a","b",null]"#],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "expose-returns-list",
+        args: &["expose"],
+        modes: &["", "--json"],
+        fixture: Fixture::SessionAfter(&[
+            &["open"],
+            &["expose", "onSave"],
+            &["expose", "getConfig", "--returns", r#"{"beta":true}"#],
+        ]),
+    },
+    Case {
+        name: "expose-returns-bad",
+        args: &["expose", "nextToken", "--returns-seq", "42"],
+        modes: ERR,
+        fixture: Fixture::None,
+    },
+    Case {
         name: "expose-bad-name",
         args: &["expose", "on-save"],
         modes: ERR,

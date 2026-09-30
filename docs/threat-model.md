@@ -77,7 +77,7 @@ What a page sends that chrome-cdp acts on:
   path the page chose.
 - **Bindings** (`expose`, the mock shim for WebSockets and SSE): the page
   can log to the session's console and ask for a configured mock's
-  answer. Neither writes files or runs commands.
+  answer or an exposed function's `--returns` value. Neither writes files or runs commands.
 - **Dialogs**: answered by the session's policy.
 - **HTTP authentication challenges**: answered with `--http-credentials`,
   from every origin unless `--http-credentials-origin` names one; a proxy

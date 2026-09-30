@@ -1140,7 +1140,18 @@ impl<'s> Converter<'s> {
             "setContent" => why("goto a data: or file: URL with the HTML"),
             "exposeFunction" | "exposeBinding" => {
                 let name = plain(env, need(arg(0), "a name")?)?;
-                Ok(vec![cmd(["expose"]).arg(name).line()])
+                let mut c = cmd(["expose"]).arg(name);
+                // `() => ({ ok: true })`: a fixed answer. Other functions'
+                // logic stays behind; their calls are logged.
+                if let Some(Expr::Func(Func {
+                    body: Body::Expr(value),
+                    ..
+                })) = arg(1)
+                    && let Ok(value) = json(env, value)
+                {
+                    c = c.flag("--returns", value);
+                }
+                Ok(vec![c.line()])
             }
             "tap" | "click" | "dblclick" | "hover" | "fill" | "type" | "press" | "check"
             | "uncheck" | "selectOption" | "focus" | "setInputFiles" | "textContent"

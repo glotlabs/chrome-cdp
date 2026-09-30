@@ -15,7 +15,10 @@
 //! that puts a function under the asked name in each document: it takes any
 //! arguments, sends them as JSON, and returns a promise, as Playwright's
 //! `exposeFunction` does. Each call goes into the tab's console as
-//! `binding <name>(args)` (see `observe::console`).
+//! `binding <name>(args)` (see `observe::console`). A function exposed with
+//! answers (`expose NAME --returns`, plan 14.7) numbers its calls and waits:
+//! the daemon hands each call its answer ([`Injector::answer`]) in the
+//! calling context, which resolves the call's promise.
 //!
 //! Workers get neither (`Page` is not theirs).
 //!
@@ -70,10 +73,8 @@ struct Table {
     last_id: u32,
     /// In the order they run.
     scripts: Vec<Arc<Script>>,
-    /// Exposed functions, oldest first, each with the serial number it was
-    /// exposed under (a name exposed again is a new binding to sessions),
-    /// and its scope.
-    bindings: Vec<(String, u32, Option<String>)>,
+    /// Exposed functions, oldest first.
+    bindings: Vec<Binding>,
     /// The last binding serial number given.
     last_serial: u32,
     /// Storage seeds (`state load`), by origin; at most one per origin and
@@ -84,6 +85,21 @@ struct Table {
     /// The scopes whose documents get the mock shim, each with its
     /// serial number (a shim turned on again is new to sessions).
     shims: Vec<(Option<String>, u32)>,
+}
+
+/// An exposed function.
+#[derive(Debug)]
+struct Binding {
+    name: String,
+    /// The serial number it was exposed under: a name exposed again, or
+    /// given other answers, is a new binding to sessions.
+    serial: u32,
+    scope: Option<String>,
+    /// What its calls get, in call order, the last repeating; none for a
+    /// function whose calls resolve at once to `undefined`.
+    answers: Vec<serde_json::Value>,
+    /// How many calls got an answer.
+    answered: usize,
 }
 
 /// An init script.
@@ -121,8 +137,12 @@ pub(crate) enum Key {
 #[derive(Debug, Clone)]
 pub(crate) enum Wanted {
     Script(Arc<Script>),
-    /// An exposed function's name.
-    Binding(String),
+    /// An exposed function's name, and whether its calls wait for an
+    /// answer.
+    Binding {
+        name: String,
+        answers: bool,
+    },
     /// [`SEED_BINDING`].
     SeedBinding,
     /// The mock shim, behind [`MOCK_BINDING`].
@@ -139,7 +159,7 @@ impl Wanted {
         match self {
             Self::MockShim => true,
             Self::Script(script) => script.world == EvalWorld::Main,
-            Self::Binding(_) | Self::SeedBinding => false,
+            Self::Binding { .. } | Self::SeedBinding => false,
         }
     }
 }
@@ -288,27 +308,58 @@ impl Injector {
         gone.iter().map(|s| s.id).collect()
     }
 
-    /// Exposes `names` (checked) in `scope`; returns those that were not
-    /// yet.
-    pub(crate) fn expose(&self, scope: Option<&str>, names: &[String]) -> Vec<String> {
+    /// Exposes `names` (checked) in `scope`, their calls answered with
+    /// `answers` (see [`Binding::answers`]); returns those that were not
+    /// yet, or had other answers.
+    pub(crate) fn expose(
+        &self,
+        scope: Option<&str>,
+        names: &[String],
+        answers: &[serde_json::Value],
+    ) -> Vec<String> {
         let mut table = lock(&self.table);
         let mut added = Vec::new();
         for name in names {
+            let same = |b: &Binding| b.name == *name && b.scope.as_deref() == scope;
             if table
                 .bindings
                 .iter()
-                .any(|(n, _, s)| n == name && s.as_deref() == scope)
+                .any(|b| same(b) && b.answers == answers)
+                || added.contains(name)
             {
                 continue;
             }
             table.last_serial += 1;
-            let serial = table.last_serial;
-            table
-                .bindings
-                .push((name.clone(), serial, scope.map(str::to_owned)));
+            let binding = Binding {
+                name: name.clone(),
+                serial: table.last_serial,
+                scope: scope.map(str::to_owned),
+                answers: answers.to_vec(),
+                answered: 0,
+            };
+            match table.bindings.iter_mut().find(|b| same(b)) {
+                Some(slot) => *slot = binding,
+                None => table.bindings.push(binding),
+            }
             added.push(name.clone());
         }
         added
+    }
+
+    /// The answer to the next call of exposed function `name` of `scope`,
+    /// if it has answers.
+    pub(crate) fn answer(&self, scope: Option<&str>, name: &str) -> Option<serde_json::Value> {
+        let mut table = lock(&self.table);
+        let binding = table
+            .bindings
+            .iter_mut()
+            .find(|b| b.name == name && b.scope.as_deref() == scope)?;
+        let answer = binding
+            .answers
+            .get(binding.answered.min(binding.answers.len().checked_sub(1)?))?
+            .clone();
+        binding.answered += 1;
+        Some(answer)
     }
 
     /// Takes `names` away from `scope`, or none if one of them is not
@@ -323,13 +374,13 @@ impl Injector {
             !table
                 .bindings
                 .iter()
-                .any(|(n, _, s)| n == *name && s.as_deref() == scope)
+                .any(|b| b.name == **name && b.scope.as_deref() == scope)
         }) {
             return Err(missing.clone());
         }
         table
             .bindings
-            .retain(|(n, _, s)| s.as_deref() != scope || !names.contains(n));
+            .retain(|b| b.scope.as_deref() != scope || !names.contains(&b.name));
         let mut removed = names.to_vec();
         removed.dedup();
         Ok(removed)
@@ -340,18 +391,19 @@ impl Injector {
         let mut table = lock(&self.table);
         let (gone, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut table.bindings)
             .into_iter()
-            .partition(|(_, _, s)| s.as_deref() == scope);
+            .partition(|b| b.scope.as_deref() == scope);
         table.bindings = kept;
-        gone.into_iter().map(|(n, _, _)| n).collect()
+        gone.into_iter().map(|b| b.name).collect()
     }
 
-    /// The names of the functions exposed in `scope`, oldest first.
-    pub(crate) fn bindings(&self, scope: Option<&str>) -> Vec<String> {
+    /// The functions exposed in `scope`, oldest first, each with its
+    /// answers.
+    pub(crate) fn bindings(&self, scope: Option<&str>) -> Vec<(String, Vec<serde_json::Value>)> {
         lock(&self.table)
             .bindings
             .iter()
-            .filter(|(_, _, s)| s.as_deref() == scope)
-            .map(|(n, _, _)| n.clone())
+            .filter(|b| b.scope.as_deref() == scope)
+            .map(|b| (b.name.clone(), b.answers.clone()))
             .collect()
     }
 
@@ -411,7 +463,7 @@ impl Injector {
         let theirs = |s: &Option<String>| s.as_deref() == Some(scope);
         table.shims.retain(|(s, _)| !theirs(s));
         table.scripts.retain(|s| !theirs(&s.scope));
-        table.bindings.retain(|(_, _, s)| !theirs(s));
+        table.bindings.retain(|b| !theirs(&b.scope));
         table.seeds.retain(|(_, s)| !theirs(&s.scope));
     }
 
@@ -425,14 +477,17 @@ impl Injector {
         let bindings = table
             .bindings
             .iter()
-            .filter(|(_, _, s)| s.as_deref() == scope)
-            .map(|(name, serial, _)| {
+            .filter(|b| b.scope.as_deref() == scope)
+            .map(|b| {
                 (
                     Key::Binding {
-                        name: name.clone(),
-                        serial: *serial,
+                        name: b.name.clone(),
+                        serial: b.serial,
                     },
-                    Wanted::Binding(name.clone()),
+                    Wanted::Binding {
+                        name: b.name.clone(),
+                        answers: !b.answers.is_empty(),
+                    },
                 )
             });
         let scripts = table
@@ -489,8 +544,9 @@ fn preview(source: &str) -> String {
 
 /// The script that puts exposed function `name` in a document: it takes
 /// the binding (and hides it) and calls it with the arguments as a JSON
-/// array.
-pub(crate) fn wrapper(name: &str) -> String {
+/// array, or with `answers` as `{"call":N,"args":[…]}`, keeping the call's
+/// promise for its answer ([`answer_script`]).
+pub(crate) fn wrapper(name: &str, answers: bool) -> String {
     let binding = format!("{BINDING_PREFIX}{name}");
     include_str!("expose.js")
         .replace("__NAME__", &serde_json::to_string(name).unwrap_or_default())
@@ -498,6 +554,22 @@ pub(crate) fn wrapper(name: &str) -> String {
             "__BINDING__",
             &serde_json::to_string(&binding).unwrap_or_default(),
         )
+        .replace("__ANSWERS__", if answers { "true" } else { "false" })
+}
+
+/// The symbol an answering wrapper of `name` keeps its answer function
+/// under.
+fn answer_symbol(name: &str) -> String {
+    format!(
+        "Symbol.for({})",
+        serde_json::to_string(&format!("chrome-cdp.expose.{name}")).unwrap_or_default()
+    )
+}
+
+/// The script that hands call `call` of exposed function `name` its
+/// answer, in the context the call came from.
+pub(crate) fn answer_script(name: &str, call: u64, answer: &serde_json::Value) -> String {
+    format!("globalThis[{}]?.({call}, {answer});", answer_symbol(name))
 }
 
 /// The mock shim: `WebSocket` and `EventSource` stand-ins that ask the
@@ -513,8 +585,9 @@ pub(crate) fn mock_shim() -> String {
 /// there are.
 pub(crate) fn unwrapper(name: &str) -> String {
     format!(
-        "delete globalThis[{}];",
-        serde_json::to_string(name).unwrap_or_default()
+        "delete globalThis[{}]; delete globalThis[{}];",
+        serde_json::to_string(name).unwrap_or_default(),
+        answer_symbol(name)
     )
 }
 
@@ -550,7 +623,7 @@ mod tests {
         let names = |n: &[&str]| n.iter().map(|&s| s.to_owned()).collect::<Vec<_>>();
         injector.add(None, "a", None, EvalWorld::Main);
         let b = injector.add(Some("C1"), "b", None, EvalWorld::Main);
-        injector.expose(Some("C1"), &names(&["f"]));
+        injector.expose(Some("C1"), &names(&["f"]), &[]);
         injector.seed(Some("C1"), "https://x", "seed()");
         assert_eq!(injector.len(None), 1);
         assert_eq!(injector.list(Some("C1"))[0].id, "s2");
@@ -587,13 +660,13 @@ mod tests {
         let injector = Injector::default();
         let names = |n: &[&str]| n.iter().map(|&s| s.to_owned()).collect::<Vec<_>>();
         assert_eq!(
-            injector.expose(None, &names(&["a", "b", "a"])),
+            injector.expose(None, &names(&["a", "b", "a"]), &[]),
             names(&["a", "b"])
         );
-        assert_eq!(injector.expose(None, &names(&["a"])), names(&[]));
+        assert_eq!(injector.expose(None, &names(&["a"]), &[]), names(&[]));
         assert_eq!(injector.unexpose(None, &names(&["c"])), Err("c".to_owned()));
         assert_eq!(injector.unexpose(None, &names(&["a"])), Ok(names(&["a"])));
-        injector.expose(None, &names(&["a"]));
+        injector.expose(None, &names(&["a"]), &[]);
         injector.add(None, "x", None, EvalWorld::Main);
         let keys: Vec<Key> = injector.wanted(None).into_iter().map(|(k, _)| k).collect();
         assert_eq!(
@@ -628,9 +701,51 @@ mod tests {
 
     #[test]
     fn the_wrapper_names_its_binding() {
-        let script = wrapper("onSave");
+        let script = wrapper("onSave", false);
         assert!(script.contains("\"__chromeCdpExpose_onSave\""), "{script}");
         assert!(script.contains("\"onSave\""), "{script}");
         assert!(!script.contains("__NAME__") && !script.contains("__BINDING__"));
+    }
+
+    #[test]
+    fn answers_go_in_call_order_and_the_last_repeats() {
+        use serde_json::json;
+        let injector = Injector::default();
+        let names = |n: &[&str]| n.iter().map(|&s| s.to_owned()).collect::<Vec<_>>();
+        injector.expose(None, &names(&["plain"]), &[]);
+        injector.expose(None, &names(&["seq"]), &[json!(1), json!("two")]);
+        assert_eq!(injector.answer(None, "plain"), None);
+        assert_eq!(injector.answer(None, "nope"), None);
+        assert_eq!(injector.answer(Some("C1"), "seq"), None);
+        let answers: Vec<_> = (0..3).map(|_| injector.answer(None, "seq")).collect();
+        assert_eq!(
+            answers,
+            [Some(json!(1)), Some(json!("two")), Some(json!("two"))]
+        );
+        // The same answers change nothing; others are a new binding that
+        // starts over.
+        assert!(
+            injector
+                .expose(None, &names(&["seq"]), &[json!(1), json!("two")])
+                .is_empty()
+        );
+        assert_eq!(
+            injector.expose(None, &names(&["seq"]), &[json!(3)]),
+            names(&["seq"])
+        );
+        assert_eq!(injector.answer(None, "seq"), Some(json!(3)));
+        let wanted = injector.wanted(None);
+        assert!(matches!(
+            &wanted[1],
+            (
+                Key::Binding { serial: 3, .. },
+                Wanted::Binding { answers: true, .. }
+            )
+        ));
+        assert!(wrapper("seq", true).contains("const answers = true;"));
+        assert_eq!(
+            answer_script("seq", 4, &json!({"a": [1]})),
+            r#"globalThis[Symbol.for("chrome-cdp.expose.seq")]?.(4, {"a":[1]});"#
+        );
     }
 }

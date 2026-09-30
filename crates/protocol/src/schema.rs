@@ -2134,6 +2134,19 @@ pub struct ExposeData {
     pub changed: Vec<String>,
     /// Every function the session exposes now, oldest first.
     pub bindings: Vec<String>,
+    /// The functions of `bindings` whose calls get answers (`expose
+    /// --returns`), with them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub returns: Vec<ExposeReturns>,
+}
+
+/// What the calls of a function exposed with `--returns` or
+/// `--returns-seq` get.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExposeReturns {
+    pub name: String,
+    /// The answers in call order; the last one answers every later call.
+    pub values: Vec<Value>,
 }
 
 /// A cookie (`cookies`, plan 07).

@@ -232,8 +232,15 @@ fn entry(level: Level, source: &str, kind: Option<&str>, text: String) -> Consol
 fn binding_call(params: &Value) -> Option<ConsoleEntry> {
     let name = params["name"].as_str()?.strip_prefix(BINDING_PREFIX)?;
     let payload = params["payload"].as_str().unwrap_or_default();
+    // `{"call":N,"args":[…]}` from a function exposed with answers.
     let args = match serde_json::from_str::<Value>(payload) {
-        Ok(Value::Array(args)) => args
+        Ok(Value::Object(mut call)) if call.get("args").is_some_and(Value::is_array) => {
+            call.remove("args")
+        }
+        other => other.ok(),
+    };
+    let args = match args {
+        Some(Value::Array(args)) => args
             .iter()
             .map(Value::to_string)
             .collect::<Vec<_>>()
@@ -513,16 +520,22 @@ mod tests {
         )));
         assert!(logged(call("__chromeCdpExpose_ping", "[]")));
         assert!(logged(call("__chromeCdpExpose_raw", "not json")));
+        // A function exposed with answers numbers its calls.
+        assert!(logged(call(
+            "__chromeCdpExpose_next",
+            r#"{"call":2,"args":[1]}"#
+        )));
         // Someone else's binding.
         assert!(!logged(call("otherBinding", "[]")));
         let entries: Vec<_> = console.entries().collect();
-        assert_eq!(entries.len(), 3);
+        assert_eq!(entries.len(), 4);
         assert_eq!(entries[0].text, r#"binding onSave({"id":1}, "x", null)"#);
         assert_eq!(entries[0].source, "binding");
         assert_eq!(entries[0].kind.as_deref(), Some("onSave"));
         assert_eq!(entries[0].level, Level::Info);
         assert_eq!(entries[1].text, "binding ping()");
         assert_eq!(entries[2].text, "binding raw(not json)");
+        assert_eq!(entries[3].text, "binding next(1)");
         assert!(console.errors_since(0).is_empty());
     }
 

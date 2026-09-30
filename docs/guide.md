@@ -405,6 +405,8 @@ chrome-cdp init-script list                     # s1 main /home/me/app/stubs.js 
 chrome-cdp init-script remove s1                # or --all
 chrome-cdp expose onCheckout                    # window.onCheckout(...) → console: binding onCheckout({"total":42})
 chrome-cdp wait --binding onCheckout            # until the page calls it (since the previous command began)
+chrome-cdp expose getConfig --returns '{"beta":true}'   # await getConfig() → {beta: true}
+chrome-cdp expose nextToken --returns-seq '["a","b"]'   # "a", then "b" for every later call
 chrome-cdp unexpose onCheckout                  # or --all
 ```
 
@@ -412,7 +414,9 @@ A script is checked in the active tab when it is added, and one that does
 not compile is refused. Its errors name its file (or `init-script-s1.js`) at
 its own line numbers. `--world isolated` runs it where `eval --world
 isolated` runs: the same DOM, out of the page's reach. An exposed function
-takes any arguments (sent as JSON) and returns a promise.
+takes any arguments (sent as JSON) and returns a promise, which resolves to
+`undefined`, or to the `--returns` value. The answer is data, not code:
+logic that runs in the page belongs in an init script.
 
 ## Cookies, storage and saved logins
 

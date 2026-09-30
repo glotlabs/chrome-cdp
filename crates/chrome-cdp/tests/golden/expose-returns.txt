@@ -1,0 +1,15 @@
+$ chrome-cdp expose nextToken --returns-seq '["a","b",null]'
+exit: 0
+--- stdout
+exposed nextToken (returns "a", "b", then null on every later call); each call is logged as binding nextToken(args) in chrome-cdp console
+
+$ chrome-cdp expose nextToken --returns-seq '["a","b",null]' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"bindings":["nextToken"],"changed":["nextToken"],"returns":[{"name":"nextToken","values":["a","b",null]}]}}
+
+$ chrome-cdp expose nextToken --returns-seq '["a","b",null]' -q
+exit: 0
+--- stdout
+nextToken
+

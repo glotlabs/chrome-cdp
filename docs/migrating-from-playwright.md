@@ -325,7 +325,7 @@ them. By default each read shows what the previous one did not.
 | `response.body()`, `response.json()` | `network show ID --body` | ✅ |
 | `page.on('download')`, `'dialog'`, `'popup'` | reported by the action that caused them | ✅ |
 | `page.on('websocket')` | `cdp --listen 'Network.webSocket*' --count 0` | 🟡 |
-| `page.exposeFunction(name, fn)`, `exposeBinding` | `expose NAME`: calls are logged in `console` (`wait --binding NAME` waits for one); they cannot return a value | 🟡 |
+| `page.exposeFunction(name, fn)`, `exposeBinding` | `expose NAME`: calls are logged in `console` (`wait --binding NAME` waits for one); `expose NAME --returns '{"ok":true}'` answers each call with that value, `--returns-seq '[1,2]'` in call order. The answer is data, not a Node function: logic that runs in the page is `eval` or `init-script` | ✅ |
 | `page.addInitScript(script)` | `init-script add FILE`, or `init-script add --code 'JS'`; `open --init-script FILE URL` for the first page | ✅ |
 | `page.coverage` | `coverage` | ✅ |
 | — | `perf` (load timing, Web Vitals), `mark NAME` + `--since NAME` | |

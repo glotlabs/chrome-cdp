@@ -297,6 +297,14 @@ const CASES: &[(&str, &str)] = &[
         "await page.exposeFunction('onDone', () => {});",
         "expose onDone",
     ),
+    (
+        "await page.exposeFunction('getConfig', async () => ({ beta: true, n: [1] }));",
+        "expose getConfig --returns '{\"beta\":true,\"n\":[1]}'",
+    ),
+    (
+        "await page.exposeFunction('twice', (x) => x * 2);",
+        "expose twice",
+    ),
     ("await page.close();", "tab close"),
     // Mocking.
     (

@@ -18,7 +18,7 @@ around it. **The v1 gate: no ❌ in an agent-critical row.** A test
 (`crates/chrome-cdp/tests/parity.rs`) holds the tables to that, checks the
 counts below, and checks that every command a row names exists.
 
-Today: 130 rows; 112 ✅, 13 🟡, 0 ❌, 5 ➖. No row is ❌.
+Today: 130 rows; 113 ✅, 12 🟡, 0 ❌, 5 ➖. No row is ❌.
 
 ## Navigation
 
@@ -140,7 +140,7 @@ Today: 130 rows; 112 ✅, 13 🟡, 0 ❌, 5 ➖. No row is ❌.
 | HAR record (`recordHar`) | `har start`, `har stop -o FILE` | ✅ | no |
 | HAR replay (`routeFromHAR`) | `mock import FILE.har`, then `mock use NAME` | ✅ | no |
 | `context.request` (`APIRequestContext`) | `http METHOD URL` with the context's cookies | ✅ | no |
-| `exposeFunction`, `exposeBinding` | `expose NAME`: calls are logged in `console` (`wait --binding NAME` waits for one), but return nothing | 🟡 | no |
+| `exposeFunction`, `exposeBinding` | `expose NAME`: calls are logged in `console` (`wait --binding NAME` waits for one); `--returns JSON` or `--returns-seq JSON-ARRAY` answers them. The answer is data, not a Node function | ✅ | no |
 | `addInitScript` | `init-script add FILE`, `init-script add --code 'JS'`, `open --init-script FILE` | ✅ | no |
 | `page.coverage` | `coverage` | ✅ | no |
 | `newCDPSession` | `cdp Domain.method '{…}'` (`--listen` for events) | ✅ | no |

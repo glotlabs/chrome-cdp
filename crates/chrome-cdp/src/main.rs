@@ -160,8 +160,19 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Mock(args)) => mock::run(&args, &cli.global),
         Some(Command::Http(args)) => http::run(&args, &cli.global),
         Some(Command::InitScript(args)) => session::init_script(&args, &cli.global),
-        Some(Command::Expose(args)) => session::expose(&args.names, false, false, &cli.global),
-        Some(Command::Unexpose(args)) => session::expose(&args.names, true, args.all, &cli.global),
+        Some(Command::Expose(args)) => session::expose(
+            &args.names,
+            session::Exposing::Add {
+                returns: args.returns.as_deref(),
+                returns_seq: args.returns_seq.as_deref(),
+            },
+            &cli.global,
+        ),
+        Some(Command::Unexpose(args)) => session::expose(
+            &args.names,
+            session::Exposing::Remove { all: args.all },
+            &cli.global,
+        ),
         Some(Command::Emulate(args)) => {
             if args.list {
                 Ok(engine::device_list())

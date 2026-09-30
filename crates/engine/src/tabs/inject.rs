@@ -26,8 +26,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use cdp::Session;
 use cdp::domains::{page, runtime};
+use cdp::{RawEvent, Session};
 use futures_util::future::join_all;
 
 use super::features::Feature;
@@ -35,7 +35,8 @@ use super::targets::TargetKind;
 use super::{Shared, Step};
 use crate::frames::WORLD_NAME;
 use crate::inject::{
-    BINDING_PREFIX, Key, MOCK_BINDING, SEED_BINDING, Wanted, mock_shim, unwrapper, wrapper,
+    BINDING_PREFIX, Key, MOCK_BINDING, SEED_BINDING, Wanted, answer_script, mock_shim, unwrapper,
+    wrapper,
 };
 use crate::request::EvalWorld;
 
@@ -145,7 +146,7 @@ fn add_to_worker(
     let (binding, source) = match what {
         Wanted::MockShim => (Some(MOCK_BINDING), Some(mock_shim())),
         Wanted::Script(script) => (None, now.then(|| script.source.clone())),
-        Wanted::Binding(_) | Wanted::SeedBinding => {
+        Wanted::Binding { .. } | Wanted::SeedBinding => {
             return Box::pin(async { Ok(()) });
         }
     };
@@ -237,11 +238,12 @@ fn add(
             params.run_immediately = Some(true);
             (Some(session.call(binding)), params)
         }
-        Wanted::Binding(name) => {
+        Wanted::Binding { name, answers } => {
             let binding = runtime::AddBindingParams::new(format!("{BINDING_PREFIX}{name}"));
             // The function goes into the documents there are at once: the
             // binding is in them already.
-            let mut params = page::AddScriptToEvaluateOnNewDocumentParams::new(wrapper(name));
+            let mut params =
+                page::AddScriptToEvaluateOnNewDocumentParams::new(wrapper(name, *answers));
             params.run_immediately = Some(true);
             (Some(session.call(binding)), params)
         }
@@ -348,4 +350,49 @@ fn remove(session: &Session, key: &Key, identifier: String) -> Step {
             .await
             .map(drop)
     })
+}
+
+/// How long handing a call its answer may take.
+const ANSWER_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// A `Runtime.bindingCalled` from session `session_id`: a call of a
+/// function exposed with answers (its payload has the call's number) gets
+/// its answer in the context it came from, in a task of its own.
+pub(super) fn answer(shared: &Arc<Shared>, session_id: &str, event: &RawEvent) {
+    let Some(name) = event.params["name"]
+        .as_str()
+        .and_then(|n| n.strip_prefix(BINDING_PREFIX))
+    else {
+        return;
+    };
+    let Some(call) = event.params["payload"]
+        .as_str()
+        .and_then(|p| serde_json::from_str::<serde_json::Value>(p).ok())
+        .and_then(|p| p["call"].as_u64())
+    else {
+        return;
+    };
+    let Some(context) = event.params["executionContextId"].as_i64() else {
+        return;
+    };
+    let Some((session, scope)) = shared
+        .lock()
+        .targets
+        .get(session_id)
+        .map(|t| (t.session.clone(), t.scope.clone()))
+    else {
+        return;
+    };
+    let Some(answer) = shared.settings.injections.answer(scope.as_deref(), name) else {
+        return;
+    };
+    let mut params = runtime::EvaluateParams::new(answer_script(name, call, &answer));
+    params.context_id = Some(context);
+    params.silent = Some(true);
+    let call = session.with_timeout(ANSWER_TIMEOUT).call(params);
+    shared.spawn(async move {
+        if let Err(e) = call.await {
+            tracing::debug!("cannot hand an exposed function's call its answer: {e}");
+        }
+    });
 }

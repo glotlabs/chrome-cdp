@@ -1452,6 +1452,10 @@ pub struct ExposeRequest {
     /// With `remove`: every one.
     #[serde(default)]
     pub all: bool,
+    /// What the calls get, in call order, the last repeating (`--returns
+    /// X` is `[X]`); none resolves them at once to `undefined`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub returns: Vec<Value>,
     pub timeout_ms: u64,
 }
 

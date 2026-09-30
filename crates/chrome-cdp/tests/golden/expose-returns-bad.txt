@@ -1,0 +1,11 @@
+$ chrome-cdp expose nextToken --returns-seq 42
+exit: 2
+--- stderr
+error: --returns-seq must be a JSON array, not a number
+  hint: wrap the values in an array, e.g. --returns-seq '[1, 2, 3]', or give one with --returns
+
+$ chrome-cdp expose nextToken --returns-seq 42 --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"--returns-seq must be a JSON array, not a number","hint":"wrap the values in an array, e.g. --returns-seq '[1, 2, 3]', or give one with --returns"}}
+
