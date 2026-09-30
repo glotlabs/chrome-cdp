@@ -1,0 +1,47 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fake Vite client</title>
+<h1>Fake Vite client</h1>
+<p id="cart">cart module not run</p>
+<p id="overlay"></p>
+<p>Speaks Vite's <code>vite-hmr</code> protocol with the fixture server's
+<code>/hmr/vite?channel=…</code> (the channel is this page's
+<code>?channel=</code>), as Vite 8's client does: an <code>update</code>
+re-imports each updated module and logs <code>[vite] hot updated: …</code>
+(or <code>[vite] Failed to reload …</code>), <code>full-reload</code>
+reloads, and <code>error</code> shows an overlay without logging.
+Tests push messages with <code>POST /hmr/send?channel=…</code>.</p>
+<script type="module">
+  import './src/cart.js';
+  const channel = new URLSearchParams(location.search).get('channel') ?? '';
+  console.debug('[vite] connecting...');
+  const ws = new WebSocket(`ws://${location.host}/hmr/vite?channel=${channel}`, 'vite-hmr');
+  ws.onmessage = async (event) => {
+    const payload = JSON.parse(event.data);
+    switch (payload.type) {
+      case 'connected':
+        console.debug('[vite] connected.');
+        break;
+      case 'update':
+        document.getElementById('overlay').textContent = '';
+        for (const update of payload.updates) {
+          const { path, acceptedPath, timestamp } = update;
+          try {
+            await import(`${acceptedPath}?t=${timestamp}`);
+          } catch (e) {
+            console.error('[vite]', `Failed to reload ${acceptedPath}. This could be due to syntax errors or importing non-existent modules. (see errors above)`);
+            continue;
+          }
+          const logged = path === acceptedPath ? path : `${acceptedPath} via ${path}`;
+          console.debug('[vite]', `hot updated: ${logged}`);
+        }
+        break;
+      case 'full-reload':
+        location.reload();
+        break;
+      case 'error':
+        document.getElementById('overlay').textContent = payload.err.message;
+        break;
+    }
+  };
+</script>

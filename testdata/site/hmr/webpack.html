@@ -1,0 +1,69 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Fake webpack-dev-server client</title>
+<h1>Fake webpack-dev-server client</h1>
+<p id="cart">cart module not run</p>
+<p>Talks to the fixture server's <code>/hmr/webpack?channel=…</code> (the
+channel is this page's <code>?channel=</code>) and logs what
+webpack-dev-server 5's client and webpack's HMR runtime log:
+<code>invalid</code> is a rebuild, <code>ok</code> after a new
+<code>hash</code> applies the modules a <code>fake-modules</code> message
+named (a real client fetches the update's manifest instead) and logs
+<code>[HMR] Updated modules:</code>, <code>errors</code> logs the compile
+errors, and <code>static-changed</code> reloads.</p>
+<script type="module">
+  import './src/cart.js';
+  const channel = new URLSearchParams(location.search).get('channel') ?? '';
+  const ws = new WebSocket(`ws://${location.host}/hmr/webpack?channel=${channel}`);
+  let hash = null;
+  let applied = null;
+  let modules = [];
+  ws.onmessage = async (event) => {
+    const message = JSON.parse(event.data);
+    switch (message.type) {
+      case 'hot':
+      case 'liveReload':
+        break;
+      case 'invalid':
+        console.log('[webpack-dev-server] App updated. Recompiling...');
+        break;
+      case 'fake-modules':
+        modules = message.data;
+        break;
+      case 'hash':
+        hash = message.data;
+        break;
+      case 'still-ok':
+      case 'ok':
+        if (applied === null) {
+          applied = hash;
+          console.log('[HMR] Waiting for update signal from WDS...');
+          break;
+        }
+        if (applied === hash) break;
+        applied = hash;
+        console.log('[webpack-dev-server] App hot update...');
+        console.log('[HMR] Checking for updates on the server...');
+        if (modules.length === 0) {
+          console.log('[HMR] Nothing hot updated.');
+        } else {
+          await import(`./src/cart.js?hash=${hash}`);
+          console.log('[HMR] Updated modules:');
+          for (const name of modules) console.log(`[HMR]  - ${name}`);
+        }
+        console.log('[HMR] App is up to date.');
+        modules = [];
+        break;
+      case 'errors':
+        console.error('[webpack-dev-server] Errors while compiling. Reload prevented.');
+        for (const error of message.data) {
+          console.error(`[webpack-dev-server] ${typeof error === 'string' ? error : error.message}`);
+        }
+        break;
+      case 'static-changed':
+        console.log(`[webpack-dev-server] "${message.data}" from static directory was changed. Reloading...`);
+        location.reload();
+        break;
+    }
+  };
+</script>

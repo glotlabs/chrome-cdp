@@ -37,6 +37,8 @@
 //! - Sends `Cache-Control: no-store`, so a reload always hits the server.
 //! - `/ws` is a WebSocket that echoes every message (for pages that keep
 //!   one open).
+//! - `/hmr/vite` and `/hmr/webpack` are fake dev servers' hot-reload
+//!   sockets, and `POST /hmr/send` pushes a message to them (see [`hmr`]).
 //! - `/items?n=<count>` answers a JSON array of `count` items (default
 //!   10), for pages that need a large JSON response.
 //! - `/echo` (any method, any path under it) answers with the request as
@@ -62,11 +64,13 @@
 //! milestones need them, rather than starting another server.
 
 mod api;
+mod hmr;
 mod shop;
 
 pub use shop::Shop;
 
 use std::convert::Infallible;
+use std::future::Future;
 use std::net::{Ipv4Addr, SocketAddr, TcpListener};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -78,7 +82,8 @@ use http_body_util::{BodyExt as _, Full};
 use hyper::body::Incoming;
 use hyper::header::{
     AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_DISPOSITION, CONTENT_TYPE, HeaderValue,
-    LOCATION, SEC_WEBSOCKET_ACCEPT, SEC_WEBSOCKET_KEY, SET_COOKIE, UPGRADE, WWW_AUTHENTICATE,
+    LOCATION, SEC_WEBSOCKET_ACCEPT, SEC_WEBSOCKET_KEY, SEC_WEBSOCKET_PROTOCOL, SET_COOKIE, UPGRADE,
+    WWW_AUTHENTICATE,
 };
 use hyper::server::conn::http1;
 use hyper::service::service_fn;
@@ -154,6 +159,7 @@ impl Fixtures {
             b: fixtures.b.clone(),
             api: std::sync::Mutex::default(),
             records: fixtures.records.clone(),
+            hmr: hmr::Channels::default(),
         });
         let https = fixtures.https.clone();
         let runtime = tokio::runtime::Builder::new_current_thread()
@@ -205,6 +211,31 @@ impl Fixtures {
     pub fn url_b(&self, path: &str) -> String {
         format!("{}{path}", self.b)
     }
+
+    /// Sends `message` to the fake hot-reload sockets (`/hmr/vite`,
+    /// `/hmr/webpack`) of `channel`, as a dev server would after an edit;
+    /// returns how many sockets got it (0 until the page connected).
+    pub fn hmr_send(&self, channel: &str, message: &str) -> usize {
+        use std::io::{Read as _, Write as _};
+        let host = self.b.strip_prefix("http://").unwrap_or(&self.b);
+        let Ok(mut stream) = std::net::TcpStream::connect(host) else {
+            return 0;
+        };
+        let request = format!(
+            "POST /hmr/send?channel={channel} HTTP/1.1\r\nHost: {host}\r\n\
+             Content-Length: {}\r\nConnection: close\r\n\r\n{message}",
+            message.len()
+        );
+        let mut text = String::new();
+        if stream.write_all(request.as_bytes()).is_err()
+            || stream.read_to_string(&mut text).is_err()
+        {
+            return 0;
+        }
+        text.split_once("\r\n\r\n")
+            .and_then(|(_, body)| body.trim().parse().ok())
+            .unwrap_or(0)
+    }
 }
 
 fn bind(port: u16) -> std::io::Result<TcpListener> {
@@ -221,6 +252,8 @@ struct Site {
     b: String,
     api: std::sync::Mutex<api::Api>,
     records: Records,
+    /// The fake dev servers' hot-reload sockets, by channel.
+    hmr: hmr::Channels,
 }
 
 async fn serve(listener: TcpListener, site: Arc<Site>, origin: String) {
@@ -273,8 +306,12 @@ where
     let service = service_fn(move |mut req: Request<Incoming>| {
         let (site, origin) = (site.clone(), origin.clone());
         async move {
-            if req.uri().path() == "/ws" {
-                return Ok::<_, Infallible>(websocket(&mut req));
+            match req.uri().path() {
+                "/ws" => return Ok::<_, Infallible>(websocket(&mut req)),
+                "/hmr/vite" => return Ok(hmr::socket(&site, &mut req, hmr::Kind::Vite)),
+                "/hmr/webpack" => return Ok(hmr::socket(&site, &mut req, hmr::Kind::Webpack)),
+                "/hmr/send" => return Ok(hmr::send(&site, req).await),
+                _ => {}
             }
             if req.uri().path() == "/e2e/ssr" {
                 return Ok::<_, Infallible>(ssr(&req).await);
@@ -455,11 +492,34 @@ async fn respond(site: &Site, origin: &str, req: &Request<Incoming>) -> Response
 /// `/ws`: accepts the WebSocket upgrade and echoes every message until the
 /// page closes it.
 fn websocket(req: &mut Request<Incoming>) -> Response<Full<Bytes>> {
+    upgrade(req, None, |mut ws| async move {
+        while let Some(Ok(message)) = ws.next().await {
+            if (message.is_text() || message.is_binary()) && ws.send(message).await.is_err() {
+                break;
+            }
+        }
+    })
+}
+
+/// The server end of a WebSocket.
+type ServerSocket = WebSocketStream<TokioIo<hyper::upgrade::Upgraded>>;
+
+/// Accepts `req`'s WebSocket upgrade (with `protocol` as its
+/// subprotocol) and runs `serve` on the socket; a 400 without one.
+fn upgrade<F, Fut>(
+    req: &mut Request<Incoming>,
+    protocol: Option<&'static str>,
+    serve: F,
+) -> Response<Full<Bytes>>
+where
+    F: FnOnce(ServerSocket) -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send,
+{
     let Some(key) = req.headers().get(SEC_WEBSOCKET_KEY) else {
         return response(
             StatusCode::BAD_REQUEST,
             "text/plain; charset=utf-8",
-            Bytes::from_static(b"/ws needs a WebSocket upgrade\n"),
+            Bytes::from(format!("{} needs a WebSocket upgrade\n", req.uri().path())),
         );
     };
     let accept = derive_accept_key(key.as_bytes());
@@ -468,13 +528,8 @@ fn websocket(req: &mut Request<Incoming>) -> Response<Full<Bytes>> {
         let Ok(upgraded) = upgrade.await else {
             return;
         };
-        let mut ws =
-            WebSocketStream::from_raw_socket(TokioIo::new(upgraded), Role::Server, None).await;
-        while let Some(Ok(message)) = ws.next().await {
-            if (message.is_text() || message.is_binary()) && ws.send(message).await.is_err() {
-                break;
-            }
-        }
+        let ws = WebSocketStream::from_raw_socket(TokioIo::new(upgraded), Role::Server, None).await;
+        serve(ws).await;
     });
     let mut response = response(
         StatusCode::SWITCHING_PROTOCOLS,
@@ -486,6 +541,9 @@ fn websocket(req: &mut Request<Incoming>) -> Response<Full<Bytes>> {
     headers.insert(CONNECTION, HeaderValue::from_static("Upgrade"));
     if let Ok(accept) = HeaderValue::from_str(&accept) {
         headers.insert(SEC_WEBSOCKET_ACCEPT, accept);
+    }
+    if let Some(protocol) = protocol {
+        headers.insert(SEC_WEBSOCKET_PROTOCOL, HeaderValue::from_static(protocol));
     }
     response
 }
@@ -925,6 +983,44 @@ mod tests {
             text.contains("set-cookie: session=ada-42; HttpOnly; Path=/"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn hmr_sockets_greet_and_relay_what_is_sent() {
+        use tokio_tungstenite::tungstenite::{client, handshake::client::generate_key};
+        let f = Fixtures::shared();
+        assert_eq!(f.hmr_send("nobody", "{}"), 0);
+        let host = f.b().strip_prefix("http://").unwrap();
+        let request = hyper::Request::get(format!("ws://{host}/hmr/vite?channel=greet"))
+            .header("Host", host)
+            .header("Connection", "Upgrade")
+            .header("Upgrade", "websocket")
+            .header("Sec-WebSocket-Version", "13")
+            .header("Sec-WebSocket-Key", generate_key())
+            .header("Sec-WebSocket-Protocol", "vite-hmr")
+            .body(())
+            .unwrap();
+        let stream = TcpStream::connect(host).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let (mut ws, response) = client::client(request, stream).unwrap();
+        assert_eq!(
+            response.headers()["sec-websocket-protocol"],
+            "vite-hmr",
+            "{response:?}"
+        );
+        assert_eq!(
+            ws.read().unwrap().to_text().unwrap(),
+            r#"{"type":"connected"}"#
+        );
+        // The socket joins its channel as the upgrade is answered.
+        assert_eq!(f.hmr_send("greet", r#"{"type":"full-reload"}"#), 1);
+        assert_eq!(
+            ws.read().unwrap().to_text().unwrap(),
+            r#"{"type":"full-reload"}"#
+        );
+        drop(ws);
     }
 
     #[test]
