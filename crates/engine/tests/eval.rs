@@ -608,6 +608,7 @@ async fn exceptions_show_a_mapped_stack() {
 
 fn cdp_request(method: Option<&str>, params: Value, listen: &[&str], count: usize) -> CdpRequest {
     CdpRequest {
+        all_sessions: false,
         method: method.map(str::to_owned),
         params: serde_json::from_value(params).unwrap(),
         target: Target::Page,

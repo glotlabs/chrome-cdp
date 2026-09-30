@@ -70,6 +70,7 @@ async fn goto(engine: &Engine, url: &str) {
 async fn cdp(engine: &Engine, method: &str, params: serde_json::Value) -> serde_json::Value {
     engine
         .cdp(CdpRequest {
+            all_sessions: false,
             method: Some(method.to_owned()),
             params: params.as_object().unwrap().clone(),
             target: Target::Page,

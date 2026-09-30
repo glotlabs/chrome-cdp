@@ -107,6 +107,8 @@ enum Probe {
     Determinism,
     /// `offline` fails its `fetch`.
     Offline,
+    /// `cdp --listen --all-sessions` hears its `fetch`, named after it.
+    Listen,
 }
 
 struct Row {
@@ -233,6 +235,11 @@ const ROWS: &[Row] = &[
     Row {
         feature: "determinism",
         probe: Probe::Determinism,
+        cells: [Check, Check, Check, Check, Check, Check],
+    },
+    Row {
+        feature: "cdp --all-sessions",
+        probe: Probe::Listen,
         cells: [Check, Check, Check, Check, Check, Check],
     },
 ];
@@ -723,6 +730,51 @@ async fn probe(engine: &Arc<Engine>, probe: Probe, who: &str) -> Result<(), Stri
                 .then_some(())
                 .ok_or_else(|| format!("Date.now() {}", report["now"]))
         }
+        Probe::Listen => {
+            // The page asks the target to fetch, as the listened call.
+            let expression = format!("ask({who:?}, 'fetch')");
+            let out = engine
+                .cdp(CdpRequest {
+                    method: Some("Runtime.evaluate".into()),
+                    params: json!({ "expression": expression, "awaitPromise": true })
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                    target: Target::Page,
+                    tab: None,
+                    frame: None,
+                    listen: vec!["Network.requestWillBeSent".into()],
+                    count: 0,
+                    all_sessions: true,
+                    timeout_ms: 2_000,
+                    max_chars: 0,
+                })
+                .await
+                .map_err(|e| e.to_text())?;
+            let data: protocol::schema::CdpListenData = serde_json::from_value(out.data).unwrap();
+            let asked = format!("/targets/api?from={who}");
+            let heard: Vec<&str> = data
+                .events
+                .iter()
+                .filter(|e| {
+                    e.params["request"]["url"]
+                        .as_str()
+                        .is_some_and(|u| u.ends_with(&asked))
+                })
+                .filter_map(|e| e.from.as_deref())
+                .collect();
+            // A same-site iframe is in the page's process and session.
+            let want = match who {
+                "main" | "same" => "main".to_owned(),
+                "oopif" => "iframe \"oopif\"".to_owned(),
+                worker => format!("{worker} worker"),
+            };
+            heard
+                .iter()
+                .any(|from| from.starts_with(&want))
+                .then_some(())
+                .ok_or_else(|| format!("heard its request from {heard:?}, not {want}"))
+        }
         Probe::Offline => {
             emulate(engine, EmulationChange::Offline { offline: true }).await;
             let answer = ask(engine, who, "fetch").await;
@@ -921,6 +973,7 @@ async fn every_target_attaches_and_resumes() {
     }
     let out = engine
         .cdp(CdpRequest {
+            all_sessions: false,
             method: Some("Target.getTargets".into()),
             params: serde_json::Map::new(),
             target: Target::Browser,
@@ -1031,6 +1084,50 @@ async fn a_shared_workers_error_counts_once_across_tabs() {
     assert!(
         text.contains("thrown in shared") && text.contains("[shared worker shared.js]"),
         "{text}"
+    );
+    engine.close().await;
+}
+
+/// `cdp --listen --all-sessions` hears a worker that starts while it
+/// listens from its first request on: the script it imports.
+#[tokio::test]
+async fn all_sessions_hears_a_worker_that_starts_meanwhile() {
+    let Some(path) = chrome_path() else { return };
+    let engine = matrix(&path, "engine-targets-listen-new").await;
+    let expression = "new Promise((resolve) => { \
+        const w = new Worker('/targets/dedicated.js?who=late'); \
+        w.onmessage = (e) => resolve(e.data); })";
+    let out = engine
+        .cdp(CdpRequest {
+            method: Some("Runtime.evaluate".into()),
+            params: json!({ "expression": expression, "awaitPromise": true })
+                .as_object()
+                .unwrap()
+                .clone(),
+            target: Target::Page,
+            tab: None,
+            frame: None,
+            listen: vec!["Network.requestWillBeSent".into()],
+            count: 0,
+            all_sessions: true,
+            timeout_ms: 2_000,
+            max_chars: 0,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("cdp: {}", e.to_text()));
+    let data: protocol::schema::CdpListenData = serde_json::from_value(out.data).unwrap();
+    let heard: Vec<(String, &str)> = data
+        .events
+        .iter()
+        .map(|e| {
+            let url = e.params["request"]["url"].as_str().unwrap_or_default();
+            let file = url.rsplit('/').next().unwrap_or_default().to_owned();
+            (file, e.from.as_deref().unwrap_or_default())
+        })
+        .collect();
+    assert!(
+        heard.contains(&("ops.js".to_owned(), "dedicated worker dedicated.js")),
+        "{heard:?}"
     );
     engine.close().await;
 }

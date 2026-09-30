@@ -423,7 +423,9 @@ pub(crate) fn cdp(args: &CdpArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
     let ctx = Ctx::new(global)?;
     let target = match args.target {
         Some(target) => target.to_engine(),
-        None if args.frame.is_some() || ctx.tab.is_some() => engine::Target::Page,
+        None if args.frame.is_some() || args.all_sessions || ctx.tab.is_some() => {
+            engine::Target::Page
+        }
         None => engine::Target::Browser,
     };
     let request = CdpRequest {
@@ -438,6 +440,7 @@ pub(crate) fn cdp(args: &CdpArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
         frame: args.frame.clone(),
         listen: args.listen.clone(),
         count: args.count.unwrap_or(1),
+        all_sessions: args.all_sessions,
         timeout_ms: millis(ctx.timeout),
         max_chars: args.max_chars,
     };

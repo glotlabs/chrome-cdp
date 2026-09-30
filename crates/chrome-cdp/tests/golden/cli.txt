@@ -624,6 +624,7 @@ command chrome-cdp cdp
   flag --frame value=FRAME
   flag --listen value=EVENT repeatable
   flag --count value=N
+  flag --all-sessions
   flag --max-chars value=N
 command chrome-cdp batch
   flag --continue

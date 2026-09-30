@@ -47,11 +47,25 @@
     "CdpEvent": {
       "description": "One raw CDP event.",
       "properties": {
+        "from": {
+          "description": "With `--all-sessions`: what sent it, `main` (the tab's page),\n`iframe \"pay\"` (an out-of-process iframe, by its name or URL), or\n`dedicated worker w.js` (`shared …`, `service …`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "method": {
           "description": "`Domain.event`.",
           "type": "string"
         },
-        "params": true
+        "params": true,
+        "session": {
+          "description": "With `--all-sessions`: the id of the CDP session it came on.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       },
       "required": [
         "method",

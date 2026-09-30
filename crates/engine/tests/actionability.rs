@@ -119,6 +119,7 @@ async fn cdp(engine: &Engine, method: &str, params: Value) -> Value {
     };
     engine
         .cdp(CdpRequest {
+            all_sessions: false,
             method: Some(method.to_owned()),
             params,
             target: Target::Page,

@@ -1,7 +1,9 @@
 //! `cdp <Domain.method> [json]`: one raw CDP call on the session's
 //! browser or current page, the escape hatch (overview principle 6).
 //! `--listen` also captures the events of the call's session that follow
-//! it (or, with no method, just listens).
+//! it (or, with no method, just listens); with `--all-sessions`, those of
+//! every session of the tab, its OOPIFs' and workers' too, each named
+//! after what sent it (see [`crate::tabs::tap`]).
 //!
 //! A page call returns at once when the page opens a dialog or crashes
 //! meanwhile (see [`crate::interrupt`]). One sent to a tab that already
@@ -23,6 +25,7 @@ use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::request::{CdpRequest, Target, millis};
 use crate::tabs::FrameContext;
+use crate::tabs::tap::Tap;
 
 /// Checks a `cdp` request without a browser: it needs a method or
 /// events to listen for, and event names must be `Domain.event` or
@@ -33,6 +36,18 @@ pub fn check_cdp(req: &CdpRequest) -> Result<(), ErrorInfo> {
             ErrorInfo::new(ErrorKind::BadArgs, "cdp needs a method, or --listen")
                 .hint(Hint::run(Cmd::new("cdp").arg("Browser.getVersion"))),
         );
+    }
+    if req.all_sessions && req.listen.is_empty() {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            "--all-sessions needs --listen: it says where to listen",
+        )
+        .hint(Hint::run(
+            Cmd::new("cdp")
+                .switch("all-sessions")
+                .flag("listen", "Network.requestWillBeSent")
+                .arg("Page.reload"),
+        )));
     }
     for name in &req.listen {
         let valid = name.split_once('.').is_some_and(|(domain, event)| {
@@ -84,6 +99,13 @@ async fn call_listening(
     Ok((result, events))
 }
 
+/// Where `--listen` hears events: the call's session, or every session
+/// of the tab (`--all-sessions`).
+enum Listening {
+    Own(LosslessEventStream),
+    Tap(Tap),
+}
+
 /// The most events one call captures (with `--count 0`).
 const MAX_EVENTS: usize = 10_000;
 
@@ -103,6 +125,32 @@ async fn collect(
             Ok(Some(event)) if wanted(listen, &event.method) => events.push(CdpEvent {
                 method: event.method.clone(),
                 params: event.params.clone(),
+                from: None,
+                session: None,
+            }),
+            Ok(Some(_)) => {}
+            Ok(None) | Err(_) => break,
+        }
+    }
+    events
+}
+
+/// [`collect`] from every session of a tab (`--all-sessions`).
+async fn collect_tapped(
+    mut tap: Tap,
+    listen: &[String],
+    count: usize,
+    deadline: Instant,
+) -> Vec<CdpEvent> {
+    let want = if count == 0 { MAX_EVENTS } else { count };
+    let mut events = Vec::new();
+    while events.len() < want {
+        match tokio::time::timeout_at(deadline, tap.next()).await {
+            Ok(Some(tapped)) if wanted(listen, &tapped.event.method) => events.push(CdpEvent {
+                method: tapped.event.method.clone(),
+                params: tapped.event.params.clone(),
+                from: Some(tapped.from),
+                session: Some(tapped.session),
             }),
             Ok(Some(_)) => {}
             Ok(None) | Err(_) => break,
@@ -127,6 +175,7 @@ impl Engine {
             frame,
             listen,
             count,
+            all_sessions,
             max_chars,
             ..
         } = req;
@@ -142,24 +191,44 @@ impl Engine {
                     .raw("--frame … Runtime.evaluate …"),
             )));
         }
+        if all_sessions && target == Target::Browser {
+            return Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                "--all-sessions listens on a tab's sessions, not the browser's",
+            )
+            .hint(Hint::run(
+                Cmd::new("cdp")
+                    .scoped(&self.session)
+                    .flag("target", "page")
+                    .switch("all-sessions")
+                    .flag("listen", "Network.requestWillBeSent")
+                    .arg("Page.reload"),
+            )));
+        }
         let mark = running.tabs.mark();
         let method = method.as_deref();
         let params = Value::Object(params);
         let listening = !listen.is_empty();
+        // With --all-sessions the tab's tap hears the call's session too.
+        let own = listening && !all_sessions;
         let mut blocked = None;
         let mut page = None;
+        let mut tap = None;
         let result = match target {
             Target::Browser => {
                 let session = running.conn.browser().with_timeout(timeout);
-                call_listening(&session, method, params, listening).await
+                call_listening(&session, method, params, own).await
             }
             Target::Page => {
                 let tab_page = self.page(&running, tab.as_deref(), timeout).await?;
                 let _tab = self.tabs.lock(&tab_page.target_id).await;
+                // Before the call, so none of the events it causes is
+                // missed.
+                tap = (listening && all_sessions).then(|| running.tabs.tap(tab_page.id));
                 let call = async {
                     let Some(frame) = frame.as_deref() else {
                         let session = tab_page.session.with_timeout(timeout);
-                        return Ok(call_listening(&session, method, params, listening).await);
+                        return Ok(call_listening(&session, method, params, own).await);
                     };
                     let call = |context: &FrameContext| {
                         let params = match method {
@@ -167,7 +236,7 @@ impl Engine {
                             None => Value::Null,
                         };
                         let session = context.session.with_timeout(timeout);
-                        async move { call_listening(&session, method, params, listening).await }
+                        async move { call_listening(&session, method, params, own).await }
                     };
                     self.in_frame(&running, &tab_page, Some(frame), World::Main, timeout, call)
                         .await
@@ -187,6 +256,10 @@ impl Engine {
                 None => info,
             }
         })?;
+        let events = match tap {
+            Some(tap) => Some(Listening::Tap(tap)),
+            None => events.map(Listening::Own),
+        };
         let mut output = match events {
             None => {
                 let value = value.unwrap_or_else(|| json!({}));
@@ -197,8 +270,11 @@ impl Engine {
                     .quiet(compact)
                     .limit(max_chars, "--max-chars 0 for all of it")
             }
-            Some(stream) => {
-                let events = collect(stream, &listen, count, deadline).await;
+            Some(listening) => {
+                let events = match listening {
+                    Listening::Own(stream) => collect(stream, &listen, count, deadline).await,
+                    Listening::Tap(tap) => collect_tapped(tap, &listen, count, deadline).await,
+                };
                 // Blocked by now, maybe while listening.
                 if let Some(page) = &page {
                     blocked = self.blocked_warning(&running, page);
@@ -259,7 +335,10 @@ impl Engine {
             quiet.push('\n');
         }
         for event in &events {
-            let line = format!("{} {}\n", event.method, event.params);
+            let line = match &event.from {
+                Some(from) => format!("[{from}] {} {}\n", event.method, event.params),
+                None => format!("{} {}\n", event.method, event.params),
+            };
             text.push_str(&line);
             quiet.push_str(&line);
         }

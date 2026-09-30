@@ -2474,6 +2474,14 @@ pub struct CdpEvent {
     /// `Domain.event`.
     pub method: String,
     pub params: Value,
+    /// With `--all-sessions`: what sent it, `main` (the tab's page),
+    /// `iframe "pay"` (an out-of-process iframe, by its name or URL), or
+    /// `dedicated worker w.js` (`shared …`, `service …`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    /// With `--all-sessions`: the id of the CDP session it came on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
 }
 
 /// `data` of `chrome-cdp eval --json`.

@@ -51,6 +51,7 @@ async fn eval(engine: &Engine, tab: Option<&str>, expression: &str) -> Value {
     let params = json!({ "expression": expression, "returnByValue": true });
     let output = engine
         .cdp(CdpRequest {
+            all_sessions: false,
             method: Some("Runtime.evaluate".into()),
             params: params.as_object().unwrap().clone(),
             target: Target::Page,
@@ -156,6 +157,7 @@ async fn cross_site_frames_are_attached_set_up_and_resumed() {
     // auto-attach.
     let targets = engine
         .cdp(CdpRequest {
+            all_sessions: false,
             method: Some("Target.getTargets".into()),
             params: serde_json::Map::new(),
             target: Target::Browser,

@@ -203,6 +203,10 @@ pub struct CdpRequest {
     /// timeout.
     #[serde(default)]
     pub count: usize,
+    /// `--all-sessions`: listen on every session of the tab (its page's,
+    /// its out-of-process iframes', its workers'), not only the call's.
+    #[serde(default)]
+    pub all_sessions: bool,
     /// Bounds the call, and the wait for events.
     pub timeout_ms: u64,
     /// The output budget (0 = none).

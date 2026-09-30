@@ -500,6 +500,9 @@ opens DevTools for the tab.
 calls the browser (or a page, with `--target page`, `--tab` or `--frame`), and
 `--listen <Domain.event|Domain.*>` also prints the events that follow, one per
 line, until `--count` of them came (`--count 0`: all until `--timeout`).
+`--all-sessions` listens on every session of the tab, its cross-site iframes'
+and workers' too (and those that start meanwhile), and starts each line with
+what sent it: `[main]`, `[iframe "pay"]`, `[service worker sw.js]`.
 
 ## Downloads, crashed tabs and HTTP authentication
 

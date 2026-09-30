@@ -45,6 +45,7 @@ mod fetch;
 mod inject;
 mod locks;
 mod mock_shim;
+pub(crate) mod tap;
 mod targets;
 
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
@@ -285,6 +286,10 @@ struct State {
     /// Console messages and requests of shared and service workers no
     /// tab had a frame on the origin of (`status`).
     dropped: u64,
+    /// The taps of `cdp --listen --all-sessions` (see [`tap`]), and the
+    /// last id given to one.
+    hooks: Vec<tap::Hook>,
+    next_hook: u64,
 }
 
 #[derive(Debug)]
@@ -1518,6 +1523,8 @@ impl State {
             starting: true,
             visited: HashMap::new(),
             dropped: 0,
+            hooks: Vec::new(),
+            next_hook: 0,
         }
     }
 
@@ -1642,6 +1649,8 @@ impl State {
         if self.tabs.remove(&id).is_some() {
             self.targets.retain(|_, t| t.owner != Owner::Tab(id));
         }
+        // Its taps end once the sessions they hear are gone.
+        self.hooks.retain(|h| h.tab() != id);
         self.recent.retain(|&r| r != id);
         if self.active == Some(id) {
             self.active = self.fallback();
@@ -2166,7 +2175,11 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent<'_>) {
     if kind == TargetKind::DedicatedWorker {
         target.frame.clone_from(&info.parent_frame_id);
     }
-    shared.lock().targets.insert(session_id.clone(), target);
+    {
+        let mut state = shared.lock();
+        state.targets.insert(session_id.clone(), target);
+        tap::attached(shared, &mut state, &session_id);
+    }
     if let Some(fetch_events) = fetch_events {
         fetch::enable_early(shared, &session, kind);
         shared.spawn(fetch::watch_fetch(
