@@ -52,12 +52,12 @@ const DOWNLOAD_WAIT: Duration = Duration::from_secs(2);
 /// page has no context yet).
 const FOCUS_MARK_WAIT: Duration = Duration::from_secs(2);
 
-/// How long marking focus waits for a child frame's context (a frame
-/// still loading has nothing focused).
-const FOCUS_FRAME_WAIT: Duration = Duration::from_millis(200);
+/// How long asking a child frame where focus is waits for its context (a
+/// frame still loading has nothing focused).
+pub(super) const FOCUS_FRAME_WAIT: Duration = Duration::from_millis(200);
 
 /// How deep in iframes the report follows focus.
-const FOCUS_DEPTH: usize = 8;
+pub(super) const FOCUS_DEPTH: usize = 8;
 
 /// How many console errors and failed requests the report lists (each);
 /// a line counts the rest.

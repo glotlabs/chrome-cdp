@@ -16,6 +16,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use tokio::time::Instant;
 
 use super::keys::{self, Key, KeyEvent};
+use super::report::{FOCUS_DEPTH, FOCUS_FRAME_WAIT};
 use super::{Actor, Checks, Ready, describe};
 use crate::context::Scoped as _;
 use crate::errors::from_cdp;
@@ -229,21 +230,34 @@ impl Actor<'_> {
         }
     }
 
-    /// The element that has focus in the tab (inside shadow roots; an
-    /// `<iframe>` when focus is in one), named; `None` when nothing has.
+    /// The element that has focus in the tab (inside shadow roots, and
+    /// down into iframes, out-of-process ones too; the `<iframe>` when its
+    /// document has nothing focused or cannot be asked), named; `None`
+    /// when nothing has.
     async fn focused_element(&self) -> Result<Option<ActedElement>, ErrorInfo> {
-        self.page_element("globalThis.__ccdp.focused()").await
-    }
-
-    /// The element `expression` (which may use `__ccdp`) gives in the main
-    /// frame's isolated world, named; `None` for `null`.
-    pub(super) async fn page_element(
-        &self,
-        expression: &str,
-    ) -> Result<Option<ActedElement>, ErrorInfo> {
-        let Some(target) = self.frame_element(None, expression, self.timeout).await? else {
+        const FOCUSED: &str = "globalThis.__ccdp.focused()";
+        let Some(mut target) = self.frame_element(None, FOCUSED, self.timeout).await? else {
             return Ok(None);
         };
+        for _ in 0..FOCUS_DEPTH {
+            let inner = self
+                .engine
+                .content_frame(&target.context, &target.object_id, self.timeout)
+                .await
+                .ok()
+                .flatten();
+            let Some(inner) = inner else { break };
+            match self
+                .frame_element(Some(&inner), FOCUSED, FOCUS_FRAME_WAIT)
+                .await
+            {
+                Ok(Some(next)) => {
+                    target.release();
+                    target = next;
+                }
+                _ => break,
+            }
+        }
         let named = self.name(&target).await;
         target.release();
         named.map(Some)

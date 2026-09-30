@@ -476,6 +476,26 @@ async fn focus_is_followed_into_frames() {
         out.text
     );
 
+    // A key without a locator goes to the element focused in the frame,
+    // and says so.
+    let out = act(
+        &engine,
+        Action::Press {
+            keys: "End".to_owned(),
+            locator: None,
+        },
+    )
+    .await;
+    assert!(
+        out.text
+            .lines()
+            .next()
+            .unwrap()
+            .contains(" textbox \"Code\""),
+        "{}",
+        out.text
+    );
+
     // Out of the frames, into the page's own form.
     let out = act(&engine, click("frame=same >> #back")).await;
     let lines = report(&out);
