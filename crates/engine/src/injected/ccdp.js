@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 900560b3b0fba05a
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: d6e92961653be8aa
 "use strict";
 (() => {
   // src/dom.ts
@@ -2668,9 +2668,9 @@ ${inner}
         const a = boxes[i];
         for (let j = i + 1; j < boxes.length && boxes[j].box[0] < a.box[0] + a.box[2]; j++) {
           const b = boxes[j];
-          if (contains(a.el, b.el) || contains(b.el, a.el)) continue;
           const both = intersect(a.box, b.box);
           if (!both || area(both) <= 4 || area(both) < 0.1 * Math.min(area(a.box), area(b.box))) continue;
+          if (contains(a.el, b.el) || contains(b.el, a.el)) continue;
           const [first, second] = a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? [a, b] : [b, a];
           findings.push({
             kind: "overlap",

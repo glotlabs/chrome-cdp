@@ -310,9 +310,9 @@ export function layoutCheck(root: Element | null, options: Options): { json: str
       const a = boxes[i];
       for (let j = i + 1; j < boxes.length && boxes[j].box[0] < a.box[0] + a.box[2]; j++) {
         const b = boxes[j];
-        if (contains(a.el, b.el) || contains(b.el, a.el)) continue;
         const both = intersect(a.box, b.box);
         if (!both || area(both) <= 4 || area(both) < 0.1 * Math.min(area(a.box), area(b.box))) continue;
+        if (contains(a.el, b.el) || contains(b.el, a.el)) continue;
         // The first in document order is the one named.
         const [first, second] =
           a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? [a, b] : [b, a];
