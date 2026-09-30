@@ -15,6 +15,7 @@ pub(crate) mod baseline;
 mod issues;
 mod mock_state;
 mod page;
+mod perf;
 
 pub(crate) use page::is_favicon;
 pub(crate) mod pixels;
@@ -22,12 +23,13 @@ mod requests;
 mod template;
 
 pub use baseline::{check_expect_screenshot, check_expect_snapshot};
+pub use perf::{check_perf_budgets, perf_metrics};
 
 use std::fmt::Write as _;
 use std::time::Duration;
 
 use cdp::domains::runtime;
-use protocol::schema::{ExpectData, MarkData, Severity};
+use protocol::schema::{ExpectData, ExpectPerf, MarkData, Severity};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format, suggest};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -296,6 +298,10 @@ enum Assertion {
         scope: Option<Locator>,
         level: A11yLevel,
     },
+    Perf {
+        budgets: Vec<perf::Budget>,
+        missing_ok: bool,
+    },
     /// Looked at in the session's mocks, not in a page.
     MockState,
     /// Looked at in the network logs of the session's (or context's)
@@ -389,6 +395,16 @@ impl Assertion {
                 Self::A11y {
                     scope: scope.as_deref().map(|s| options.parse(s)).transpose()?,
                     level: *level,
+                }
+            }
+            Expectation::Perf {
+                budgets,
+                missing_ok,
+            } => {
+                no_not("--perf")?;
+                Self::Perf {
+                    budgets: perf::parse(budgets)?,
+                    missing_ok: *missing_ok,
                 }
             }
             Expectation::MockState { name, check } => {
@@ -600,6 +616,7 @@ fn expected(req: &ExpectRequest, level_rules: Option<(usize, A11yLevel)>) -> Str
             ),
             None => "no accessibility violations".into(),
         },
+        Expectation::Perf { budgets, .. } => perf::expected_budgets(budgets),
         Expectation::MockState { name, check } => match check {
             MockStateCheck::Count { count, min, max } => {
                 let n = |n: u64| {
@@ -726,6 +743,15 @@ fn command(req: &ExpectRequest) -> Cmd {
                 cmd = cmd.flag("level", level.as_str());
             }
         }
+        Expectation::Perf {
+            budgets,
+            missing_ok,
+        } => {
+            cmd = cmd.flag("perf", budgets);
+            if *missing_ok {
+                cmd = cmd.flag("perf-missing", "ok");
+            }
+        }
         Expectation::MockState { name, check } => {
             cmd = cmd.arg("mock-state").arg(name);
             cmd = match check {
@@ -827,6 +853,8 @@ struct Passed {
     quiet: String,
     count: Option<u64>,
     retries: u64,
+    /// `--perf`: the budgets and what was measured.
+    perf: Option<ExpectPerf>,
 }
 
 impl Engine {
@@ -909,7 +937,10 @@ impl Engine {
         let running = self.running()?;
         let timeout = millis(req.timeout_ms);
         let page = self.page(&running, req.tab.as_deref(), timeout).await?;
-        if matches!(assertion, Assertion::Polled { .. } | Assertion::A11y { .. }) {
+        if matches!(
+            assertion,
+            Assertion::Polled { .. } | Assertion::A11y { .. } | Assertion::Perf { .. }
+        ) {
             self.check_not_blocked(&running, &page)?;
         }
         let mark = running.tabs.mark();
@@ -930,8 +961,13 @@ impl Engine {
             elapsed_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
             retries: passed.retries,
             layout: None,
+            perf: passed.perf,
         };
-        let text = format!("passed: {assertion_text} ({})", format::duration(elapsed));
+        let mut text = format!("passed: {assertion_text} ({})", format::duration(elapsed));
+        if let Some(perf) = &data.perf {
+            text.push('\n');
+            text.push_str(&perf::passed_line(perf));
+        }
         let output = Output::typed(&data, text)
             .quiet(passed.quiet)
             .limit(req.max_chars, "--max-chars 0 for all of it");
@@ -961,6 +997,7 @@ impl Engine {
                             quiet: quiet_value(&observed),
                             count: met.count.filter(|_| matcher.is_some()),
                             retries: retries(&observed),
+                            perf: None,
                         })
                     }
                     Err(unmet) => {
@@ -993,6 +1030,7 @@ impl Engine {
                         quiet: url,
                         count: None,
                         retries: 0,
+                        perf: None,
                     }),
                     Err(url) => {
                         let actual = format!("{:?} (after {})", url, format::duration(timeout));
@@ -1018,6 +1056,13 @@ impl Engine {
             }
             Assertion::A11y { scope, level } => {
                 self.a11y(running, page, req, scope.as_ref(), *level, options, timeout)
+                    .await
+            }
+            Assertion::Perf {
+                budgets,
+                missing_ok,
+            } => {
+                self.perf_budgets(running, page, req, budgets, *missing_ok, options, timeout)
                     .await
             }
             Assertion::MockState | Assertion::Request => {

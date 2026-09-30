@@ -752,6 +752,14 @@ pub enum Expectation {
         #[serde(default)]
         level: A11yLevel,
     },
+    /// `--perf`: the page's numbers (`perf`) within every budget of
+    /// `budgets` (`lcp<2.5s cls<0.1`), read once after `load`. A metric
+    /// not measured yet fails, unless `missing_ok`.
+    Perf {
+        budgets: String,
+        #[serde(default)]
+        missing_ok: bool,
+    },
     /// `expect mock-state <name> <check>`: a named value or collection of
     /// the mock sets in use (plan 11, milestone 11.3).
     MockState { name: String, check: MockStateCheck },

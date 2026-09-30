@@ -308,6 +308,7 @@ impl Engine {
                 findings: keys.into_iter().collect(),
                 stale,
             }),
+            perf: None,
         };
         Ok(warnings
             .into_iter()

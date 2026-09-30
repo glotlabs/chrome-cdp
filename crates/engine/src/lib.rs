@@ -88,7 +88,8 @@ pub use emulate::{
 pub use endpoint::{Endpoint, parse_endpoint};
 pub use errors::from_cdp;
 pub use expect::{
-    MATCHERS, check_expect, check_expect_screenshot, check_expect_snapshot, parse_matcher,
+    MATCHERS, check_expect, check_expect_screenshot, check_expect_snapshot, check_perf_budgets,
+    parse_matcher, perf_metrics,
 };
 pub use explore::check_explore;
 pub use frames::{FrameInfo, WORLD_NAME, World};

@@ -4822,6 +4822,62 @@ pub struct ExpectData {
     /// `expect --layout`: the baseline and the findings.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout: Option<ExpectLayout>,
+    /// `expect --perf`: every budget with what was measured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub perf: Option<ExpectPerf>,
+}
+
+/// `expect --perf`: every budget with what was measured, and the
+/// throttling it was measured under. A failure's `details.perf` has it
+/// too.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ExpectPerf {
+    /// The page measured.
+    pub url: String,
+    /// The budgets, in the order typed (`good` expanded).
+    pub budgets: Vec<PerfBudgetCheck>,
+    /// The network and CPU throttling (`throttle`, `cpu-throttle`).
+    pub throttling: PerfThrottling,
+}
+
+/// One budget of `expect --perf`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PerfBudgetCheck {
+    /// The budget, as typed: `lcp<2.5s`.
+    pub budget: String,
+    /// `ttfb`, `fcp`, `dcl`, `load`, `lcp`, `cls`, `inp`, `tbt`,
+    /// `requests`, `transfer`, `elements` or `heap`.
+    pub metric: String,
+    /// `<`, `<=`, `>` or `>=`.
+    pub op: String,
+    /// The limit, in `unit`.
+    pub limit: f64,
+    /// What was measured, in `unit`; absent when the metric is not
+    /// measured yet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<f64>,
+    /// `ms`, `bytes`, `count`, or empty for CLS (a score).
+    pub unit: String,
+    /// Whether the budget held.
+    pub held: bool,
+    /// Why the metric is not measured, and what to do (`interact
+    /// first`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub missing: Option<String>,
+    /// LCP's element, e.g. `img#hero`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element: Option<String>,
+}
+
+/// The throttling `expect --perf` measured under.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PerfThrottling {
+    /// `throttle`'s preset (`slow-3g`) or settings; absent when off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network: Option<String>,
+    /// `cpu-throttle`'s slowdown (4 is 4x slower); absent when off.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu: Option<f64>,
 }
 
 /// `data` of `chrome-cdp mark --json`.

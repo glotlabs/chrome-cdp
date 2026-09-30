@@ -52,6 +52,7 @@ impl Engine {
                 quiet: "0".into(),
                 count: Some(0),
                 retries: 0,
+                perf: None,
             });
         }
         let count = issues.len();

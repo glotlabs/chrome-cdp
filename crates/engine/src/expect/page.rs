@@ -137,6 +137,7 @@ impl Engine {
                 quiet: "0".into(),
                 count: Some(0),
                 retries: 0,
+                perf: None,
             });
         }
         let tab = tab_name(page.id);
@@ -294,6 +295,7 @@ impl Engine {
                 elapsed_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
                 retries: 0,
                 layout: None,
+                perf: None,
             };
             let text = format!("passed: {assertion} ({})", format::duration(elapsed));
             return Ok(Output::typed(&data, text)
@@ -370,6 +372,7 @@ impl Engine {
                 quiet: "0".into(),
                 count: Some(0),
                 retries: 0,
+                perf: None,
             });
         }
         let tab = tab_name(page.id);
@@ -474,6 +477,7 @@ impl Engine {
                 quiet: "0".into(),
                 count: Some(0),
                 retries: 0,
+                perf: None,
             });
         }
         let total: usize = audit.violations.iter().map(|v| v.count).sum();

@@ -23,10 +23,11 @@ use protocol::{ErrorInfo, ErrorKind, Output, format};
 use serde::Deserialize;
 
 use crate::Engine;
+use crate::Running;
 use crate::errors::from_cdp;
 use crate::frames::World;
 use crate::request::{PerfRequest, millis};
-use crate::tabs::tab_name;
+use crate::tabs::{Page, tab_name};
 
 /// The observer every top-level document gets.
 pub(crate) const OBSERVER: &str = include_str!("perf.js");
@@ -102,37 +103,13 @@ impl Engine {
         let page = self.page(&running, req.tab.as_deref(), timeout).await?;
         self.check_not_blocked(&running, &page)?;
         let mark = running.tabs.mark();
-        let work = async {
-            let context = self
-                .frame_context(&running, &page, None, World::Isolated, timeout)
-                .await?;
-            let mut params = runtime::EvaluateParams::new(format!("{OBSERVER}\n{READ}"));
-            params.context_id = Some(context.context_id);
-            params.return_by_value = Some(true);
-            let result = context
-                .session
-                .with_timeout(timeout)
-                .call(params)
-                .await
-                .map_err(|e| from_cdp(&e, &self.session))?;
-            if let Some(e) = result.exception_details {
-                return Err(ErrorInfo::new(
-                    ErrorKind::ProtocolError,
-                    format!("reading the page's timing failed: {}", e.text),
-                ));
-            }
-            let read: Read = serde_json::from_value(result.result.value.unwrap_or_default())
-                .map_err(|e| {
-                    ErrorInfo::new(
-                        ErrorKind::ProtocolError,
-                        format!("the page's timing came back unreadable: {e}"),
-                    )
-                })?;
-            let metrics = self.metrics(&page.session, timeout).await;
-            Ok((read, metrics))
-        };
-        let (read, metrics) = Box::pin(self.unless_blocked(&running, &page, mark, work)).await?;
-        let data = perf_data(tab_name(page.id), read, metrics);
+        let data = Box::pin(self.unless_blocked(
+            &running,
+            &page,
+            mark,
+            self.read_perf(&running, &page, timeout),
+        ))
+        .await?;
         let text = perf_text(&data);
         let quiet = data
             .lcp
@@ -146,6 +123,43 @@ impl Engine {
             );
         }
         Ok(output)
+    }
+
+    /// The page's numbers now, as `perf` shows them (and `expect --perf`
+    /// checks them).
+    pub(crate) async fn read_perf(
+        &self,
+        running: &Running,
+        page: &Page,
+        timeout: std::time::Duration,
+    ) -> Result<PerfData, ErrorInfo> {
+        let context = self
+            .frame_context(running, page, None, World::Isolated, timeout)
+            .await?;
+        let mut params = runtime::EvaluateParams::new(format!("{OBSERVER}\n{READ}"));
+        params.context_id = Some(context.context_id);
+        params.return_by_value = Some(true);
+        let result = context
+            .session
+            .with_timeout(timeout)
+            .call(params)
+            .await
+            .map_err(|e| from_cdp(&e, &self.session))?;
+        if let Some(e) = result.exception_details {
+            return Err(ErrorInfo::new(
+                ErrorKind::ProtocolError,
+                format!("reading the page's timing failed: {}", e.text),
+            ));
+        }
+        let read: Read =
+            serde_json::from_value(result.result.value.unwrap_or_default()).map_err(|e| {
+                ErrorInfo::new(
+                    ErrorKind::ProtocolError,
+                    format!("the page's timing came back unreadable: {e}"),
+                )
+            })?;
+        let metrics = self.metrics(&page.session, timeout).await;
+        Ok(perf_data(tab_name(page.id), read, metrics))
     }
 
     /// `Performance.getMetrics`, with the domain on just for the call;
