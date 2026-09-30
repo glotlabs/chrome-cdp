@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 use browser::Host;
 use engine::{
     Action, ActionRequest, EmulateRequest, EmulationChange, Engine, EvalRequest, EvalWorld,
-    NavigateRequest, Navigation, OpenRequest, PermissionsOp, PermissionsRequest, TabsRequest,
-    WaitUntil,
+    NavigateRequest, Navigation, OpenRequest, PermissionsOp, PermissionsRequest, TabSelectRequest,
+    TabsRequest, WaitUntil,
 };
 use fixtures::Fixtures;
 use protocol::ErrorInfo;
@@ -644,6 +644,15 @@ async fn settings_apply_to_first_scripts_popups_and_frames() {
         Some(412),
         "the popup",
     );
+    // The popup opens behind its opener, and Chrome holds back a hidden
+    // page's geolocation requests: bring it to the front.
+    engine
+        .tab_select(TabSelectRequest {
+            tab: popup.clone(),
+            timeout_ms: TIMEOUT_MS,
+        })
+        .await
+        .unwrap();
     later(Some(popup), None, "the popup").await;
     engine.close().await;
 }
