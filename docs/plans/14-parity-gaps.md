@@ -1,6 +1,6 @@
 # Plan 14 — Parity gaps and small commands
 
-Status: NOT STARTED
+Status: IN PROGRESS (14.1 done)
 Depends on: v1 (plans 01–11). Track 3 of [plan 12](12-after-v1.md). Plan 13
 (every frame, every worker) is not required, but where it has landed, use its
 target graph instead of adding per-session code.
@@ -433,7 +433,7 @@ match with changed dynamic text, fail on a missing button, and survive
 - [ ] The 🟡 rows for `keyboard.down`/`up`, `exposeFunction`, WebSocket
       frames, `toMatchAriaSnapshot` and `browser_generate_locator` are ✅,
       in both parity docs.
-- [ ] `convert` translates `filter({ has, hasNot, hasNotText })`, `or()`
+- [x] `convert` translates `filter({ has, hasNot, hasNotText })`, `or()`
       and `and()` on the same-parent forms, and its tests load the output.
 - [ ] Every new command and flag has help with an example, a
       `docs/commands/` page, golden output and a `--json` form that only
@@ -457,4 +457,33 @@ match with changed dynamic text, fail on a missing button, and survive
 
 ## Decisions log
 
-_(append here)_
+- **14.1, inner quoting.** Inside a quoted inner locator only `\"` and
+  `\\` are unescaped; other backslashes stay, so an inner regex
+  (`has="text=/a\s+b/"`) needs no doubling. Text values keep their rule.
+- **14.1, `has=` candidates.** `stable.ts` writes them unquoted,
+  `role=row >> has=text="Invoice 12" >> …`, using the first element in
+  the container that holds its whole text (outside the target). They come
+  after the scoped `has-text=` forms and before `nth=`.
+- **14.1, `locator --all`.** It lists the element's own candidates (role,
+  label, test id, placeholder, text) that find it, with counts, and the
+  scoped, `has=` and `nth=` forms only when none of its own is usable:
+  those are what `stable` tries. Listing every scoped combination on a
+  page with a unique button was noise.
+- **14.1, no stable locator.** `locator` on an element with nothing to
+  find it by (or in an iframe no `frame=` can name alone) is `NotFound`
+  with the reason, and the candidates in `details`. There is no
+  FailedPrecondition kind, and adding a kind would change exit codes.
+- **14.1, no auto-wait.** `locator` resolves its argument at once, as the
+  other read commands do today; 14.5 decides whether reads wait, and
+  `locator` should follow that decision.
+- **14.1, `has=` not found.** The "`.row` matched 12 elements; none has
+  …" message comes from the bundle counting the steps before a last
+  `has=` when nothing matched; the count is also `details.before_has`.
+  When those steps match nothing either, the usual "no element matches"
+  message stays.
+- **14.1, `convert` and `or()`/`and()`.** The parent is found on the
+  translated locators: `a`'s steps before its last finder step. `b` must
+  start with the same steps, and the rest becomes the inner locator.
+  `page.getByRole('button').or(page.locator('.row').getByRole('link'))`
+  is therefore `role=button >> or=".row >> role=link"`, while
+  `row.getByRole('button').or(page.getByRole('link'))` stays a TODO.
