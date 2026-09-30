@@ -89,6 +89,11 @@ pub struct OpenRequest {
     /// keeps the session's (`<session dir>/downloads` at first).
     #[serde(default)]
     pub downloads_dir: Option<PathBuf>,
+    /// `--init-script` and `--init-script-code`: init scripts added (as
+    /// `init-script add`) before `url` loads, in order. One the session
+    /// already has (same source and file) is not added again.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub init_scripts: Vec<OpenInitScript>,
     /// Sent by a CLI whose daemon an upgrade replaced: `downloads` says
     /// its list starts now.
     #[serde(default)]
@@ -99,6 +104,30 @@ pub struct OpenRequest {
     pub state: Option<StateLoadRequest>,
     /// Bounds the launch and the page load.
     pub timeout_ms: u64,
+}
+
+/// An init script `open` adds: `--init-script FILE` (with the file, read
+/// by the CLI) or `--init-script-code JS`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OpenInitScript {
+    pub source: String,
+    /// The file it was read from (absolute), for `init-script list`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<PathBuf>,
+}
+
+impl OpenInitScript {
+    /// `earlier` followed by those of `later` it does not have: the init
+    /// scripts of an `open` after the scripts of the ones before it.
+    pub fn merged(earlier: &[Self], later: &[Self]) -> Vec<Self> {
+        let mut all = earlier.to_vec();
+        for script in later {
+            if !all.contains(script) {
+                all.push(script.clone());
+            }
+        }
+        all
+    }
 }
 
 /// How the session answers JavaScript dialogs (`open --dialogs`).

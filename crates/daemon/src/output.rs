@@ -6,7 +6,7 @@ use std::io::{Read as _, Seek as _, SeekFrom};
 use std::path::Path;
 use std::time::Duration;
 
-use engine::{Opened, describe};
+use engine::{Opened, describe, init_script_line};
 use protocol::schema::{
     BrowserInfo, BrowserKind, CloseData, ClosedSession, SessionEntry, SessionState, SessionsData,
     StatusData,
@@ -29,6 +29,9 @@ pub fn opened(opened: &Opened) -> Output {
     }
     if let Some(dir) = &data.downloads_dir {
         let _ = write!(text, "\ndownloads: {dir}");
+    }
+    for script in &data.init_scripts {
+        let _ = write!(text, "\ninit script: {}", init_script_line(script));
     }
     if let Some(state) = &data.state {
         let plural = |n: usize, what: &str| format!("{n} {what}{}", if n == 1 { "" } else { "s" });

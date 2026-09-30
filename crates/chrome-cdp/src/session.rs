@@ -29,10 +29,10 @@ use engine::{
     CoverageStartRequest, CoverageStopRequest, DialogRequest, DownloadsRequest, ElementState,
     EvalRequest, FindRequest, FramesRequest, HarStartRequest, HarStopRequest, HighlightRequest,
     HttpCredentials, ImageFormat, InspectRequest, LocatorRequest, NavigateRequest, Navigation,
-    NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PdfRequest, PerfRequest,
-    Read, ReadRequest, RouteRequest, RoutesRequest, ScreenshotRequest, SnapshotRequest,
-    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, TraceStartRequest,
-    TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest,
+    NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenInitScript, OpenRequest,
+    PdfRequest, PerfRequest, Read, ReadRequest, RouteRequest, RoutesRequest, ScreenshotRequest,
+    SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
+    TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest,
 };
 use engine::{
     CookieFilter, CookieSpec, CookiesOp, CookiesRequest, StateLoadRequest, StateSaveRequest,
@@ -178,7 +178,8 @@ pub(crate) fn open(args: &OpenArgs, global: &GlobalArgs) -> Result<Output, Error
     if let Some(name) = &launch.profile {
         browser::launch::check_profile_name(name)?;
     }
-    // The state file is read before a browser starts.
+    // Init scripts and the state file are read before a browser starts.
+    let init_scripts = open_init_scripts(args)?;
     let state = args
         .state
         .as_deref()
@@ -186,15 +187,17 @@ pub(crate) fn open(args: &OpenArgs, global: &GlobalArgs) -> Result<Output, Error
         .transpose()?;
     let ctx = Ctx::new(global)?;
     let mut session = ctx.start()?;
-    let result = open_in(
-        &ctx,
-        &mut session,
-        args,
+    // What is read and checked before a browser starts; `open_in` adds
+    // the rest.
+    let read = OpenRequest {
         url,
-        credentials,
+        http_credentials: credentials,
         state,
         extensions,
-    );
+        init_scripts,
+        ..OpenRequest::default()
+    };
+    let result = open_in(&ctx, &mut session, args, read);
     if result.is_err() {
         ctx.abandon(&mut session);
     }
@@ -205,10 +208,7 @@ fn open_in(
     ctx: &Ctx,
     session: &mut Session,
     args: &OpenArgs,
-    url: Option<String>,
-    http_credentials: Option<HttpCredentials>,
-    state: Option<StateLoadRequest>,
-    extensions: Vec<PathBuf>,
+    read: OpenRequest,
 ) -> Result<Output, ErrorInfo> {
     let tab = ctx.tab.clone();
     let launch = &args.launch;
@@ -237,21 +237,18 @@ fn open_in(
         headed: launch.headed.then_some(true),
         profile: launch.profile(),
         chrome_args: launch.chrome_args(),
-        extensions,
         restart: args.restart,
-        url,
         base_url: ctx.base_url.clone(),
         tab,
         follow_popups: args.follow_popups.then_some(true),
         ignore_https_errors: args.ignore_https_errors.then_some(true),
         bypass_service_worker: args.bypass_service_worker.then_some(true),
         device: args.device.clone(),
-        state: state.map(|state| StateLoadRequest {
+        state: read.state.map(|state| StateLoadRequest {
             timeout_ms: millis(ctx.timeout),
             ..state
         }),
         dialogs: args.dialogs.map(crate::cli::Dialogs::to_engine),
-        http_credentials,
         console_buffer: args
             .console_buffer
             .map(|n| usize::try_from(n).unwrap_or(usize::MAX)),
@@ -269,6 +266,7 @@ fn open_in(
             .as_ref()
             .is_some_and(|m| m.browser.is_some()),
         timeout_ms: millis(ctx.timeout),
+        ..read
     };
     if let Some(previous) = session.replaced.as_ref().and_then(|m| m.launch.as_ref()) {
         keep_previous_options(&mut request, previous);
@@ -335,6 +333,25 @@ fn keep_previous_options(request: &mut OpenRequest, previous: &OpenRequest) {
     if request.downloads_dir.is_none() {
         request.downloads_dir.clone_from(&previous.downloads_dir);
     }
+    request.init_scripts = OpenInitScript::merged(&previous.init_scripts, &request.init_scripts);
+}
+
+/// `--init-script` files (read now, so a missing one fails before a
+/// browser starts), then `--init-script-code`s.
+fn open_init_scripts(args: &OpenArgs) -> Result<Vec<OpenInitScript>, ErrorInfo> {
+    let mut scripts = Vec::new();
+    for path in &args.init_script {
+        let absolute = PathBuf::from(input::absolute_path(path)?);
+        scripts.push(OpenInitScript {
+            source: read_script(&absolute)?,
+            file: Some(absolute),
+        });
+    }
+    scripts.extend(args.init_script_code.iter().map(|code| OpenInitScript {
+        source: code.clone(),
+        file: None,
+    }));
+    Ok(scripts)
 }
 
 /// `--extension`s as absolute paths (the daemon has another working

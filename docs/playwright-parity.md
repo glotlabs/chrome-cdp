@@ -141,7 +141,7 @@ Today: 130 rows; 112 ✅, 13 🟡, 0 ❌, 5 ➖. No row is ❌.
 | HAR replay (`routeFromHAR`) | `mock import FILE.har`, then `mock use NAME` | ✅ | no |
 | `context.request` (`APIRequestContext`) | `http METHOD URL` with the context's cookies | ✅ | no |
 | `exposeFunction`, `exposeBinding` | `expose NAME`: calls are logged in `console`, but return nothing | 🟡 | no |
-| `addInitScript` | `init-script add FILE`, `init-script add --code 'JS'` | ✅ | no |
+| `addInitScript` | `init-script add FILE`, `init-script add --code 'JS'`, `open --init-script FILE` | ✅ | no |
 | `page.coverage` | `coverage` | ✅ | no |
 | `newCDPSession` | `cdp Domain.method '{…}'` (`--listen` for events) | ✅ | no |
 

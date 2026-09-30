@@ -458,3 +458,86 @@ fn uninstall_refuses_a_browser_in_use() {
     assert_eq!(code(&cli(&["uninstall", id])), 0);
     assert!(!install.exists());
 }
+
+#[test]
+fn open_init_scripts_run_on_the_first_page_and_outlive_the_daemon() {
+    let Some(chrome) = chrome_path() else { return };
+    let site = fixtures::Fixtures::shared();
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let url = site.url("/nav/a.html");
+    let stub = sandbox.dir.path().join("stub.js");
+    std::fs::write(&stub, "window.__stub = 'file';").unwrap();
+    let stub = stub.to_string_lossy().into_owned();
+
+    // A missing file fails before a browser starts.
+    let out = sandbox.run(&["open", "--init-script", "missing.js", &url]);
+    assert_eq!(code(&out), 2, "{}", stderr(&out));
+    assert!(stderr(&out).contains("cannot read "), "{}", stderr(&out));
+    assert!(sandbox.chromes().is_empty(), "{:?}", sandbox.chromes());
+
+    let open = [
+        "open",
+        "--init-script",
+        &stub,
+        "--init-script-code",
+        "window.__code = 1",
+        &url,
+    ];
+    let out = sandbox.run(&open);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let text = stdout(&out);
+    assert!(
+        text.contains(&format!("\ninit script: s1 main {stub} 23B\n")),
+        "{text}"
+    );
+    assert!(
+        text.contains("\ninit script: s2 main 'window.__code = 1' 17B\n"),
+        "{text}"
+    );
+    let out = sandbox.run(&["eval", "window.__stub + window.__code", "-q"]);
+    assert_eq!(stdout(&out).trim(), "file1", "{}", stderr(&out));
+
+    // Open again: the session has them, so nothing is added.
+    let out = sandbox.run(&[&open[..], &["--json"]].concat());
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let ids: Vec<Value> = json_out(&out)["data"]["init_scripts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].clone())
+        .collect();
+    assert_eq!(ids, [json!("s1"), json!("s2")]);
+    let out = sandbox.run(&["init-script", "list", "-q"]);
+    assert_eq!(stdout(&out).trim(), "s1\ns2");
+    let browser = json_out(&sandbox.run(&["status", "--json"]))["data"]["browser"].clone();
+    assert_eq!(code(&sandbox.run(&["close"])), 0);
+
+    // A daemon as an older chrome-cdp started it, whose browser was
+    // opened with an init script: the new daemon's browser has it too.
+    let log = std::fs::File::create(sandbox.dir.path().join("old-daemon.log")).unwrap();
+    let mut old = sandbox
+        .cli()
+        .args(["__daemon", "--session", "default", "--build", "0.0.1+old"])
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let session_dir = sandbox.runtime_dir().join("chrome-cdp/default");
+    wait_until("the old daemon to listen", || {
+        session_dir.join("sock").exists() && session_dir.join("meta.json").exists()
+    });
+    let meta_path = session_dir.join("meta.json");
+    let mut meta: Value = serde_json::from_slice(&std::fs::read(&meta_path).unwrap()).unwrap();
+    meta["browser"] = browser;
+    meta["launch"] = json!({
+        "init_scripts": [{ "source": "window.__kept = 'yes'" }],
+        "timeout_ms": 30000,
+    });
+    std::fs::write(&meta_path, serde_json::to_vec(&meta).unwrap()).unwrap();
+    let out = sandbox.run(&["goto", &url]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["eval", "window.__kept", "-q"]);
+    assert_eq!(stdout(&out).trim(), "yes", "{}", stderr(&out));
+    let _ = old.wait();
+    assert_eq!(code(&sandbox.run(&["close"])), 0);
+}

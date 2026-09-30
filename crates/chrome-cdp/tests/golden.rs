@@ -1202,6 +1202,18 @@ const CASES: &[Case] = &[
         fixture: Fixture::Session,
     },
     Case {
+        name: "open-init-script",
+        args: &["open", "--init-script-code", "window.__ready = true"],
+        modes: ALL,
+        fixture: Fixture::Session,
+    },
+    Case {
+        name: "open-init-script-missing",
+        args: &["open", "--init-script", "{sandbox}/missing.js"],
+        modes: ERR,
+        fixture: Fixture::NoSessions,
+    },
+    Case {
         name: "console",
         args: &["console", "--since", "0"],
         modes: ALL,

@@ -397,6 +397,7 @@ tab's console, so a page (or an init script) can report back:
 ```sh
 chrome-cdp init-script add ./stubs.js           # s1; runs from the next load (`reload`), or --now
 chrome-cdp init-script add --code 'window.FEATURE_X = true' --world isolated
+chrome-cdp open --init-script ./stubs.js localhost:3000   # the same, before the first page loads
 chrome-cdp init-script list                     # s1 main /home/me/app/stubs.js 2KB
 chrome-cdp init-script remove s1                # or --all
 chrome-cdp expose onCheckout                    # window.onCheckout(...) → console: binding onCheckout({"total":42})

@@ -23,6 +23,8 @@ Options:
 - `--extension <DIR>`: Load the unpacked extension in this directory (the one holding its manifest.json); repeat it for more. Headless or headed, but not with chrome-headless-shell
 - `--restart`: Close a running browser first and start one with these options
 - `--device <DEVICE>`: Emulate this device (as `emulate <device>`) before loading URL. The session keeps it, like `emulate`
+- `--init-script <FILE>`: Run this file's script in every document before its own scripts, from URL on (as `init-script add FILE`). Repeatable; the session keeps them, and `init-script list` shows them
+- `--init-script-code <JS>`: Like --init-script, with the script itself. Repeatable; these run after the --init-script files
 - `--state <FILE>`: Load cookies and storage from a state file (as `state load`) before loading URL
 - `--follow-popups`: Make popups (window.open, target=_blank) the active tab as they open. The session keeps this setting
 - `--ignore-https-errors`: Load pages despite certificate errors (self-signed test servers). The session keeps this setting; it applies to a running browser too
@@ -49,6 +51,7 @@ Examples:
   chrome-cdp open --profile work https://app.test   # keeps logins
   chrome-cdp open --session shop http://localhost:3000
   chrome-cdp open --device 'iPhone 15' http://localhost:3000
+  chrome-cdp open --init-script ./stub-analytics.js http://localhost:3000
   chrome-cdp open --restart --chrome-arg=--window-size=1920,1080
   chrome-cdp open --follow-popups                   # popups become the active tab
   chrome-cdp open --dialogs dismiss                 # answer every dialog with Cancel

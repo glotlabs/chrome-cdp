@@ -13,6 +13,7 @@ popups and frames, those opened later too) before the page's own scripts, in the
 order they were added. Stub APIs, set feature flags, or record what the
 page does. Init scripts belong to the browser context (the session's own,
 unless --context); the session's own stay when the browser is restarted.
+For the very first page, give them to open: open --init-script FILE URL.
 
 Examples:
   chrome-cdp init-script add ./stubs.js

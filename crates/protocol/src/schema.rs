@@ -1273,6 +1273,11 @@ pub struct OpenData {
     /// Where downloads go now (`--downloads-dir`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub downloads_dir: Option<String>,
+    /// The init scripts `--init-script` and `--init-script-code` gave, as
+    /// `init-script list` shows them (one the session had already keeps
+    /// its id).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub init_scripts: Vec<InitScriptInfo>,
 }
 
 /// `data` of `chrome-cdp close --json`.

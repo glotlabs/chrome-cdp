@@ -325,7 +325,7 @@ them. By default each read shows what the previous one did not.
 | `page.on('download')`, `'dialog'`, `'popup'` | reported by the action that caused them | ✅ |
 | `page.on('websocket')` | `cdp --listen 'Network.webSocket*' --count 0` | 🟡 |
 | `page.exposeFunction(name, fn)`, `exposeBinding` | `expose NAME`: calls are logged in `console`; they cannot return a value | 🟡 |
-| `page.addInitScript(script)` | `init-script add FILE`, or `init-script add --code 'JS'` | ✅ |
+| `page.addInitScript(script)` | `init-script add FILE`, or `init-script add --code 'JS'`; `open --init-script FILE URL` for the first page | ✅ |
 | `page.coverage` | `coverage` | ✅ |
 | — | `perf` (load timing, Web Vitals), `mark NAME` + `--since NAME` | |
 

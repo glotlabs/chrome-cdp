@@ -1,0 +1,10 @@
+$ chrome-cdp open --init-script <sandbox>/missing.js
+exit: 2
+--- stderr
+error: cannot read <sandbox>/missing.js: No such file or directory (os error 2)
+
+$ chrome-cdp open --init-script <sandbox>/missing.js --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"cannot read <sandbox>/missing.js: No such file or directory (os error 2)"}}
+

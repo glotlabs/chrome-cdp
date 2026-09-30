@@ -82,6 +82,7 @@ pub use expect::{
     MATCHERS, check_expect, check_expect_screenshot, check_expect_snapshot, parse_matcher,
 };
 pub use frames::{FrameInfo, WORLD_NAME, World};
+pub use inject::commands::script_line as init_script_line;
 pub use inject::{MAX_SCRIPT, check_binding_name};
 pub use input::{ActionPoint, Checks, check_action, parse_modifiers};
 pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, is_ref, parse_locator};
@@ -102,13 +103,13 @@ pub use request::{
     KeyboardOp, LocatorRequest, Margins, MarkRequest, Matcher, MockExplainRequest, MockListRequest,
     MockLogRequest, MockOffRequest, MockSeedRequest, MockStateCheck, MockStateRequest, MockTestTag,
     MockUseRequest, MockWsSendRequest, Modifier, MouseOp, NavigateRequest, Navigation,
-    NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenRequest, PaperFormat, PdfRequest,
-    PerfRequest, PermissionsOp, PermissionsRequest, Read, ReadRequest, RequestCheck, RouteAction,
-    RouteBody, RouteRequest, RouteSpec, RoutesRequest, ScreenshotRequest, ScrollTo, ShotScale,
-    Since, SnapshotEngine, SnapshotRequest, StateLoadRequest, StateSaveRequest, StatusRange,
-    StorageArea, StorageOp, StorageRequest, TabCloseRequest, TabNewRequest, TabSelectRequest,
-    TabsRequest, Target, TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest,
-    WaitUntil,
+    NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenInitScript, OpenRequest,
+    PaperFormat, PdfRequest, PerfRequest, PermissionsOp, PermissionsRequest, Read, ReadRequest,
+    RequestCheck, RouteAction, RouteBody, RouteRequest, RouteSpec, RoutesRequest,
+    ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest,
+    StateLoadRequest, StateSaveRequest, StatusRange, StorageArea, StorageOp, StorageRequest,
+    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest,
+    TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use state::{OriginState, StateCookie, StorageState};
@@ -321,6 +322,12 @@ impl Engine {
         if let Some(device) = &req.device {
             emulate::find_device(device, &self.session)?;
         }
+        for script in &req.init_scripts {
+            inject::commands::check_source(&script.source).map_err(|e| match &script.file {
+                Some(file) => e.note("file", file.display().to_string()),
+                None => e,
+            })?;
+        }
         if let Some(dir) = &req.downloads_dir {
             std::fs::create_dir_all(dir).map_err(|e| {
                 ErrorInfo::new(
@@ -404,6 +411,7 @@ impl Engine {
             };
             self.emulate(change).await?;
         }
+        let init_scripts = self.open_init_scripts(&req.init_scripts, timeout).await?;
         let state = match &req.state {
             Some(state) => {
                 let (data, loaded) = self.load_state(state).await?;
@@ -444,6 +452,7 @@ impl Engine {
                     .downloads_dir
                     .as_ref()
                     .map(|dir| dir.display().to_string()),
+                init_scripts,
             },
             warnings,
         })
@@ -554,6 +563,7 @@ impl Engine {
                         device: None,
                         state: None,
                         downloads_dir: None,
+                        init_scripts: Vec::new(),
                     },
                     warnings,
                 });
@@ -632,6 +642,7 @@ impl Engine {
                 device: None,
                 state: None,
                 downloads_dir: None,
+                init_scripts: Vec::new(),
             },
             warnings,
         })

@@ -223,6 +223,25 @@ impl Injector {
         script
     }
 
+    /// The script of `scope` added with this source and file, if there is
+    /// one (`open --init-script` given again adds nothing).
+    pub(crate) fn find(
+        &self,
+        scope: Option<&str>,
+        source: &str,
+        file: Option<&std::path::Path>,
+    ) -> Option<InitScriptInfo> {
+        lock(&self.table)
+            .scripts
+            .iter()
+            .find(|s| {
+                s.scope.as_deref() == scope
+                    && s.file.as_deref() == file
+                    && s.source == with_source_url(source, s.id, file)
+            })
+            .map(|s| s.info())
+    }
+
     /// The scripts of `scope`, in the order they run.
     pub(crate) fn list(&self, scope: Option<&str>) -> Vec<InitScriptInfo> {
         lock(&self.table)

@@ -40,6 +40,8 @@ command chrome-cdp open
   flag --extension value=DIR repeatable
   flag --restart
   flag --device value=DEVICE
+  flag --init-script value=FILE repeatable
+  flag --init-script-code value=JS repeatable
   flag --state value=FILE
   flag --follow-popups
   flag --ignore-https-errors

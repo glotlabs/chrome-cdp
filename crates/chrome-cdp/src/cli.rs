@@ -220,6 +220,7 @@ Examples:
   chrome-cdp open --profile work https://app.test   # keeps logins
   chrome-cdp open --session shop http://localhost:3000
   chrome-cdp open --device 'iPhone 15' http://localhost:3000
+  chrome-cdp open --init-script ./stub-analytics.js http://localhost:3000
   chrome-cdp open --restart --chrome-arg=--window-size=1920,1080
   chrome-cdp open --follow-popups                   # popups become the active tab
   chrome-cdp open --dialogs dismiss                 # answer every dialog with Cancel
@@ -1301,6 +1302,7 @@ popups and frames, those opened later too) before the page's own scripts, in the
 order they were added. Stub APIs, set feature flags, or record what the
 page does. Init scripts belong to the browser context (the session's own,
 unless --context); the session's own stay when the browser is restarted.
+For the very first page, give them to open: open --init-script FILE URL.
 
 Examples:
   chrome-cdp init-script add ./stubs.js
@@ -2250,6 +2252,17 @@ pub(crate) struct OpenArgs {
     /// The session keeps it, like `emulate`.
     #[arg(long, value_name = "DEVICE")]
     pub(crate) device: Option<String>,
+
+    /// Run this file's script in every document before its own scripts,
+    /// from URL on (as `init-script add FILE`). Repeatable; the session
+    /// keeps them, and `init-script list` shows them.
+    #[arg(long, value_name = "FILE")]
+    pub(crate) init_script: Vec<PathBuf>,
+
+    /// Like --init-script, with the script itself. Repeatable; these run
+    /// after the --init-script files.
+    #[arg(long, value_name = "JS")]
+    pub(crate) init_script_code: Vec<String>,
 
     /// Load cookies and storage from a state file (as `state load`)
     /// before loading URL.

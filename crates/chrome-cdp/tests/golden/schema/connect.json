@@ -677,6 +677,43 @@
       ],
       "type": "object"
     },
+    "InitScriptInfo": {
+      "description": "An init script (`init-script`, plan 07): it runs in every new document\nof the session's tabs, popups and frames before the page's own scripts.",
+      "properties": {
+        "file": {
+          "description": "The file it was read from (absolute); none for `--code` or stdin.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "`s1`, `s2`, …; never reused in a session.",
+          "type": "string"
+        },
+        "preview": {
+          "description": "Its first line, cut at 60 characters.",
+          "type": "string"
+        },
+        "size": {
+          "description": "Its size in bytes.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "world": {
+          "description": "`main` (the page's own globals) or `isolated` (chrome-cdp's world,\nas `eval --world isolated` sees it).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "world",
+        "preview",
+        "size"
+      ],
+      "type": "object"
+    },
     "Note": {
       "description": "One labelled line of an error's text form.",
       "properties": {
@@ -757,6 +794,13 @@
             "string",
             "null"
           ]
+        },
+        "init_scripts": {
+          "description": "The init scripts `--init-script` and `--init-script-code` gave, as\n`init-script list` shows them (one the session had already keeps\nits id).",
+          "items": {
+            "$ref": "#/$defs/InitScriptInfo"
+          },
+          "type": "array"
         },
         "page": {
           "anyOf": [

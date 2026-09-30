@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use engine::{Engine, OpenRequest};
+use engine::{Engine, OpenInitScript, OpenRequest};
 use protocol::rpc::{Request, Response, RpcError};
 use protocol::schema::{ClosedSession, SessionState, StatusData};
 use protocol::{ErrorInfo, Output};
@@ -761,6 +761,10 @@ fn keep_settings(launch: &mut OpenRequest, newer: &OpenRequest) {
     if newer.downloads_dir.is_some() {
         launch.downloads_dir.clone_from(&newer.downloads_dir);
     }
+    if newer.device.is_some() {
+        launch.device.clone_from(&newer.device);
+    }
+    launch.init_scripts = OpenInitScript::merged(&launch.init_scripts, &newer.init_scripts);
 }
 
 fn millis(d: Duration) -> u64 {
@@ -811,7 +815,7 @@ async fn serve_connection(daemon: &Daemon, stream: Stream) {
 
 #[cfg(test)]
 mod tests {
-    use engine::{DialogPolicy, OpenRequest};
+    use engine::{DialogPolicy, OpenInitScript, OpenRequest};
 
     use super::keep_settings;
 
@@ -834,5 +838,28 @@ mod tests {
         assert_eq!(launch.follow_popups, Some(true));
         // Launch options are not settings.
         assert_eq!(launch.headed, Some(true));
+    }
+
+    #[test]
+    fn devices_and_init_scripts_given_later_are_kept() {
+        let script = |source: &str| OpenInitScript {
+            source: source.into(),
+            file: None,
+        };
+        let mut launch = OpenRequest {
+            init_scripts: vec![script("a()"), script("b()")],
+            ..OpenRequest::default()
+        };
+        let newer = OpenRequest {
+            device: Some("iPhone 15".into()),
+            init_scripts: vec![script("b()"), script("c()")],
+            ..OpenRequest::default()
+        };
+        keep_settings(&mut launch, &newer);
+        assert_eq!(launch.device.as_deref(), Some("iPhone 15"));
+        assert_eq!(
+            launch.init_scripts,
+            vec![script("a()"), script("b()"), script("c()")]
+        );
     }
 }

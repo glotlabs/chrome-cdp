@@ -19,7 +19,8 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use super::{MAX_SCRIPT, check_binding_name, parse_script_id, script_name};
 use crate::context::Scoped as _;
 use crate::request::{
-    ExposeRequest, InitScriptAddRequest, InitScriptListRequest, InitScriptRemoveRequest, millis,
+    EvalWorld, ExposeRequest, InitScriptAddRequest, InitScriptListRequest, InitScriptRemoveRequest,
+    OpenInitScript, millis,
 };
 use crate::{Engine, State};
 
@@ -28,26 +29,17 @@ impl Engine {
     /// tab, if there is one), then adds it after the others.
     pub async fn init_script_add(&self, req: InitScriptAddRequest) -> Result<Output, ErrorInfo> {
         let timeout = millis(req.timeout_ms);
-        if req.source.trim().is_empty() {
-            return Err(
-                ErrorInfo::new(ErrorKind::BadArgs, "the init script is empty").hint(Hint::run(
-                    Cmd::new("init-script")
-                        .arg("add")
-                        .flag("code", "window.__test = true")
-                        .scoped(&self.session),
-                )),
-            );
-        }
-        if req.source.len() > MAX_SCRIPT {
-            return Err(ErrorInfo::new(
-                ErrorKind::BadArgs,
-                format!(
-                    "the init script is {}; the most it can be is {}",
-                    format::size(req.source.len() as u64),
-                    format::size(MAX_SCRIPT as u64)
-                ),
-            ));
-        }
+        check_source(&req.source).map_err(|e| {
+            if !req.source.trim().is_empty() {
+                return e;
+            }
+            e.hint(Hint::run(
+                Cmd::new("init-script")
+                    .arg("add")
+                    .flag("code", "window.__test = true")
+                    .scoped(&self.session),
+            ))
+        })?;
         let scope = self.context_key()?;
         let scope = scope.as_deref();
         self.check_compiles(&req, scope, timeout).await?;
@@ -83,6 +75,42 @@ impl Engine {
             active: self.settings.injections.len(scope),
         };
         Ok(Output::typed(&data, text).quiet(quiet))
+    }
+
+    /// `open --init-script` and `--init-script-code`, before the first URL
+    /// loads: adds the scripts the session does not have yet (in its
+    /// default context), checked as `init-script add` checks them.
+    /// Returns them all, those it had too.
+    pub(crate) async fn open_init_scripts(
+        &self,
+        scripts: &[OpenInitScript],
+        timeout: Duration,
+    ) -> Result<Vec<InitScriptInfo>, ErrorInfo> {
+        let injections = &self.settings.injections;
+        let mut infos = Vec::new();
+        let mut added = false;
+        for script in scripts {
+            let file = script.file.as_deref();
+            if let Some(info) = injections.find(None, &script.source, file) {
+                infos.push(info);
+                continue;
+            }
+            let req = InitScriptAddRequest {
+                source: script.source.clone(),
+                file: script.file.clone(),
+                world: EvalWorld::Main,
+                now: false,
+                timeout_ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
+            };
+            self.check_compiles(&req, None, timeout).await?;
+            injections.add(None, &script.source, script.file.clone(), EvalWorld::Main);
+            added = true;
+            infos.extend(injections.find(None, &script.source, file));
+        }
+        if added {
+            self.apply_injections(false, timeout).await;
+        }
+        Ok(infos)
     }
 
     /// Errors when `req`'s script does not compile, as Chrome sees it in
@@ -281,8 +309,29 @@ impl Engine {
     }
 }
 
+/// Errors when an init script is empty or too big.
+pub(crate) fn check_source(source: &str) -> Result<(), ErrorInfo> {
+    if source.trim().is_empty() {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            "the init script is empty",
+        ));
+    }
+    if source.len() > MAX_SCRIPT {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!(
+                "the init script is {}; the most it can be is {}",
+                format::size(source.len() as u64),
+                format::size(MAX_SCRIPT as u64)
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// `s1 main /home/me/stub.js 2KB` or `s2 isolated 'window.x = 1' 12B`.
-fn script_line(script: &InitScriptInfo) -> String {
+pub fn script_line(script: &InitScriptInfo) -> String {
     let what = match &script.file {
         Some(file) => file.clone(),
         None => format!("'{}'", script.preview),

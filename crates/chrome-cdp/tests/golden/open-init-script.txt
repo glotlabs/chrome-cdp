@@ -1,0 +1,16 @@
+$ chrome-cdp open --init-script-code 'window.__ready = true'
+exit: 0
+--- stdout
+session default is already open: Chrome/<version>, headless, temporary profile, pid <pid>
+init script: s1 main 'window.__ready = true' 21B
+
+$ chrome-cdp open --init-script-code 'window.__ready = true' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"browser":{"headless":true,"kind":"launched","path":"<chrome>","pid":<pid>,"product":"Chrome/<version>","profile":{"dir":"<sandbox>/tmp/chrome-cdp-<rand>/profile","kind":"temporary"},"source":"given by CHROME_CDP_CHROME"},"init_scripts":[{"id":"s1","preview":"window.__ready = true","size":21,"world":"main"}],"session":"default","started":false}}
+
+$ chrome-cdp open --init-script-code 'window.__ready = true' -q
+exit: 0
+--- stdout
+default
+
