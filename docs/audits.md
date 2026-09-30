@@ -27,8 +27,8 @@ hint: chrome-cdp audit --baseline checkout --update   (accepts these)
 It waits for the page's `load` event first, then looks once. It exits 0
 whatever it finds; [`expect --audit`](#expect---audit) is the check that
 fails. `-q` prints the number of findings shown; `--json` has every
-finding with its target (ref, stable locator, request id, cookie, frame)
-and its key (`chrome-cdp schema audit` has the shape).
+finding with its target (ref, stable locator, request id, cookie,
+script line, frame) and its key (`chrome-cdp schema audit` has the shape).
 
 ## Categories
 
