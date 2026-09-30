@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 7360fcf94514e655
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: 851eab76cd4a44e7
 "use strict";
 (() => {
   // src/dom.ts
@@ -3369,6 +3369,37 @@ ${inner}
     return { json: JSON.stringify(out), els: pick ? [pick[0]] : [] };
   }
 
+  // src/compare.ts
+  function elementsAt(points) {
+    const boxes = [];
+    for (const el of descendants(document)) {
+      const t = tag(el);
+      if (t === "html" || t === "head" || t === "script" || t === "style") continue;
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+      if (!points.some(([x, y]) => x >= r.left && x < r.right && y >= r.top && y < r.bottom)) continue;
+      if (!visible(el)) continue;
+      boxes.push([el, r]);
+    }
+    const els = [];
+    const at = points.map(([x, y]) => {
+      let best = null;
+      let area2 = Infinity;
+      for (const [el, r] of boxes) {
+        if (x < r.left || x >= r.right || y < r.top || y >= r.bottom) continue;
+        if (r.width * r.height <= area2) {
+          best = el;
+          area2 = r.width * r.height;
+        }
+      }
+      if (!best) return -1;
+      const i = els.indexOf(best);
+      return i >= 0 ? i : els.push(best) - 1;
+    });
+    const names = els.map(named);
+    return { json: JSON.stringify({ names, at }), els };
+  }
+
   // src/index.ts
   var api = {
     version: 1,
@@ -3418,7 +3449,8 @@ ${inner}
     pageExtent,
     contentBox,
     formsList,
-    pickOption
+    pickOption,
+    elementsAt
   };
   if (!globalThis.__ccdp) globalThis.__ccdp = api;
 })();
