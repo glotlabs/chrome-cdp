@@ -1,0 +1,17 @@
+$ chrome-cdp components '#pay'
+exit: 0
+--- stdout
+<Nowhere> src/Nowhere.svelte:7  (holds e1)
+  state: not available (Svelte 5 has no public API for a component's props or state)
+via svelte (the page's debug info)
+
+$ chrome-cdp components '#pay' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"component":{"framework":"svelte","name":"Nowhere","place":{"column":3,"line":7,"source":"src/Nowhere.svelte"},"unavailable":"Svelte 5 has no public API for a component's props or state"},"element":{"name":"Pay","ref":"e1","role":"button","tag":"button"},"frameworks":[{"name":"svelte"}],"tab":"t1"}}
+
+$ chrome-cdp components '#pay' -q
+exit: 0
+--- stdout
+src/Nowhere.svelte:7:3
+

@@ -47,6 +47,7 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`count`](count.md) | Count the elements a locator matches (0 is not an error) |
 | [`box`](box.md) | Print an element's box in the viewport: x, y, width and height |
 | [`source`](source.md) | Print the file and line an element came from, and its components |
+| [`components`](components.md) | Print the page's component tree, or the component that rendered an element, with its props and state |
 
 ## Acting
 

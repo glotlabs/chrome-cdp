@@ -1,6 +1,6 @@
 # Plan 15 — From page to source
 
-Status: IN PROGRESS (15.1-15.2 done)
+Status: IN PROGRESS (15.1-15.3 done)
 Depends on: v1 (plans 01-11), mainly 04 (refs), 05 (the action report)
 and 06 (console, network, source maps). Uses plan 13's target graph where
 it exists. Track 4 of [plan 12](12-after-v1.md).
@@ -535,7 +535,7 @@ test that needs Node is the gated real-Vite test.
       apps, and the right line from node stacks in the plain app.
 - [x] `source` says why when it cannot answer (not a dev build, node
       created before stacks, no source map), with the next command.
-- [ ] `components` shows each app's tree and a component's props and
+- [x] `components` shows each app's tree and a component's props and
       state, bounded by `--max-chars`.
 - [ ] `debug log` at a source line shows the value on the next action,
       in `console` and in the report, survives a reload, and never
@@ -677,3 +677,39 @@ _(append here)_
   would drop the first's node ids), and maps all stacks in one pass. It
   cannot be used with `--diff`. A node nothing answers for has no
   suffix.
+- 15.3: A component's place in `components` is its **own** file, at the
+  first element it renders (React: the first fiber below it that it
+  owns; Vue: its root element, matched in its template; Svelte: its
+  first element's `loc`), not `source`'s usage line: the tree answers
+  "which file is this component", and the plan's example (`<CartItem>
+  src/CartItem.tsx:12`) shows the component's own file. Owners (with a
+  locator) keep `source`'s usage places in JSON.
+- 15.3: Tree lines show props one level deep (collections counted:
+  `items=[3 items]`, `item={…4 keys}`), functions, `children`, `key` and
+  `ref` left out, at most 6. Siblings fold when their name, place,
+  these props and their subtrees are the same (runs, in order), which
+  is what "no differing props" means here: three items with different
+  objects fold, as in the plan's example. A React 19 node sends 4 debug
+  stack frames (enough for its first frame of the app) so siblings'
+  places compare equal. The page reads at most 5,000 components; past
+  `--depth` a node counts what is below it (`… 3 components below`).
+- 15.3: The fixture apps' `CartItem` holds no state (its quantity is
+  the `item` prop, from `App`'s `useState`), and changing the apps would
+  move the lines 15.2's tests pin. So the test checks the item's `item`
+  prop and `App`'s state (React's `#0` hook, Vue's `items`) before and
+  after "Add" instead of a `qty` state in `CartItem`.
+- 15.3: With a locator, the component is the element's owner (the one
+  whose code made it, as `source` says), else the nearest component
+  around it; React's owner fiber is swapped for its on-screen copy
+  (`alternate`) when that is the current one, so state after a click is
+  fresh. Vue's state is `setupState` without functions, components and
+  the `props` alias `<script setup>` exposes, then `data`. Svelte 5
+  prints `state: not available (Svelte 5 has no public API …)`; JSON has
+  no `props`/`state` and an `unavailable` reason. `--depth` bounds the
+  owners there (default 8, as `source`).
+- 15.3: Only the tab's main frame is read for the tree; with a locator,
+  the element's frame. `NoSource` gains the reasons `no_framework` (no
+  React, Vue or Svelte on the page) and `no_component` (no component of
+  a dev build rendered the element). The 200-item list is the React 19
+  app with `cart.json` routed; the deep tree a page that fakes 41 nested
+  Svelte components (`testdata/site/source/deep-svelte.html`).

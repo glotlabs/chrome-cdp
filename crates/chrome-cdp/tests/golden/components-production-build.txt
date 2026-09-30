@@ -1,0 +1,11 @@
+$ chrome-cdp components
+exit: 1
+--- stderr
+error: the page's react app is a production build: it keeps no components
+  hint: open the app from its dev server (a development build keeps its components), then run components again
+
+$ chrome-cdp components --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NoSource","message":"the page's react app is a production build: it keeps no components","hint":"open the app from its dev server (a development build keeps its components), then run components again","details":{"reason":"not_dev_build"}}}
+

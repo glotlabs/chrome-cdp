@@ -1,0 +1,24 @@
+$ chrome-cdp components
+exit: 0
+--- stdout
+<App> src/App.svelte:3
+  <Level1> src/Level1.svelte:3
+    <Level2> src/Level2.svelte:3
+      <Level3> src/Level3.svelte:3
+        … 37 components below (a larger --depth shows them)
+via svelte 5 (the page's debug info)
+
+$ chrome-cdp components --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"frameworks":[{"name":"svelte","version":"5"}],"roots":[{"children":[{"children":[{"children":[{"more":37,"name":"Level3","place":{"column":1,"line":3,"source":"src/Level3.svelte"}}],"name":"Level2","place":{"column":1,"line":3,"source":"src/Level2.svelte"}}],"name":"Level1","place":{"column":1,"line":3,"source":"src/Level1.svelte"}}],"framework":"svelte","name":"App","place":{"column":1,"line":3,"source":"src/App.svelte"}}],"tab":"t1"}}
+
+$ chrome-cdp components -q
+exit: 0
+--- stdout
+<App> src/App.svelte:3
+  <Level1> src/Level1.svelte:3
+    <Level2> src/Level2.svelte:3
+      <Level3> src/Level3.svelte:3
+        … 37 components below (a larger --depth shows them)
+
