@@ -17,12 +17,16 @@ mod ax;
 mod dom;
 mod find;
 pub use find::check_find;
+mod fold;
 mod prune;
 mod refs;
+mod regions;
 mod render;
 mod resolve;
 mod tree;
 
+use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::time::Duration;
 
 use cdp::Session;
@@ -37,9 +41,11 @@ use crate::request::{SnapshotEngine, SnapshotRequest, millis};
 use crate::tabs::{Page, tab_name};
 use crate::{Engine, Running};
 
+use fold::{Folding, Frame, Registries};
 use prune::View;
 use refs::Refs;
 pub(crate) use refs::parse_ref;
+use regions::{Region, Regions, parse_region};
 pub use resolve::RefCall;
 pub(crate) use resolve::Target;
 use tree::Node;
@@ -120,14 +126,60 @@ impl Reader for DomReader<'_> {
 struct Tree {
     capture: Capture,
     shown: Vec<Node>,
+    /// With `--expand`, how many of `shown`'s nodes each region has.
+    groups: Vec<usize>,
     before: Option<Vec<Node>>,
     new_page: bool,
+}
+
+/// What part of the page a snapshot shows.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Within<'a> {
+    Page,
+    /// `--scope`: this node's subtree.
+    Node(&'a NodeKey),
+    /// `--expand`: these regions, one after the other.
+    Regions(&'a [(u32, Region)]),
+}
+
+impl<'a> Within<'a> {
+    /// `--scope`'s node, or the whole page.
+    pub(crate) fn scope(key: Option<&'a NodeKey>) -> Self {
+        key.map_or(Self::Page, Self::Node)
+    }
+
+    /// The nodes of `nodes` it shows, a group per region; `Err` with the
+    /// scope's or a region's number if it is not in them.
+    fn groups(self, nodes: &[Node]) -> Result<Vec<Vec<Node>>, Option<u32>> {
+        match self {
+            Self::Page => Ok(vec![nodes.to_vec()]),
+            Self::Node(key) => prune::find(nodes, key).map(|n| vec![vec![n]]).ok_or(None),
+            Self::Regions(regions) => regions
+                .iter()
+                .map(|(number, region)| {
+                    let found: Vec<Node> = match region {
+                        Region::Node(key) => prune::find(nodes, key).into_iter().collect(),
+                        Region::Run(keys) => {
+                            keys.iter().filter_map(|k| prune::find(nodes, k)).collect()
+                        }
+                    };
+                    if found.is_empty() {
+                        Err(Some(*number))
+                    } else {
+                        Ok(found)
+                    }
+                })
+                .collect(),
+        }
+    }
 }
 
 /// What a tab remembers between snapshots.
 #[derive(Debug, Default)]
 pub(crate) struct Memory {
     pub(crate) refs: Refs,
+    /// What `--fold` and `--budget` folded, for `--expand`.
+    regions: Regions,
     /// The last snapshot's tree as the engine read it, for `--diff`.
     last: Option<Vec<Node>>,
     /// The main frame loaded a new document since `last` was read.
@@ -139,6 +191,7 @@ impl Memory {
     /// frame.
     pub(crate) fn navigated(&mut self, frames: &[String], main: bool) {
         self.refs.navigated(frames, main);
+        self.regions.navigated(frames, main);
         self.new_page |= main;
     }
 }
@@ -165,7 +218,41 @@ pub fn check_snapshot(req: &SnapshotRequest) -> Result<(), ErrorInfo> {
             "run snapshot --source for the whole page, or chrome-cdp source <ref> for one element",
         )));
     }
+    if !req.expand.is_empty() {
+        let with = if req.scope.is_some() {
+            Some("--scope")
+        } else if req.diff {
+            Some("--diff")
+        } else {
+            None
+        };
+        if let Some(with) = with {
+            return Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!(
+                    "--expand cannot be used with {with}: a region is its own part of the page"
+                ),
+            )
+            .hint(Hint::text(
+                "run snapshot --expand <region> alone, or take the snapshot again",
+            )));
+        }
+        if let Some(bad) = req.expand.iter().find(|r| parse_region(r).is_none()) {
+            return Err(bad_region(bad));
+        }
+    }
     scope_locator(req.scope.as_deref(), &locate_options(req)).map(drop)
+}
+
+/// The error for an `--expand` value that is not a region.
+fn bad_region(text: &str) -> ErrorInfo {
+    ErrorInfo::new(
+        ErrorKind::BadArgs,
+        format!("--expand {text}: not a region; regions look like r4"),
+    )
+    .hint(Hint::text(
+        "snapshot --fold or --budget N prints regions ([region r4]) where it folds",
+    ))
 }
 
 /// A `--scope` locator.
@@ -230,22 +317,34 @@ impl Engine {
         let (scope_key, note) = self
             .scope_key(running, page, scope.as_ref(), &options, &retry, timeout)
             .await?;
+        // A diff compares unfolded trees: it is short already.
+        let folding = if req.diff {
+            Folding::default()
+        } else {
+            Folding {
+                repeats: req.fold,
+                budget: req.budget.filter(|&b| b > 0),
+            }
+        };
+        let regions = self.expanded_regions(running, page, &req.expand)?;
+        let within = if req.expand.is_empty() {
+            Within::scope(scope_key.as_ref())
+        } else {
+            Within::Regions(&regions)
+        };
         let Tree {
             capture,
             shown,
+            groups,
             before,
             new_page,
         } = self
-            .read_tree(running, page, req, &view, scope_key.as_ref(), mark)
+            .read_tree(running, page, req, &view, within, &folding, mark)
             .await?;
 
         let tab = tab_name(page.id);
         let mut warnings = Vec::new();
-        let mut text = format!(
-            "page {tab} \"{}\" {}",
-            capture.title.replace('"', "\\\""),
-            capture.url
-        );
+        let mut text = header(page, &capture);
         let (nodes, diff): (Vec<SnapshotNode>, Option<bool>) = if req.diff {
             let compared = before.is_some();
             let changes = match &before {
@@ -277,8 +376,8 @@ impl Engine {
                 .iter()
                 .map(|(r, source)| (*r, crate::source::node_source_text(source, origin)))
                 .collect();
-            render::text_with_sources(&shown, &suffixes, &mut text);
-            let mut nodes: Vec<SnapshotNode> = shown.iter().map(render::json).collect();
+            group_text(&shown, &groups, &regions, &suffixes, &mut text);
+            let mut nodes = json_groups(&shown, &groups, &regions);
             render::json_sources(&mut nodes, &sources);
             if sources.is_empty()
                 && let Some((first, _)) = refs.first()
@@ -293,9 +392,17 @@ impl Engine {
             }
             (nodes, None)
         } else {
-            render::text(&shown, &mut text);
-            (shown.iter().map(render::json).collect(), None)
+            group_text(&shown, &groups, &regions, &HashMap::new(), &mut text);
+            (json_groups(&shown, &groups, &regions), None)
         };
+        if let Some(first) = folded_regions(&shown).first() {
+            warnings.push(format!(
+                "parts of the page are folded; {} shows one",
+                Cmd::new("snapshot")
+                    .flag("expand", format!("r{first}"))
+                    .scoped(&self.session)
+            ));
+        }
         let data = SnapshotData {
             tab,
             url: capture.url,
@@ -318,15 +425,18 @@ impl Engine {
     }
 
     /// Reads `page` with `req`'s engine and gives refs to the nodes
-    /// `view` shows (the subtree of `scope_key`, if given), remembering
-    /// the tree for the next `--diff`. The caller holds the tab's lock.
+    /// `view` shows (of the part `within` names), folded as `folding`
+    /// says, remembering the tree for the next `--diff`. The caller holds
+    /// the tab's lock.
+    #[allow(clippy::too_many_arguments)]
     async fn read_tree(
         &self,
         running: &Running,
         page: &Page,
         req: &SnapshotRequest,
         view: &View,
-        scope_key: Option<&NodeKey>,
+        within: Within<'_>,
+        folding: &Folding,
         mark: u64,
     ) -> Result<Tree, ErrorInfo> {
         let engine = req.engine.unwrap_or(DEFAULT_ENGINE);
@@ -347,7 +457,7 @@ impl Engine {
                         AxReader {
                             session: &self.session,
                         }
-                        .read(&frames, scope_key, timeout)
+                        .read(&frames, within_key(within), timeout)
                         .await
                     }
                     SnapshotEngine::Dom => {
@@ -356,49 +466,85 @@ impl Engine {
                             page,
                             engine: self,
                         }
-                        .read(&frames, scope_key, timeout)
+                        .read(&frames, within_key(within), timeout)
                         .await
                     }
                 }
             };
             let capture = self.unless_blocked(running, page, mark, read).await?;
-            let Some(current) = scoped(scope_key, &capture.nodes) else {
-                return Err(self.scope_gone(req.scope.as_deref(), page));
+            let mut groups: Vec<Vec<Node>> = match within.groups(&capture.nodes) {
+                Ok(groups) => groups
+                    .into_iter()
+                    .map(|group| prune::shape_uncollapsed(group, view))
+                    .collect(),
+                Err(None) => return Err(self.scope_gone(req.scope.as_deref(), page)),
+                Err(Some(region)) => return Err(self.region_gone(region, page)),
             };
-            let mut shown = prune::shape(current, view);
+            let numbers: Vec<u32> = match within {
+                Within::Regions(regions) => regions.iter().map(|(n, _)| *n).collect(),
+                Within::Page | Within::Node(_) => Vec::new(),
+            };
+            let frame = Frame {
+                extra_chars: header(page, &capture).chars().count() + region_labels(within),
+                roots: !matches!(within, Within::Page),
+                regions: &numbers,
+            };
             let assigned = running.tabs.snapshot_memory(page.id, |memory| {
                 if memory.refs.generation() != generation && attempts < READ_ATTEMPTS {
                     return None;
                 }
-                prune::assign_refs(&mut shown, &mut memory.refs, view.all_refs, engine);
+                fold::arrange(
+                    &mut groups,
+                    folding,
+                    frame,
+                    view.collapse,
+                    &mut Registries {
+                        refs: &mut memory.refs,
+                        regions: &mut memory.regions,
+                        all_refs: view.all_refs,
+                        engine,
+                    },
+                );
                 let before = memory.last.replace(capture.nodes.clone());
                 let new_page = std::mem::take(&mut memory.new_page) && before.is_some();
                 let before = before.map(|old| {
-                    let mut old = prune::shape(scoped(scope_key, &old).unwrap_or_default(), view);
+                    let old = within.groups(&old).unwrap_or_default().concat();
+                    let mut old = prune::shape(old, view);
                     prune::lookup_refs(&mut old, &memory.refs);
                     old
                 });
                 Some((before, new_page))
             });
-            match assigned {
-                Some(Some((before, new_page))) => {
-                    return Ok(Tree {
-                        capture,
-                        shown,
-                        before,
-                        new_page,
-                    });
-                }
-                Some(None) => {}
+            let (before, new_page) = match assigned {
+                Some(Some(found)) => found,
+                Some(None) => continue,
                 None => {
-                    return Ok(Tree {
-                        capture,
-                        shown,
-                        before: None,
-                        new_page: false,
-                    });
+                    // The tab is gone: no refs to give.
+                    fold::arrange(
+                        &mut groups,
+                        &Folding::default(),
+                        frame,
+                        view.collapse,
+                        &mut Registries {
+                            refs: &mut Refs::default(),
+                            regions: &mut Regions::default(),
+                            all_refs: false,
+                            engine,
+                        },
+                    );
+                    for group in &mut groups {
+                        forget_refs(group);
+                    }
+                    (None, false)
                 }
-            }
+            };
+            return Ok(Tree {
+                capture,
+                groups: groups.iter().map(Vec::len).collect(),
+                shown: groups.concat(),
+                before,
+                new_page,
+            });
         }
     }
 
@@ -426,6 +572,9 @@ impl Engine {
             strict_refs: false,
             testid_attribute: None,
             source: false,
+            fold: false,
+            budget: None,
+            expand: Vec::new(),
             timeout_ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
             max_chars: 0,
         };
@@ -434,7 +583,15 @@ impl Engine {
             ..View::default()
         };
         let tree = self
-            .read_tree(running, page, &req, &view, None, mark)
+            .read_tree(
+                running,
+                page,
+                &req,
+                &view,
+                Within::Page,
+                &Folding::default(),
+                mark,
+            )
             .await?;
         Ok(refs_of(&tree.shown))
     }
@@ -477,6 +634,9 @@ impl Engine {
             strict_refs: options.strict_refs,
             testid_attribute: options.testid_attribute.clone(),
             source: false,
+            fold: false,
+            budget: None,
+            expand: Vec::new(),
             timeout_ms: u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX),
             max_chars: 0,
         };
@@ -484,7 +644,15 @@ impl Engine {
             .scope_key(running, page, scope, options, retry, timeout)
             .await?;
         let mut tree = self
-            .read_tree(running, page, &req, &view, scope_key.as_ref(), mark)
+            .read_tree(
+                running,
+                page,
+                &req,
+                &view,
+                Within::scope(scope_key.as_ref()),
+                &Folding::default(),
+                mark,
+            )
             .await?;
         forget_refs(&mut tree.shown);
         let mut text = String::new();
@@ -515,6 +683,67 @@ impl Engine {
         Ok(found)
     }
 
+    /// The regions `--expand` names, as the tab keeps them.
+    fn expanded_regions(
+        &self,
+        running: &Running,
+        page: &Page,
+        expand: &[String],
+    ) -> Result<Vec<(u32, Region)>, ErrorInfo> {
+        let numbers = expand
+            .iter()
+            .map(|r| parse_region(r).ok_or_else(|| bad_region(r)))
+            .collect::<Result<Vec<_>, _>>()?;
+        let found = running
+            .tabs
+            .snapshot_memory(page.id, |m| {
+                numbers
+                    .iter()
+                    .map(|&n| (n, m.regions.lookup(n)))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let tab = tab_name(page.id);
+        found
+            .into_iter()
+            .map(|(n, lookup)| match lookup {
+                regions::Lookup::Live(region) => Ok((n, region)),
+                regions::Lookup::StalePage => Err(self.stale_region(
+                    n,
+                    format!("region r{n} is from an earlier page of tab {tab}"),
+                )),
+                regions::Lookup::StaleFrame => Err(self.stale_region(
+                    n,
+                    format!("region r{n} is from an earlier document of its frame in tab {tab}"),
+                )),
+                regions::Lookup::Unknown => {
+                    Err(self.stale_region(n, format!("tab {tab} has no region r{n}")))
+                }
+            })
+            .collect()
+    }
+
+    /// A region that cannot be expanded: take a new snapshot.
+    fn stale_region(&self, number: u32, message: String) -> ErrorInfo {
+        ErrorInfo::new(ErrorKind::RefStale, message)
+            .hint(
+                Hint::run(Cmd::new("snapshot").switch("fold").scoped(&self.session))
+                    .why("gives the page's regions now"),
+            )
+            .details(serde_json::json!({ "region": format!("r{number}") }))
+    }
+
+    /// The error when a region's nodes are no longer in the page.
+    fn region_gone(&self, number: u32, page: &Page) -> ErrorInfo {
+        self.stale_region(
+            number,
+            format!(
+                "region r{number} is no longer in tab {}: the page removed it",
+                tab_name(page.id)
+            ),
+        )
+    }
+
     /// The error when the `--scope` node is not in the tree.
     pub(crate) fn scope_gone(&self, scope: Option<&str>, page: &Page) -> ErrorInfo {
         let scope = scope.unwrap_or_default();
@@ -530,6 +759,87 @@ impl Engine {
                 .why("shows what the page has now"),
         )
     }
+}
+
+/// Renders `shown`, with `sources`' suffixes; with `--expand`, a region
+/// at a time, each after its label.
+fn group_text(
+    shown: &[Node],
+    groups: &[usize],
+    regions: &[(u32, Region)],
+    sources: &HashMap<u32, String>,
+    text: &mut String,
+) {
+    if regions.is_empty() {
+        render::text_with_sources(shown, sources, text);
+        return;
+    }
+    let mut rest = shown;
+    for (size, (number, _)) in groups.iter().zip(regions) {
+        let (group, after) = rest.split_at((*size).min(rest.len()));
+        let _ = write!(text, "\nregion r{number}");
+        render::region_text(group, *number, sources, text);
+        rest = after;
+    }
+}
+
+/// The `--json` nodes of `shown`; with `--expand`, each top-level node
+/// names its region.
+fn json_groups(shown: &[Node], groups: &[usize], regions: &[(u32, Region)]) -> Vec<SnapshotNode> {
+    let mut nodes: Vec<SnapshotNode> = shown.iter().map(render::json).collect();
+    if !regions.is_empty() {
+        let mut at = 0;
+        for (size, (number, _)) in groups.iter().zip(regions) {
+            for node in nodes.iter_mut().skip(at).take(*size) {
+                node.region = Some(format!("r{number}"));
+            }
+            at += size;
+        }
+    }
+    nodes
+}
+
+/// The node a reader must return with its key: `--scope`'s.
+fn within_key(within: Within<'_>) -> Option<&NodeKey> {
+    match within {
+        Within::Node(key) => Some(key),
+        Within::Page | Within::Regions(_) => None,
+    }
+}
+
+/// A snapshot's first line: `page t1 "Title" https://…`.
+fn header(page: &Page, capture: &Capture) -> String {
+    format!(
+        "page {} \"{}\" {}",
+        tab_name(page.id),
+        capture.title.replace('"', "\\\""),
+        capture.url
+    )
+}
+
+/// The characters of the lines before each region `--expand` shows
+/// (`region r4`, [`group_text`]).
+fn region_labels(within: Within<'_>) -> usize {
+    match within {
+        Within::Regions(regions) => regions
+            .iter()
+            .map(|(number, _)| format!("\nregion r{number}").chars().count())
+            .sum(),
+        Within::Page | Within::Node(_) => 0,
+    }
+}
+
+/// The regions shown in `nodes`, in page order.
+fn folded_regions(nodes: &[Node]) -> Vec<u32> {
+    let mut found = Vec::new();
+    for node in nodes {
+        node.walk(&mut |n| {
+            if let Some(fold) = &n.fold {
+                found.push(fold.region);
+            }
+        });
+    }
+    found
 }
 
 /// The refs of `nodes` and their descendants, with their nodes, in page

@@ -3032,8 +3032,33 @@ pub struct SnapshotNode {
     /// with a ref (see `chrome-cdp source`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<NodeSource>,
+    /// `--fold` or `--budget`: what was folded in place of this node's
+    /// children (it has none), or, with `like`, of the siblings after the
+    /// node before it. `snapshot --expand <region>` shows them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub folded: Option<SnapshotFold>,
+    /// `--expand`: the region this top-level node was expanded from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub children: Vec<SnapshotNode>,
+}
+
+/// What a snapshot folded into one stub (`snapshot --fold`, `--budget`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SnapshotFold {
+    /// The region `snapshot --expand` takes, e.g. `r4`.
+    pub region: String,
+    /// How many nodes were folded.
+    pub nodes: u32,
+    /// How many of them have refs (they keep working).
+    pub refs: u32,
+    /// Their estimated tokens (characters ÷ 4), were they shown.
+    pub tokens: u32,
+    /// A run of siblings with the same shape as the node before this
+    /// stub: how many were folded. `role` is theirs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub like: Option<u32>,
 }
 
 /// Where a snapshot node came from (`snapshot --source`).

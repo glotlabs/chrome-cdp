@@ -6,7 +6,8 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
-use protocol::schema::{NodeSource, SnapshotNode};
+use protocol::format;
+use protocol::schema::{NodeSource, SnapshotFold, SnapshotNode};
 
 use super::tree::{Node, NodeKey};
 
@@ -60,11 +61,20 @@ fn quote(text: &str) -> String {
     out
 }
 
-/// The line of `node`, without indentation or the leading `- `.
-pub(crate) fn line(node: &Node) -> String {
+/// The line of `node`, without indentation or the leading `- `, as if
+/// nothing were folded in it.
+fn unfolded_line(node: &Node) -> String {
     let mut line = node.role.clone();
     if let Some(more) = node.more {
         return format!("… {more} more {}", node.role);
+    }
+    if let Some(fold) = &node.fold
+        && let Some(like) = fold.like
+    {
+        return format!(
+            "… {like} more {} like the one above [region r{}]",
+            node.role, fold.region
+        );
     }
     if !node.name.is_empty() {
         line.push(' ');
@@ -78,6 +88,31 @@ pub(crate) fn line(node: &Node) -> String {
         line.push_str(&part);
     }
     line
+}
+
+/// The line of `node`, with the stub of what it folds.
+pub(crate) fn line(node: &Node) -> String {
+    let mut line = unfolded_line(node);
+    if node.more.is_none()
+        && let Some(fold) = &node.fold
+        && fold.like.is_none()
+    {
+        let _ = write!(
+            line,
+            " [region r{}: {}, {}, ~{} tokens]",
+            fold.region,
+            count(fold.nodes, "node"),
+            count(fold.refs, "ref"),
+            format::thousands(fold.tokens as usize)
+        );
+    }
+    line
+}
+
+/// `1 node`, `412 nodes`.
+fn count(n: u32, what: &str) -> String {
+    let s = if n == 1 { "" } else { "s" };
+    format!("{} {what}{s}", format::thousands(n as usize))
 }
 
 /// What follows the ref: level, password or file, value, states, href.
@@ -112,13 +147,30 @@ fn states(node: &Node) -> Vec<&'static str> {
 
 /// The snapshot as text, after its header line.
 pub(crate) fn text(nodes: &[Node], out: &mut String) {
-    lines(nodes, 0, None, &HashMap::new(), out);
+    lines(nodes, 0, None, &HashMap::new(), false, out);
+}
+
+/// [`text`] of what `--expand` shows of `region`: a long list at the top
+/// says to expand it with `--all`.
+pub(crate) fn region_text(
+    nodes: &[Node],
+    region: u32,
+    sources: &HashMap<u32, String>,
+    out: &mut String,
+) {
+    lines(nodes, 0, Some(Parent::Region(region)), sources, false, out);
+}
+
+/// [`text`] at `depth`, with what folds hide shown in their place: what
+/// the folded nodes would print.
+pub(crate) fn open_text(nodes: &[Node], depth: usize, out: &mut String) {
+    lines(nodes, depth, None, &HashMap::new(), true, out);
 }
 
 /// [`text`] with `snapshot --source`'s suffixes, by ref number
 /// (`<CartItem src/components/CartItem.tsx:42>`).
 pub(crate) fn text_with_sources(nodes: &[Node], sources: &HashMap<u32, String>, out: &mut String) {
-    lines(nodes, 0, None, sources, out);
+    lines(nodes, 0, None, sources, false, out);
 }
 
 /// Sets `snapshot --source`'s sources on `nodes` (the `--json` form), by
@@ -136,15 +188,42 @@ pub(crate) fn json_sources(nodes: &mut [SnapshotNode], sources: &HashMap<u32, No
     }
 }
 
+/// What holds a long list, for the hint of its `… N more` line.
+#[derive(Debug, Clone, Copy)]
+enum Parent {
+    Ref(u32),
+    Region(u32),
+}
+
 fn lines(
     nodes: &[Node],
     depth: usize,
-    parent: Option<u32>,
+    parent: Option<Parent>,
     sources: &HashMap<u32, String>,
+    open: bool,
     out: &mut String,
 ) {
     let indent = "  ".repeat(depth);
     for node in nodes {
+        if open && let Some(fold) = &node.fold {
+            if fold.like.is_some() {
+                lines(&fold.hidden, depth, parent, sources, open, out);
+                continue;
+            }
+            out.push('\n');
+            out.push_str(&indent);
+            out.push_str("- ");
+            out.push_str(&unfolded_line(node));
+            lines(
+                &fold.hidden,
+                depth + 1,
+                node.reference.map(Parent::Ref),
+                sources,
+                open,
+                out,
+            );
+            continue;
+        }
         out.push('\n');
         out.push_str(&indent);
         out.push_str("- ");
@@ -155,8 +234,11 @@ fn lines(
         }
         if node.more.is_some() {
             match parent {
-                Some(r) => {
+                Some(Parent::Ref(r)) => {
                     let _ = write!(out, " (use --scope e{r} --all)");
+                }
+                Some(Parent::Region(r)) => {
+                    let _ = write!(out, " (use --expand r{r} --all)");
                 }
                 None => out.push_str(" (use --all)"),
             }
@@ -170,7 +252,14 @@ fn lines(
                 None => out.push_str(" (use a larger --depth)"),
             }
         }
-        lines(&node.children, depth + 1, node.reference, sources, out);
+        lines(
+            &node.children,
+            depth + 1,
+            node.reference.map(Parent::Ref),
+            sources,
+            open,
+            out,
+        );
     }
 }
 
@@ -191,6 +280,14 @@ pub(crate) fn json(node: &Node) -> SnapshotNode {
         change: None,
         was: None,
         source: None,
+        folded: node.fold.as_ref().map(|fold| SnapshotFold {
+            region: format!("r{}", fold.region),
+            nodes: fold.nodes,
+            refs: fold.refs,
+            tokens: fold.tokens,
+            like: fold.like,
+        }),
+        region: None,
         children: node.children.iter().map(json).collect(),
     }
 }

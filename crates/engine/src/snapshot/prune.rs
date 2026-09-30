@@ -71,6 +71,16 @@ pub(crate) fn find(nodes: &[Node], key: &NodeKey) -> Option<Node> {
 
 /// Applies everything but refs: pruning, the views and collapsing.
 pub(crate) fn shape(nodes: Vec<Node>, view: &View) -> Vec<Node> {
+    let mut nodes = shape_uncollapsed(nodes, view);
+    if view.collapse {
+        collapse(&mut nodes);
+    }
+    nodes
+}
+
+/// [`shape`] without collapsing long lists: folding comes first
+/// ([`super::fold`]).
+pub(crate) fn shape_uncollapsed(nodes: Vec<Node>, view: &View) -> Vec<Node> {
     let mut nodes = finish(prune_list(nodes, view, false), view);
     if view.interactive {
         nodes = interactive(nodes);
@@ -78,14 +88,12 @@ pub(crate) fn shape(nodes: Vec<Node>, view: &View) -> Vec<Node> {
     if let Some(depth) = view.depth {
         limit_depth(&mut nodes, depth.max(1));
     }
-    if view.collapse {
-        collapse(&mut nodes);
-    }
     nodes
 }
 
 /// Gives every reffable node shown (every node with `--all-refs`) its
-/// ref, in document order. `engine` read them.
+/// ref, in document order. `engine` read them. Folded nodes get theirs
+/// too, so refs from an earlier snapshot keep working.
 pub(crate) fn assign_refs(nodes: &mut [Node], refs: &mut Refs, all: bool, engine: SnapshotEngine) {
     for node in nodes {
         if (node.reffable || all)
@@ -95,6 +103,9 @@ pub(crate) fn assign_refs(nodes: &mut [Node], refs: &mut Refs, all: bool, engine
             node.reference = Some(refs.assign_from(key, &node.role, &node.name, engine));
         }
         assign_refs(&mut node.children, refs, all, engine);
+        if let Some(fold) = &mut node.fold {
+            assign_refs(&mut fold.hidden, refs, all, engine);
+        }
     }
 }
 
@@ -347,7 +358,8 @@ fn limit_depth(nodes: &mut [Node], depth: u32) {
 /// rather than per role, keeps mixed lists (a row's checkbox, link and
 /// buttons) together. Returns whether it cut `nodes`; a parent that loses
 /// children gets a ref, so the hint can name it.
-fn collapse(nodes: &mut Vec<Node>) -> bool {
+/// A fold's run stub is kept where it is and not counted.
+pub(crate) fn collapse(nodes: &mut Vec<Node>) -> bool {
     for node in nodes.iter_mut() {
         if collapse(&mut node.children) {
             node.reffable = true;
@@ -356,11 +368,12 @@ fn collapse(nodes: &mut Vec<Node>) -> bool {
     let mut seen: HashMap<&str, usize> = HashMap::new();
     let mut cut = None;
     let mut totals: HashMap<&str, usize> = HashMap::new();
-    for node in nodes.iter().filter(|n| !n.is_text()) {
+    let counted = |n: &Node| !n.is_text() && n.fold.as_ref().is_none_or(|f| f.like.is_none());
+    for node in nodes.iter().filter(|n| counted(n)) {
         *totals.entry(node.role.as_str()).or_default() += 1;
     }
     for (i, node) in nodes.iter().enumerate() {
-        if node.is_text() {
+        if !counted(node) {
             continue;
         }
         let count = seen.entry(node.role.as_str()).or_default();
@@ -385,7 +398,7 @@ fn collapse(nodes: &mut Vec<Node>) -> bool {
         if node.is_text() {
             continue;
         }
-        if over.contains(&node.role) {
+        if counted(&node) && over.contains(&node.role) {
             match more.iter_mut().find(|(role, _)| *role == node.role) {
                 Some((_, n)) => *n += 1,
                 None => more.push((node.role, 1)),

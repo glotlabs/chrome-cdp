@@ -522,6 +522,9 @@ impl Actor<'_> {
             strict_refs: self.req.strict_refs,
             testid_attribute: self.req.testid_attribute.clone(),
             source: false,
+            fold: false,
+            budget: None,
+            expand: Vec::new(),
             timeout_ms: self.req.timeout_ms,
             max_chars,
         };

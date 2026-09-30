@@ -107,6 +107,26 @@ pub(crate) struct Node {
     pub(crate) more: Option<u32>,
     /// How many nodes below it `--depth` left out.
     pub(crate) below: Option<u32>,
+    /// What `--fold` or `--budget` hid in its place (plan 16, 16.3).
+    pub(crate) fold: Option<Box<Fold>>,
+}
+
+/// Nodes a fold hides, and what its stub line says about them. A region
+/// stub is a node whose children are hidden; a run stub stands for the
+/// siblings after the node before it, which share its shape.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Fold {
+    /// The hidden nodes: the children, or the run's siblings.
+    pub(crate) hidden: Vec<Node>,
+    /// A run: how many siblings like the one before it.
+    pub(crate) like: Option<u32>,
+    /// Its region number (`4` for `r4`).
+    pub(crate) region: u32,
+    /// The nodes hidden, and the refs among them.
+    pub(crate) nodes: u32,
+    pub(crate) refs: u32,
+    /// The estimated tokens of the hidden nodes' lines.
+    pub(crate) tokens: u32,
 }
 
 /// The role of a text node.

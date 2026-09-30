@@ -242,6 +242,9 @@ async fn elements_frames_and_worlds() {
             strict_refs: false,
             testid_attribute: None,
             source: false,
+            fold: false,
+            budget: None,
+            expand: Vec::new(),
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })
@@ -409,6 +412,9 @@ async fn returned_elements_get_refs() {
             strict_refs: false,
             testid_attribute: None,
             source: false,
+            fold: false,
+            budget: None,
+            expand: Vec::new(),
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })

@@ -2399,6 +2399,17 @@ pub struct SnapshotRequest {
     /// `--source`: each node with a ref gets its component and place.
     #[serde(default)]
     pub source: bool,
+    /// `--fold`: runs of four or more siblings with the same shape show
+    /// the first and one line for the rest.
+    #[serde(default)]
+    pub fold: bool,
+    /// `--budget`: fold regions until the text is at most this many
+    /// estimated tokens (characters ÷ 4); `None` or 0 for no budget.
+    #[serde(default)]
+    pub budget: Option<usize>,
+    /// `--expand`: show these regions (`r4`) of the last folded snapshot.
+    #[serde(default)]
+    pub expand: Vec<String>,
     pub timeout_ms: u64,
     /// The output budget (0 = none).
     pub max_chars: usize,

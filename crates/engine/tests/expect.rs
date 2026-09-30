@@ -401,6 +401,9 @@ async fn failures_say_what_they_saw() {
             strict_refs: false,
             testid_attribute: None,
             source: false,
+            fold: false,
+            budget: None,
+            expand: Vec::new(),
             timeout_ms: TIMEOUT_MS,
             max_chars: 0,
         })
