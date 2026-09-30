@@ -1190,6 +1190,13 @@
           "description": "`<`, `<=`, `>` or `>=`.",
           "type": "string"
         },
+        "ref": {
+          "description": "That element's ref, when an `lcp` budget failed and the element is\nstill in the document.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "unit": {
           "description": "`ms`, `bytes`, `count`, or empty for CLS (a score).",
           "type": "string"

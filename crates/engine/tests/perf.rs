@@ -337,7 +337,9 @@ async fn expect_perf_waits_for_load_then_checks_every_budget() {
     assert_eq!(err.message, "expect failed: --perf 'lcp<100 tbt<60s'");
     assert_eq!(note(&err, "actual"), "1 budget over (of 2)");
     let lcp = note(&err, "lcp");
-    assert!(lcp.contains(" > 100ms ✗ (element: img#hero)"), "{lcp}");
+    assert!(lcp.contains(" > 100ms ✗ (element: img#hero [e"), "{lcp}");
+    let reference = perf.budgets[0].reference.clone().unwrap();
+    assert!(lcp.ends_with(&format!("[{reference}])")), "{lcp}");
     assert!(
         note(&err, "tbt").ends_with(" < 60000ms ✓"),
         "{}",

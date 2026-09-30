@@ -20,9 +20,13 @@ use serde_json::{Map, Value, json};
 use tokio::time::Instant;
 
 use super::{Failed, Passed, expected};
+use cdp::domains::{dom, runtime};
+
 use crate::context::Scoped as _;
+use crate::frames::World;
 use crate::locator::LocateOptions;
 use crate::request::ExpectRequest;
+use crate::snapshot::{NodeKey, Target};
 use crate::tabs::Page;
 use crate::wait::Condition;
 use crate::{Engine, Running};
@@ -284,6 +288,8 @@ struct Measured {
     /// Why there is no value, and what to do.
     missing: Option<&'static str>,
     element: Option<String>,
+    /// The element's ref (LCP's, when its budget failed).
+    reference: Option<String>,
 }
 
 impl Measured {
@@ -293,6 +299,7 @@ impl Measured {
             shown: None,
             missing: None,
             element: None,
+            reference: None,
         }
     }
 
@@ -302,6 +309,7 @@ impl Measured {
             shown: None,
             missing: Some(why),
             element: None,
+            reference: None,
         }
     }
 
@@ -401,7 +409,11 @@ fn row(budget: &Budget, measured: &Measured, held: bool) -> String {
         budget.unit.show(budget.limit)
     );
     if let Some(element) = &measured.element {
-        let _ = write!(text, " (element: {element})");
+        let _ = write!(text, " (element: {element}");
+        if let Some(reference) = &measured.reference {
+            let _ = write!(text, " [{reference}]");
+        }
+        text.push(')');
     }
     text
 }
@@ -522,7 +534,13 @@ impl Engine {
             .saturating_duration_since(Instant::now())
             .max(Duration::from_secs(1));
         let data = self.read_perf(running, page, true, left).await?;
-        let results = evaluate(budgets, &data, missing_ok);
+        let mut results = evaluate(budgets, &data, missing_ok);
+        if let Some((_, lcp, _)) = results
+            .iter_mut()
+            .find(|(b, m, held)| !held && b.metric == "lcp" && m.element.is_some())
+        {
+            lcp.reference = self.lcp_ref(running, page, left).await;
+        }
         let perf = ExpectPerf {
             url: data.url.clone(),
             budgets: results
@@ -537,6 +555,7 @@ impl Engine {
                     held: *held,
                     missing: measured.missing.map(str::to_owned),
                     element: measured.element.clone(),
+                    reference: measured.reference.clone(),
                 })
                 .collect(),
             throttling: self.throttling()?,
@@ -589,6 +608,44 @@ impl Engine {
         });
         failed.details.insert("perf".into(), json!(perf));
         Err(self.one_shot_failure(page, req, failed))
+    }
+
+    /// A ref for the page's LCP element (kept by the observer), if it is
+    /// still in the document.
+    async fn lcp_ref(&self, running: &Running, page: &Page, timeout: Duration) -> Option<String> {
+        let generation = running
+            .tabs
+            .snapshot_memory(page.id, |m| m.refs.generation());
+        let (frame, context) = self
+            .frame_and_context(running, page, None, World::Isolated, timeout)
+            .await
+            .ok()?;
+        let mut params = runtime::EvaluateParams::new(
+            "(() => { const node = globalThis[Symbol.for('chrome-cdp.perf')]?.lcpNode?.deref(); \
+             return node && node.isConnected ? node : null; })()"
+                .to_owned(),
+        );
+        params.context_id = Some(context.context_id);
+        let session = context.session.with_timeout(timeout);
+        let object_id = session.call(params).await.ok()?.result.object_id?;
+        let described = session
+            .call(dom::DescribeNodeParams {
+                object_id: Some(object_id.clone()),
+                ..dom::DescribeNodeParams::default()
+            })
+            .await;
+        let target = Target {
+            key: NodeKey {
+                frame,
+                backend: described.ok()?.node.backend_node_id,
+            },
+            context,
+            object_id,
+            note: None,
+        };
+        let named = self.name_target(running, page, &target, generation).await;
+        target.release();
+        named.reference
     }
 
     /// The network and CPU throttling of the session (or context).

@@ -4867,6 +4867,10 @@ pub struct PerfBudgetCheck {
     /// LCP's element, e.g. `img#hero`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub element: Option<String>,
+    /// That element's ref, when an `lcp` budget failed and the element is
+    /// still in the document.
+    #[serde(rename = "ref", default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
 }
 
 /// The throttling `expect --perf` measured under.

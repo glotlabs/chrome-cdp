@@ -20,6 +20,8 @@
     // the browser buffered: event timing only for 104ms and slower).
     fromStart: document.readyState === 'loading',
     lcp: null,
+    // The LCP's element, for `expect --perf` to give it a ref.
+    lcpNode: null,
     cls: 0,
     shifts: 0,
     window: 0,
@@ -33,6 +35,7 @@
   const handle = {
     'largest-contentful-paint': (e) => {
       state.lcp = { time: e.startTime, size: e.size, element: describe(e.element), url: e.url || null };
+      state.lcpNode = e.element ? new WeakRef(e.element) : null;
     },
     'layout-shift': (e) => {
       if (e.hadRecentInput) return;
