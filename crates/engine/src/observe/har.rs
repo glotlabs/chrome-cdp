@@ -549,7 +549,7 @@ fn entry(page: &str, record: &Record, fetched: Fetched) -> HarEntry {
         record
             .frames
             .iter()
-            .map(|f| WebSocketMessage {
+            .map(|(_, f)| WebSocketMessage {
                 kind: if f.sent { "send" } else { "receive" },
                 time: f.time_ms as f64 / 1000.0,
                 opcode: match f.opcode.as_str() {

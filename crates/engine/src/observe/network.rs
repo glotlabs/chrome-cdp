@@ -9,7 +9,8 @@
 //! while pending is shown once more when it ends, so the agent sees how
 //! it went. `network show` fetches bodies from Chrome only when asked
 //! (`--body`, `--request-body`); Chrome keeps them for a while, not
-//! forever.
+//! forever. `network frames` lists a WebSocket's frames (plan 14.7), and
+//! with `--follow` the new ones as they come.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -18,12 +19,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use base64::Engine as _;
 use cdp::domains::network as cdp_network;
 use protocol::schema::{
-    Body, NetworkClearData, NetworkData, NetworkEntry, NetworkShowData, RequestState,
+    Body, NetworkClearData, NetworkData, NetworkEntry, NetworkFramesData, NetworkShowData,
+    RequestState, WebSocketFrame,
 };
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format as units};
 use tokio::time::Instant;
 
-use super::commands::shown_url;
+use super::commands::{regex_arg, shown_url};
 use super::netlog::{NetLog, Record};
 use super::save;
 use crate::Engine;
@@ -31,7 +33,9 @@ use crate::Running;
 use crate::context::Scoped as _;
 use crate::input::origin;
 use crate::pattern::UrlPattern;
-use crate::request::{NetworkClearRequest, NetworkRequest, NetworkShowRequest, Since, millis};
+use crate::request::{
+    NetworkClearRequest, NetworkFramesRequest, NetworkRequest, NetworkShowRequest, Since, millis,
+};
 use crate::tabs::{Page, TabError, parse_tab_id, tab_name};
 
 /// The resource types `network --type` takes: Chrome's, in lower case.
@@ -60,8 +64,10 @@ pub const RESOURCE_TYPES: &[&str] = &[
 /// How much of a URL a `network` line shows.
 const SHOWN_URL: usize = 150;
 
-/// How many WebSocket frames `network show` lists in the text form.
+/// How many WebSocket frames `network show` lists in the text form, and
+/// in JSON (`network frames` lists them all).
 const SHOWN_FRAMES: usize = 10;
+const SHOWN_FRAMES_JSON: usize = 20;
 
 /// What one `network` call picked from the log.
 #[derive(Debug)]
@@ -313,8 +319,15 @@ impl Engine {
             response_headers: None,
             request_body: None,
             response_body: None,
-            frames: record.frames.iter().cloned().collect(),
+            frames: record
+                .frames
+                .iter()
+                .skip(record.frames.len().saturating_sub(SHOWN_FRAMES_JSON))
+                .map(|(_, f)| f.clone())
+                .collect(),
+            earlier_frames: 0,
         };
+        data.earlier_frames = data.frames.first().map_or(0, |f| f.n - 1);
         if req.headers {
             data.request_headers = Some(record.request_headers.clone());
             data.response_headers = Some(record.response_headers.clone());
@@ -330,7 +343,11 @@ impl Engine {
         } else if req.body {
             data.response_body = Some(self.response_body(&running, &record, timeout).await);
         }
-        let text = show_text(&data, &record, &req, page_origin.as_deref());
+        let frames_cmd = Cmd::new("network")
+            .arg("frames")
+            .arg(req.id.to_string())
+            .scoped(&self.session);
+        let text = show_text(&data, &record, &req, page_origin.as_deref(), &frames_cmd);
         let quiet = data
             .response_body
             .as_ref()
@@ -345,6 +362,88 @@ impl Engine {
         Ok(Output::typed(&data, text)
             .quiet(quiet)
             .limit(req.max_chars, "--max-chars 0 for all of it"))
+    }
+
+    /// `network frames`: WebSocket `#id`'s frames after `after` that match,
+    /// the newest `--limit`. With `wait_ms` and nothing to show, waits that
+    /// long for one (`--follow`).
+    pub async fn network_frames(&self, req: NetworkFramesRequest) -> Result<Output, ErrorInfo> {
+        let grep = req
+            .grep
+            .as_deref()
+            .map(|g| regex_arg("--grep", g))
+            .transpose()?;
+        let running = self.running()?;
+        let page = self
+            .log_page(&running, req.tab.as_deref(), req.timeout_ms)
+            .await?;
+        let wanted = |f: &WebSocketFrame| {
+            f.n > req.after
+                && req.sent.is_none_or(|sent| f.sent == sent)
+                && grep
+                    .as_ref()
+                    .is_none_or(|re| f.text.as_deref().is_some_and(|t| re.is_match(t)))
+        };
+        let deadline = Instant::now() + Duration::from_millis(req.wait_ms);
+        let data = loop {
+            let (found, changes, oldest, latest) = running
+                .tabs
+                .netlog(page.id, |log| {
+                    let found = log
+                        .get(req.id)
+                        .map(|record| frames_of(record, &wanted, &req));
+                    let oldest = log.records().next().map(|r| r.entry.id);
+                    (found, log.changes(), oldest, log.seq())
+                })
+                .ok_or_else(|| self.tab_error(&running, TabError::NoSuchTab(page.id)))?;
+            let Some(found) = found else {
+                return Err(self.no_such_request(&page, req.id, oldest, latest));
+            };
+            let mut data = found.map_err(|entry| self.not_a_websocket(&page, &entry))?;
+            let closed = data.request.websocket.as_ref().is_some_and(|w| w.closed);
+            if !data.frames.is_empty() || closed || Instant::now() >= deadline {
+                data.tab = tab_name(page.id);
+                break data;
+            }
+            if !running
+                .tabs
+                .netlog_changed(page.id, changes, deadline)
+                .await
+            {
+                data.tab = tab_name(page.id);
+                break data;
+            }
+        };
+        let text = frames_text(&data, &req);
+        let quiet = data
+            .frames
+            .iter()
+            .filter_map(|f| f.text.as_deref())
+            .collect::<Vec<_>>()
+            .join("\n");
+        Ok(Output::typed(&data, text)
+            .quiet(quiet)
+            .limit(req.max_chars, "--max-chars 0 for all of it, or --limit"))
+    }
+
+    fn not_a_websocket(&self, page: &Page, entry: &NetworkEntry) -> ErrorInfo {
+        let mut list = Cmd::new("network")
+            .flag("type", "websocket")
+            .flag("since", "0");
+        if self
+            .running()
+            .is_ok_and(|r| r.tabs.active() != Some(page.id))
+        {
+            list = list.flag("tab", tab_name(page.id));
+        }
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!(
+                "request #{} is not a WebSocket: it is {} {} ({})",
+                entry.id, entry.method, entry.url, entry.kind
+            ),
+        )
+        .hint(Hint::run(list.scoped(&self.session)).why("lists the WebSockets"))
     }
 
     /// `network clear`: empties the tab's network log.
@@ -639,6 +738,117 @@ fn select(log: &mut NetLog, filter: &Filter<'_>, now_ms: u64) -> Selection {
 }
 
 /// The origin of tab `id`'s main frame, to shorten URLs by.
+/// What `network frames` shows of `record`: its frames that are
+/// `wanted`, the newest `req.limit`; `Err` with its entry if it is no
+/// WebSocket.
+fn frames_of(
+    record: &Record,
+    wanted: &impl Fn(&WebSocketFrame) -> bool,
+    req: &NetworkFramesRequest,
+) -> Result<NetworkFramesData, NetworkEntry> {
+    if record.entry.websocket.is_none() {
+        return Err(record.entry.clone());
+    }
+    let mut frames: Vec<WebSocketFrame> = record
+        .frames
+        .iter()
+        .map(|(_, f)| f)
+        .filter(|f| wanted(f))
+        .cloned()
+        .collect();
+    let skipped = match req.limit {
+        0 => 0,
+        limit => frames.len().saturating_sub(limit),
+    };
+    frames.drain(..skipped);
+    // Frames dropped before any this call could show.
+    let first_kept = record.frames_dropped + 1;
+    let dropped = if req.after < first_kept {
+        first_kept - 1 - req.after
+    } else {
+        0
+    };
+    Ok(NetworkFramesData {
+        tab: String::new(),
+        request: record.entry.clone(),
+        frames,
+        skipped,
+        dropped,
+        last: record
+            .frames
+            .back()
+            .map_or(req.after, |(_, f)| f.n.max(req.after)),
+    })
+}
+
+/// `3 received text 12B {"type":"hello"}`, one line per frame, after a
+/// line naming the socket (on the first call, not `--follow`'s later ones).
+fn frames_text(data: &NetworkFramesData, req: &NetworkFramesRequest) -> String {
+    let mut text = String::new();
+    let entry = &data.request;
+    if req.after == 0 {
+        if let Some(ws) = &entry.websocket {
+            let _ = writeln!(
+                text,
+                "#{} {}: {} sent, {} received, {}",
+                entry.id,
+                entry.url,
+                ws.sent,
+                ws.received,
+                if ws.closed { "closed" } else { "open" },
+            );
+        }
+        if data.dropped > 0 {
+            let _ = writeln!(
+                text,
+                "… {} earlier frames dropped (the log keeps a socket's last 500)",
+                data.dropped
+            );
+        }
+    }
+    if data.skipped > 0 {
+        let _ = writeln!(
+            text,
+            "… {} earlier {} left out; --limit 0 for all",
+            data.skipped,
+            if data.skipped == 1 { "frame" } else { "frames" }
+        );
+    }
+    for frame in &data.frames {
+        let _ = write!(text, "{} ", frame.n);
+        frame_text(&mut text, frame);
+        text.push('\n');
+    }
+    let closed = entry.websocket.as_ref().is_some_and(|w| w.closed);
+    if req.after == 0 {
+        if data.frames.is_empty() {
+            text.push_str(if req.grep.is_some() || req.sent.is_some() {
+                "no frames match"
+            } else {
+                "no frames yet"
+            });
+        }
+    } else if closed {
+        // `--follow` ends here.
+        let _ = write!(text, "#{} closed", entry.id);
+    }
+    text.trim_end().to_owned()
+}
+
+/// `sent text 5B hello`: a frame's direction, kind, size and text.
+fn frame_text(text: &mut String, frame: &WebSocketFrame) {
+    let _ = write!(
+        text,
+        "{} {} {}",
+        if frame.sent { "sent" } else { "received" },
+        frame.opcode,
+        units::size(frame.size),
+    );
+    if let Some(payload) = &frame.text {
+        let _ = write!(text, " {}", payload.replace('\n', " "));
+    }
+}
+
 fn page_origin(running: &Running, id: u32) -> Option<String> {
     let frames = running.tabs.frames(id);
     let url = frames.first().map(|f| f.url.as_str()).unwrap_or_default();
@@ -718,6 +928,7 @@ fn show_text(
     record: &Record,
     req: &NetworkShowRequest,
     page_origin: Option<&str>,
+    frames_cmd: &Cmd,
 ) -> String {
     let entry = &data.request;
     let mut text = String::new();
@@ -836,17 +1047,13 @@ fn show_text(
             if ws.closed { ", closed" } else { ", open" },
         );
         let skip = data.frames.len().saturating_sub(SHOWN_FRAMES);
+        let earlier = data.earlier_frames + skip as u64;
+        if earlier > 0 {
+            let _ = writeln!(text, "  … {earlier} earlier: {frames_cmd}");
+        }
         for frame in &data.frames[skip..] {
-            let _ = write!(
-                text,
-                "  {} {} {}",
-                if frame.sent { "sent" } else { "received" },
-                frame.opcode,
-                units::size(frame.size),
-            );
-            if let Some(payload) = &frame.text {
-                let _ = write!(text, " {}", payload.replace('\n', " "));
-            }
+            text.push_str("  ");
+            frame_text(&mut text, frame);
             text.push('\n');
         }
     }

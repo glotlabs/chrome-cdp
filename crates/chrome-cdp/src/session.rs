@@ -29,10 +29,10 @@ use engine::{
     CoverageStartRequest, CoverageStopRequest, DialogRequest, DownloadsRequest, ElementState,
     EvalRequest, FindRequest, FramesRequest, HarStartRequest, HarStopRequest, HighlightRequest,
     HttpCredentials, ImageFormat, InspectRequest, LocatorRequest, NavigateRequest, Navigation,
-    NetworkClearRequest, NetworkRequest, NetworkShowRequest, OpenInitScript, OpenRequest,
-    PdfRequest, PerfRequest, Read, ReadRequest, RouteRequest, RoutesRequest, ScreenshotRequest,
-    SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
-    TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest,
+    NetworkClearRequest, NetworkFramesRequest, NetworkRequest, NetworkShowRequest, OpenInitScript,
+    OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest, RouteRequest, RoutesRequest,
+    ScreenshotRequest, SnapshotRequest, TabCloseRequest, TabNewRequest, TabSelectRequest,
+    TabsRequest, TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest,
 };
 use engine::{
     CookieFilter, CookieSpec, CookiesOp, CookiesRequest, StateLoadRequest, StateSaveRequest,
@@ -51,13 +51,13 @@ use crate::cli::{
     ContextCommand, CookieFilterArgs, CookieSetArgs, CookiesArgs, CookiesCommand, CoverageArgs,
     CoverageCommand, DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs, ElementStateArg,
     EvalArgs, ExtensionStorageAreaArg, ExtensionStorageCommand, ExtensionsArgs, ExtensionsCommand,
-    FindArgs, FramesArgs, GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs,
-    IdleArgs, ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs,
-    LocatorArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs,
-    PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs,
-    SnapshotArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg, StorageAreaArg,
-    StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs, TraceCommand,
-    UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    FindArgs, FrameDirArg, FramesArgs, GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs,
+    HistoryArgs, IdleArgs, ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand,
+    InspectArgs, LocatorArgs, LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs,
+    PermissionsArgs, PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs,
+    SessionsArgs, SnapshotArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg,
+    StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs,
+    TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -1134,14 +1134,20 @@ pub(crate) fn network(args: &NetworkArgs, global: &GlobalArgs) -> Result<Output,
                     .runtime
                     .block_on(client.call_output(rpc::NETWORK, &request, wait));
             }
-            follow(global, "network", "requests", |poll, first| {
-                request.wait_ms = millis(poll);
-                if !first {
-                    request.since = engine::Since::Last;
-                }
-                ctx.runtime
-                    .block_on(client.call_output(rpc::NETWORK, &request, poll + wait))
-            })
+            follow(
+                global,
+                "network",
+                "requests",
+                |_| false,
+                |poll, first| {
+                    request.wait_ms = millis(poll);
+                    if !first {
+                        request.since = engine::Since::Last;
+                    }
+                    ctx.runtime
+                        .block_on(client.call_output(rpc::NETWORK, &request, poll + wait))
+                },
+            )
         }
         Some(NetworkCommand::Show(show)) => {
             let output = match show.output.as_deref() {
@@ -1172,6 +1178,37 @@ pub(crate) fn network(args: &NetworkArgs, global: &GlobalArgs) -> Result<Output,
             };
             ctx.runtime
                 .block_on(client.call_output(rpc::NETWORK_SHOW, &request, wait))
+        }
+        Some(NetworkCommand::Frames(frames)) => {
+            let mut request = NetworkFramesRequest {
+                tab: ctx.tab.clone(),
+                id: frames.id,
+                grep: frames.grep.clone(),
+                sent: frames.dir.map(|d| d == FrameDirArg::Sent),
+                limit: frames.limit,
+                after: 0,
+                wait_ms: 0,
+                timeout_ms,
+                max_chars: frames.max_chars,
+            };
+            if !frames.follow {
+                return ctx.runtime.block_on(client.call_output(
+                    rpc::NETWORK_FRAMES,
+                    &request,
+                    wait,
+                ));
+            }
+            let closed = |output: &Output| output.data["request"]["websocket"]["closed"] == true;
+            follow(global, "frames", "frames", closed, |poll, _| {
+                request.wait_ms = millis(poll);
+                let output = ctx.runtime.block_on(client.call_output(
+                    rpc::NETWORK_FRAMES,
+                    &request,
+                    poll + wait,
+                ))?;
+                request.after = output.data["last"].as_u64().unwrap_or(request.after);
+                Ok(output)
+            })
         }
         Some(NetworkCommand::Clear(_)) => {
             let request = NetworkClearRequest {
@@ -2135,25 +2172,36 @@ pub(crate) fn console(
         ));
     }
     let what = if errors { "errors" } else { "console" };
-    follow(global, what, "entries", |wait, first| {
-        request.wait_ms = millis(wait);
-        if !first {
-            // From now on, what is new since the last batch.
-            request.since = engine::Since::Last;
-        }
-        ctx.runtime
-            .block_on(client.call_output(rpc::CONSOLE, &request, wait + ctx.timeout + QUICK))
-    })
+    follow(
+        global,
+        what,
+        "entries",
+        |_| false,
+        |wait, first| {
+            request.wait_ms = millis(wait);
+            if !first {
+                // From now on, what is new since the last batch.
+                request.since = engine::Since::Last;
+            }
+            ctx.runtime.block_on(client.call_output(
+                rpc::CONSOLE,
+                &request,
+                wait + ctx.timeout + QUICK,
+            ))
+        },
+    )
 }
 
 /// `--follow`: calls `call` with how long the daemon may wait for
 /// something new (and whether it is the first call) until Ctrl-C, or
-/// `--timeout` if given, printing each batch whose `data[key]` list is not
-/// empty; returns the last, empty one. `what` names what is followed.
+/// `--timeout` if given, or a batch that is `done`, printing each batch
+/// whose `data[key]` list is not empty; returns the last, empty (or done)
+/// one. `what` names what is followed.
 fn follow(
     global: &GlobalArgs,
     what: &str,
     key: &str,
+    done: impl Fn(&Output) -> bool,
     mut call: impl FnMut(Duration, bool) -> Result<Output, ErrorInfo>,
 ) -> Result<Output, ErrorInfo> {
     let deadline = global.timeout.map(|t| std::time::Instant::now() + t);
@@ -2173,6 +2221,9 @@ fn follow(
             crate::output::stderr(&format!("following {tab}'s {what}; Ctrl-C stops\n"));
         }
         first = false;
+        if done(&output) {
+            return Ok(output);
+        }
         if left.is_some_and(|l| l.is_zero()) {
             if !shown {
                 output.text.clear();
@@ -2219,6 +2270,12 @@ fn wait_condition(args: &WaitCmdArgs) -> Result<WaitFor, ErrorInfo> {
         Cmd::new("wait")
             .flag("response", "/api/save")
             .flag("status", "200"),
+    )?;
+    needs(
+        "--frame",
+        args.frame.is_some() && args.ws.is_none(),
+        "--ws",
+        Cmd::new("wait").flag("ws", "/live").flag("frame", "price"),
     )?;
     if let Some(target) = &args.target {
         if let Some(ms) = delay_ms(target) {
@@ -2282,6 +2339,11 @@ fn wait_condition(args: &WaitCmdArgs) -> Result<WaitFor, ErrorInfo> {
         }
     } else if let Some(name) = &args.binding {
         WaitFor::Binding { name: name.clone() }
+    } else if let Some(pattern) = &args.ws {
+        WaitFor::WebSocket {
+            pattern: pattern.clone(),
+            frame: args.frame.clone(),
+        }
     } else {
         return Err(
             bad_args("wait needs a condition").hint(Cmd::new("wait").switch("help").to_string())

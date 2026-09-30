@@ -1,0 +1,10 @@
+$ chrome-cdp wait --ws /ws --frame price
+exit: 0
+--- stdout
+frame 1 sent text 22B {"type":"price","i":1} on #2 <ws-site>/ws (<ms>)
+
+$ chrome-cdp wait --ws /ws --frame price --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"condition":"ws","elapsed_ms":<ms>,"met":"frame 1 sent text 22B {\"type\":\"price\",\"i\":1} on #2 <ws-site>/ws","tab":"t1","url":"<site>/network/frames.html","websocket":{"frame":{"n":1,"opcode":"text","sent":true,"size":22,"text":"{\"type\":\"price\",\"i\":1}","time_ms":<ms>},"id":2,"url":"<ws-site>/ws"}}}
+

@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WebSocket frames</title>
+<h1>WebSocket frames</h1>
+<p id="state">connecting</p>
+<p>Keeps a WebSocket to <code>/ws</code> (which echoes) open.
+<code>send(n)</code> sends n messages, a price every third one;
+<code>later(text, ms)</code> sends one after a delay.</p>
+<script>
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  let echoes = 0;
+  ws.onopen = () => { document.getElementById('state').textContent = 'open'; };
+  ws.onmessage = () => { window.echoes = ++echoes; };
+  window.send = (n) => {
+    for (let i = 1; i <= n; i++) {
+      ws.send(JSON.stringify(i % 3 === 0 ? { type: 'price', i } : { type: 'noise', i }));
+    }
+    return n;
+  };
+  window.later = (text, ms) => { setTimeout(() => ws.send(text), ms); return ms; };
+  window.echoed = (n) => new Promise((resolve) => {
+    const check = () => (echoes >= n ? resolve(echoes) : setTimeout(check, 20));
+    check();
+  });
+</script>

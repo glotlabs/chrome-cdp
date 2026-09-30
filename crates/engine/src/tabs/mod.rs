@@ -345,6 +345,8 @@ struct Tab {
     event_marks: (u64, u64),
     /// The same for its console (`wait --console`).
     console_marks: (u64, u64),
+    /// The same for its network log's changes (`wait --ws`).
+    netlog_marks: (u64, u64),
     /// The network and console marks when the main frame's document
     /// committed: where `expect --no-errors` starts by default.
     document_marks: (u64, u64),
@@ -389,6 +391,7 @@ impl Tab {
             marks: HashMap::new(),
             event_marks: (0, 0),
             console_marks: (0, 0),
+            netlog_marks: (0, 0),
             dialog: None,
             crashed: None,
             snapshot: SnapshotMemory::default(),
@@ -1327,7 +1330,19 @@ impl Tabs {
             tab.command_marks = (tab.command_marks.1, tab.network.seq());
             tab.event_marks = (tab.event_marks.1, seq);
             tab.console_marks = (tab.console_marks.1, tab.console.seq());
+            tab.netlog_marks = (tab.netlog_marks.1, tab.netlog.changes());
         }
+    }
+
+    /// The network log's change count when the page command before the
+    /// current one on tab `id` began: `wait --ws` also accepts a frame
+    /// that came while that command ran.
+    pub(crate) fn previous_netlog_mark(&self, id: u32) -> u64 {
+        self.shared
+            .lock()
+            .tabs
+            .get(&id)
+            .map_or(0, |t| t.netlog_marks.0)
     }
 
     /// The console's mark when the page command before the current one on

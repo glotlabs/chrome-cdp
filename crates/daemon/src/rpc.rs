@@ -40,6 +40,7 @@ pub const CLIPBOARD: &str = "clipboard";
 pub const CONSOLE: &str = "console";
 pub const NETWORK: &str = "network";
 pub const NETWORK_SHOW: &str = "network_show";
+pub const NETWORK_FRAMES: &str = "network_frames";
 pub const NETWORK_CLEAR: &str = "network_clear";
 pub const ROUTE: &str = "route";
 pub const ROUTES: &str = "routes";

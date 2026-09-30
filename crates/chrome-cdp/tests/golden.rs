@@ -1362,6 +1362,43 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAt("/network/index.html"),
     },
     Case {
+        name: "network-frames",
+        args: &["network", "frames", "2", "--grep", "price", "--limit", "1"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/network/frames.html"],
+            &["wait", "--text", "open"],
+            &["eval", "send(6)"],
+            &["eval", "echoed(6)"],
+        ]),
+    },
+    Case {
+        name: "network-frames-not-websocket",
+        args: &["network", "frames", "1"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/network/frames.html"),
+    },
+    Case {
+        name: "wait-ws",
+        args: &["wait", "--ws", "/ws", "--frame", "price"],
+        // The --json run finds the frame that came while the first ran.
+        modes: &["", "--json"],
+        fixture: Fixture::SessionAfter(&[
+            &["open", "{site}/network/frames.html"],
+            &["wait", "--text", "open"],
+            &[
+                "eval",
+                "later(JSON.stringify({ type: 'price', i: 1 }), 200)",
+            ],
+        ]),
+    },
+    Case {
+        name: "wait-ws-timeout",
+        args: &["wait", "--ws", "/nope", "--timeout", "500ms"],
+        modes: ERR,
+        fixture: Fixture::SessionAt("/network/frames.html"),
+    },
+    Case {
         name: "network-show-missing",
         args: &["network", "show", "#999"],
         modes: ERR,

@@ -244,6 +244,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<NetworkShowData>),
     },
     CommandSchema {
+        name: "network frames",
+        summary: "a WebSocket's frames, oldest first, filtered; with --follow each new batch",
+        schema: || schema_for!(Envelope<NetworkFramesData>),
+    },
+    CommandSchema {
         name: "network clear",
         summary: "how many requests were cleared from the tab's network log",
         schema: || schema_for!(Envelope<NetworkClearData>),
@@ -1785,6 +1790,30 @@ pub struct NetworkShowData {
     /// A WebSocket's last frames (at most 20), oldest first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub frames: Vec<WebSocketFrame>,
+    /// A WebSocket's frames before those, which `network frames` lists
+    /// (as far as the log keeps them).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub earlier_frames: u64,
+}
+
+/// `data` of `chrome-cdp network frames --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NetworkFramesData {
+    /// The tab, e.g. `t1`.
+    pub tab: String,
+    /// The WebSocket's request id (`#12`), its URL and counts.
+    pub request: NetworkEntry,
+    /// The frames that match, oldest first.
+    pub frames: Vec<WebSocketFrame>,
+    /// Older matches `--limit` left out.
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
+    pub skipped: usize,
+    /// Frames the log dropped to make room (it keeps a socket's last 500).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub dropped: u64,
+    /// The number of the newest frame looked at: `--follow` goes on after
+    /// it.
+    pub last: u64,
 }
 
 /// A request's phases, in ms.
@@ -1837,6 +1866,9 @@ pub struct Body {
 /// One WebSocket frame.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct WebSocketFrame {
+    /// Its number on the socket: 1 for the first frame sent or received.
+    #[serde(default)]
+    pub n: u64,
     /// Sent by the page (else received).
     pub sent: bool,
     pub time_ms: u64,
@@ -3450,7 +3482,7 @@ pub struct WaitData {
     pub tab: String,
     /// What was waited for: `load`, `domcontentloaded`, `idle`, `settle`,
     /// `element`, `text`, `text_gone`, `url`, `fn`, `request`, `response`,
-    /// `delay`, `download`, `console` or `binding`.
+    /// `delay`, `download`, `console`, `binding` or `ws`.
     pub condition: String,
     /// What held, in words: `text "Welcome" is visible`.
     pub met: String,
@@ -3474,6 +3506,18 @@ pub struct WaitData {
     /// --json` shows it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub console: Option<ConsoleEntry>,
+    /// `--ws`: the frame that matched, and its socket.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub websocket: Option<WaitWebSocket>,
+}
+
+/// The frame `wait --ws` waited for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct WaitWebSocket {
+    /// The socket's request id (`network frames ID` lists its frames).
+    pub id: u64,
+    pub url: String,
+    pub frame: WebSocketFrame,
 }
 
 /// `data` of `chrome-cdp expect --json`: the assertion held.

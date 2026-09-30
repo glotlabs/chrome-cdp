@@ -18,7 +18,7 @@ around it. **The v1 gate: no ❌ in an agent-critical row.** A test
 (`crates/chrome-cdp/tests/parity.rs`) holds the tables to that, checks the
 counts below, and checks that every command a row names exists.
 
-Today: 130 rows; 113 ✅, 12 🟡, 0 ❌, 5 ➖. No row is ❌.
+Today: 130 rows; 114 ✅, 11 🟡, 0 ❌, 5 ➖. No row is ❌.
 
 ## Navigation
 
@@ -134,7 +134,7 @@ Today: 130 rows; 113 ✅, 12 🟡, 0 ❌, 5 ➖. No row is ❌.
 | `page.on('pageerror')` | `errors` (uncaught exceptions, `console.error`, failed loads; `--sourcemaps`) | ✅ | yes |
 | `page.on('request' \| 'response' \| 'requestfailed')` | `network` (`--failed`, `--url`, `--type`, `--status 4xx`, `--follow`) | ✅ | yes |
 | `response.body()`, `json()` | `network show ID --body` | ✅ | yes |
-| `page.on('websocket')`, frames | `network --type websocket` lists them; frames only through `cdp --listen 'Network.webSocket*'` | 🟡 | no |
+| `page.on('websocket')`, frames | `network --type websocket` lists them; `network frames ID` their frames (`--grep`, `--dir`, `--follow`); `wait --ws URL --frame REGEX` waits for one | ✅ | no |
 | `page.route` + `fulfill` / `abort` / `continue` / `fetch` | `route URL --json-body … \| --status … \| --abort \| --set-header … \| --rewrite-url … \| --patch-json …`; `unroute`, `routes`, `block` | ✅ | yes |
 | `page.routeWebSocket` | a `[[websocket]]` mock, `mock ws send` | ✅ | no |
 | HAR record (`recordHar`) | `har start`, `har stop -o FILE` | ✅ | no |

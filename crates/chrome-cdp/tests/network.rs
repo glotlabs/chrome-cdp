@@ -144,3 +144,81 @@ fn follow_prints_requests_as_they_come() {
     // The first, empty batch printed nothing.
     assert!(!text.contains("no new requests"), "{text}");
 }
+
+/// `network frames` filters a WebSocket's frames and, with `--follow`,
+/// prints new ones as they come; `wait --ws` waits for one.
+#[test]
+fn websocket_frames_and_wait_ws() {
+    let Some(chrome) = chrome_path() else { return };
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let page = Fixtures::shared().url("/network/frames.html");
+    let out = sandbox.run(&["open", &page]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["wait", "--text", "open"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    sandbox.run(&["eval", "send(3)"]);
+    sandbox.run(&["eval", "echoed(3)"]);
+    let out = sandbox.run(&["network", "--type", "websocket", "--since", "0", "-q"]);
+    let id = stdout(&out).trim().trim_start_matches('#').to_owned();
+    assert!(id.parse::<u64>().is_ok(), "{}", stdout(&out));
+
+    let out = sandbox.run(&[
+        "network", "frames", &id, "--grep", "price", "--dir", "received",
+    ]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let text = stdout(&out);
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 2, "{text}");
+    assert!(lines[0].starts_with(&format!("#{id} ws://")), "{text}");
+    assert!(
+        lines[0].ends_with("/ws: 3 sent, 3 received, open"),
+        "{text}"
+    );
+    assert!(
+        lines[1].ends_with(r#" received text 22B {"type":"price","i":3}"#),
+        "{text}"
+    );
+    let out = sandbox.run(&["network", "frames", &id, "--dir", "sent", "-q"]);
+    assert_eq!(
+        stdout(&out),
+        "{\"type\":\"noise\",\"i\":1}\n{\"type\":\"noise\",\"i\":2}\n{\"type\":\"price\",\"i\":3}\n"
+    );
+
+    let follow = sandbox
+        .cli()
+        .args(["network", "frames", &id, "--follow", "--timeout", "3s"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(700));
+    let out = sandbox.run(&["eval", "later('tick', 0)"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = follow.wait_with_output().unwrap();
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert_eq!(stderr(&out), "following t1's frames; Ctrl-C stops\n");
+    let text = stdout(&out);
+    assert!(text.starts_with(&format!("#{id} ")), "{text}");
+    assert!(text.contains("\n7 sent text 4B tick\n"), "{text}");
+    assert!(text.contains("\n8 received text 4B tick\n"), "{text}");
+
+    let out = sandbox.run(&["eval", r#"later('{"type":"price","i":9}', 300)"#]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["wait", "--ws", "/ws", "--frame", "price", "-q"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert_eq!(stdout(&out), "{\"type\":\"price\",\"i\":9}\n");
+    let out = sandbox.run(&["wait", "--load", "--frame", "price"]);
+    assert_eq!(code(&out), 2, "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("--frame needs --ws"),
+        "{}",
+        stderr(&out)
+    );
+    let out = sandbox.run(&["network", "frames", "1"]);
+    assert_eq!(code(&out), 2, "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("hint: chrome-cdp network --type websocket --since 0"),
+        "{}",
+        stderr(&out)
+    );
+}

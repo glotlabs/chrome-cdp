@@ -495,6 +495,8 @@ Give exactly one condition. It is checked against the active tab (or
                       began; prints it as `console` does
   --binding <NAME>    a call of a function `expose NAME` put in the page,
                       since the previous command began
+  --ws <PATTERN> [--frame <REGEX>]  a frame sent or received on a WebSocket
+                      whose URL matches, since the previous command began
   <MS>                a fixed sleep, e.g. 500 or 2s (prefer a condition)
 
 Examples:
@@ -510,7 +512,8 @@ Examples:
   chrome-cdp wait --response '**/api/save' --status 200
   chrome-cdp wait --download
   chrome-cdp wait --console 'checkout (done|failed)'
-  chrome-cdp wait --binding onCheckout      # after expose onCheckout")]
+  chrome-cdp wait --binding onCheckout      # after expose onCheckout
+  chrome-cdp wait --ws /live --frame '\"type\":\"price\"'")]
     Wait(WaitCmdArgs),
 
     /// Assert something about the page, retrying until it holds: an element's state, text, value, count, …
@@ -3401,6 +3404,22 @@ Examples:
   chrome-cdp network show 7 -o logo.png              # save a body, binary too")]
     Show(NetworkShowArgs),
 
+    /// List a WebSocket's frames, and with --follow new ones as they come.
+    #[command(after_help = "\
+ID is the socket's request id (`network --type websocket` lists them).
+The log keeps each socket's last 500 frames, and up to 200 characters of
+each text frame; binary frames show their size. Each line reads: N
+DIRECTION KIND SIZE TEXT, N counting the socket's frames from 1. With
+--follow, new frames print as they come until the socket closes, Ctrl-C,
+or --timeout. `wait --ws` waits for one frame.
+
+Examples:
+  chrome-cdp network frames 12
+  chrome-cdp network frames 12 --grep '\"type\":\"price\"' --dir received
+  chrome-cdp network frames 12 --follow --timeout 10s
+  chrome-cdp network frames 12 -q                 # just the texts")]
+    Frames(NetworkFramesArgs),
+
     /// Forget the tab's requests so far (ids go on from where they were).
     #[command(after_help = "\
 Examples:
@@ -3479,6 +3498,41 @@ pub(crate) struct NetworkShowArgs {
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct NetworkFramesArgs {
+    /// The WebSocket's request id, as `network` lists it: 12 or #12.
+    #[arg(value_parser = parse_request_id, value_name = "ID")]
+    pub(crate) id: u64,
+
+    /// Only text frames whose text matches this regular expression.
+    #[arg(long, value_name = "REGEX")]
+    pub(crate) grep: Option<String>,
+
+    /// Only frames the page sent, or only those it received.
+    #[arg(long, value_enum, value_name = "DIR")]
+    pub(crate) dir: Option<FrameDirArg>,
+
+    /// Show at most this many frames, the newest (0 = all).
+    #[arg(long, default_value_t = 100, value_name = "N")]
+    pub(crate) limit: usize,
+
+    /// Keep printing new frames as they come, until the socket closes,
+    /// Ctrl-C, or --timeout if given.
+    #[arg(short, long)]
+    pub(crate) follow: bool,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+/// `network frames --dir`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum FrameDirArg {
+    Sent,
+    Received,
 }
 
 #[derive(Debug, Args)]
@@ -5677,7 +5731,7 @@ impl Wait {
             .args([
                 "target", "load", "domcontentloaded", "idle", "settle", "text", "text_gone",
                 "url", "function", "request", "response", "download", "console",
-                "binding",
+                "binding", "ws",
             ])
     )
 )]
@@ -5768,6 +5822,15 @@ pub(crate) struct WaitCmdArgs {
     /// previous command began.
     #[arg(long, value_name = "NAME")]
     pub(crate) binding: Option<String>,
+
+    /// A frame, sent or received since the previous command began, on a
+    /// WebSocket whose URL matches (a part, a glob or /regex/).
+    #[arg(long, value_name = "PATTERN")]
+    pub(crate) ws: Option<String>,
+
+    /// The text the --ws frame must match: a regular expression.
+    #[arg(long, value_name = "REGEX")]
+    pub(crate) frame: Option<String>,
 
     /// Bound the output (--fn's value) to this many characters (0 = no
     /// limit).

@@ -470,6 +470,10 @@ impl Daemon {
                 Ok(p) => output(self.engine.network_show(p).await),
                 Err(e) => Err(e),
             },
+            rpc::NETWORK_FRAMES => match params(req.params) {
+                Ok(p) => output(self.engine.network_frames(p).await),
+                Err(e) => Err(e),
+            },
             rpc::NETWORK_CLEAR => match params(req.params) {
                 Ok(p) => output(self.engine.network_clear(p).await),
                 Err(e) => Err(e),

@@ -867,7 +867,7 @@
       "description": "`data` of `chrome-cdp wait --json`.",
       "properties": {
         "condition": {
-          "description": "What was waited for: `load`, `domcontentloaded`, `idle`, `settle`,\n`element`, `text`, `text_gone`, `url`, `fn`, `request`, `response`,\n`delay`, `download`, `console` or `binding`.",
+          "description": "What was waited for: `load`, `domcontentloaded`, `idle`, `settle`,\n`element`, `text`, `text_gone`, `url`, `fn`, `request`, `response`,\n`delay`, `download`, `console`, `binding` or `ws`.",
           "type": "string"
         },
         "console": {
@@ -932,6 +932,17 @@
         },
         "value": {
           "description": "`--fn`: the expression's value (as JSON; other values as a string)."
+        },
+        "websocket": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WaitWebSocket"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`--ws`: the frame that matched, and its socket."
         }
       },
       "required": [
@@ -940,6 +951,74 @@
         "met",
         "url",
         "elapsed_ms"
+      ],
+      "type": "object"
+    },
+    "WaitWebSocket": {
+      "description": "The frame `wait --ws` waited for.",
+      "properties": {
+        "frame": {
+          "$ref": "#/$defs/WebSocketFrame"
+        },
+        "id": {
+          "description": "The socket's request id (`network frames ID` lists its frames).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "url",
+        "frame"
+      ],
+      "type": "object"
+    },
+    "WebSocketFrame": {
+      "description": "One WebSocket frame.",
+      "properties": {
+        "n": {
+          "default": 0,
+          "description": "Its number on the socket: 1 for the first frame sent or received.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "opcode": {
+          "description": "`text`, `binary`, `close`, `ping` or `pong`.",
+          "type": "string"
+        },
+        "sent": {
+          "description": "Sent by the page (else received).",
+          "type": "boolean"
+        },
+        "size": {
+          "description": "The payload's size in bytes.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "text": {
+          "description": "The start of a text payload (at most 200 characters).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "time_ms": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sent",
+        "time_ms",
+        "opcode",
+        "size"
       ],
       "type": "object"
     },

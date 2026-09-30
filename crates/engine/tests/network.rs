@@ -11,11 +11,14 @@ use std::time::{Duration, Instant};
 
 use browser::Host;
 use engine::{
-    Action, ActionRequest, Button, Engine, NavigateRequest, Navigation, NetworkClearRequest,
-    NetworkRequest, NetworkShowRequest, OpenRequest, Since, StatusRange, WaitUntil,
+    Action, ActionRequest, Button, Engine, EvalRequest, EvalWorld, NavigateRequest, Navigation,
+    NetworkClearRequest, NetworkFramesRequest, NetworkRequest, NetworkShowRequest, OpenRequest,
+    Since, StatusRange, WaitFor, WaitRequest, WaitUntil,
 };
 use fixtures::Fixtures;
-use protocol::schema::{NetworkData, NetworkEntry, NetworkShowData, RequestState};
+use protocol::schema::{
+    NetworkData, NetworkEntry, NetworkFramesData, NetworkShowData, RequestState, WaitData,
+};
 use protocol::{ErrorKind, Output};
 
 const TIMEOUT_MS: u64 = 30_000;
@@ -635,5 +638,217 @@ async fn the_log_is_bounded_and_clears() {
     assert!(data.requests.is_empty());
     assert_eq!(data.dropped, 0);
     assert_eq!(out.text, "no requests in t1");
+    engine.close().await;
+}
+
+async fn eval(engine: &Engine, script: &str) -> serde_json::Value {
+    let out = engine
+        .eval(EvalRequest {
+            script: script.to_owned(),
+            locator: None,
+            frame: None,
+            world: EvalWorld::Main,
+            tab: None,
+            strict_refs: false,
+            testid_attribute: None,
+            sourcemaps: false,
+            timeout_ms: TIMEOUT_MS,
+            max_chars: 0,
+        })
+        .await
+        .unwrap_or_else(|e| panic!("{script}: {}", e.to_text()));
+    out.data["value"].clone()
+}
+
+fn frames_request(id: u64) -> NetworkFramesRequest {
+    NetworkFramesRequest {
+        tab: None,
+        id,
+        grep: None,
+        sent: None,
+        limit: 0,
+        after: 0,
+        wait_ms: 0,
+        timeout_ms: TIMEOUT_MS,
+        max_chars: 0,
+    }
+}
+
+async fn frames(engine: &Engine, req: NetworkFramesRequest) -> (Output, NetworkFramesData) {
+    let out = engine
+        .network_frames(req)
+        .await
+        .unwrap_or_else(|e| panic!("network frames: {}", e.to_text()));
+    let data = serde_json::from_value(out.data.clone()).unwrap();
+    (out, data)
+}
+
+/// `network frames`: a socket keeps its last 500 frames, numbered, and
+/// counts the ones it dropped; `--grep` and `--dir` filter them,
+/// `--limit` keeps the newest, and a later call after `last` waits for
+/// the next frame (`--follow`). `network show` lists the last 20 and
+/// counts the rest.
+#[tokio::test]
+async fn websocket_frames_are_listed_filtered_and_followed() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "network-frames", None).await;
+    goto(&engine, &site.url("/network/frames.html")).await;
+    eval(&engine, "new Promise(r => { const c = () => document.getElementById('state').textContent === 'open' ? r(1) : setTimeout(c, 20); c(); })").await;
+    // 300 sent and 300 echoed: the first 100 are dropped.
+    eval(&engine, "send(300)").await;
+    eval(&engine, "echoed(300)").await;
+    let (_, data) = list(&engine, all()).await;
+    let ws = find(&data, "/ws").id;
+
+    let (out, data) = frames(&engine, frames_request(ws)).await;
+    assert_eq!(data.frames.len(), 500, "{}", out.text);
+    assert_eq!(data.dropped, 100);
+    assert_eq!(data.frames[0].n, 101);
+    assert_eq!(data.last, 600);
+    assert!(
+        out.text
+            .contains("… 100 earlier frames dropped (the log keeps a socket's last 500)"),
+        "{}",
+        out.text
+    );
+
+    // Received prices, the newest 3.
+    let req = NetworkFramesRequest {
+        grep: Some(r#""type":"price""#.to_owned()),
+        sent: Some(false),
+        limit: 3,
+        ..frames_request(ws)
+    };
+    let (out, data) = frames(&engine, req).await;
+    assert_eq!(data.frames.len(), 3, "{}", out.text);
+    assert!(data.frames.iter().all(|f| !f.sent));
+    assert_eq!(
+        data.frames[2].text.as_deref(),
+        Some(r#"{"type":"price","i":300}"#)
+    );
+    assert!(
+        out.text.contains("left out; --limit 0 for all"),
+        "{}",
+        out.text
+    );
+    assert!(
+        out.text
+            .lines()
+            .last()
+            .unwrap()
+            .ends_with(r#" received text 24B {"type":"price","i":300}"#),
+        "{}",
+        out.text
+    );
+
+    // Following: the next frame, after the last one seen.
+    eval(&engine, "later('tick', 300)").await;
+    let req = NetworkFramesRequest {
+        after: 600,
+        wait_ms: 20_000,
+        ..frames_request(ws)
+    };
+    let started = Instant::now();
+    let (out, data) = frames(&engine, req).await;
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert_eq!(data.frames[0].n, 601, "{}", out.text);
+    assert_eq!(data.frames[0].text.as_deref(), Some("tick"));
+    assert!(
+        !out.text.starts_with('#'),
+        "no header when following: {}",
+        out.text
+    );
+
+    let (out, shown) = show(&engine, show_request(ws)).await;
+    assert_eq!(shown.frames.len(), 20);
+    assert!(shown.earlier_frames > 400, "{}", out.text);
+    assert!(
+        out.text.contains(&format!(
+            "earlier: chrome-cdp network frames {ws} --session network-frames"
+        )),
+        "{}",
+        out.text
+    );
+
+    // Not a WebSocket.
+    let page = find(&data_list(&engine).await, "frames.html").id;
+    let err = engine
+        .network_frames(frames_request(page))
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::BadArgs, "{}", err.to_text());
+    assert!(
+        err.to_text().contains("is not a WebSocket"),
+        "{}",
+        err.to_text()
+    );
+    engine.close().await;
+}
+
+async fn data_list(engine: &Engine) -> NetworkData {
+    list(engine, all()).await.1
+}
+
+async fn wait_ws(
+    engine: &Engine,
+    pattern: &str,
+    frame: Option<&str>,
+    timeout_ms: u64,
+) -> Result<WaitData, protocol::ErrorInfo> {
+    let out = engine
+        .wait(WaitRequest {
+            condition: WaitFor::WebSocket {
+                pattern: pattern.to_owned(),
+                frame: frame.map(str::to_owned),
+            },
+            tab: None,
+            strict_refs: false,
+            testid_attribute: None,
+            timeout_ms,
+            max_chars: 0,
+        })
+        .await?;
+    Ok(serde_json::from_value(out.data).unwrap())
+}
+
+/// `wait --ws`: a frame on a matching socket since the previous command
+/// began, its text matching `--frame`; a timeout names what it saw.
+#[tokio::test]
+async fn wait_for_a_websocket_frame() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "network-wait-ws", None).await;
+    goto(&engine, &site.url("/network/frames.html")).await;
+    eval(&engine, "new Promise(r => { const c = () => document.getElementById('state').textContent === 'open' ? r(1) : setTimeout(c, 20); c(); })").await;
+    eval(&engine, "later(JSON.stringify({type: 'price', i: 7}), 300)").await;
+    let data = wait_ws(&engine, "/ws", Some("price"), 10_000)
+        .await
+        .unwrap();
+    assert_eq!(data.condition, "ws");
+    let ws = data.websocket.unwrap();
+    assert!(ws.frame.sent);
+    assert_eq!(ws.frame.text.as_deref(), Some(r#"{"type":"price","i":7}"#));
+    assert!(ws.url.ends_with("/ws"));
+
+    // Only frames since the previous command began count: not the echo.
+    eval(&engine, "echoed(1)").await;
+    eval(&engine, "send(2)").await;
+    let err = wait_ws(&engine, "/ws", Some("price"), 1_000)
+        .await
+        .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Timeout, "{}", err.to_text());
+    assert!(
+        err.to_text()
+            .contains(r#"received text 22B {"type":"noise","i":2}"#),
+        "{}",
+        err.to_text()
+    );
+    let err = wait_ws(&engine, "/nope", None, 500).await.unwrap_err();
+    assert!(
+        err.to_text().contains("no WebSocket whose URL matches"),
+        "{}",
+        err.to_text()
+    );
     engine.close().await;
 }

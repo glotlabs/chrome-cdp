@@ -816,6 +816,12 @@
     "NetworkShowData": {
       "description": "`data` of `chrome-cdp network show --json`.",
       "properties": {
+        "earlier_frames": {
+          "description": "A WebSocket's frames before those, which `network frames` lists\n(as far as the log keeps them).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "frames": {
           "description": "A WebSocket's last frames (at most 20), oldest first.",
           "items": {
@@ -1080,6 +1086,13 @@
     "WebSocketFrame": {
       "description": "One WebSocket frame.",
       "properties": {
+        "n": {
+          "default": 0,
+          "description": "Its number on the socket: 1 for the first frame sent or received.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "opcode": {
           "description": "`text`, `binary`, `close`, `ping` or `pong`.",
           "type": "string"

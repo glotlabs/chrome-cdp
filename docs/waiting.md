@@ -72,9 +72,10 @@ job that finishes, a WebSocket message), wait for the change itself:
 | `wait --settle` | network idle and no DOM changes for 300 ms |
 | `wait --response '**/api/save' --status 200` | a response since the previous command |
 | `wait --download` | a download since the previous command finished |
+| `wait --ws /live --frame price` | a WebSocket frame, sent or received since the previous command, on a socket whose URL matches (`--frame`: its text matches a regex) |
 | `wait --fn 'window.app?.ready'` | a JavaScript expression is truthy |
 
-`wait --response` and `wait --download` also count what happened between
+`wait --response`, `--download` and `--ws` also count what happened between
 the previous command and this one, so `click e6 && wait --response …`
 cannot miss a fast response.
 

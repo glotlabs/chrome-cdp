@@ -16,10 +16,11 @@
 
 mod console;
 mod probe;
+mod websocket;
 
 use std::time::Duration;
 
-use protocol::schema::{ConsoleEntry, DownloadInfo, RequestInfo, WaitData};
+use protocol::schema::{ConsoleEntry, DownloadInfo, RequestInfo, WaitData, WaitWebSocket};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde_json::{Map, Value, json};
 use tokio::time::Instant;
@@ -87,6 +88,12 @@ pub(crate) enum Condition {
     Console {
         regex: regex::Regex,
         binding: Option<String>,
+    },
+    /// A WebSocket frame on a socket whose URL `pattern` matches, and
+    /// whose text `frame` matches if given.
+    WebSocket {
+        pattern: UrlPattern,
+        frame: Option<regex::Regex>,
     },
     /// `expect`'s polled checks (plan 09): `check` (see `expect.ts`) on
     /// what `locator` matches, or on the page without one. It is met when
@@ -208,6 +215,13 @@ impl Condition {
                     binding: Some(name.clone()),
                 }
             }
+            WaitFor::WebSocket { pattern, frame } => Self::WebSocket {
+                pattern: UrlPattern::parse(pattern)?,
+                frame: frame
+                    .as_deref()
+                    .map(|f| crate::observe::regex_arg("--frame", f))
+                    .transpose()?,
+            },
         })
     }
 
@@ -251,6 +265,7 @@ impl Condition {
             Self::Console {
                 binding: Some(_), ..
             } => "binding",
+            Self::WebSocket { .. } => "ws",
             Self::Expect { .. } => "expect",
         }
     }
@@ -304,6 +319,16 @@ impl Condition {
             Self::Console { regex, .. } => {
                 format!("a console entry matching {:?}", regex.as_str())
             }
+            Self::WebSocket { pattern, frame } => {
+                let text = frame
+                    .as_ref()
+                    .map(|f| format!(" matching {:?}", f.as_str()))
+                    .unwrap_or_default();
+                format!(
+                    "a WebSocket frame{text} on a socket to {:?}",
+                    pattern.to_string()
+                )
+            }
             Self::Expect { .. } => "the assertion".into(),
         }
     }
@@ -320,6 +345,8 @@ pub(crate) struct Met {
     pub(crate) download: Option<DownloadInfo>,
     /// `--console` and `--binding`: the entry.
     pub(crate) console: Option<ConsoleEntry>,
+    /// `--ws`: the frame.
+    pub(crate) websocket: Option<WaitWebSocket>,
     /// `e6 re-resolved by role+name` when a ref's element was found again.
     pub(crate) note: Option<String>,
 }
@@ -422,9 +449,9 @@ impl Engine {
         }
         let mark = running.tabs.mark();
         let start = Instant::now();
-        let met = if let Condition::Console { .. } = &condition {
-            // Reading the console takes no tab lock, and a dialog does
-            // not stop it: an action can run meanwhile.
+        let met = if let Condition::Console { .. } | Condition::WebSocket { .. } = &condition {
+            // Reading the console or the network log takes no tab lock,
+            // and a dialog does not stop it: an action can run meanwhile.
             self.wait_until(&running, &page, &condition, start, timeout, &req)
                 .await?
         } else {
@@ -465,6 +492,13 @@ impl Engine {
                     console: Some(e), ..
                 },
             ) => e.text.clone(),
+            (
+                _,
+                Met {
+                    websocket: Some(ws),
+                    ..
+                },
+            ) => ws.frame.text.clone().unwrap_or_default(),
             (_, Met { value: Some(v), .. }) => v.to_string(),
             (_, Met { count: Some(n), .. }) => n.to_string(),
             _ => String::new(),
@@ -491,6 +525,7 @@ impl Engine {
             request,
             download: met.download.clone(),
             console: met.console,
+            websocket: met.websocket,
         };
         let mut output = Output::typed(&data, text)
             .quiet(quiet)
@@ -618,6 +653,10 @@ impl Engine {
             }
             Condition::Console { regex, binding } => {
                 self.console_until(running, page, regex, binding.as_deref(), deadline)
+                    .await?
+            }
+            Condition::WebSocket { pattern, frame } => {
+                self.websocket_until(running, page, pattern, frame.as_ref(), deadline)
                     .await?
             }
             Condition::Load { .. }
@@ -760,6 +799,18 @@ impl Engine {
             Condition::Console { .. } => Hint::run(again).why(
                 "only entries since the previous command began count; run the action that logs it first",
             ),
+            Condition::WebSocket { .. } if unmet.observed.get("sockets") == Some(&json!(0)) => {
+                let mut list = Cmd::new("network")
+                    .flag("type", "websocket")
+                    .flag("since", "0");
+                if let Some(tab) = &req.tab {
+                    list = list.flag("tab", tab);
+                }
+                Hint::run(list.scoped(&self.session)).why("lists the tab's WebSockets")
+            }
+            Condition::WebSocket { .. } => Hint::run(again).why(
+                "only frames since the previous command began count; run the action that sends one first",
+            ),
             Condition::Download if unmet.observed.get("download") == Some(&Value::Null) => {
                 Hint::run(again).why(
                     "only downloads since the previous command count; run the action that starts it first",
@@ -821,6 +872,13 @@ fn retry(condition: &WaitFor, tab: Option<&str>) -> Cmd {
         WaitFor::Download => cmd.switch("download"),
         WaitFor::Console { pattern } => cmd.flag("console", pattern),
         WaitFor::Binding { name } => cmd.flag("binding", name),
+        WaitFor::WebSocket { pattern, frame } => {
+            let cmd = cmd.flag("ws", pattern);
+            match frame {
+                Some(frame) => cmd.flag("frame", frame),
+                None => cmd,
+            }
+        }
     };
     match tab {
         Some(tab) => cmd.flag("tab", tab),

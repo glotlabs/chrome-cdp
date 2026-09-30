@@ -512,6 +512,14 @@ pub enum WaitFor {
     /// `--binding`: a call of a function `expose` put in the page (its
     /// `binding NAME(…)` console entry), after the wait began.
     Binding { name: String },
+    /// `--ws [--frame]`: a frame, sent or received since the previous
+    /// command began, on a WebSocket whose URL matches (and whose text
+    /// matches `frame`).
+    WebSocket {
+        pattern: String,
+        #[serde(default)]
+        frame: Option<String>,
+    },
 }
 
 /// The state `wait <locator>` waits for.
@@ -1037,6 +1045,32 @@ pub struct NetworkShowRequest {
     /// absolute path instead of showing it.
     #[serde(default)]
     pub output: Option<PathBuf>,
+    pub timeout_ms: u64,
+    /// The output budget (0 = none).
+    pub max_chars: usize,
+}
+
+/// `network frames`: a WebSocket's frames.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NetworkFramesRequest {
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// The WebSocket's request id in the log (`#12`).
+    pub id: u64,
+    /// Only text frames whose text matches this regex.
+    #[serde(default)]
+    pub grep: Option<String>,
+    /// Only frames the page sent (`true`) or received (`false`).
+    #[serde(default)]
+    pub sent: Option<bool>,
+    /// The newest this many (0 = all).
+    pub limit: usize,
+    /// Only frames after this number (`--follow`'s later calls).
+    #[serde(default)]
+    pub after: u64,
+    /// With nothing to show, wait this long for a frame.
+    #[serde(default)]
+    pub wait_ms: u64,
     pub timeout_ms: u64,
     /// The output budget (0 = none).
     pub max_chars: usize,

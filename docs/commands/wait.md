@@ -4,7 +4,7 @@
 Wait for the page: an element, text, the URL, network idle, a request, …
 
 ```text
-chrome-cdp wait [OPTIONS] <LOCATOR|MS|--load|--domcontentloaded|--idle|--settle|--text <TEXT>|--text-gone <TEXT>|--url <PATTERN>|--fn <JS>|--request <PATTERN>|--response <PATTERN>|--download|--console <REGEX>|--binding <NAME>>
+chrome-cdp wait [OPTIONS] <LOCATOR|MS|--load|--domcontentloaded|--idle|--settle|--text <TEXT>|--text-gone <TEXT>|--url <PATTERN>|--fn <JS>|--request <PATTERN>|--response <PATTERN>|--download|--console <REGEX>|--binding <NAME>|--ws <PATTERN>>
 ```
 
 Arguments:
@@ -30,6 +30,8 @@ Options:
 - `--download`: A download, started since the previous command began, to finish
 - `--console <REGEX>`: A console entry whose text or URL matches this regular expression, logged since the previous command began
 - `--binding <NAME>`: A call of the function `expose NAME` put in the page, since the previous command began
+- `--ws <PATTERN>`: A frame, sent or received since the previous command began, on a WebSocket whose URL matches (a part, a glob or /regex/)
+- `--frame <REGEX>`: The text the --ws frame must match: a regular expression
 - `--max-chars <N>`: Bound the output (--fn's value) to this many characters (0 = no limit) (default `20000`)
 
 ```text
@@ -57,6 +59,8 @@ Give exactly one condition. It is checked against the active tab (or
                       began; prints it as `console` does
   --binding <NAME>    a call of a function `expose NAME` put in the page,
                       since the previous command began
+  --ws <PATTERN> [--frame <REGEX>]  a frame sent or received on a WebSocket
+                      whose URL matches, since the previous command began
   <MS>                a fixed sleep, e.g. 500 or 2s (prefer a condition)
 
 Examples:
@@ -73,5 +77,6 @@ Examples:
   chrome-cdp wait --download
   chrome-cdp wait --console 'checkout (done|failed)'
   chrome-cdp wait --binding onCheckout      # after expose onCheckout
+  chrome-cdp wait --ws /live --frame '"type":"price"'
 ```
 

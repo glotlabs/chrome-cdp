@@ -97,8 +97,9 @@ holds: an element (`wait '#results'`, `wait .spinner --state hidden`,
 `/regex/`), `--load`, `--idle` (network idle, not counting WebSockets,
 beacons and requests open over 10 s), `--settle`, a JavaScript expression
 (`--fn 'window.app.ready'`), or a request or response since the previous
-command (`--response '**/api/save' --status 200`), or a download since the
-previous command (`--download`). On timeout (exit 3) it says what it saw
+command (`--response '**/api/save' --status 200`), a WebSocket frame
+(`--ws /live --frame price`), or a download since the previous command
+(`--download`). On timeout (exit 3) it says what it saw
 instead: how many elements matched, the requests still in flight, the URL,
 the last value, and the page.
 
@@ -317,6 +318,18 @@ body) and `--request-body` add the rest; `-o file` saves the response body
 while, also after the page navigates away, and the output says when it no
 longer has one. Each tab keeps its newest 2,000 requests (`open
 --network-buffer N`); `network clear` empties the log.
+
+A WebSocket is a request too (`network --type websocket`). `network frames
+ID` lists its frames, numbered from 1 (the log keeps a socket's last 500,
+and 200 characters of each text); `--grep REGEX`, `--dir sent|received` and
+`--limit` filter, and `--follow` prints new ones until the socket closes.
+`wait --ws /live --frame '"type":"price"'` waits for one frame, sent or
+received since the previous command began:
+
+```
+#12 ws://localhost:4000/live: 3 sent, 5 received, open
+7 received text 41B {"type":"price","symbol":"ACME","price":12.5}
+```
 
 ## Mocking and blocking requests
 

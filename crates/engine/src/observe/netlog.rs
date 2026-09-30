@@ -10,7 +10,9 @@
 //! each hop of a redirect, is one record: what was asked, the response
 //! (status, MIME type, sizes, timing, cache, protocol), how it failed
 //! (`errorText`, `blockedReason`, CORS), and for a WebSocket its frames,
-//! summed up. Records keep headers and a small request body; response
+//! summed up, and the last [`FRAMES`] of them (`network frames`).
+//! Each frame has its number on the socket, and the log's change count
+//! when it came, which `wait --ws` compares with the command marks. Records keep headers and a small request body; response
 //! bodies stay in Chrome until `network show --body` asks for them.
 //!
 //! Records are keyed by session and request id while they are live, since
@@ -56,7 +58,7 @@ const PENDING: usize = 256;
 const RAW_SEARCH: usize = 200;
 
 /// How many WebSocket frames a record keeps, and how much of each text.
-const FRAMES: usize = 20;
+const FRAMES: usize = 500;
 const FRAME_TEXT: usize = 200;
 
 /// One request as the log keeps it.
@@ -72,7 +74,11 @@ pub(crate) struct Record {
     /// The request body if it is short, and whether it has one at all.
     pub(crate) post_data: Option<String>,
     pub(crate) has_post_data: bool,
-    pub(crate) frames: VecDeque<WebSocketFrame>,
+    /// A WebSocket's last frames, oldest first, each with the log's change
+    /// count it came at ([`NetLog::changes`]).
+    pub(crate) frames: VecDeque<(u64, WebSocketFrame)>,
+    /// The frames dropped to make room.
+    pub(crate) frames_dropped: u64,
     /// For a request of the main frame's document (each hop of its
     /// redirects), the navigation it starts: `har stop` makes a page of
     /// each.
@@ -308,10 +314,11 @@ impl NetLog {
                 } else {
                     None
                 };
+                let change = self.changes + 1;
                 let Some(record) = self.live_record(&key) else {
                     return false;
                 };
-                if !record.apply(method, params) {
+                if !record.apply(method, params, change) {
                     return false;
                 }
                 record.set_raw_response(raw);
@@ -477,6 +484,7 @@ impl Record {
             post_data: None,
             has_post_data: false,
             frames: VecDeque::new(),
+            frames_dropped: 0,
             navigation: None,
             raw_request: false,
             raw_response: false,
@@ -490,9 +498,9 @@ impl Record {
         self.started
     }
 
-    /// Applies an event about this record; `false` if it is not one the
-    /// log follows.
-    fn apply(&mut self, method: &str, params: &Value) -> bool {
+    /// Applies an event about this record, the log's change `change`;
+    /// `false` if it is not one the log follows.
+    fn apply(&mut self, method: &str, params: &Value, change: u64) -> bool {
         match method {
             "Network.requestServedFromCache" => {
                 self.entry.cache.get_or_insert_with(|| "memory".to_owned());
@@ -546,7 +554,11 @@ impl Record {
                 }
             }
             "Network.webSocketFrameSent" | "Network.webSocketFrameReceived" => {
-                self.frame(method == "Network.webSocketFrameSent", &params["response"]);
+                self.frame(
+                    method == "Network.webSocketFrameSent",
+                    &params["response"],
+                    change,
+                );
             }
             "Network.webSocketFrameError" => {
                 self.entry.error = non_empty(&params["errorMessage"]);
@@ -626,7 +638,7 @@ impl Record {
         }
     }
 
-    fn frame(&mut self, sent: bool, frame: &Value) {
+    fn frame(&mut self, sent: bool, frame: &Value, change: u64) {
         let payload = frame["payloadData"].as_str().unwrap_or_default();
         let opcode = whole(&frame["opcode"]).unwrap_or(1);
         let (opcode, size, text) = match opcode {
@@ -650,14 +662,18 @@ impl Record {
         }
         if self.frames.len() >= FRAMES {
             self.frames.pop_front();
+            self.frames_dropped += 1;
         }
-        self.frames.push_back(WebSocketFrame {
+        let n = self.frames_dropped + self.frames.len() as u64 + 1;
+        let frame = WebSocketFrame {
+            n,
             sent,
             time_ms: now_ms(),
             opcode: opcode.to_owned(),
             size,
             text: text.map(|t| cut(t.to_owned(), FRAME_TEXT)),
-        });
+        };
+        self.frames.push_back((change, frame));
     }
 }
 
@@ -1035,8 +1051,10 @@ mod tests {
         assert_eq!(record.entry.state, RequestState::Pending);
         let ws = record.entry.websocket.as_ref().unwrap();
         assert_eq!((ws.sent, ws.received, ws.received_bytes), (1, 2, 8));
-        assert_eq!(record.frames[2].opcode, "binary");
-        assert_eq!(record.frames[2].size, 3);
+        assert_eq!(record.frames[2].1.opcode, "binary");
+        assert_eq!(record.frames[2].1.size, 3);
+        assert_eq!(record.frames[2].1.n, 3);
+        assert!(record.frames[0].0 < record.frames[1].0);
         event(
             &mut log,
             "Network.webSocketClosed",

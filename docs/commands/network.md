@@ -70,6 +70,41 @@ Examples:
   chrome-cdp network show 7 -o logo.png              # save a body, binary too
 ```
 
+## `chrome-cdp network frames`
+
+List a WebSocket's frames, and with --follow new ones as they come
+
+```text
+chrome-cdp network frames [OPTIONS] <ID>
+```
+
+Arguments:
+
+- `<ID>`: The WebSocket's request id, as `network` lists it: 12 or #12
+
+Options:
+
+- `--grep <REGEX>`: Only text frames whose text matches this regular expression
+- `--dir <DIR>`: Only frames the page sent, or only those it received (one of `sent`, `received`)
+- `--limit <N>`: Show at most this many frames, the newest (0 = all) (default `100`)
+- `-f, --follow`: Keep printing new frames as they come, until the socket closes, Ctrl-C, or --timeout if given
+- `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
+
+```text
+ID is the socket's request id (`network --type websocket` lists them).
+The log keeps each socket's last 500 frames, and up to 200 characters of
+each text frame; binary frames show their size. Each line reads: N
+DIRECTION KIND SIZE TEXT, N counting the socket's frames from 1. With
+--follow, new frames print as they come until the socket closes, Ctrl-C,
+or --timeout. `wait --ws` waits for one frame.
+
+Examples:
+  chrome-cdp network frames 12
+  chrome-cdp network frames 12 --grep '"type":"price"' --dir received
+  chrome-cdp network frames 12 --follow --timeout 10s
+  chrome-cdp network frames 12 -q                 # just the texts
+```
+
 ## `chrome-cdp network clear`
 
 Forget the tab's requests so far (ids go on from where they were)

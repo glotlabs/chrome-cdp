@@ -1,0 +1,13 @@
+$ chrome-cdp wait --ws /nope --timeout 500ms
+exit: 3
+--- stderr
+error: waited 500ms for a WebSocket frame on a socket to "/nope"
+  observed: no WebSocket whose URL matches in the tab's log
+  page: <site>/network/frames.html "WebSocket frames"
+  hint: chrome-cdp network --type websocket --since 0   (lists the tab's WebSockets)
+
+$ chrome-cdp wait --ws /nope --timeout 500ms --json
+exit: 3
+--- stdout
+{"ok":false,"error":{"kind":"Timeout","message":"waited 500ms for a WebSocket frame on a socket to \"/nope\"","hint":"chrome-cdp network --type websocket --since 0   (lists the tab's WebSockets)","notes":[{"label":"observed","text":"no WebSocket whose URL matches in the tab's log"},{"label":"page","text":"<site>/network/frames.html \"WebSocket frames\""}],"details":{"condition":"ws","observed":{"frames":[],"sockets":0},"page":{"title":"WebSocket frames","url":"<site>/network/frames.html"},"timeout_ms":500}}}
+

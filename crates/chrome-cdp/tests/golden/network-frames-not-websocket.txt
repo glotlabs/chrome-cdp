@@ -1,0 +1,11 @@
+$ chrome-cdp network frames 1
+exit: 2
+--- stderr
+error: request #1 is not a WebSocket: it is GET <site>/network/frames.html (document)
+  hint: chrome-cdp network --type websocket --since 0   (lists the WebSockets)
+
+$ chrome-cdp network frames 1 --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"request #1 is not a WebSocket: it is GET <site>/network/frames.html (document)","hint":"chrome-cdp network --type websocket --since 0   (lists the WebSockets)"}}
+
