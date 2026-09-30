@@ -34,6 +34,7 @@ const READS: &[&str] = &[
     "highlight",
     "html",
     "inspect",
+    "issues",
     "locator",
     "markdown",
     "network",

@@ -947,6 +947,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "issues": {
+          "default": 0,
+          "description": "The issue the mark comes after (`issues --since` takes it).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "name": {
           "type": "string"
         },

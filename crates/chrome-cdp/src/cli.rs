@@ -616,13 +616,14 @@ Examples:
   chrome-cdp expect no-request DELETE '/api/cart/**'")]
     Expect(ExpectArgs),
 
-    /// Name this point in the tab's console and network logs, for expect --no-errors --since.
+    /// Name this point in the tab's console, issues and network logs, for expect --no-errors --since.
     #[command(after_help = "\
 A mark belongs to the tab (the active one, or --tab). Setting a name again
-moves it. `expect --no-errors --since <name>` and `expect
---no-failed-requests --since <name>` look only at what happened after it,
-as do `console`, `errors` and `network` with `--since <name>`. A name
-starts with a letter: letters, digits, -, _ and . follow.
+moves it. `expect --no-errors --since <name>`, `expect --no-issues --since
+<name>` and `expect --no-failed-requests --since <name>` look only at what
+happened after it, as do `console`, `errors`, `issues` and `network` with
+`--since <name>`. A name starts with a letter: letters, digits, -, _ and .
+follow.
 
 Examples:
   chrome-cdp mark before-save

@@ -86,7 +86,7 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`expect`](expect.md) | Assert something about the page, retrying until it holds: an element's state, text, value, count, … |
 | [`expect-snapshot`](expect-snapshot.md) | Compare the page's snapshot with a stored text baseline; a diff shows what changed |
 | [`expect-screenshot`](expect-screenshot.md) | Compare a screenshot with a stored PNG baseline, pixel by pixel (experimental) |
-| [`mark`](mark.md) | Name this point in the tab's console and network logs, for expect --no-errors --since |
+| [`mark`](mark.md) | Name this point in the tab's console, issues and network logs, for expect --no-errors --since |
 | [`init`](init.md) | Set up a project for chrome-cdp: `init e2e` scaffolds E2E tests with mocks |
 | [`test`](test.md) | Run the project's E2E scenarios, each test in a fresh browser context with its mocks |
 | [`lint`](lint.md) | Check scenario and mock files for mistakes without running them |

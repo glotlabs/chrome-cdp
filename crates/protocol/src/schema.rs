@@ -4833,6 +4833,9 @@ pub struct MarkData {
     /// The console entry the mark comes after (`console --since` takes
     /// it).
     pub console: u64,
+    /// The issue the mark comes after (`issues --since` takes it).
+    #[serde(default)]
+    pub issues: u64,
     /// Whether it replaced a mark of the same name.
     pub replaced: bool,
 }

@@ -855,7 +855,8 @@ impl Engine {
         }
         .map_err(|e| self.tab_error(&running, e))?;
         let replaced = running.tabs.set_mark(page.id, name).is_some();
-        let (_, console) = running.tabs.log_marks(page.id);
+        let marks = running.tabs.named_mark(page.id, name).ok();
+        let (console, issues) = marks.map_or((0, 0), |m| (m.console, m.issues));
         let tab = tab_name(page.id);
         let text = format!(
             "{} mark {name:?} in {tab}; check what happened after it: {}",
@@ -869,6 +870,7 @@ impl Engine {
             tab,
             name: name.to_owned(),
             console,
+            issues,
             replaced,
         };
         Ok(Output::typed(&data, text).quiet(name.to_owned()))
