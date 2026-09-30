@@ -1,7 +1,7 @@
 <!-- Generated from the CLI by `cargo xtask docs`; do not edit. -->
 # `chrome-cdp lint`
 
-Check scenario and mock files for mistakes without running them
+Check scenario, mock and audit baseline files for mistakes without running them
 
 ```text
 chrome-cdp lint [OPTIONS] [PATH]...
@@ -32,8 +32,11 @@ mock-only (mock state/seed/ws send or expect mock-state in a test that
 real backends run), mock-literal (a value from the mock data, in a test
 real backends run), sleep (wait <ms>) and no-expect (a test that checks
 nothing). Mock files get the `mock check` rules (unreachable,
-collection-shadowed, openapi-…). Environment variables are not needed:
-${env:…} and ${secret:…} are not read.
+collection-shadowed, openapi-…), and audit baselines (the .json files of
+e2e/audit and .chrome-cdp/audit) the rule audit-baseline (not valid JSON,
+a field `schema audit-baseline` does not have, a bad key or version).
+Environment variables are not needed: ${env:…} and ${secret:…} are not
+read.
 
 Errors exit 1; warnings alone exit 0. --format github prints workflow
 annotations, so problems show inline on pull requests; --format json is

@@ -17,5 +17,6 @@ Examples:
   chrome-cdp schema version         # the schema of chrome-cdp --version --json
   chrome-cdp schema scenario        # .cdp directives, commands, flags, variables
   chrome-cdp schema mocks           # the mock file format
+  chrome-cdp schema audit-baseline  # an audit baseline file
 ```
 

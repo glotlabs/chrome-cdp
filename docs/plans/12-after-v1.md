@@ -289,6 +289,7 @@ maps the e2e-shop example fully within its budget.
 ### Track 6 ★ — Page audits
 
 Plan: [17-page-audits](17-page-audits.md).
+Status: DONE (plan 17, 17.1-17.4).
 
 **Why.** Chrome already checks a lot (its DevTools Issues panel:
 mixed content, CSP violations, cookie problems, deprecated APIs, CORS,

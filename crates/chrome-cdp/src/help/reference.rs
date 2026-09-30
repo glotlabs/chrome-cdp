@@ -33,6 +33,9 @@ pub(crate) fn files() -> BTreeMap<String, String> {
             if *name == "issues" {
                 issue_codes(&mut page);
             }
+            if *name == "audit" {
+                audit_rules(&mut page);
+            }
             files.insert(format!("{name}.md"), page);
         }
     }
@@ -64,6 +67,30 @@ fn issue_codes(page: &mut String) {
             code.name,
             code.severity.as_str(),
             cell(code.about)
+        );
+    }
+}
+
+/// The `audit` page's table of its rules (from [`engine::AUDIT_RULES`]),
+/// after where the `issues` and `a11y` categories' rules come from.
+fn audit_rules(page: &mut String) {
+    page.push_str(
+        "\n## Rules and severities\n\n\
+         Every finding's key is `<category>/<rule>/<where>`. The `issues`\n\
+         category's rules are Chrome's issues, with their severities (see\n\
+         [`issues`](issues.md#rules-and-severities)); the `a11y` category's are\n\
+         the rules of `expect --a11y` ([docs/accessibility.md](../accessibility.md)),\n\
+         level A an error and level AA a warning. The other categories' rules:\n\n\
+         | Category | Rule | Severity | What |\n|---|---|---|---|\n",
+    );
+    for rule in engine::AUDIT_RULES {
+        let _ = writeln!(
+            page,
+            "| `{}` | `{}` | {} | {} |",
+            rule.category,
+            rule.id,
+            rule.severity.as_str(),
+            cell(rule.about)
         );
     }
 }

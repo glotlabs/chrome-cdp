@@ -141,10 +141,10 @@ fill-form --values '{"Email":"a@b"}'  fill a whole form; see forms
 upload <loc> <file...> [--drop] file inputs; --drop for drop zones
 wait <loc> | --text t | --url u | --idle
 expect <loc> visible|text t|value v|count n [--not]   assert, retrying
-expect --url u | --no-errors | --no-issues | --no-failed-requests | --a11y | --perf good
-expect-snapshot <name>         snapshot -i vs a stored baseline; a diff if not
+expect --url u | --no-errors | --no-issues | --no-failed-requests | --a11y | --perf good | --audit
+expect-snapshot <name>         snapshot -i vs a stored baseline
 screenshot [loc] [--full [loc]] [-o f.png]   --full loc: all of a scrolling container
-errors | console | issues | network [--failed]
+errors | console | issues | network [--failed] | audit
 eval '<js>'                    run JavaScript, print the value (elements with refs)
 tabs | tab <id> | tab new <url> | tab close
 frames                         the tab's iframes (cross-site too) and workers

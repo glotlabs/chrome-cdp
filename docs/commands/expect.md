@@ -4,7 +4,7 @@
 Assert something about the page, retrying until it holds: an element's state, text, value, count, …
 
 ```text
-chrome-cdp expect [OPTIONS] <LOCATOR|--url <PATTERN>|--title <TEXT>|--no-errors|--no-issues|--no-failed-requests|--a11y|--perf <BUDGETS>|--layout> [MATCHER] [VALUE]...
+chrome-cdp expect [OPTIONS] <LOCATOR|--url <PATTERN>|--title <TEXT>|--no-errors|--no-issues|--no-failed-requests|--a11y|--perf <BUDGETS>|--layout|--audit> [MATCHER] [VALUE]...
 ```
 
 Arguments:
@@ -23,7 +23,7 @@ Options:
 - `--title <TEXT>`: The page title contains this (all of it with --exact), or matches /regex/
 - `--no-errors`: No uncaught exception or console error since the page loaded (or --since)
 - `--no-issues`: No issue of Chrome's (see `issues`) of --min-severity or above since the page loaded (or --since)
-- `--min-severity <SEVERITY>`: --no-issues: the least severe issues that fail it (one of `error`, `warning`, `info`)
+- `--min-severity <SEVERITY>`: --no-issues and --audit: the least severe issues (findings) that fail it (one of `error`, `warning`, `info`)
 - `--all-tabs`: --no-errors, --no-issues and --no-failed-requests: in every tab of the session (or --context), each since it opened, whatever it loaded since
 - `--no-failed-requests`: No request failed or got a status of 400 or more since the page loaded (or --since)
 - `--since <MARK>`: --no-errors, --no-issues, --no-failed-requests and `request`: only after this mark (see `mark`), not since the page loaded
@@ -37,9 +37,11 @@ Options:
 - `--perf <BUDGETS>`: Check `perf`'s numbers against budgets, all of which must hold: 'lcp&lt;2.5s cls&lt;0.1 tbt&lt;200', or good (the Web Vitals thresholds)
 - `--perf-missing <WHAT>`: --perf: what a metric not measured yet (INP before an interaction) does (one of `fail`, `ok`)
 - `--layout`: Check the page's layout (see `layout`) or LOCATOR's element: fail on error findings the --baseline does not list
-- `--baseline <NAME>`: --layout: the baseline, &lt;dir&gt;/layout/&lt;NAME&gt;.txt (one finding key per line)
-- `--update`: --layout: write the findings to the baseline instead of comparing
-- `--dir <DIR>`: --layout: the baselines' directory (default: .chrome-cdp in the project)
+- `--baseline <NAME>`: --layout: the baseline, &lt;dir&gt;/layout/&lt;NAME&gt;.txt (one finding key per line). --audit: the accepted findings, a .json file or NAME for &lt;dir&gt;/audit/NAME.json
+- `--update`: --layout and --audit: write the findings to the baseline instead of comparing
+- `--dir <DIR>`: --layout and --audit: the baselines' directory (default: .chrome-cdp in the project)
+- `--audit`: Audit the page (see `audit`), or LOCATOR's element: fail on findings at --min-severity or above that the --baseline does not accept (any, without one)
+- `--category <CATEGORY>`: --audit: the categories to check (comma-separated or repeated) (one of `issues`, `a11y`, `layout`, `console`, `network`, `security`, `meta`)
 - `--viewports <LIST>`: Check at each of these viewports: mobile, tablet, desktop or WxH, comma-separated
 - `--only <KINDS>`: Check only these kinds, comma-separated: covered, overlap, clipped, truncated, overflow-x, offscreen, small-target, contrast
 - `--full`: Look for covered elements and low contrast down the whole page, a viewport at a time, not only in view
@@ -101,6 +103,15 @@ away by waiting.
                        does not list; retried like the matchers. --update
                        writes the findings to it; layout's --viewports,
                        --only, --full, --min-target and --stretch-text apply
+  --audit [--baseline NAME|FILE]   no finding of `audit` (Chrome's issues,
+                       accessibility, layout, errors, failed requests,
+                       security, metadata) at --min-severity (warning) or
+                       above that the baseline does not accept; without
+                       one, none at all. --category picks, LOCATOR scopes.
+                       Waits for load, then looks once; the failure is the
+                       report of the new findings. NAME is
+                       .chrome-cdp/audit/NAME.json (e2e/audit/ under
+                       `test`); a missing one is written, except in CI
 
 Mock state (expect mock-state <NAME> <CHECK>), retried like the matchers:
   count <N> (or --min/--max)   items of a collection (or a list value)
@@ -134,6 +145,7 @@ Examples:
   chrome-cdp expect --a11y --level A
   chrome-cdp expect --perf 'lcp<2.5s cls<0.1 tbt<200'
   chrome-cdp expect --layout --baseline cart --viewports mobile,desktop
+  chrome-cdp expect --audit --baseline checkout
   chrome-cdp expect mock-state todos count 4
   chrome-cdp expect request POST /api/orders --json-body '{"qty":2}' --count 1
   chrome-cdp expect no-request DELETE '/api/cart/**'

@@ -38,8 +38,9 @@ arrays lose their tail, never whole fields, and `truncated` says where.
 
 `chrome-cdp schema` lists the commands; `chrome-cdp schema <command>`
 prints the JSON Schema of that command's envelope (`schema tab close`,
-`schema version` for `--version --json`). `schema scenario` and
-`schema mocks` describe the `.cdp` and mock file formats.
+`schema version` for `--version --json`). `schema scenario`,
+`schema mocks` and `schema audit-baseline` describe the `.cdp`, mock and
+audit baseline file formats.
 
 ## Exit codes
 

@@ -86,10 +86,11 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`expect`](expect.md) | Assert something about the page, retrying until it holds: an element's state, text, value, count, … |
 | [`expect-snapshot`](expect-snapshot.md) | Compare the page's snapshot with a stored text baseline; a diff shows what changed |
 | [`expect-screenshot`](expect-screenshot.md) | Compare a screenshot with a stored PNG baseline, pixel by pixel (experimental) |
+| [`audit`](audit.md) | Audit the page in one report: Chrome's issues, accessibility, layout, errors, failed requests, security and metadata |
 | [`mark`](mark.md) | Name this point in the tab's console, issues and network logs, for expect --no-errors --since |
 | [`init`](init.md) | Set up a project for chrome-cdp: `init e2e` scaffolds E2E tests with mocks |
 | [`test`](test.md) | Run the project's E2E scenarios, each test in a fresh browser context with its mocks |
-| [`lint`](lint.md) | Check scenario and mock files for mistakes without running them |
+| [`lint`](lint.md) | Check scenario, mock and audit baseline files for mistakes without running them |
 | [`fmt`](fmt.md) | Format .cdp scenario files and mock files in place; --check only reports |
 | [`history`](history.md) | The commands the session ran; --as-scenario writes them as a test |
 

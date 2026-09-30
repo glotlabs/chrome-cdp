@@ -329,6 +329,14 @@ Each tab keeps its newest 1,000 entries (`open --console-buffer N`), and
 dedicated workers log into their tab's console. A wait that times out says
 how many errors are unread.
 
+`audit` puts every check in one report: Chrome's own issues (`issues`,
+as in DevTools' Issues panel), the accessibility rules, `layout`, console
+errors, failed requests, security headers and cookies, and metadata,
+most severe first. Each finding has a key that stays the same across
+runs, so a committed baseline can accept what is known, and
+`expect --audit --baseline checkout` fails only on what is new
+([audits.md](audits.md)).
+
 ## Network
 
 The same goes for requests: `network` lists what the tab requested since it

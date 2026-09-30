@@ -77,6 +77,7 @@ chrome-cdp expect --no-issues                     # none of Chrome's issues (see
 chrome-cdp expect --no-failed-requests --all-tabs  # in every tab, since each opened
 chrome-cdp expect --a11y                          # accessibility rules (docs/accessibility.md)
 chrome-cdp expect --perf 'lcp<2.5s cls<0.1'       # performance budgets on `perf`'s numbers
+chrome-cdp expect --audit --baseline checkout     # no audit finding the baseline does not accept (docs/audits.md)
 chrome-cdp expect request POST /api/orders --json-body '{"qty":2}'
 chrome-cdp expect-snapshot checkout               # the tree against a saved baseline (or template)
 chrome-cdp expect-screenshot header 'role=banner' # pixels against a saved baseline

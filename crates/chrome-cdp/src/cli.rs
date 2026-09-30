@@ -163,7 +163,8 @@ Examples:
   chrome-cdp schema                 # list the commands that have one
   chrome-cdp schema version         # the schema of chrome-cdp --version --json
   chrome-cdp schema scenario        # .cdp directives, commands, flags, variables
-  chrome-cdp schema mocks           # the mock file format")]
+  chrome-cdp schema mocks           # the mock file format
+  chrome-cdp schema audit-baseline  # an audit baseline file")]
     Schema(SchemaArgs),
 
     /// Download Chrome for Testing into chrome-cdp's cache.
@@ -593,6 +594,15 @@ away by waiting.
                        does not list; retried like the matchers. --update
                        writes the findings to it; layout's --viewports,
                        --only, --full, --min-target and --stretch-text apply
+  --audit [--baseline NAME|FILE]   no finding of `audit` (Chrome's issues,
+                       accessibility, layout, errors, failed requests,
+                       security, metadata) at --min-severity (warning) or
+                       above that the baseline does not accept; without
+                       one, none at all. --category picks, LOCATOR scopes.
+                       Waits for load, then looks once; the failure is the
+                       report of the new findings. NAME is
+                       .chrome-cdp/audit/NAME.json (e2e/audit/ under
+                       `test`); a missing one is written, except in CI
 
 Mock state (expect mock-state <NAME> <CHECK>), retried like the matchers:
   count <N> (or --min/--max)   items of a collection (or a list value)
@@ -626,6 +636,7 @@ Examples:
   chrome-cdp expect --a11y --level A
   chrome-cdp expect --perf 'lcp<2.5s cls<0.1 tbt<200'
   chrome-cdp expect --layout --baseline cart --viewports mobile,desktop
+  chrome-cdp expect --audit --baseline checkout
   chrome-cdp expect mock-state todos count 4
   chrome-cdp expect request POST /api/orders --json-body '{\"qty\":2}' --count 1
   chrome-cdp expect no-request DELETE '/api/cart/**'")]
@@ -1530,7 +1541,7 @@ them), entries that no longer match are listed as stale, and --update
 writes the current findings into the file, keeping notes. It exits 0
 whatever it finds; expect --audit fails on findings the baseline does
 not accept. -q prints the number of findings shown. docs/audits.md has
-the details; the rules are listed below.
+the details, and docs/commands/audit.md every rule with its severity.
 
 Examples:
   chrome-cdp audit
@@ -2307,7 +2318,7 @@ Examples:
   chrome-cdp fmt --check        # in CI, before chrome-cdp lint and test")]
     Fmt(FmtArgs),
 
-    /// Check scenario and mock files for mistakes without running them.
+    /// Check scenario, mock and audit baseline files for mistakes without running them.
     #[command(after_help = "\
 Without paths, checks the project's E2E files, as fmt finds them. Every
 problem has a place (file:line:col), a severity, a rule and a hint.
@@ -2323,8 +2334,11 @@ mock-only (mock state/seed/ws send or expect mock-state in a test that
 real backends run), mock-literal (a value from the mock data, in a test
 real backends run), sleep (wait <ms>) and no-expect (a test that checks
 nothing). Mock files get the `mock check` rules (unreachable,
-collection-shadowed, openapi-…). Environment variables are not needed:
-${env:…} and ${secret:…} are not read.
+collection-shadowed, openapi-…), and audit baselines (the .json files of
+e2e/audit and .chrome-cdp/audit) the rule audit-baseline (not valid JSON,
+a field `schema audit-baseline` does not have, a bad key or version).
+Environment variables are not needed: ${env:…} and ${secret:…} are not
+read.
 
 Errors exit 1; warnings alone exit 0. --format github prints workflow
 annotations, so problems show inline on pull requests; --format json is

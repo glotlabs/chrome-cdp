@@ -1,6 +1,6 @@
 # Plan 17 — Page audits
 
-Status: IN PROGRESS (17.1-17.3 done)
+Status: DONE (17.1-17.4)
 Depends on: 13 (the target graph: issues come from every target), 16
 §16.2 (`layout`, one of `audit`'s categories), 09 §9.1 (`expect`,
 `--a11y`), 06 (`perf`, `console`, `network`)
@@ -317,13 +317,13 @@ smoke scenario per page). Link it from `docs/README.md` and mention
       metric not measured yet as a failure with a hint.
 - [x] The 14 new accessibility rules each flag exactly the failing
       elements of their fixture, and none on a clean page.
-- [ ] Fixture pages with one known finding per `audit` category: `audit`
+- [x] Fixture pages with one known finding per `audit` category: `audit`
       finds each, with the right severity, and finds nothing on a clean
       page.
-- [ ] `expect --audit` fails on a new finding, passes with it in the
+- [x] `expect --audit` fails on a new finding, passes with it in the
       baseline, and reports stale baseline entries; baseline keys are
       stable across runs, ports and reloads.
-- [ ] Every new command and flag has help with an example, a
+- [x] Every new command and flag has help with an example, a
       `docs/commands/` page, golden tests, and additive `--json` schemas.
 
 ## Tests
@@ -485,3 +485,51 @@ _(append here)_
 - 17.3: With 26 rules, the failure's 10 text lines could fill with the
   first rules' elements: every failing rule now gets a line first, then
   the first rules more (up to 5 each), each with `… and N more`.
+- 17.4: Keys follow 17.1's: a page-wide finding's `<where>` is the URL's
+  path with its `/` (`security/no-csp//checkout`, as `issues/quirks-mode//…`).
+  The stable locator (`stable.ts`) never uses ids, so an element no
+  locator finds alone is keyed by its role and name (`a11y/image-alt/img`);
+  two such fold into one finding with a count.
+- 17.4: A LOCATOR scopes `a11y`, `layout` and `security`'s forms and
+  password fields; without `--category`, `audit LOCATOR` checks only
+  those, and a page-wide category named in `--category` runs page-wide.
+- 17.4: `a11y` lists up to 50 elements per rule in an audit (`a11y.ts`
+  takes a per-rule limit; `expect --a11y` keeps 5); a warning names how
+  many more a rule has. Level A is an error, AA a warning.
+- 17.4: Rule ids of the categories chrome-cdp defines, in
+  `engine::AUDIT_RULES` (which generates the table of
+  `docs/commands/audit.md`; `docs/audits.md` is the guide): `console`
+  `uncaught-exception`/`console-error` (keyed by script, line and the
+  message's first line, URLs in it as keys name them); `network`
+  `request-failed`/`http-error` (keyed by method and URL; an error from
+  the page's origin, else a warning); `security` `http-page`,
+  `http-password`, `form-http-action`, `no-csp`, `no-hsts`,
+  `cookie-no-secure`, `cookie-no-httponly`, `cookie-no-samesite`; `meta`
+  `no-title`, `no-lang`, `no-viewport`, `viewport-blocks-zoom` (warnings:
+  they affect use), `no-description`, `noindex` (info).
+- 17.4: Security treats this machine as secure, as browsers do
+  (`localhost`, `*.localhost`, `127.x`, `::1`: no `http-page`, no
+  `no-hsts`, forms posting there are fine). CSP and HSTS come from the
+  network log's latest main-document response; a CSP meta tag counts; on
+  a page chrome-cdp attached to after it loaded they are skipped with a
+  warning. Cookies are `Network.getCookies` for the page's URL. Tests
+  map `*.audit.test` to 127.0.0.1 (`--host-resolver-rules`) for a host
+  that is not this machine, and the fixture server takes `?header=` for
+  response headers.
+- 17.4: A finding's `message` is its line as shown and may hold a ref
+  (as `layout`'s messages do); its key never does.
+- 17.4: Baselines: `--baseline NAME` is `<dir>/audit/NAME.json` (`--dir`
+  as for `expect --layout`, default the project's `.chrome-cdp`; the test
+  runner passes `e2e`), a name ending in `.json` a file path. `--update`
+  adds new entries without `count` (any number), raises a count to what
+  it found, keeps notes, drops stale entries and keeps entries of
+  categories not checked. `lint` checks the `.json` files of `e2e/audit`
+  and `.chrome-cdp/audit` (and any `.json` file named) with rule
+  `audit-baseline`.
+- 17.4: `audit` and `expect --audit` are one engine call (`AuditRequest`,
+  `expect` set for the latter), like `layout` and `expect --layout`.
+  Both wait for `load`: `audit` goes on with a warning when it does not
+  come, `expect --audit` fails. A stale entry is a warning of `expect
+  --audit`, not a failure. `--min-severity`, `--baseline`, `--update` and
+  `--dir` of `expect` are shared with `--no-issues` and `--layout` and
+  checked by hand (clap's `requires` does not see a flag's absence).
