@@ -916,6 +916,15 @@ pub(crate) fn mark(args: &crate::cli::MarkArgs, global: &GlobalArgs) -> Result<O
 pub(crate) fn snapshot(args: &SnapshotArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     check_tab(global.tab.as_deref())?;
     let ctx = Ctx::new(global)?;
+    let budget = args.budget.or(global.snapshot_budget).filter(|&b| b > 0);
+    // A budget above the default --max-chars raises it, so the budget is
+    // what bounds the output.
+    let max_chars = match budget {
+        Some(tokens) if args.max_chars == crate::cli::SNAPSHOT_MAX_CHARS => {
+            args.max_chars.max(tokens.saturating_mul(4))
+        }
+        _ => args.max_chars,
+    };
     let request = SnapshotRequest {
         tab: ctx.tab.clone(),
         interactive: args.interactive,
@@ -930,8 +939,11 @@ pub(crate) fn snapshot(args: &SnapshotArgs, global: &GlobalArgs) -> Result<Outpu
         strict_refs: args.strict_refs,
         testid_attribute: global.testid_attribute.clone(),
         source: args.source,
+        fold: args.fold,
+        budget,
+        expand: args.expand.clone(),
         timeout_ms: millis(ctx.timeout),
-        max_chars: args.max_chars,
+        max_chars,
     };
     engine::check_snapshot(&request)?;
     let mut client = running_session(&ctx)?;

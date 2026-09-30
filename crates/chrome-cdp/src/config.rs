@@ -26,6 +26,9 @@
 //! the root is the nearest directory up with a project config,
 //! `.chrome-cdp/` or `.git` ([`project_root`]).
 //!
+//! `snapshot_budget` (plan 16) is `snapshot --budget`'s default, in
+//! tokens; 0 turns it off, as `--budget 0` does for one snapshot.
+//!
 //! The project config's `[e2e]` section (plan 11) is read and checked by
 //! the commands that test (`e2e::Config`), not here, so a mistake in it
 //! does not stop `click`. Its `base_url` is also the `goto /path` base
@@ -42,8 +45,8 @@ use serde::Deserialize;
 use crate::cli::{GlobalArgs, parse_duration};
 
 /// The keys a config file may set.
-pub(crate) const KEYS: &str =
-    "session, timeout, base_url, testid_attribute, snap_after_action, node_stacks, source_root";
+pub(crate) const KEYS: &str = "session, timeout, base_url, testid_attribute, snap_after_action, \
+     node_stacks, source_root, snapshot_budget";
 
 /// One config file as written.
 #[derive(Debug, Default, Deserialize)]
@@ -56,6 +59,7 @@ struct File {
     snap_after_action: Option<String>,
     node_stacks: Option<String>,
     source_root: Option<String>,
+    snapshot_budget: Option<usize>,
     /// Checked by `e2e::Config`; only its `base_url` is read here.
     e2e: Option<toml::Table>,
 }
@@ -73,6 +77,8 @@ struct Settings {
     /// Absolute: a relative `source_root` is joined to the file's
     /// directory.
     source_root: Option<PathBuf>,
+    /// `snapshot --budget`'s default (0 = none).
+    snapshot_budget: Option<usize>,
 }
 
 impl Settings {
@@ -86,6 +92,7 @@ impl Settings {
             snap_after_action: over.snap_after_action.or(self.snap_after_action),
             node_stacks: over.node_stacks.or(self.node_stacks),
             source_root: over.source_root.or(self.source_root),
+            snapshot_budget: over.snapshot_budget.or(self.snapshot_budget),
         }
     }
 }
@@ -130,6 +137,7 @@ pub(crate) fn apply(global: &mut GlobalArgs, matches: &ArgMatches) -> Result<(),
     };
     global.snap_after_action = settings.snap_after_action.unwrap_or(false);
     global.node_stacks = settings.node_stacks;
+    global.snapshot_budget = settings.snapshot_budget;
     global.source_root = settings
         .source_root
         .or_else(|| cwd.as_deref().map(project_root));
@@ -268,6 +276,7 @@ fn parse(text: &str, scope: Scope, dir: &Path) -> Result<Settings, String> {
         snap_after_action,
         node_stacks,
         source_root,
+        snapshot_budget: file.snapshot_budget,
     })
 }
 
@@ -320,7 +329,12 @@ mod tests {
                 snap_after_action: None,
                 node_stacks: None,
                 source_root: None,
+                snapshot_budget: None,
             }
+        );
+        assert_eq!(
+            parse("snapshot_budget = 4000").unwrap().snapshot_budget,
+            Some(4000)
         );
         assert_eq!(
             parse("node_stacks = \"on\"").unwrap().node_stacks,

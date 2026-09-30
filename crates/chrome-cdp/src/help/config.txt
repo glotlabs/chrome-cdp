@@ -15,6 +15,7 @@ Support/chrome-cdp/config.toml). Keys (unknown keys are errors):
   testid_attribute = "data-test" what testid= reads (data-testid)
   snap_after_action = "diff"     every action adds --snap ("off")
   node_stacks = "on"             open --node-stacks ("off", "localhost")
+  snapshot_budget = 4000         snapshot --budget (0 = none)
   source_root = "web"            where places in the page's code are
                                  looked up (src/cart.ts:12); relative to
                                  the file. Default: the nearest directory

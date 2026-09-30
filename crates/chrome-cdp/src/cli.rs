@@ -119,6 +119,11 @@ pub(crate) struct GlobalArgs {
     #[arg(skip)]
     pub(crate) node_stacks: Option<engine::NodeStacks>,
 
+    /// `snapshot_budget` in the config files: `snapshot --budget`'s
+    /// default.
+    #[arg(skip)]
+    pub(crate) snapshot_budget: Option<usize>,
+
     /// The project root places in the page's code print relative to:
     /// `source_root` in the config files, else the nearest directory up
     /// with a project config or `.git`, else the current one.
@@ -691,6 +696,11 @@ scrollable boxes, iframes); a node keeps its ref while it stays in the
 page. Hidden content is left out, lists longer than 30 collapse, and text
 is cut at --text-limit. Needs a running session.
 
+A big page: --budget 2000 folds parts of it (runs of cards or rows, then
+big lists, tables and sections) until it is about 2,000 tokens; --fold
+folds every run of four or more alike. A folded part is one line with a
+region (r4); its refs still work, and --expand r4 shows it.
+
 Examples:
   chrome-cdp snapshot
   chrome-cdp snapshot -i                  # only what can be acted on
@@ -698,7 +708,10 @@ Examples:
   chrome-cdp snapshot --scope '#results' --depth 3
   chrome-cdp snapshot --scope 'frame=payment'
   chrome-cdp snapshot --diff              # what changed since the last one
-  chrome-cdp snapshot -i --source         # and where each came from")]
+  chrome-cdp snapshot -i --source         # and where each came from
+  chrome-cdp snapshot --budget 2000       # a big page in ~2,000 tokens
+  chrome-cdp snapshot --fold              # one card, then \"… 59 more\"
+  chrome-cdp snapshot --expand r4 r7      # parts it folded")]
     Snapshot(SnapshotArgs),
 
     /// Search the page for elements by role, name or text; shows refs.
@@ -2829,6 +2842,23 @@ pub(crate) struct SnapshotArgs {
     #[arg(long, conflicts_with = "diff")]
     pub(crate) source: bool,
 
+    /// Fold runs of four or more siblings with the same shape (cards,
+    /// rows): the first is shown, then one `… N more … [region r5]` line.
+    #[arg(long)]
+    pub(crate) fold: bool,
+
+    /// Fold parts of the page until the output is at most this many
+    /// tokens (characters ÷ 4): runs of alike siblings, then regions (big
+    /// lists, tables, sections) as one line each; 0 = none.
+    /// `snapshot_budget` in the config sets a default.
+    #[arg(long, value_name = "TOKENS")]
+    pub(crate) budget: Option<usize>,
+
+    /// Show these regions (r4) of the last folded snapshot, with the same
+    /// --fold and --budget inside them.
+    #[arg(long, value_name = "REGION", num_args = 1.., conflicts_with_all = ["scope", "diff"])]
+    pub(crate) expand: Vec<String>,
+
     /// How to read the page: ax (Chrome's accessibility tree, the
     /// default) or dom (chrome-cdp's DOM walker).
     #[arg(long, value_enum, value_name = "ENGINE")]
@@ -2846,9 +2876,12 @@ pub(crate) struct SnapshotArgs {
     pub(crate) strict_refs: bool,
 
     /// Bound the output to this many characters (0 = no limit).
-    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    #[arg(long, default_value_t = SNAPSHOT_MAX_CHARS, value_name = "N")]
     pub(crate) max_chars: usize,
 }
+
+/// `snapshot --max-chars`' default.
+pub(crate) const SNAPSHOT_MAX_CHARS: usize = 20_000;
 
 /// `snapshot --engine`.
 #[derive(Debug, Clone, Copy, ValueEnum)]

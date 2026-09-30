@@ -18,6 +18,9 @@ Options:
 - `--text-limit <N>`: Cut text and names after this many characters (0 = no limit) (default `200`)
 - `--no-text`: Leave text out: the page's skeleton
 - `--source`: After each node with a ref, the component it is in and its place in the source (`<CartItem src/components/CartItem.tsx:42>`), as `source` finds them
+- `--fold`: Fold runs of four or more siblings with the same shape (cards, rows): the first is shown, then one `… N more … [region r5]` line
+- `--budget <TOKENS>`: Fold parts of the page until the output is at most this many tokens (characters ÷ 4): runs of alike siblings, then regions (big lists, tables, sections) as one line each; 0 = none. `snapshot_budget` in the config sets a default
+- `--expand <REGION>`: Show these regions (r4) of the last folded snapshot, with the same --fold and --budget inside them
 - `--engine <ENGINE>`: How to read the page: ax (Chrome's accessibility tree, the default) or dom (chrome-cdp's DOM walker) (one of `ax`, `dom`)
 - `--strict-refs`: A --scope ref whose element is gone fails, instead of being re-resolved to the one element with its role and name (env `CHROME_CDP_STRICT_REFS`)
 - `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
@@ -30,6 +33,11 @@ scrollable boxes, iframes); a node keeps its ref while it stays in the
 page. Hidden content is left out, lists longer than 30 collapse, and text
 is cut at --text-limit. Needs a running session.
 
+A big page: --budget 2000 folds parts of it (runs of cards or rows, then
+big lists, tables and sections) until it is about 2,000 tokens; --fold
+folds every run of four or more alike. A folded part is one line with a
+region (r4); its refs still work, and --expand r4 shows it.
+
 Examples:
   chrome-cdp snapshot
   chrome-cdp snapshot -i                  # only what can be acted on
@@ -38,5 +46,8 @@ Examples:
   chrome-cdp snapshot --scope 'frame=payment'
   chrome-cdp snapshot --diff              # what changed since the last one
   chrome-cdp snapshot -i --source         # and where each came from
+  chrome-cdp snapshot --budget 2000       # a big page in ~2,000 tokens
+  chrome-cdp snapshot --fold              # one card, then "… 59 more"
+  chrome-cdp snapshot --expand r4 r7      # parts it folded
 ```
 

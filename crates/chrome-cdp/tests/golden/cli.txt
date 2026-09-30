@@ -206,6 +206,9 @@ command chrome-cdp snapshot
   flag --text-limit value=N
   flag --no-text
   flag --source
+  flag --fold
+  flag --budget value=TOKENS
+  flag --expand value=REGION repeatable
   flag --engine value=ENGINE values=ax|dom
   flag --strict-refs env=CHROME_CDP_STRICT_REFS
   flag --max-chars value=N
