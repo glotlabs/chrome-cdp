@@ -45,6 +45,7 @@ pub(crate) mod emulation;
 mod features;
 mod fetch;
 mod inject;
+mod locals;
 mod locks;
 mod mock_shim;
 pub(crate) mod node_stacks;
@@ -85,6 +86,7 @@ use tokio::task::AbortHandle;
 use tokio::time::Instant;
 
 pub(crate) use debug::{Cleared, LogError, Spec, hit_text};
+pub(crate) use locals::{NOT_STOPPED, STOPPED_ELSEWHERE};
 pub(crate) use locks::TabLocks;
 
 /// The URL of a new empty tab.
@@ -2061,7 +2063,7 @@ async fn watch_host(
             "Runtime.bindingCalled" => {
                 inject::answer(&shared, &session_id, &event);
                 if let Some(tab) = tab {
-                    console_event(&shared, tab, &event);
+                    console_event(&shared, &session_id, tab, &event);
                 }
             }
             "Runtime.consoleAPICalled"
@@ -2069,7 +2071,7 @@ async fn watch_host(
             | "Runtime.exceptionRevoked"
             | "Log.entryAdded" => {
                 if let Some(tab) = tab {
-                    console_event(&shared, tab, &event);
+                    console_event(&shared, &session_id, tab, &event);
                 }
             }
             page::JavascriptDialogOpening::NAME => {
@@ -2095,6 +2097,7 @@ async fn watch_host(
             method => {
                 if method == page::FrameStartedNavigating::NAME {
                     node_stacks::navigating(&shared, &session_id, &event);
+                    debug::navigating(&shared, &session_id, &event);
                 }
                 if method == runtime::ExecutionContextsCleared::NAME {
                     debug::contexts_gone(&shared, &session_id, None);
@@ -2249,14 +2252,27 @@ fn network_event(shared: &Shared, session_id: &str, tab: u32, method: &str, even
     }
 }
 
-/// Applies a console call, uncaught exception or browser message of a
-/// page or iframe session to tab `tab`'s console.
-fn console_event(shared: &Shared, tab: u32, event: &RawEvent) {
+/// Applies a console call, uncaught exception or browser message of
+/// page or iframe session `session_id` to tab `tab`'s console; an
+/// uncaught exception gets the locals read at its pause.
+fn console_event(shared: &Shared, session_id: &str, tab: u32, event: &RawEvent) {
     let capacity = shared.settings.console_buffer();
-    let logged = shared.lock().tabs.get_mut(&tab).is_some_and(|t| {
-        t.console
-            .event(&event.method, &event.params, None, capacity)
+    let mut guard = shared.lock();
+    let state = &mut *guard;
+    let found = exception_locals(state, session_id, event);
+    let logged = state.tabs.get_mut(&tab).is_some_and(|t| {
+        let logged = t
+            .console
+            .event(&event.method, &event.params, None, capacity);
+        if logged
+            && let Some(found) = &found
+            && let Some(entry) = t.console.last_mut()
+        {
+            locals::attach(entry, found);
+        }
+        logged
     });
+    drop(guard);
     if logged {
         shared.bump();
     }
@@ -2289,18 +2305,37 @@ fn worker_console_event(shared: &Shared, session_id: &str, event: &RawEvent) {
         worker: &worker,
         once: once.as_ref().map(|(id, n)| (id.as_str(), *n)),
     };
+    let found = exception_locals(state, session_id, event);
     let mut logged = false;
     for id in tabs {
-        if let Some(t) = state.tabs.get_mut(&id) {
-            logged |= t
-                .console
-                .event(&event.method, &event.params, Some(from), capacity);
+        if let Some(t) = state.tabs.get_mut(&id)
+            && t.console
+                .event(&event.method, &event.params, Some(from), capacity)
+        {
+            logged = true;
+            if let Some(found) = &found
+                && let Some(entry) = t.console.last_mut()
+            {
+                locals::attach(entry, found);
+            }
         }
     }
     drop(guard);
     if logged {
         shared.bump();
     }
+}
+
+/// For an uncaught exception of session `session_id`, the locals read at
+/// its pause, or why it has none (see [`locals`]).
+fn exception_locals(
+    state: &mut State,
+    session_id: &str,
+    event: &RawEvent,
+) -> Option<locals::Found> {
+    (event.method == "Runtime.exceptionThrown")
+        .then(|| locals::for_exception(state, session_id, &event.params))
+        .flatten()
 }
 
 /// Whether a console event is one a tab's console keeps (not a revoked

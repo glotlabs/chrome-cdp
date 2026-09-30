@@ -16,7 +16,7 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use protocol::schema::{ConsoleData, ConsoleEntry, Event, Level, StackFrame, Worker};
+use protocol::schema::{ConsoleData, ConsoleEntry, Event, Level, Local, StackFrame, Worker};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use regex::Regex;
 use tokio::time::Instant;
@@ -29,7 +29,7 @@ use crate::input::origin;
 use crate::places;
 use crate::request::{ConsoleRequest, Since, millis};
 use crate::tabs::commands::path_of;
-use crate::tabs::{Page, TabError, parse_tab_id, tab_name};
+use crate::tabs::{NOT_STOPPED, Page, STOPPED_ELSEWHERE, TabError, parse_tab_id, tab_name};
 use crate::{Engine, Running};
 
 /// How much of an entry's text the text form shows.
@@ -105,6 +105,14 @@ impl Engine {
                 break selection;
             }
         };
+        if !req.locals {
+            for entry in &mut selection.entries {
+                entry.no_locals = None;
+                for frame in &mut entry.stack {
+                    frame.locals = None;
+                }
+            }
+        }
         let mut stack: Vec<&mut StackFrame> = selection
             .entries
             .iter_mut()
@@ -165,8 +173,27 @@ impl Engine {
             ("console entry", "console entries")
         };
         let mut text = String::new();
+        // Why an error has no locals, said once for each reason.
+        let mut said = HashSet::new();
         for entry in &selection.entries {
             entry_text(&mut text, entry, page_origin);
+            if let Some(why) = &entry.no_locals
+                && said.insert(why.as_str())
+            {
+                let _ = write!(text, "    (locals not captured: {why}");
+                // A logpoint at the throwing line reads them instead.
+                if (why == NOT_STOPPED || why == STOPPED_ELSEWHERE)
+                    && let Some(frame) = entry.stack.first()
+                {
+                    let (place, line, _) = frame_place(frame, page_origin);
+                    let cmd = Cmd::new("debug log")
+                        .arg(format!("{place}:{line}"))
+                        .raw("<expr>…")
+                        .session(&self.session);
+                    let _ = write!(text, "; {cmd} logs values there");
+                }
+                text.push_str(")\n");
+            }
         }
         if selection.skipped > 0 {
             let limit = req.limit + selection.skipped;
@@ -533,8 +560,23 @@ pub(crate) fn entry_text(text: &mut String, entry: &ConsoleEntry, page_origin: O
     if stack {
         for frame in &entry.stack {
             let _ = writeln!(text, "    at {}", frame_line(frame, page_origin));
+            if let Some(locals) = &frame.locals {
+                let _ = writeln!(text, "      {}", locals_line(locals));
+            }
         }
     }
+}
+
+/// A frame's locals on one line: `item = undefined, qty = 2`.
+fn locals_line(locals: &[Local]) -> String {
+    if locals.is_empty() {
+        return "(no local variables)".to_owned();
+    }
+    locals
+        .iter()
+        .map(|l| format!("{} = {}", l.name, l.value))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 #[cfg(test)]
@@ -555,6 +597,7 @@ mod tests {
             limit: 50,
             wait_ms: 0,
             sourcemaps: false,
+            locals: false,
             timeout_ms: 1000,
             max_chars: 0,
         }
@@ -682,6 +725,8 @@ mod tests {
             column: 5,
             original: None,
             file: None,
+            async_boundary: None,
+            locals: None,
         }
     }
 
@@ -705,6 +750,7 @@ mod tests {
             worker: None,
             worker_kind: None,
             logpoint: None,
+            no_locals: None,
         };
         error.stack[0].original = Some(SourcePosition {
             source: "http://x/src/app.ts".into(),

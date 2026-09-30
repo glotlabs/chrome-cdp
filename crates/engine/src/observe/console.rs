@@ -106,6 +106,11 @@ impl Console {
         self.evicted
     }
 
+    /// The newest entry, to add to what it holds.
+    pub(crate) fn last_mut(&mut self) -> Option<&mut ConsoleEntry> {
+        self.entries.back_mut().map(|s| &mut s.entry)
+    }
+
     /// The entries kept, oldest first.
     pub(crate) fn entries(&self) -> impl DoubleEndedIterator<Item = &ConsoleEntry> {
         self.entries.iter().map(|s| &s.entry)
@@ -226,6 +231,8 @@ impl Console {
                             column: e.column.unwrap_or(1),
                             original: None,
                             file: None,
+                            async_boundary: None,
+                            locals: None,
                         })
                     }),
                     once: s.once.clone(),
@@ -263,6 +270,7 @@ pub(crate) fn entry(level: Level, source: &str, kind: Option<&str>, text: String
         worker: None,
         worker_kind: None,
         logpoint: None,
+        no_locals: None,
     }
 }
 
@@ -372,6 +380,8 @@ fn exception(details: &Value) -> ConsoleEntry {
             column,
             original: None,
             file: None,
+            async_boundary: None,
+            locals: None,
         });
     }
     entry

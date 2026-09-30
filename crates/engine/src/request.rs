@@ -988,6 +988,10 @@ pub struct ConsoleRequest {
     /// for localhost pages).
     #[serde(default)]
     pub sourcemaps: bool,
+    /// `--locals`: show the local variables read at uncaught errors
+    /// (`StackFrame::locals`), or why an error has none.
+    #[serde(default)]
+    pub locals: bool,
     pub timeout_ms: u64,
     /// The output budget (0 = none).
     pub max_chars: usize,
@@ -1919,6 +1923,27 @@ pub struct DebugClearRequest {
     #[serde(default)]
     pub id: Option<u32>,
     pub timeout_ms: u64,
+}
+
+/// `debug locals`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DebugLocalsRequest {
+    /// Where to capture locals from now on; `None` only says where.
+    #[serde(default)]
+    pub set: Option<LocalsMode>,
+    pub timeout_ms: u64,
+}
+
+/// Where locals are captured at uncaught errors (`debug locals`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LocalsMode {
+    /// In every page, iframe and worker.
+    On,
+    /// Nowhere.
+    Off,
+    /// In documents and workers on this machine (the default).
+    Localhost,
 }
 
 /// `inspect`.

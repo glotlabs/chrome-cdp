@@ -34,15 +34,23 @@
 //! its `--limit` hits (its breakpoints removed), and says so once in the
 //! console. **Other pauses** (a `debugger;` statement) are resumed at
 //! once and noted in the console.
+//!
+//! **Locals** (milestone 15.5) are the second reason for Debugger to be
+//! on in a session: where locals capture is on, it pauses at uncaught
+//! errors (see `super::locals`). Each session's [`Mode`] says which
+//! reasons it has; [`switch`] sends what turning each on or off takes.
+//! Where Debugger is on, async call stacks are recorded too, so a
+//! request's initiator goes on across `await`s and timers.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
+use std::future::Future;
 use std::hash::{BuildHasher as _, Hasher as _};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use cdp::domains::{debugger, runtime};
+use cdp::domains::{debugger, page, runtime};
 use cdp::{Event as _, RawEvent, Session};
 use futures_util::FutureExt as _;
 use futures_util::future::join_all;
@@ -52,9 +60,9 @@ use tokio::time::Instant;
 
 use super::features::{Feature, NewTarget};
 use super::targets::Target;
-use super::{Shared, State, Step, Tabs, step, tab_name};
+use super::{Shared, State, Step, Tabs, locals, step, tab_name};
 use crate::observe::console;
-use crate::observe::{Mapped, RESOLVE_LIMIT};
+use crate::observe::{Mapped, RESOLVE_LIMIT, is_local};
 use crate::places;
 use crate::request::DebugLogRequest;
 
@@ -67,6 +75,9 @@ const BUSY_POLL: Duration = Duration::from_millis(10);
 /// The logpoints' helper, put in each breakpoint's condition.
 const HELPER: &str = include_str!("../injected/logpoint.js");
 
+/// How many async parents a stack keeps where Debugger is on.
+const ASYNC_DEPTH: i64 = 8;
+
 /// The session's logpoints and where Debugger is on for them.
 #[derive(Debug)]
 pub(super) struct Debugging {
@@ -75,7 +86,7 @@ pub(super) struct Debugging {
     next_id: u32,
     logpoints: BTreeMap<u32, Logpoint>,
     /// The sessions Debugger is on in, by id, with their scripts.
-    sessions: HashMap<String, Scripts>,
+    pub(super) sessions: HashMap<String, Scripts>,
     /// The project root of the latest `debug` command: places in hits
     /// and notes print relative to it.
     root: Option<PathBuf>,
@@ -85,6 +96,24 @@ pub(super) struct Debugging {
     placed: HashMap<Spot, Placed>,
     /// Held while a breakpoint is set again (see [`replace`]).
     changing: Arc<tokio::sync::Mutex<()>>,
+    /// `debug locals`: on or off everywhere; `None` for `localhost`
+    /// pages only.
+    pub(super) locals: Option<bool>,
+}
+
+/// Why Debugger is on in a session.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct Mode {
+    /// It runs scripts of a tab with a logpoint.
+    pub(super) logpoints: bool,
+    /// Locals capture is on there.
+    pub(super) locals: bool,
+}
+
+impl Mode {
+    fn any(self) -> bool {
+        self.logpoints || self.locals
+    }
 }
 
 /// Where a breakpoint is: a session, a script's URL, and the 0-based
@@ -111,19 +140,26 @@ impl Default for Debugging {
             root: None,
             placed: HashMap::new(),
             changing: Arc::default(),
+            locals: None,
         }
     }
 }
 
-/// The scripts a session reported, by script id.
+/// A session Debugger is on in: why, and the scripts it reported, by
+/// script id.
 #[derive(Debug, Default)]
-struct Scripts {
-    by_id: HashMap<String, Script>,
+pub(super) struct Scripts {
+    pub(super) mode: Mode,
+    pub(super) by_id: HashMap<String, Script>,
+    /// The instrumentation breakpoint logpoints set, once set.
+    instrument: Option<String>,
+    /// Locals read at uncaught errors, for their console entries.
+    pub(super) pauses: locals::Pauses,
 }
 
 #[derive(Debug, Clone)]
-struct Script {
-    url: String,
+pub(super) struct Script {
+    pub(super) url: String,
     /// Its source map's URL (relative to it, or `data:`); empty if none.
     map: String,
     context: i64,
@@ -413,71 +449,63 @@ fn debugged_tabs(state: &State) -> HashSet<u32> {
         .collect()
 }
 
-/// Whether Debugger should be on in `target`: it runs scripts of a tab
-/// with a logpoint.
-fn wanted(state: &State, tabs: &HashSet<u32>, target: &Target) -> bool {
-    Feature::Debugger.applies(target) && state.tabs_of(target).iter().any(|t| tabs.contains(t))
+/// Why Debugger should be on in `target`, whose document is at `url`: it
+/// runs scripts of a tab with a logpoint, or locals capture is on there.
+fn wanted(state: &State, tabs: &HashSet<u32>, target: &Target, url: &str) -> Mode {
+    if !Feature::Debugger.applies(target) {
+        return Mode::default();
+    }
+    Mode {
+        logpoints: state.tabs_of(target).iter().any(|t| tabs.contains(t)),
+        locals: state.debug.locals.unwrap_or_else(|| is_local(url)),
+    }
 }
 
-/// Turns Debugger on in each session that should have it and off in the
-/// rest. Fails if turning it on in a tab's page fails.
+/// The mode Debugger is in in session `id` now.
+fn current(state: &State, id: &str) -> Mode {
+    state
+        .debug
+        .sessions
+        .get(id)
+        .map(|s| s.mode)
+        .unwrap_or_default()
+}
+
+/// Brings every session's Debugger in line with what it should do. Fails
+/// if turning it on for logpoints fails in a tab's page.
 async fn sync(shared: &Arc<Shared>, timeout: Duration) -> cdp::Result<()> {
-    let (on, off, pages, binding) = {
-        let mut guard = shared.lock();
-        let state = &mut *guard;
-        let tabs = debugged_tabs(state);
-        let wanted: HashMap<String, Session> = state
+    let changes: Vec<(String, Mode, Mode, Session)> = {
+        let state = shared.lock();
+        let tabs = debugged_tabs(&state);
+        state
             .targets
             .iter()
-            .filter(|(_, t)| wanted(state, &tabs, t))
-            .map(|(id, t)| (id.clone(), t.session.clone()))
-            .collect();
-        let pages: HashSet<String> = tabs
+            .filter_map(|(id, t)| {
+                let to = wanted(&state, &tabs, t, &t.url);
+                let from = current(&state, id);
+                (from != to).then(|| (id.clone(), from, to, t.session.with_timeout(timeout)))
+            })
+            .collect()
+    };
+    let pages: HashSet<String> = {
+        let state = shared.lock();
+        debugged_tabs(&state)
             .iter()
             .filter_map(|t| state.tabs.get(t)?.session.id().map(str::to_owned))
-            .collect();
-        let debug = &mut state.debug;
-        let on: Vec<(String, Session)> = wanted
-            .iter()
-            .filter(|(id, _)| !debug.sessions.contains_key(*id))
-            .map(|(id, s)| (id.clone(), s.clone()))
-            .collect();
-        for (id, _) in &on {
-            debug.sessions.insert(id.clone(), Scripts::default());
-        }
-        let off: Vec<Session> = debug
-            .sessions
-            .keys()
-            .filter(|id| !wanted.contains_key(*id))
-            .filter_map(|id| state.targets.get(id).map(|t| t.session.clone()))
-            .collect();
-        // Turning Debugger off removes a session's breakpoints.
-        debug.sessions.retain(|id, _| wanted.contains_key(id));
-        debug.placed.retain(|spot, _| wanted.contains_key(&spot.0));
-        for logpoint in debug.logpoints.values_mut() {
-            logpoint.bound.retain(|b| wanted.contains_key(&b.session));
-        }
-        (on, off, pages, debug.binding.clone())
+            .collect()
     };
-    let turned_on = join_all(on.iter().map(|(id, session)| {
-        let session = session.with_timeout(timeout);
-        let binding = binding.clone();
-        async move { (id, enable(shared, &session, id, &binding).await) }
-    }));
-    let turned_off = join_all(off.iter().map(|session| {
-        let session = session.with_timeout(timeout);
-        let binding = binding.clone();
-        async move { disable(&session, &binding).await }
-    }));
-    let (turned_on, ()) = tokio::join!(turned_on, async {
-        turned_off.await;
+    let calls = changes.iter().map(|(id, from, to, session)| {
+        let sent = switch(shared, id, session, *from, *to);
+        async move { (id, *from, *to, sent.await) }
     });
     let mut result = Ok(());
-    for (id, outcome) in turned_on {
+    for (id, from, to, outcome) in join_all(calls).await {
         if let Err(e) = outcome {
-            tracing::debug!("turning the debugger on in {id} failed: {e}");
-            shared.lock().debug.sessions.remove(id);
-            if pages.contains(id) {
+            tracing::debug!("turning the debugger to {to:?} in {id} failed: {e}");
+            if !from.any() && to.any() {
+                shared.lock().debug.sessions.remove(id);
+            }
+            if to.logpoints && !from.logpoints && pages.contains(id) {
                 result = Err(e);
             }
         }
@@ -485,71 +513,221 @@ async fn sync(shared: &Arc<Shared>, timeout: Duration) -> cdp::Result<()> {
     result
 }
 
-/// Turns Debugger on in `session` (of id `id`) and records the scripts
-/// it has: they are reported before `Debugger.enable` answers.
-async fn enable(shared: &Shared, session: &Session, id: &str, binding: &str) -> cdp::Result<()> {
-    let mut parsed = session.events_lossless(debugger::ScriptParsed::NAME);
-    let add = session.call(runtime::AddBindingParams::new(binding.to_owned()));
-    let enable = session.call(debugger::EnableParams::default());
-    let instrument = session.call(debugger::SetInstrumentationBreakpointParams::new(
-        debugger::SetInstrumentationBreakpointInstrumentation::BeforeScriptWithSourceMapExecution,
-    ));
-    add.await?;
-    enable.await?;
-    while let Some(Some(event)) = parsed.next().now_or_never() {
-        record(shared, id, &event);
+/// Brings Debugger in session `id` from mode `from` to `to`, and the
+/// registry with it. The commands are sent at once (before a new document
+/// can run a script); the future awaits them, and records the scripts
+/// `Debugger.enable` reported.
+fn switch(
+    shared: &Arc<Shared>,
+    id: &str,
+    session: &Session,
+    from: Mode,
+    to: Mode,
+) -> impl Future<Output = cdp::Result<()>> + Send + 'static + use<> {
+    let (binding, instrument, placed) = {
+        let mut state = shared.lock();
+        let debug = &mut state.debug;
+        let (instrument, placed) = if to.logpoints {
+            (None, Vec::new())
+        } else {
+            // Its logpoints' breakpoints go (Debugger.disable would take
+            // them too).
+            let placed: Vec<String> = debug
+                .placed
+                .iter()
+                .filter(|(spot, _)| spot.0 == id)
+                .map(|(_, p)| p.breakpoint.clone())
+                .collect();
+            debug.placed.retain(|spot, _| spot.0 != id);
+            for logpoint in debug.logpoints.values_mut() {
+                logpoint.bound.retain(|b| b.session != id);
+            }
+            let instrument = debug.sessions.get_mut(id).and_then(|s| s.instrument.take());
+            (instrument, placed)
+        };
+        if to.any() {
+            debug.sessions.entry(id.to_owned()).or_default().mode = to;
+        } else {
+            debug.sessions.remove(id);
+        }
+        (debug.binding.clone(), instrument, placed)
+    };
+    let mut calls: Vec<Step> = Vec::new();
+    let mut parsed = None;
+    if !from.any() && to.any() {
+        parsed = Some(session.events_lossless(debugger::ScriptParsed::NAME));
+        calls.push(step(session.call(debugger::EnableParams::default())));
+        calls.push(step(
+            session.call(runtime::SetAsyncCallStackDepthParams::new(ASYNC_DEPTH)),
+        ));
     }
-    instrument.await?;
-    Ok(())
-}
-
-/// Turns Debugger off in `session` (which removes its breakpoints).
-async fn disable(session: &Session, binding: &str) {
-    let off = session.call(debugger::DisableParams::default());
-    let remove = session.call(runtime::RemoveBindingParams::new(binding.to_owned()));
-    if let Err(e) = off.await {
-        tracing::debug!("Debugger.disable failed: {e}");
+    if to.logpoints && !from.logpoints {
+        calls.push(step(
+            session.call(runtime::AddBindingParams::new(binding.clone())),
+        ));
+        let set = session.call(debugger::SetInstrumentationBreakpointParams::new(
+            debugger::SetInstrumentationBreakpointInstrumentation::BeforeScriptWithSourceMapExecution,
+        ));
+        let (shared, id) = (shared.clone(), id.to_owned());
+        calls.push(Box::pin(async move {
+            let set = set.await?;
+            if let Some(s) = shared.lock().debug.sessions.get_mut(&id) {
+                s.instrument = Some(set.breakpoint_id);
+            }
+            Ok(())
+        }));
     }
-    let _ = remove.await;
+    if from.logpoints && !to.logpoints {
+        // Not needed once the calls are sent: a failure is only logged.
+        let mut gone = vec![session.call(runtime::RemoveBindingParams::new(binding))];
+        let mut removed: Vec<_> = placed
+            .into_iter()
+            .chain(instrument)
+            .filter(|_| to.any())
+            .map(|b| session.call(debugger::RemoveBreakpointParams::new(b)))
+            .collect();
+        calls.push(Box::pin(async move {
+            for call in gone.drain(..) {
+                let _ = call.await;
+            }
+            for call in removed.drain(..) {
+                if let Err(e) = call.await {
+                    tracing::debug!("removing a breakpoint failed: {e}");
+                }
+            }
+            Ok(())
+        }));
+    }
+    if to.any() && to.locals != from.locals {
+        let state = if to.locals {
+            debugger::SetPauseOnExceptionsState::Uncaught
+        } else {
+            debugger::SetPauseOnExceptionsState::None
+        };
+        calls.push(step(
+            session.call(debugger::SetPauseOnExceptionsParams::new(state)),
+        ));
+    }
+    if from.any() && !to.any() {
+        calls.push(step(session.call(debugger::DisableParams::default())));
+        calls.push(step(
+            session.call(runtime::SetAsyncCallStackDepthParams::new(0)),
+        ));
+    }
+    let shared = shared.clone();
+    let id = id.to_owned();
+    async move {
+        let mut result = Ok(());
+        for call in calls {
+            if let Err(e) = call.await
+                && result.is_ok()
+            {
+                result = Err(e);
+            }
+        }
+        if let Some(mut parsed) = parsed {
+            while let Some(Some(event)) = parsed.next().now_or_never() {
+                record(&shared, &id, &event);
+            }
+        }
+        result
+    }
 }
 
 /// A new target's steps: Debugger on, if it runs scripts of a tab with
-/// a logpoint.
+/// a logpoint or locals capture is on there.
 pub(super) fn setup_steps(
     shared: &Arc<Shared>,
     target: NewTarget<'_>,
     steps: &mut Vec<(&'static str, Step)>,
 ) {
-    let mut guard = shared.lock();
-    let state = &mut *guard;
     let id = target.session.id().unwrap_or_default().to_owned();
-    let tabs = debugged_tabs(state);
-    if !state
-        .targets
-        .get(&id)
-        .is_some_and(|t| wanted(state, &tabs, t))
-    {
+    let to = {
+        let state = shared.lock();
+        let tabs = debugged_tabs(&state);
+        match state.targets.get(&id) {
+            Some(t) => wanted(&state, &tabs, t, &t.url),
+            None => return,
+        }
+    };
+    if to.any() {
+        steps.push((
+            "Debugger.enable",
+            Box::pin(switch(shared, &id, target.session, Mode::default(), to)),
+        ));
+    }
+}
+
+/// A frame of session `session_id` started navigating (`event`): if it is
+/// the session's top frame, locals capture follows where it goes, at once.
+pub(super) fn navigating(shared: &Arc<Shared>, session_id: &str, event: &RawEvent) {
+    let Ok(started) = page::FrameStartedNavigating::deserialize(&event.params) else {
+        return;
+    };
+    if matches!(
+        started.navigation_type,
+        page::FrameStartedNavigatingNavigationType::SameDocument
+            | page::FrameStartedNavigatingNavigationType::HistorySameDocument
+    ) {
         return;
     }
-    state.debug.sessions.entry(id).or_default();
-    let session = target.session;
-    let binding = state.debug.binding.clone();
-    steps.push((
-        "Runtime.addBinding",
-        step(session.call(runtime::AddBindingParams::new(binding))),
-    ));
-    steps.push((
-        "Debugger.enable",
-        step(session.call(debugger::EnableParams::default())),
-    ));
-    steps.push((
-        "Debugger.setInstrumentationBreakpoint",
-        step(
-            session.call(debugger::SetInstrumentationBreakpointParams::new(
-                debugger::SetInstrumentationBreakpointInstrumentation::BeforeScriptWithSourceMapExecution,
-            )),
-        ),
-    ));
+    let (from, to, session) = {
+        let state = shared.lock();
+        let Some(target) = state.targets.get(session_id) else {
+            return;
+        };
+        if !target.kind.is_host() || target.id != started.frame_id {
+            return;
+        }
+        let tabs = debugged_tabs(&state);
+        let to = wanted(&state, &tabs, target, &started.url);
+        (current(&state, session_id), to, target.session.clone())
+    };
+    if from == to {
+        return;
+    }
+    let sent = switch(
+        shared,
+        session_id,
+        &session.with_timeout(super::SETUP_TIMEOUT),
+        from,
+        to,
+    );
+    shared.spawn(async move {
+        if let Err(e) = sent.await {
+            tracing::debug!("turning the debugger to {to:?} failed: {e}");
+        }
+    });
+}
+
+impl Tabs {
+    /// `debug locals`: turns locals capture on or off everywhere
+    /// (`Some`), or back to `localhost` pages (`None`). The setting and
+    /// how many sessions capture now.
+    pub(crate) async fn debug_locals(
+        &self,
+        locals: Option<bool>,
+        timeout: Duration,
+    ) -> (Option<bool>, usize) {
+        self.shared.lock().debug.locals = locals;
+        if let Err(e) = sync(&self.shared, timeout).await {
+            tracing::debug!("debug locals: changing the debugger failed: {e}");
+        }
+        self.locals_now()
+    }
+
+    /// Where locals are captured (`None`: `localhost`), and how many
+    /// sessions capture them now.
+    pub(crate) fn locals_now(&self) -> (Option<bool>, usize) {
+        let state = self.shared.lock();
+        let capturing = state
+            .debug
+            .sessions
+            .values()
+            .filter(|s| s.mode.locals)
+            .count();
+        (state.debug.locals, capturing)
+    }
 }
 
 /// The scripts of tab `tab`'s sessions with Debugger on that a logpoint
@@ -928,6 +1106,13 @@ async fn bind_everywhere(shared: &Arc<Shared>, candidates: &[Candidate]) {
 /// resumes.
 async fn paused(shared: &Arc<Shared>, session: &Session, params: &serde_json::Value) {
     let session_id = session.id().unwrap_or_default().to_owned();
+    if matches!(
+        params["reason"].as_str(),
+        Some("exception" | "promiseRejection")
+    ) {
+        locals::capture(shared, session, params).await;
+        return;
+    }
     if params["reason"] == "instrumentation" {
         let data = &params["data"];
         let url = data["url"].as_str().unwrap_or_default().to_owned();
@@ -968,7 +1153,7 @@ async fn paused(shared: &Arc<Shared>, session: &Session, params: &serde_json::Va
     note_pause(shared, session, params).await;
 }
 
-async fn resume(session: &Session) {
+pub(super) async fn resume(session: &Session) {
     let session = session.with_timeout(Duration::from_secs(5));
     if let Err(e) = session.call(debugger::ResumeParams::default()).await {
         tracing::debug!("resuming a pause failed: {e}");

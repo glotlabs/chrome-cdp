@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: fc8d84f551d22eb2
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: ba6f27963cd7543d
 "use strict";
 var __ccdpLogpoint = (() => {
   var __defProp = Object.defineProperty;
@@ -22,7 +22,8 @@ var __ccdpLogpoint = (() => {
   // src/logpoint.ts
   var logpoint_exports = {};
   __export(logpoint_exports, {
-    hit: () => hit
+    hit: () => hit,
+    locals: () => locals
   });
 
   // src/frameworks.ts
@@ -112,16 +113,22 @@ var __ccdpLogpoint = (() => {
       return "error";
     }
   }
-  function hit(binding, id, values) {
-    const shown = values.map((value) => {
+  function show(values) {
+    return values.map((value) => {
       try {
         return { value: preview(value()) };
       } catch (e) {
         return { error: thrown(e) };
       }
     });
+  }
+  function hit(binding, id, values) {
+    const shown = show(values);
     const send = globalThis[binding];
     if (typeof send === "function") send(JSON.stringify({ id, values: shown }));
+  }
+  function locals(values) {
+    return JSON.stringify(show(values));
   }
   return __toCommonJS(logpoint_exports);
 })();

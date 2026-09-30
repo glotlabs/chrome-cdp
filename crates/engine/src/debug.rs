@@ -9,7 +9,7 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use cdp::domains::runtime;
-use protocol::schema::{DebugClearData, DebugListData, DebugLogData, Logpoint};
+use protocol::schema::{DebugClearData, DebugListData, DebugLocalsData, DebugLogData, Logpoint};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use serde_json::json;
 
@@ -18,7 +18,9 @@ use crate::frames::World;
 use crate::input::origin;
 use crate::observe::shown_url;
 use crate::places;
-use crate::request::{DebugClearRequest, DebugListRequest, DebugLogRequest, millis};
+use crate::request::{
+    DebugClearRequest, DebugListRequest, DebugLocalsRequest, DebugLogRequest, LocalsMode, millis,
+};
 use crate::tabs::{Cleared, LogError, Spec, parse_tab_id};
 
 impl Engine {
@@ -110,13 +112,47 @@ impl Engine {
             .debug_clear(req.id, timeout)
             .await
             .map_err(|ids| self.no_logpoint(req.id.unwrap_or_default(), &ids))?;
-        let text = clear_text(&cleared);
+        let text = clear_text(&cleared, &self.session);
         let data = DebugClearData {
             cleared: cleared.ids,
             remaining: cleared.remaining,
             debugger: cleared.debugger,
         };
         Ok(Output::typed(&data, text))
+    }
+
+    /// `debug locals`: where uncaught errors get their frames' local
+    /// variables, changed if asked.
+    pub async fn debug_locals(&self, req: DebugLocalsRequest) -> Result<Output, ErrorInfo> {
+        let running = self.running()?;
+        let (setting, capturing) = match req.set {
+            Some(mode) => {
+                let setting = match mode {
+                    LocalsMode::On => Some(true),
+                    LocalsMode::Off => Some(false),
+                    LocalsMode::Localhost => None,
+                };
+                running
+                    .tabs
+                    .debug_locals(setting, millis(req.timeout_ms))
+                    .await
+            }
+            None => running.tabs.locals_now(),
+        };
+        let locals = match setting {
+            Some(true) => "on",
+            Some(false) => "off",
+            None => "localhost",
+        };
+        let text = locals_text(setting, &self.session);
+        Ok(Output::typed(
+            &DebugLocalsData {
+                locals: locals.to_owned(),
+                capturing,
+            },
+            text,
+        )
+        .quiet(locals))
     }
 
     /// Fails with `BadArgs` for an expression that is not JavaScript,
@@ -272,17 +308,38 @@ fn list_line(logpoint: &Logpoint, tabs: bool) -> String {
 }
 
 /// `debug clear`'s text.
-fn clear_text(cleared: &Cleared) -> String {
+fn clear_text(cleared: &Cleared, session: &str) -> String {
     let ids: Vec<String> = cleared.ids.iter().map(u32::to_string).collect();
     let what = match ids.as_slice() {
         [] => "no logpoints to clear".to_owned(),
         [id] => format!("cleared logpoint {id}"),
         ids => format!("cleared logpoints {}", ids.join(", ")),
     };
-    if cleared.remaining == 0 && !cleared.debugger {
-        format!("{what}; the debugger is off")
-    } else {
-        format!("{what}; {} left", cleared.remaining)
+    match (cleared.remaining, cleared.debugger) {
+        (0, false) => format!("{what}; the debugger is off"),
+        // Only locals keep it on.
+        (0, true) => format!(
+            "{what}; the debugger stays on for locals at uncaught errors ({} turns it off)",
+            Cmd::new("debug locals").arg("off").session(session)
+        ),
+        (left, _) => format!("{what}; {left} left"),
+    }
+}
+
+/// `debug locals`' text: where locals are captured.
+fn locals_text(setting: Option<bool>, session: &str) -> String {
+    let errors = Cmd::new("errors").switch("locals").session(session);
+    match setting {
+        Some(true) => {
+            format!("locals capture is on everywhere: {errors} shows an uncaught error's variables")
+        }
+        Some(false) => format!(
+            "locals capture is off; {} turns it on",
+            Cmd::new("debug locals").arg("on").session(session)
+        ),
+        None => format!(
+            "locals capture is on for localhost pages: {errors} shows an uncaught error's variables"
+        ),
     }
 }
 
