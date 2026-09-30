@@ -432,7 +432,7 @@ fn since_arg(since: &Since, base: u64) -> String {
 }
 
 /// A URL as the text form shows it: without the page's origin.
-pub(super) fn shown_url<'a>(url: &'a str, page_origin: Option<&str>) -> &'a str {
+pub(crate) fn shown_url<'a>(url: &'a str, page_origin: Option<&str>) -> &'a str {
     if page_origin.is_some() && origin(url) == page_origin {
         path_of(url)
     } else {
@@ -496,14 +496,17 @@ pub(crate) fn entry_text(text: &mut String, entry: &ConsoleEntry, page_origin: O
         ("exception", Some(kind)) => {
             let _ = write!(text, "{kind} ");
         }
-        ("console" | "exception", _) => {}
+        // A logpoint's hit says so: `logpoint 1 src/cart.ts:42: …`.
+        ("console" | "exception" | "logpoint", _) => {}
         (source, _) => {
             let _ = write!(text, "[{source}] ");
         }
     }
     text.push_str(first);
     let stack = entry.level == Level::Error && !entry.stack.is_empty();
-    if !stack {
+    // chrome-cdp's own entries have their place in their text.
+    let placed = matches!(entry.source.as_str(), "logpoint" | "debugger");
+    if !stack && !placed {
         let place = match (entry.stack.first(), &entry.url) {
             (Some(frame), _) => {
                 let (place, line, _) = frame_place(frame, page_origin);
@@ -701,6 +704,7 @@ mod tests {
             ],
             worker: None,
             worker_kind: None,
+            logpoint: None,
         };
         error.stack[0].original = Some(SourcePosition {
             source: "http://x/src/app.ts".into(),

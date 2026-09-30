@@ -211,6 +211,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Trace(args)) => session::trace(&args, &cli.global),
         Some(Command::Perf(_)) => session::perf(&cli.global),
         Some(Command::Coverage(args)) => session::coverage(&args, &cli.global),
+        Some(Command::Debug(args)) => session::debug(&args, &cli.global),
         Some(Command::Highlight(args)) => session::highlight(&args, &cli.global),
         Some(Command::Source(args)) => session::source(&args, &cli.global),
         Some(Command::Components(args)) => session::components(&args, &cli.global),

@@ -25,11 +25,11 @@ pub(crate) mod screenshot;
 mod sourcemaps;
 mod trace;
 
-pub(crate) use commands::{entry_text, regex_arg, shown_source};
+pub(crate) use commands::{entry_text, regex_arg, shown_source, shown_url};
 pub use eval::check_eval;
 pub(crate) use har::{HarRecording, iso8601};
 pub use network::RESOURCE_TYPES;
 pub(crate) use perf::OBSERVER as PERF_OBSERVER;
 pub use screenshot::check_screenshot;
-pub(crate) use sourcemaps::{SourceMaps, is_local};
+pub(crate) use sourcemaps::{Mapped, RESOLVE_LIMIT, SourceMaps, is_local};
 pub(crate) use trace::TraceRecording;

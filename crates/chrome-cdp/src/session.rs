@@ -26,14 +26,14 @@ use daemon::rpc::{self, ConnectParams, OpenParams, StatusParams};
 use engine::{
     Action, ActionRequest, CdpRequest, ClipboardOp, ClipboardRequest, ComponentsRequest,
     ConnectRequest, ConsoleRequest, ContextCloseRequest, ContextListRequest, ContextNewRequest,
-    CoverageStartRequest, CoverageStopRequest, DialogRequest, DownloadsRequest, ElementState,
-    EvalRequest, FindRequest, FramesRequest, HarStartRequest, HarStopRequest, HighlightRequest,
-    HttpCredentials, ImageFormat, InspectRequest, LocatorRequest, NavigateRequest, Navigation,
-    NetworkClearRequest, NetworkFramesRequest, NetworkRequest, NetworkShowRequest, OpenInitScript,
-    OpenRequest, PdfRequest, PerfRequest, Read, ReadRequest, RouteRequest, RoutesRequest,
-    ScreenshotRequest, SnapshotRequest, SourceRequest, TabCloseRequest, TabNewRequest,
-    TabSelectRequest, TabsRequest, TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor,
-    WaitRequest,
+    CoverageStartRequest, CoverageStopRequest, DebugClearRequest, DebugListRequest,
+    DebugLogRequest, DialogRequest, DownloadsRequest, ElementState, EvalRequest, FindRequest,
+    FramesRequest, HarStartRequest, HarStopRequest, HighlightRequest, HttpCredentials, ImageFormat,
+    InspectRequest, LocatorRequest, NavigateRequest, Navigation, NetworkClearRequest,
+    NetworkFramesRequest, NetworkRequest, NetworkShowRequest, OpenInitScript, OpenRequest,
+    PdfRequest, PerfRequest, Read, ReadRequest, RouteRequest, RoutesRequest, ScreenshotRequest,
+    SnapshotRequest, SourceRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest,
+    TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest,
 };
 use engine::{
     CookieFilter, CookieSpec, CookiesOp, CookiesRequest, StateLoadRequest, StateSaveRequest,
@@ -50,15 +50,16 @@ use tokio::runtime::Runtime;
 use crate::cli::{
     AfterArgs, BlockArgs, CdpArgs, ClipboardReadArgs, CloseArgs, ComponentsArgs, ConnectArgs,
     ContextArgs, ContextCommand, CookieFilterArgs, CookieSetArgs, CookiesArgs, CookiesCommand,
-    CoverageArgs, CoverageCommand, DEFAULT_TIMEOUT, DialogArgs, DialogCommand, DownloadsArgs,
-    ElementStateArg, EvalArgs, ExtensionStorageAreaArg, ExtensionStorageCommand, ExtensionsArgs,
-    ExtensionsCommand, FindArgs, FrameDirArg, FramesArgs, GlobalArgs, GotoArgs, HarArgs,
-    HarCommand, HighlightArgs, HistoryArgs, IdleArgs, ImageFormatArg, InitScriptAddArgs,
-    InitScriptArgs, InitScriptCommand, InspectArgs, LocatorArgs, LogReadArgs, NetworkArgs,
-    NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs, PermissionsCommand, ReloadArgs, RouteArgs,
-    RoutesArgs, ScreenshotArgs, SessionsArgs, SnapshotArgs, SourceArgs, StateArgs, StateCommand,
-    StatusArgs, StorageActionArg, StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand,
-    TabsArgs, TraceArgs, TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
+    CoverageArgs, CoverageCommand, DEFAULT_TIMEOUT, DebugArgs, DebugCommand, DialogArgs,
+    DialogCommand, DownloadsArgs, ElementStateArg, EvalArgs, ExtensionStorageAreaArg,
+    ExtensionStorageCommand, ExtensionsArgs, ExtensionsCommand, FindArgs, FrameDirArg, FramesArgs,
+    GlobalArgs, GotoArgs, HarArgs, HarCommand, HighlightArgs, HistoryArgs, IdleArgs,
+    ImageFormatArg, InitScriptAddArgs, InitScriptArgs, InitScriptCommand, InspectArgs, LocatorArgs,
+    LogReadArgs, NetworkArgs, NetworkCommand, OpenArgs, PdfArgs, PermissionsArgs,
+    PermissionsCommand, ReloadArgs, RouteArgs, RoutesArgs, ScreenshotArgs, SessionsArgs,
+    SnapshotArgs, SourceArgs, StateArgs, StateCommand, StatusArgs, StorageActionArg,
+    StorageAreaArg, StorageArgs, StrictRefsArgs, TabArgs, TabCommand, TabsArgs, TraceArgs,
+    TraceCommand, UnrouteArgs, WAIT_TIMEOUT, WaitCmdArgs, parse_duration,
 };
 use crate::{input, version};
 
@@ -2036,6 +2037,83 @@ pub(crate) fn perf(global: &GlobalArgs) -> Result<Output, ErrorInfo> {
         .block_on(client.call_output(rpc::PERF, &request, ctx.timeout + QUICK))
 }
 
+/// `debug log`, `debug list` and `debug clear`: need a running session.
+pub(crate) fn debug(args: &DebugArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    check_tab(global.tab.as_deref())?;
+    let (method, request) = match &args.command {
+        DebugCommand::Log(log) => {
+            let (path, line, column) = parse_place(&log.place)?;
+            let mut exprs = Vec::with_capacity(log.exprs.len());
+            for expr in &log.exprs {
+                exprs.push(input::text_arg(expr, "expression")?.trim().to_owned());
+            }
+            // The file the path names, when it is one here: the daemon
+            // matches sources on disk against it.
+            let file = (!path.contains("://"))
+                .then(|| std::fs::canonicalize(&path).ok())
+                .flatten()
+                .filter(|f| f.is_file())
+                .and_then(|f| f.into_os_string().into_string().ok());
+            let request = DebugLogRequest {
+                tab: global.tab.clone(),
+                path,
+                file,
+                line,
+                column,
+                exprs,
+                limit: log.limit,
+                timeout_ms: 0,
+            };
+            (rpc::DEBUG_LOG, serde_json::to_value(request))
+        }
+        DebugCommand::List(_) => (
+            rpc::DEBUG_LIST,
+            serde_json::to_value(DebugListRequest { timeout_ms: 0 }),
+        ),
+        DebugCommand::Clear(clear) => (
+            rpc::DEBUG_CLEAR,
+            serde_json::to_value(DebugClearRequest {
+                id: if clear.all { None } else { clear.id },
+                timeout_ms: 0,
+            }),
+        ),
+    };
+    let mut request = request.map_err(|e| {
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("cannot encode the request: {e}"),
+        )
+    })?;
+    let ctx = Ctx::new(global)?;
+    request["timeout_ms"] = json!(millis(ctx.timeout));
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(method, &request, ctx.timeout + QUICK))
+}
+
+/// `FILE:LINE` or `FILE:LINE:COLUMN` (1-based).
+fn parse_place(place: &str) -> Result<(String, u32, Option<u32>), ErrorInfo> {
+    let bad = || {
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("{place:?} is not a source line: give FILE:LINE or FILE:LINE:COLUMN"),
+        )
+        .hint(Cmd::new("debug log").arg("src/cart.ts:42").raw("<expr>…"))
+    };
+    let number = |text: &str| text.parse::<u32>().ok().filter(|n| *n > 0);
+    let (rest, last) = place.rsplit_once(':').ok_or_else(bad)?;
+    let last = number(last).ok_or_else(bad)?;
+    let (path, line, column) = match rest.rsplit_once(':') {
+        Some((path, line)) if number(line).is_some() => (path, number(line), Some(last)),
+        _ => (rest, Some(last), None),
+    };
+    let line = line.ok_or_else(bad)?;
+    if path.is_empty() {
+        return Err(bad());
+    }
+    Ok((path.to_owned(), line, column))
+}
+
 /// `coverage start` and `coverage stop`: need a running session.
 pub(crate) fn coverage(args: &CoverageArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     check_tab(global.tab.as_deref())?;
@@ -2670,7 +2748,36 @@ mod tests {
     use protocol::ErrorKind;
     use serde_json::json;
 
-    use super::{check_method, delay_ms, init_script_request, keep_previous_options, parse_params};
+    use super::{
+        check_method, delay_ms, init_script_request, keep_previous_options, parse_params,
+        parse_place,
+    };
+
+    #[test]
+    fn source_lines() {
+        let place = |text: &str| parse_place(text).map_err(|e| e.kind);
+        assert_eq!(
+            place("src/cart.ts:42"),
+            Ok(("src/cart.ts".into(), 42, None))
+        );
+        assert_eq!(
+            place("src/cart.ts:42:7"),
+            Ok(("src/cart.ts".into(), 42, Some(7)))
+        );
+        assert_eq!(
+            place("http://localhost:5173/src/cart.ts:9"),
+            Ok(("http://localhost:5173/src/cart.ts".into(), 9, None))
+        );
+        for bad in [
+            "src/cart.ts",
+            "src/cart.ts:",
+            "src/cart.ts:x",
+            ":4",
+            "a.ts:0",
+        ] {
+            assert_eq!(place(bad), Err(ErrorKind::BadArgs), "{bad}");
+        }
+    }
 
     #[test]
     fn init_scripts_are_read_from_files_or_code() {

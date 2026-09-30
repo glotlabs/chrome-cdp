@@ -38,6 +38,7 @@
 mod auth;
 pub(crate) mod commands;
 pub(crate) mod coverage;
+mod debug;
 pub(crate) mod dialogs;
 mod downloads;
 pub(crate) mod emulation;
@@ -72,6 +73,7 @@ use crate::inject::{Injector, MOCK_BINDING, SEED_BINDING};
 use crate::injected;
 use crate::input::{Key, Pointer};
 use crate::network::{Exchange, Failure, Idle, InFlight, Network};
+use crate::observe::SourceMaps;
 use crate::observe::console::{self, Console, ConsoleError, FromWorker};
 use crate::observe::netlog::{self, NetLog};
 use crate::request::{DialogPolicy, HttpCredentials, NodeStacks};
@@ -82,6 +84,7 @@ use tokio::sync::watch;
 use tokio::task::AbortHandle;
 use tokio::time::Instant;
 
+pub(crate) use debug::{Cleared, LogError, Spec, hit_text};
 pub(crate) use locks::TabLocks;
 
 /// The URL of a new empty tab.
@@ -286,6 +289,9 @@ struct Shared {
     /// stopped with the manager (a connected browser's WebSocket closes
     /// only when the last handle goes).
     tasks: Mutex<Vec<AbortHandle>>,
+    /// The source maps of the scripts seen, shared with the commands
+    /// that resolve places (logpoints bind with them).
+    sourcemaps: Arc<SourceMaps>,
 }
 
 #[derive(Debug)]
@@ -326,6 +332,8 @@ struct State {
     next_hook: u64,
     /// The running `coverage start`, if any (see [`coverage`]).
     coverage: Option<coverage::Measuring>,
+    /// The logpoints, and where Debugger is on for them (see [`debug`]).
+    debug: debug::Debugging,
 }
 
 #[derive(Debug)]
@@ -445,6 +453,7 @@ impl Tabs {
         conn: &Connection,
         settings: Arc<Settings>,
         default_viewport: Option<Viewport>,
+        sourcemaps: Arc<SourceMaps>,
     ) -> Self {
         let shared = Arc::new(Shared {
             conn: conn.clone(),
@@ -454,6 +463,7 @@ impl Tabs {
             security_applied: AtomicBool::new(false),
             default_viewport,
             tasks: Mutex::default(),
+            sourcemaps,
         });
         // Subscribe before anything can attach. Lossless, as a missed
         // target event loses a tab.
@@ -1735,6 +1745,7 @@ impl State {
             hooks: Vec::new(),
             next_hook: 0,
             coverage: None,
+            debug: debug::Debugging::default(),
         }
     }
 
@@ -2043,6 +2054,10 @@ async fn watch_host(
             "Runtime.bindingCalled" if event.params["name"] == MOCK_BINDING => {
                 mock_shim::called(&shared, &session_id, tab, &event);
             }
+            "Runtime.bindingCalled" if debug::is_hit(&shared, &event) => {
+                debug::hit(&shared, &event);
+            }
+            method if method.starts_with("Debugger.") => debug::event(&shared, &session, &event),
             "Runtime.bindingCalled" => {
                 inject::answer(&shared, &session_id, &event);
                 if let Some(tab) = tab {
@@ -2080,6 +2095,15 @@ async fn watch_host(
             method => {
                 if method == page::FrameStartedNavigating::NAME {
                     node_stacks::navigating(&shared, &session_id, &event);
+                }
+                if method == runtime::ExecutionContextsCleared::NAME {
+                    debug::contexts_gone(&shared, &session_id, None);
+                }
+                if method == runtime::ExecutionContextDestroyed::NAME {
+                    let context = event.params["executionContextId"].as_i64();
+                    if context.is_some() {
+                        debug::contexts_gone(&shared, &session_id, context);
+                    }
                 }
                 if let Some(tab) = tab {
                     frame_event(&shared, &session_id, tab, method, &event);
@@ -2295,8 +2319,19 @@ fn is_logged(event: &RawEvent) -> bool {
 /// belongs to (see `State::tabs_of`, asked at each event), and its mock
 /// shim's calls to the router.
 async fn watch_worker(shared: Arc<Shared>, mut events: LosslessEventStream, session_id: String) {
+    let session = shared.conn.session(session_id.clone());
     while let Some(event) = events.next().await {
         match event.method.as_str() {
+            "Runtime.bindingCalled" if debug::is_hit(&shared, &event) => {
+                debug::hit(&shared, &event);
+            }
+            method if method.starts_with("Debugger.") => debug::event(&shared, &session, &event),
+            "Runtime.executionContextDestroyed" => {
+                let context = event.params["executionContextId"].as_i64();
+                if context.is_some() {
+                    debug::contexts_gone(&shared, &session_id, context);
+                }
+            }
             method if method.starts_with("Network.") => {
                 worker_network_event(&shared, &session_id, method, &event);
             }
@@ -2664,6 +2699,7 @@ fn ready(shared: &Shared, id: u32) {
 fn detached(shared: &Shared, session_id: &str) {
     let mut state = shared.lock();
     for (id, target) in state.forget_target(session_id) {
+        debug::detached(&mut state, &id);
         if target.kind.is_host()
             && let Some(tab) = target.tab().and_then(|tab| state.tabs.get_mut(&tab))
         {
@@ -2681,6 +2717,7 @@ fn detached(shared: &Shared, session_id: &str) {
         .map(|(&id, _)| id);
     if let Some(id) = tab {
         state.remove(id);
+        debug::tab_gone(&mut state, id);
     }
     drop(state);
     shared.bump();
@@ -2700,7 +2737,7 @@ mod tests {
     use cdp::domains::{page, target};
 
     use super::targets::{Owner, Target, TargetKind};
-    use super::{Settings, State, Tab, Tabs, parse_tab_id};
+    use super::{Settings, SourceMaps, State, Tab, Tabs, parse_tab_id};
 
     /// A burst far past the old 1024-event broadcast buffer, sent while
     /// the tab's watchers cannot run, loses nothing: every console entry
@@ -2721,7 +2758,12 @@ mod tests {
             let _io = io.enter();
             Connection::new(transport)
         };
-        let tabs = Tabs::start(&conn, Arc::new(Settings::default()), None);
+        let tabs = Tabs::start(
+            &conn,
+            Arc::new(Settings::default()),
+            None,
+            Arc::new(SourceMaps::default()),
+        );
         peer.send_json(&json!({"method": "Target.attachedToTarget", "params": {
             "sessionId": "S1",
             "targetInfo": {"targetId": "T1", "type": "page", "title": "", "url": "about:blank",

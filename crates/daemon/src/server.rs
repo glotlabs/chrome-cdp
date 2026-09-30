@@ -629,6 +629,18 @@ impl Daemon {
                 Ok(p) => output(Box::pin(self.engine.highlight(p)).await),
                 Err(e) => Err(e),
             },
+            rpc::DEBUG_LOG => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.debug_log(p)).await),
+                Err(e) => Err(e),
+            },
+            rpc::DEBUG_LIST => match params(req.params) {
+                Ok(p) => output(self.engine.debug_list(p)),
+                Err(e) => Err(e),
+            },
+            rpc::DEBUG_CLEAR => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.debug_clear(p)).await),
+                Err(e) => Err(e),
+            },
             rpc::SOURCE => match params(req.params) {
                 Ok(p) => output(Box::pin(self.engine.source(p)).await),
                 Err(e) => Err(e),

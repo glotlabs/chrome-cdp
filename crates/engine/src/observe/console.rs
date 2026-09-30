@@ -20,7 +20,7 @@
 use std::collections::VecDeque;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use protocol::schema::{ConsoleEntry, Level, StackFrame, Worker};
+use protocol::schema::{ConsoleEntry, Level, LogpointHit, StackFrame, Worker};
 use serde_json::Value;
 
 use super::format::{self, one_based};
@@ -146,11 +146,29 @@ impl Console {
             "Log.entryAdded" => (log_entry(&params["entry"]), None),
             _ => return false,
         };
+        entry.worker = from.map(|f| f.worker.url.clone());
+        entry.worker_kind = from.map(|f| f.worker.kind);
+        let once = from.and_then(|f| f.once).map(|(id, n)| (id.to_owned(), n));
+        self.push(entry, exception_id, once, capacity);
+        true
+    }
+
+    /// Logs an entry chrome-cdp made (a logpoint's hit, a note of the
+    /// debugger's), keeping at most `capacity` entries.
+    pub(crate) fn log(&mut self, entry: ConsoleEntry, capacity: usize) {
+        self.push(entry, None, None, capacity);
+    }
+
+    fn push(
+        &mut self,
+        mut entry: ConsoleEntry,
+        exception_id: Option<i64>,
+        once: Option<(String, u64)>,
+        capacity: usize,
+    ) {
         self.seq += 1;
         entry.seq = self.seq;
         entry.time_ms = now_ms();
-        entry.worker = from.map(|f| f.worker.url.clone());
-        entry.worker_kind = from.map(|f| f.worker.kind);
         format::cut(&mut entry.text, TEXT_LEN);
         entry.stack.truncate(STACK_LEN);
         if entry.url.is_none()
@@ -168,9 +186,17 @@ impl Console {
         self.entries.push_back(Stored {
             entry,
             exception_id,
-            once: from.and_then(|f| f.once).map(|(id, n)| (id.to_owned(), n)),
+            once,
         });
-        true
+    }
+
+    /// The logpoint hits logged after mark `after`, oldest first.
+    pub(crate) fn logpoints_since(&self, after: u64) -> Vec<LogpointHit> {
+        self.entries
+            .iter()
+            .filter(|s| s.entry.seq > after)
+            .filter_map(|s| s.entry.logpoint.clone())
+            .collect()
     }
 
     /// The `console.error` calls, failed `console.assert`s and uncaught
@@ -222,7 +248,7 @@ fn now_ms() -> u64 {
 }
 
 /// An entry with nothing set yet but these.
-fn entry(level: Level, source: &str, kind: Option<&str>, text: String) -> ConsoleEntry {
+pub(crate) fn entry(level: Level, source: &str, kind: Option<&str>, text: String) -> ConsoleEntry {
     ConsoleEntry {
         seq: 0,
         time_ms: 0,
@@ -236,6 +262,7 @@ fn entry(level: Level, source: &str, kind: Option<&str>, text: String) -> Consol
         stack: Vec::new(),
         worker: None,
         worker_kind: None,
+        logpoint: None,
     }
 }
 

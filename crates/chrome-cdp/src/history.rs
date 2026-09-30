@@ -62,6 +62,7 @@ const TOOLS: &[&str] = &[
     "context",
     "convert",
     "coverage",
+    "debug",
     "har",
     "help",
     "history",

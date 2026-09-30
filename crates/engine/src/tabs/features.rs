@@ -20,7 +20,8 @@ use cdp::domains::{network, page, runtime};
 
 use super::targets::{KindSet, Target, TargetKind};
 use super::{
-    Shared, State, Step, auto_attach, coverage, emulation, fetch, inject, node_stacks, seed, step,
+    Shared, State, Step, auto_attach, coverage, debug, emulation, fetch, inject, node_stacks, seed,
+    step,
 };
 use crate::{frames, injected, observe};
 
@@ -55,10 +56,12 @@ pub(crate) enum Feature {
     /// Node creation stacks, for documents `--node-stacks` covers (see
     /// [`node_stacks`]).
     NodeStacks,
+    /// `Debugger`, while the target's tab has a logpoint (see [`debug`]).
+    Debugger,
 }
 
 /// Every feature, in the order a new target gets their steps.
-pub(crate) const REGISTRY: [Feature; 9] = [
+pub(crate) const REGISTRY: [Feature; 10] = [
     Feature::Base,
     Feature::Runtime,
     Feature::Network,
@@ -68,6 +71,7 @@ pub(crate) const REGISTRY: [Feature; 9] = [
     Feature::Emulation,
     Feature::Coverage,
     Feature::NodeStacks,
+    Feature::Debugger,
 ];
 
 /// A new target, paused, as the features see it.
@@ -91,6 +95,7 @@ impl Feature {
             Self::Emulation => "emulation",
             Self::Coverage => "coverage",
             Self::NodeStacks => "stacks",
+            Self::Debugger => "debugger",
         }
     }
 
@@ -101,9 +106,12 @@ impl Feature {
             // gets the mock shim.
             // Emulation: what means something in a worker (see
             // `emulation`).
-            Self::Runtime | Self::Network | Self::Inject | Self::Emulation | Self::Coverage => {
-                KindSet::HOSTS_AND_WORKERS
-            }
+            Self::Runtime
+            | Self::Network
+            | Self::Inject
+            | Self::Emulation
+            | Self::Coverage
+            | Self::Debugger => KindSet::HOSTS_AND_WORKERS,
             // Chrome has no `Fetch` in a dedicated worker: its requests
             // are paused in the session of the frame that started it.
             Self::Fetch => KindSet::of(&[
@@ -169,6 +177,8 @@ impl Feature {
             Self::Coverage => coverage::setup_steps(shared, target, steps),
             // Where `--node-stacks` wants them (see `node_stacks`).
             Self::NodeStacks => node_stacks::setup_steps(shared, target, steps),
+            // While its tab has a logpoint (see `debug`).
+            Self::Debugger => debug::setup_steps(shared, target, steps),
         }
     }
 }
@@ -303,6 +313,7 @@ mod tests {
                 "emulation xxxxx.",
                 "coverage  xxxxx.",
                 "stacks    xx....",
+                "debugger  xxxxx.",
             ]
         );
     }

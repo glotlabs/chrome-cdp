@@ -283,6 +283,7 @@ impl Engine {
                 let id = id.map(|id| format!("#{id} ")).unwrap_or_default();
                 format!("request failed: {id}{method} {} ({why})", path_of(url))
             }
+            Event::Logpoint { hit, .. } => super::hit_text(hit),
             Event::FocusMoved {
                 tab,
                 element,

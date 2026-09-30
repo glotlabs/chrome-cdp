@@ -554,6 +554,21 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<CoverageStopData>),
     },
     CommandSchema {
+        name: "debug log",
+        summary: "the logpoint set at a source line, and where it is bound",
+        schema: || schema_for!(Envelope<DebugLogData>),
+    },
+    CommandSchema {
+        name: "debug list",
+        summary: "the session's logpoints, where they are bound and their hits",
+        schema: || schema_for!(Envelope<DebugListData>),
+    },
+    CommandSchema {
+        name: "debug clear",
+        summary: "the logpoints removed, and whether the debugger is still on",
+        schema: || schema_for!(Envelope<DebugClearData>),
+    },
+    CommandSchema {
         name: "highlight",
         summary: "the element highlighted in the page, and for how long",
         schema: || schema_for!(Envelope<HighlightData>),
@@ -1569,6 +1584,43 @@ pub struct ConsoleEntry {
     /// message is in each tab of its origin (plan 13).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worker_kind: Option<WorkerKind>,
+    /// A logpoint's hit (`source` is `logpoint`): its values.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logpoint: Option<LogpointHit>,
+}
+
+/// A logpoint was hit (`chrome-cdp debug log`): the line ran, and these
+/// were its expressions' values.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LogpointHit {
+    /// The logpoint's id (`debug list`, `debug clear <id>`).
+    pub id: u32,
+    /// Its place as text shows it: the file relative to the project root
+    /// when chrome-cdp found it, else the source's URL path, with the
+    /// line it is bound at (`src/cart.ts:42`).
+    pub place: String,
+    /// The source on disk (an absolute path), when found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    /// The original line it is bound at (1-based).
+    pub line: u32,
+    /// Each expression's value, in the order given.
+    pub values: Vec<LogpointValue>,
+}
+
+/// An expression of a logpoint, and its value at a hit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LogpointValue {
+    /// The expression, as given.
+    pub expr: String,
+    /// Its value, previewed in the page: at most 2 levels deep, strings
+    /// cut at 80 characters, collections over 5 entries counted
+    /// (`[12 items]`), functions as `ƒ`. Absent if it threw.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    /// What it threw (`ReferenceError: total is not defined`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// One frame of a stack trace.
@@ -2619,6 +2671,74 @@ pub struct PerfInp {
     pub event: String,
     /// Its target, e.g. `button#save`.
     pub target: Option<String>,
+}
+
+/// `data` of `chrome-cdp debug log --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DebugLogData {
+    pub logpoint: Logpoint,
+}
+
+/// `data` of `chrome-cdp debug list --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DebugListData {
+    /// The session's logpoints, oldest first.
+    pub logpoints: Vec<Logpoint>,
+}
+
+/// `data` of `chrome-cdp debug clear --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DebugClearData {
+    /// The ids of the logpoints removed.
+    pub cleared: Vec<u32>,
+    /// The logpoints left.
+    pub remaining: usize,
+    /// Whether the debugger is still on in some tab (it is turned off
+    /// when nothing needs it).
+    pub debugger: bool,
+}
+
+/// A logpoint (`chrome-cdp debug log`): a source line that logs its
+/// expressions' values each time it runs, without stopping the page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Logpoint {
+    /// Its id in the session, from 1.
+    pub id: u32,
+    /// The tab whose scripts it is set in, e.g. `t1`.
+    pub tab: String,
+    /// Where it is, as text shows it (`src/cart.ts:42`): the source file
+    /// relative to the project root when chrome-cdp found it, else its
+    /// URL path; the place as asked while it is pending.
+    pub place: String,
+    /// The source on disk (an absolute path), when found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    /// The source's URL, as the script's source map names it (or the
+    /// script's own URL, without a map), once it matched one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// The line asked for (1-based).
+    pub line: u32,
+    /// The line it is bound at, when that is another: the asked one had
+    /// no code, and the next line with code is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bound_line: Option<u32>,
+    /// The column asked for, if one was (1-based).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column: Option<u32>,
+    /// The expressions it logs, as given.
+    pub exprs: Vec<String>,
+    /// `bound` (set in a script that has its source), `pending` (no
+    /// script has it yet; it binds when one loads) or `stopped` (it
+    /// reached `--limit`).
+    pub state: String,
+    /// The scripts it is set in (their URLs).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scripts: Vec<String>,
+    /// How many times it was hit.
+    pub hits: u64,
+    /// It stops after this many hits.
+    pub limit: u64,
 }
 
 /// `data` of `chrome-cdp coverage start --json`.
@@ -3961,6 +4081,14 @@ pub enum Event {
         /// Chrome's error if it did not, e.g. `net::ERR_CONNECTION_REFUSED`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         error: Option<String>,
+    },
+    /// A logpoint (`chrome-cdp debug log`) was hit after the command
+    /// began.
+    Logpoint {
+        /// The tab, e.g. `t1`.
+        tab: String,
+        #[serde(flatten)]
+        hit: LogpointHit,
     },
     /// Focus moved to an element of another form than before (or into a
     /// form, or out of one, or into another frame) that the action did not

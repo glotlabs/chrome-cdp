@@ -12,8 +12,9 @@
 //!
 //! Then it adds a line for each thing that happened, and only then: a
 //! navigation (`→ navigated to …`), a new tab, a dialog answered, a
-//! download, a new console error, a failed request to the page's own
-//! origin, or focus moving to another form (`! …`). `--json` lists them
+//! download, a new console error, a logpoint's hit (plan 15.4), a failed
+//! request to the page's own origin, or focus moving to another form
+//! (`! …`). `--json` lists them
 //! in `events`. `--snap` appends `snapshot --diff -i`.
 
 use std::time::Duration;
@@ -186,6 +187,7 @@ impl Actor<'_> {
         events.extend(self.engine.events_since(self.running, mark, None).await);
         let origins = origins(&before, &events);
         events.extend(self.console_errors(&before).await);
+        events.extend(self.logpoint_hits(&before));
         events.extend(self.failed_requests(&before, &origins, &events));
         if !leaving && let Some((element, frame)) = self.focus_moved().await {
             events.push(Event::FocusMoved {
@@ -356,6 +358,19 @@ impl Actor<'_> {
             .await
     }
 
+    /// The logpoint hits (`debug log`) logged since the action began.
+    fn logpoint_hits(&self, before: &Before) -> Vec<Event> {
+        self.running
+            .tabs
+            .logpoints_since(self.page.id, before.logs.1)
+            .into_iter()
+            .map(|hit| Event::Logpoint {
+                tab: self.tab(),
+                hit,
+            })
+            .collect()
+    }
+
     /// The requests to one of `origins` that failed since the action
     /// began, except the document of a navigation `events` report (its
     /// status is on the navigation's line).
@@ -422,13 +437,15 @@ impl Actor<'_> {
     }
 
     /// The report's lines: `→ navigated …` first, then `! …` for the rest,
-    /// at most [`LISTED`] console errors and failed requests each.
+    /// at most [`LISTED`] console errors, logpoint hits and failed
+    /// requests each.
     fn lines(&self, events: &[Event]) -> Vec<String> {
         let mut lines = Vec::new();
-        let (mut errors, mut failures) = (0, 0);
+        let (mut errors, mut hits, mut failures) = (0, 0, 0);
         for event in events {
             let count = match event {
                 Event::ConsoleError { .. } => Some(&mut errors),
+                Event::Logpoint { .. } => Some(&mut hits),
                 Event::RequestFailed { .. } => Some(&mut failures),
                 _ => None,
             };
@@ -444,17 +461,17 @@ impl Actor<'_> {
                 _ => format!("! {line}"),
             });
         }
-        for (count, what, console) in [
-            (errors, "console errors", true),
-            (failures, "failed requests", false),
+        for (count, what, cmd) in [
+            (errors, "console errors", Cmd::new("errors")),
+            (hits, "logpoint hits", Cmd::new("console")),
+            (
+                failures,
+                "failed requests",
+                Cmd::new("network").switch("failed"),
+            ),
         ] {
             if count > LISTED {
                 let more = count - LISTED;
-                let cmd = if console {
-                    Cmd::new("errors")
-                } else {
-                    Cmd::new("network").switch("failed")
-                };
                 let cmd = cmd.scoped(&self.engine.session);
                 lines.push(format!("! … and {more} more {what} ({cmd} shows them)"));
             }

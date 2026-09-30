@@ -1875,6 +1875,52 @@ impl ComponentsRequest {
     pub const OWNERS: u32 = 8;
 }
 
+/// `debug log`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DebugLogRequest {
+    /// `--tab`: the tab whose scripts it is set in; the active one if
+    /// `None`.
+    #[serde(default)]
+    pub tab: Option<String>,
+    /// The place's path as given: `src/cart.ts`, a URL.
+    pub path: String,
+    /// The file on disk the path names (absolute), when the CLI found one.
+    #[serde(default)]
+    pub file: Option<String>,
+    /// 1-based.
+    pub line: u32,
+    #[serde(default)]
+    pub column: Option<u32>,
+    /// The JavaScript expressions it logs.
+    #[serde(default)]
+    pub exprs: Vec<String>,
+    /// `--limit`: it stops after this many hits.
+    pub limit: u64,
+    pub timeout_ms: u64,
+}
+
+impl DebugLogRequest {
+    /// `--limit`'s default.
+    pub const LIMIT: u64 = 1000;
+    /// The most logpoints a session has at once.
+    pub const MAX: usize = 20;
+}
+
+/// `debug list`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DebugListRequest {
+    pub timeout_ms: u64,
+}
+
+/// `debug clear`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DebugClearRequest {
+    /// The logpoint to remove; every one if `None` (`--all`).
+    #[serde(default)]
+    pub id: Option<u32>,
+    pub timeout_ms: u64,
+}
+
 /// `inspect`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InspectRequest {

@@ -31,6 +31,7 @@
 mod clipboard;
 mod components;
 mod context;
+mod debug;
 mod dialog;
 mod downloads;
 mod emulate;
@@ -98,23 +99,23 @@ pub use request::{
     A11yLevel, Action, ActionRequest, Button, CdpRequest, ClipboardOp, ClipboardRequest,
     ComponentsRequest, ConnectRequest, ConsoleRequest, ContextCloseRequest, ContextListRequest,
     ContextNewRequest, CookieFilter, CookieSpec, CookiesOp, CookiesRequest, CoverageStartRequest,
-    CoverageStopRequest, DialogPolicy, DialogRequest, DownloadsRequest, ElementState,
-    EmulateRequest, EmulationChange, EvalRequest, EvalWorld, ExpectRequest,
-    ExpectScreenshotRequest, ExpectSnapshotRequest, Expectation, ExposeRequest,
-    ExtensionStorageArea, ExtensionStorageOp, ExtensionsOp, ExtensionsRequest, FindRequest,
-    FramesRequest, HarContent, HarExportRequest, HarStartRequest, HarStopRequest, HighlightRequest,
-    HttpCredentials, HttpRequest, ImageFormat, InitScriptAddRequest, InitScriptListRequest,
-    InitScriptRemoveRequest, InspectRequest, KeyboardOp, LocatorRequest, Margins, MarkRequest,
-    Matcher, MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest, MockSeedRequest,
-    MockStateCheck, MockStateRequest, MockTestTag, MockUseRequest, MockWsSendRequest, Modifier,
-    MouseOp, NavigateRequest, Navigation, NetworkClearRequest, NetworkFramesRequest,
-    NetworkRequest, NetworkShowRequest, NodeStacks, OpenInitScript, OpenRequest, PaperFormat,
-    PdfRequest, PerfRequest, PermissionsOp, PermissionsRequest, Read, ReadRequest, RequestCheck,
-    RouteAction, RouteBody, RouteRequest, RouteSpec, RoutesRequest, ScreenshotRequest, ScrollTo,
-    ShotScale, Since, SnapshotEngine, SnapshotRequest, SourceRequest, StateLoadRequest,
-    StateSaveRequest, StatusRange, StorageArea, StorageOp, StorageRequest, TabCloseRequest,
-    TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest, TraceStopRequest,
-    UnrouteRequest, WaitFor, WaitRequest, WaitUntil,
+    CoverageStopRequest, DebugClearRequest, DebugListRequest, DebugLogRequest, DialogPolicy,
+    DialogRequest, DownloadsRequest, ElementState, EmulateRequest, EmulationChange, EvalRequest,
+    EvalWorld, ExpectRequest, ExpectScreenshotRequest, ExpectSnapshotRequest, Expectation,
+    ExposeRequest, ExtensionStorageArea, ExtensionStorageOp, ExtensionsOp, ExtensionsRequest,
+    FindRequest, FramesRequest, HarContent, HarExportRequest, HarStartRequest, HarStopRequest,
+    HighlightRequest, HttpCredentials, HttpRequest, ImageFormat, InitScriptAddRequest,
+    InitScriptListRequest, InitScriptRemoveRequest, InspectRequest, KeyboardOp, LocatorRequest,
+    Margins, MarkRequest, Matcher, MockExplainRequest, MockListRequest, MockLogRequest,
+    MockOffRequest, MockSeedRequest, MockStateCheck, MockStateRequest, MockTestTag, MockUseRequest,
+    MockWsSendRequest, Modifier, MouseOp, NavigateRequest, Navigation, NetworkClearRequest,
+    NetworkFramesRequest, NetworkRequest, NetworkShowRequest, NodeStacks, OpenInitScript,
+    OpenRequest, PaperFormat, PdfRequest, PerfRequest, PermissionsOp, PermissionsRequest, Read,
+    ReadRequest, RequestCheck, RouteAction, RouteBody, RouteRequest, RouteSpec, RoutesRequest,
+    ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest, SourceRequest,
+    StateLoadRequest, StateSaveRequest, StatusRange, StorageArea, StorageOp, StorageRequest,
+    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest,
+    TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WaitUntil,
 };
 pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
 pub use state::{OriginState, StateCookie, StorageState};
@@ -172,8 +173,9 @@ struct Running {
     /// Whether the browser runs on macOS (for `Mod` and editing
     /// commands), once asked.
     mac: std::sync::OnceLock<bool>,
-    /// The source maps console stack frames were resolved with.
-    sourcemaps: observe::SourceMaps,
+    /// The source maps console stack frames were resolved with (the
+    /// tabs' logpoints bind with them too).
+    sourcemaps: Arc<observe::SourceMaps>,
     /// The `har start` recording, if one runs.
     har: Mutex<Option<observe::HarRecording>>,
     /// The `trace start` recording, if one runs.
@@ -674,17 +676,23 @@ impl Engine {
         }
         let stop = Arc::new(Notify::new());
         let default_viewport = default_viewport_for(&spec);
+        let sourcemaps = Arc::new(observe::SourceMaps::default());
         let running = Arc::new(Running {
             generation,
             conn: conn.clone(),
             info,
             spec,
             started: Instant::now(),
-            tabs: Tabs::start(&conn, self.settings.clone(), default_viewport),
+            tabs: Tabs::start(
+                &conn,
+                self.settings.clone(),
+                default_viewport,
+                sourcemaps.clone(),
+            ),
             launched: Mutex::new(launched),
             stop: stop.clone(),
             mac: std::sync::OnceLock::new(),
-            sourcemaps: observe::SourceMaps::default(),
+            sourcemaps,
             har: Mutex::new(None),
             trace: Mutex::new(None),
             highlights: AtomicU64::new(0),

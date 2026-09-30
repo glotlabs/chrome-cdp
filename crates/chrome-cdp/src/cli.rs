@@ -1824,6 +1824,31 @@ Examples:
     )]
     Coverage(CoverageArgs),
 
+    /// Log values at a source line each time it runs (logpoints), without
+    /// stopping the page or editing its code.
+    #[command(
+        subcommand_required = true,
+        arg_required_else_help = true,
+        after_help = "\
+`debug log FILE:LINE EXPR…` sets a logpoint in the tab's scripts: the line
+of an original source file, found through the scripts' source maps (a
+script without one by its own URL). Each time the line runs, the page
+logs the expressions' values without stopping: in `console`, and in the
+report of the action that ran it (`! logpoint 1 src/cart.ts:42: total=12`).
+It is set again after a reload, and in scripts loaded later. `debug list`
+shows the logpoints and their hits; `debug clear` removes them and turns
+the debugger off when none is left. While one is set, a `debugger;`
+statement does not stop the page: it is resumed and noted in the console.
+Needs a running session.
+
+Examples:
+  chrome-cdp debug log src/cart.ts:42 total items.length
+  chrome-cdp click e12                   # ! logpoint 1 src/cart.ts:42: total=12, items.length=3
+  chrome-cdp debug list
+  chrome-cdp debug clear --all"
+    )]
+    Debug(DebugArgs),
+
     /// Point out an element in the browser window, for a human watching.
     #[command(after_help = "\
 Scrolls the element into view and paints DevTools' element highlight over
@@ -5497,6 +5522,90 @@ Examples:
 }
 
 #[derive(Debug, Args)]
+pub(crate) struct DebugArgs {
+    #[command(subcommand)]
+    pub(crate) command: DebugCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum DebugCommand {
+    /// Set a logpoint: log expressions' values each time a source line
+    /// runs.
+    #[command(after_help = "\
+FILE is matched by path against the original sources of the tab's scripts
+(`src/cart.ts` matches `http://localhost:5173/src/cart.ts` and
+`webpack://app/./src/cart.ts`); when it names several, the error lists
+them and more of the path picks one. A line with no code uses the next
+line with code, and says so. A file no script has yet is pending: the
+logpoint binds when a script with it loads (a lazy chunk, a reload).
+
+Each EXPR is one JavaScript expression, run in the scope of the line
+(before it runs) and shown with its text as the label; one that throws
+shows its error in its place. Values are previewed in the page: 2 levels
+deep, strings cut at 80 characters, collections over 5 entries counted.
+`-` reads one expression from stdin. A session has at most 20 logpoints.
+-q prints the logpoint's id.
+
+Examples:
+  chrome-cdp debug log src/cart.ts:42 total 'items.length'
+  chrome-cdp debug log src/cart.ts:42:7 item
+  chrome-cdp debug log src/App.tsx:30             # was the line reached?
+  chrome-cdp debug log src/cart.ts:42 total --limit 5")]
+    Log(DebugLogArgs),
+
+    /// List the logpoints, where they are and how often they were hit.
+    #[command(after_help = "\
+One line per logpoint: its id, place, expressions and hits, and whether it
+is pending (no script has its file yet) or stopped (it reached --limit).
+-q prints the ids.
+
+Examples:
+  chrome-cdp debug list
+  chrome-cdp debug list --json")]
+    List(DebugListArgs),
+
+    /// Remove a logpoint, or all of them.
+    #[command(after_help = "\
+When no logpoint is left, the debugger is turned off in the tab.
+
+Examples:
+  chrome-cdp debug clear 1
+  chrome-cdp debug clear --all")]
+    Clear(DebugClearArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct DebugLogArgs {
+    /// The source line: FILE:LINE or FILE:LINE:COLUMN (1-based), e.g.
+    /// src/cart.ts:42.
+    #[arg(value_name = "FILE:LINE")]
+    pub(crate) place: String,
+
+    /// JavaScript expressions to log, each one argument; `-` reads one
+    /// from stdin.
+    #[arg(value_name = "EXPR")]
+    pub(crate) exprs: Vec<String>,
+
+    /// Stop logging after this many hits.
+    #[arg(long, default_value_t = 1000, value_name = "N")]
+    pub(crate) limit: u64,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct DebugListArgs {}
+
+#[derive(Debug, Args)]
+pub(crate) struct DebugClearArgs {
+    /// The logpoint's id (`debug list` shows them).
+    #[arg(value_name = "ID", required_unless_present = "all")]
+    pub(crate) id: Option<u32>,
+
+    /// Remove every logpoint.
+    #[arg(long, conflicts_with = "id")]
+    pub(crate) all: bool,
+}
+
+#[derive(Debug, Args)]
 pub(crate) struct CoverageStartArgs {}
 
 #[derive(Debug, Args)]
@@ -6721,6 +6830,10 @@ mod tests {
         "trace stop",
         "perf",
         "coverage start",
+        // A line; `debug list` a line per logpoint, at most 20.
+        "debug log",
+        "debug list",
+        "debug clear",
         "highlight",
         "inspect",
         "network clear",
