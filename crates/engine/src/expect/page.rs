@@ -247,7 +247,7 @@ impl Engine {
         for &id in &tabs {
             let wanted = wanted_origin(&running, id, origin_filter);
             for f in running.tabs.failures_since(id, 0) {
-                if !wanted.as_deref().is_none_or(|w| origin(&f.url) == Some(w))
+                if wanted.as_deref().is_some_and(|w| origin(&f.url) != Some(w))
                     || is_favicon(&f.url)
                     || !seen.insert((f.session.clone(), f.request_id.clone()))
                 {
