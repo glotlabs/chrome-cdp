@@ -1,6 +1,6 @@
 # Plan 16 — Seeing more of the page
 
-Status: IN PROGRESS (16.1-16.4 done)
+Status: IN PROGRESS (16.1-16.5 done)
 Depends on: 04 (snapshot, refs, locators), 05 (actionability pipeline, action report), 06 (screenshots), 07 (viewport emulation), 09 (`expect`, baselines), 11 (contexts, stable locators), 13 (the target graph, for out-of-process iframes)
 
 ## Goal
@@ -577,7 +577,7 @@ on its state.
 - [x] `fill-form` fills `forms/checkout.html` in one call, including the
       field that appears after the country, and the page's own state
       shows every value.
-- [ ] `compare` reports exactly the known differences of `compare/a.html`
+- [x] `compare` reports exactly the known differences of `compare/a.html`
       and `b.html`, across the two fixture origins.
 - [ ] `explore` maps `testdata/site/explore/` to its expected map, never
       clicks the destructive button or submits the form without the
@@ -779,3 +779,47 @@ _(append here)_
   (`button`). `forms -q` prints how many required fields are empty.
 - 16.4: `chrome-cdp skill` gets a cheat-sheet line for `fill-form` (and
   `forms`); to stay under 2,000 tokens, `select` and `check` share a line.
+- 16.5: the diff prints `snapshot --diff`'s lines as they are (`~ -
+  heading "Your cart (3)" (h1) (was "Your cart (2)")`, `+ - button
+  "Apply coupon"`), not the plan example's shorthand, so one form reads
+  both. `changes` counts the marks (an added subtree once): a moved block
+  is a removal and an addition, so the fixture's four differences are
+  five changes.
+- 16.5: in the gap between two aligned siblings, a node of B pairs with
+  the first node of A with its role not taken yet, in order; the rest of
+  A is removed and shown before what B added there, as a unified diff
+  does.
+- 16.5: each live side is read as `expect-snapshot` reads it (lists not
+  collapsed, refs off), which counts as the tab's last snapshot for
+  `snapshot --diff`.
+- 16.5: every kind of side reaches the engine as a tree, so the diff and
+  render code stayed in the engine: the CLI reads a `.json` file (the
+  envelope or its `data`) itself, and asks a `session:` side's daemon for
+  its active tab's tree and screenshot (`compare_capture`), then, with
+  `--visual`, names B's regions there (`compare_name`, refs of that
+  session). A side is `tab:…`, `session:…`, a path ending in `.json` or an
+  existing file, else a URL (a relative one resolves against
+  `base_url`).
+- 16.5: on a `.json` side, `-i` keeps what had refs and the landmarks
+  around them; `--scope` does not apply (a warning says so), nor does a
+  fold (what it hid compares as missing, with a warning).
+- 16.5: a URL side's tab opens in the background and is brought to the
+  front for its screenshot; afterwards it is closed and the session's
+  active tab goes back to the front. It gets the viewport (the session's
+  pixel ratio and mobile mode kept) only when its own size differs.
+  `--viewport` without `--visual` is `BadArgs`.
+- 16.5: a region's box is around its changed pixels, not its cells;
+  regions sort by area. Its element is the smallest visible element of
+  B's main document whose box holds the centre (not inside iframes); a
+  region where B shows nothing (where a block moved away) has none. A URL
+  side's tab is closed, so its names have no refs.
+- 16.5: the diff image is the session's next numbered shot
+  (`shots/4.png`), as `screenshot` and `expect-screenshot` save theirs,
+  not `compare-4.png`.
+- 16.5: the JSON also has `differs` (what `--exit-code` looks at),
+  `visual.region_count` (all regions; `regions` lists 10) and each
+  region's `changed` pixels. `-q` prints the number of differences
+  (changes and regions).
+- 16.5: no line in `chrome-cdp skill` (at its budget; the plan asks for
+  lines for `why`, `forms` and `snapshot --budget` only). The dev server
+  guide shows `compare` local against production.
