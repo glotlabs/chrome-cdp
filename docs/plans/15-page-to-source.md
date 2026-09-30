@@ -926,3 +926,8 @@ _(append here)_
   `wait --hmr`. No release tag exists yet, so `release check` gained
   `--since <rev>`: `cargo xtask release check --since 241f9bd` (the
   commit before 15.1) says 154 schemas and the command line only add.
+- Close-out: the agent benchmark also counts shell reads: commands of
+  Bash calls that start with `cat`, `grep`, `rg`, `sed`, `find`, `ls`
+  and the like (a pipeline once), in their own column, so "files read"
+  keeps the planned meaning and an arm that reads through Bash is not
+  undercounted.

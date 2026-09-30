@@ -381,11 +381,12 @@ pub fn run(opts: &Options) -> Result<AgentReport, String> {
                 ));
                 let e = episode(task, arm, rep, &site, opts);
                 crate::note(&format!(
-                    "  {} in {} turns, {} tokens, {} file reads, {:.0}s{}",
+                    "  {} in {} turns, {} tokens, {} file reads (+{} in the shell), {:.0}s{}",
                     if e.success { "passed" } else { "FAILED" },
                     e.run.turns,
                     e.run.tokens.total(),
                     e.run.file_reads,
+                    e.run.shell_reads,
                     Duration::from_millis(e.run.wall_ms).as_secs_f64(),
                     e.error
                         .as_deref()
@@ -467,6 +468,8 @@ pub struct ArmSummary {
     pub turns_median: f64,
     /// Read, Grep and Glob calls.
     pub file_reads_median: f64,
+    /// Bash commands that read or list files.
+    pub shell_reads_median: f64,
     pub wall_median_s: f64,
     pub cost_usd: f64,
 }
@@ -483,6 +486,7 @@ pub fn summarize(episodes: &[Episode]) -> Vec<ArmSummary> {
             let tokens: Vec<f64> = mine.iter().map(|e| e.run.tokens.total() as f64).collect();
             let turns: Vec<f64> = mine.iter().map(|e| e.run.turns as f64).collect();
             let reads: Vec<f64> = mine.iter().map(|e| e.run.file_reads as f64).collect();
+            let shell: Vec<f64> = mine.iter().map(|e| e.run.shell_reads as f64).collect();
             let wall: Vec<f64> = mine.iter().map(|e| e.run.wall_ms as f64 / 1000.0).collect();
             Some(ArmSummary {
                 arm,
@@ -492,6 +496,7 @@ pub fn summarize(episodes: &[Episode]) -> Vec<ArmSummary> {
                 tokens_mean: stats::mean(&tokens),
                 turns_median: stats::percentile(&turns, 50.0),
                 file_reads_median: stats::percentile(&reads, 50.0),
+                shell_reads_median: stats::percentile(&shell, 50.0),
                 wall_median_s: stats::percentile(&wall, 50.0),
                 cost_usd: mine.iter().map(|e| e.run.cost_usd).sum(),
             })
@@ -512,11 +517,11 @@ pub fn markdown(r: &AgentReport) -> String {
         tasks.len(),
         r.reps
     );
-    md.push_str("| Arm | Success | Tokens (median) | Tokens (mean) | Turns (median) | Files read (median) | Wall time (median) | Cost |\n|---|---:|---:|---:|---:|---:|---:|---:|\n");
+    md.push_str("| Arm | Success | Tokens (median) | Tokens (mean) | Turns (median) | Files read (median) | Shell reads (median) | Wall time (median) | Cost |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|\n");
     for s in summarize(&r.episodes) {
         let _ = writeln!(
             md,
-            "| {} | {}/{} ({:.0}%) | {:.0} | {:.0} | {:.0} | {:.0} | {:.0}s | ${:.2} |",
+            "| {} | {}/{} ({:.0}%) | {:.0} | {:.0} | {:.0} | {:.0} | {:.0} | {:.0}s | ${:.2} |",
             s.arm.name(),
             s.passed,
             s.episodes,
@@ -525,6 +530,7 @@ pub fn markdown(r: &AgentReport) -> String {
             s.tokens_mean,
             s.turns_median,
             s.file_reads_median,
+            s.shell_reads_median,
             s.wall_median_s,
             s.cost_usd
         );
@@ -572,6 +578,7 @@ mod tests {
             run: AgentRun {
                 turns: 4,
                 file_reads: 6,
+                shell_reads: 2,
                 tokens: Tokens {
                     input: tokens,
                     ..Tokens::default()
@@ -612,7 +619,7 @@ mod tests {
             episodes: episodes.to_vec(),
         });
         assert!(
-            md.contains("| chrome-cdp | 1/2 (50%) | 100 | 200 | 4 | 6 | 30s | $1.00 |"),
+            md.contains("| chrome-cdp | 1/2 (50%) | 100 | 200 | 4 | 6 | 2 | 30s | $1.00 |"),
             "{md}"
         );
         assert!(md.contains("| `login` | 1/2 | 100 | 1/1 | 900 |"), "{md}");

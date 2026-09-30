@@ -181,7 +181,9 @@ questions, the agent's final `ANSWER:` line. Tokens are the sum over every
 model Claude Code called (input, output, cache reads and writes), turns
 its `num_turns`, files read the Read, Grep and Glob calls in the
 transcript (how much code the agent looked through to find the place),
-and wall time the whole `claude` process. Each task runs
+shell reads the commands of its Bash calls that start with a reading
+tool (`cat`, `grep`, `rg`, `sed`, `find`, `ls`, …; a pipeline counts
+once), and wall time the whole `claude` process. Each task runs
 5 times per arm (`--reps`); the tables show the success rate and medians.
 
 `--check` runs no agent. For each task it checks that the verifier fails

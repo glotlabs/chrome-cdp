@@ -72,10 +72,42 @@ pub struct AgentRun {
     /// the agent looked through (plan 15.7).
     #[serde(default)]
     pub file_reads: u64,
+    /// Commands run through Bash that read or list files (`cat`, `grep`,
+    /// `sed`, `find`, …; see [`shell_reads`]), which `file_reads` misses.
+    #[serde(default)]
+    pub shell_reads: u64,
 }
 
 /// The tools that read the working dir's files.
 pub const READ_TOOLS: [&str; 3] = ["Read", "Grep", "Glob"];
+
+/// The shell commands that read or list files.
+pub const READ_COMMANDS: [&str; 18] = [
+    "cat", "head", "tail", "less", "more", "nl", "bat", "grep", "egrep", "fgrep", "rg", "ag",
+    "sed", "awk", "find", "fd", "ls", "tree",
+];
+
+/// How many commands of a Bash call read or list files: each command
+/// (split at `;`, `&&`, `||` and newlines) whose pipeline starts with one
+/// of [`READ_COMMANDS`] counts once, so `grep -n x a.ts | head` is one
+/// read. Leading `VAR=value` assignments, `cd dir &&` and a path before
+/// the command name (`/usr/bin/grep`) are looked past.
+pub fn shell_reads(command: &str) -> u64 {
+    command
+        .split(['\n', ';'])
+        .flat_map(|part| part.split("&&"))
+        .flat_map(|part| part.split("||"))
+        .filter(|cmd| {
+            let first_stage = cmd.split('|').next().unwrap_or_default();
+            first_stage
+                .split_whitespace()
+                .find(|word| !word.contains('=') && *word != "(" && *word != "{")
+                .map(|word| word.trim_start_matches(['(', '{']))
+                .map(|word| word.rsplit('/').next().unwrap_or(word))
+                .is_some_and(|name| READ_COMMANDS.contains(&name))
+        })
+        .count() as u64
+}
 
 /// Reads Claude Code's `--output-format stream-json` transcript (one JSON
 /// message a line): the last `result` message, and the reading tool
@@ -83,6 +115,7 @@ pub const READ_TOOLS: [&str; 3] = ["Read", "Grep", "Glob"];
 pub fn parse_transcript(text: &str) -> AgentRun {
     let mut result = None;
     let mut file_reads = 0;
+    let mut shell_reads = 0;
     for msg in text
         .lines()
         .filter_map(|l| serde_json::from_str::<Value>(l).ok())
@@ -94,12 +127,19 @@ pub fn parse_transcript(text: &str) -> AgentRun {
                     .pointer("/message/content")
                     .and_then(Value::as_array)
                     .map_or(&[][..], Vec::as_slice);
-                file_reads += content
+                let tools = content
                     .iter()
-                    .filter(|c| c.get("type").and_then(Value::as_str) == Some("tool_use"))
-                    .filter_map(|c| c.get("name").and_then(Value::as_str))
-                    .filter(|name| READ_TOOLS.contains(name))
-                    .count() as u64;
+                    .filter(|c| c.get("type").and_then(Value::as_str) == Some("tool_use"));
+                for tool in tools {
+                    match tool.get("name").and_then(Value::as_str) {
+                        Some(name) if READ_TOOLS.contains(&name) => file_reads += 1,
+                        Some("Bash") => {
+                            let command = tool.pointer("/input/command").and_then(Value::as_str);
+                            shell_reads += command.map_or(0, self::shell_reads);
+                        }
+                        _ => {}
+                    }
+                }
             }
             _ => {}
         }
@@ -112,6 +152,7 @@ pub fn parse_transcript(text: &str) -> AgentRun {
         parse_result,
     );
     run.file_reads = file_reads;
+    run.shell_reads = shell_reads;
     run
 }
 
@@ -151,6 +192,7 @@ pub fn parse_result(out: &Value) -> AgentRun {
             .unwrap_or(0.0),
         wall_ms: 0,
         file_reads: 0,
+        shell_reads: 0,
     }
 }
 
@@ -374,6 +416,7 @@ mod tests {
                 {"type": "tool_use", "name": "Grep", "input": {"pattern": "Add"}},
                 {"type": "tool_use", "name": "Glob", "input": {"pattern": "**/*.vue"}},
                 {"type": "tool_use", "name": "Edit", "input": {}},
+                {"type": "tool_use", "name": "Bash", "input": {"command": "cat src/a.tsx | head"}},
             ]}}),
             json!({"type": "result", "is_error": false, "num_turns": 3, "result": "Fixed.",
                 "usage": {"input_tokens": 2, "output_tokens": 3}}),
@@ -381,6 +424,7 @@ mod tests {
         let text = lines.map(|l| l.to_string()).join("\n");
         let run = parse_transcript(&text);
         assert_eq!(run.file_reads, 3);
+        assert_eq!(run.shell_reads, 1);
         assert_eq!(run.turns, 3);
         assert_eq!(run.reply, "Fixed.");
         assert_eq!(run.tokens.total(), 5);
@@ -388,6 +432,19 @@ mod tests {
         let cut = parse_transcript(text.trim_end().rsplit_once('\n').unwrap().0);
         assert!(cut.is_error);
         assert_eq!(cut.file_reads, 3);
+    }
+
+    #[test]
+    fn shell_commands_that_read_files() {
+        assert_eq!(shell_reads("chrome-cdp source e3"), 0);
+        assert_eq!(shell_reads("grep -rn Add src | head -5"), 1);
+        assert_eq!(
+            shell_reads("cd app && cat src/a.ts; sed -n 1,9p src/b.ts"),
+            2
+        );
+        assert_eq!(shell_reads("LC_ALL=C /usr/bin/rg total\nls src"), 2);
+        assert_eq!(shell_reads("npm test || tail log.txt"), 1);
+        assert_eq!(shell_reads("echo cat"), 0);
     }
 
     #[test]
