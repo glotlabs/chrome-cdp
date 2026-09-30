@@ -68,14 +68,14 @@ impl Engine {
                 .console_logged(page.id, checked, deadline)
                 .await
             {
-                return Ok(Err(unmet(page, running, seen)));
+                return Ok(Err(unmet(page, running, &seen)));
             }
         }
     }
 }
 
 /// What a timeout saw: the last entries logged, or that there were none.
-fn unmet(page: &Page, running: &Running, seen: VecDeque<ConsoleEntry>) -> Unmet {
+fn unmet(page: &Page, running: &Running, seen: &VecDeque<ConsoleEntry>) -> Unmet {
     let unmet = Unmet::default().observed("entries", json!(seen));
     if seen.is_empty() {
         return unmet.note(
