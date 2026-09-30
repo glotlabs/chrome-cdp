@@ -878,18 +878,17 @@ async fn probe(engine: &Arc<Engine>, probe: Probe, who: &str) -> Result<(), Stri
                 &format!("document.body.append(Object.assign(document.createElement('p'), {{ textContent: {marker:?} }})); 1"),
             )
             .await;
-            let out = engine
-                .read(ReadRequest {
-                    read: Read::Text,
-                    locator: None,
-                    tab: None,
-                    strict_refs: false,
-                    testid_attribute: None,
-                    timeout_ms: TIMEOUT_MS,
-                    max_chars: 0,
-                })
-                .await
-                .map_err(|e| e.to_text())?;
+            let out = Box::pin(engine.read(ReadRequest {
+                read: Read::Text,
+                locator: None,
+                tab: None,
+                strict_refs: false,
+                testid_attribute: None,
+                timeout_ms: TIMEOUT_MS,
+                max_chars: 0,
+            }))
+            .await
+            .map_err(|e| e.to_text())?;
             out.text
                 .contains(&marker)
                 .then_some(())
@@ -904,22 +903,21 @@ async fn probe(engine: &Arc<Engine>, probe: Probe, who: &str) -> Result<(), Stri
                 &format!("setTimeout(() => document.body.append(Object.assign(document.createElement('p'), {{ textContent: {marker:?} }})), 300); 1"),
             )
             .await;
-            engine
-                .wait(WaitRequest {
-                    condition: WaitFor::Text {
-                        text: marker,
-                        within: None,
-                        gone: false,
-                    },
-                    tab: None,
-                    strict_refs: false,
-                    testid_attribute: None,
-                    timeout_ms: 5_000,
-                    max_chars: 0,
-                })
-                .await
-                .map(drop)
-                .map_err(|e| e.to_text())
+            Box::pin(engine.wait(WaitRequest {
+                condition: WaitFor::Text {
+                    text: marker,
+                    within: None,
+                    gone: false,
+                },
+                tab: None,
+                strict_refs: false,
+                testid_attribute: None,
+                timeout_ms: 5_000,
+                max_chars: 0,
+            }))
+            .await
+            .map(drop)
+            .map_err(|e| e.to_text())
         }
         Probe::A11y => {
             let frame = (who != "main").then_some(who);
