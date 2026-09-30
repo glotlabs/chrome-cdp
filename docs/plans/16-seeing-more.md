@@ -1,6 +1,6 @@
 # Plan 16 — Seeing more of the page
 
-Status: IN PROGRESS (16.1 done)
+Status: IN PROGRESS (16.1-16.2 done)
 Depends on: 04 (snapshot, refs, locators), 05 (actionability pipeline, action report), 06 (screenshots), 07 (viewport emulation), 09 (`expect`, baselines), 11 (contexts, stable locators), 13 (the target graph, for out-of-process iframes)
 
 ## Goal
@@ -563,12 +563,12 @@ on its state.
       action passes at once.
 - [x] `why` names the cause (the element and the property) for every
       failed check on the fixture, not only the check.
-- [ ] `layout` finds each fixture's known findings and nothing on the
+- [x] `layout` finds each fixture's known findings and nothing on the
       clean page, at every viewport of `--viewports mobile,tablet,desktop`,
       and leaves the page's emulation, scroll and text as they were.
-- [ ] `contrast` fails the gradient and photo cases that `expect --a11y`
+- [x] `contrast` fails the gradient and photo cases that `expect --a11y`
       passes.
-- [ ] `expect --layout` passes with an up-to-date baseline and fails on a
+- [x] `expect --layout` passes with an up-to-date baseline and fails on a
       new finding; finding keys survive a reload and a re-render.
 - [ ] `snapshot` without the new flags prints exactly what v1 printed on
       every corpus page (the plan 04 `.expected` files are unchanged).
@@ -659,3 +659,48 @@ _(append here)_
   timing. The agreement test tells "fails at once" from "waits" by half
   the action's timeout: the pipeline gives up one retry before its
   deadline.
+- 16.2: `--viewports` emulates each size on the checked tab alone
+  (device metrics and touch on its session), not for the whole session
+  as `viewport` does, so other tabs are not resized; after the last it
+  gives the tab back what the session emulates for it, and scrolls the
+  page back to where it was (a new size moves the scroll).
+- 16.2: boxes (and `covered`'s point) are in the page's coordinates: the
+  main document's, scroll included, with an iframe's moved into it, so
+  `--full`'s scroll positions agree. `--full` scrolls at most 40
+  viewports down.
+- 16.2: `overflow-x` compares `scrollWidth` with the root's
+  `clientWidth`, not `innerWidth`: with a classic scrollbar, content
+  `100vw` wide scrolls sideways, which `innerWidth` hides. Its key is
+  `overflow-x <viewport>`, one per page, with no locator.
+- 16.2: a skip link is any off-screen link to `#…`; checking that it
+  comes into view on focus would move the page's focus.
+- 16.2: rules the plan leaves open, from a sweep of the fixture corpus:
+  inert elements (`inert`, or behind an open modal dialog) are not
+  targets; an inline element that wraps is checked per line box (its
+  bounding box takes in its neighbours); `clipped` counts text partly
+  shown, not text wholly outside the box (a carousel's other slide), nor
+  visually hidden elements; the text of disabled controls needs no
+  contrast (WCAG 1.4.3); a native control whose small sides are those of
+  an unstyled control of its kind (measured in a closed shadow root) and
+  a native select's options are sized by the browser (WCAG 2.5.8's
+  exception), not small targets.
+- 16.2: contrast makes all text transparent (a style sheet with a
+  selector no page rule outranks, in the document and every open shadow
+  root), not only the checked elements'. The shot as is finds where text
+  is drawn: where the two shots do not differ, something covers it and it
+  is skipped, unless its colour is the background's (reported, ~1:1).
+- 16.2: an element with no stable locator (`stable.ts` finds none) is
+  keyed by a short CSS path (`css=#main > div.banner`).
+- 16.2: with a LOCATOR, only its frame is checked (not iframes inside
+  it). In an iframe, `covered` and `contrast` look only where the frame
+  shows in the tab's viewport, and the frame's hit test does not see what
+  the parent page puts over it.
+- 16.2: a missing `expect --layout` baseline always fails, as the plan
+  says, where `expect-snapshot` stores one outside CI. Keys the baseline
+  lists but the run did not find are named in a warning (and in
+  `stale`), only for the kinds and viewports the run checked. The data is
+  `expect`'s with a new `layout` field (`baseline`, `result`,
+  `findings`, `stale`).
+- 16.2: no line for `layout` in `chrome-cdp skill`: it is at its 2,000
+  token budget, and the lines this plan asks for (`forms`, `snapshot
+  --budget`) need the room. `docs/playwright-parity.md` has a row.
