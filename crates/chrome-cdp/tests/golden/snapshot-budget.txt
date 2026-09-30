@@ -4,25 +4,20 @@ exit: 0
 page t1 "Sign in – Acme" <site>/snapshot/login.html
 - banner
   - link "Acme" [e1] → /
-  - navigation "Main"
-    - link "Pricing" [e2] → /pricing
-    - link "Docs" [e3] → /docs
-- main
-  - heading "Sign in" (h1)
-  - form "Login" [region r1: 5 nodes, 4 refs, ~45 tokens]
-  - link "Forgot password?" [e8] → /forgot
+  - navigation "Main" [region r2: 2 nodes, 2 refs, ~23 tokens]
+- main [region r3: 8 nodes, 5 refs, ~89 tokens]
 - iframe "Payment" [e9]
   - textbox "Card number" [e10]
 - contentinfo
   - text "© 2026 Acme"
   - link "Terms" [e11] → https://example.com/terms
 --- stderr
-warning: parts of the page are folded; chrome-cdp snapshot --expand r1 shows one
+warning: parts of the page are folded; chrome-cdp snapshot --expand r2 shows one
 
 $ chrome-cdp snapshot --budget 120 --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"engine":"ax","nodes":[{"children":[{"href":"/","name":"Acme","ref":"e1","role":"link"},{"children":[{"href":"/pricing","name":"Pricing","ref":"e2","role":"link"},{"href":"/docs","name":"Docs","ref":"e3","role":"link"}],"name":"Main","role":"navigation"}],"role":"banner"},{"children":[{"level":1,"name":"Sign in","role":"heading"},{"folded":{"nodes":5,"refs":4,"region":"r1","tokens":45},"name":"Login","role":"form"},{"href":"/forgot","name":"Forgot password?","ref":"e8","role":"link"}],"role":"main"},{"children":[{"name":"Card number","ref":"e10","role":"textbox"}],"name":"Payment","ref":"e9","role":"iframe"},{"children":[{"name":"© 2026 Acme","role":"text"},{"href":"https://example.com/terms","name":"Terms","ref":"e11","role":"link"}],"role":"contentinfo"}],"tab":"t1","title":"Sign in – Acme","url":"<site>/snapshot/login.html"},"warnings":["parts of the page are folded; chrome-cdp snapshot --expand r1 shows one"]}
+{"ok":true,"data":{"engine":"ax","nodes":[{"children":[{"href":"/","name":"Acme","ref":"e1","role":"link"},{"folded":{"nodes":2,"refs":2,"region":"r2","tokens":23},"name":"Main","role":"navigation"}],"role":"banner"},{"folded":{"nodes":8,"refs":5,"region":"r3","tokens":89},"role":"main"},{"children":[{"name":"Card number","ref":"e10","role":"textbox"}],"name":"Payment","ref":"e9","role":"iframe"},{"children":[{"name":"© 2026 Acme","role":"text"},{"href":"https://example.com/terms","name":"Terms","ref":"e11","role":"link"}],"role":"contentinfo"}],"tab":"t1","title":"Sign in – Acme","url":"<site>/snapshot/login.html"},"warnings":["parts of the page are folded; chrome-cdp snapshot --expand r2 shows one"]}
 
 $ chrome-cdp snapshot --budget 120 -q
 exit: 0
@@ -30,18 +25,13 @@ exit: 0
 page t1 "Sign in – Acme" <site>/snapshot/login.html
 - banner
   - link "Acme" [e1] → /
-  - navigation "Main"
-    - link "Pricing" [e2] → /pricing
-    - link "Docs" [e3] → /docs
-- main
-  - heading "Sign in" (h1)
-  - form "Login" [region r1: 5 nodes, 4 refs, ~45 tokens]
-  - link "Forgot password?" [e8] → /forgot
+  - navigation "Main" [region r2: 2 nodes, 2 refs, ~23 tokens]
+- main [region r3: 8 nodes, 5 refs, ~89 tokens]
 - iframe "Payment" [e9]
   - textbox "Card number" [e10]
 - contentinfo
   - text "© 2026 Acme"
   - link "Terms" [e11] → https://example.com/terms
 --- stderr
-warning: parts of the page are folded; chrome-cdp snapshot --expand r1 shows one
+warning: parts of the page are folded; chrome-cdp snapshot --expand r2 shows one
 
