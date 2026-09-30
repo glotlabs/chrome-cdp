@@ -4,6 +4,7 @@
 ::error file=e2e/scenarios/includes.cdp,line=2,col=12,title=chrome-cdp lint%3A include-missing::cannot read <fixture>/e2e/scenarios/../steps/missing.cdp: No such file or directory (os error 2)%0Ahint: @include paths are relative to the file that includes them
 ::error file=e2e/scenarios/load.cdp,line=1,col=1,title=chrome-cdp lint%3A unknown-directive::unknown directive @tag%0Ahint: did you mean @tags?
 ::error file=e2e/scenarios/load.cdp,line=2,col=1,title=chrome-cdp lint%3A syntax::@timeout takes one duration%0Ahint: e.g. @timeout 60s
+::error file=e2e/scenarios/load.cdp,line=6,col=3,title=chrome-cdp lint%3A ref::`e12` is a ref: refs name elements of one session's snapshot, so they break in a scenario%0Ahint: use a stable locator such as role=button[name="Save"], label=Email or text=Sign in; `chrome-cdp history --as-scenario` writes them for the refs of a session
 ::error file=e2e/scenarios/steps.cdp,line=4,col=3,title=chrome-cdp lint%3A unknown-command::unrecognized subcommand 'clik'%0Ahint: chrome-cdp click text=Add
 ::error file=e2e/scenarios/steps.cdp,line=5,col=3,title=chrome-cdp lint%3A unknown-flag::unexpected argument '--forse' found%0Ahint: chrome-cdp click text=Add --force
 ::error file=e2e/scenarios/steps.cdp,line=6,col=3,title=chrome-cdp lint%3A locator::`role=button[name=`: a [ is not closed%0Ahint: e.g. role=button[name="Save"]

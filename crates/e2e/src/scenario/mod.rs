@@ -378,12 +378,39 @@ impl Resolve for Vars {
 /// the error (syntax, directives, includes); variables are not filled in
 /// yet.
 pub fn load(path: &Path, name: &str) -> Result<Scenario, Vec<ScriptError>> {
-    let src = std::fs::read_to_string(path).map_err(|e| {
-        vec![ScriptError::new(
-            start_of(name),
-            format!("cannot read {}: {e}", path.display()),
-        )]
-    })?;
+    let (scenario, errors) = read(path, name);
+    if errors.is_empty() {
+        Ok(scenario)
+    } else {
+        Err(errors)
+    }
+}
+
+/// Like [`load`], but also returns what it could read when there are
+/// problems (for `lint`, which checks the steps of a file that has
+/// directive errors too): the tests that have a name, with the steps,
+/// settings and includes that were right, and the hooks.
+pub fn read(path: &Path, name: &str) -> (Scenario, Vec<ScriptError>) {
+    let mut scenario = Scenario {
+        path: path.to_path_buf(),
+        name: name.to_owned(),
+        settings: Settings::default(),
+        before_all: Vec::new(),
+        after_all: Vec::new(),
+        before: Vec::new(),
+        after: Vec::new(),
+        tests: Vec::new(),
+    };
+    let src = match std::fs::read_to_string(path) {
+        Ok(src) => src,
+        Err(e) => {
+            let error = ScriptError::new(
+                start_of(name),
+                format!("cannot read {}: {e}", path.display()),
+            );
+            return (scenario, vec![error]);
+        }
+    };
     let parsed = script::parse(name, &src);
     let dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
     let mut loader = Loader {
@@ -395,16 +422,6 @@ pub fn load(path: &Path, name: &str) -> Result<Scenario, Vec<ScriptError>> {
         dir,
         include: None,
     });
-    let mut scenario = Scenario {
-        path: path.to_path_buf(),
-        name: name.to_owned(),
-        settings: Settings::default(),
-        before_all: Vec::new(),
-        after_all: Vec::new(),
-        before: Vec::new(),
-        after: Vec::new(),
-        tests: Vec::new(),
-    };
     let items = &parsed.script.items;
     let mut hooks_seen: Vec<&str> = Vec::new();
     for (i, item) in items.iter().enumerate() {
@@ -475,14 +492,10 @@ pub fn load(path: &Path, name: &str) -> Result<Scenario, Vec<ScriptError>> {
             ),
         );
     }
-    if loader.errors.is_empty() {
-        Ok(scenario)
-    } else {
-        loader.errors.sort_by(|a, b| {
-            (a.span.file.as_ref(), a.span.start).cmp(&(b.span.file.as_ref(), b.span.start))
-        });
-        Err(loader.errors)
-    }
+    loader.errors.sort_by(|a, b| {
+        (a.span.file.as_ref(), a.span.start).cmp(&(b.span.file.as_ref(), b.span.start))
+    });
+    (scenario, loader.errors)
 }
 
 /// Line 1, column 1 of `file`.
@@ -687,9 +700,9 @@ impl Loader {
         }
     }
 
-    /// A `@test` block; `None` when it has problems (they are recorded).
+    /// A `@test` block; `None` when it has no name. Its other problems are
+    /// recorded, and it keeps what was right.
     fn test(&mut self, d: &Directive, vars: &Arc<Vars>, end_line: u32) -> Option<Test> {
-        let before = self.errors.len();
         let Some(first) = d.args.first() else {
             self.errors.push(
                 ScriptError::new(d.span.clone(), "@test needs a name")
@@ -788,7 +801,7 @@ impl Loader {
                     .hint("indent its commands 2 spaces below the @test line"),
             );
         }
-        (self.errors.len() == before).then(|| Test {
+        Some(Test {
             name,
             span: d.span.clone(),
             end_line,

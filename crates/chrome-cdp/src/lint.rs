@@ -1,7 +1,8 @@
 //! `chrome-cdp lint [paths…]` (plan 11, milestone 11.12): checks scenario
 //! files, step files and mock files without running anything.
 //!
-//! A scenario is read as `test` reads it ([`e2e::scenario::load`]), and
+//! A scenario is read as `test` reads it ([`e2e::scenario::read`], which
+//! also keeps what it could read of a file with directive errors), and
 //! each step checked as `test` checks it ([`crate::script::step`]: clap,
 //! locators), for every backend that runs it (its `${var:…}` values).
 //! On top come the rules only a linter has: refs, sleeps, tests without
@@ -120,7 +121,7 @@ pub(crate) fn for_run(
 ) -> Result<LintData, ErrorInfo> {
     let mut linter = Linter::new(config, global, Some(backend))?;
     for s in scenarios {
-        linter.scenario(s);
+        linter.scenario(s, true);
     }
     let problems = linter.problems;
     Ok(data(scenarios.iter().map(|s| s.path.as_path()), problems))
@@ -414,22 +415,21 @@ impl Linter {
             self.step_file(path, &parsed.script.items);
             return;
         }
-        match scenario::load(path, &name) {
-            Ok(s) => self.scenario(&s),
-            Err(errors) => {
-                // A cycle leaves the step files in it without steps; that
-                // is the same problem.
-                let cycle = errors
-                    .iter()
-                    .any(|e| e.message.starts_with("@include cycle"));
-                for e in &errors {
-                    if cycle && e.message.ends_with("has no steps") {
-                        continue;
-                    }
-                    self.script_error(e, load_rule(e));
-                }
+        // A file with directive errors still gets its steps checked: what
+        // `read` could make of it.
+        let (s, errors) = scenario::read(path, &name);
+        // A cycle leaves the step files in it without steps; that is the
+        // same problem.
+        let cycle = errors
+            .iter()
+            .any(|e| e.message.starts_with("@include cycle"));
+        for e in &errors {
+            if cycle && e.message.ends_with("has no steps") {
+                continue;
             }
+            self.script_error(e, load_rule(e));
         }
+        self.scenario(&s, errors.is_empty());
     }
 
     /// A file without tests: a step file (`@include`d) or a script of
@@ -480,7 +480,10 @@ impl Linter {
         }
     }
 
-    fn scenario(&mut self, s: &Scenario) {
+    /// Checks the tests and hooks of `s`. When it was not read `complete`ly
+    /// (it has directive errors), a test's missing steps may hold its
+    /// `expect`, so `no-expect` is left out.
+    fn scenario(&mut self, s: &Scenario, complete: bool) {
         let saved = saved_names(s);
         let mut names: BTreeMap<&str, &Span> = BTreeMap::new();
         let mut file_real = false;
@@ -548,7 +551,7 @@ impl Linter {
                 let facts = self.step(step, &runs, &saved, real, false);
                 expects |= facts.expect;
             }
-            if !expects && settings.skip.is_none() && !test.steps.is_empty() {
+            if !expects && complete && settings.skip.is_none() && !test.steps.is_empty() {
                 self.warning(
                     &test.span,
                     "no-expect",
@@ -821,7 +824,7 @@ fn clap_rule(words: &[String], info: &ErrorInfo) -> &'static str {
     }
 }
 
-/// The rule of a problem `scenario::load` found.
+/// The rule of a problem `scenario::read` found.
 fn load_rule(e: &ScriptError) -> &'static str {
     let hint = e.hint.as_deref().unwrap_or("");
     if e.message.starts_with("unknown directive") {

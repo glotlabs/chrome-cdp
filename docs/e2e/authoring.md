@@ -198,6 +198,10 @@ the `mock check` rules above. Scenario rules:
 | `sleep` | warning | `wait 500`: wait for a condition instead |
 | `no-expect` | warning | a test with no `expect` step |
 
+A file with directive errors (`@timeout soon`, a missing `@include`) still
+has its steps checked, so one pass lists everything; only a syntax error
+stops the rest of its file, since the lines around it are guesses.
+
 Each step is checked for every backend that runs its test, so a variable
 missing from one backend's vars file is found before that backend's run.
 `${env:…}` and `${secret:…}` are not read, so `lint` needs no secrets.

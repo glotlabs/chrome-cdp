@@ -1,5 +1,7 @@
 @tag smoke
 @timeout soon
 
-@test "never checked"
+@test "checked anyway"
   goto /
+  click e12
+  expect text=Home visible

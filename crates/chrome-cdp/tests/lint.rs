@@ -81,6 +81,15 @@ fn lint_reports_each_rule_where_it_is() {
             "error",
             "@timeout 60s",
         ),
+        // The directive errors do not hide the steps' problems.
+        (
+            "e2e/scenarios/load.cdp",
+            6,
+            3,
+            "ref",
+            "error",
+            "stable locator",
+        ),
         (
             "e2e/scenarios/args.cdp",
             4,
@@ -266,7 +275,7 @@ fn lint_prints_github_annotations() {
     let root = fixture().canonicalize().unwrap().display().to_string();
     golden("lint/github.txt", &stdout(&out).replace(&root, "<fixture>"));
     assert!(
-        stderr(&out).contains("10 files: 17 errors, 5 warnings"),
+        stderr(&out).contains("10 files: 18 errors, 5 warnings"),
         "{}",
         stderr(&out)
     );
