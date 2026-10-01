@@ -523,6 +523,59 @@ const CASES: &[(&str, &str)] = &[
         "fill label=Name \"it's $${x}\"",
     ),
     ("console.log('hi');\ntest.slow();", ""),
+    // Values known now: constants, lists, objects.
+    (
+        "const ITEMS = ['a b', 'c'];\nawait page.getByLabel('New').fill(ITEMS[1]);",
+        "fill label=New c",
+    ),
+    (
+        "const links = { home: '/home' };\nawait page.goto(links.home);",
+        "goto /home",
+    ),
+    (
+        "const ITEMS = ['a b', 'c'];\nawait expect(page.getByTestId('title')).toHaveText(ITEMS.slice(0, 1));",
+        "expect testid=title count 1\nexpect 'testid=title >> nth=0' text 'a b' --exact",
+    ),
+    (
+        "await expect(page.locator('li')).toHaveText(['One', /two/i], { timeout: 1000 });",
+        "expect css=li count 2 --timeout 1s\nexpect 'css=li >> nth=0' text One --exact --timeout 1s\nexpect 'css=li >> nth=1' text /two/i --timeout 1s",
+    ),
+    (
+        "await expect(page.locator('li')).toHaveClass(['done', '']);",
+        "expect css=li count 2\nexpect 'css=li >> nth=0' attr class done\nexpect 'css=li >> nth=1' class '/^$/'",
+    ),
+    (
+        "await expect(page.getByPlaceholder('Search')).toBeEmpty();",
+        "expect placeholder=Search value ''",
+    ),
+    // Arguments of page functions, as JSON.
+    (
+        "await page.evaluate(n => n * 2, 21);",
+        "eval '(n => n * 2)(21)'",
+    ),
+    (
+        "await page.waitForFunction(([a, b]) => a < b, [1, 2], { timeout: 2000 });",
+        "wait --fn '(([a, b]) => a < b)([1,2])' --timeout 2s",
+    ),
+    (
+        "await page.locator('#a').evaluate((el, c) => el.classList.add(c), 'on');",
+        "eval --in '#a' 'el => ((el, c) => el.classList.add(c))(el, \"on\")'",
+    ),
+    // TypeScript is left out of what runs in the page.
+    (
+        "await page.waitForFunction((n: number): boolean => (window as any).count === n!, 3);",
+        "wait --fn '((n) => (window).count === n)(3)'",
+    ),
+    // Loops over lists known now.
+    (
+        "for (const name of ['a', 'b']) {\n  await page.getByLabel(name).check();\n}",
+        "check label=a\ncheck label=b",
+    ),
+    // Locators kept in variables of a context.
+    (
+        "const ctx = page.context();\nawait ctx.clearCookies();",
+        "cookies clear",
+    ),
 ];
 
 #[test]
@@ -595,10 +648,21 @@ const TODOS: &[(&str, &str)] = &[
         "(a popup opens as a new tab",
     ),
     (
-        "await page.evaluate(n => n * 2, 21);",
+        "await page.evaluate(n => n * 2, count);",
         "(evaluate with an argument",
     ),
-    ("await helper(page);", "(not a Playwright call"),
+    (
+        "await helper(page);",
+        "(helper() is not defined in this file: inline its steps",
+    ),
+    (
+        "await expect(page.getByTestId('row')).toContainText(['a', 'b']);",
+        "(a list of texts",
+    ),
+    (
+        "if (x) { await page.waitForFunction((n: number) => n > 1, 2); }",
+        "(conditions and loops",
+    ),
     (
         "await expect(page.locator('#a')).toMatchAriaSnapshot(`- button`);",
         "(an ARIA template",
@@ -822,7 +886,7 @@ test('b', async ({ page }) => { await page.goto('/b'); });
 #[test]
 fn conditional_skips_become_todo_lines() {
     let src = "\
-test.skip(({ browserName }) => browserName !== 'chromium', 'Chromium only');
+test.skip(({ isMobile }) => isMobile, 'desktop only');
 test('a', async ({ page }) => {
   test.skip(process.env.CI, 'not in CI');
   await page.goto('/a');
@@ -900,4 +964,192 @@ fn words_are_quoted_for_the_script_syntax() {
     assert_eq!(lit("it's ${x} \\d"), r#""it's $${x} \\d""#);
     let var = Word(vec![Part::Lit("a\"".into()), Part::Var("env:X".into())]);
     assert_eq!(var.render(), "\"a\\\"${env:X}\"");
+}
+
+#[test]
+fn conditions_on_the_browser_hold_or_not_in_chrome() {
+    let src = "\
+test.skip(({ browserName }) => browserName !== 'chromium', 'Chromium only');
+test.describe('d', () => {
+  test.fixme(({ browserName }) => browserName === 'chromium', 'broken in Chrome');
+  test('b', async ({ page }) => { await page.goto('/b'); });
+});
+test('a', async ({ page, browserName }) => {
+  test.skip(browserName === 'webkit' || browserName === 'firefox', 'slow there');
+  await page.goto('/a');
+});
+";
+    let converted = convert("t.spec.ts", src);
+    assert!(converted.todos.is_empty(), "{:?}", converted.todos);
+    assert!(
+        converted
+            .script
+            .contains("\n@test \"d > b\" @skip \"broken in Chrome\"\n"),
+        "{}",
+        converted.script
+    );
+    assert!(
+        converted.script.contains("\n@test \"a\"\n  goto /a\n"),
+        "{}",
+        converted.script
+    );
+    script::check_scenario(&converted.script).unwrap();
+}
+
+#[test]
+fn details_objects_give_tags_and_skips() {
+    let src = "\
+test.describe('cart', { tag: '@smoke' }, () => {
+  test('adds', { tag: ['@fast', '@smoke'] }, async ({ page }) => { await page.goto('/a'); });
+  test('pays', { annotation: { type: 'fixme', description: 'payment sandbox down' } }, async ({ page }) => {
+    await page.goto('/b');
+  });
+  test('lists', { annotation: [{ type: 'issue', description: 'https://x/1' }] }, async ({ page }) => {
+    await page.goto('/c');
+  });
+});
+";
+    let converted = convert("t.spec.ts", src);
+    assert!(converted.todos.is_empty(), "{:?}", converted.todos);
+    let script = &converted.script;
+    assert!(script.contains("\n@tags smoke\n"), "{script}");
+    assert!(
+        script.contains("\n@test \"cart > adds\" @tags fast\n"),
+        "{script}"
+    );
+    assert!(
+        script.contains("\n@test \"cart > pays\" @skip \"payment sandbox down\"\n"),
+        "{script}"
+    );
+    assert!(script.contains("\n@test \"cart > lists\"\n"), "{script}");
+    script::check_scenario(script).unwrap();
+}
+
+#[test]
+fn helpers_of_the_file_are_inlined() {
+    let src = "\
+import { test, expect, type Page } from '@playwright/test';
+
+test('adds', async ({ page }) => {
+  await addTodos(page, ['a', 'b']);
+  await expect(row(page, 1)).toHaveText('b');
+  await checkCount(page, 2);
+  await openMenu({ page, label: 'Settings' });
+});
+
+async function addTodos(page: Page, items: string[]) {
+  const input = page.getByPlaceholder('New todo');
+  for (const item of items) {
+    await input.fill(item);
+    await input.press('Enter');
+  }
+}
+
+const row = (page: Page, i: number) => page.getByTestId('row').nth(i);
+
+async function checkCount(page: Page, expected: number) {
+  return await page.waitForFunction(e => document.querySelectorAll('li').length === e, expected);
+}
+
+const openMenu = async ({ page, label }: { page: Page; label: string }) => {
+  await page.getByRole('button', { name: label }).click();
+  if (label === 'x') console.log('never');
+};
+";
+    let converted = convert("t.spec.ts", src);
+    let want = "\
+@test \"adds\"
+  fill 'placeholder=New todo' a
+  press Enter --in 'placeholder=New todo'
+  fill 'placeholder=New todo' b
+  press Enter --in 'placeholder=New todo'
+  expect 'testid=row >> nth=1' text b --exact
+  wait --fn \"(e => document.querySelectorAll('li').length === e)(2)\"
+  click 'role=button[name=Settings]'
+  # TODO line 26 (in openMenu(), called on line 7: conditions and loops: split into scripts, or drive chrome-cdp from a shell): if (label === 'x') console.log('never');
+";
+    assert!(converted.script.ends_with(want), "{}", converted.script);
+    script::check_scenario(&converted.script).unwrap();
+}
+
+#[test]
+fn values_the_file_changes_are_not_constants() {
+    let src = "\
+let log = [];
+const names = ['a'];
+names.push('b');
+test('t', async ({ page }) => {
+  let step = 'one';
+  step = 'two';
+  await page.getByLabel(step).click();
+  for (const n of names) { await page.getByLabel(n).click(); }
+  await page.getByLabel(log[0]).click();
+});
+";
+    let converted = convert("t.spec.ts", src);
+    let reasons: Vec<(usize, &str)> = converted
+        .todos
+        .iter()
+        .map(|t| (t.line, t.reason.as_str()))
+        .collect();
+    assert_eq!(
+        reasons,
+        [
+            (5, "step changes later: the script needs one value"),
+            (6, "an assignment: the script has no variables to change"),
+            (
+                7,
+                "step is set on line 5, which convert could not translate (step changes later: the script needs one value)"
+            ),
+            (
+                8,
+                "conditions and loops: split into scripts, or drive chrome-cdp from a shell"
+            ),
+            (9, "a value computed at run time"),
+        ]
+    );
+}
+
+#[test]
+fn todo_lines_say_where_an_unknown_value_came_from() {
+    let src = "\
+import translations from './i18n.json';
+test.afterAll(async () => await cleanUp());
+test('t', async ({ page }) => {
+  const save = page.getByRole('button', { name: translations.save });
+  await save.click();
+  await expect(save).toBeEnabled();
+  const loop = { [key]: 1 };
+});
+";
+    let converted = convert("t.spec.ts", src);
+    let todos: Vec<(usize, &str, &str)> = converted
+        .todos
+        .iter()
+        .map(|t| (t.line, t.reason.as_str(), t.code.as_str()))
+        .collect();
+    let unknown =
+        "save is set on line 4, which convert could not translate (a value computed at run time)";
+    assert_eq!(
+        todos,
+        [
+            (
+                2,
+                "cleanUp() is not defined in this file: inline its steps",
+                "async () => await cleanUp()"
+            ),
+            (
+                4,
+                "a value computed at run time",
+                "const save = page.getByRole('button', { name: translations.save });"
+            ),
+            (5, unknown, "await save.click();"),
+            (6, unknown, "await expect(save).toBeEnabled();"),
+            (
+                7,
+                "a value the script cannot keep",
+                "const loop = { [key]: 1 };"
+            ),
+        ]
+    );
 }

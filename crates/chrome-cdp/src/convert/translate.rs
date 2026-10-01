@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 
 use super::lex::TemplatePart;
-use super::parse::{Body, Expr, Func, Pattern, Prop, Stmt, StmtKind};
+use super::parse::{Body, Expr, Func, Param, Pattern, Prop, Stmt, StmtKind};
 use super::{Line, Part, Word};
 use crate::history::quoted_name;
 
@@ -32,6 +32,15 @@ struct Env {
     words: HashMap<String, Word>,
     /// Waits started but not awaited yet: `const p = page.waitForResponse(…)`.
     pending: HashMap<String, Vec<Line>>,
+    /// Constant lists and objects: `const ITEMS = ['a', 'b']`.
+    values: HashMap<String, Expr>,
+    /// Helper functions, inlined where they are called.
+    helpers: HashMap<String, Func>,
+    /// Names convert could not give a value, and why: their uses are TODO
+    /// lines that say so.
+    unknown: HashMap<String, String>,
+    /// How many helper calls deep the lines are.
+    depth: usize,
     /// A page was opened (script mode): the next one is `tab new`.
     page_open: bool,
     /// The test's title as a file name, for unnamed screenshots.
@@ -43,12 +52,29 @@ struct Env {
     settings: Settings,
 }
 
+impl Env {
+    /// Drops what `name` meant, before it gets a new meaning.
+    fn forget(&mut self, name: &str) {
+        self.pages.remove(name);
+        self.contexts.remove(name);
+        self.browsers.remove(name);
+        self.locators.remove(name);
+        self.words.remove(name);
+        self.pending.remove(name);
+        self.values.remove(name);
+        self.helpers.remove(name);
+        self.unknown.remove(name);
+    }
+}
+
 /// A scenario's settings (docs/e2e/scenarios.md), for the file or a test.
 #[derive(Debug, Clone, Default, PartialEq)]
 struct Settings {
     /// `@skip [reason]`.
     skip: Option<String>,
     only: bool,
+    /// `@tags`, without Playwright's leading `@`.
+    tags: Vec<String>,
     timeout: Option<String>,
     retries: Option<String>,
     viewport: Option<String>,
@@ -79,9 +105,16 @@ impl Settings {
         } else {
             (self.viewport.clone(), self.device.clone())
         };
+        let mut tags = self.tags.clone();
+        for t in &inner.tags {
+            if !tags.contains(t) {
+                tags.push(t.clone());
+            }
+        }
         Self {
             skip: inner.skip.clone().or_else(|| self.skip.clone()),
             only: self.only || inner.only,
+            tags,
             timeout: inner.timeout.clone().or_else(|| self.timeout.clone()),
             retries: inner.retries.clone().or_else(|| self.retries.clone()),
             viewport,
@@ -99,6 +132,14 @@ impl Settings {
         }
         if self.only {
             out.push("@only".into());
+        }
+        if !self.tags.is_empty() {
+            let tags: Vec<String> = self
+                .tags
+                .iter()
+                .map(|t| Word::lit(t.as_str()).render())
+                .collect();
+            out.push(format!("@tags {}", tags.join(" ")));
         }
         if let Some(t) = &self.timeout {
             out.push(format!("@timeout {t}"));
@@ -155,6 +196,8 @@ pub(super) struct Converter<'s> {
     /// Statements outside any test: converted as a script when the file
     /// has no tests.
     loose: Vec<Stmt>,
+    /// Names the file assigns to or changes in place: not constants.
+    mutated: HashSet<String>,
 }
 
 impl<'s> Converter<'s> {
@@ -170,6 +213,7 @@ impl<'s> Converter<'s> {
             after_all: Vec::new(),
             runner_todos: Vec::new(),
             loose: Vec::new(),
+            mutated: super::parse::mutated(src),
         }
     }
 
@@ -191,6 +235,23 @@ impl<'s> Converter<'s> {
 
     /// The runner's structure: describe blocks, hooks, `test.use` and tests.
     fn walk(&mut self, stmts: &[Stmt], env: &mut Env) {
+        // Tests run once the whole file is read, so they see the helpers
+        // and constants declared after them.
+        for s in stmts {
+            match &s.kind {
+                StmtKind::Function { name, func } => {
+                    env.forget(name);
+                    env.helpers.insert(name.clone(), func.clone());
+                }
+                StmtKind::Let {
+                    pattern: Pattern::Name(name),
+                    init,
+                } if !is_require(init) => {
+                    self.constant(env, name, init);
+                }
+                _ => {}
+            }
+        }
         for s in stmts {
             match &s.kind {
                 StmtKind::Let { init, .. } if is_require(init) => {}
@@ -198,9 +259,7 @@ impl<'s> Converter<'s> {
                     pattern: Pattern::Name(name),
                     init,
                 } => {
-                    if let Ok(word) = word(env, init) {
-                        env.words.insert(name.clone(), word);
-                    } else {
+                    if !self.constant(env, name, init) {
                         self.loose.push(s.clone());
                     }
                 }
@@ -209,10 +268,31 @@ impl<'s> Converter<'s> {
                         self.loose.push(s.clone());
                     }
                 }
-                StmtKind::Ignored => {}
+                StmtKind::Function { .. } | StmtKind::Ignored => {}
                 _ => self.loose.push(s.clone()),
             }
         }
+    }
+
+    /// Keeps a declaration's value when it is known now and the file does
+    /// not change it: a text, a list or object of them, or a helper.
+    fn constant(&self, env: &mut Env, name: &str, init: &Expr) -> bool {
+        if self.mutated.contains(name) {
+            return false;
+        }
+        if let Some(value) = literal(env, init).filter(|v| !matches!(v, Expr::Str(_))) {
+            env.forget(name);
+            env.values.insert(name.to_owned(), value);
+        } else if let Ok(word) = word(env, init) {
+            env.forget(name);
+            env.words.insert(name.to_owned(), word);
+        } else if let Expr::Func(f) = init {
+            env.forget(name);
+            env.helpers.insert(name.to_owned(), f.clone());
+        } else {
+            return false;
+        }
+        true
     }
 
     /// Handles a call to the test runner; false when `e` is not one.
@@ -246,7 +326,13 @@ impl<'s> Converter<'s> {
             | "describe.only"
             | "describe.skip" => {
                 let Some(f) = func else { return false };
-                let settings = Settings::of_call(&path);
+                let mut settings = Settings::of_call(&path);
+                if let Some(Expr::Object(props)) = args.get(1) {
+                    for w in details(env, props, &mut settings) {
+                        let todo = self.todo(s, &w.0);
+                        self.runner_todos.push(todo);
+                    }
+                }
                 self.scopes.push(Scope {
                     title,
                     settings,
@@ -315,7 +401,13 @@ impl<'s> Converter<'s> {
                 if !matches!(args.first(), Some(Expr::Func(_))) =>
             {
                 let Some(func) = func else { return false };
-                let settings = Settings::of_call(&path);
+                let mut settings = Settings::of_call(&path);
+                if let Some(Expr::Object(props)) = args.get(1) {
+                    for w in details(env, props, &mut settings) {
+                        let todo = self.todo(s, &w.0);
+                        self.runner_todos.push(todo);
+                    }
+                }
                 self.calls.push(TestCall {
                     title: self.full_title(title.as_deref().unwrap_or("test")),
                     func,
@@ -331,13 +423,21 @@ impl<'s> Converter<'s> {
                     String::new()
                 });
             }
-            "test.skip" | "test.fixme" | "test.fail" => {
-                let todo = self.todo(
-                    s,
-                    "a runner call with a condition: write @skip on the tests it skips",
-                );
-                self.runner_todos.push(todo);
-            }
+            "test.skip" | "test.fixme" | "test.fail" => match condition(env, args) {
+                // A condition that never holds in Chrome, such as
+                // `browserName === 'webkit'`.
+                Some(false) => {}
+                Some(true) if path != "test.fail" => {
+                    self.scope().settings.skip = Some(skip_reason(env, &path, args));
+                }
+                _ => {
+                    let todo = self.todo(
+                        s,
+                        "a runner call with a condition: write @skip on the tests it skips",
+                    );
+                    self.runner_todos.push(todo);
+                }
+            },
             _ => return false,
         }
         true
@@ -370,10 +470,17 @@ impl<'s> Converter<'s> {
         for p in &f.params {
             match p.as_str() {
                 "page" => {
+                    env.forget(p);
                     env.pages.insert(p.clone());
                 }
                 "context" => {
+                    env.forget(p);
                     env.contexts.insert(p.clone());
+                }
+                // The tests run in Chrome.
+                "browserName" => {
+                    env.forget(p);
+                    env.words.insert(p.clone(), Word::lit("chromium"));
                 }
                 _ => {}
             }
@@ -542,6 +649,8 @@ impl<'s> Converter<'s> {
             body.insert(0, cmd(["viewport"]).arg(size).line());
         }
         let mut settings = settings.with(&call.settings).with(&env.settings);
+        // The file's tags apply already.
+        settings.tags.retain(|t| !file.tags.contains(t));
         if settings.skip.is_none() && !body.iter().any(|l| matches!(l, Line::Cmd(_))) {
             // A test without steps does not load unless it is skipped.
             settings.skip = Some(if body.iter().any(|l| matches!(l, Line::Todo { .. })) {
@@ -686,8 +795,8 @@ impl<'s> Converter<'s> {
             Body::Expr(e) => {
                 let s = Stmt {
                     kind: StmtKind::Expr((**e).clone()),
-                    start: 0,
-                    end: 0,
+                    start: f.start,
+                    end: f.end,
                 };
                 self.body(env, std::slice::from_ref(&s))
             }
@@ -695,11 +804,21 @@ impl<'s> Converter<'s> {
     }
 
     fn body(&self, env: &mut Env, stmts: &[Stmt]) -> Vec<Line> {
+        for s in stmts {
+            if let StmtKind::Function { name, func } = &s.kind {
+                env.forget(name);
+                env.helpers.insert(name.clone(), func.clone());
+            }
+        }
         let mut out = Vec::new();
         for s in stmts {
             match self.stmt(env, s) {
                 Ok(lines) => out.extend(lines),
                 Err(w) => out.push(self.todo(s, &w.0)),
+            }
+            if matches!(s.kind, StmtKind::Return(_)) {
+                // What follows does not run.
+                break;
             }
         }
         out
@@ -707,7 +826,8 @@ impl<'s> Converter<'s> {
 
     fn stmt(&self, env: &mut Env, s: &Stmt) -> Out {
         match &s.kind {
-            StmtKind::Ignored => Ok(vec![]),
+            StmtKind::Ignored | StmtKind::Function { .. } | StmtKind::Return(None) => Ok(vec![]),
+            StmtKind::ForOf { name, iter, body } => self.for_of(env, name, iter, body),
             StmtKind::Other => {
                 let code = self.code(s);
                 let first = code
@@ -722,21 +842,124 @@ impl<'s> Converter<'s> {
                     _ => why("not understood"),
                 }
             }
-            StmtKind::Let { pattern, init } => self.declare(env, s, pattern, init),
-            StmtKind::Expr(e) => self.expr_stmt(env, s, e),
+            StmtKind::Let { pattern, init } => {
+                let result = self.declare(env, s, pattern, init);
+                if let Err(w) = &result {
+                    let names = match pattern {
+                        Pattern::Name(n) => vec![n.clone()],
+                        Pattern::Array(names) => names.iter().flatten().cloned().collect(),
+                        Pattern::Object(names) => names.clone(),
+                    };
+                    let line = self.line(s);
+                    for n in names {
+                        env.forget(&n);
+                        env.unknown.insert(
+                            n.clone(),
+                            format!(
+                                "{n} is set on line {line}, which convert could not translate ({})",
+                                w.0
+                            ),
+                        );
+                    }
+                }
+                result
+            }
+            StmtKind::Expr(e) | StmtKind::Return(Some(e)) => self.expr_stmt(env, s, e),
         }
+    }
+
+    /// `for (const x of LIST)` over a list known now: its body once per
+    /// item. A body with a step convert cannot translate is one TODO line.
+    fn for_of(&self, env: &mut Env, name: &str, iter: &Expr, body: &[Stmt]) -> Out {
+        const MAX: usize = 50;
+        let Some(Expr::Array(items)) = literal(env, iter) else {
+            return why(
+                "conditions and loops: split into scripts, or drive chrome-cdp from a shell",
+            );
+        };
+        if items.len() > MAX {
+            return why(format!(
+                "a loop over {} items: drive chrome-cdp from a shell",
+                items.len()
+            ));
+        }
+        let mut out = Vec::new();
+        for item in &items {
+            let mut inner = env.clone();
+            bind(env, &mut inner, name, item);
+            let lines = self.body(&mut inner, body);
+            if let Some(Line::Todo { reason, line, .. }) =
+                lines.iter().find(|l| matches!(l, Line::Todo { .. }))
+            {
+                return why(format!("in the loop, line {line}: {reason}"));
+            }
+            env.screenshots = inner.screenshots;
+            out.extend(lines);
+        }
+        Ok(out)
+    }
+
+    /// A call of a helper of the file: its body, with the parameters bound
+    /// to the arguments. What the body cannot translate stays TODO lines
+    /// that name the call.
+    fn inline(&self, env: &mut Env, s: &Stmt, name: &str, f: &Func, args: &[Expr]) -> Out {
+        const MAX_DEPTH: usize = 8;
+        if env.depth >= MAX_DEPTH {
+            return why(format!(
+                "{name}() calls helpers {MAX_DEPTH} deep: inline its steps"
+            ));
+        }
+        let mut inner = env.clone();
+        bind_params(env, &mut inner, name, f, args)?;
+        inner.depth += 1;
+        inner.in_test = false;
+        let mut lines = self.func_body(&mut inner, f);
+        env.screenshots = inner.screenshots;
+        let call = self.line(s);
+        for l in &mut lines {
+            if let Line::Todo { reason, .. } = l
+                && !reason.starts_with("in ")
+            {
+                *reason = format!("in {name}(), called on line {call}: {reason}");
+            }
+        }
+        Ok(lines)
     }
 
     fn declare(&self, env: &mut Env, s: &Stmt, pattern: &Pattern, init: &Expr) -> Out {
         let awaited = matches!(init, Expr::Await(_));
         let value = init.awaited();
         if let Pattern::Name(name) = pattern {
-            if let Ok(w) = word(env, value) {
+            let constant = !self.mutated.contains(name);
+            if constant && let Some(v) = literal(env, value).filter(|v| !matches!(v, Expr::Str(_)))
+            {
+                env.forget(name);
+                env.values.insert(name.clone(), v);
+                return Ok(vec![]);
+            }
+            if let Ok(w) = word(env, value)
+                && constant
+            {
+                env.forget(name);
                 env.words.insert(name.clone(), w);
                 return Ok(vec![]);
             }
-            if !awaited && let Ok(loc) = Self::locator(env, value) {
-                env.locators.insert(name.clone(), loc);
+            let loc = Self::locator(env, value);
+            if !awaited && let Ok(loc) = &loc {
+                env.forget(name);
+                env.locators.insert(name.clone(), loc.clone());
+                return Ok(vec![]);
+            }
+            if let Expr::Func(f) = value
+                && constant
+            {
+                env.forget(name);
+                env.helpers.insert(name.clone(), f.clone());
+                return Ok(vec![]);
+            }
+            if !awaited && Self::is_context(env, value) {
+                env.forget(name);
+                env.contexts.insert(name.clone());
                 return Ok(vec![]);
             }
             if let Expr::Name(pending) = value
@@ -802,11 +1025,28 @@ impl<'s> Converter<'s> {
                 reader_hint(value)
             ));
         }
+        if let Pattern::Name(_) = pattern
+            && looks_like_locator(env, value)
+            && let Err(w) = Self::locator(env, value)
+        {
+            return Err(w);
+        }
+        if let Pattern::Name(name) = pattern
+            && self.mutated.contains(name)
+        {
+            return why(format!("{name} changes later: the script needs one value"));
+        }
+        if matches!(value, Expr::Member(..) | Expr::Index(..) | Expr::Name(_)) {
+            word(env, value)?;
+        }
         why("a value the script cannot keep")
     }
 
     fn expr_stmt(&self, env: &mut Env, s: &Stmt, e: &Expr) -> Out {
         let value = e.awaited();
+        if matches!(value, Expr::Other) && is_assignment(&self.code(s)) {
+            return why("an assignment: the script has no variables to change");
+        }
         if let Expr::Name(name) = value {
             if let Some(lines) = env.pending.remove(name) {
                 return Ok(lines);
@@ -850,9 +1090,16 @@ impl<'s> Converter<'s> {
                 }
                 "test.slow" | "test.setTimeout" | "console.log" => return Ok(vec![]),
                 "test.skip" | "test.fixme" => {
-                    return why(
-                        "a runner call with a condition: write @skip on the @test line when it holds",
-                    );
+                    return match condition(env, args) {
+                        Some(false) => Ok(vec![]),
+                        Some(true) if env.in_test => {
+                            env.settings.skip = Some(skip_reason(env, &path, args));
+                            Ok(vec![])
+                        }
+                        _ => why(
+                            "a runner call with a condition: write @skip on the @test line when it holds",
+                        ),
+                    };
                 }
                 "test.fail" | "test.info" => {
                     return why("a runner call");
@@ -860,8 +1107,17 @@ impl<'s> Converter<'s> {
                 _ => {}
             }
         }
+        if let Expr::Call(callee, args) = value
+            && let Expr::Name(name) = &**callee
+        {
+            let Some(f) = env.helpers.get(name).cloned() else {
+                return why(format!(
+                    "{name}() is not defined in this file: inline its steps"
+                ));
+            };
+            return self.inline(env, s, name, &f, args);
+        }
         if let Some(expect) = Expect::of(value) {
-            let _ = s;
             return Self::expect(env, &expect);
         }
         Self::call(env, value)
@@ -902,7 +1158,10 @@ impl<'s> Converter<'s> {
             return why("not understood");
         };
         let Expr::Member(recv, method) = &**callee else {
-            return why("not a Playwright call");
+            return match &**callee {
+                Expr::Name(name) => why(format!("{name}() is not a Playwright call")),
+                _ => why("not a Playwright call"),
+            };
         };
         let method = method.as_str();
         if Self::is_page(env, recv) {
@@ -1006,11 +1265,13 @@ impl<'s> Converter<'s> {
             }
             "waitForTimeout" => one(cmd(["wait"]).arg(duration(need(arg(0), "a time")?)?)),
             "waitForFunction" => {
-                if args.len() > 1 && !matches!(arg(1), Some(Expr::Name(n)) if n == "undefined") {
-                    return why("waitForFunction with an argument: put the value into the script");
-                }
-                let js = script_source(env, need(arg(0), "a function")?, true)?;
-                one(cmd(["wait", "--fn"]).arg(js))
+                let f = need(arg(0), "a function")?;
+                let js = match arg(1) {
+                    Some(Expr::Name(n)) if n == "undefined" => script_source(env, f, true)?,
+                    None => script_source(env, f, true)?,
+                    Some(value) => called(env, "waitForFunction", f, None, value)?,
+                };
+                one(timeout_only(cmd(["wait", "--fn"]).arg(js), arg(2))?)
             }
             "waitForResponse" | "waitForRequest" => {
                 let flag = if method == "waitForResponse" {
@@ -1030,10 +1291,12 @@ impl<'s> Converter<'s> {
                 other => why(format!("the {other} event")),
             },
             "evaluate" => {
-                if args.len() > 1 {
-                    return why("evaluate with an argument: put the value into the script");
-                }
-                one(cmd(["eval"]).arg(script_source(env, need(arg(0), "a script")?, false)?))
+                let f = need(arg(0), "a script")?;
+                let js = match arg(1) {
+                    Some(value) => called(env, "evaluate", f, None, value)?,
+                    None => script_source(env, f, false)?,
+                };
+                one(cmd(["eval"]).arg(js))
             }
             "screenshot" => {
                 let mut c = cmd(["screenshot"]);
@@ -1349,10 +1612,11 @@ impl<'s> Converter<'s> {
                 one(c)
             }
             "evaluate" => {
-                if args.len() > 1 {
-                    return why("evaluate with an argument: put the value into the script");
-                }
-                let js = script_source(env, need(arg(0), "a function")?, false)?;
+                let f = need(arg(0), "a function")?;
+                let js = match arg(1) {
+                    Some(value) => called(env, "evaluate", f, Some("el"), value)?,
+                    None => script_source(env, f, false)?,
+                };
                 one(cmd(["eval"]).flag("--in", loc.to_owned()).arg(js))
             }
             "dispatchEvent" => {
@@ -1382,12 +1646,41 @@ impl<'s> Converter<'s> {
     /// A locator expression → a chrome-cdp locator.
     fn locator(env: &Env, e: &Expr) -> Result<String, Why> {
         match e {
-            Expr::Name(n) => env
-                .locators
-                .get(n)
-                .cloned()
-                .ok_or_else(|| Why(format!("{n} is not a locator the script knows"))),
+            Expr::Name(n) => env.locators.get(n).cloned().ok_or_else(|| {
+                Why(env
+                    .unknown
+                    .get(n)
+                    .cloned()
+                    .unwrap_or_else(|| format!("{n} is not a locator the script knows")))
+            }),
             Expr::Call(callee, args) => {
+                if let Expr::Name(name) = &**callee {
+                    // A helper that returns a locator.
+                    let Some(f) = env.helpers.get(name) else {
+                        return why(format!(
+                            "{name}() is not defined in this file: inline what it returns"
+                        ));
+                    };
+                    let returned = match &f.body {
+                        Body::Expr(e) => Some(&**e),
+                        Body::Block(stmts) => match stmts.as_slice() {
+                            [
+                                Stmt {
+                                    kind: StmtKind::Return(Some(e)),
+                                    ..
+                                },
+                            ] => Some(e),
+                            _ => None,
+                        },
+                    };
+                    let Some(returned) = returned.filter(|_| env.depth < 8) else {
+                        return why(format!("{name}() does more than return a locator"));
+                    };
+                    let mut inner = env.clone();
+                    bind_params(env, &mut inner, name, f, args)?;
+                    inner.depth += 1;
+                    return Self::locator(&inner, returned.awaited());
+                }
                 let Expr::Member(recv, method) = &**callee else {
                     return why("not a locator");
                 };
@@ -1398,7 +1691,10 @@ impl<'s> Converter<'s> {
                 let step = match method.as_str() {
                     "first" => "nth=0".to_owned(),
                     "last" => "nth=-1".to_owned(),
-                    "nth" => format!("nth={}", number(need(args.first(), "an index")?)?),
+                    "nth" => format!(
+                        "nth={}",
+                        known_number(env, need(args.first(), "an index")?)?
+                    ),
                     "filter" => return filter(env, &before, args.first()),
                     "contentFrame" => return frame_of(&before),
                     "and" | "or" => return combine(env, &before, method, args.first()),
@@ -1422,7 +1718,7 @@ impl<'s> Converter<'s> {
                 "toHaveTitle" => {
                     let title = need(arg(0), "a title")?;
                     c = c.flag("--title", text_value(env, title)?);
-                    if !matches!(title, Expr::Regex { .. }) {
+                    if !matches!(regex_of(env, title), Expr::Regex { .. }) {
                         c = c.arg("--exact".to_owned());
                     }
                     c = timeout_only(c, arg(1))?;
@@ -1437,16 +1733,25 @@ impl<'s> Converter<'s> {
             }
             return Ok(vec![c.line()]);
         }
-        let Ok(loc) = Self::locator(env, x.subject) else {
-            return why(format!(
-                "{} on a value, not a locator: compare a command's -q output in a shell",
-                x.matcher
-            ));
+        let loc = match Self::locator(env, x.subject) {
+            Ok(loc) => loc,
+            // A locator convert could not read: say why.
+            Err(w)
+                if ELEMENT_MATCHERS.contains(&x.matcher) && looks_like_locator(env, x.subject) =>
+            {
+                return Err(w);
+            }
+            Err(_) => {
+                return why(format!(
+                    "{} on a value, not a locator: compare a command's -q output in a shell",
+                    x.matcher
+                ));
+            }
         };
         if x.matcher == "toHaveScreenshot" {
             return Self::screenshot_assertion(env, Some(&loc), x);
         }
-        c = c.arg(loc);
+        c = c.arg(loc.clone());
         // The index of the options object among the arguments.
         let opts;
         let mut negate = x.not;
@@ -1486,13 +1791,26 @@ impl<'s> Converter<'s> {
             }
             "toHaveText" | "toContainText" => {
                 let value = need(arg(0), "a text")?;
-                if matches!(value, Expr::Array(_)) {
-                    return why(
-                        "a list of texts: expect LOC count N, then expect 'LOC >> nth=0' text …",
-                    );
+                let known = literal(env, value);
+                if let Some(Expr::Array(items)) = known.as_ref().or(Some(value)) {
+                    if x.matcher == "toContainText" || negate {
+                        return why(
+                            "a list of texts: expect LOC count N, then expect 'LOC >> nth=0' text …",
+                        );
+                    }
+                    // Each element's whole text, in order.
+                    return each(&loc, items, arg(1), |c, item| {
+                        let c = c.arg("text".to_owned()).word(text_word(env, item)?);
+                        Ok(if matches!(regex_of(env, item), Expr::Regex { .. }) {
+                            c
+                        } else {
+                            c.arg("--exact".to_owned())
+                        })
+                    });
                 }
                 c = c.arg("text".to_owned()).word(text_word(env, value)?);
-                if x.matcher == "toHaveText" && !matches!(value, Expr::Regex { .. }) {
+                if x.matcher == "toHaveText" && !matches!(regex_of(env, value), Expr::Regex { .. })
+                {
                     c = c.arg("--exact".to_owned());
                 }
                 opts = 1;
@@ -1534,13 +1852,14 @@ impl<'s> Converter<'s> {
             }
             "toHaveClass" => {
                 let value = need(arg(0), "a class")?;
-                if matches!(value, Expr::Array(_)) {
-                    return why("a list of classes: one expect per element");
+                let known = literal(env, value);
+                if let Some(Expr::Array(items)) = known.as_ref().or(Some(value)) {
+                    if negate {
+                        return why("a negated list of classes: one expect per element");
+                    }
+                    return each(&loc, items, arg(1), |c, item| whole_class(env, c, item));
                 }
-                c = c
-                    .arg("attr".to_owned())
-                    .arg("class".to_owned())
-                    .word(text_word(env, value)?);
+                c = whole_class(env, c, value)?;
                 opts = 1;
             }
             "toContainClass" => {
@@ -1559,8 +1878,18 @@ impl<'s> Converter<'s> {
             "toHaveCount" => {
                 c = c
                     .arg("count".to_owned())
-                    .arg(number(need(arg(0), "a count")?)?);
+                    .arg(known_number(env, need(arg(0), "a count")?)?);
                 opts = 1;
+            }
+            "toBeEmpty"
+                if loc
+                    .rsplit(" >> ")
+                    .next()
+                    .is_some_and(|l| l.starts_with("placeholder=")) =>
+            {
+                // Only fields have a placeholder.
+                c = c.arg("value".to_owned()).arg(String::new());
+                opts = 0;
             }
             "toBeEmpty" => {
                 return why("toBeEmpty: expect LOC text '' --exact, or value '' for a field");
@@ -1644,13 +1973,18 @@ impl<'s> Converter<'s> {
 
     fn todo(&self, s: &Stmt, reason: &str) -> Line {
         Line::Todo {
-            line: self.src[..s.start.min(self.src.len())]
-                .matches('\n')
-                .count()
-                + 1,
+            line: self.line(s),
             reason: reason.to_owned(),
             code: self.code(s),
         }
+    }
+
+    /// The statement's line in the spec file.
+    fn line(&self, s: &Stmt) -> usize {
+        self.src[..s.start.min(self.src.len())]
+            .matches('\n')
+            .count()
+            + 1
     }
 
     /// The statement's source on one line.
@@ -1664,6 +1998,81 @@ impl<'s> Converter<'s> {
         } else {
             flat
         }
+    }
+}
+
+/// The matchers of an element (or the page), not of a value.
+const ELEMENT_MATCHERS: &[&str] = &[
+    "toBeVisible",
+    "toBeHidden",
+    "toBeAttached",
+    "toBeEnabled",
+    "toBeDisabled",
+    "toBeEditable",
+    "toBeChecked",
+    "toBeFocused",
+    "toBeInViewport",
+    "toBeEmpty",
+    "toHaveText",
+    "toContainText",
+    "toHaveValue",
+    "toHaveValues",
+    "toHaveAttribute",
+    "toHaveId",
+    "toHaveClass",
+    "toContainClass",
+    "toHaveCSS",
+    "toHaveCount",
+    "toHaveScreenshot",
+    "toMatchAriaSnapshot",
+    "toHaveURL",
+    "toHaveTitle",
+];
+
+/// A list matcher as `expect LOC count N`, then one check per element.
+fn each(
+    loc: &str,
+    items: &[Expr],
+    opts: Option<&Expr>,
+    check: impl Fn(Cmd, &Expr) -> Result<Cmd, Why>,
+) -> Out {
+    let count = cmd(["expect"])
+        .arg(loc.to_owned())
+        .arg("count")
+        .arg(items.len().to_string());
+    let mut lines = vec![timeout_only(count, opts)?.line()];
+    for (i, item) in items.iter().enumerate() {
+        let c = check(cmd(["expect"]).arg(format!("{loc} >> nth={i}")), item)?;
+        lines.push(timeout_only(c, opts)?.line());
+    }
+    Ok(lines)
+}
+
+/// `toHaveClass`'s value: the whole class attribute, which is `''` for an
+/// element without one.
+fn whole_class(env: &Env, c: Cmd, value: &Expr) -> Result<Cmd, Why> {
+    let value = literal(env, value).unwrap_or_else(|| value.clone());
+    if matches!(&value, Expr::Str(s) if s.trim().is_empty()) {
+        return Ok(c.arg("class".to_owned()).arg("/^$/".to_owned()));
+    }
+    Ok(c.arg("attr".to_owned())
+        .arg("class".to_owned())
+        .word(text_word(env, &value)?))
+}
+
+/// `e` is a locator chain: from a page, a locator, a name convert could not
+/// read, or a helper call.
+fn looks_like_locator(env: &Env, e: &Expr) -> bool {
+    match e {
+        Expr::Name(n) => {
+            env.pages.contains(n) || env.locators.contains_key(n) || env.unknown.contains_key(n)
+        }
+        Expr::Call(callee, _) => match &**callee {
+            Expr::Name(_) => true,
+            Expr::Member(recv, _) => looks_like_locator(env, recv),
+            _ => false,
+        },
+        _ => false,
     }
 }
 
@@ -1776,14 +2185,313 @@ fn word(env: &Env, e: &Expr) -> Result<Word, Why> {
             Ok(out)
         }
         Expr::Binary("??" | "||", a, _) => word(env, a),
+        Expr::Name(n) if env.unknown.contains_key(n) => Err(Why(env.unknown[n].clone())),
         other => match other.path() {
             Some(path) if path.starts_with("process.env.") => Ok(Word(vec![Part::Var(format!(
                 "env:{}",
                 &path["process.env.".len()..]
             ))])),
-            _ => why("a value computed at run time"),
+            _ => match literal(env, other) {
+                Some(Expr::Str(s) | Expr::Num(s)) => Ok(Word::lit(s)),
+                _ => why("a value computed at run time"),
+            },
         },
     }
+}
+
+/// A value known when converting, as a literal: texts, numbers, booleans,
+/// and lists and objects of them, read through constants, `[i]`, `.key`,
+/// `.length` and `.slice()`.
+fn literal(env: &Env, e: &Expr) -> Option<Expr> {
+    match e {
+        Expr::Str(_) | Expr::Num(_) | Expr::Regex { .. } => Some(e.clone()),
+        Expr::Name(n) if matches!(n.as_str(), "true" | "false" | "null") => Some(e.clone()),
+        Expr::Name(n) => env.values.get(n).cloned().or_else(|| {
+            let w = env.words.get(n)?;
+            match w.0.as_slice() {
+                [] => Some(Expr::Str(String::new())),
+                [Part::Lit(t)] => Some(Expr::Str(t.clone())),
+                _ => None,
+            }
+        }),
+        Expr::Unary("-", inner) => match &**inner {
+            Expr::Num(_) => Some(e.clone()),
+            _ => None,
+        },
+        Expr::Template(_) | Expr::Binary("+", ..) => plain(env, e).ok().map(Expr::Str),
+        Expr::Array(items) => {
+            let mut out = Vec::new();
+            for item in items {
+                match item {
+                    Expr::Spread(inner) => match literal(env, inner)? {
+                        Expr::Array(more) => out.extend(more),
+                        _ => return None,
+                    },
+                    other => out.push(literal(env, other)?),
+                }
+            }
+            Some(Expr::Array(out))
+        }
+        Expr::Object(props) => {
+            let mut out = Vec::new();
+            for p in props {
+                match p {
+                    Prop::Pair(k, v) => out.push(Prop::Pair(k.clone(), literal(env, v)?)),
+                    Prop::Spread(inner) => match literal(env, inner)? {
+                        Expr::Object(more) => out.extend(more),
+                        _ => return None,
+                    },
+                    Prop::Other => return None,
+                }
+            }
+            Some(Expr::Object(out))
+        }
+        Expr::Index(object, key) => match (literal(env, object)?, literal(env, key)?) {
+            (Expr::Array(items), Expr::Num(i)) => items.into_iter().nth(i.parse().ok()?),
+            (Expr::Object(props), Expr::Str(k) | Expr::Num(k)) => member(&props, &k),
+            _ => None,
+        },
+        Expr::Member(object, key) => match literal(env, object)? {
+            Expr::Object(props) => member(&props, key),
+            Expr::Array(items) if key == "length" => Some(Expr::Num(items.len().to_string())),
+            Expr::Str(s) if key == "length" => Some(Expr::Num(s.chars().count().to_string())),
+            _ => None,
+        },
+        Expr::Call(callee, args) => {
+            let Expr::Member(object, method) = &**callee else {
+                return None;
+            };
+            let Expr::Array(items) = literal(env, object)? else {
+                return None;
+            };
+            if method != "slice" {
+                return None;
+            }
+            // Negative indexes count from the end.
+            let index = |a: Option<&Expr>, default: usize| -> Option<usize> {
+                let Some(a) = a else { return Some(default) };
+                let n: i64 = number(&literal(env, a)?).ok()?.parse().ok()?;
+                let back = usize::try_from(n.unsigned_abs()).ok()?;
+                Some(if n < 0 {
+                    items.len().saturating_sub(back)
+                } else {
+                    back.min(items.len())
+                })
+            };
+            let from = index(args.first(), 0)?;
+            let to = index(args.get(1), items.len())?;
+            Some(Expr::Array(items.get(from..to.max(from))?.to_vec()))
+        }
+        _ => None,
+    }
+}
+
+/// An object literal's value for `key`.
+fn member(props: &[Prop], key: &str) -> Option<Expr> {
+    props.iter().rev().find_map(|p| match p {
+        Prop::Pair(k, v) if k == key => Some(v.clone()),
+        _ => None,
+    })
+}
+
+/// Gives `name` in `inner` what `value` means in `outer`: a page, context,
+/// text, constant, locator or helper. A value known only at run time makes
+/// the uses of `name` TODO lines.
+fn bind(outer: &Env, inner: &mut Env, name: &str, value: &Expr) {
+    inner.forget(name);
+    let value = value.awaited();
+    if Converter::is_page(outer, value) {
+        inner.pages.insert(name.to_owned());
+    } else if Converter::is_context(outer, value) {
+        inner.contexts.insert(name.to_owned());
+    } else if let Some(v) = literal(outer, value).filter(|v| !matches!(v, Expr::Str(_))) {
+        inner.values.insert(name.to_owned(), v);
+    } else if let Ok(w) = word(outer, value) {
+        inner.words.insert(name.to_owned(), w);
+    } else if let Ok(loc) = Converter::locator(outer, value) {
+        inner.locators.insert(name.to_owned(), loc);
+    } else if let Expr::Func(f) = value {
+        inner.helpers.insert(name.to_owned(), f.clone());
+    } else if let Expr::Name(n) = value
+        && let Some(f) = outer.helpers.get(n)
+    {
+        inner.helpers.insert(name.to_owned(), f.clone());
+    } else {
+        let why = match value {
+            Expr::Name(n) if outer.unknown.contains_key(n) => outer.unknown[n].clone(),
+            _ => format!("{name} is computed at run time"),
+        };
+        inner.unknown.insert(name.to_owned(), why);
+    }
+}
+
+/// Binds a helper's parameters to a call's arguments.
+fn bind_params(
+    outer: &Env,
+    inner: &mut Env,
+    name: &str,
+    f: &Func,
+    args: &[Expr],
+) -> Result<(), Why> {
+    for (i, p) in f.positional.iter().enumerate() {
+        let arg = args
+            .get(i)
+            .filter(|a| !matches!(a, Expr::Name(n) if n == "undefined"));
+        match p {
+            Param::Name(n) => {
+                if let Some(a) = arg {
+                    bind(outer, inner, n, a);
+                } else {
+                    inner.forget(n);
+                    inner
+                        .unknown
+                        .insert(n.clone(), format!("{name}() is called without {n}"));
+                }
+            }
+            Param::Object(keys) => {
+                let props = match arg.map(|a| literal(outer, a).unwrap_or_else(|| a.clone())) {
+                    Some(Expr::Object(props)) => props,
+                    None => Vec::new(),
+                    Some(_) => return why(format!("{name}() takes an object convert cannot read")),
+                };
+                for (key, local) in keys {
+                    if let Some(v) = member(&props, key) {
+                        bind(outer, inner, local, &v);
+                    } else {
+                        inner.forget(local);
+                        inner
+                            .unknown
+                            .insert(local.clone(), format!("{name}() is called without {key}"));
+                    }
+                }
+            }
+            Param::Other => return why(format!("{name}() takes a parameter convert cannot bind")),
+        }
+    }
+    Ok(())
+}
+
+/// Whether a condition holds in Chrome, when convert can tell: `true`,
+/// `browserName === 'webkit'`, `!x`, `a && b`. For a function (`({
+/// browserName }) => …`), what it returns.
+fn condition(env: &Env, args: &[Expr]) -> Option<bool> {
+    let first = args.first()?;
+    let Expr::Func(f) = first else {
+        return truth(env, first);
+    };
+    let env = Converter::hook_env(env, f);
+    match &f.body {
+        Body::Expr(e) => truth(&env, e),
+        Body::Block(stmts) => match stmts.as_slice() {
+            [
+                Stmt {
+                    kind: StmtKind::Return(Some(e)),
+                    ..
+                },
+            ] => truth(&env, e),
+            _ => None,
+        },
+    }
+}
+
+fn truth(env: &Env, e: &Expr) -> Option<bool> {
+    match e {
+        Expr::Unary("!", inner) => truth(env, inner).map(|held| !held),
+        Expr::Binary("&&", left, right) => match (truth(env, left), truth(env, right)) {
+            (Some(false), _) | (_, Some(false)) => Some(false),
+            (Some(true), Some(true)) => Some(true),
+            _ => None,
+        },
+        Expr::Binary("||", left, right) => match (truth(env, left), truth(env, right)) {
+            (Some(true), _) | (_, Some(true)) => Some(true),
+            (Some(false), Some(false)) => Some(false),
+            _ => None,
+        },
+        Expr::Binary(op @ ("===" | "==" | "!==" | "!="), left, right) => {
+            let same = match (literal(env, left)?, literal(env, right)?) {
+                (Expr::Num(one), Expr::Num(other)) => one
+                    .parse::<f64>()
+                    .ok()?
+                    .total_cmp(&other.parse::<f64>().ok()?)
+                    .is_eq(),
+                (Expr::Str(one), Expr::Str(other)) | (Expr::Name(one), Expr::Name(other)) => {
+                    one == other
+                }
+                _ => return None,
+            };
+            Some(same == op.starts_with('='))
+        }
+        other => match literal(env, other)? {
+            Expr::Name(word) if word == "true" => Some(true),
+            Expr::Name(word) if word == "false" || word == "null" => Some(false),
+            Expr::Str(text) => Some(!text.is_empty()),
+            _ => None,
+        },
+    }
+}
+
+/// The `@skip` reason of `test.skip(condition, 'why')` or `test.fixme`.
+fn skip_reason(env: &Env, path: &str, args: &[Expr]) -> String {
+    match args.get(1).and_then(|a| plain(env, a).ok()) {
+        Some(reason) => reason,
+        None if path.ends_with("fixme") => "fixme".into(),
+        None => String::new(),
+    }
+}
+
+/// A test's or describe's details object (`{ tag: '@smoke', annotation:
+/// { type: 'skip' } }`) into `settings`; what it cannot read, as reasons.
+fn details(env: &Env, props: &[Prop], settings: &mut Settings) -> Vec<Why> {
+    let mut out = Vec::new();
+    for p in props {
+        let Prop::Pair(key, value) = p else {
+            out.push(Why("a details object computed at run time".into()));
+            continue;
+        };
+        match key.as_str() {
+            "tag" => match strings(env, value) {
+                Ok(tags) => {
+                    for t in tags {
+                        let t = t.trim_start_matches('@').to_owned();
+                        if !t.is_empty() && !settings.tags.contains(&t) {
+                            settings.tags.push(t);
+                        }
+                    }
+                }
+                Err(w) => out.push(w),
+            },
+            "annotation" => {
+                let value = literal(env, value).unwrap_or_else(|| value.clone());
+                let list = match value {
+                    Expr::Array(items) => items,
+                    one => vec![one],
+                };
+                for a in &list {
+                    let Expr::Object(fields) = a else {
+                        out.push(Why("an annotation computed at run time".into()));
+                        continue;
+                    };
+                    let text = |k: &str| member(fields, k).and_then(|v| plain(env, &v).ok());
+                    // Other types (issue, …) are notes for the report.
+                    match text("type").as_deref() {
+                        Some(kind @ ("skip" | "fixme")) => {
+                            settings.skip = Some(text("description").unwrap_or_else(|| {
+                                if kind == "fixme" {
+                                    "fixme".into()
+                                } else {
+                                    String::new()
+                                }
+                            }));
+                        }
+                        Some(_) => {}
+                        None => out.push(Why("an annotation without a type".into())),
+                    }
+                }
+            }
+            other => out.push(Why(format!("the {other} detail"))),
+        }
+    }
+    out
 }
 
 /// A string known when converting (no variables).
@@ -1806,9 +2514,17 @@ fn strings(env: &Env, e: &Expr) -> Result<Vec<String>, Why> {
     }
 }
 
+/// `e`, or the regex constant it names.
+fn regex_of(env: &Env, e: &Expr) -> Expr {
+    match literal(env, e) {
+        Some(re @ Expr::Regex { .. }) => re,
+        _ => e.clone(),
+    }
+}
+
 /// A text or regex for expect: `/re/flags` stays a regex.
 fn text_word(env: &Env, e: &Expr) -> Result<Word, Why> {
-    match e {
+    match &regex_of(env, e) {
         Expr::Regex { pattern, flags } => Ok(Word::lit(format!("/{pattern}/{flags}"))),
         other => {
             let w = word(env, other)?;
@@ -1827,7 +2543,7 @@ fn text_word(env: &Env, e: &Expr) -> Result<Word, Why> {
 }
 
 fn text_value(env: &Env, e: &Expr) -> Result<String, Why> {
-    match e {
+    match &regex_of(env, e) {
         Expr::Regex { pattern, flags } => Ok(format!("/{pattern}/{flags}")),
         other => plain(env, other),
     }
@@ -1835,11 +2551,16 @@ fn text_value(env: &Env, e: &Expr) -> Result<String, Why> {
 
 /// A URL pattern: a glob or part, or a regex.
 fn pattern(env: &Env, e: &Expr) -> Result<String, Why> {
-    match e {
+    match &regex_of(env, e) {
         Expr::Regex { pattern, flags } => Ok(format!("/{pattern}/{flags}")),
         Expr::Func(_) => why("a predicate function: wait --response takes a URL pattern"),
         other => plain(env, other),
     }
+}
+
+/// A number, maybe from a constant: `ITEMS.length`, a helper's `i`.
+fn known_number(env: &Env, e: &Expr) -> Result<String, Why> {
+    number(&literal(env, e).unwrap_or_else(|| e.clone()))
 }
 
 fn number(e: &Expr) -> Result<String, Why> {
@@ -2118,7 +2839,10 @@ fn json(env: &Env, e: &Expr) -> Result<String, Why> {
                 }
                 Value::Object(map)
             }
-            _ => return why("JSON computed at run time: put it in a file for --body-file"),
+            other => match literal(env, other) {
+                Some(known) if !matches!(known, Expr::Regex { .. }) => value(env, &known)?,
+                _ => return why("JSON computed at run time: put it in a file for --body-file"),
+            },
         })
     }
     Ok(value(env, e)?.to_string())
@@ -2137,14 +2861,39 @@ fn init_script(env: &Env, e: &Expr) -> Out {
     }
 }
 
+/// A function called with a value known now, as JavaScript: `(fn)(3)`,
+/// or `el => (fn)(el, 3)` with the element first.
+fn called(env: &Env, what: &str, f: &Expr, el: Option<&str>, value: &Expr) -> Result<String, Why> {
+    let (Expr::Func(f), Ok(value)) = (f, json(env, value)) else {
+        return why(format!(
+            "{what} with an argument: put the value into the script"
+        ));
+    };
+    let source = js_source(f)?;
+    Ok(match el {
+        Some(el) => format!("{el} => ({source})({el}, {value})"),
+        None => format!("({source})({value})"),
+    })
+}
+
 /// JavaScript to run: a string as it is, or a function's source (called
 /// when `call` is set, for commands that take an expression).
 fn script_source(env: &Env, e: &Expr, call: bool) -> Result<String, Why> {
     match e {
-        Expr::Func(f) if call => Ok(format!("({})()", f.source)),
-        Expr::Func(f) => Ok(f.source.clone()),
+        Expr::Func(f) if call => Ok(format!("({})()", js_source(f)?)),
+        Expr::Func(f) => js_source(f),
         other => plain(env, other),
     }
+}
+
+/// A function's source to run in the page, which must be JavaScript.
+fn js_source(f: &Func) -> Result<String, Why> {
+    if super::parse::has_types(&f.source) {
+        return why(
+            "a function with TypeScript types convert could not remove: write it in JavaScript",
+        );
+    }
+    Ok(f.source.clone())
 }
 
 fn keyboard(env: &Env, method: &str, args: &[Expr]) -> Out {
@@ -2417,7 +3166,7 @@ fn flag_value(v: &Expr) -> Result<&str, Why> {
 /// A text value inside a locator: a part (as Playwright's default), the
 /// exact text quoted, or a regex.
 fn locator_text(env: &Env, e: &Expr, exact: bool) -> Result<String, Why> {
-    if let Expr::Regex { pattern, flags } = e {
+    if let Expr::Regex { pattern, flags } = &regex_of(env, e) {
         return Ok(format!("/{pattern}/{flags}"));
     }
     let text = plain(env, e)?;
@@ -2588,6 +3337,18 @@ fn selector(sel: &str) -> Result<String, Why> {
 /// A JavaScript string literal.
 fn js_string(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| format!("'{s}'"))
+}
+
+/// `x = …`, `a.b[0] += …`: a statement that assigns.
+fn is_assignment(code: &str) -> bool {
+    let target = code
+        .find(|c: char| !(c.is_alphanumeric() || "_$.[]'\"".contains(c)))
+        .map_or(code, |i| &code[..i]);
+    let rest = code[target.len()..].trim_start();
+    !target.is_empty()
+        && ["=", "+=", "-=", "*=", "/=", "??=", "||=", "&&="]
+            .iter()
+            .any(|op| rest.starts_with(op) && !rest[op.len()..].starts_with(['=', '>']))
 }
 
 /// Calls that wait for something to happen after an action.
