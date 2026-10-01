@@ -589,6 +589,7 @@ command chrome-cdp mock seed
 command chrome-cdp mock record
   flag --scope value=GLOB repeatable
   flag --output -o value=FILE
+  flag --match-bodies
   flag --force
   flag --dir value=DIR
   flag --max-chars value=N
@@ -596,6 +597,7 @@ command chrome-cdp mock import
   arg FILE required
   flag --scope value=GLOB repeatable
   flag --output -o value=FILE
+  flag --match-bodies
   flag --force
   flag --dir value=DIR
   flag --max-chars value=N
