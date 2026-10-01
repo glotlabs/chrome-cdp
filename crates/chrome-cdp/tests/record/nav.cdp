@@ -1,0 +1,15 @@
+@test "finds help"
+  goto /record/form.html
+  click 'role=link[name="Help"]'
+  goto /record/form.html
+  back
+  forward
+  reload
+  dblclick 'text="Double-click to edit"'
+  click 'role=button[name="Pick a nickname"]'
+  dialog accept Grace
+  click 'role=button[name="Delete draft"]'
+  dialog dismiss
+  click 'role=textbox[name="Name"]'
+  press Escape
+  # add expect steps: the recorder does not guess what to check

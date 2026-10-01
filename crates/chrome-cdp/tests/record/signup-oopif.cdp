@@ -1,0 +1,21 @@
+@test "signs up"
+  goto '/record/form.html?card={b}/record/card.html'
+  fill 'role=textbox[name="Name"]' Ada
+  press Tab
+  fill 'role=textbox[name="Email"]' ada@example.com
+  press Tab
+  # a password field: the test reads it from the PASSWORD secret, never the value
+  fill 'role=textbox[name="Password"]' "${secret:PASSWORD}"
+  fill 'role=textbox[name="Bio"]' "line one\nline two"
+  select 'role=combobox[name="Size"]' m
+  check 'role=radio[name="Pro"]'
+  check 'role=checkbox[name="I accept the terms"]'
+  uncheck 'role=checkbox[name="Send me news"]'
+  # TODO: path: the file chosen was me.png; give its path
+  upload 'role=button[name="Photo"]' me.png
+  fill 'frame=card >> role=textbox[name="Card number"]' 4242
+  click 'frame=card >> role=button[name="Pay"]'
+  click 'role=button[name="Delete draft"]'
+  dialog accept
+  click 'role=button[name="Sign up"]'
+  # add expect steps: the recorder does not guess what to check

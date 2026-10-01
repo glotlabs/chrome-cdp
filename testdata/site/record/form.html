@@ -3,7 +3,8 @@
 <title>Sign up</title>
 <!-- A form for `record` (plan 18.6): every row of the recorder's events
      table has a control here, and an iframe (card.html) has its own.
-     Submit shows what the form holds, so a replayed test can check it. -->
+     Submit shows what the form holds, so a replayed test can check it.
+     `?card=URL` loads the iframe from another origin (an OOPIF). -->
 <h1>Sign up</h1>
 <form id="signup">
   <label>Name <input name="name"></label>
@@ -23,10 +24,14 @@
   <button type="submit">Sign up</button>
 </form>
 <p role="status" id="status"></p>
-<p><a href="help.html">Help</a></p>
-<iframe name="card" src="card.html" title="Card"></iframe>
+<p><a href="help.html">Help</a> <span id="edit">Double-click to edit</span></p>
+<iframe name="card" title="Card"></iframe>
 <script>
   const status = document.getElementById('status');
+  document.querySelector('iframe').src = new URLSearchParams(location.search).get('card') || 'card.html';
+  document.getElementById('edit').ondblclick = () => {
+    status.textContent = 'editing';
+  };
   document.getElementById('draft').onclick = () => {
     status.textContent = confirm('Delete the draft?') ? 'draft deleted' : 'draft kept';
   };
