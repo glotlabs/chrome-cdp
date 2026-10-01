@@ -1,6 +1,6 @@
 # Plan 18 — Tests that maintain themselves
 
-Status: IN PROGRESS (18.1-18.4 done)
+Status: IN PROGRESS (18.1-18.5 done)
 Depends on: 11 (the test runner, `history --as-scenario`, `mock record`), 13 (the target graph, for `record` in iframes)
 Roadmap: track 7 of [plan 12](12-after-v1.md)
 
@@ -396,7 +396,7 @@ and `convert-real-world-specs` (18.7):
 - [x] `test --ui-coverage` on e2e-shop lists every page the suite
       visits, the controls it never acted on, and the mocks it never
       used; the numbers match a hand count on two pages.
-- [ ] A repro bundle replays offline and fails at the same step with
+- [x] A repro bundle replays offline and fails at the same step with
       the same error; with the fix in its mocks it passes.
 - [ ] `record` round trip: recorded fixture flows pass with `test`.
 - [ ] No password or `${secret:…}` value appears in fingerprints,
@@ -585,3 +585,42 @@ _(append here)_
   bounds, 50ms per step for `--ui-coverage` and 10ms for fingerprints,
   are its own, as the plan names none. Deferred: benchmarks run after
   all plans.
+- 18.5 bodies: the daemon asks Chrome for a body when its request
+  finishes loading (`Network.loadingFinished`) while a repro runs, and
+  keeps it by session and request id (`observe::kept`, at most 512MB;
+  more are counted, not kept); `har export` reads the store first. The
+  bodies of the documents open at `repro start` are asked for right away,
+  and its `repro` flag exports each tab's requests from its document open
+  at the start (tabs opened later from their first), so the start page is
+  in the mocks. The start state (cookies and storage) stays in the
+  daemon's memory until `repro save` writes it; `repro save` does not end
+  the recording.
+- 18.5 scenario: the frozen time, locale, time zone and viewport go into
+  the bundle's `chrome-cdp.toml` (`[e2e.determinism]`, `viewport`), not
+  `@before` commands: the runner applies determinism before `@before`, so a
+  `time freeze` there would freeze twice. `@before` only loads
+  `state.json`. The config also sets `allow_console_errors = true` (the
+  session's page was not checked for them) and `fingerprints = "off"`, and
+  `base_url` is the session's, else the start page's origin.
+  `unmatched = "fail"` is a mock set's setting, so it is in
+  `mocks/repro.toml`'s `[settings]` with `scope = ["/**"]`, not in `[e2e]`.
+- 18.5 the failed step: the last failed command that would be a step and
+  did not fail with a usage error (`BadArgs`, `BadLocator`); commands after
+  it are left out. The history now keeps a failed command's message with
+  its notes (`HistoryEntry::message`: `expected: …`, `actual: …`), so the
+  comment and README quote it. `mock` commands are left out of a bundle's
+  test: its own mocks answer.
+- 18.5 passwords: after a `fill` or `type` the daemon asks whether the
+  focused element (through open shadow roots, in the isolated world) is a
+  password input (`HistoryEntry::password`); the bundle's step reads
+  `${secret:PASSWORD}`. A field in an iframe is not recognized (a note).
+- 18.5 size: `--max-body` (5MB) is the limit; images, fonts and media get
+  a fifth of it (1MB). A left-out body's mock keeps its status and says
+  why (`Exchange::left_out`).
+- 18.5 replay: `e2e::find_project_file` walks up from the current
+  directory only; a path argument never chose the project. Now `test DIR`,
+  with one path that is a folder holding a project file other than the
+  current directory's project, changes into DIR before the config is read
+  and runs with no paths, as `cd DIR; chrome-cdp test` would; relative
+  inputs (`state load state.json`) then resolve there. Any other path list
+  keeps the old rule.

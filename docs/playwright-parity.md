@@ -174,7 +174,7 @@ Today: 138 rows; 124 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
 
 | Playwright | chrome-cdp | Status | Agent-critical |
 |---|---|---|---|
-| tracing and the Trace Viewer | `trace start`, `trace stop` (a Chrome performance trace); each command reports what it did; `test --trace` screenshots every step | 🟡 | no |
+| tracing and the Trace Viewer | `trace start`, `trace stop` (a Chrome performance trace); each command reports what it did; `test --trace` screenshots every step; to hand a bug over, `repro save DIR` packs a session (its steps as a test, every request as mocks, the state, a snapshot and screenshot) into a folder `test DIR` replays offline | 🟡 | no |
 | `accessibility.snapshot()`, `ariaSnapshot()` | `snapshot` (`-i`, `--scope LOC`, `--diff`); a big page in `--budget N` tokens, alike cards or rows folded with `--fold`, a folded part shown with `--expand r4` | ✅ | yes |
 | visibility and state matchers (`toBeVisible`, `toBeEnabled`, `toBeChecked`, `toBeFocused`, `toBeInViewport`, …) | `expect LOC visible\|hidden\|enabled\|disabled\|editable\|checked\|focused\|in-viewport\|attached\|detached` (`--not`) | ✅ | yes |
 | `toHaveText`, `toContainText`, `toHaveValue(s)` | `expect LOC text T [--exact]`, `expect LOC value V`, `expect LOC values A B` | ✅ | yes |
