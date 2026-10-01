@@ -106,6 +106,7 @@ command chrome-cdp test
   flag --heal value=LEVEL values=high|medium
   flag --write
   flag --record-mocks
+  flag --match-bodies
   flag --ui-coverage
   flag --max-chars value=N
 command chrome-cdp history

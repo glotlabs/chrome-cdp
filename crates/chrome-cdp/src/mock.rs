@@ -586,12 +586,13 @@ pub(crate) fn record_for_test(
     scope: &[String],
     exchanges: &[mock::record::Exchange],
     origin: String,
+    match_bodies: bool,
 ) -> Result<Option<MockRecordData>, ErrorInfo> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| config.root.clone());
     let project = Project::of(config, cwd);
     let file = project.dir.join(format!("{name}.toml"));
     let out = Target::new(&project, Some(&file), name, true)?;
-    match write_recording(&out, exchanges, scope, origin, 0, false, || {
+    match write_recording(&out, exchanges, scope, origin, 0, match_bodies, || {
         Hint::text("the test sent no fetch or XHR request")
     }) {
         Ok(output) => Ok(serde_json::from_value(output.data).ok()),

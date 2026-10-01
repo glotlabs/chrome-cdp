@@ -35,6 +35,7 @@ Options:
 - `--heal <LEVEL>`: When a step's locator finds nothing, run it with the element its fingerprint matches (high confidence; =medium: medium too), and write the changes to heal.patch (one of `high`, `medium`)
 - `--write`: With --heal: apply heal.patch to the scenario and step files after the run
 - `--record-mocks`: With a real backend: write each passed test's fetch and XHR requests as a mock set, recorded/&lt;file&gt;/&lt;test&gt; in the mocks directory (replacing an older one)
+- `--match-bodies`: With --record-mocks: tell requests to one path apart by their bodies, as `mock record --match-bodies` does
 - `--ui-coverage`: Record what the tests reached: per page, the controls no step acted on or checked, and the mocks no request matched; writes ui-coverage.json in the artifacts directory and prints a summary
 - `--max-chars <N>`: Bound the JSON output to this many characters (0 = no limit) (default `200000`)
 

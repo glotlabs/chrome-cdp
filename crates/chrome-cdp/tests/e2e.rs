@@ -1920,6 +1920,7 @@ fn record_mocks_writes_a_set_per_passed_test() {
         "--backend",
         "local",
         "--record-mocks",
+        "--match-bodies",
     ]);
     assert_eq!(out.status.code(), Some(0), "{value}");
     let recorded = &value["data"]["recorded"][0];
@@ -1963,6 +1964,10 @@ fn record_mocks_writes_a_set_per_passed_test() {
         "{}",
         stderr(&out)
     );
+    // --match-bodies only goes with --record-mocks.
+    let out = project.test(&["scenarios/backends/shop.cdp", "--match-bodies"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr(&out).contains("--record-mocks"), "{}", stderr(&out));
 }
 
 /// Compares `actual` with golden file `heal/<name>`, or writes it with

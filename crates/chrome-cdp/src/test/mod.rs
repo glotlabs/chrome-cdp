@@ -493,7 +493,7 @@ fn conclude(
         .map(|v| v.finish(&plan.backend.name, args.update));
     let mut record_warnings = Vec::new();
     if let Some(record) = &options.record {
-        let (recorded, warnings) = record::write(plan, record);
+        let (recorded, warnings) = record::write(plan, record, args.match_bodies);
         data.recorded = recorded;
         record_warnings = warnings;
         if mode == Mode::Text {

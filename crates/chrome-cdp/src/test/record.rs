@@ -38,7 +38,11 @@ fn set_name(plan: &Plan, index: usize) -> String {
 
 /// Writes the recorded tests' sets; also returns warnings for those that
 /// could not be written.
-pub(super) fn write(plan: &Plan, record: &Mutex<Recorded>) -> (Vec<MockRecordData>, Vec<String>) {
+pub(super) fn write(
+    plan: &Plan,
+    record: &Mutex<Recorded>,
+    match_bodies: bool,
+) -> (Vec<MockRecordData>, Vec<String>) {
     let tests = std::mem::take(&mut *record.lock().unwrap_or_else(PoisonError::into_inner));
     let mut written = Vec::new();
     let mut warnings = Vec::new();
@@ -49,7 +53,15 @@ pub(super) fn write(plan: &Plan, record: &Mutex<Recorded>) -> (Vec<MockRecordDat
             "Recorded by `chrome-cdp test --record-mocks` from backend {}, test \"{}\" ({}:{}).",
             plan.backend.name, test.name, plan.scenarios[test.file].name, test.line
         );
-        match crate::mock::record_for_test(&plan.config, &name, &scope, &exchanges, origin) {
+        let recorded = crate::mock::record_for_test(
+            &plan.config,
+            &name,
+            &scope,
+            &exchanges,
+            origin,
+            match_bodies,
+        );
+        match recorded {
             Ok(Some(data)) => written.push(data),
             Ok(None) => {}
             Err(info) => warnings.push(format!("cannot record {name}: {}", info.message)),

@@ -188,6 +188,10 @@ a list read before and after another test's write cannot be one set's
 answer. A test replays its recording with `@mocks recorded/<file>/<test>`;
 move what the tests share into the project's own sets.
 
+With `--match-bodies`, requests to one path are told apart by their
+bodies, as `mock record --match-bodies` does: a test that logs in as two
+users gets a mock per user, not a `sequence`.
+
 ## Protected backends
 
 `protected = true` (for anything production-like) makes the run refuse

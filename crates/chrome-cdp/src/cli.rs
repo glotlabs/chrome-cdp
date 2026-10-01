@@ -7889,6 +7889,11 @@ pub(crate) struct TestArgs {
     #[arg(long)]
     pub(crate) record_mocks: bool,
 
+    /// With --record-mocks: tell requests to one path apart by their
+    /// bodies, as `mock record --match-bodies` does.
+    #[arg(long, requires = "record_mocks")]
+    pub(crate) match_bodies: bool,
+
     /// Record what the tests reached: per page, the controls no step
     /// acted on or checked, and the mocks no request matched; writes
     /// ui-coverage.json in the artifacts directory and prints a summary.
