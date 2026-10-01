@@ -94,6 +94,7 @@ pub(super) fn opening(shared: &Shared, session: &Session, tab: u32, event: &RawE
         answer(policy, opening.r#type)
     };
     if let Some(accept) = answer {
+        super::record::policy_answered(shared, &state, tab);
         state.log(Event::Dialog {
             tab: tab_name(tab),
             kind: info.kind.clone(),

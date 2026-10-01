@@ -14,7 +14,8 @@
 //! answer comes.
 //!
 //! Storage seeds (`state load`, milestone 7.4) are isolated-world scripts
-//! like the others, plus one binding in that world they report on.
+//! like the others, plus one binding in that world they report on; so is
+//! the recorder (`record start`, plan 18.6).
 //!
 //! A worker has no `Page` domain and no documents to come: its items run
 //! once with `Runtime.evaluate`. A new worker gets them while paused,
@@ -38,6 +39,7 @@ use crate::inject::{
     BINDING_PREFIX, Key, MOCK_BINDING, SEED_BINDING, Wanted, answer_script, mock_shim, unwrapper,
     wrapper,
 };
+use crate::record::RECORD_BINDING;
 use crate::request::EvalWorld;
 
 /// The setup steps of a new page, iframe or worker session.
@@ -146,7 +148,7 @@ fn add_to_worker(
     let (binding, source) = match what {
         Wanted::MockShim => (Some(MOCK_BINDING), Some(mock_shim())),
         Wanted::Script(script) => (None, now.then(|| script.source.clone())),
-        Wanted::Binding { .. } | Wanted::SeedBinding => {
+        Wanted::Binding { .. } | Wanted::SeedBinding | Wanted::Recorder(_) => {
             return Box::pin(async { Ok(()) });
         }
     };
@@ -238,6 +240,17 @@ fn add(
             params.run_immediately = Some(true);
             (Some(session.call(binding)), params)
         }
+        Wanted::Recorder(script) => {
+            // The binding only in chrome-cdp's world, where the recorder
+            // runs; the documents there are get it at once.
+            let mut binding = runtime::AddBindingParams::new(RECORD_BINDING.to_owned());
+            binding.execution_context_name = Some(WORLD_NAME.to_owned());
+            let mut params =
+                page::AddScriptToEvaluateOnNewDocumentParams::new(script.source.clone());
+            params.world_name = Some(WORLD_NAME.to_owned());
+            params.run_immediately = Some(true);
+            (Some(session.call(binding)), params)
+        }
         Wanted::Binding { name, answers } => {
             let binding = runtime::AddBindingParams::new(format!("{BINDING_PREFIX}{name}"));
             // The function goes into the documents there are at once: the
@@ -324,18 +337,26 @@ fn remove(session: &Session, key: &Key, identifier: String) -> Step {
     let script = session.call(page::RemoveScriptToEvaluateOnNewDocumentParams::new(
         identifier,
     ));
-    let (binding, undo) = match key {
-        Key::Binding { name, .. } => (format!("{BINDING_PREFIX}{name}"), unwrapper(name)),
+    let (binding, undo, world) = match key {
+        Key::Binding { name, .. } => (format!("{BINDING_PREFIX}{name}"), unwrapper(name), None),
         // Sockets opened later in the documents there are are real again.
         Key::MockShim(_) => (
             MOCK_BINDING.to_owned(),
             "globalThis[Symbol.for('chrome-cdp.mock')]?.({ off: true });".to_owned(),
+            None,
+        ),
+        // The documents there are stop reporting.
+        Key::Recorder(_) => (
+            RECORD_BINDING.to_owned(),
+            "globalThis.__ccdp?.recordOff();".to_owned(),
+            Some(WORLD_NAME.to_owned()),
         ),
         _ => return Box::pin(async move { script.await.map(drop) }),
     };
     let binding = session.call(runtime::RemoveBindingParams::new(binding));
     let mut params = page::AddScriptToEvaluateOnNewDocumentParams::new(undo);
     params.run_immediately = Some(true);
+    params.world_name = world;
     let unwrap = session.call(params);
     let session = session.clone();
     Box::pin(async move {

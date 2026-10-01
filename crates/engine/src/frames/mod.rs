@@ -368,6 +368,23 @@ impl FrameTree {
         self.contexts_cleared(session);
     }
 
+    /// The frame whose chrome-cdp isolated world is context `id` of
+    /// session `session`.
+    pub(crate) fn frame_of(
+        &self,
+        session: &str,
+        id: runtime::ExecutionContextId,
+    ) -> Option<String> {
+        self.frames
+            .iter()
+            .find(|(_, f)| {
+                f.isolated
+                    .as_ref()
+                    .is_some_and(|c| c.session == session && c.id == id)
+            })
+            .map(|(frame, _)| frame.clone())
+    }
+
     /// The main frame's id.
     pub(crate) fn root(&self) -> &str {
         &self.root

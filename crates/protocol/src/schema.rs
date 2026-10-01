@@ -879,6 +879,21 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<ReproSaveData>),
     },
     CommandSchema {
+        name: "record start",
+        summary: "the recording started: its test's name, the tab it starts in, and when",
+        schema: || schema_for!(Envelope<RecordStartData>),
+    },
+    CommandSchema {
+        name: "record status",
+        summary: "whether a recording runs, and how many steps it has so far",
+        schema: || schema_for!(Envelope<RecordStatusData>),
+    },
+    CommandSchema {
+        name: "record stop",
+        summary: "the recorded test as .cdp text, its steps, and the file written",
+        schema: || schema_for!(Envelope<RecordStopData>),
+    },
+    CommandSchema {
         name: "convert",
         summary: "the .cdp script translated from a Playwright test file, and its TODO lines",
         schema: || schema_for!(Envelope<ConvertData>),
@@ -5718,6 +5733,76 @@ pub struct ReproLeftOut {
     pub bytes: Option<u64>,
     /// Why: `over 5MB`, `not kept`.
     pub why: String,
+}
+
+/// `data` of `chrome-cdp record start --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RecordStartData {
+    /// The recorded test's name (`@test "NAME"`).
+    pub name: String,
+    /// The tab the recording starts in (`t1`): a step in another tab is
+    /// preceded by `tab …`.
+    pub tab: String,
+    /// When it started (ISO 8601, UTC).
+    pub started: String,
+    /// Whether an earlier recording was dropped for this one, and how
+    /// many steps it had.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dropped: Option<usize>,
+}
+
+/// `data` of `chrome-cdp record status --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RecordStatusData {
+    /// Whether a recording runs.
+    pub recording: bool,
+    /// Its test's name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// When it started (ISO 8601, UTC).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started: Option<String>,
+    /// The steps recorded so far (typing still going on counts as one).
+    pub steps: usize,
+}
+
+/// `data` of `chrome-cdp record stop --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RecordStopData {
+    /// The recorded test's name.
+    pub name: String,
+    /// How many steps it has.
+    pub steps: usize,
+    /// The test as `.cdp` text: `@test "NAME"`, its steps, and a comment
+    /// that asks for `expect` steps.
+    pub scenario: String,
+    /// The file it went into (`-o`), if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+}
+
+/// What the daemon recorded, which the CLI writes as a test.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RecordedData {
+    pub name: String,
+    /// ISO 8601, UTC.
+    pub started: String,
+    /// The tab it started in.
+    pub tab: String,
+    pub steps: Vec<RecordedStep>,
+    /// What a person should look at (a step whose element no locator
+    /// finds alone, a locator by position, …).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
+}
+
+/// One recorded step: the comments before it, then its words (none for
+/// a step only a comment stands for).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RecordedStep {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub comments: Vec<String>,
+    pub words: Vec<String>,
 }
 
 /// A ref and the most robust locator that found its element alone.

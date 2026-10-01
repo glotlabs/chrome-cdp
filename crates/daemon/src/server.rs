@@ -692,6 +692,15 @@ impl Daemon {
                 Err(e) => Err(e),
             },
             rpc::REPRO_INFO => output(self.engine.repro_info()),
+            rpc::RECORD_START => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.record_start(p)).await),
+                Err(e) => Err(e),
+            },
+            rpc::RECORD_STATUS => output(self.engine.record_status()),
+            rpc::RECORD_STOP => match params(req.params) {
+                Ok(p) => output(self.engine.record_stop(p).await),
+                Err(e) => Err(e),
+            },
             rpc::HAR_EXPORT => match params(req.params) {
                 Ok(p) => output(Box::pin(self.engine.har_export(p)).await),
                 Err(e) => Err(e),

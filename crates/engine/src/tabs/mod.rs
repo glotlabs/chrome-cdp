@@ -49,6 +49,7 @@ mod locals;
 mod locks;
 mod mock_shim;
 pub(crate) mod node_stacks;
+mod record;
 pub(crate) mod tap;
 mod targets;
 
@@ -80,6 +81,7 @@ use crate::observe::hmr::{HotUpdates, Outcome};
 use crate::observe::issues::{self, Issues};
 use crate::observe::kept::{KeptBodies, KeptBody};
 use crate::observe::netlog::{self, NetLog};
+use crate::record::RECORD_BINDING;
 use crate::request::{DialogPolicy, HttpCredentials, NodeStacks};
 use crate::route::Router;
 use crate::snapshot::{FrameSource, Memory as SnapshotMemory};
@@ -174,6 +176,8 @@ pub(crate) struct Settings {
     pub(crate) emulation: Emulator,
     /// Init scripts and exposed functions (plan 07).
     pub(crate) injections: Injector,
+    /// The recording `record start` began, if any (plan 18.6).
+    pub(crate) recorder: crate::record::Recorder,
     /// The browser contexts made with `context new` (plan 11).
     pub(crate) contexts: crate::context::Contexts,
 }
@@ -2247,6 +2251,11 @@ async fn watch_host(
             "Runtime.bindingCalled" if event.params["name"] == MOCK_BINDING => {
                 mock_shim::called(&shared, &session_id, tab, &event);
             }
+            "Runtime.bindingCalled" if event.params["name"] == RECORD_BINDING => {
+                if let Some(tab) = tab {
+                    record::reported(&shared, &session_id, tab, &event);
+                }
+            }
             "Runtime.bindingCalled" if debug::is_hit(&shared, &event) => {
                 debug::hit(&shared, &event);
             }
@@ -2277,6 +2286,7 @@ async fn watch_host(
             }
             page::JavascriptDialogClosed::NAME => {
                 if let Some(tab) = tab {
+                    record::dialog_closed(&shared, tab, &event);
                     dialogs::closed(&shared, tab, &event);
                 }
             }
@@ -2294,6 +2304,12 @@ async fn watch_host(
                 if method == page::FrameStartedNavigating::NAME {
                     node_stacks::navigating(&shared, &session_id, &event);
                     debug::navigating(&shared, &session_id, &event);
+                }
+                if (method == page::FrameStartedNavigating::NAME
+                    || method == page::FrameRequestedNavigation::NAME)
+                    && let Some(tab) = tab
+                {
+                    record::navigation(&shared, tab, method, &event);
                 }
                 if method == runtime::ExecutionContextsCleared::NAME {
                     debug::contexts_gone(&shared, &session_id, None);

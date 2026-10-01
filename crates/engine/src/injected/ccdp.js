@@ -1,4 +1,4 @@
-// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: cf255af9f0546daf
+// Built by `cargo xtask build-js` from src/*.ts; do not edit. sources: cc056d765d04e4cd
 "use strict";
 (() => {
   // src/dom.ts
@@ -4360,6 +4360,196 @@ ${inner}
     return stable(el, testid || "data-testid", false, true);
   }
 
+  // src/record.ts
+  var KEY = /* @__PURE__ */ Symbol.for("chrome-cdp.record");
+  var ACTS = /* @__PURE__ */ new Set([
+    "button",
+    "link",
+    "checkbox",
+    "radio",
+    "switch",
+    "combobox",
+    "option",
+    "menuitem",
+    "menuitemcheckbox",
+    "menuitemradio",
+    "tab",
+    "treeitem",
+    "textbox",
+    "searchbox",
+    "slider",
+    "spinbutton",
+    "listbox",
+    "gridcell",
+    "row",
+    "cell"
+  ]);
+  var TEXT = /* @__PURE__ */ new Set(["", "email", "number", "password", "search", "tel", "text", "url"]);
+  var SET = /* @__PURE__ */ new Set(["color", "date", "time", "datetime-local", "month", "range", "week"]);
+  var MODIFIERS = /* @__PURE__ */ new Set([
+    "Shift",
+    "Control",
+    "Alt",
+    "Meta",
+    "AltGraph",
+    "CapsLock",
+    "Fn",
+    "Dead",
+    "Process",
+    "Unidentified"
+  ]);
+  var isInput = (el) => el instanceof HTMLInputElement;
+  function typedInto(el) {
+    if (isInput(el)) return TEXT.has(el.type.toLowerCase());
+    return el instanceof HTMLTextAreaElement || el.isContentEditable === true;
+  }
+  var multiline = (el) => el instanceof HTMLTextAreaElement || el.isContentEditable === true;
+  function targetOf(e) {
+    const first = e.composedPath()[0];
+    if (first instanceof Element) return first;
+    return first instanceof Node ? first.parentElement : null;
+  }
+  function actor(el) {
+    for (let a2 = el; a2; a2 = parentOf(a2)) {
+      const role = roleOf(a2);
+      if (role && ACTS.has(role)) return a2;
+      if (a2 instanceof HTMLLabelElement) return a2;
+    }
+    return el;
+  }
+  function locate(r, el) {
+    try {
+      const found = JSON.parse(stable(el, r.testid, false, r.short));
+      return found.locator ? { loc: found.locator, how: found.how } : { reason: found.reason };
+    } catch (e) {
+      return { reason: String(e) };
+    }
+  }
+  function keyName(e) {
+    const key = e.key === " " ? "Space" : e.key === "+" ? "Equal" : e.key;
+    const mods = [e.ctrlKey && "Control", e.altKey && "Alt", e.metaKey && "Meta"].filter(Boolean);
+    if (e.shiftKey && (key.length > 1 || mods.length > 0)) mods.push("Shift");
+    return [...mods, key].join("+");
+  }
+  function record(binding, testid, short) {
+    const existing = window[KEY];
+    if (existing) {
+      Object.assign(existing, { on: true, binding, testid, short });
+      return;
+    }
+    const r = { on: true, binding, testid, short };
+    window[KEY] = r;
+    const send = (msg) => {
+      if (!r.on) return;
+      const call = globalThis[r.binding];
+      if (typeof call !== "function") return;
+      try {
+        call(JSON.stringify(msg));
+      } catch {
+      }
+    };
+    let lastKey = null;
+    const listen = (type, fn) => window.addEventListener(type, (e) => {
+      if (!r.on) return;
+      try {
+        fn(e);
+      } catch {
+      }
+    }, true);
+    listen("click", (e) => {
+      const event = e;
+      if (!event.isTrusted || event.button !== 0) return;
+      const target = targetOf(event);
+      if (!target) return;
+      if (event.detail === 0 && lastKey && performance.now() - lastKey.at < 1e3 && (lastKey.key === "Enter" || lastKey.key === " ")) {
+        return;
+      }
+      const el = actor(target);
+      if (el instanceof HTMLLabelElement) {
+        const control = el.control;
+        if (control && control !== target && !control.contains(target)) return;
+      }
+      if (el instanceof HTMLSelectElement || el instanceof HTMLOptionElement) return;
+      if (isInput(el) && el.type.toLowerCase() === "file") return;
+      if (isInput(el) && SET.has(el.type.toLowerCase())) return;
+      const role = roleOf(el);
+      if (isInput(el) && (el.type === "checkbox" || el.type === "radio")) {
+        send({ k: "check", checked: el.checked, ...locate(r, el) });
+        return;
+      }
+      if (role === "checkbox" || role === "radio" || role === "switch" || role === "menuitemcheckbox") {
+        const was = el.getAttribute("aria-checked") === "true";
+        send({ k: "check", checked: role === "radio" ? true : !was, ...locate(r, el) });
+        return;
+      }
+      send({ k: "click", ...locate(r, el) });
+    });
+    listen("dblclick", (e) => {
+      if (!e.isTrusted) return;
+      const target = targetOf(e);
+      if (!target) return;
+      const el = actor(target);
+      send({ k: "dblclick", ...locate(r, el) });
+    });
+    listen("input", (e) => {
+      const el = targetOf(e);
+      if (!el) return;
+      if (isInput(el) && SET.has(el.type.toLowerCase())) return;
+      if (!e.isTrusted || !typedInto(el)) return;
+      if (isInput(el) && el.type.toLowerCase() === "password") {
+        send({ k: "input", secret: true, ...locate(r, el) });
+        return;
+      }
+      const value2 = isInput(el) || el instanceof HTMLTextAreaElement ? el.value : el.innerText.replace(/\n$/, "");
+      send({ k: "input", value: value2, ...locate(r, el) });
+    });
+    listen("change", (e) => {
+      const el = targetOf(e);
+      if (!el) return;
+      if (el instanceof HTMLSelectElement) {
+        const values = Array.from(el.selectedOptions).map((o) => o.value);
+        send({ k: "select", values, ...locate(r, el) });
+      } else if (isInput(el) && el.type.toLowerCase() === "file") {
+        const names = Array.from(el.files || []).map((f) => f.name);
+        send({ k: "upload", names, ...locate(r, el) });
+      } else if (isInput(el) && SET.has(el.type.toLowerCase())) {
+        send({ k: "input", value: el.value, ...locate(r, el) });
+      }
+    });
+    listen("keydown", (e) => {
+      const event = e;
+      if (!event.isTrusted || event.isComposing || event.repeat || MODIFIERS.has(event.key)) return;
+      const el = targetOf(event);
+      lastKey = { key: event.key, el, at: performance.now() };
+      const shortcut = event.ctrlKey || event.metaKey || event.altKey;
+      if (el && typedInto(el)) {
+        const enter = event.key === "Enter" && (!multiline(el) || shortcut);
+        if (!enter && event.key !== "Escape" && event.key !== "Tab") return;
+      } else if (el && (el instanceof HTMLSelectElement || isInput(el) && SET.has(el.type.toLowerCase()))) {
+        if (event.key !== "Enter" && event.key !== "Escape" && event.key !== "Tab") return;
+      }
+      const at = el && el !== document.body && el !== document.documentElement ? locate(r, el) : {};
+      send({ k: "press", key: keyName(event), ...at });
+    });
+    const page = () => {
+      if (window.top !== window) return;
+      const nav = globalThis.navigation;
+      send({ k: "page", url: location.href, index: nav?.currentEntry?.index ?? -1 });
+    };
+    page();
+    window.addEventListener("pageshow", (e) => {
+      if (e.persisted && r.on) page();
+    });
+    const navigation = globalThis.navigation;
+    navigation?.addEventListener("currententrychange", () => {
+      if (r.on) page();
+    });
+  }
+  function recordOff() {
+    const r = window[KEY];
+    if (r) r.on = false;
+  }
+
   // src/index.ts
   var api = {
     version: 1,
@@ -4416,7 +4606,9 @@ ${inner}
     exploreCandidates,
     fingerprint,
     healCandidates,
-    healStable
+    healStable,
+    record,
+    recordOff
   };
   if (!globalThis.__ccdp) globalThis.__ccdp = api;
 })();

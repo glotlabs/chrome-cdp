@@ -1317,6 +1317,24 @@ pub struct ReproStartRequest {
     pub timeout_ms: u64,
 }
 
+/// `record start`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecordStartRequest {
+    /// The test's name.
+    pub name: String,
+    /// The attribute `testid=` locators read (the config's), if not
+    /// `data-testid`.
+    #[serde(default)]
+    pub testid_attribute: Option<String>,
+    pub timeout_ms: u64,
+}
+
+/// `record stop`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecordStopRequest {
+    pub timeout_ms: u64,
+}
+
 /// What `test` asks when a step's locator found nothing (plan 18.2): the
 /// elements of the page that best match the step's fingerprint.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -27,6 +27,10 @@
 //! its storage and then reports on [`SEED_BINDING`], upon which the seed is
 //! taken out ([`Injector::seeded`]). Seeds are not init scripts to the
 //! user: `init-script list` does not show them.
+//!
+//! Plan 18.6's `record start` adds the recorder: an isolated-world script
+//! and its binding ([`crate::record::RECORD_BINDING`]), at most one, in the
+//! scope it records. It is no init script to the user either.
 
 pub(crate) mod commands;
 
@@ -85,6 +89,9 @@ struct Table {
     /// The scopes whose documents get the mock shim, each with its
     /// serial number (a shim turned on again is new to sessions).
     shims: Vec<(Option<String>, u32)>,
+    /// The recorder (`record start`): its scope, serial number and
+    /// script.
+    recorder: Option<(Option<String>, u32, Arc<Script>)>,
 }
 
 /// An exposed function.
@@ -131,6 +138,8 @@ pub(crate) enum Key {
     SeedBinding,
     /// The mock shim and [`MOCK_BINDING`], by serial number.
     MockShim(u32),
+    /// The recorder and its binding, by serial number.
+    Recorder(u32),
 }
 
 /// What a [`Key`] stands for.
@@ -147,6 +156,9 @@ pub(crate) enum Wanted {
     SeedBinding,
     /// The mock shim, behind [`MOCK_BINDING`].
     MockShim,
+    /// The recorder's script, in chrome-cdp's isolated world, behind
+    /// [`crate::record::RECORD_BINDING`].
+    Recorder(Arc<Script>),
 }
 
 impl Wanted {
@@ -159,7 +171,7 @@ impl Wanted {
         match self {
             Self::MockShim => true,
             Self::Script(script) => script.world == EvalWorld::Main,
-            Self::Binding { .. } | Self::SeedBinding => false,
+            Self::Binding { .. } | Self::SeedBinding | Self::Recorder(_) => false,
         }
     }
 }
@@ -457,6 +469,27 @@ impl Injector {
         true
     }
 
+    /// Puts the recorder (its script's source) in the documents of
+    /// `scope`, in place of one there was (anywhere), or with `None` takes
+    /// it out.
+    pub(crate) fn set_recorder(&self, recorder: Option<(Option<&str>, String)>) {
+        let mut table = lock(&self.table);
+        table.recorder = recorder.map(|(scope, source)| {
+            table.last_serial += 1;
+            let serial = table.last_serial;
+            let script = Arc::new(Script {
+                id: 0,
+                source: format!("{source}\n//# sourceURL=chrome-cdp-recorder.js"),
+                world: EvalWorld::Isolated,
+                file: None,
+                preview: String::new(),
+                size: source.len() as u64,
+                scope: scope.map(str::to_owned),
+            });
+            (scope.map(str::to_owned), serial, script)
+        });
+    }
+
     /// Gives `to`, a context of ours, copies of the init scripts of
     /// `from` and its mock shim (not its exposed functions, whose calls
     /// the agent answers, nor its storage seeds).
@@ -496,13 +529,16 @@ impl Injector {
         table.scripts.retain(|s| !theirs(&s.scope));
         table.bindings.retain(|b| !theirs(&b.scope));
         table.seeds.retain(|(_, s)| !theirs(&s.scope));
+        if table.recorder.as_ref().is_some_and(|(s, _, _)| theirs(s)) {
+            table.recorder = None;
+        }
     }
 
     /// What every page and iframe session of `scope` should have, in the
     /// order it is added: the exposed functions first (so init scripts can
     /// call them), then the storage seeds (after their binding), so init
     /// scripts see the storage they give, then the mock shim, then the
-    /// scripts.
+    /// scripts, then the recorder.
     pub(crate) fn wanted(&self, scope: Option<&str>) -> Vec<(Key, Wanted)> {
         let table = lock(&self.table);
         let bindings = table
@@ -538,11 +574,17 @@ impl Injector {
             .iter()
             .find(|(s, _)| s.as_deref() == scope)
             .map(|(_, serial)| (Key::MockShim(*serial), Wanted::MockShim));
+        let recorder = table
+            .recorder
+            .as_ref()
+            .filter(|(s, _, _)| s.as_deref() == scope)
+            .map(|(_, serial, script)| (Key::Recorder(*serial), Wanted::Recorder(script.clone())));
         bindings
             .chain(seed_binding)
             .chain(seeds)
             .chain(shim)
             .chain(scripts)
+            .chain(recorder)
             .collect()
     }
 }
@@ -714,6 +756,26 @@ mod tests {
                 Key::Script(1),
             ]
         );
+    }
+
+    #[test]
+    fn the_recorder_is_one_and_goes_with_its_scope() {
+        let injector = Injector::default();
+        injector.add(None, "x", None, EvalWorld::Main);
+        injector.set_recorder(Some((None, "rec()".to_owned())));
+        let wanted = injector.wanted(None);
+        assert!(
+            matches!(&wanted[1], (Key::Recorder(1), Wanted::Recorder(s)) if s.world == EvalWorld::Isolated)
+        );
+        // Another scope's recorder replaces it.
+        injector.set_recorder(Some((Some("C1"), "rec()".to_owned())));
+        assert_eq!(injector.wanted(None).len(), 1);
+        assert!(matches!(injector.wanted(Some("C1"))[0].0, Key::Recorder(2)));
+        injector.drop_scope("C1");
+        assert!(injector.wanted(Some("C1")).is_empty());
+        injector.set_recorder(Some((None, "rec()".to_owned())));
+        injector.set_recorder(None);
+        assert_eq!(injector.wanted(None).len(), 1);
     }
 
     #[test]

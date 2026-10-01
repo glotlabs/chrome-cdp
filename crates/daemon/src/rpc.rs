@@ -75,6 +75,9 @@ pub const HAR_STOP: &str = "har_stop";
 pub const HAR_EXPORT: &str = "har_export";
 pub const REPRO_START: &str = "repro_start";
 pub const REPRO_INFO: &str = "repro_info";
+pub const RECORD_START: &str = "record_start";
+pub const RECORD_STATUS: &str = "record_status";
+pub const RECORD_STOP: &str = "record_stop";
 /// `test`'s heal (plan 18.2): the elements that best match a fingerprint.
 pub const HEAL_MATCH: &str = "heal_match";
 pub const HISTORY: &str = "history";
