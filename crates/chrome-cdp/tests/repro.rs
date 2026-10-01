@@ -202,6 +202,8 @@ fn a_bundle_keeps_no_password() {
     session.ok(&["repro", "start"]);
     session.ok(&["fill", "label=Email", "ada@example.com"]);
     session.ok(&["fill", "label=Password", password]);
+    let form = format!("{{\"Email\":\"ada@example.com\",\"Password\":\"{password}\"}}");
+    session.ok(&["fill-form", "--values", &form]);
     session.ok(&["click", "role=button[name=\"Sign in\"]"]);
     session.ok(&["expect", "#welcome", "text", "Welcome, ada@example.com"]);
     let saved = session.ok(&["repro", "save", "login"]);
@@ -218,6 +220,12 @@ fn a_bundle_keeps_no_password() {
     let test = std::fs::read_to_string(bundle.join("repro.cdp")).unwrap();
     assert!(
         test.contains("  fill label=Password '${secret:PASSWORD}'\n"),
+        "{test}"
+    );
+    assert!(
+        test.contains(
+            "  fill-form --values '{\"Email\":\"ada@example.com\",\"Password\":\"${secret:PASSWORD}\"}'\n"
+        ),
         "{test}"
     );
     let readme = std::fs::read_to_string(bundle.join("README.md")).unwrap();

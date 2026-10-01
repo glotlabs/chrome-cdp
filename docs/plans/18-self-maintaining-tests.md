@@ -610,10 +610,12 @@ _(append here)_
   its notes (`HistoryEntry::message`: `expected: …`, `actual: …`), so the
   comment and README quote it. `mock` commands are left out of a bundle's
   test: its own mocks answer.
-- 18.5 passwords: after a `fill` or `type` the daemon asks whether the
-  focused element (through open shadow roots, in the isolated world) is a
-  password input (`HistoryEntry::password`); the bundle's step reads
-  `${secret:PASSWORD}`. A field in an iframe is not recognized (a note).
+- 18.5 passwords: after a `fill`, `type` or `fill-form` the daemon reads
+  the values of the page's password inputs (through open shadow roots, in
+  the isolated world) and keeps the command's words with each as
+  `${secret:PASSWORD}` (`HistoryEntry::redacted`): a word that is one, or
+  a string of `fill-form`'s JSON values that is one. The bundle's test is
+  made of those words. A field in an iframe is not read (a note).
 - 18.5 size: `--max-body` (5MB) is the limit; images, fonts and media get
   a fifth of it (1MB). A left-out body's mock keeps its status and says
   why (`Exchange::left_out`).

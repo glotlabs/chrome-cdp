@@ -102,9 +102,9 @@ fonts get a fifth of it). Bodies Chrome no longer had (requests before
 
 ## Secrets
 
-- A value typed into a password field (`fill`, `type`) is never written:
-  the step reads `${secret:PASSWORD}` instead, and the README says the
-  replay needs `PASSWORD` in the environment.
+- A value typed into a password field (`fill`, `type`, `fill-form`) is
+  never written: the step reads `${secret:PASSWORD}` instead, and the
+  README says the replay needs `PASSWORD` in the environment.
 - `${secret:…}` placeholders in the history stay placeholders, and the
   README names each.
 - `Authorization` and `Cookie` headers are not in the mocks (they match
@@ -129,6 +129,6 @@ mocks.
 - Files a step reads (`upload FILE`, `state load FILE` after the start)
   are not copied into the bundle.
 - A password typed into an iframe's field is not recognized (the check
-  reads the page's focused element).
+  reads the page's own password fields).
 - Mocks match by path, so two origins' requests to the same path share a
   mock.

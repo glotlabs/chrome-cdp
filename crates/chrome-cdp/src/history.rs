@@ -213,9 +213,9 @@ pub(crate) struct Scenario {
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct Rules {
     /// `repro save`: the last failed command stays, as the last step, with
-    /// its error in a comment; a value typed into a password field becomes
-    /// `${secret:PASSWORD}`; `mock` commands are left out (the bundle's
-    /// own mocks answer).
+    /// its error in a comment; a value typed into a password field is
+    /// `${secret:PASSWORD}` (the daemon's redacted words); `mock` commands
+    /// are left out (the bundle's own mocks answer).
     pub(crate) repro: bool,
 }
 
@@ -323,6 +323,23 @@ pub(crate) fn build(
     let mut out = Scenario::default();
     let mut body: Vec<String> = Vec::new();
     let mut mocks: Option<Vec<String>> = None;
+    // A repro writes what was typed into password fields as a secret.
+    let redacted: Vec<HistoryEntry>;
+    let entries = if rules.repro {
+        redacted = entries
+            .iter()
+            .map(|e| {
+                let mut e = e.clone();
+                if let Some(words) = &e.redacted {
+                    e.words.clone_from(words);
+                }
+                e
+            })
+            .collect();
+        &redacted[..]
+    } else {
+        entries
+    };
     // The failed command a repro ends with: the last failed step.
     let last_failure = if rules.repro {
         entries.iter().rposition(|e| {
@@ -375,13 +392,7 @@ pub(crate) fn build(
             relative_urls(&mut words, base_url);
         }
         let mut comments = Vec::new();
-        if rules.repro
-            && e.password
-            && let Some(index) = typed_text_index(&matches)
-        {
-            if let Some(word) = words.get_mut(index) {
-                *word = format!("${{secret:{PASSWORD_SECRET}}}");
-            }
+        if rules.repro && e.redacted.is_some() {
             comments.push(format!(
                 "# typed into a password field; the replay reads it from ${PASSWORD_SECRET}"
             ));
@@ -458,16 +469,6 @@ fn one_line(text: &str) -> String {
         Some((cut, _)) => format!("{}…", &line[..cut]),
         None => line.to_owned(),
     }
-}
-
-/// The index in the words of `fill`'s or `type`'s TEXT.
-fn typed_text_index(matches: &ArgMatches) -> Option<usize> {
-    let (name, sub) = matches.subcommand()?;
-    if !matches!(name, "fill" | "type") {
-        return None;
-    }
-    // A subcommand's indices count from its name (0).
-    sub.indices_of("text")?.next()
 }
 
 /// `"adds item to cart"`, with `"` and `\` escaped and `${` made literal.
@@ -604,7 +605,7 @@ mod tests {
             ok: true,
             error: None,
             message: None,
-            password: false,
+            redacted: None,
             refs: refs
                 .iter()
                 .map(|(r, l, how)| RefLocator {

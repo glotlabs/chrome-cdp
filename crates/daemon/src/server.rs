@@ -313,13 +313,15 @@ impl Daemon {
             .fingerprint
             .clone()
             .map(|locator| (locator, testid.clone()));
-        // A `fill` or `type` kept in the history: whether it typed into a
-        // password field, whose value a repro bundle must not hold.
+        // A `fill`, `type` or `fill-form` kept in the history: what the
+        // page's password fields hold after it, which a repro bundle must
+        // not.
         let typing = line.is_some()
-            && req.method == rpc::ACT
-            && matches!(req.params["action"]["kind"].as_str(), Some("fill" | "type"));
+            && (req.method == rpc::FILL_FORM
+                || (req.method == rpc::ACT
+                    && matches!(req.params["action"]["kind"].as_str(), Some("fill" | "type"))));
         let tab = req.params["tab"].as_str().map(str::to_owned);
-        let (refs, (result, fingerprint), password) = engine::in_context(
+        let (refs, (result, fingerprint), passwords) = engine::in_context(
             context.clone(),
             Box::pin(engine::in_root(root, async {
                 // A ref's element may be gone once the command ran.
@@ -334,8 +336,16 @@ impl Daemon {
                     |(result, _)| result.is_ok(),
                 ))
                 .await;
-                let password = typing && self.typed_password(tab.as_deref()).await;
-                (refs, (with_notices(result, notices), fingerprint), password)
+                let passwords = if typing {
+                    self.password_values(tab.as_deref()).await
+                } else {
+                    Vec::new()
+                };
+                (
+                    refs,
+                    (with_notices(result, notices), fingerprint),
+                    passwords,
+                )
             })),
         )
         .await;
@@ -361,7 +371,8 @@ impl Daemon {
                 }
                 (kind, message)
             });
-            lock_ignoring_poison(&self.history).push(words, context, error, refs, password);
+            let redacted = crate::history::redact(&words, &passwords);
+            lock_ignoring_poison(&self.history).push(words, context, error, refs, redacted);
         }
         let mut response = match result {
             Ok(value) => Response::ok(id, value),
@@ -371,23 +382,27 @@ impl Daemon {
         (response, exit)
     }
 
-    /// Whether the focused element of tab `tab` (the active one if
-    /// `None`), through open shadow roots, is a password field: where a
-    /// `fill` or `type` just typed.
-    async fn typed_password(&self, tab: Option<&str>) -> bool {
-        const FOCUSED: &str = "(() => { let e = document.activeElement; \
-             while (e && e.shadowRoot && e.shadowRoot.activeElement) e = e.shadowRoot.activeElement; \
-             return !!e && e.localName === 'input' && e.type === 'password'; })()";
+    /// The values of the password fields of tab `tab` (the active one if
+    /// `None`), through open shadow roots: what a `fill`, `type` or
+    /// `fill-form` may just have typed.
+    async fn password_values(&self, tab: Option<&str>) -> Vec<String> {
+        const VALUES: &str = "(() => { const out = []; \
+             const walk = (root) => { for (const e of root.querySelectorAll('*')) { \
+               if (e.localName === 'input' && e.type === 'password' && e.value) out.push(e.value); \
+               if (e.shadowRoot) walk(e.shadowRoot); } }; \
+             walk(document); return out; })()";
         self.engine
             .evaluate(
                 tab,
                 None,
                 engine::World::Isolated,
-                FOCUSED,
+                VALUES,
                 Duration::from_secs(2),
             )
             .await
-            .is_ok_and(|v| v == Value::Bool(true))
+            .ok()
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default()
     }
 
     /// The stable locators of the refs `words` name, in the tab its

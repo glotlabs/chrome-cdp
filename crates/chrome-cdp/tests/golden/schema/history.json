@@ -867,9 +867,15 @@
           "description": "Whether it succeeded.",
           "type": "boolean"
         },
-        "password": {
-          "description": "Whether it typed into a password field (`fill`, `type`): a repro\nbundle writes `${secret:PASSWORD}` instead of its value.",
-          "type": "boolean"
+        "redacted": {
+          "description": "When it typed into a password field (`fill`, `type`, `fill-form`):\nits words with that value as `${secret:PASSWORD}`, which a repro\nbundle writes instead.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
         },
         "refs": {
           "description": "The refs it named, with their stable locators when it ran.",

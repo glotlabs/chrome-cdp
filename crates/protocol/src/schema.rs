@@ -5635,10 +5635,11 @@ pub struct HistoryEntry {
     /// The refs it named, with their stable locators when it ran.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub refs: Vec<RefLocator>,
-    /// Whether it typed into a password field (`fill`, `type`): a repro
-    /// bundle writes `${secret:PASSWORD}` instead of its value.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub password: bool,
+    /// When it typed into a password field (`fill`, `type`, `fill-form`):
+    /// its words with that value as `${secret:PASSWORD}`, which a repro
+    /// bundle writes instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub redacted: Option<Vec<String>>,
 }
 
 /// `data` of `chrome-cdp repro start --json`.
