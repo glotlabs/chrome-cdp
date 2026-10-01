@@ -315,10 +315,16 @@ fn cors_preflights() {
         headers: &headers,
         body: None,
     };
-    match m.decide(&preflight("http://api.test/api/login"), 0) {
-        Outcome::Preflight { mock: Some(mock) } => assert_eq!(mock.name, "login"),
+    match m.decide(&preflight("http://api.test/api/orders"), 0) {
+        Outcome::Preflight { mock: Some(mock) } => assert_eq!(mock.name, "orders"),
         other => panic!("{other:?}"),
     }
+    // "login" matches on the body, which a preflight does not show: it is
+    // allowed, but no mock is named, since another may answer the POST.
+    assert!(matches!(
+        m.decide(&preflight("http://api.test/api/login"), 0),
+        Outcome::Preflight { mock: None }
+    ));
     // In scope but unmocked: allowed too, so the page sees the 501.
     assert!(matches!(
         m.decide(&preflight("http://api.test/api/other"), 0),

@@ -217,6 +217,12 @@ impl Matcher {
         Ok(params)
     }
 
+    /// Whether the match has header or body conditions, the ones a
+    /// preflight cannot show.
+    pub(crate) fn reads_request(&self) -> bool {
+        !self.headers.is_empty() || self.body.is_some()
+    }
+
     /// The path, URL or regex condition: the parameters it captures.
     pub(crate) fn check_target(&self, req: &Parsed) -> Result<BTreeMap<String, String>, String> {
         Ok(match &self.target {

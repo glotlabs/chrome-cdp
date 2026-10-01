@@ -317,9 +317,22 @@ async fn layers_routes_cors_and_explain() {
         got,
         json!([200, "login", {"ok": true, "user": "ada@example.com"}])
     );
+    // "login" matches on the body, which the preflight does not show, so
+    // the preflight names no mock: only the full log has it.
     let (text, _) = log(&engine, false);
+    assert!(!text.contains("OPTIONS "), "{text}");
+    let text = engine
+        .mock_log(&MockLogRequest {
+            unmatched: false,
+            all: true,
+            limit: 0,
+            max_chars: 0,
+        })
+        .unwrap()
+        .text;
     assert!(text.contains("OPTIONS "), "{text}");
-    assert!(text.contains("\"login\" preflight allowed"), "{text}");
+    assert!(text.contains("preflight allowed"), "{text}");
+    assert!(!text.contains("\"login\" preflight allowed"), "{text}");
 
     // A body the mock does not match: unmatched.
     let other = format!(

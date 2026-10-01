@@ -631,9 +631,10 @@ impl Mocks {
                     && holds(&mock.when, &self.state).is_ok()
                     && mock.matcher.check(parsed, &method, true).is_ok()
                 {
-                    return Some(Outcome::Preflight {
-                        mock: Some(mock_ref(set, mock)),
-                    });
+                    // A preflight shows no headers or body: when the mock
+                    // reads them, another one may answer the request.
+                    let mock = (!mock.matcher.reads_request()).then(|| mock_ref(set, mock));
+                    return Some(Outcome::Preflight { mock });
                 }
             }
             for c in &set.collections {
