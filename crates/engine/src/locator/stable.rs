@@ -55,7 +55,9 @@ const COLUMN: usize = 80;
 impl Engine {
     /// The stable locator of each of `refs` in tab `tab` (the active one
     /// if `None`), or why there is none. An element in an iframe gets a
-    /// `frame=` step first (see [`frame_step`]).
+    /// `frame=` step first (see [`frame_step`]). A configured
+    /// `testid_attribute` is written `testid=…`: the test runs where the
+    /// same config holds.
     pub async fn stable_locators(
         &self,
         tab: Option<&str>,
@@ -67,10 +69,19 @@ impl Engine {
             strict_refs: true,
             testid_attribute: testid_attribute.map(str::to_owned),
         };
+        let short = testid_attribute.is_some();
         let mut out = Vec::with_capacity(refs.len());
         for reference in refs {
             let found = self
-                .stable_locator(tab, reference, &options, false, None, true, timeout)
+                .stable_locator(
+                    tab,
+                    reference,
+                    &options,
+                    (false, short),
+                    None,
+                    true,
+                    timeout,
+                )
                 .await
                 .unwrap_or_else(|e| Found::none(e.message));
             out.push(RefLocator {
@@ -105,7 +116,7 @@ impl Engine {
                     request.tab.as_deref(),
                     &request.locator,
                     options,
-                    request.all,
+                    (request.all, false),
                     Some(retry),
                     true,
                     timeout,
@@ -167,22 +178,32 @@ impl Engine {
             strict_refs: true,
             testid_attribute: None,
         };
-        self.stable_locator(Some(tab), reference, &options, false, None, false, timeout)
-            .await
-            .ok()?
-            .locator
+        self.stable_locator(
+            Some(tab),
+            reference,
+            &options,
+            (false, false),
+            None,
+            false,
+            timeout,
+        )
+        .await
+        .ok()?
+        .locator
     }
 
     /// The stable locator of the one element `text` names (with `all`,
     /// every candidate too), each with a `frame=` step first for an
-    /// element in an iframe. With `lock`, it takes the tab's lock.
+    /// element in an iframe; with `short`, `testid=…` for any test id
+    /// attribute (see the bundle's `stable`). With `lock`, it takes the
+    /// tab's lock.
     #[allow(clippy::too_many_arguments)]
     async fn stable_locator(
         &self,
         tab: Option<&str>,
         text: &str,
         options: &LocateOptions,
-        all: bool,
+        (all, short): (bool, bool),
         retry: Option<&(dyn Fn(&str) -> Cmd + Sync)>,
         lock: bool,
         timeout: Duration,
@@ -195,8 +216,9 @@ impl Engine {
                 .unwrap_or(super::DEFAULT_TESTID_ATTRIBUTE),
         )
         .unwrap_or_else(|_| "\"data-testid\"".to_owned());
-        let function =
-            format!("function () {{ return globalThis.__ccdp.stable(this, {attribute}, {all}); }}");
+        let function = format!(
+            "function () {{ return globalThis.__ccdp.stable(this, {attribute}, {all}, {short}); }}"
+        );
         let running = self.running()?;
         let page = self.page(&running, tab, timeout).await?;
         self.check_not_blocked(&running, &page)?;

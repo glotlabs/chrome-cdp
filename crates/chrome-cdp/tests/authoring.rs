@@ -253,8 +253,8 @@ fn refs_in_frames_become_frame_locators_that_replay() {
 
 /// The project's `testid_attribute` reaches the daemon's stable locators:
 /// two buttons alike but for their `data-test` are told apart by it
-/// (written as `css=[data-test=…]`, which replays whatever the config
-/// says), and the scenario replays.
+/// (written as `testid=…`, which the project's `test` reads with the same
+/// attribute), and the scenario replays.
 #[test]
 fn history_uses_the_configured_testid_attribute() {
     let Some(chrome) = chrome_path() else { return };
@@ -275,7 +275,7 @@ fn history_uses_the_configured_testid_attribute() {
     let scenario = stdout(&out);
     assert_eq!(
         scenario,
-        "@test \"removes the mouse\"\n  goto /record/testids.html\n  click 'css=[data-test=\"remove-mouse\"]'\n  expect 'role=button[name=\"Removed\"]' text Removed\n"
+        "@test \"removes the mouse\"\n  goto /record/testids.html\n  click testid=remove-mouse\n  expect 'role=button[name=\"Removed\"]' text Removed\n"
     );
     std::fs::write(project.root.join("scenarios/remove.cdp"), &scenario).unwrap();
     project.ok(&["close"]);

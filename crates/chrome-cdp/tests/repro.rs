@@ -219,12 +219,12 @@ fn a_bundle_keeps_no_password() {
     }
     let test = std::fs::read_to_string(bundle.join("repro.cdp")).unwrap();
     assert!(
-        test.contains("  fill label=Password '${secret:PASSWORD}'\n"),
+        test.contains("  fill label=Password \"${secret:PASSWORD}\"\n"),
         "{test}"
     );
     assert!(
         test.contains(
-            "  fill-form --values '{\"Email\":\"ada@example.com\",\"Password\":\"${secret:PASSWORD}\"}'\n"
+            "  fill-form --values \"{\\\"Email\\\":\\\"ada@example.com\\\",\\\"Password\\\":\\\"${secret:PASSWORD}\\\"}\"\n"
         ),
         "{test}"
     );
@@ -234,6 +234,12 @@ fn a_bundle_keeps_no_password() {
         "{readme}"
     );
     session.ok(&["close"]);
+    // The replay types the secret, not its name.
+    std::fs::write(
+        bundle.join("repro.cdp"),
+        format!("{test}  expect label=Password value \"${{secret:PASSWORD}}\"\n"),
+    )
+    .unwrap();
 
     // The replay reads it from the environment.
     let out = common::run(

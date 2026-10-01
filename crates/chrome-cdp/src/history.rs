@@ -75,6 +75,7 @@ const TOOLS: &[&str] = &[
     "init",
     "install",
     "perf",
+    "record",
     "repro",
     "schema",
     "sessions",
@@ -425,7 +426,7 @@ pub(crate) fn build(
                 ));
             }
         }
-        let line: Vec<String> = words.iter().map(|w| shell_quote(w).into_owned()).collect();
+        let line: Vec<String> = words.iter().map(|w| script_word(w).into_owned()).collect();
         let line = line.join(" ");
         if failure {
             let kind = e.error.clone().unwrap_or_else(|| "failed".to_owned());
@@ -469,6 +470,31 @@ fn one_line(text: &str) -> String {
         Some((cut, _)) => format!("{}…", &line[..cut]),
         None => line.to_owned(),
     }
+}
+
+/// The `${secret:…}` a password typed in the session becomes, as written.
+const PASSWORD_PLACEHOLDER: &str = "${secret:PASSWORD}";
+
+/// `word` as a scenario writes it: [`shell_quote`]d, except a word that
+/// holds [`PASSWORD_PLACEHOLDER`] or a line break, which goes in double
+/// quotes: so the secret is filled in (single quotes keep `${…}` as text),
+/// and a quote closes on its line (`\n`). Any other `${` in it is made
+/// literal.
+pub(crate) fn script_word(word: &str) -> std::borrow::Cow<'_, str> {
+    if !word.contains(PASSWORD_PLACEHOLDER) && !word.contains(['\n', '\r']) {
+        return shell_quote(word);
+    }
+    let parts: Vec<String> = word
+        .split(PASSWORD_PLACEHOLDER)
+        .map(|part| {
+            part.replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace("\r\n", "\\n")
+                .replace(['\n', '\r'], "\\n")
+                .replace("${", "$${")
+        })
+        .collect();
+    std::borrow::Cow::Owned(format!("\"{}\"", parts.join(PASSWORD_PLACEHOLDER)))
 }
 
 /// `"adds item to cart"`, with `"` and `\` escaped and `${` made literal.
@@ -572,7 +598,7 @@ fn positional_url(words: &[String]) -> Option<String> {
 
 /// Makes URLs under `base_url` paths: `http://localhost:5173/cart` is
 /// `/cart` when base_url is `http://localhost:5173`.
-fn relative_urls(words: &mut [String], base_url: Option<&str>) {
+pub(crate) fn relative_urls(words: &mut [String], base_url: Option<&str>) {
     let Some(base) = base_url.map(|b| b.trim_end_matches('/')) else {
         return;
     };
