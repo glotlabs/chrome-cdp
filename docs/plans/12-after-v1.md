@@ -358,6 +358,7 @@ patch; a planted flake is diagnosed as its cause.
 ### Track 8 — Mocks
 
 Plan: [19-mocks](19-mocks.md).
+Status: DONE (plan 19, 19.1-19.4).
 
 **Why.** Plan 11's mocks are the part of chrome-cdp furthest ahead of
 Playwright. The backlog fills in its edges.

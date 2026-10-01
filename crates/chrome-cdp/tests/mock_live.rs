@@ -1,6 +1,7 @@
 //! Mocks beyond fetches, end to end (plan 11, milestone 11.9): the page's
 //! WebSockets and EventSources answered by `[[websocket]]` and `sse`
-//! mocks, `mock ws send`, `mock sse send` (plan 19.2), and `mock serve`.
+//! mocks, `mock ws send`, `mock sse send` (plan 19.2), and `mock serve`
+//! (with a set `mock gen` wrote from the Petstore spec, plan 19.4).
 //!
 //! The real-Chrome tests need `CHROME_PATH` (see `cli.rs`).
 
@@ -454,4 +455,65 @@ fn a_recorded_websocket_and_event_source_replay() {
     let log = stdout(&out);
     assert!(log.contains("websocket → live.toml:"), "{log}");
     assert!(log.contains("eventsource → live.toml:"), "{log}");
+}
+
+/// Plan 19.4: `mock gen` over the Petstore writes a set `mock serve`
+/// answers the spec's requests with.
+#[test]
+fn a_set_generated_from_the_petstore_spec_is_served() {
+    let dir = tempfile::tempdir().unwrap();
+    let mocks = dir.path().join("mocks");
+    let spec = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../testdata/openapi/petstore.yaml")
+        .canonicalize()
+        .unwrap();
+    let out = cli()
+        .current_dir(dir.path())
+        .args(["mock", "gen", "--openapi"])
+        .arg(&spec)
+        .arg("--dir")
+        .arg(&mocks)
+        .output()
+        .unwrap();
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert!(
+        stdout(&out).contains("generated.toml: 19 mocks, 0 collections, 11 data files\n"),
+        "{}",
+        stdout(&out)
+    );
+    // No problem of mock check is left to warn about.
+    assert!(stderr(&out).is_empty(), "{}", stderr(&out));
+
+    let mut child = cli()
+        .current_dir(dir.path())
+        .args(["mock", "serve", "--dir"])
+        .arg(&mocks)
+        .args(["generated", "--no-defaults", "--port", "0"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let _served = Served(child);
+    let first = lines.next().unwrap().unwrap();
+    let addr = first
+        .strip_prefix("mock server on http://")
+        .and_then(|rest| rest.split(": ").next())
+        .unwrap_or_else(|| panic!("{first}"))
+        .to_owned();
+    let (status, body) = get(&addr, "/api/v3/pet/10", "");
+    assert_eq!(status, "HTTP/1.1 200 OK");
+    let pet: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(pet["name"], "doggie", "{body}");
+    let (status, body) = get(&addr, "/api/v3/pet/findByStatus?status=sold", "");
+    assert_eq!(status, "HTTP/1.1 200 OK");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&body)
+            .unwrap()
+            .as_array()
+            .map(Vec::len),
+        Some(2)
+    );
+    let (status, _) = get(&addr, "/api/v3/user/logout", "");
+    assert_eq!(status, "HTTP/1.1 200 OK");
 }

@@ -1,6 +1,6 @@
 # Plan 19 — Mocks
 
-Status: IN PROGRESS (19.1-19.3 done)
+Status: DONE (19.1-19.4)
 Depends on: 11 (the mock format, `mock record`/`import`/`check`/`serve`, WebSocket and SSE mocks), 13 §13.2 (mocks in every target), 14 §14.7 (WebSocket frames in the network log)
 Roadmap: track 8 of [plan 12](12-after-v1.md)
 
@@ -373,11 +373,11 @@ warnings are printed. Add:
       when the upstream is down.
 - [x] examples/e2e-shop passes with `--backend mock`, `--backend local`
       and `--backend hybrid`.
-- [ ] `mock gen` over the Petstore spec is deterministic and the set it
+- [x] `mock gen` over the Petstore spec is deterministic and the set it
       writes passes `mock check --openapi` with no errors.
-- [ ] `test` in e2e-shop checks the mocks against its spec and prints
+- [x] `test` in e2e-shop checks the mocks against its spec and prints
       the `openapi-uncovered` summary when a mock is removed.
-- [ ] `docs/e2e/mocks.schema.json` only gained entries (the release
+- [x] `docs/e2e/mocks.schema.json` only gained entries (the release
       check's schema comparison passes).
 
 ## Tests
@@ -468,3 +468,39 @@ _(append here)_
   (`http://127.0.0.1:*/v1/**`), and the set is in `default_mocks` too.
 - 19.3: the fixture provider accepts every card, so the declined card is
   the mock's alone and its scenario is `@backend mock hybrid`.
+- 19.4: data files go to `data/<set>/<operation>.json` (`data/generated/`
+  by default), as `mock record`'s go to `data/<set>/`: two generated sets
+  cannot overwrite each other's.
+- 19.4: a body is written inline only up to 100 characters of JSON, not
+  2 KB: TOML's inline tables are one line, and a 2 KB line is no file to
+  start from. Bodies TOML cannot say (a `null`) go to data files too, and
+  a collection's items to a seed file when one is over 160 characters.
+- 19.4: each operation's values come from a generator seeded by `--seed`
+  and the operation's name, with counters (`name-1`) starting over per
+  mock, so adding an operation leaves the others' values alone. All
+  `date-time` values are the one seeded instant. A `number` whose range
+  holds no whole number gets a fraction to two places, not a TODO;
+  `writeOnly` properties are left out unless required.
+- 19.4: `--collections` needs a list GET (an array, or an object with an
+  array property, which becomes `list.wrap`) and an item GET; the
+  Petstore has no list GET, so its `--collections` golden equals the
+  plain one, and `testdata/openapi/todos.yaml` covers collections (nested,
+  wrapped) and every type, format and example source.
+- 19.4: `openapi-uncovered` counts a mock for an operation when its path
+  and method land on it in the spec (`/pets/:id`, `/pets/7`), not when a
+  catch-all (`/api/**`, a regex, no path) merely matches it: the shop's
+  `errors/api-down` would otherwise cover every operation of every run.
+  Its problems name the spec file at line 0.
+- 19.4: a set scoped only to full URLs that no server of the spec is
+  under (a third party's, like the shop's payment provider) is not
+  checked against the spec, and a collection's paths need to be in the
+  spec with any method rather than GET (the real shop has no GET of one
+  cart item, nor a list of orders). Without both, the shop's mocks could
+  not pass its own spec.
+- 19.4: the spec check now lets `null` through a `nullable` schema whose
+  type comes from `allOf: [$ref]`, the 3.0 way of a nullable reference
+  (it checked the `allOf` first and refused it).
+- 19.4: the Petstore is swagger-api/swagger-petstore's OpenAPI 3.0 file,
+  with a comment naming its source and its Apache-2.0 license (the spec's
+  own `info.license` says so too); it has no separate license header to
+  keep.
