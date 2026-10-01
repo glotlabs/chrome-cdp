@@ -5895,6 +5895,11 @@ pub struct MockCheckData {
     pub warnings: usize,
     /// Errors first, then warnings, each by file and line.
     pub problems: Vec<MockProblem>,
+    /// With a spec: its operations no mock or collection answers (`GET
+    /// /pets/{petId} (getPetById)`), all of them; the problems list the
+    /// first 20 as `openapi-uncovered`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uncovered: Vec<String>,
 }
 
 /// One problem `mock check` found.
@@ -5909,7 +5914,8 @@ pub struct MockProblem {
     pub severity: String,
     /// `load`, `unreachable`, `collection-shadowed`, `duplicate-collection`,
     /// `undeclared-state`, `ws-unreachable`, `ws-rule-unreachable`,
-    /// `openapi-path`, `openapi-method`, `openapi-status` or `openapi-body`.
+    /// `openapi-path`, `openapi-method`, `openapi-status`, `openapi-body`
+    /// or `openapi-uncovered` (its `file` is the spec, line 0).
     pub rule: String,
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

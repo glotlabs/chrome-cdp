@@ -363,24 +363,53 @@ fn check(args: &MockCheckArgs) -> Result<Output, ErrorInfo> {
 /// `mock check` at the start of `test`: the sets the run uses (the
 /// defaults and every test's `@mocks`). Errors stop the run; the
 /// warnings come back to be shown.
+///
+/// `[e2e] mock_check` says what stops it: errors (the default), warnings
+/// too, or nothing (no check). The spec's operations no mock answers are
+/// one warning line, not one each, so a run's output stays short.
 pub(crate) fn check_for_run(
     config: &e2e::Config,
     names: &[String],
 ) -> Result<Vec<String>, ErrorInfo> {
-    if names.is_empty() {
+    use e2e::config::MockCheck;
+    if names.is_empty() || config.mock_check == MockCheck::Off {
         return Ok(Vec::new());
     }
     let cwd = std::env::current_dir().unwrap_or_else(|_| config.root.clone());
     let project = Project::of(config, cwd);
     let data = check_sets(&project, names, config.openapi.as_deref())?;
+    let mut cmd = Cmd::new("mock").arg("check");
+    for name in names {
+        cmd = cmd.arg(name);
+    }
     if data.errors > 0 {
-        let mut cmd = Cmd::new("mock").arg("check");
-        for name in names {
-            cmd = cmd.arg(name);
-        }
         return Err(check_failed(&data, &cmd.to_string()));
     }
-    Ok(data.problems.iter().map(problem_line).collect())
+    if data.warnings > 0 && config.mock_check == MockCheck::Warnings {
+        return Err(
+            check_failed(&data, &cmd.to_string()).hint(Hint::text(format!(
+                "fix the warnings (mock_check = \"warnings\" in [e2e] stops on them), then run \
+             {cmd} again"
+            ))),
+        );
+    }
+    let mut lines: Vec<String> = data
+        .problems
+        .iter()
+        .filter(|p| p.rule != "openapi-uncovered")
+        .map(problem_line)
+        .collect();
+    match data.uncovered.len() {
+        0 => {}
+        1 => lines.push(format!(
+            "1 spec operation has no mock: {}",
+            data.uncovered[0]
+        )),
+        n => lines.push(format!(
+            "{n} spec operations have no mock ({cmd} --openapi to list)"
+        )),
+    }
+    Ok(lines)
 }
 
 /// `mock check` of mock files `files` (absolute) for `lint`, against
@@ -416,6 +445,7 @@ fn check_sets(
         .transpose()?;
     let sources = project.sources(names)?;
     let checked = mock::check::check(&sources, &project.defaults, spec.as_ref());
+    let uncovered = checked.uncovered.clone();
     let errors = checked
         .problems
         .iter()
@@ -431,6 +461,7 @@ fn check_sets(
         errors,
         warnings: checked.problems.len() - errors,
         problems: checked.problems,
+        uncovered,
     })
 }
 

@@ -22,7 +22,13 @@
 //!   answers every message;
 //! - `openapi-path`, `openapi-method`, `openapi-status`, `openapi-body`
 //!   (errors): the spec has no such path or method, does not list the
-//!   status, or its schema does not fit the JSON body.
+//!   status, or its schema does not fit the JSON body;
+//! - `openapi-uncovered` (warning): an operation of the spec that no mock
+//!   or collection of the sets answers (at most [`UNCOVERED_LISTED`],
+//!   then one line with the count).
+//!
+//! A set scoped to full URLs that none of the spec's servers is under
+//! (a third party's API) is not checked against the spec.
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
@@ -40,6 +46,9 @@ use crate::respond::{Body, Respond};
 use crate::template::is_template;
 use crate::ws::{WsAction, WsMatch, WsSend};
 
+/// How many `openapi-uncovered` operations are listed one by one.
+pub const UNCOVERED_LISTED: usize = 20;
+
 /// What [`check`] looked at, and found.
 #[derive(Debug, Default)]
 pub struct Checked {
@@ -49,6 +58,9 @@ pub struct Checked {
     pub mocks: usize,
     /// Errors first, then warnings, by file and line.
     pub problems: Vec<MockProblem>,
+    /// The spec's operations no mock or collection answers (`GET
+    /// /pets/{id}`), all of them.
+    pub uncovered: Vec<String>,
 }
 
 /// Checks the sets of `sources`. `layers` are the `default_mocks`, in the
@@ -86,8 +98,40 @@ pub fn check(sources: &[Source], layers: &[String], openapi: Option<&OpenApi>) -
     duplicate_collections(&out.sets, &mut out.problems);
     undeclared(&out.sets, &mut out.problems);
     if let Some(spec) = openapi {
-        for set in &out.sets {
+        for set in out.sets.iter().filter(|s| spec.covers_scope(&s.scope_text)) {
             against_spec(set, spec, &mut out.problems);
+        }
+        out.uncovered = uncovered(&out.sets, spec);
+        let file = spec
+            .file()
+            .map_or_else(|| Path::new("openapi").to_path_buf(), Path::to_path_buf);
+        for op in out.uncovered.iter().take(UNCOVERED_LISTED) {
+            out.problems.push(problem(
+                &file,
+                0,
+                0,
+                Severity::Warning,
+                "openapi-uncovered",
+                format!("{op}: no mock or collection answers it"),
+                Some(format!(
+                    "add a [[mock]] for it (`chrome-cdp mock gen --scope '{}' -o …` writes one)",
+                    gen_scope(op)
+                )),
+            ));
+        }
+        if out.uncovered.len() > UNCOVERED_LISTED {
+            out.problems.push(problem(
+                &file,
+                0,
+                0,
+                Severity::Warning,
+                "openapi-uncovered",
+                format!(
+                    "{} more spec operations have no mock (--json lists them all)",
+                    out.uncovered.len() - UNCOVERED_LISTED
+                ),
+                None,
+            ));
         }
     }
     out.problems.sort_by(|a, b| {
@@ -737,4 +781,68 @@ fn against_spec(set: &MockSet, spec: &OpenApi, out: &mut Vec<MockProblem>) {
             }
         }
     }
+}
+
+/// `--scope` of `mock gen` for an uncovered operation: its path with the
+/// parameters as `*`.
+fn gen_scope(op: &str) -> String {
+    let path = op.split(' ').nth(1).unwrap_or(op);
+    path.split('/')
+        .map(|s| if s.contains('{') { "*" } else { s })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// The spec's operations (`GET /pets/{id}`, with ` (operationId)`) that
+/// no mock or collection of `sets` answers.
+fn uncovered(sets: &[MockSet], spec: &OpenApi) -> Vec<String> {
+    let samples = |path: &str| -> Vec<String> {
+        let sample = crate::generate::sample_path(path);
+        spec.bases()
+            .iter()
+            .map(|b| format!("{b}{sample}"))
+            .collect()
+    };
+    // Whether a path glob takes the operation: a path the spec says is
+    // that operation's (`/pets/7`, `/pets/:id`), or a glob that matches
+    // it with any parameters (`/pets/**`).
+    let takes = |glob: &PathGlob, method: &str, path: &str| {
+        if let Lookup::Found(ops) = spec.lookup(glob.text(), &[method.to_owned()])
+            && ops.iter().any(|o| o.path == path)
+        {
+            return true;
+        }
+        samples(path).iter().any(|s| glob.matches(s))
+    };
+    let mut out = Vec::new();
+    for op in spec.operations() {
+        let method = op.method.as_str();
+        let covered = sets.iter().any(|set| {
+            set.mocks.iter().any(|m| {
+                let methods =
+                    m.matcher.methods.is_empty() || m.matcher.methods.iter().any(|x| x == method);
+                methods
+                    && match &m.matcher.target {
+                        None => true,
+                        Some(Target::Path(g)) => takes(g, method, op.path),
+                        Some(Target::Url(_)) => spec_path(&m.matcher)
+                            .and_then(|p| PathGlob::path(&p).ok())
+                            .is_some_and(|g| takes(&g, method, op.path)),
+                        Some(Target::Regex(r)) => samples(op.path).iter().any(|s| r.is_match(s)),
+                    }
+            }) || set.collections.iter().any(|c| {
+                (matches!(method, "GET" | "POST") && takes(&c.path, method, op.path))
+                    || (matches!(method, "GET" | "PUT" | "PATCH" | "DELETE")
+                        && takes(&c.item, method, op.path))
+            })
+        });
+        if !covered {
+            let mut name = format!("{} {}", op.method, op.path);
+            if let Some(id) = op.id {
+                let _ = std::fmt::Write::write_fmt(&mut name, format_args!(" ({id})"));
+            }
+            out.push(name);
+        }
+    }
+    out
 }

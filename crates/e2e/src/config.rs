@@ -97,6 +97,8 @@ pub struct Config {
     /// An OpenAPI spec (JSON or YAML) `mock check` checks the mocks
     /// against (plan 11.8).
     pub openapi: Option<PathBuf>,
+    /// What of the `mock check` at the start of `test` stops the run.
+    pub mock_check: MockCheck,
     /// The backend `test` uses without `--backend`: [`MOCK_BACKEND`] or a
     /// key of [`Self::backends`].
     pub default_backend: String,
@@ -161,6 +163,21 @@ impl Fingerprints {
             Self::Read | Self::Off => false,
         }
     }
+}
+
+/// `[e2e] mock_check`: what of the `mock check` at the start of a `test`
+/// run stops it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MockCheck {
+    /// Errors stop the run; warnings are shown.
+    #[default]
+    Errors,
+    /// Warnings stop it too (`openapi-uncovered` among them), for CI
+    /// that wants the mocks to follow the spec.
+    Warnings,
+    /// No check.
+    Off,
 }
 
 /// How many tests run at once.
@@ -513,6 +530,7 @@ impl Check<'_> {
                 .unwrap_or_default(),
             default_backend,
             openapi: raw.openapi.as_deref().map(|p| self.path(p)),
+            mock_check: raw.mock_check.unwrap_or_default(),
             jobs: raw.jobs.map_or(Jobs::Auto, Spanned::into_inner),
             retries: raw.retries.unwrap_or(0),
             allow_console_errors: raw.allow_console_errors.unwrap_or(false),
@@ -862,6 +880,7 @@ struct RawE2e {
     mocks: Option<String>,
     default_mocks: Option<Spanned<Vec<String>>>,
     openapi: Option<String>,
+    mock_check: Option<MockCheck>,
     default_backend: Option<Spanned<String>>,
     jobs: Option<Spanned<Jobs>>,
     retries: Option<u32>,

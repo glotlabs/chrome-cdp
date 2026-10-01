@@ -32,6 +32,8 @@ pub struct OpenApi {
     swagger: bool,
     /// The servers' URLs as written (`basePath` for Swagger 2), in order.
     servers: Vec<String>,
+    /// Where it was read from.
+    file: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -104,7 +106,9 @@ impl OpenApi {
         let json = file
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("json"));
-        Self::parse(&text, json).map_err(|e| format!("{}: {e}", file.display()))
+        let mut spec = Self::parse(&text, json).map_err(|e| format!("{}: {e}", file.display()))?;
+        spec.file = Some(file.to_path_buf());
+        Ok(spec)
     }
 
     /// Parses a spec's text.
@@ -163,6 +167,7 @@ impl OpenApi {
             paths,
             swagger,
             servers,
+            file: None,
         })
     }
 
@@ -241,6 +246,17 @@ impl OpenApi {
     /// The whole document, for walking what the helpers do not cover.
     pub(crate) fn doc(&self) -> &Value {
         &self.doc
+    }
+
+    /// The path prefixes a mock's path may have (`""` when the servers
+    /// have none), longest first.
+    pub(crate) fn bases(&self) -> &[String] {
+        &self.bases
+    }
+
+    /// The file it was loaded from, if it was.
+    pub fn file(&self) -> Option<&Path> {
+        self.file.as_deref()
     }
 
     /// Whether it is a Swagger 2.0 spec.

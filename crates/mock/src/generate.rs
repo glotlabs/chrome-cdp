@@ -194,7 +194,7 @@ pub fn generate(spec: &OpenApi, options: &GenOptions) -> Result<Generated, Strin
 }
 
 /// `/pets/{id}` with its parameters as sample values: `/pets/__param__`.
-fn sample_path(path: &str) -> String {
+pub(crate) fn sample_path(path: &str) -> String {
     path.split('/')
         .map(|s| if s.contains('{') { "__param__" } else { s })
         .collect::<Vec<_>>()

@@ -973,6 +973,13 @@
           },
           "type": "array"
         },
+        "uncovered": {
+          "description": "With a spec: its operations no mock or collection answers (`GET\n/pets/{petId} (getPetById)`), all of them; the problems list the\nfirst 20 as `openapi-uncovered`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "warnings": {
           "format": "uint",
           "minimum": 0,
@@ -1016,7 +1023,7 @@
           "type": "string"
         },
         "rule": {
-          "description": "`load`, `unreachable`, `collection-shadowed`, `duplicate-collection`,\n`undeclared-state`, `ws-unreachable`, `ws-rule-unreachable`,\n`openapi-path`, `openapi-method`, `openapi-status` or `openapi-body`.",
+          "description": "`load`, `unreachable`, `collection-shadowed`, `duplicate-collection`,\n`undeclared-state`, `ws-unreachable`, `ws-rule-unreachable`,\n`openapi-path`, `openapi-method`, `openapi-status`, `openapi-body`\nor `openapi-uncovered` (its `file` is the spec, line 0).",
           "type": "string"
         },
         "severity": {

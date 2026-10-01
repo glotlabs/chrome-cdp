@@ -1233,6 +1233,48 @@ fn mock_check_errors_stop_the_run_before_the_browser_starts() {
     assert!(err.contains("hint: fix the errors in the mock files (or the spec), then run chrome-cdp mock check shop sale again"), "{err}");
     assert!(stdout(&out).is_empty(), "{}", stdout(&out));
     assert!(project.sandbox.daemons().is_empty());
+
+    // The mocks fit; the spec has an operation no mock answers. With
+    // mock_check = "warnings" that stops the run too.
+    std::fs::write(
+        project.root.join("api/openapi.json"),
+        r#"{"openapi": "3.0.3", "servers": [{"url": "/e2e/api"}], "paths": {
+            "/price": {"get": {"responses": {"200": {"description": "the price",
+                "content": {"application/json": {"schema": {"type": "object",
+                    "properties": {"price": {"type": "integer"}}}}}}}}},
+            "/orders": {"post": {"operationId": "placeOrder", "responses": {"201": {"description": "made"}}}},
+            "/todos": {"get": {"responses": {"200": {"description": "list"}}}},
+            "/todos/{id}": {"get": {"responses": {"200": {"description": "one"}}}}
+        }}"#,
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(
+        &config,
+        text.replace("[e2e]\n", "[e2e]\nmock_check = \"warnings\"\n"),
+    )
+    .unwrap();
+    let out = project.test(&[]);
+    assert_eq!(out.status.code(), Some(1));
+    let err = stderr(&out);
+    assert!(
+        err.contains("api/openapi.json: warning [openapi-uncovered] POST /orders (placeOrder): no mock or collection answers it"),
+        "{err}"
+    );
+    assert!(err.contains("hint: fix the warnings (mock_check = \"warnings\" in [e2e] stops on them), then run chrome-cdp mock check shop sale again"), "{err}");
+    assert!(project.sandbox.daemons().is_empty());
+
+    // By default the run goes on, and says so in one line.
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(&config, text.replace("mock_check = \"warnings\"\n", "")).unwrap();
+    let out = project.test(&[]);
+    let err = stderr(&out);
+    assert_eq!(out.status.code(), Some(0), "{err}");
+    assert!(
+        err.contains("warning: 1 spec operation has no mock: POST /orders (placeOrder)\n"),
+        "{err}"
+    );
+    assert!(!err.contains("[openapi-uncovered]"), "{err}");
 }
 
 /// Every file below `dir` whose text contains `needle`.

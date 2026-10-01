@@ -5178,11 +5178,16 @@ earlier one always answers for, collections a mock always answers for,
 collections of one name in two files, and state names no [state]
 declares. With an OpenAPI spec (--openapi, or `openapi` in [e2e]), each
 mock's path, method, status and JSON body must fit the operation it
-stands for, which catches mocks the real API has moved away from.
+stands for, which catches mocks the real API has moved away from, and
+each operation of the spec no mock or collection answers is a warning
+(openapi-uncovered; the first 20, then a count). Sets scoped to another
+origin than the spec's servers (a third party's) are left out of it.
 
 Each problem reads file:line:col, severity, rule and message. Errors exit
 1; warnings alone exit 0. `chrome-cdp test` runs the check on the sets it
-uses before it starts, and stops on errors.
+uses before it starts, and stops on errors (`mock_check = \"warnings\"`
+in [e2e] stops on warnings too, \"off\" skips it); operations with no
+mock are one line there.
 
 Examples:
   chrome-cdp mock check

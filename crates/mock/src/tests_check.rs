@@ -482,3 +482,141 @@ fn specs_are_read_as_json_or_yaml_and_swagger() {
         Lookup::NoPath { .. }
     ));
 }
+
+#[test]
+fn spec_operations_no_mock_answers_are_uncovered() {
+    let spec = OpenApi::parse(SPEC, false).unwrap();
+    // BASE answers every operation: GET /products/{id} by a parameter
+    // and by an id, /todos by its collection and a `**` mock.
+    let d = dir(&[("base.toml", BASE), ("data/products.json", PRODUCTS)]);
+    let checked = check(&sources(d.path(), &["base"]), &[], Some(&spec));
+    assert_eq!(checked.uncovered, Vec::<String>::new());
+    assert!(
+        !checked
+            .problems
+            .iter()
+            .any(|p| p.rule == "openapi-uncovered")
+    );
+
+    let few = r#"
+[[mock]]
+name = "one product"
+match = { method = "GET", path = "/api/products/7" }
+respond = { json = { id = 7, name = "Seven", price = 7 } }
+
+[[mock]]
+name = "any todo"
+match = { path = "/api/todos/*" }
+respond = { json = { id = 1, title = "Milk" } }
+"#;
+    let d = dir(&[("few.toml", few)]);
+    let checked = check(&sources(d.path(), &["few"]), &[], Some(&spec));
+    assert_eq!(
+        checked.uncovered,
+        ["POST /orders", "GET /products", "GET /todos"]
+    );
+    let warnings: Vec<(&str, usize, &str)> = checked
+        .problems
+        .iter()
+        .filter(|p| p.rule == "openapi-uncovered")
+        .map(|p| (p.severity.as_str(), p.line, p.message.as_str()))
+        .collect();
+    assert_eq!(
+        warnings,
+        [
+            (
+                "warning",
+                0,
+                "POST /orders: no mock or collection answers it"
+            ),
+            (
+                "warning",
+                0,
+                "GET /products: no mock or collection answers it"
+            ),
+            ("warning", 0, "GET /todos: no mock or collection answers it"),
+        ]
+    );
+    let hint = checked
+        .problems
+        .iter()
+        .find(|p| p.rule == "openapi-uncovered");
+    assert_eq!(
+        hint.and_then(|p| p.hint.as_deref()),
+        Some("add a [[mock]] for it (`chrome-cdp mock gen --scope '/orders' -o …` writes one)")
+    );
+    // Without a spec, nothing to cover.
+    assert!(
+        check(&sources(d.path(), &["few"]), &[], None)
+            .uncovered
+            .is_empty()
+    );
+}
+
+#[test]
+fn many_uncovered_operations_are_counted() {
+    let mut spec = String::from("openapi: 3.0.0\ninfo: {title: t, version: '1'}\npaths:\n");
+    for i in 0..25 {
+        let _ = std::fmt::Write::write_fmt(
+            &mut spec,
+            format_args!(
+                "  /r{i:02}:\n    get:\n      operationId: get{i:02}\n      responses: {{'204': {{description: none}}}}\n"
+            ),
+        );
+    }
+    let spec = OpenApi::parse(&spec, false).unwrap();
+    let d = dir(&[(
+        "one.toml",
+        "[[mock]]\nname = \"r00\"\nmatch = { method = \"GET\", path = \"/r00\" }\nrespond = { status = 204 }\n",
+    )]);
+    let checked = check(&sources(d.path(), &["one"]), &[], Some(&spec));
+    assert_eq!(checked.uncovered.len(), 24);
+    assert_eq!(checked.uncovered[0], "GET /r01 (get01)");
+    let lines: Vec<&str> = checked
+        .problems
+        .iter()
+        .filter(|p| p.rule == "openapi-uncovered")
+        .map(|p| p.message.as_str())
+        .collect();
+    assert_eq!(lines.len(), 21);
+    assert_eq!(
+        lines[20],
+        "4 more spec operations have no mock (--json lists them all)"
+    );
+}
+
+#[test]
+fn third_party_sets_are_not_checked_against_the_spec() {
+    let spec = OpenApi::parse(SPEC, false).unwrap();
+    let payments = r#"
+[settings]
+scope = ["http://127.0.0.1:*/v1/**"]
+
+[[mock]]
+name = "charge"
+match = { method = "POST", path = "/v1/charges" }
+respond = { json = { id = "ch_1" } }
+"#;
+    // Scoped to the spec's own server: checked.
+    let own = r#"
+[settings]
+scope = ["https://shop.example.com/api/**"]
+
+[[mock]]
+name = "typo"
+match = { method = "GET", path = "/api/prodcts" }
+respond = { json = [] }
+"#;
+    let d = dir(&[("payments.toml", payments), ("own.toml", own)]);
+    let checked = check(&sources(d.path(), &["payments", "own"]), &[], Some(&spec));
+    let errors: Vec<&str> = checked
+        .problems
+        .iter()
+        .filter(|p| p.severity == "error")
+        .map(|p| p.message.as_str())
+        .collect();
+    assert_eq!(errors, ["mock \"typo\": the spec has no path /api/prodcts"]);
+    assert!(spec.covers_scope(&[]));
+    assert!(spec.covers_scope(&["/api/**".to_owned()]));
+    assert!(!spec.covers_scope(&["https://api.stripe.com/**".to_owned()]));
+}

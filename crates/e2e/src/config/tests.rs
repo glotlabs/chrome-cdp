@@ -131,6 +131,15 @@ fn defaults_fill_an_empty_section() {
         ["/", "/products/:id"]
     );
     assert_eq!(c.openapi, None);
+    assert_eq!(c.mock_check, crate::config::MockCheck::Errors);
+    assert_eq!(
+        parse("[e2e]\nmock_check = \"warnings\"\n").mock_check,
+        crate::config::MockCheck::Warnings
+    );
+    assert_eq!(
+        parse("[e2e]\nmock_check = \"off\"\n").mock_check,
+        crate::config::MockCheck::Off
+    );
     assert_eq!(
         parse("[e2e]\nopenapi = \"api/openapi.yaml\"\n").openapi,
         Some(PathBuf::from("/p/api/openapi.yaml"))
