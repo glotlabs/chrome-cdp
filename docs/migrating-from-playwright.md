@@ -211,7 +211,7 @@ events, like Playwright's actionability checks. `--force` skips the checks
 | `loc.isVisible()`, `isEnabled()`, `isChecked()`, … | `count 'LOC >> visible=true' -q` (0 when not), or `expect LOC enabled --timeout 1ms` (exit 1 when not) | 🟡 |
 | `loc.all()` | `find`, or `snapshot --scope LOC` for refs to each | 🟡 |
 | `page.evaluate(fn)` | `eval 'JS'` (a function is called; a promise awaited) | ✅ |
-| `page.evaluate(fn, arg)` | put the value into the script: `eval "(n => n * 2)(21)"` | 🟡 |
+| `page.evaluate(fn, arg)` | put the value into the script: `eval "(n => n * 2)(21)"` (`convert` does this for a value it knows) | 🟡 |
 | `loc.evaluate(el => …)` | `eval --in LOC 'el => el.value'` | ✅ |
 | `frame.evaluate(…)` | `eval --frame NAME '…'` | ✅ |
 | `page.evaluateHandle`, `JSHandle`, `ElementHandle` | refs replace handles; `eval` returns values | ➖ |
@@ -458,6 +458,9 @@ The Playwright test runner's structure becomes directives:
 | `test.beforeEach` / `test.afterEach` | `@before` / `@after` |
 | `test.beforeAll` / `test.afterAll` | `@before-all` / `@after-all` |
 | `test.skip('title', …)`, `test.fixme(…)`, `test.describe.skip`, `test.skip()` in a test | `@skip` on the `@test` line (`@skip "fixme"` for fixme) |
+| `test.skip(({ browserName }) => browserName === 'webkit', 'why')` | nothing (never true in Chrome); a condition that holds, `@skip "why"` |
+| `test('title', { tag: '@smoke' }, …)`, `test.describe(…, { tag: [...] }, …)` | `@tags smoke` |
+| `{ annotation: { type: 'skip' \| 'fixme', description } }` | `@skip "description"` (other types are dropped) |
 | `test.only`, `test.describe.only` | `@only` |
 | `test.use({ viewport })`, `test.use({ ...devices['iPhone 15'] })` | `@viewport 1024x768`, `@device "iPhone 15"` |
 | other `test.use` options (`locale`, `colorScheme`, …) | emulation commands at the start of `@before` |
@@ -474,11 +477,29 @@ lines"`, so the file still loads; `chrome-cdp lint` checks it.
 
 Locators stored in variables (`const email = page.getByLabel('Email')`) are
 tracked, and so is `const p = page.waitForResponse(…)` followed by
-`await p`. It does not run TypeScript: loops, conditions (a conditional
-`test.skip(…)` too), helper functions, and values read into variables
-need a person (or an agent) to rewrite them. A file without tests (a
-script that launches the browser itself) becomes a plain script for
-`chrome-cdp run`.
+`await p`. Values known when converting are read too:
+
+- constants of the file: texts, numbers, and lists and objects of them,
+  through `ITEMS[0]`, `links.home`, `ITEMS.length` and `ITEMS.slice(0, 2)`
+  (a name the file assigns to again, or changes with `push`, is not a
+  constant);
+- `for (const item of ITEMS)` over such a list: its steps once per item;
+- helper functions of the file (`async function addTodos(page) { … }`,
+  `const row = (page, i) => page.getByTestId('row').nth(i)`): their steps
+  inline where they are called, with the arguments in place of the
+  parameters;
+- `toHaveText([…])` and `toHaveClass([…])`: `expect LOC count N`, then one
+  check per element;
+- `page.waitForFunction(fn, arg)`, `page.evaluate(fn, arg)` and
+  `locator.evaluate(fn, arg)`: the argument as JSON, `wait --fn
+  '(fn)(3)'`. TypeScript types in the function are left out, since it runs
+  in the page.
+
+It does not run the code: conditions, loops over values only known at run
+time, helpers imported from other files, and values read into variables
+need a person (or an agent) to rewrite them. A TODO line that uses such a
+value names the line that set it. A file without tests (a script that
+launches the browser itself) becomes a plain script for `chrome-cdp run`.
 
 ## Where the models differ
 
