@@ -375,7 +375,7 @@ fn mock_serve_talks_websocket_to_a_client_that_is_not_a_browser() {
         [
             r#"WS /mock/ws/prices/ACME ← {"type":"ping","id":3}"#,
             r#"WS /mock/ws/prices/ACME → {"id":3,"type":"pong"}"#,
-            r#"WS /mock/ws/prices/ACME ← bye"#,
+            "WS /mock/ws/prices/ACME ← bye",
         ]
     );
     assert_eq!(
