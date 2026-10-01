@@ -504,3 +504,8 @@ _(append here)_
   with a comment naming its source and its Apache-2.0 license (the spec's
   own `info.license` says so too); it has no separate license header to
   keep.
+- 19.4: "the first of `examples`" is the first by name, and generated
+  objects list their properties by name: the spec loader reads into
+  `serde_json` maps, which sort their keys (the workspace does not turn
+  on `preserve_order`). The output is still deterministic; document order
+  is a backlog note (`mock-gen-spec-key-order`).
