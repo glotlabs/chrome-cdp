@@ -123,6 +123,13 @@ command chrome-cdp repro save
   flag --max-body value=SIZE
   flag --force
   flag --max-chars value=N
+command chrome-cdp record
+command chrome-cdp record start
+  flag --name value=NAME
+command chrome-cdp record status
+command chrome-cdp record stop
+  flag --output -o value=FILE
+  flag --max-chars value=N
 command chrome-cdp goto
   arg URL required
   flag --wait value=EVENT values=settle|load|domcontentloaded|networkidle|commit|none
