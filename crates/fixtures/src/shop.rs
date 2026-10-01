@@ -20,6 +20,9 @@
 //! - any other path: the file under `dist/`, or `index.html` for a path
 //!   whose last segment has no `.` (the app's own routes).
 //!
+//! The checkout's payment provider is a server of its own (see
+//! `payments`), on another origin.
+//!
 //! State lives as long as the server; [`Shop::start`] starts afresh.
 
 use std::collections::HashMap;
@@ -52,12 +55,20 @@ pub(crate) const PASSWORD: &str = "secret";
 #[derive(Debug, Clone)]
 pub struct Shop {
     url: String,
+    payments: String,
 }
 
 impl Shop {
     /// Serves `dist` and the API on `http://localhost:<port>` (0 = any free
     /// port) and returns once it accepts connections.
     pub fn start(dist: PathBuf, port: u16) -> std::io::Result<Self> {
+        Self::start_with(dist, port, 0)
+    }
+
+    /// [`Shop::start`], with the payment provider on
+    /// `http://127.0.0.1:<payments_port>` (0 = any free port).
+    pub fn start_with(dist: PathBuf, port: u16, payments_port: u16) -> std::io::Result<Self> {
+        let payments = crate::payments::start(payments_port)?;
         let listener = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))?;
         listener.set_nonblocking(true)?;
         let url = format!("http://localhost:{}", listener.local_addr()?.port());
@@ -83,12 +94,17 @@ impl Shop {
                     }
                 });
             })?;
-        Ok(Self { url })
+        Ok(Self { url, payments })
     }
 
     /// `http://localhost:<port>`.
     pub fn url(&self) -> &str {
         &self.url
+    }
+
+    /// The payment provider: `http://127.0.0.1:<port>`.
+    pub fn payments(&self) -> &str {
+        &self.payments
     }
 }
 

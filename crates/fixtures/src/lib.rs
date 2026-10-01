@@ -65,13 +65,15 @@
 //!   [`Fixtures::records`].
 //!
 //! [`Shop`] is another server: the real backend of `examples/e2e-shop`
-//! (its built app and its API on one origin).
+//! (its built app and its API on one origin, and a payment provider on
+//! another).
 //!
 //! Add pages under `testdata/site` (and dynamic routes in [`respond`]) as
 //! milestones need them, rather than starting another server.
 
 mod api;
 mod hmr;
+mod payments;
 mod shop;
 
 pub use shop::Shop;

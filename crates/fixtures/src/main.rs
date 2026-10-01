@@ -4,14 +4,15 @@ use std::process::ExitCode;
 
 const USAGE: &str = "\
 usage: fixtures [--port <A>] [--port-b <B>]
-       fixtures --shop <dist> [--port <A>]
+       fixtures --shop <dist> [--port <A>] [--payments <P>]
 
 Serves testdata/site on two origins, http://127.0.0.1:<A> and
 http://localhost:<B> (free ports unless given), and on
 https://127.0.0.1:<free port> with a self-signed certificate, until Ctrl-C.
 
 With --shop, serves the real backend of examples/e2e-shop instead: the
-built app in <dist> and its /api on http://localhost:<A>.
+built app in <dist> and its /api on http://localhost:<A>, and its payment
+provider on http://127.0.0.1:<P> (a free port unless given).
 ";
 
 #[allow(clippy::print_stdout, clippy::print_stderr)]
@@ -21,7 +22,7 @@ fn main() -> ExitCode {
         print!("{USAGE}");
         return ExitCode::SUCCESS;
     }
-    let (port_a, port_b, shop) = match parse(&args) {
+    let (port_a, port_b, payments, shop) = match parse(&args) {
         Ok(parsed) => parsed,
         Err(e) => {
             eprint!("error: {e}\n\n{USAGE}");
@@ -29,7 +30,7 @@ fn main() -> ExitCode {
         }
     };
     if let Some(dist) = shop {
-        let shop = match fixtures::Shop::start(dist.into(), port_a) {
+        let shop = match fixtures::Shop::start_with(dist.into(), port_a, payments) {
             Ok(shop) => shop,
             Err(e) => {
                 eprintln!("error: cannot start the shop: {e}");
@@ -37,6 +38,7 @@ fn main() -> ExitCode {
             }
         };
         println!("shop: {}/", shop.url());
+        println!("payments: {}/", shop.payments());
         println!("press Ctrl-C to stop");
         loop {
             std::thread::park();
@@ -59,8 +61,8 @@ fn main() -> ExitCode {
     }
 }
 
-fn parse(args: &[String]) -> Result<(u16, u16, Option<String>), String> {
-    let (mut a, mut b, mut shop) = (0, 0, None);
+fn parse(args: &[String]) -> Result<(u16, u16, u16, Option<String>), String> {
+    let (mut a, mut b, mut payments, mut shop) = (0, 0, 0, None);
     let mut args = args.iter();
     while let Some(flag) = args.next() {
         let port = |value: Option<&String>| {
@@ -71,6 +73,7 @@ fn parse(args: &[String]) -> Result<(u16, u16, Option<String>), String> {
         match flag.as_str() {
             "--port" => a = port(args.next())?,
             "--port-b" => b = port(args.next())?,
+            "--payments" => payments = port(args.next())?,
             "--shop" => {
                 shop = Some(
                     args.next()
@@ -81,5 +84,5 @@ fn parse(args: &[String]) -> Result<(u16, u16, Option<String>), String> {
             other => return Err(format!("unknown argument `{other}`")),
         }
     }
-    Ok((a, b, shop))
+    Ok((a, b, payments, shop))
 }
