@@ -13,7 +13,8 @@
 //!
 //! The file follows <http://www.softwareishard.com/blog/har-12-spec/>,
 //! with DevTools' `_resourceType`, `_transferSize`, `_error` and
-//! `_webSocketMessages` extensions. Each tab is a page (`t1`), or, when
+//! `_webSocketMessages` extensions, and `_eventSourceMessages` (an
+//! EventSource's messages: `time`, `eventName`, `eventId`, `data`). Each tab is a page (`t1`), or, when
 //! its main frame navigated while recording, each document is one
 //! (`t1_1`, `t1_2`, …), with its `DOMContentLoaded` and `load` times.
 
@@ -566,7 +567,8 @@ fn entry(page: &str, record: &Record, fetched: Fetched) -> HarEntry {
         record
             .frames
             .iter()
-            .map(|(_, f)| WebSocketMessage {
+            .zip(&record.payloads)
+            .map(|((_, f), payload)| WebSocketMessage {
                 kind: if f.sent { "send" } else { "receive" },
                 time: f.time_ms as f64 / 1000.0,
                 opcode: match f.opcode.as_str() {
@@ -577,7 +579,19 @@ fn entry(page: &str, record: &Record, fetched: Fetched) -> HarEntry {
                     "pong" => 10,
                     _ => 0,
                 },
-                data: f.text.clone().unwrap_or_default(),
+                data: payload.clone(),
+            })
+            .collect()
+    });
+    let events = (!record.events.is_empty()).then(|| {
+        record
+            .events
+            .iter()
+            .map(|m| EventSourceMessage {
+                time: m.time_ms as f64 / 1000.0,
+                event_name: m.event.clone(),
+                event_id: m.id.clone(),
+                data: m.data.clone(),
             })
             .collect()
     });
@@ -613,6 +627,7 @@ fn entry(page: &str, record: &Record, fetched: Fetched) -> HarEntry {
         timings,
         resource_type: e.kind.clone(),
         web_socket_messages: messages,
+        event_source_messages: events,
     }
 }
 
@@ -894,6 +909,11 @@ struct HarEntry {
     resource_type: String,
     #[serde(rename = "_webSocketMessages", skip_serializing_if = "Option::is_none")]
     web_socket_messages: Option<Vec<WebSocketMessage>>,
+    #[serde(
+        rename = "_eventSourceMessages",
+        skip_serializing_if = "Option::is_none"
+    )]
+    event_source_messages: Option<Vec<EventSourceMessage>>,
 }
 
 #[derive(Serialize)]
@@ -991,6 +1011,15 @@ struct WebSocketMessage {
     kind: &'static str,
     time: f64,
     opcode: u8,
+    data: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EventSourceMessage {
+    time: f64,
+    event_name: String,
+    event_id: String,
     data: String,
 }
 

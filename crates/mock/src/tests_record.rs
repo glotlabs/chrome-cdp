@@ -681,3 +681,250 @@ fn a_har_entrys_start_is_read() {
     let exchanges = har_exchanges(&har).unwrap();
     assert_eq!(exchanges[0].started_ms, Some(1_790_812_800_250));
 }
+
+/// A socket to `url` opened at 1000 ms, with `messages`: `>` the page
+/// sent it, `<` the server did, each at its ms.
+fn socket(url: &str, messages: &[(i64, &str, &str)]) -> Exchange {
+    Exchange {
+        method: "GET".into(),
+        url: url.into(),
+        status: 101,
+        resource_type: "websocket".into(),
+        started_ms: Some(1000),
+        ws_messages: messages
+            .iter()
+            .map(|(at, dir, data)| crate::record::WsRecorded {
+                sent: *dir == ">",
+                time_ms: *at,
+                opcode: if data.starts_with("b64:") { 2 } else { 1 },
+                data: data.trim_start_matches("b64:").to_owned(),
+            })
+            .collect(),
+        ..Exchange::default()
+    }
+}
+
+#[test]
+fn websockets_are_recorded_as_websocket_mocks() {
+    let exchanges = vec![
+        ex("GET", "http://localhost:5173/api/prices", 200, "[]"),
+        socket(
+            "ws://localhost:5173/api/ws/prices",
+            &[
+                (1000, "<", r#"{"type":"hello"}"#),
+                (1500, "<", r#"{"type":"tick","n":1}"#),
+                (
+                    1600,
+                    ">",
+                    r#"{"type":"subscribe","symbol":"ACME","nonce":"6f1c2a3e-1b2c-4d5e-8f90-123456789abc"}"#,
+                ),
+                (1720, "<", r#"{"type":"subscribed","symbol":"ACME"}"#),
+                (1730, "<", r#"{"type":"price","value":42}"#),
+                (2000, ">", "ping"),
+                (2010, "<", "pong"),
+                (2100, ">", "b64:AAE="),
+                (2110, "<", "b64:AAE="),
+                (2200, ">", "{{nope}}"),
+                (2205, "<", "{{template}}"),
+            ],
+        ),
+        // A second socket to the path: the same rules once; another
+        // answer to a message answered before is left out.
+        socket(
+            "ws://localhost:5173/api/ws/prices?session=2",
+            &[
+                (5000, "<", r#"{"type":"hello"}"#),
+                (
+                    5100,
+                    ">",
+                    r#"{"type":"subscribe","symbol":"ACME","nonce":"0a1b2c3d-1b2c-4d5e-8f90-abcdefabcdef"}"#,
+                ),
+                (5200, "<", r#"{"type":"subscribed","symbol":"ACME"}"#),
+                (5300, ">", "ping"),
+                (5310, "<", "PONG"),
+            ],
+        ),
+    ];
+    let recorded = record(&exchanges, &options(&[])).unwrap();
+    assert_eq!(
+        (recorded.mocks, recorded.websockets, recorded.sockets),
+        (1, 1, 2)
+    );
+    assert_eq!(recorded.scope, ["/api/**"]);
+    let ws = &recorded.toml[recorded.toml.find("[[websocket]]").unwrap()..];
+    assert_eq!(
+        ws,
+        r#"[[websocket]]
+url = "/api/ws/prices"
+on_open = [
+  { send = { type = "hello" } },
+  { delay = "500ms", send = { n = 1, type = "tick" } },
+]
+on_message = [
+  { match = "ping", send = "pong" },
+  { match = { symbol = "ACME", type = "subscribe" }, delay = "120ms", send = { symbol = "ACME", type = "subscribed" } },
+]
+"#
+    );
+    assert!(
+        recorded
+            .toml
+            .contains("# 2 recorded sockets\n[[websocket]]"),
+        "{}",
+        recorded.toml
+    );
+    assert_eq!(
+        recorded.skipped,
+        [
+            "WS /api/ws/prices: 2 binary message(s) left out (send_base64 is not recorded)",
+            "WS /api/ws/prices: 2 more answer(s) left out: a rule sends one message (the first after the page's), and text like a template ({{ … }}) is not sent",
+            "WS /api/ws/prices: 1 answer(s) to a message answered differently before; the first is kept",
+        ]
+    );
+
+    // Replayed, the page gets the same messages.
+    let d = write(&recorded);
+    let mut m = mocks(d.path(), &["recorded"]);
+    let crate::WsOutcome::Open { key, steps, .. } =
+        m.ws_open("ws://localhost:5173/api/ws/prices", &[], 0)
+    else {
+        panic!("not mocked")
+    };
+    let frames: Vec<(u128, crate::WsFrame)> = steps
+        .into_iter()
+        .map(|s| (s.delay.as_millis(), s.frame))
+        .collect();
+    assert_eq!(
+        frames,
+        [
+            (0, crate::WsFrame::Text(r#"{"type":"hello"}"#.into())),
+            (500, crate::WsFrame::Text(r#"{"n":1,"type":"tick"}"#.into())),
+        ]
+    );
+    let url = "ws://localhost:5173/api/ws/prices";
+    let answer = m.ws_message(
+        &key,
+        url,
+        crate::WsMessage::Text(r#"{"type":"subscribe","symbol":"ACME","nonce":"another"}"#),
+        0,
+    );
+    assert_eq!(
+        answer[0].frame,
+        crate::WsFrame::Text(r#"{"symbol":"ACME","type":"subscribed"}"#.into())
+    );
+    assert_eq!(answer[0].delay.as_millis(), 120);
+    let answer = m.ws_message(&key, url, crate::WsMessage::Text("ping"), 0);
+    assert_eq!(answer[0].frame, crate::WsFrame::Text("pong".into()));
+}
+
+#[test]
+fn event_streams_are_recorded_as_sse_answers() {
+    let mut stream = ex("GET", "http://localhost:5173/api/news", 200, "");
+    stream.resource_type = "eventsource".into();
+    stream.mime = "text/event-stream".into();
+    stream.response_body = None;
+    stream.started_ms = Some(1000);
+    stream.sse_messages = vec![
+        crate::record::SseRecorded {
+            time_ms: 1010,
+            event: "message".into(),
+            id: String::new(),
+            data: "first".into(),
+        },
+        crate::record::SseRecorded {
+            time_ms: 1260,
+            event: "headline".into(),
+            id: "2".into(),
+            data: r#"{"title":"Second"}"#.into(),
+        },
+    ];
+    // From a HAR file's body: the events, without their times.
+    let mut body = ex(
+        "GET",
+        "http://localhost:5173/api/feed",
+        200,
+        "data: one\n\nevent: tick\ndata: {\"n\":2}\n\n",
+    );
+    body.mime = "text/event-stream".into();
+    let recorded = record(&[stream, body], &options(&[])).unwrap();
+    assert!(
+        recorded.toml.contains(
+            "respond = { sse = [\n  { data = \"first\" },\n  { delay = \"250ms\", event = \"headline\", id = \"2\", data = { title = \"Second\" } },\n] }"
+        ),
+        "{}",
+        recorded.toml
+    );
+    assert!(
+        recorded.toml.contains(
+            "respond = { sse = [\n  { data = \"one\" },\n  { event = \"tick\", data = { n = 2 } },\n] }"
+        ),
+        "{}",
+        recorded.toml
+    );
+    let d = write(&recorded);
+    let mut m = mocks(d.path(), &["recorded"]);
+    match m.decide(
+        &crate::tests::req("GET", "http://localhost:5173/api/news", None),
+        0,
+    ) {
+        crate::Outcome::Answer(a) => {
+            let events = a.events.unwrap();
+            assert_eq!(events.len(), 2);
+            assert_eq!(events[1].delay.as_millis(), 250);
+            assert_eq!(events[1].event.as_deref(), Some("headline"));
+            assert_eq!(events[1].data.as_deref(), Some(r#"{"title":"Second"}"#));
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn har_websocket_and_event_source_messages_are_read() {
+    let har = json!({ "log": { "entries": [
+        {
+            "startedDateTime": "2026-01-01T00:00:00.000Z",
+            "_resourceType": "websocket",
+            "request": { "method": "GET", "url": "wss://push.example.com/feed", "headers": [] },
+            "response": { "status": 101, "headers": [{ "name": "Sec-WebSocket-Protocol", "value": "v1" }], "content": { "size": 0 } },
+            "_webSocketMessages": [
+                { "type": "receive", "time": 1_767_225_600.25, "opcode": 1, "data": "hi" },
+                { "type": "send", "time": 1_767_225_600.5, "opcode": 1, "data": "{\"op\":\"sub\"}" },
+                { "type": "receive", "time": 1_767_225_600.6, "opcode": 1, "data": "{\"op\":\"ok\"}" }
+            ]
+        },
+        {
+            "startedDateTime": "2026-01-01T00:00:01.000Z",
+            "_resourceType": "eventsource",
+            "request": { "method": "GET", "url": "https://push.example.com/events", "headers": [] },
+            "response": { "status": 200, "headers": [], "content": { "size": 0, "mimeType": "text/event-stream" } },
+            "_eventSourceMessages": [
+                { "time": 1_767_225_601.5, "eventName": "message", "eventId": "", "data": "x" }
+            ]
+        }
+    ] } });
+    let exchanges = har_exchanges(&har).unwrap();
+    assert_eq!(exchanges[0].ws_messages.len(), 3);
+    assert_eq!(exchanges[0].ws_messages[0].time_ms, 1_767_225_600_250);
+    assert!(exchanges[0].ws_messages[1].sent);
+    assert_eq!(exchanges[1].sse_messages[0].data, "x");
+    let recorded = record(&exchanges, &options(&[])).unwrap();
+    assert!(
+        recorded.toml.contains(
+            "[[websocket]]\nurl = \"/feed\"\nprotocol = \"v1\"\non_open = [\n  { delay = \"250ms\", send = \"hi\" },\n]\non_message = [\n  { match = { op = \"sub\" }, delay = \"100ms\", send = { op = \"ok\" } },\n]\n"
+        ),
+        "{}",
+        recorded.toml
+    );
+    assert!(
+        recorded
+            .toml
+            .contains("respond = { sse = [\n  { delay = \"500ms\", data = \"x\" },\n] }"),
+        "{}",
+        recorded.toml
+    );
+    let d = write(&recorded);
+    MockSet::load(&Source::find(d.path(), d.path(), "recorded").unwrap()).unwrap();
+    // An explicit scope leaves sockets out of it out.
+    let recorded = record(&exchanges, &options(&["/events"])).unwrap();
+    assert_eq!(recorded.websockets, 0);
+}

@@ -6011,6 +6011,9 @@ pub struct MockRecordData {
     /// (`--match-bodies`), told apart from others to the same path.
     #[serde(default)]
     pub by_body: usize,
+    /// The `[[websocket]]`s written (one per socket path).
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
+    pub websockets: usize,
 }
 
 /// `data` of `chrome-cdp mock off --json`.

@@ -384,3 +384,74 @@ fn mock_serve_talks_websocket_to_a_client_that_is_not_a_browser() {
     );
     drop(served);
 }
+
+/// `window.seen` of the page once it has `n` entries, sorted, with JSON
+/// messages in one form.
+fn seen_sorted(sandbox: &Sandbox, n: usize) -> Vec<String> {
+    let mut got: Vec<String> = seen(sandbox, n)
+        .into_iter()
+        .map(|s| match s.split_once(' ') {
+            Some((kind, rest)) => match serde_json::from_str::<serde_json::Value>(rest) {
+                Ok(v) if v.is_object() => format!("{kind} {v}"),
+                _ => s,
+            },
+            None => s,
+        })
+        .collect();
+    got.sort();
+    got
+}
+
+#[test]
+fn a_recorded_websocket_and_event_source_replay() {
+    let Some(chrome) = chrome_path() else { return };
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let site = Fixtures::shared();
+    let out = sandbox.run(&["open", &site.url("/mock/real-live.html")]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    seen(&sandbox, 3);
+    let out = sandbox.run(&["click", "#ping"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let real = seen_sorted(&sandbox, 4);
+    assert_eq!(
+        real,
+        [
+            r#"headline {"title":"Second"} #2"#,
+            "sse first",
+            r#"ws {"id":7,"type":"pong"}"#,
+            r#"ws {"type":"hello"}"#,
+        ]
+    );
+
+    let file = sandbox.tmp().join("mocks/live.toml");
+    let file = file.to_str().unwrap();
+    let out = sandbox.run(&["mock", "record", "-o", file, "--force"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert!(
+        stdout(&out).contains(": 1 mock from 1 request, 1 [[websocket]] from 1 socket"),
+        "{}",
+        stdout(&out)
+    );
+    let toml = std::fs::read_to_string(file).unwrap();
+    assert!(toml.contains("scope = [\"/live/**\"]"), "{toml}");
+    assert!(
+        toml.contains("[[websocket]]\nurl = \"/live/ws\"\n"),
+        "{toml}"
+    );
+    assert!(toml.contains("respond = { sse = ["), "{toml}");
+
+    // Replayed: the page gets the same messages and events, from the
+    // mocks.
+    let out = sandbox.run(&["mock", "use", file]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["reload"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    seen(&sandbox, 3);
+    let out = sandbox.run(&["click", "#ping"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert_eq!(seen_sorted(&sandbox, 4), real);
+    let out = sandbox.run(&["mock", "log"]);
+    let log = stdout(&out);
+    assert!(log.contains("websocket → live.toml:"), "{log}");
+    assert!(log.contains("eventsource → live.toml:"), "{log}");
+}

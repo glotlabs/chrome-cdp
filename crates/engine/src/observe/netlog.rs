@@ -64,6 +64,15 @@ const FRAMES: usize = 500;
 const FRAME_TEXT: usize = 200;
 const FRAME_HEX: usize = 32;
 
+/// How much of each frame's payload `har stop` and `mock record` get
+/// (text as it is, binary in base64).
+const FRAME_KEEP: usize = 64 * 1024;
+
+/// How many EventSource messages a record keeps, and how much of each
+/// one's data.
+const EVENTS: usize = 500;
+const EVENT_DATA: usize = 64 * 1024;
+
 /// How many frames of a request's initiator stack are kept.
 const INITIATOR_FRAMES: usize = 8;
 
@@ -83,8 +92,13 @@ pub(crate) struct Record {
     /// A WebSocket's last frames, oldest first, each with the log's change
     /// count it came at ([`NetLog::changes`]).
     pub(crate) frames: VecDeque<(u64, WebSocketFrame)>,
+    /// Their payloads, in step with `frames`: text as it is, binary in
+    /// base64, at most [`FRAME_KEEP`] bytes each.
+    pub(crate) payloads: VecDeque<String>,
     /// The frames dropped to make room.
     pub(crate) frames_dropped: u64,
+    /// An EventSource's last messages, oldest first.
+    pub(crate) events: VecDeque<SseMessage>,
     /// For a request of the main frame's document (each hop of its
     /// redirects), the navigation it starts: `har stop` makes a page of
     /// each.
@@ -96,6 +110,16 @@ pub(crate) struct Record {
     /// response headers were in.
     started: Option<f64>,
     headers_end: Option<f64>,
+}
+
+/// A message an EventSource got (`Network.eventSourceMessageReceived`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SseMessage {
+    pub(crate) time_ms: u64,
+    /// Its type (`message` for most).
+    pub(crate) event: String,
+    pub(crate) id: String,
+    pub(crate) data: String,
 }
 
 /// A navigation of the main frame, as its document's request saw it.
@@ -490,7 +514,9 @@ impl Record {
             post_data: None,
             has_post_data: false,
             frames: VecDeque::new(),
+            payloads: VecDeque::new(),
             frames_dropped: 0,
+            events: VecDeque::new(),
             navigation: None,
             raw_request: false,
             raw_response: false,
@@ -566,6 +592,7 @@ impl Record {
                     change,
                 );
             }
+            "Network.eventSourceMessageReceived" => self.event_source_message(params),
             "Network.webSocketFrameError" => {
                 self.entry.error = non_empty(&params["errorMessage"]);
             }
@@ -684,6 +711,7 @@ impl Record {
         }
         if self.frames.len() >= FRAMES {
             self.frames.pop_front();
+            self.payloads.pop_front();
             self.frames_dropped += 1;
         }
         let n = self.frames_dropped + self.frames.len() as u64 + 1;
@@ -697,6 +725,19 @@ impl Record {
             hex: hex.filter(|h| !h.is_empty()),
         };
         self.frames.push_back((change, frame));
+        self.payloads.push_back(cut_bytes(payload, FRAME_KEEP));
+    }
+
+    fn event_source_message(&mut self, params: &Value) {
+        if self.events.len() >= EVENTS {
+            self.events.pop_front();
+        }
+        self.events.push_back(SseMessage {
+            time_ms: now_ms(),
+            event: text(&params["eventName"]),
+            id: text(&params["eventId"]),
+            data: cut_bytes(params["data"].as_str().unwrap_or_default(), EVENT_DATA),
+        });
     }
 }
 
@@ -863,6 +904,18 @@ fn base64_len(b64: &str) -> usize {
     base64::engine::general_purpose::STANDARD
         .decode(b64)
         .map_or(b64.len() * 3 / 4, |d| d.len())
+}
+
+/// `text`, at most `max` bytes (cut on a character boundary).
+fn cut_bytes(text: &str, max: usize) -> String {
+    if text.len() <= max {
+        return text.to_owned();
+    }
+    let mut end = max;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text[..end].to_owned()
 }
 
 fn now_ms() -> u64 {

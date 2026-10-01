@@ -1097,6 +1097,12 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "websockets": {
+          "description": "The `[[websocket]]`s written (one per socket path).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [

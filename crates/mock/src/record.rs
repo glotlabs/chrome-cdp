@@ -9,6 +9,10 @@
 //! out; ids in paths and ids and timestamps in bodies get a comment, so
 //! whoever edits the file knows where a template would do.
 //!
+//! WebSockets in scope become `[[websocket]]`s, and an EventSource's
+//! messages (or a `text/event-stream` body) an `sse` answer: see
+//! `record_streams` (plan 19, milestone 19.2).
+//!
 //! The file is written here, as text, so its layout (inline tables, the
 //! comments) stays readable; [`crate::MockSet::parse`] checks it in the
 //! tests.
@@ -19,6 +23,8 @@ use std::fmt::Write as _;
 use serde_json::Value;
 
 use crate::glob::PathGlob;
+use crate::record_streams::{self as streams, SseRec};
+pub use crate::record_streams::{SseRecorded, WsRecorded};
 use crate::stable::{self, Fields, Kind};
 use crate::template::is_template;
 
@@ -44,13 +50,17 @@ pub struct Exchange {
     pub resource_type: String,
     /// When it was sent (ms since the epoch), if known.
     pub started_ms: Option<i64>,
+    /// A WebSocket's messages, in order.
+    pub ws_messages: Vec<WsRecorded>,
+    /// An EventSource's messages, in order.
+    pub sse_messages: Vec<SseRecorded>,
 }
 
 /// What to record.
 #[derive(Debug, Clone, Default)]
 pub struct RecordOptions {
     /// Path or full-URL globs, as a set's `scope`. Empty: the page's
-    /// `fetch` and XHR requests.
+    /// `fetch` and XHR requests, WebSockets and EventSources.
     pub scope: Vec<String>,
     /// Where data files go, relative to the mock file's directory:
     /// `data/<name>`.
@@ -81,6 +91,10 @@ pub struct Recorded {
     /// Requests whose mock matches their body (`--match-bodies`): told
     /// apart from others to the same path.
     pub by_body: usize,
+    /// The `[[websocket]]`s written.
+    pub websockets: usize,
+    /// The WebSockets recorded.
+    pub sockets: usize,
 }
 
 /// JSON bodies up to this many characters (compact) are written inline.
@@ -149,7 +163,7 @@ const VOLATILE: &[&str] = &[
 
 /// What `--scope` records: requests whose path or URL (without its
 /// query) a glob matches, or with no globs the page's `fetch` and XHR
-/// requests.
+/// requests, WebSockets and EventSources.
 #[derive(Debug, Clone)]
 pub struct Scope(Vec<PathGlob>);
 
@@ -177,7 +191,9 @@ impl Scope {
             return false;
         };
         if self.0.is_empty() {
-            return kind.eq_ignore_ascii_case("fetch") || kind.eq_ignore_ascii_case("xhr");
+            return ["fetch", "xhr", "websocket", "eventsource"]
+                .iter()
+                .any(|k| kind.eq_ignore_ascii_case(k));
         }
         let path = url.path().to_owned();
         url.set_query(None);
@@ -277,9 +293,45 @@ pub fn har_exchanges(har: &Value) -> Result<Vec<Exchange>, String> {
                 .get("startedDateTime")
                 .and_then(Value::as_str)
                 .and_then(crate::stable::date_ms),
+            ws_messages: list(entry, "_webSocketMessages")
+                .map(|m| WsRecorded {
+                    sent: m.get("type").and_then(Value::as_str) == Some("send"),
+                    time_ms: seconds_ms(m.get("time")),
+                    opcode: m
+                        .get("opcode")
+                        .and_then(Value::as_u64)
+                        .and_then(|o| u8::try_from(o).ok())
+                        .unwrap_or(1),
+                    data: text(m, "data"),
+                })
+                .collect(),
+            sse_messages: list(entry, "_eventSourceMessages")
+                .map(|m| SseRecorded {
+                    time_ms: seconds_ms(m.get("time")),
+                    event: text(m, "eventName"),
+                    id: text(m, "eventId"),
+                    data: text(m, "data"),
+                })
+                .collect(),
         });
     }
     Ok(out)
+}
+
+/// The items of `entry`'s list `key`.
+fn list<'a>(entry: &'a Value, key: &str) -> impl Iterator<Item = &'a Value> {
+    entry
+        .get(key)
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+}
+
+/// A HAR message `time` (seconds since the epoch) in ms.
+#[allow(clippy::cast_possible_truncation)]
+fn seconds_ms(time: Option<&Value>) -> i64 {
+    time.and_then(Value::as_f64)
+        .map_or(0, |t| (t * 1000.0).round() as i64)
 }
 
 /// Standard base64, with or without padding; `None` if it is not.
@@ -349,10 +401,17 @@ pub fn record(exchanges: &[Exchange], options: &RecordOptions) -> Result<Recorde
         .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
     let mut out = Recorded::default();
     let mut reqs: Vec<Req<'_>> = Vec::new();
+    let mut sockets: Vec<&Exchange> = Vec::new();
     for ex in exchanges {
         let Ok(url) = url::Url::parse(&ex.url) else {
             continue;
         };
+        if matches!(url.scheme(), "ws" | "wss") || ex.resource_type == "websocket" {
+            if scope.matches(url.as_str(), "websocket") {
+                sockets.push(ex);
+            }
+            continue;
+        }
         if !matches!(url.scheme(), "http" | "https") {
             continue;
         }
@@ -398,8 +457,20 @@ pub fn record(exchanges: &[Exchange], options: &RecordOptions) -> Result<Recorde
         });
     }
     out.requests = reqs.len();
+    out.sockets = sockets.len();
+    let socket_paths: Vec<String> = sockets
+        .iter()
+        .filter_map(|ex| url::Url::parse(&ex.url).ok())
+        .map(|u| u.path().to_owned())
+        .collect();
     out.scope = if options.scope.is_empty() {
-        common_scope(&reqs).into_iter().collect()
+        common_scope(
+            reqs.iter()
+                .map(|r| r.path.as_str())
+                .chain(socket_paths.iter().map(String::as_str)),
+        )
+        .into_iter()
+        .collect()
     } else {
         options.scope.clone()
     };
@@ -582,6 +653,13 @@ pub fn record(exchanges: &[Exchange], options: &RecordOptions) -> Result<Recorde
             let _ = writeln!(text, "respond = {r}");
         }
     }
+    let ws = streams::websockets(&sockets, now_ms);
+    out.websockets = ws.toml.len();
+    out.skipped.extend(ws.skipped);
+    for socket in &ws.toml {
+        text.push('\n');
+        text.push_str(socket);
+    }
     out.toml = text;
     Ok(out)
 }
@@ -701,13 +779,13 @@ fn graphql_operation(ex: &Exchange, url: &url::Url) -> Option<String> {
     None
 }
 
-/// `/api/**` when every request's path starts with `/api/`.
-fn common_scope(reqs: &[Req<'_>]) -> Option<String> {
+/// `/api/**` when every path starts with `/api/`.
+fn common_scope<'a>(paths: impl Iterator<Item = &'a str>) -> Option<String> {
     let first = |p: &str| {
         let seg = p.trim_start_matches('/').split('/').next()?.to_owned();
         (!seg.is_empty() && p.trim_start_matches('/').contains('/')).then_some(seg)
     };
-    let mut segs = reqs.iter().map(|r| first(&r.path));
+    let mut segs = paths.map(first);
     let one = segs.next()??;
     segs.all(|s| s.as_deref() == Some(&one))
         .then(|| format!("/{one}/**"))
@@ -755,6 +833,8 @@ enum Body {
         bytes: Vec<u8>,
         ext: &'static str,
     },
+    /// An EventSource's events.
+    Sse(Vec<SseRec>),
 }
 
 impl Answer {
@@ -767,7 +847,19 @@ impl Answer {
             .map(|(_, v)| v.to_ascii_lowercase())
             .unwrap_or_default();
         let mime = if mime.is_empty() { header_mime } else { mime };
+        let stream = essence(&mime) == "text/event-stream";
         let body = match &ex.response_body {
+            _ if !ex.sse_messages.is_empty() => {
+                Body::Sse(streams::sse_events(&ex.sse_messages, ex.started_ms))
+            }
+            Some(b) if stream && !b.is_empty() => {
+                let events = streams::sse_body(&String::from_utf8_lossy(b));
+                if events.is_empty() {
+                    classify(b, &mime)
+                } else {
+                    Body::Sse(events)
+                }
+            }
             None => Body::NotRecorded(ex.left_out.clone()),
             Some(b) if b.is_empty() => Body::Empty,
             Some(b) => classify(b, &mime),
@@ -802,6 +894,7 @@ impl Answer {
         let given = match &body {
             Body::Json(_) => Some("application/json"),
             Body::Text { ext, .. } | Body::Binary { ext, .. } => Some(ext_type(ext)),
+            Body::Sse(_) => Some("text/event-stream"),
             Body::Empty | Body::NotRecorded(_) => None,
         };
         if let Some(given) = given
@@ -890,6 +983,10 @@ impl Answer {
                 files.push((path.clone(), bytes.clone()));
                 parts.push(format!("file = {}", toml_string(&path)));
             }
+            Body::Sse(events) => match streams::sse_toml(events, &mut notes) {
+                Some(sse) => parts.push(format!("sse = {sse}")),
+                None => notes.push("the stream's events were not recorded; add some".to_owned()),
+            },
         }
         if self.dropped_cookies {
             notes.push(
@@ -1052,7 +1149,7 @@ fn clean(text: &str) -> String {
 
 /// Whether a path segment looks like an id: a number, a UUID, a long
 /// hex or mixed token.
-fn is_id(seg: &str) -> bool {
+pub(crate) fn is_id(seg: &str) -> bool {
     if seg.is_empty() {
         return false;
     }
@@ -1085,7 +1182,7 @@ fn path_ids(path: &str) -> Vec<String> {
 }
 
 /// `/api/products/:id` for `/api/products/1`.
-fn param_path(path: &str) -> String {
+pub(crate) fn param_path(path: &str) -> String {
     let mut n = 0;
     path.split('/')
         .map(|s| {
@@ -1203,7 +1300,7 @@ fn inline_json(value: &Value) -> Option<String> {
     toml_value(value)
 }
 
-fn toml_value(value: &Value) -> Option<String> {
+pub(crate) fn toml_value(value: &Value) -> Option<String> {
     Some(match value {
         Value::Null => return None,
         Value::Bool(b) => b.to_string(),
@@ -1268,7 +1365,7 @@ pub(crate) fn toml_string(s: &str) -> String {
 }
 
 /// A TOML key: bare when it can be.
-fn toml_key(k: &str) -> String {
+pub(crate) fn toml_key(k: &str) -> String {
     if !k.is_empty()
         && k.chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')

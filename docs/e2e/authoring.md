@@ -67,7 +67,8 @@ next: chrome-cdp mock use recorded
 
 It reads the session's network log (every tab of the context, or
 `--tab`'s), keeps the requests `--scope` matches (globs as a set's `scope`
-takes them; without it, the page's fetch and XHR requests) and writes:
+takes them; without it, the page's fetch and XHR requests, WebSockets and
+EventSources) and writes:
 
 - one `[[mock]]` per distinct request: method, path, query (cache busters
   such as `_=1767261600000` left out), and the operation of a GraphQL
@@ -83,6 +84,16 @@ takes them; without it, the page's fetch and XHR requests) and writes:
   (`{{uuid}}`, `{{now}}` in a `.tmpl.json` data file);
 - `[settings] scope`: the `--scope` given, or the first path segment every
   recorded request shares.
+- a `[[websocket]]` per socket path: the server's messages before the
+  page's first as `on_open` (each with the delay since the one before,
+  rounded to 10 ms; none under 50 ms), and for each page message the
+  server answered an `on_message` rule that sends the first answer. A JSON
+  message is matched by its stable fields (as `--match-bodies` picks
+  them), any other text exactly. Sockets to one path are merged; binary
+  messages, answers after the first (a rule sends one message) and
+  conflicting answers are left out and listed;
+- an EventSource's messages as an `sse` answer, with their delays (a
+  `text/event-stream` body in a HAR file gives the events without them).
 
 Requests are told apart by method, path, query and GraphQL operation, so
 two POSTs to one path with different bodies (logging in as two users)

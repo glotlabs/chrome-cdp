@@ -478,7 +478,7 @@ fn record(args: &MockRecordArgs, global: &GlobalArgs) -> Result<Output, ErrorInf
     let exchanges = mock::record::har_exchanges(&exported.data["har"])
         .map_err(|e| ErrorInfo::new(ErrorKind::ProtocolError, format!("bad export: {e}")))?;
     let origin = match args.scope.as_slice() {
-        [] => "Recorded by `chrome-cdp mock record` from the session's fetch and XHR requests."
+        [] => "Recorded by `chrome-cdp mock record` from the session's fetch and XHR requests, WebSockets and EventSources."
             .to_owned(),
         scope => format!(
             "Recorded by `chrome-cdp mock record --scope {}`.",
@@ -581,6 +581,7 @@ pub(crate) fn record_bundle(
                 scope,
                 skipped: Vec::new(),
                 by_body: 0,
+                websockets: 0,
             }
         }
         Err(info) => return Err(info),
@@ -645,7 +646,7 @@ fn import(args: &MockImportArgs) -> Result<Output, ErrorInfo> {
         args.match_bodies,
         || {
             Hint::text(
-                "check --scope: the HAR has no request it matches (without it, fetch and XHR ones)",
+                "check --scope: the HAR has no request it matches (without it, fetch and XHR ones, WebSockets and EventSources)",
             )
         },
     )
@@ -738,9 +739,9 @@ fn write_recording(
     };
     let recorded = mock::record::record(exchanges, &options)
         .map_err(|e| ErrorInfo::new(ErrorKind::BadArgs, e))?;
-    if recorded.mocks == 0 {
+    if recorded.mocks == 0 && recorded.websockets == 0 {
         let what = if scope.is_empty() {
-            "no fetch or XHR request".to_owned()
+            "no fetch, XHR, WebSocket or EventSource request".to_owned()
         } else {
             format!("no request in scope {}", scope.join(", "))
         };
@@ -812,6 +813,19 @@ fn write_recording(
     if recorded.by_body > 0 {
         let _ = write!(text, " ({} told apart by body)", recorded.by_body);
     }
+    if recorded.websockets > 0 {
+        let _ = write!(
+            text,
+            ", {} [[websocket]] from {} {}",
+            recorded.websockets,
+            recorded.sockets,
+            if recorded.sockets == 1 {
+                "socket"
+            } else {
+                "sockets"
+            }
+        );
+    }
     if !files.is_empty() {
         let _ = write!(
             text,
@@ -835,6 +849,7 @@ fn write_recording(
         scope: recorded.scope.clone(),
         skipped: recorded.skipped.clone(),
         by_body: recorded.by_body,
+        websockets: recorded.websockets,
     };
     let mut output = Output::typed(&data, text)
         .quiet(path)

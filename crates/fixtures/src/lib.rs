@@ -39,6 +39,10 @@
 //! - Sends `Cache-Control: no-store`, so a reload always hits the server.
 //! - `/ws` is a WebSocket that echoes every message (for pages that keep
 //!   one open).
+//! - `/live/ws` is a WebSocket that says `{"type":"hello"}`, then answers
+//!   `{"type":"ping","id":N}` with `{"type":"pong","id":N}`; and
+//!   `/live/events` an event stream of two events (for `mock record` of
+//!   streaming traffic, plan 19.2).
 //! - `/hmr/vite` and `/hmr/webpack` are fake dev servers' hot-reload
 //!   sockets, and `POST /hmr/send` pushes a message to them (see [`hmr`]).
 //! - `/items?n=<count>` answers a JSON array of `count` items (default
@@ -95,6 +99,7 @@ use rustls::pki_types::pem::PemObject as _;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::WebSocketStream;
+use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::handshake::derive_accept_key;
 use tokio_tungstenite::tungstenite::protocol::Role;
 
@@ -333,6 +338,7 @@ where
         async move {
             match req.uri().path() {
                 "/ws" => return Ok::<_, Infallible>(websocket(&mut req)),
+                "/live/ws" => return Ok::<_, Infallible>(live_socket(&mut req)),
                 "/hmr/vite" => return Ok(hmr::socket(&site, &mut req, hmr::Kind::Vite)),
                 "/hmr/webpack" => return Ok(hmr::socket(&site, &mut req, hmr::Kind::Webpack)),
                 "/hmr/send" => return Ok(hmr::send(&site, req).await),
@@ -478,6 +484,7 @@ async fn respond(site: &Site, origin: &str, req: &Request<Incoming>) -> Response
         .and_then(|code| StatusCode::from_u16(code).ok());
     let mut response = match file(site, path) {
         None if path == "/items" => items(query),
+        None if path == "/live/events" => live_events(),
         None if path == "/targets/api" => targets_api(query),
         Some(file) => {
             let Ok(body) = std::fs::read(&file) else {
@@ -650,6 +657,42 @@ async fn server_get(
         .map(|(_, b)| b)
         .unwrap_or_default();
     Ok((status, body.to_owned()))
+}
+
+/// `/live/events`: two events, and a long `retry` so the page does not
+/// come back for more when the (whole, not streamed) answer ends.
+fn live_events() -> Response<Full<Bytes>> {
+    response(
+        StatusCode::OK,
+        "text/event-stream",
+        Bytes::from_static(
+            b"retry: 3600000\n\ndata: first\n\nevent: headline\nid: 2\ndata: {\"title\":\"Second\"}\n\n",
+        ),
+    )
+}
+
+/// `/live/ws`: says hello, then answers pings with pongs.
+fn live_socket(req: &mut Request<Incoming>) -> Response<Full<Bytes>> {
+    upgrade(req, None, |mut ws| async move {
+        let hello = Message::text(r#"{"type":"hello"}"#);
+        if ws.send(hello).await.is_err() {
+            return;
+        }
+        while let Some(Ok(message)) = ws.next().await {
+            let Message::Text(text) = message else {
+                continue;
+            };
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(text.as_str()) else {
+                continue;
+            };
+            if value["type"] == "ping" {
+                let pong = serde_json::json!({ "type": "pong", "id": value["id"] });
+                if ws.send(Message::text(pong.to_string())).await.is_err() {
+                    break;
+                }
+            }
+        }
+    })
 }
 
 /// `/items?n=<count>`: a JSON array of `count` items.

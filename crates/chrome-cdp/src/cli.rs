@@ -5125,7 +5125,8 @@ Examples:
     #[command(after_help = "\
 Reads the session's network log (every tab of the context, or --tab's),
 keeps the requests in --scope (globs as a set's scope takes them; without
-it, the page's fetch and XHR requests), and writes one [[mock]] per
+it, the page's fetch and XHR requests, WebSockets and EventSources), and
+writes one [[mock]] per
 distinct request: method, path, query (and a GraphQL operation). A request
 sent more than once with other answers becomes a `sequence`. Bodies go to
 data files in data/<set>/ (small ones inline); volatile headers (date,
@@ -5138,6 +5139,13 @@ logins as different users): their mocks match `json` (or `form`, or a
 GraphQL request's variables) with the body's stable fields, leaving out
 fields whose values differ and look generated (UUIDs, the time, long
 tokens). Requests with equal stable fields still form a sequence.
+
+A WebSocket becomes a [[websocket]]: the server's messages before the
+page's first are on_open, and each page message the server answered is an
+on_message rule (matching a JSON message's stable fields, other text
+exactly) that sends the first answer, with the delays seen. An
+EventSource's messages become an `sse` answer. Binary messages, and
+answers after the first, are left out and listed.
 
 Browse first, then record: bodies are asked of Chrome, which keeps them
 while the page that loaded them is open.
@@ -5399,7 +5407,7 @@ pub(crate) struct MockCheckArgs {
 pub(crate) struct MockRecordArgs {
     /// Record the requests these globs match (repeatable, or
     /// comma-separated): paths (`/api/**`) or full URLs. Default: the
-    /// page's fetch and XHR requests.
+    /// page's fetch and XHR requests, WebSockets and EventSources.
     #[arg(long, value_name = "GLOB", value_delimiter = ',')]
     pub(crate) scope: Vec<String>,
 
@@ -5434,7 +5442,7 @@ pub(crate) struct MockImportArgs {
 
     /// Import the requests these globs match (repeatable, or
     /// comma-separated): paths (`/api/**`) or full URLs. Default: the
-    /// page's fetch and XHR requests.
+    /// page's fetch and XHR requests, WebSockets and EventSources.
     #[arg(long, value_name = "GLOB", value_delimiter = ',')]
     pub(crate) scope: Vec<String>,
 

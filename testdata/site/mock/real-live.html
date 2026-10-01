@@ -1,0 +1,24 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Live, for real</title>
+<h1>Live, for real</h1>
+<p>A real WebSocket to <code>/live/ws</code> and a real EventSource on
+<code>/live/events</code> (the fixture server's), for recording them with
+<code>mock record</code> and replaying the recording (plan 19, milestone
+19.2). Every message the page gets is a list item.</p>
+<button id="ping" onclick="socket.send(JSON.stringify({ type: 'ping', id: 7 }))">Ping</button>
+<ol id="log" aria-label="log"></ol>
+<script>
+  window.seen = [];
+  const note = (text) => {
+    window.seen.push(text);
+    const li = document.createElement('li');
+    li.textContent = text;
+    document.getElementById('log').append(li);
+  };
+  window.socket = new WebSocket(`ws://${location.host}/live/ws`);
+  socket.onmessage = (event) => note(`ws ${event.data}`);
+  window.news = new EventSource('/live/events');
+  news.onmessage = (event) => note(`sse ${event.data}`);
+  news.addEventListener('headline', (event) => note(`headline ${event.data} #${event.lastEventId}`));
+</script>
