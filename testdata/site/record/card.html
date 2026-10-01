@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Card</title>
+<!-- The iframe of form.html (plan 18.6). -->
+<label>Card number <input name="card"></label>
+<button id="pay">Pay</button>
+<p role="status" id="paid"></p>
+<script>
+  document.getElementById('pay').onclick = () => {
+    document.getElementById('paid').textContent = 'paid with ' + document.querySelector('input').value;
+  };
+</script>

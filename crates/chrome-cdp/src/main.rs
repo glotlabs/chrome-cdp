@@ -31,6 +31,7 @@ mod log;
 mod mock;
 mod output;
 mod progress;
+mod record;
 mod repro;
 mod route;
 mod schema;
@@ -181,6 +182,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Mark(args)) => session::mark(&args, &cli.global),
         Some(Command::History(args)) => history::run(&args, &cli.global),
         Some(Command::Repro(args)) => repro::run(&args, &cli.global),
+        Some(Command::Record(args)) => record::run(&args, &cli.global),
         Some(Command::ExpectSnapshot(args)) => session::expect_snapshot(&args, &cli.global),
         Some(Command::ExpectScreenshot(args)) => session::expect_screenshot(&args, &cli.global),
         Some(Command::Dialog(args)) => session::dialog(&args, &cli.global),

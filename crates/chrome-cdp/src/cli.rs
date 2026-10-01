@@ -451,8 +451,8 @@ usual commands, then save what worked.
 
 In the test, refs (e12) become the most robust locator that found their
 element alone when the command ran: role and name, then label, test id
-(the config's testid_attribute; one other than data-testid is written
-css=[data-test=\"…\"]), placeholder or text, then one of those inside
+(testid=…, read with the config's testid_attribute, as the project's
+`test` reads it), placeholder or text, then one of those inside
 a named container (a list item, a row, a dialog), and `>> nth=` only as
 a last resort. An element in an iframe gets frame=NAME (or a part of its URL only it has) first:
 frame=pay >> role=button[name=\"Pay\"]. Commands that only read (snapshot, console, text, network, …) and failed ones are left
@@ -488,6 +488,27 @@ Examples:
   chrome-cdp test bugs/pay-twice"
     )]
     Repro(ReproArgs),
+
+    /// Record what happens in the page as test steps.
+    #[command(
+        subcommand_required = true,
+        arg_required_else_help = true,
+        after_help = "\
+`record start` listens to the page itself, in every tab and iframe of the
+session (or --context), so it records whoever acts: a person in a headed
+window, an agent's chrome-cdp commands, or raw `cdp Input.*` events.
+`record stop` prints the recorded test (or appends it to -o FILE): clicks,
+checks, typing (one `fill` per field), choices, files, keys, browser
+navigations, dialogs answered and tab switches, each element by the same
+stable locators `history --as-scenario` writes. It guesses no assertions:
+add `expect` steps. docs/e2e/recording.md has the details.
+
+Examples:
+  chrome-cdp record start --name \"adds a mouse to the cart\"
+  chrome-cdp record status
+  chrome-cdp record stop -o e2e/scenarios/cart.cdp"
+    )]
+    Record(RecordArgs),
 
     /// Load a URL in the current tab and wait for it.
     #[command(after_help = "\
@@ -4859,6 +4880,73 @@ Examples:
 }
 
 #[derive(Debug, Args)]
+pub(crate) struct RecordArgs {
+    #[command(subcommand)]
+    pub(crate) command: RecordCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum RecordCommand {
+    /// Start recording what happens in the page.
+    #[command(after_help = "\
+From now on every page and iframe of the session's tabs (or --context's)
+reports what is done in it, from the active tab on. Each element is named
+at the moment it is acted on, by the most robust locator that finds it
+alone (testid= for the configured testid_attribute). Starting again drops
+the earlier recording. Needs a running session.
+
+Examples:
+  chrome-cdp record start
+  chrome-cdp record start --name \"signs in\"")]
+    Start(RecordStartArgs),
+
+    /// How many steps the recording has so far.
+    #[command(after_help = "\
+Typing still going on counts as one step.
+
+Examples:
+  chrome-cdp record status
+  chrome-cdp record status -q     # just the number")]
+    Status(RecordStatusArgs),
+
+    /// Stop recording and print the test, or append it to a file.
+    #[command(after_help = "\
+Prints `@test \"NAME\"` and its steps, ending with a comment asking for
+`expect` steps (the recorder guesses no assertions). URLs under base_url
+become paths. A password field's value is never recorded: the step fills
+${secret:PASSWORD}. A file chosen gets `upload LOC NAME` and a TODO for
+its path. With -o, the test is appended to FILE (made if missing).
+
+Examples:
+  chrome-cdp record stop
+  chrome-cdp record stop -o e2e/scenarios/signin.cdp
+  chrome-cdp test e2e/scenarios/signin.cdp")]
+    Stop(RecordStopArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct RecordStartArgs {
+    /// The recorded test's name (`@test "NAME"`).
+    #[arg(long, default_value = "recorded", value_name = "NAME")]
+    pub(crate) name: String,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct RecordStatusArgs {}
+
+#[derive(Debug, Args)]
+pub(crate) struct RecordStopArgs {
+    /// Append the test to this file (made if missing) instead of printing
+    /// it.
+    #[arg(short = 'o', long = "output", value_name = "FILE")]
+    pub(crate) output: Option<PathBuf>,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
 pub(crate) struct ReproStartArgs {
     /// Keep only the bodies of these requests: a path glob (`/api/**`) or
     /// a full-URL glob (`https://api.example.com/**`); repeatable.
@@ -7947,6 +8035,8 @@ mod tests {
         "pdf",
         "har start",
         "repro start",
+        "record start",
+        "record status",
         "har stop",
         "trace start",
         "trace stop",

@@ -1,0 +1,47 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sign up</title>
+<!-- A form for `record` (plan 18.6): every row of the recorder's events
+     table has a control here, and an iframe (card.html) has its own.
+     Submit shows what the form holds, so a replayed test can check it. -->
+<h1>Sign up</h1>
+<form id="signup">
+  <label>Name <input name="name"></label>
+  <label>Email <input name="email" type="email"></label>
+  <label>Password <input name="password" type="password"></label>
+  <label>Bio <textarea name="bio"></textarea></label>
+  <label>Size <select name="size"><option value="s">Small</option><option value="m">Medium</option><option value="l">Large</option></select></label>
+  <fieldset><legend>Plan</legend>
+    <label><input type="radio" name="plan" value="free" checked> Free</label>
+    <label><input type="radio" name="plan" value="pro"> Pro</label>
+  </fieldset>
+  <label><input type="checkbox" name="terms"> I accept the terms</label>
+  <label><input type="checkbox" name="news" checked> Send me news</label>
+  <label>Photo <input type="file" name="photo"></label>
+  <button type="button" id="draft">Delete draft</button>
+  <button type="button" id="nick">Pick a nickname</button>
+  <button type="submit">Sign up</button>
+</form>
+<p role="status" id="status"></p>
+<p><a href="help.html">Help</a></p>
+<iframe name="card" src="card.html" title="Card"></iframe>
+<script>
+  const status = document.getElementById('status');
+  document.getElementById('draft').onclick = () => {
+    status.textContent = confirm('Delete the draft?') ? 'draft deleted' : 'draft kept';
+  };
+  document.getElementById('nick').onclick = () => {
+    status.textContent = 'nickname: ' + prompt('Nickname?', 'ada');
+  };
+  document.getElementById('signup').onsubmit = (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const photo = f.get('photo');
+    status.textContent = [
+      f.get('name'), f.get('email'), 'password ' + String(f.get('password')).length,
+      f.get('bio'), f.get('size'), f.get('plan'),
+      f.get('terms') ? 'terms' : 'no terms', f.get('news') ? 'news' : 'no news',
+      photo && photo.name ? photo.name : 'no photo',
+    ].join(', ');
+  };
+</script>
