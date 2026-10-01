@@ -5947,6 +5947,31 @@ pub struct MockWsSendData {
     pub size: usize,
     /// The sockets that got it.
     pub sockets: Vec<MockSocketInfo>,
+    /// With `--serve` (or in a `test` run with a mock server): what the
+    /// mock server's sockets got.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub served: Option<MockServedPush>,
+}
+
+/// What a push to `mock serve` reached.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockServedPush {
+    /// The mock server, e.g. `http://127.0.0.1:4010`.
+    pub server: String,
+    /// Its sockets (or streams) that got it.
+    pub sent: Vec<MockServedSocket>,
+}
+
+/// A socket or stream of `mock serve` that a push reached.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockServedSocket {
+    /// Its URL.
+    pub url: String,
+    /// The mock that answers it.
+    pub mock: MockRef,
+    /// Its test's partition (the `x-chrome-cdp-test` header), if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test: Option<String>,
 }
 
 /// `data` of `chrome-cdp mock sse send --json`.
@@ -5958,6 +5983,10 @@ pub struct MockSseSendData {
     pub size: usize,
     /// The mocked EventSources that got it.
     pub streams: Vec<MockSocketInfo>,
+    /// With `--serve` (or in a `test` run with a mock server): what the
+    /// mock server's streams got.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub served: Option<MockServedPush>,
 }
 
 /// `data` of `chrome-cdp mock record|import --json`.

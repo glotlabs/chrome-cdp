@@ -1205,6 +1205,29 @@ impl Runner<'_> {
     /// them.
     fn prepare(&self, cli: &mut crate::cli::Cli) {
         super::project_baselines(cli, &self.plan.config.root, self.options.update_snapshots);
+        // A push goes to the browser's sockets and the test's of the mock
+        // server.
+        if let Some(server) = self.served()
+            && let Some(Command::Mock(mock)) = &mut cli.command
+        {
+            use crate::cli::{MockCommand, MockSseCommand, MockWsCommand};
+            let flags = match &mut mock.command {
+                MockCommand::Ws(MockWsCommand::Send(a)) => {
+                    Some((&mut a.serve, &mut a.serve_test, &mut a.and_browser))
+                }
+                MockCommand::Sse(MockSseCommand::Send(a)) => {
+                    Some((&mut a.serve, &mut a.serve_test, &mut a.and_browser))
+                }
+                _ => None,
+            };
+            if let Some((serve, test, both)) = flags
+                && serve.is_none()
+            {
+                *serve = Some(server.url());
+                *test = Some(self.test_id.borrow().clone());
+                *both = true;
+            }
+        }
         // Files the step writes go in the test's artifacts folder.
         let dir = self.recorder.borrow().as_ref().map(|r| r.dir.clone());
         if let Some(dir) = dir {

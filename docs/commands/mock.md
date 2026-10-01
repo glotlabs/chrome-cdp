@@ -424,6 +424,12 @@ per test. `abort` closes the connection, `passthrough` answers 502 (there
 is no real server behind), a request no set owns answers 404, and an `sse`
 answer streams its events.
 
+A WebSocket upgrade a [[websocket]] mock matches is served by it, and the
+log shows each socket's open, its messages in (←) and out (→), and its
+close (`WS /ws/prices open`). `mock ws send --serve URL` and `mock sse
+send --serve URL` push to its open sockets and streams, through control
+requests under /__chrome-cdp/ that it takes from this machine only.
+
 In a test run, `mock_server = { port = 4010 }` in [e2e.web_server] starts
 one before the web server, with each test's own mock sets.
 
@@ -457,6 +463,7 @@ Arguments:
 Options:
 
 - `--base64`: MESSAGE is base64: send its bytes as a binary message
+- `--serve <URL>`: Push to the sockets of the mock server at URL (`mock serve`) instead of the browser's
 - `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
 
 ```text
@@ -467,11 +474,17 @@ it. Waits (up to --timeout) for such a socket to open. Only sockets a
 [[websocket]] mock answers can be sent to: the page's and its workers'
 `WebSocket`s talk to the mocks after `mock use`.
 
+With --serve URL it goes to the sockets of that `mock serve` instead (a
+client that is not a browser page: an SSR server, a native app). In a
+`test` run with a mock server, it goes to both the browser's sockets and
+the test's sockets of the mock server.
+
 Examples:
   chrome-cdp mock ws send '/ws/**' '{"type":"price","value":42}'
   chrome-cdp mock ws send '*' hello
   chrome-cdp mock ws send /ws/feed AQID --base64    # a binary message: bytes 1, 2, 3
   echo '{"type":"bye"}' | chrome-cdp mock ws send /ws/prices -
+  chrome-cdp mock ws send --serve http://127.0.0.1:4010 '/ws/**' hello
 ```
 
 ## `chrome-cdp mock sse`
@@ -500,6 +513,7 @@ Options:
 - `--event <TYPE>`: The event's type (the page's `addEventListener(TYPE)`); `message` when not given
 - `--id <ID>`: The event's id (the stream's `lastEventId`)
 - `--retry <MS>`: The reconnection time the event sets, in ms
+- `--serve <URL>`: Push to the streams of the mock server at URL (`mock serve`) instead of the browser's
 - `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
 
 ```text
@@ -511,10 +525,15 @@ so the page gets them back as newlines. Waits (up to --timeout) for such
 a stream to open. Only streams an `sse` mock answers can be pushed to:
 the page's `EventSource`s talk to the mocks after `mock use`.
 
+With --serve URL it goes to the streams of that `mock serve` instead. In
+a `test` run with a mock server, it goes to both the browser's streams
+and the test's streams of the mock server.
+
 Examples:
   chrome-cdp mock sse send /api/prices '{"price":42}'
   chrome-cdp mock sse send '/api/**' 'sold out' --event stock --id 7
   chrome-cdp mock sse send '*' bye --retry 5000
   echo '{"price":43}' | chrome-cdp mock sse send /api/prices -
+  chrome-cdp mock sse send --serve http://127.0.0.1:4010 /api/prices '{"price":44}'
 ```
 

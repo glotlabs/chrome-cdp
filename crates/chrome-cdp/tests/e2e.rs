@@ -1505,6 +1505,69 @@ fn a_mock_server_answers_server_side_fetches_per_test() {
 }
 
 #[test]
+fn pushes_in_a_test_go_to_the_browser_and_the_mock_server() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let config = project.root.join("chrome-cdp.toml");
+    let base = std::fs::read_to_string(&config).unwrap();
+    let port = free_port();
+    std::fs::write(
+        &config,
+        format!(
+            "{base}\n[e2e.web_server]\ncommand = \"exit 3\"\nurl = \"{}\"\nmock_server = {{ port = {port} }}\n",
+            Fixtures::shared().a()
+        ),
+    )
+    .unwrap();
+    let live =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/site/mock/mocks/live.toml");
+    std::fs::copy(live, project.root.join("mocks/live.toml")).unwrap();
+    let dir = project.root.join("scenarios/push");
+    std::fs::create_dir_all(&dir).unwrap();
+    // The page's socket and stream are the browser's; the mock server
+    // has none open, and says so.
+    std::fs::write(
+        dir.join("push.cdp"),
+        "@mocks live\n\n@test \"pushes\"\n  goto /mock/live.html\n  wait --fn 'window.seen && seen.length >= 4'\n  mock ws send '/mock/ws/**' '{\"type\":\"price\",\"value\":42}'\n  mock sse send /mock/api/news pushed\n  expect '#price' text 42\n  wait --fn 'seen.includes(\"sse pushed\")'\n",
+    )
+    .unwrap();
+    let (out, value) = project.json(&["scenarios/push/push.cdp"]);
+    assert_eq!(out.status.code(), Some(0), "{value}");
+    let artifacts = value["data"]["tests"][0]["artifacts"].as_str().unwrap();
+    let steps: Vec<Value> = std::fs::read_to_string(Path::new(artifacts).join("steps.jsonl"))
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let output = |prefix: &str| {
+        steps
+            .iter()
+            .find(|s| s["command"].as_str().unwrap().starts_with(prefix))
+            .map(|s| s["output"].as_str().unwrap_or_default().to_owned())
+            .unwrap()
+    };
+    let ws = output("mock ws send");
+    assert!(ws.starts_with("sent 27B to 1 socket:"), "{ws}");
+    assert!(
+        ws.ends_with(&format!(
+            "mock server http://127.0.0.1:{port}: sent to 0 sockets"
+        )),
+        "{ws}"
+    );
+    let sse = output("mock sse send");
+    assert!(
+        sse.starts_with("sent to 1 stream (/mock/api/news)"),
+        "{sse}"
+    );
+    assert!(
+        sse.ends_with(&format!(
+            "mock server http://127.0.0.1:{port}: sent to 0 streams"
+        )),
+        "{sse}"
+    );
+}
+
+#[test]
 fn protected_backends_run_only_safe_tests_and_refuse_writes() {
     let Some(chrome) = chrome_path() else { return };
     let project = Project::new(&chrome);

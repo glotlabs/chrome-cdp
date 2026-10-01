@@ -617,6 +617,7 @@ command chrome-cdp mock ws send
   arg URL required
   arg MESSAGE required
   flag --base64
+  flag --serve value=URL
   flag --max-chars value=N
 command chrome-cdp mock sse
 command chrome-cdp mock sse send
@@ -625,6 +626,7 @@ command chrome-cdp mock sse send
   flag --event value=TYPE
   flag --id value=ID
   flag --retry value=MS
+  flag --serve value=URL
   flag --max-chars value=N
 command chrome-cdp http
   arg METHOD required

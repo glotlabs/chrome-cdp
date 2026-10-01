@@ -5199,6 +5199,12 @@ per test. `abort` closes the connection, `passthrough` answers 502 (there
 is no real server behind), a request no set owns answers 404, and an `sse`
 answer streams its events.
 
+A WebSocket upgrade a [[websocket]] mock matches is served by it, and the
+log shows each socket's open, its messages in (←) and out (→), and its
+close (`WS /ws/prices open`). `mock ws send --serve URL` and `mock sse
+send --serve URL` push to its open sockets and streams, through control
+requests under /__chrome-cdp/ that it takes from this machine only.
+
 In a test run, `mock_server = { port = 4010 }` in [e2e.web_server] starts
 one before the web server, with each test's own mock sets.
 
@@ -5229,11 +5235,16 @@ so the page gets them back as newlines. Waits (up to --timeout) for such
 a stream to open. Only streams an `sse` mock answers can be pushed to:
 the page's `EventSource`s talk to the mocks after `mock use`.
 
+With --serve URL it goes to the streams of that `mock serve` instead. In
+a `test` run with a mock server, it goes to both the browser's streams
+and the test's streams of the mock server.
+
 Examples:
   chrome-cdp mock sse send /api/prices '{\"price\":42}'
   chrome-cdp mock sse send '/api/**' 'sold out' --event stock --id 7
   chrome-cdp mock sse send '*' bye --retry 5000
-  echo '{\"price\":43}' | chrome-cdp mock sse send /api/prices -")]
+  echo '{\"price\":43}' | chrome-cdp mock sse send /api/prices -
+  chrome-cdp mock sse send --serve http://127.0.0.1:4010 /api/prices '{\"price\":44}'")]
     Send(MockSseSendArgs),
 }
 
@@ -5248,11 +5259,17 @@ it. Waits (up to --timeout) for such a socket to open. Only sockets a
 [[websocket]] mock answers can be sent to: the page's and its workers'
 `WebSocket`s talk to the mocks after `mock use`.
 
+With --serve URL it goes to the sockets of that `mock serve` instead (a
+client that is not a browser page: an SSR server, a native app). In a
+`test` run with a mock server, it goes to both the browser's sockets and
+the test's sockets of the mock server.
+
 Examples:
   chrome-cdp mock ws send '/ws/**' '{\"type\":\"price\",\"value\":42}'
   chrome-cdp mock ws send '*' hello
   chrome-cdp mock ws send /ws/feed AQID --base64    # a binary message: bytes 1, 2, 3
-  echo '{\"type\":\"bye\"}' | chrome-cdp mock ws send /ws/prices -")]
+  echo '{\"type\":\"bye\"}' | chrome-cdp mock ws send /ws/prices -
+  chrome-cdp mock ws send --serve http://127.0.0.1:4010 '/ws/**' hello")]
     Send(MockWsSendArgs),
 }
 
@@ -5294,6 +5311,21 @@ pub(crate) struct MockWsSendArgs {
     #[arg(long)]
     pub(crate) base64: bool,
 
+    /// Push to the sockets of the mock server at URL (`mock serve`)
+    /// instead of the browser's.
+    #[arg(long, value_name = "URL")]
+    pub(crate) serve: Option<String>,
+
+    /// With --serve: only the sockets of this test's partition (`test`
+    /// sets it).
+    #[arg(long, value_name = "ID", requires = "serve", hide = true)]
+    pub(crate) serve_test: Option<String>,
+
+    /// With --serve: the browser's too, and either may take it (`test`
+    /// sets it).
+    #[arg(long, requires = "serve", hide = true)]
+    pub(crate) and_browser: bool,
+
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]
     pub(crate) max_chars: usize,
@@ -5321,6 +5353,21 @@ pub(crate) struct MockSseSendArgs {
     /// The reconnection time the event sets, in ms.
     #[arg(long, value_name = "MS")]
     pub(crate) retry: Option<u64>,
+
+    /// Push to the streams of the mock server at URL (`mock serve`)
+    /// instead of the browser's.
+    #[arg(long, value_name = "URL")]
+    pub(crate) serve: Option<String>,
+
+    /// With --serve: only the streams of this test's partition (`test`
+    /// sets it).
+    #[arg(long, value_name = "ID", requires = "serve", hide = true)]
+    pub(crate) serve_test: Option<String>,
+
+    /// With --serve: the browser's too, and either may take it (`test`
+    /// sets it).
+    #[arg(long, requires = "serve", hide = true)]
+    pub(crate) and_browser: bool,
 
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]

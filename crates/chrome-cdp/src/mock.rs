@@ -13,8 +13,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use base64::Engine as _;
 use daemon::rpc;
-use e2e::mock_server::{MockServer, Served};
+use e2e::mock_server::{MockServer, Served, SocketLog};
 use engine::{
     HarExportRequest, MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest,
     MockSeedRequest, MockSseSendRequest, MockStateRequest, MockTestTag, MockUseRequest,
@@ -22,7 +23,8 @@ use engine::{
 };
 use mock::{MockSet, Mocks, Source};
 use protocol::schema::{
-    MockCheckData, MockExplainData, MockProblem, MockRecordData, MockServeData, MockSetsData,
+    MockCheckData, MockExplainData, MockProblem, MockRecordData, MockServeData, MockServedPush,
+    MockServedSocket, MockSetsData, MockSseSendData, MockWsSendData,
 };
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
 use serde_json::{Value, json};
@@ -248,6 +250,14 @@ fn serve(args: &MockServeArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo>
                 Hint::run(Cmd::new("mock").arg("serve").flag("port", "0")).why("picks a free port"),
             )
         })?;
+    server.on_socket(Box::new(move |entry: &SocketLog| match mode {
+        Mode::Json => {
+            let line = serde_json::to_string(entry).unwrap_or_default();
+            output::stdout(&format!("{line}\n"));
+        }
+        Mode::Text => output::stdout(&format!("{}\n", entry.line())),
+        Mode::Quiet => {}
+    }));
     let url = server.url();
     // The sets in the order they are tried.
     let tried: Vec<String> = names.iter().rev().cloned().collect();
@@ -903,29 +913,277 @@ fn seed(args: &MockSeedArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
 /// `mock ws send`.
 fn ws_send(args: &MockWsSendArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     let message = input::text_arg(&args.message, "the message")?;
-    let request = MockWsSendRequest {
+    let request = |timeout_ms| MockWsSendRequest {
         url: args.url.clone(),
-        message,
+        message: message.clone(),
         base64: args.base64,
         max_chars: args.max_chars,
-        timeout_ms: session::timeout_ms(global),
+        timeout_ms,
     };
-    session::call_session(global, rpc::MOCK_WS_SEND, &request, "mocked sockets")
+    let browser = |timeout_ms| {
+        session::call_session(
+            global,
+            rpc::MOCK_WS_SEND,
+            &request(timeout_ms),
+            "mocked sockets",
+        )
+    };
+    let Some(server) = &args.serve else {
+        return browser(session::timeout_ms(global));
+    };
+    let body = json!({
+        "url": args.url,
+        "data": message,
+        "base64": args.base64,
+        "test": args.serve_test,
+    });
+    let push = Pushing {
+        server,
+        kind: "ws",
+        body,
+        what: "WebSocket",
+        command: Cmd::new("mock")
+            .arg("ws")
+            .arg("send")
+            .flag("serve", server)
+            .arg("*")
+            .arg(&message),
+    };
+    let size = if args.base64 {
+        base64::engine::general_purpose::STANDARD
+            .decode(message.trim())
+            .map_or(message.len(), |b| b.len())
+    } else {
+        message.len()
+    };
+    let served_only = |served: MockServedPush| {
+        let mut text = format!(
+            "sent {}{} to {} of mock server {}:",
+            protocol::format::size(size as u64),
+            if args.base64 { " (binary)" } else { "" },
+            count(served.sent.len(), "socket", "sockets"),
+            served.server
+        );
+        served_lines(&mut text, &served);
+        let quiet = served.sent.len().to_string();
+        let data = MockWsSendData {
+            url: args.url.clone(),
+            size,
+            sockets: Vec::new(),
+            served: Some(served),
+        };
+        Output::typed(&data, text)
+            .quiet(quiet)
+            .limit(args.max_chars, "--max-chars 0 for all of it")
+    };
+    push.run(global, args.and_browser, browser, served_only, "sockets")
 }
 
 /// `mock sse send`.
 fn sse_send(args: &MockSseSendArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     let data = input::text_arg(&args.data, "the data")?;
-    let request = MockSseSendRequest {
+    let request = |timeout_ms| MockSseSendRequest {
         url: args.url.clone(),
-        data,
+        data: data.clone(),
         event: args.event.clone(),
         id: args.id.clone(),
         retry: args.retry,
         max_chars: args.max_chars,
-        timeout_ms: session::timeout_ms(global),
+        timeout_ms,
     };
-    session::call_session(global, rpc::MOCK_SSE_SEND, &request, "mocked streams")
+    let browser = |timeout_ms| {
+        session::call_session(
+            global,
+            rpc::MOCK_SSE_SEND,
+            &request(timeout_ms),
+            "mocked streams",
+        )
+    };
+    let Some(server) = &args.serve else {
+        return browser(session::timeout_ms(global));
+    };
+    let body = json!({
+        "url": args.url,
+        "data": data,
+        "event": args.event,
+        "id": args.id,
+        "retry": args.retry,
+        "test": args.serve_test,
+    });
+    let push = Pushing {
+        server,
+        kind: "sse",
+        body,
+        what: "EventSource stream",
+        command: Cmd::new("mock")
+            .arg("sse")
+            .arg("send")
+            .flag("serve", server)
+            .arg("*")
+            .arg(&data),
+    };
+    let served_only = |served: MockServedPush| {
+        let mut text = format!(
+            "sent to {} ({}) of mock server {}:",
+            count(served.sent.len(), "stream", "streams"),
+            args.url,
+            served.server
+        );
+        served_lines(&mut text, &served);
+        let quiet = served.sent.len().to_string();
+        let out = MockSseSendData {
+            url: args.url.clone(),
+            size: data.len(),
+            streams: Vec::new(),
+            served: Some(served),
+        };
+        Output::typed(&out, text)
+            .quiet(quiet)
+            .limit(args.max_chars, "--max-chars 0 for all of it")
+    };
+    push.run(global, args.and_browser, browser, served_only, "streams")
+}
+
+/// `1 socket`, `2 sockets`.
+fn count(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
+/// The lines of a push's sockets or streams of the mock server.
+fn served_lines(text: &mut String, served: &MockServedPush) {
+    for s in &served.sent {
+        let _ = write!(text, "\n  {} ({} \"{}\")", s.url, s.mock.at, s.mock.name);
+        if let Some(test) = &s.test {
+            let _ = write!(text, " [test {test}]");
+        }
+    }
+}
+
+/// A push to `mock serve`'s sockets or streams (`--serve`).
+struct Pushing<'a> {
+    server: &'a str,
+    /// `ws` or `sse`.
+    kind: &'static str,
+    /// The control request, less `timeout_ms`.
+    body: Value,
+    /// `WebSocket` or `EventSource stream`.
+    what: &'static str,
+    /// The same push to every socket of the server.
+    command: Cmd,
+}
+
+impl Pushing<'_> {
+    /// Posts it, waiting up to `timeout_ms` for a socket; `Ok(Err(open))`:
+    /// the server has none that matches, and these open.
+    fn post(&self, timeout_ms: u64) -> Result<Result<MockServedPush, Vec<String>>, ErrorInfo> {
+        let mut body = self.body.clone();
+        body["timeout_ms"] = json!(timeout_ms);
+        match e2e::mock_server::post_push(self.server, self.kind, &body) {
+            Ok(sent) => Ok(Ok(MockServedPush {
+                server: self.server.to_owned(),
+                sent: sent
+                    .into_iter()
+                    .map(|p| MockServedSocket {
+                        url: p.url,
+                        mock: p.mock,
+                        test: p.test,
+                    })
+                    .collect(),
+            })),
+            Err(e) if e.none_matched => Ok(Err(e.open)),
+            Err(e) => Err(ErrorInfo::new(ErrorKind::LaunchFailed, e.message).hint(
+                Hint::run(Cmd::new("mock").arg("serve")).why("starts a mock server (port 4010)"),
+            )),
+        }
+    }
+
+    /// No socket matched in time.
+    fn none(&self, global: &GlobalArgs, open: &[String]) -> ErrorInfo {
+        let waited = protocol::format::duration(std::time::Duration::from_millis(
+            session::timeout_ms(global),
+        ));
+        let glob = self.body["url"].as_str().unwrap_or_default();
+        let info = ErrorInfo::new(
+            ErrorKind::Timeout,
+            format!(
+                "no {} of mock server {} matching {glob} opened within {waited}",
+                self.what, self.server
+            ),
+        );
+        if open.is_empty() {
+            info.note("open", "none")
+                .hint("connect a client to the mock server first, or give a longer --timeout")
+        } else {
+            info.note("open", open.join(", "))
+                .hint(Hint::run(self.command.clone()).why("sends to every one the server has open"))
+        }
+    }
+
+    /// The push: to the server only, or (`and_browser`) to the browser's
+    /// too, until either has one that matches.
+    fn run(
+        &self,
+        global: &GlobalArgs,
+        and_browser: bool,
+        browser: impl Fn(u64) -> Result<Output, ErrorInfo>,
+        served_only: impl Fn(MockServedPush) -> Output,
+        plural: &str,
+    ) -> Result<Output, ErrorInfo> {
+        let timeout_ms = session::timeout_ms(global);
+        if !and_browser {
+            return match self.post(timeout_ms)? {
+                Ok(served) => Ok(served_only(served)),
+                Err(open) => Err(self.none(global, &open)),
+            };
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+        loop {
+            let last = std::time::Instant::now() >= deadline;
+            let in_browser = match browser(0) {
+                Ok(out) => Some(out),
+                Err(e) if e.kind == ErrorKind::Timeout => {
+                    if last {
+                        let mut e = e;
+                        e.message = e.message.replace(
+                            "within 0ms",
+                            &format!(
+                                "within {}",
+                                protocol::format::duration(std::time::Duration::from_millis(
+                                    timeout_ms
+                                ))
+                            ),
+                        );
+                        return Err(e.note(
+                            "mock server",
+                            format!("{}: none of its {plural} matched either", self.server),
+                        ));
+                    }
+                    None
+                }
+                Err(e) => return Err(e),
+            };
+            let served = self.post(0)?.ok();
+            match (in_browser, served) {
+                (Some(mut out), served) => {
+                    let served = served.unwrap_or_else(|| MockServedPush {
+                        server: self.server.to_owned(),
+                        sent: Vec::new(),
+                    });
+                    let _ = write!(
+                        out.text,
+                        "\nmock server {}: sent to {}",
+                        served.server,
+                        count(served.sent.len(), &plural[..plural.len() - 1], plural)
+                    );
+                    out.data["served"] = serde_json::to_value(&served).unwrap_or_default();
+                    return Ok(out);
+                }
+                (None, Some(served)) => return Ok(served_only(served)),
+                (None, None) => {}
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    }
 }
 
 fn mock_use(args: &MockUseArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {

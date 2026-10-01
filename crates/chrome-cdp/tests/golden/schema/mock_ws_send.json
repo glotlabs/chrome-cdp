@@ -973,6 +973,52 @@
       ],
       "type": "object"
     },
+    "MockServedPush": {
+      "description": "What a push to `mock serve` reached.",
+      "properties": {
+        "sent": {
+          "description": "Its sockets (or streams) that got it.",
+          "items": {
+            "$ref": "#/$defs/MockServedSocket"
+          },
+          "type": "array"
+        },
+        "server": {
+          "description": "The mock server, e.g. `http://127.0.0.1:4010`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "server",
+        "sent"
+      ],
+      "type": "object"
+    },
+    "MockServedSocket": {
+      "description": "A socket or stream of `mock serve` that a push reached.",
+      "properties": {
+        "mock": {
+          "$ref": "#/$defs/MockRef",
+          "description": "The mock that answers it."
+        },
+        "test": {
+          "description": "Its test's partition (the `x-chrome-cdp-test` header), if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "Its URL.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "mock"
+      ],
+      "type": "object"
+    },
     "MockSocketInfo": {
       "description": "A page's WebSocket that a `[[websocket]]` mock answers (plan 11,\nmilestone 11.9).",
       "properties": {
@@ -1001,6 +1047,17 @@
     "MockWsSendData": {
       "description": "`data` of `chrome-cdp mock ws send --json`.",
       "properties": {
+        "served": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MockServedPush"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "With `--serve` (or in a `test` run with a mock server): what the\nmock server's sockets got."
+        },
         "size": {
           "description": "The message's size in bytes.",
           "format": "uint",

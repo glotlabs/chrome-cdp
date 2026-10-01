@@ -271,3 +271,116 @@ fn mock_serve_runs_until_interrupted() {
         Some("mock server stopped after 2 requests")
     );
 }
+
+/// A `mock serve` of set `set`, its URL and its output's lines.
+fn serve(
+    set: &str,
+) -> (
+    Served,
+    String,
+    std::io::Lines<BufReader<std::process::ChildStdout>>,
+) {
+    let mut child = cli()
+        .args(["mock", "serve", "--dir", &mocks_dir(), set, "--port", "0"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let served = Served(child);
+    let first = lines.next().unwrap().unwrap();
+    let url = first
+        .strip_prefix("mock server on ")
+        .and_then(|rest| rest.split(": ").next())
+        .unwrap_or_else(|| panic!("{first}"))
+        .to_owned();
+    (served, url, lines)
+}
+
+#[test]
+fn mock_serve_talks_websocket_to_a_client_that_is_not_a_browser() {
+    use tokio_tungstenite::tungstenite::{self, Message};
+    let (served, url, mut lines) = serve("live");
+    let addr = url.trim_start_matches("http://").to_owned();
+    let stream = TcpStream::connect(&addr).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let (mut socket, _) =
+        tungstenite::client(format!("ws://{addr}/mock/ws/prices/ACME"), stream).unwrap();
+    assert_eq!(
+        socket.read().unwrap(),
+        Message::text(r#"{"symbol":"ACME","type":"hello"}"#)
+    );
+    assert_eq!(
+        lines.next().unwrap().unwrap(),
+        r#"WS /mock/ws/prices/ACME open (live.toml:6 "prices")"#
+    );
+    assert_eq!(
+        lines.next().unwrap().unwrap(),
+        r#"WS /mock/ws/prices/ACME → {"symbol":"ACME","type":"hello"}"#
+    );
+
+    // `mock ws send --serve` reaches it, without a browser.
+    let out = cli()
+        .args(["mock", "ws", "send", "--serve", &url, "/mock/ws/**"])
+        .arg(r#"{"type":"price","value":42}"#)
+        .output()
+        .unwrap();
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert_eq!(
+        stdout(&out),
+        format!(
+            "sent 27B to 1 socket of mock server {url}:\n  ws://{addr}/mock/ws/prices/ACME (live.toml:6 \"prices\")\n"
+        )
+    );
+    assert_eq!(
+        socket.read().unwrap(),
+        Message::text(r#"{"type":"price","value":42}"#)
+    );
+    assert_eq!(
+        lines.next().unwrap().unwrap(),
+        r#"WS /mock/ws/prices/ACME → {"type":"price","value":42}"#
+    );
+    let out = cli()
+        .args(["mock", "sse", "send", "--serve", &url, "*", "x"])
+        .args(["--timeout", "200ms"])
+        .output()
+        .unwrap();
+    assert_eq!(code(&out), 3, "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains(&format!(
+            "no EventSource stream of mock server {url} matching * opened within 200ms"
+        )),
+        "{}",
+        stderr(&out)
+    );
+
+    // The page's message gets its rule's answer; bye closes it.
+    socket
+        .send(Message::text(r#"{"type":"ping","id":3}"#))
+        .unwrap();
+    assert_eq!(
+        socket.read().unwrap(),
+        Message::text(r#"{"id":3,"type":"pong"}"#)
+    );
+    socket.send(Message::text("bye")).unwrap();
+    match socket.read().unwrap() {
+        Message::Close(Some(frame)) => assert_eq!(u16::from(frame.code), 4000),
+        other => panic!("not a close: {other:?}"),
+    }
+    let rest: Vec<String> = (0..3).map(|_| lines.next().unwrap().unwrap()).collect();
+    assert_eq!(
+        rest,
+        [
+            r#"WS /mock/ws/prices/ACME ← {"type":"ping","id":3}"#,
+            r#"WS /mock/ws/prices/ACME → {"id":3,"type":"pong"}"#,
+            r#"WS /mock/ws/prices/ACME ← bye"#,
+        ]
+    );
+    assert_eq!(
+        lines.next().unwrap().unwrap(),
+        "WS /mock/ws/prices/ACME close 4000 bye"
+    );
+    drop(served);
+}

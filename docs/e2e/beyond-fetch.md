@@ -128,6 +128,39 @@ browser, except what only a browser can do: `abort` closes the connection,
 `passthrough` answers 502 (there is no real server behind), and a request
 no set owns answers 404. `sse` answers are streamed.
 
+### WebSockets and pushes
+
+A WebSocket upgrade that a `[[websocket]]` matches is served by it, as in
+the browser: `on_open`, `on_message` rules with their delays, and
+`close`. One no `[[websocket]]` takes gets the HTTP answer (usually 404).
+So an SSR server's own socket, a native app, or a page pointed at the
+mock server without `mock use` can talk to the same mocks. The printed
+log shows each socket:
+
+```
+WS /ws/prices/ACME open (live.toml:6 "prices")
+WS /ws/prices/ACME → {"symbol":"ACME","type":"hello"}
+WS /ws/prices/ACME ← {"type":"ping","id":3}
+WS /ws/prices/ACME close 4000 bye
+```
+
+`mock ws send --serve URL` and `mock sse send --serve URL` push to the
+mock server's open sockets and `sse` streams instead of the browser's:
+
+```
+chrome-cdp mock ws send --serve http://127.0.0.1:4010 '/ws/**' '{"type":"price","value":43}'
+chrome-cdp mock sse send --serve http://127.0.0.1:4010 /api/prices '{"price":43}'
+```
+
+They post to `/__chrome-cdp/ws/send` and `/__chrome-cdp/sse/send`: control
+requests the mock server takes from loopback peers only, with a JSON body
+`{ "url": glob, "data": "…", "base64"?, "event"?, "id"?, "retry"?,
+"test"?, "timeout_ms"? }` (`test` limits the push to one test's sockets;
+it waits up to `timeout_ms` for one to open). In a `test` run with a
+`mock_server`, a `mock ws send` or `mock sse send` step goes to both the
+browser and the test's sockets of the mock server, and its output gives
+the count for each.
+
 ### In a test run
 
 ```toml

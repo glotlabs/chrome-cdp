@@ -299,6 +299,7 @@ impl Engine {
             url: req.url.clone(),
             size,
             sockets: sent,
+            served: None,
         };
         Ok(Output::typed(&data, text)
             .quiet(quiet)
@@ -428,6 +429,7 @@ impl Engine {
             url: req.url.clone(),
             size: req.data.len(),
             streams: sent,
+            served: None,
         };
         Ok(Output::typed(&data, text)
             .quiet(quiet)
