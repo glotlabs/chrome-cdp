@@ -931,7 +931,7 @@ impl Runner<'_> {
         deadline: Instant,
         part: Part,
     ) -> Result<(), Box<TestFailure>> {
-        for step in steps {
+        for (index, step) in steps.iter().enumerate() {
             let started = Instant::now();
             if self.covering(part) {
                 self.covered.borrow_mut().1 = false;
@@ -939,6 +939,7 @@ impl Runner<'_> {
             let heals = self.healed.borrow().len();
             self.likely.borrow_mut().take();
             let result = self.step(step, context, deadline, part);
+            let result = dialog_answered_next(result, steps.get(index + 1));
             let healed = self.healed.borrow().get(heals).cloned();
             let unmatched = self.unmatched(context);
             let result = match result {
@@ -1806,6 +1807,32 @@ const HEAL_WAIT: Duration = Duration::from_secs(10);
 /// How long `@after` steps may run past the test's time limit, so a test
 /// that ran out of time still cleans up.
 const AFTER_GRACE: Duration = Duration::from_secs(10);
+
+/// A step that failed only because a dialog opened (`DialogOpen`, a
+/// `confirm` its click opened) passed when the next step answers it
+/// (`dialog accept|dismiss`), as `record` writes them.
+fn dialog_answered_next(
+    result: Result<Output, ErrorInfo>,
+    next: Option<&Prepared>,
+) -> Result<Output, ErrorInfo> {
+    match result {
+        Err(error)
+            if error.kind == ErrorKind::DialogOpen
+                && next.is_some_and(|n| {
+                    n.text
+                        .split_whitespace()
+                        .find(|w| !w.starts_with('-'))
+                        .is_some_and(|w| w == "dialog")
+                }) =>
+        {
+            Ok(Output::new(
+                serde_json::json!({ "dialog": error.details }),
+                format!("{}; the next step answers it", error.message),
+            ))
+        }
+        result => result,
+    }
+}
 
 fn failure(step: &Prepared, part: Part, error: ErrorInfo) -> Box<TestFailure> {
     Box::new(TestFailure {
