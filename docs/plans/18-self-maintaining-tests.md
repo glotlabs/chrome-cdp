@@ -1,6 +1,6 @@
 # Plan 18 — Tests that maintain themselves
 
-Status: IN PROGRESS (18.1-18.2 done)
+Status: IN PROGRESS (18.1-18.3 done)
 Depends on: 11 (the test runner, `history --as-scenario`, `mock record`), 13 (the target graph, for `record` in iframes)
 Roadmap: track 7 of [plan 12](12-after-v1.md)
 
@@ -391,7 +391,7 @@ and `convert-real-world-specs` (18.7):
       closest candidate and its low confidence in report.md.
 - [x] Without `--heal`, every broken locator's report.md names the
       element it likely is now.
-- [ ] Each planted flake of 18.3 is diagnosed as its own cause, first
+- [x] Each planted flake of 18.3 is diagnosed as its own cause, first
       in rank, with evidence naming the right request or element.
 - [ ] `test --ui-coverage` on e2e-shop lists every page the suite
       visits, the controls it never acted on, and the mocks it never
@@ -511,3 +511,41 @@ _(append here)_
   test names the substitution that stops applying after a rebuild.
   `testdata/e2e/scenarios/heal` and `testdata/site/e2e/heal.html` back the
   golden output (`crates/chrome-cdp/tests/golden/heal/`).
+- 18.3 folders: runs keep the `run-1/`, `run-2/` names (a retry's
+  `try-2/`) that docs/e2e/debugging.md and the tests already used, not
+  `run-01/`: they were per run before this milestone, and a rename would
+  move documented paths.
+- 18.3 journal: each `requests.txt` line ends with `(sent +120ms, answered
+  +132ms)`, from the test's start as `steps.jsonl` times are (from the
+  network log's start time and duration). The mock server's journal has
+  no answer times, so the rules read the browser's requests only.
+- 18.3 rules: a step "acts" when it ends, since an action auto-waits for
+  its element and so starts before the data in passing runs too.
+  `unsettled` takes a request sent before the step started (a request the
+  step sent is not one it depends on), open when it acted in failing runs
+  and answered by then in every passing run; it looks at the actions up
+  to the failing step and that step (a passed `wait`/`expect` cannot act
+  early). `race` compares `fetch`/`xhr` requests only. Requests are keyed
+  by method and URL with ids made `:id` (`engine::fingerprint_score::
+  page_template`, also for query values), and Chrome's favicon fetch is
+  left out (it comes in some runs only). `shared-state` is the "only in
+  runs after the first" rule (passed until one run, failed from it on);
+  "only with --jobs > 1" and "only after one other test" need a second run
+  or other tests' timelines (a note). Confidence is a weight per cause
+  times the share of failing runs it explains: moving target 0.95,
+  unsettled 0.9, race and different requests 0.85, time 0.8, shared
+  state 0.5, unknown 0; ties rank in the table's order.
+- 18.3 planted flakes: the mocks' random latency and the pages' seeded
+  random values are the same in every run (that is the determinism the
+  runner promises), so they cannot make runs differ. The fixture page
+  (`testdata/site/e2e/flaky.html`) instead seeds a PRNG with the run's
+  number from `${test.id}`, and in a bad run sends `x-flake: slow`, which
+  a header-matched mock answers late: same URLs in every run, the same
+  runs fail every time. `goto` waits for the network to go quiet (up to
+  5s), so the settle flake is a click whose request outlives the click's
+  1.5s wait. The test turns `freeze_time` and `disable_animations` off
+  for the clock and the sliding button.
+- 18.3 output: `--json`'s test result has `flake: {cause, summary,
+  confidence, evidence, hint, runs, failed_runs, at, step, others}`; the
+  section goes into the report.md of the failure the test shows (a
+  retried test's first try's).
