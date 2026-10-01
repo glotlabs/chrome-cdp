@@ -1505,6 +1505,67 @@ fn a_mock_server_answers_server_side_fetches_per_test() {
 }
 
 #[test]
+fn a_hybrid_backends_mock_server_forwards_to_its_upstream() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let config = project.root.join("chrome-cdp.toml");
+    let base = std::fs::read_to_string(&config).unwrap();
+    let port = free_port();
+    let real = project.real.a();
+    std::fs::write(
+        &config,
+        format!(
+            "{base}\n[e2e.backends.ssr]\nmode = \"real\"\nbase_url = \"{real}\"\nmocks = [\"ssr-hybrid\"]\n\
+             web_server = {{ command = \"exit 3\", url = \"{real}\", mock_server = {{ port = {port}, upstream = \"{real}\" }} }}\n"
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        project.root.join("mocks/ssr-hybrid.toml"),
+        r#"[settings]
+scope = ["/e2e/api/**"]
+unmatched = "passthrough"
+
+[[mock]]
+name = "greeting"
+match = { method = "GET", path = "/e2e/api/greeting" }
+respond = { json = { greeting = "mocked" } }
+
+[[mock]]
+name = "price"
+match = { method = "GET", path = "/e2e/api/price" }
+respond = { passthrough = true, patch = { via = "mock server" } }
+"#,
+    )
+    .unwrap();
+    let dir = project.root.join("scenarios/hybrid-ssr");
+    std::fs::create_dir_all(&dir).unwrap();
+    // The page's server fetches the mock server: a mock answers the
+    // greeting, the real API (patched) the price and (unmatched) the
+    // todo.
+    let page = format!("/e2e/ssr?api=http://127.0.0.1:{port}");
+    std::fs::write(
+        dir.join("ssr.cdp"),
+        format!(
+            "@test \"hybrid\"\n  goto {page}\n  expect text='The server got: 200 {{\"greeting\":\"mocked\"}}' visible\n\
+             \x20 goto {page}&path=/e2e/api/price\n  expect text='The server got: 200 {{\"price\":49,\"via\":\"mock server\"}}' visible\n\
+             \x20 goto {page}&path=/e2e/api/todos/1\n  expect '#answer' text 'Buy milk'\n"
+        ),
+    )
+    .unwrap();
+    let (out, value) = project.json(&["scenarios/hybrid-ssr/ssr.cdp", "--backend", "ssr"]);
+    assert_eq!(out.status.code(), Some(0), "{value}");
+    let artifacts = value["data"]["tests"][0]["artifacts"].as_str().unwrap();
+    let requests = std::fs::read_to_string(Path::new(artifacts).join("requests.txt")).unwrap();
+    assert!(requests.contains(r#""greeting" fulfill 200"#), "{requests}");
+    assert!(requests.contains("→ upstream 200, patched"), "{requests}");
+    assert!(
+        requests.contains("unmatched, passthrough → upstream 200"),
+        "{requests}"
+    );
+}
+
+#[test]
 fn pushes_in_a_test_go_to_the_browser_and_the_mock_server() {
     let Some(chrome) = chrome_path() else { return };
     let project = Project::new(&chrome);

@@ -246,6 +246,9 @@ pub struct MockServer {
     pub port: u16,
     /// `127.0.0.1` unless `host` says otherwise.
     pub host: std::net::IpAddr,
+    /// `upstream = "http://localhost:8080"` (and `upstream_timeout`):
+    /// where `passthrough` requests go (plan 19, milestone 19.3).
+    pub upstream: Option<crate::mock_server::Upstream>,
 }
 
 /// `[e2e.determinism]` (plan 11.6). `None` means "not set here";
@@ -717,7 +720,31 @@ fn mock_server(key: &str, raw: Spanned<RawMockServer>) -> Result<MockServer, Pro
             )
         })?,
     };
-    Ok(MockServer { port, host })
+    let timeout = raw
+        .upstream_timeout
+        .map(|t| {
+            if raw.upstream.is_none() {
+                return Err((
+                    t.span(),
+                    format!("{key}.upstream_timeout: set without upstream, which it times"),
+                ));
+            }
+            duration(&format!("{key}.upstream_timeout"), &t)
+        })
+        .transpose()?
+        .unwrap_or(crate::mock_server::UPSTREAM_TIMEOUT);
+    let upstream = raw
+        .upstream
+        .map(|u| {
+            crate::mock_server::Upstream::new(u.get_ref(), timeout)
+                .map_err(|e| (u.span(), format!("{key}.upstream: {e}")))
+        })
+        .transpose()?;
+    Ok(MockServer {
+        port,
+        host,
+        upstream,
+    })
 }
 
 /// The port of an `http://localhost:PORT` or `http://127.0.0.1:PORT`
@@ -870,6 +897,8 @@ struct RawWebServer {
 struct RawMockServer {
     port: Spanned<i64>,
     host: Option<Spanned<String>>,
+    upstream: Option<Spanned<String>>,
+    upstream_timeout: Option<Spanned<String>>,
 }
 
 #[derive(Deserialize)]

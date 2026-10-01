@@ -56,8 +56,9 @@
 //!   backend of the test runner's shop page; each server has its own
 //!   state.
 //! - `/e2e/ssr?api=<origin>` stands for a server-rendered page (plan
-//!   11.9): the server GETs `<origin>/e2e/api/greeting` itself, with the
-//!   request's `x-chrome-cdp-test` header, and shows the answer.
+//!   11.9): the server GETs `<origin>/e2e/api/greeting` (or `&path=…`)
+//!   itself, with the request's `x-chrome-cdp-test` header, and shows the
+//!   answer.
 //! - `POST /bench/record` keeps its JSON body (both origins share the
 //!   list), and `GET /bench/records` answers the list: what the agent
 //!   benchmark's pages submitted (plan 10.4), which its verifier reads with
@@ -592,7 +593,8 @@ where
 }
 
 /// `/e2e/ssr?api=http://127.0.0.1:<port>`: a page whose server fetched
-/// `/e2e/api/greeting` of `api` (forwarding `x-chrome-cdp-test`).
+/// `/e2e/api/greeting` (or `path`) of `api` (forwarding
+/// `x-chrome-cdp-test`).
 async fn ssr(req: &Request<Incoming>) -> Response<Full<Bytes>> {
     let query = req.uri().query().unwrap_or_default();
     let api = param(query, "api").unwrap_or_default();
@@ -601,7 +603,8 @@ async fn ssr(req: &Request<Incoming>) -> Response<Full<Bytes>> {
         .get("x-chrome-cdp-test")
         .and_then(|v| v.to_str().ok())
         .map(str::to_owned);
-    let fetched = server_get(api, "/e2e/api/greeting", test.as_deref()).await;
+    let path = param(query, "path").unwrap_or("/e2e/api/greeting");
+    let fetched = server_get(api, path, test.as_deref()).await;
     let escape = |s: &str| {
         s.replace('&', "&amp;")
             .replace('<', "&lt;")

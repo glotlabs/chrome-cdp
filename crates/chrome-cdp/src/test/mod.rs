@@ -780,45 +780,57 @@ fn close(global: &GlobalArgs, session: &str, own: bool) {
 /// The variable that gives web servers the mock server's URL.
 const MOCK_URL_ENV: &str = "CHROME_CDP_MOCK_URL";
 
-/// Starts the `mock_server` of `web_servers` (in mock mode), serving the
-/// default mocks to requests without a test's header; returns its URL.
-/// A run's second call (`--watch`) finds it running.
+/// Starts the `mock_server` of `web_servers`, serving the default mocks
+/// to requests without a test's header; returns its URL. A real backend
+/// starts one only if it has an `upstream` (hybrid mode for server-side
+/// fetches), serving the backend's `mocks`. A run's second call
+/// (`--watch`) finds it running.
 fn start_mock_server(
     plan: &Plan,
     web_servers: &[e2e::config::WebServer],
     started: &std::sync::OnceLock<e2e::mock_server::MockServer>,
     mode: Mode,
 ) -> Result<Option<String>, ErrorInfo> {
-    if plan.real() {
-        return Ok(None);
-    }
     let Some(wanted) = web_servers.iter().find_map(|w| w.mock_server.as_ref()) else {
         return Ok(None);
     };
+    if plan.real() && wanted.upstream.is_none() {
+        return Ok(None);
+    }
     if let Some(server) = started.get() {
         return Ok(Some(server.url()));
     }
     let config = &plan.config;
     let cwd = std::env::current_dir().unwrap_or_else(|_| config.root.clone());
-    let sets = config
-        .default_mocks
+    let names = if plan.real() {
+        &plan.backend.mocks
+    } else {
+        &config.default_mocks
+    };
+    let sets = names
         .iter()
         .map(|name| mock::MockSet::load(&mock::Source::find(&config.mocks, &cwd, name)?))
         .collect::<Result<Vec<_>, _>>()?;
     let seed = plan.determinism.random_seed.unwrap_or_default();
     let addr = std::net::SocketAddr::new(wanted.host, wanted.port);
-    let server = e2e::mock_server::MockServer::start(addr, sets, seed, None).map_err(|e| {
-        ErrorInfo::new(
-            ErrorKind::LaunchFailed,
-            format!("the mock_server cannot listen on {addr}: {e}"),
-        )
-        .hint(Hint::text(
-            "stop what listens there (a `chrome-cdp mock serve`?), or give mock_server another port",
-        ))
-    })?;
+    let server =
+        e2e::mock_server::MockServer::start_with(addr, sets, seed, None, wanted.upstream.clone())
+            .map_err(|e| {
+                ErrorInfo::new(
+                    ErrorKind::LaunchFailed,
+                    format!("the mock_server cannot listen on {addr}: {e}"),
+                )
+                .hint(Hint::text(
+                    "stop what listens there (a `chrome-cdp mock serve`?), or give mock_server another port",
+                ))
+            })?;
     let url = server.url();
     if mode == Mode::Text {
-        output::stdout(&format!("mock server {url}\n"));
+        let upstream = server
+            .upstream()
+            .map(|u| format!(" (passthrough to {})", u.url()))
+            .unwrap_or_default();
+        output::stdout(&format!("mock server {url}{upstream}\n"));
     }
     let _ = started.set(server);
     Ok(Some(url))

@@ -416,3 +416,34 @@ fn find_says_how_to_start() {
     let c = Config::find(&dir.path().join(".")).unwrap();
     assert_eq!(c.base_url.as_deref(), Some("http://localhost:3000"));
 }
+
+#[test]
+fn a_mock_server_may_have_an_upstream() {
+    let c = parse(
+        "[e2e]\n[e2e.web_server]\ncommand = \"x\"\nurl = \"http://localhost:3000\"\n\
+         mock_server = { port = 4010, upstream = \"http://localhost:8080/\" }\n",
+    );
+    let server = c.web_servers[0].mock_server.as_ref().unwrap();
+    let upstream = server.upstream.as_ref().unwrap();
+    assert_eq!(upstream.url(), "http://localhost:8080");
+    assert_eq!(upstream.timeout, crate::mock_server::UPSTREAM_TIMEOUT);
+    let c = parse(
+        "[e2e]\n[e2e.web_server]\ncommand = \"x\"\nurl = \"http://localhost:3000\"\n\
+         mock_server = { port = 0, upstream = \"http://api:8080\", upstream_timeout = \"2s\" }\n",
+    );
+    let upstream = c.web_servers[0]
+        .mock_server
+        .as_ref()
+        .unwrap()
+        .upstream
+        .clone();
+    assert_eq!(upstream.unwrap().timeout, Duration::from_secs(2));
+    assert!(
+        error("[e2e]\n[e2e.web_server]\ncommand = \"x\"\nurl = \"http://l:1\"\nmock_server = { port = 1, upstream = \"localhost:8080\" }\n")
+            .contains("e2e.web_server.mock_server.upstream: `localhost:8080` is not")
+    );
+    assert!(
+        error("[e2e]\n[e2e.web_server]\ncommand = \"x\"\nurl = \"http://l:1\"\nmock_server = { port = 1, upstream_timeout = \"2s\" }\n")
+            .contains("upstream_timeout: set without upstream")
+    );
+}

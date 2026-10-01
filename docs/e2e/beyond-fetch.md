@@ -125,8 +125,38 @@ API_URL=http://localhost:4010 npm run dev     # point the app's server at it
 It prints each request it answers (the same lines as `mock log`) until
 Ctrl-C, and reads mock files again when they change. Answers are as in the
 browser, except what only a browser can do: `abort` closes the connection,
-`passthrough` answers 502 (there is no real server behind), and a request
-no set owns answers 404. `sse` answers are streamed.
+`passthrough` answers 502 (there is no real server behind, unless
+`--upstream` names one, below), and a request no set owns answers 404.
+`sse` answers are streamed.
+
+### Some endpoints mocked, the rest real: `--upstream`
+
+```
+chrome-cdp mock serve third-party --upstream http://localhost:8080
+```
+
+With `--upstream URL`, `passthrough` answers (a mock's `passthrough =
+true`, and a set's `unmatched = "passthrough"`) send the request to that
+server instead of answering 502: the same method, path (joined onto
+URL's path, so `http://api:8080/v2` is a prefix) and query, the headers
+less the hop-by-hop ones (`Connection`, `Keep-Alive`, `Transfer-Encoding`,
+`Upgrade`, …), `Host` set to the upstream's, and the body as received.
+The upstream's answer comes back as it is (streamed, so an event stream
+stays one, and redirects are not followed), with a mock's `patch` merged
+into its JSON body. A request no set owns still answers 404: only the
+sets' own requests are forwarded.
+
+An upstream that refuses the connection, or does not answer within
+`--upstream-timeout` (30s), gets a 502 whose JSON body names it and the
+error; the log line says what happened:
+
+```
+#1 GET http://localhost:4010/api/prices server → payments.toml:5 "prices" passthrough, patch json → upstream 200, patched
+#2 GET http://localhost:4010/api/orders server → unmatched, passthrough → upstream error: cannot connect (Connection refused (os error 111)), 502 (scope of payments)
+```
+
+WebSockets are not forwarded: an upgrade no `[[websocket]]` takes is
+answered as before.
 
 ### WebSockets and pushes
 
@@ -173,7 +203,14 @@ env = { API_URL = "http://localhost:4010" }
 
 `chrome-cdp test` starts the mock server before the web server (which also
 gets its URL as `CHROME_CDP_MOCK_URL`; with `port = 0`, the only way to
-know it) and stops it at the end. It is not started with a real backend.
+know it) and stops it at the end.
+
+`mock_server = { port = 4010, upstream = "http://localhost:8080" }` (and
+`upstream_timeout = "10s"`) forwards its `passthrough` answers, as
+`--upstream` does. A real backend starts its mock server only if it has an
+`upstream`, and it serves the backend's `mocks` (hybrid mode for the app's
+server-side fetches, see [backends.md](backends.md)); without one, a real
+backend starts none.
 
 **State per test, if the app forwards a header.** The browser's requests
 to the web servers, `base_url` and the mock server carry

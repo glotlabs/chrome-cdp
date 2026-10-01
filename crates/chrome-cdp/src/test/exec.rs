@@ -852,7 +852,11 @@ impl Runner<'_> {
             // The server's partition for the test, with the test's sets;
             // the context's requests to the app and to the server say
             // which it is.
-            let sets = self.plan.mock_mode_sets(settings);
+            let sets = if self.plan.real() {
+                self.plan.backend.mocks.clone()
+            } else {
+                self.plan.mock_mode_sets(settings)
+            };
             let loaded = self
                 .load_sets(&sets)
                 .map_err(|e| setup_failure(span, "mock serve", e))?;
@@ -971,9 +975,10 @@ impl Runner<'_> {
         Ok(())
     }
 
-    /// The mock server, in mock mode.
+    /// The mock server: in mock mode, or a real backend's with an
+    /// `upstream`.
     fn served(&self) -> Option<&e2e::mock_server::MockServer> {
-        self.options.mock_server.get().filter(|_| !self.plan.real())
+        self.options.mock_server.get()
     }
 
     /// Mock sets `names` of the project, read (`mock check` already
