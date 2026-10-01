@@ -1,0 +1,13 @@
+$ chrome-cdp record stop
+exit: 0
+--- stdout
+@test "signs up"
+  goto <site>/record/form.html
+  fill 'role=textbox[name="Name"]' Ada
+  # a password field: the test reads it from the PASSWORD secret, never the value
+  fill 'role=textbox[name="Password"]' "${secret:PASSWORD}"
+  check 'role=checkbox[name="I accept the terms"]'
+  fill 'frame=card >> role=textbox[name="Card number"]' 4242
+  click 'frame=card >> role=button[name="Pay"]'
+  # add expect steps: the recorder does not guess what to check
+

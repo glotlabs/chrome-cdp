@@ -1,0 +1,11 @@
+$ chrome-cdp record stop
+exit: 2
+--- stderr
+error: no recording runs in this session
+  hint: chrome-cdp record start   (then act in the page)
+
+$ chrome-cdp record stop --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"no recording runs in this session","hint":"chrome-cdp record start   (then act in the page)"}}
+

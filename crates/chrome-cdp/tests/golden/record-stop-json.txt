@@ -1,0 +1,5 @@
+$ chrome-cdp record stop --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"name":"signs up","scenario":"@test \"signs up\"\n  goto <site>/record/form.html\n  fill 'role=textbox[name=\"Name\"]' Ada\n  # a password field: the test reads it from the PASSWORD secret, never the value\n  fill 'role=textbox[name=\"Password\"]' \"${secret:PASSWORD}\"\n  check 'role=checkbox[name=\"I accept the terms\"]'\n  fill 'frame=card >> role=textbox[name=\"Card number\"]' 4242\n  click 'frame=card >> role=button[name=\"Pay\"]'\n  # add expect steps: the recorder does not guess what to check\n","steps":6}}
+

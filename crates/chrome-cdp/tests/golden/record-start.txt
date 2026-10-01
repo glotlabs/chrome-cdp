@@ -1,0 +1,16 @@
+$ chrome-cdp record start --name 'signs up'
+exit: 0
+--- stdout
+recording "signs up" from tab t1
+act in the page (or send it input); then: chrome-cdp record stop -o test.cdp
+
+$ chrome-cdp record start --name 'signs up' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"name":"signs up","started":"<time>","tab":"t1"}}
+
+$ chrome-cdp record start --name 'signs up' -q
+exit: 0
+--- stdout
+t1
+

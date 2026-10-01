@@ -1,0 +1,15 @@
+$ chrome-cdp record status
+exit: 0
+--- stdout
+recording "signs up": 6 steps since <time>
+
+$ chrome-cdp record status --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"name":"signs up","recording":true,"started":"<time>","steps":6}}
+
+$ chrome-cdp record status -q
+exit: 0
+--- stdout
+6
+

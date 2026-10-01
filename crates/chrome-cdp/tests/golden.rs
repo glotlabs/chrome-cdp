@@ -164,6 +164,19 @@ const REPRO: &[&[&str]] = &[
     &["expect", "role=status", "text", "ordered"],
 ];
 
+/// The record fixture form while `record start` records (plan 18.6):
+/// typing, a password, a check and a click in its iframe.
+const RECORD: &[&[&str]] = &[
+    &["open", "{site}/record/form.html"],
+    &["wait", "frame=card >> label=Card number"],
+    &["record", "start", "--name", "signs up"],
+    &["fill", "label=Name", "Ada"],
+    &["fill", "label=Password", "hunter2"],
+    &["check", "label=I accept the terms"],
+    &["fill", "frame=card >> label=Card number", "4242"],
+    &["click", "frame=card >> role=button[name=\"Pay\"]"],
+];
+
 /// The mock fixture page with the `base` and `cart` sets in use, after
 /// it sent an order and asked for the cart, which no mock answers (plan
 /// 11.5).
@@ -2120,6 +2133,37 @@ const CASES: &[Case] = &[
         fixture: Fixture::Session,
     },
     Case {
+        name: "record-start",
+        args: &["record", "start", "--name", "signs up"],
+        modes: ALL,
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "record-status",
+        args: &["record", "status"],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(RECORD),
+    },
+    Case {
+        name: "record-stop",
+        args: &["record", "stop"],
+        // Each mode needs a recording of its own.
+        modes: &[""],
+        fixture: Fixture::SessionAfter(RECORD),
+    },
+    Case {
+        name: "record-stop-json",
+        args: &["record", "stop"],
+        modes: &["--json"],
+        fixture: Fixture::SessionAfter(RECORD),
+    },
+    Case {
+        name: "record-stop-none",
+        args: &["record", "stop"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
         name: "mock-check",
         args: &["mock", "check"],
         modes: ALL,
@@ -3782,6 +3826,8 @@ impl Normalizer {
             // When `repro start` ran.
             (" a repro at ", &iso_time, "<time>"),
             ("\"started\":\"", &iso_time, "<time>"),
+            // When `record start` ran.
+            ("steps since ", &iso_time, "<time>"),
         ]
         .iter()
         .fold(text, |text, (prefix, keep, to)| {

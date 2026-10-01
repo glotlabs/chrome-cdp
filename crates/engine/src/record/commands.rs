@@ -129,10 +129,10 @@ impl Engine {
         };
         let text = match &data.name {
             Some(name) => format!(
-                "recording \"{name}\" since {}: {} {}",
-                data.started.as_deref().unwrap_or_default(),
+                "recording \"{name}\": {} {} since {}",
                 data.steps,
-                if data.steps == 1 { "step" } else { "steps" }
+                if data.steps == 1 { "step" } else { "steps" },
+                data.started.as_deref().unwrap_or_default(),
             ),
             None => "not recording".to_owned(),
         };
