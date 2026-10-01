@@ -15,6 +15,7 @@
 mod all;
 mod artifacts;
 mod backend;
+mod coverage;
 mod determinism;
 mod exec;
 mod fingerprints;
@@ -314,6 +315,7 @@ fn options(plan: &Plan, args: &TestArgs, global: &GlobalArgs, explicit_session: 
         }),
         taken: std::sync::Mutex::new(std::collections::BTreeMap::new()),
         fingerprint_warnings,
+        ui_coverage: args.ui_coverage,
         global,
         sessions,
         update_snapshots: args.update_snapshots,
@@ -436,6 +438,15 @@ fn conclude(
     let (heal_data, heal_text, mut heal_warnings) =
         healing(plan, args, outcomes, options, &mut data);
     data.heal = heal_data;
+    let mut coverage_warnings = Vec::new();
+    if args.ui_coverage {
+        let (coverage, warning) = ui_coverage(plan, outcomes);
+        if mode == Mode::Text {
+            output::stdout(&coverage::text(&coverage, !plan.config.pages.is_empty()));
+        }
+        coverage_warnings.extend(warning);
+        data.ui_coverage = Some(coverage);
+    }
     data.verify = options
         .verify
         .as_ref()
@@ -466,6 +477,7 @@ fn conclude(
         *info = report::debugging(info.clone(), debug, servers_started);
     }
     heal_warnings.extend(options.fingerprint_warnings.iter().cloned());
+    heal_warnings.extend(coverage_warnings);
     for warning in record_warnings.into_iter().chain(heal_warnings) {
         result = match result {
             Ok(out) => Ok(out.warning(warning)),
@@ -499,6 +511,33 @@ fn conclude(
         output::stdout(&format!("{summary}\n{}", report::reports(&data)));
     }
     output::print(mode, result)
+}
+
+/// `--ui-coverage`: the run's, from every test's in the plan's order,
+/// written to `ui-coverage.json`; and a warning when it cannot be.
+fn ui_coverage(
+    plan: &Plan,
+    outcomes: &[Outcome],
+) -> (protocol::schema::UiCoverageData, Option<String>) {
+    let mut all = coverage::Coverage::default();
+    for outcome in outcomes {
+        if let Some(coverage) = &outcome.coverage {
+            all.merge(coverage.clone());
+        }
+    }
+    let mut data = all.report(&plan.config.pages);
+    let path = plan.config.artifacts.join(coverage::FILE);
+    let mut text = serde_json::to_string_pretty(&data).unwrap_or_default();
+    text.push('\n');
+    let written =
+        std::fs::create_dir_all(&plan.config.artifacts).and_then(|()| std::fs::write(&path, text));
+    match written {
+        Ok(()) => {
+            data.file = Some(path.display().to_string());
+            (data, None)
+        }
+        Err(e) => (data, Some(format!("cannot write {}: {e}", path.display()))),
+    }
 }
 
 /// After the tests: `heal.patch` from the heals of the tests that passed

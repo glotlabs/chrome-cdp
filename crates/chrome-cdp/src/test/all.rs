@@ -37,10 +37,10 @@ fn run_all(
     explicit_session: bool,
     mode: Mode,
 ) -> Result<Result<Output, ErrorInfo>, ErrorInfo> {
-    if args.watch || args.debug || args.verify_mocks || args.record_mocks {
+    if args.watch || args.debug || args.verify_mocks || args.record_mocks || args.ui_coverage {
         return Err(ErrorInfo::new(
             ErrorKind::BadArgs,
-            "--backend all runs each backend once; --watch, --debug, --verify-mocks and --record-mocks take one backend",
+            "--backend all runs each backend once; --watch, --debug, --verify-mocks, --record-mocks and --ui-coverage take one backend",
         )
         .hint(Hint::run(
             Cmd::new("test").flag("backend", "<name>"),
@@ -178,6 +178,7 @@ fn combine(runs: &[(Plan, TestRunData)], duration: Duration, args: &TestArgs) ->
         verify: None,
         recorded: Vec::new(),
         heal: None,
+        ui_coverage: None,
     }
 }
 

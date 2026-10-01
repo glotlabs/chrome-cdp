@@ -305,11 +305,151 @@ fn a_redesign_is_healed() {
     assert!(!patch.contains("secret"), "{patch}");
 }
 
+/// Plan 18.4: `--ui-coverage` lists every page the suite visits, the
+/// controls no step acted on and the mocks no request matched; two
+/// pages' numbers are counted by hand.
+#[test]
+fn ui_coverage_names_what_the_suite_never_touched() {
+    let Some(chrome) = chrome_path() else { return };
+    let example = Example::new(Sandbox::with_chrome(&chrome));
+    // A mock no page asks for, and a listed page no test visits.
+    let base = example.root.join("e2e/mocks/base.toml");
+    let mut mocks = std::fs::read_to_string(&base).unwrap();
+    mocks.push_str(
+        "\n[[mock]]\nname = \"gift cards\"\nmatch = { method = \"GET\", path = \"/api/gift-cards\" }\nrespond = { json = [] }\n",
+    );
+    std::fs::write(&base, mocks).unwrap();
+    let config = example.root.join("chrome-cdp.toml");
+    let text = std::fs::read_to_string(&config).unwrap().replacen(
+        "[e2e]\n",
+        "[e2e]\npages = [\"/products/:id\", \"/account\"]\n",
+        1,
+    );
+    std::fs::write(&config, text).unwrap();
+
+    let value = example.json(&["test", "--jobs", "4", "--ui-coverage"]);
+    assert_eq!(counts(&value), (17, 0, 0), "{value:#}");
+    let coverage = &value["data"]["ui_coverage"];
+    let pages: Vec<&str> = coverage["pages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["page"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        pages,
+        [
+            "/products/:id",
+            "/cart",
+            "/login",
+            "/",
+            "/checkout",
+            "/orders/:id",
+            "/search"
+        ]
+    );
+    assert_eq!(coverage["unvisited"], serde_json::json!(["/account"]));
+    let page = |name: &str| {
+        let page = coverage["pages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["page"] == name)
+            .unwrap();
+        let keys = |acted: bool| -> Vec<&str> {
+            page["controls"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|c| (c["acted"].as_u64().unwrap() > 0) == acted)
+                .map(|c| c["key"].as_str().unwrap())
+                .collect()
+        };
+        (keys(true), keys(false))
+    };
+    // By hand: the banner's link "Shop", cart link, search box and button
+    // and "Sign out" (or, signed out, "Sign in"), and the page's own.
+    let (acted, never) = page("/checkout");
+    assert_eq!(
+        acted,
+        [
+            "button \"Sign out\"",
+            "button \"Place order\"",
+            "button \"Try again\""
+        ]
+    );
+    assert_eq!(
+        never,
+        [
+            "link \"Shop\"",
+            "link \"Cart (1)\"",
+            "searchbox \"Search\"",
+            "button \"Search\"",
+            "link \"Sign in\" in banner",
+            "link \"Sign in\" in main"
+        ]
+    );
+    let (acted, never) = page("/products/:id");
+    assert_eq!(
+        acted,
+        [
+            "button \"Add to cart\"",
+            "link \"Back to products\"",
+            "link \"Cart (1)\""
+        ]
+    );
+    assert_eq!(
+        never,
+        [
+            "link \"Shop\"",
+            "link \"Cart (0)\"",
+            "searchbox \"Search\"",
+            "button \"Search\"",
+            "link \"Sign in\"",
+            "button \"Sign out\""
+        ]
+    );
+    let unused: Vec<&str> = coverage["mocks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|m| m["hits"] == 0)
+        .map(|m| m["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(unused, ["gift cards"]);
+    let file = example.root.join("e2e/.results/ui-coverage.json");
+    let written: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    assert_eq!(written["pages"], coverage["pages"]);
+
+    let out = example.cli(&["test", "--jobs", "4", "--ui-coverage"]);
+    assert_eq!(out.status.code(), Some(0));
+    let text = stdout(&out);
+    let from = text.find("ui coverage:").unwrap();
+    let to = text.find("17 tests:").unwrap();
+    let summary = text[from..to].replace(&example.root.display().to_string(), "<root>");
+    let golden = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/ui-coverage/shop.txt");
+    if std::env::var_os("UPDATE_GOLDEN").is_some_and(|v| !v.is_empty() && v != "0") {
+        std::fs::create_dir_all(golden.parent().unwrap()).unwrap();
+        std::fs::write(&golden, &summary).unwrap();
+    }
+    assert_eq!(
+        std::fs::read_to_string(&golden).unwrap_or_default(),
+        summary,
+        "golden/ui-coverage/shop.txt differs (UPDATE_GOLDEN=1 accepts it)"
+    );
+}
+
 #[test]
 fn the_same_scenarios_pass_against_the_real_api_and_the_mocks_match_it() {
     let Some(chrome) = chrome_path() else { return };
     let example = Example::new(Sandbox::with_chrome(&chrome));
-    let out = example.cli(&["test", "--backend", "local", "--verify-mocks"]);
+    let out = example.cli(&[
+        "test",
+        "--backend",
+        "local",
+        "--verify-mocks",
+        "--ui-coverage",
+    ]);
     let text = stdout(&out);
     assert_eq!(out.status.code(), Some(0), "{text}{}", stderr(&out));
     // Only the @backend mock tests are skipped.
@@ -325,6 +465,10 @@ fn the_same_scenarios_pass_against_the_real_api_and_the_mocks_match_it() {
     // The page's requests (the WebSocket too) and the http arrange steps
     // meet the mocks, and the ids the real API gave carry over.
     assert!(text.contains(" mocks; no drift\n"), "{text}");
+    // --ui-coverage: a real backend's API requests, by path template.
+    assert!(text.contains("\napi requests: "), "{text}");
+    assert!(text.contains("\napi requests: GET /api/cart ×"), "{text}");
+    assert!(text.contains(", DELETE /api/cart/:id ×"), "{text}");
 }
 
 #[test]

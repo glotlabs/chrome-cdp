@@ -402,6 +402,13 @@ with it when the match is high (--heal=medium: medium too), marks the
 step healed, and writes the passed tests' changes to heal.patch in the
 artifacts folder; --heal --write applies it to the scenario files.
 
+UI coverage (docs/e2e/coverage.md): --ui-coverage reads the controls of
+each page the tests visit (the elements `snapshot -i` gives refs) and
+prints, per page, how many a step acted on and those none did, and the
+mocks no request matched; ui-coverage.json in the artifacts folder has
+it all. [e2e] pages = [\"/products/:id\", …] groups by those patterns
+and names the listed pages no test visited.
+
 Scenario syntax (docs/e2e/scenarios.md):
   @mocks base checkout          # file settings: @mocks @tags @skip @only
   @before                       #   @timeout @viewport @device @retries
@@ -426,6 +433,7 @@ Examples:
   chrome-cdp test --backend staging --verify-mocks
   chrome-cdp test --heal       # after a redesign: heal broken locators
   chrome-cdp test --heal --write   # and fix them in the files
+  chrome-cdp test --ui-coverage    # what the suite never clicks
   chrome-cdp test --list")]
     Test(TestArgs),
 
@@ -7432,6 +7440,12 @@ pub(crate) struct TestArgs {
     /// directory (replacing an older one).
     #[arg(long)]
     pub(crate) record_mocks: bool,
+
+    /// Record what the tests reached: per page, the controls no step
+    /// acted on or checked, and the mocks no request matched; writes
+    /// ui-coverage.json in the artifacts directory and prints a summary.
+    #[arg(long)]
+    pub(crate) ui_coverage: bool,
 
     /// Bound the JSON output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 200_000, value_name = "N")]

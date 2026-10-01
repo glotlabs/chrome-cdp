@@ -76,6 +76,9 @@ pub(super) struct Target {
     pub(super) word: usize,
     /// Its value, variables filled in.
     pub(super) locator: String,
+    /// The step acts on the element; an `expect` or `wait` only checks
+    /// it.
+    pub(super) acts: bool,
 }
 
 /// The locator of step `words` (variables filled in) whose element a
@@ -86,6 +89,7 @@ pub(super) fn target(words: &[String]) -> Option<Target> {
     let args = std::iter::once(protocol::PROGRAM.to_owned()).chain(words.iter().cloned());
     let matches = Cli::command().try_get_matches_from(args).ok()?;
     let cli = Cli::from_arg_matches(&matches).ok()?;
+    let acts = !matches!(cli.command, Some(Command::Expect(_) | Command::Wait(_)));
     let locator = match cli.command.as_ref()? {
         Command::Click(_)
         | Command::Dblclick(_)
@@ -134,7 +138,11 @@ pub(super) fn target(words: &[String]) -> Option<Target> {
         return None;
     }
     let word = words.iter().skip(1).position(|w| *w == locator)? + 1;
-    Some(Target { word, locator })
+    Some(Target {
+        word,
+        locator,
+        acts,
+    })
 }
 
 /// The key of `step`'s locator word `word` in its scenario's file:

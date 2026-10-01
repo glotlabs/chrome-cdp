@@ -48,6 +48,7 @@ use serde_json::Value;
 use e2e::scenario::Settings;
 
 use super::artifacts::{self, Capture, Logs, Recorder, StepRecord, Timed};
+use super::coverage::{Coverage, Snap};
 use super::determinism;
 use super::fingerprints::{self, Taken};
 use super::flake::{self, RunRecord};
@@ -95,6 +96,8 @@ pub(super) struct Outcome {
     pub(super) runs: Vec<RunRecord>,
     /// Why its runs disagreed, when they did (plan 18.3).
     pub(super) flake: Option<TestFlake>,
+    /// `--ui-coverage`: what its runs reached and touched (plan 18.4).
+    pub(super) coverage: Option<Coverage>,
 }
 
 /// How a run's steps are made.
@@ -130,6 +133,8 @@ pub(super) struct Options {
     pub(super) taken: Mutex<BTreeMap<usize, BTreeMap<String, Taken>>>,
     /// What reading the fingerprints warned about.
     pub(super) fingerprint_warnings: Vec<String>,
+    /// `--ui-coverage`: record what the tests reach and touch.
+    pub(super) ui_coverage: bool,
 }
 
 /// The browser context `--debug` kept.
@@ -225,6 +230,7 @@ pub(super) fn execute(
                             healed: Vec::new(),
                             runs: Vec::new(),
                             flake: None,
+                            coverage: None,
                         }
                     } else {
                         let runner = Runner {
@@ -245,6 +251,8 @@ pub(super) fn execute(
                             healed: RefCell::new(Vec::new()),
                             likely: RefCell::new(None),
                             last: RefCell::new(None),
+                            coverage: RefCell::new(Coverage::default()),
+                            covered: RefCell::new((String::new(), false)),
                         };
                         let index = item / repeat;
                         let outcome = match runner.before_all(test, &before_all[test.file]) {
@@ -260,6 +268,7 @@ pub(super) fn execute(
                                 healed: Vec::new(),
                                 runs: Vec::new(),
                                 flake: None,
+                                coverage: None,
                             },
                             Ok(()) => {
                                 runner.test(test, index, (repeat > 1).then_some(item % repeat + 1))
@@ -364,6 +373,13 @@ fn merge(mut runs: Vec<Outcome>, repeat: usize) -> Outcome {
         .or(runs.first());
     let artifacts = shown.and_then(|o| o.artifacts.clone());
     let healed = shown.map(|o| o.healed.clone()).unwrap_or_default();
+    let coverage = runs
+        .iter_mut()
+        .filter_map(|o| o.coverage.take())
+        .reduce(|mut all, run| {
+            all.merge(run);
+            all
+        });
     let records = runs
         .iter_mut()
         .flat_map(|o| std::mem::take(&mut o.runs))
@@ -374,6 +390,7 @@ fn merge(mut runs: Vec<Outcome>, repeat: usize) -> Outcome {
         healed,
         runs: records,
         flake: None,
+        coverage,
         duration: runs.iter().map(|o| o.duration).max().unwrap_or_default(),
         tries: runs.iter().map(|o| o.tries).sum(),
         failure: runs.iter().find_map(|o| o.failure.clone()),
@@ -411,6 +428,7 @@ fn not_run(options: &Options) -> Outcome {
         healed: Vec::new(),
         runs: Vec::new(),
         flake: None,
+        coverage: None,
     }
 }
 
@@ -450,6 +468,11 @@ struct Runner<'a> {
     likely: RefCell<Option<HealCandidate>>,
     /// The steps and requests of the last test (or hook) that ran.
     last: RefCell<Option<(Vec<StepRecord>, Vec<Timed>)>>,
+    /// `--ui-coverage`: what the test's tries reached and touched.
+    coverage: RefCell<Coverage>,
+    /// `--ui-coverage`: the URL of the try's last snapshot, and whether
+    /// one was read after the last step.
+    covered: RefCell<(String, bool)>,
 }
 
 /// A step's place in a test, for its failure.
@@ -465,6 +488,7 @@ impl Runner<'_> {
     fn test(&self, test: &Planned, index: usize, run: Option<usize>) -> Outcome {
         let tries = self.plan.retries(test) + 1;
         let mut first_failure = None;
+        self.coverage.take();
         let mut runs = Vec::new();
         for attempt in 1..=tries {
             let started = Instant::now();
@@ -484,6 +508,7 @@ impl Runner<'_> {
             *self.current.borrow_mut() = Some((test.file, test.name.clone(), self.test_span(test)));
             self.taken.borrow_mut().clear();
             self.healed.borrow_mut().clear();
+            *self.covered.borrow_mut() = (String::new(), false);
             let result = self.attempt(test, index, &dir, label);
             *self.current.borrow_mut() = None;
             let duration = started.elapsed();
@@ -527,6 +552,7 @@ impl Runner<'_> {
                         healed: self.healed.take(),
                         runs,
                         flake: None,
+                        coverage: self.covered_test(),
                     };
                 }
                 Err(failure) if attempt == tries => {
@@ -542,6 +568,7 @@ impl Runner<'_> {
                         healed: self.healed.take(),
                         runs,
                         flake: None,
+                        coverage: self.covered_test(),
                     };
                 }
                 Err(failure) => {
@@ -588,8 +615,14 @@ impl Runner<'_> {
             Some(&hooks.after),
             verify.as_deref(),
             |context| {
-                self.steps(&hooks.before, context, deadline, Part::Hook("before"))?;
-                self.steps(&test.steps, context, deadline, Part::Test)?;
+                let ran = self
+                    .steps(&hooks.before, context, deadline, Part::Hook("before"))
+                    .and_then(|()| self.steps(&test.steps, context, deadline, Part::Test));
+                // The page as the test left it, unless the last step read it.
+                if self.options.ui_coverage && !self.covered.borrow().1 {
+                    self.cover_snapshot(Snap::Full, context, None);
+                }
+                ran?;
                 self.no_errors(test, context, &span)?;
                 self.record_mocks(test, index, context);
                 Ok(())
@@ -640,6 +673,10 @@ impl Runner<'_> {
                     self.verify(&context, sets);
                 }
                 let id = self.test_id.borrow().clone();
+                let covering = self.options.ui_coverage && self.current.borrow().is_some();
+                if covering {
+                    self.cover_mocks(&context, &id);
+                }
                 let served = self
                     .served()
                     .map(|server| (server.url(), server.journal(Some(&id))));
@@ -651,6 +688,12 @@ impl Runner<'_> {
                 logs = artifacts::logs(dir, &context, served, started_ms, &|words| {
                     self.invoke(words, Some(&context), None)
                 });
+                if covering && self.plan.real() {
+                    let requests = logs.requests.iter();
+                    self.coverage.borrow_mut().requests(
+                        requests.map(|r| (r.method.as_str(), r.url.as_str(), r.kind.as_str())),
+                    );
+                }
                 if let Some(server) = self.served() {
                     server.close_partition(&id);
                 }
@@ -890,6 +933,9 @@ impl Runner<'_> {
     ) -> Result<(), Box<TestFailure>> {
         for step in steps {
             let started = Instant::now();
+            if self.covering(part) {
+                self.covered.borrow_mut().1 = false;
+            }
             let heals = self.healed.borrow().len();
             self.likely.borrow_mut().take();
             let result = self.step(step, context, deadline, part);
@@ -1095,6 +1141,9 @@ impl Runner<'_> {
             _ => None,
         };
         self.prepare(&mut cli);
+        let covered = self
+            .covering(part)
+            .then(|| Covered::of(cli.command.as_ref()));
         let screenshot = matches!(cli.command, Some(Command::ExpectScreenshot(_)));
         let exit_on_finding = crate::exits_on_finding(&cli);
         let target = if self.fingerprinted(part) {
@@ -1106,7 +1155,7 @@ impl Runner<'_> {
         let out = match (result, &target) {
             (Ok(out), Some(target)) => {
                 let key = self.key(step, target.word);
-                self.keep_fingerprint(key, taken);
+                self.keep_fingerprint(key, taken, target.acts);
                 out
             }
             (Ok(out), None) => out,
@@ -1145,6 +1194,9 @@ impl Runner<'_> {
         if Instant::now() > deadline {
             return Err(over());
         }
+        if let Some(covered) = covered {
+            self.cover_step(covered, &out, context, deadline);
+        }
         Ok(out)
     }
 
@@ -1162,7 +1214,7 @@ impl Runner<'_> {
     /// Whether steps of `part` get fingerprints: a test's own and its
     /// `@before` and `@after` steps, unless `fingerprints = "off"`.
     fn fingerprinted(&self, part: Part) -> bool {
-        self.options.fingerprints.is_some()
+        (self.options.fingerprints.is_some() || self.options.ui_coverage)
             && self.current.borrow().is_some()
             && matches!(part, Part::Test | Part::Hook("before" | "after"))
     }
@@ -1178,13 +1230,101 @@ impl Runner<'_> {
         )
     }
 
-    /// Keeps what a step gave for step key `key`, less secrets.
-    fn keep_fingerprint(&self, key: String, taken: Option<protocol::schema::Fingerprint>) {
+    /// Keeps what a step gave for step key `key`, less secrets; with
+    /// `--ui-coverage`, its element was touched (acted on, if `acts`).
+    fn keep_fingerprint(
+        &self,
+        key: String,
+        taken: Option<protocol::schema::Fingerprint>,
+        acts: bool,
+    ) {
         let taken = taken.map(|mut fp| {
             fingerprints::scrub(&mut fp, &crate::output::secret_values());
             fp
         });
+        if self.options.ui_coverage
+            && let Some(fp) = &taken
+            && let Some((_, _, test)) = self.current.borrow().as_ref()
+        {
+            self.coverage
+                .borrow_mut()
+                .touch(fp, acts, test, &self.plan.config.pages);
+        }
         self.taken.borrow_mut().push((key, taken));
+    }
+
+    /// Whether `--ui-coverage` reads the pages of steps of `part`: a
+    /// test's own and its `@before` and `@after` steps.
+    fn covering(&self, part: Part) -> bool {
+        self.options.ui_coverage
+            && self.current.borrow().is_some()
+            && matches!(part, Part::Test | Part::Hook("before" | "after"))
+    }
+
+    /// `--ui-coverage`, after a step (`covered`) gave `out`: reads every
+    /// control of the page when the step changed the URL, and the ones it
+    /// added when it acted (from its `--snap` diff when it has one).
+    fn cover_step(&self, covered: Covered, out: &Output, context: &str, deadline: Instant) {
+        let navigated = out.events.iter().rev().find_map(|e| match e {
+            protocol::schema::Event::Navigated { url, .. } => Some(url.as_str()),
+            _ => None,
+        });
+        let url = navigated.or_else(|| {
+            matches!(covered, Covered::Navigates)
+                .then(|| out.data["url"].as_str())
+                .flatten()
+        });
+        let moved = url.is_some_and(|url| url != self.covered.borrow().0);
+        if moved {
+            self.cover_snapshot(Snap::Full, context, Some(deadline));
+        } else if covered == Covered::Acts {
+            if out.data["snapshot"].is_object() {
+                self.cover_read(&out.data["snapshot"], Snap::Added);
+            } else {
+                self.cover_snapshot(Snap::Added, context, Some(deadline));
+            }
+        }
+    }
+
+    /// `--ui-coverage`: reads the controls of `context`'s page.
+    fn cover_snapshot(&self, snap: Snap, context: &str, deadline: Option<Instant>) {
+        match self.invoke(snap.words(), Some(context), deadline) {
+            Ok(out) => self.cover_read(&out.data, snap),
+            Err(e) => tracing::debug!("--ui-coverage cannot read the page: {}", e.message),
+        }
+    }
+
+    /// `--ui-coverage`: records the controls of snapshot `data`.
+    fn cover_read(&self, data: &Value, snap: Snap) {
+        let Some(test) = self.current.borrow().as_ref().map(|c| c.2.clone()) else {
+            return;
+        };
+        self.coverage
+            .borrow_mut()
+            .snapshot(data, snap, &test, &self.plan.config.pages);
+        let mut covered = self.covered.borrow_mut();
+        if let Some(url) = data["url"].as_str() {
+            url.clone_into(&mut covered.0);
+        }
+        covered.1 = true;
+    }
+
+    /// `--ui-coverage`: records the mocks of `context`'s sets and how many
+    /// requests each answered, with the mock server's of try `id`.
+    fn cover_mocks(&self, context: &str, id: &str) {
+        let served = self
+            .served()
+            .map(|server| server.journal(Some(id)))
+            .unwrap_or_default();
+        match self.invoke(&["mock", "list", "--max-chars", "0"], Some(context), None) {
+            Ok(out) => self.coverage.borrow_mut().mocks(&out.data, &served),
+            Err(e) => tracing::debug!("--ui-coverage cannot list the mocks: {}", e.message),
+        }
+    }
+
+    /// `--ui-coverage`: what the test's tries reached and touched.
+    fn covered_test(&self) -> Option<Coverage> {
+        self.options.ui_coverage.then(|| self.coverage.take())
     }
 
     /// A fingerprinted step (`words`, its `target` locator) failed with
@@ -1293,7 +1433,7 @@ impl Runner<'_> {
         out.warnings.push(format!("healed: {}", heal.line()));
         self.likely.borrow_mut().take();
         self.healed.borrow_mut().push(heal);
-        self.keep_fingerprint(key, taken);
+        self.keep_fingerprint(key, taken, target.acts);
         Ok(out)
     }
 
@@ -1551,6 +1691,48 @@ impl Runner<'_> {
             None,
             |context| self.steps(steps, context, deadline, Part::Hook(name)),
         )
+    }
+}
+
+/// What `--ui-coverage` reads after a step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Covered {
+    /// It loads a page (`goto`, `back`, …): every control, when the URL
+    /// changed.
+    Navigates,
+    /// It acts on the page: the controls it added.
+    Acts,
+    /// It only reads or checks: nothing, unless it navigated.
+    Reads,
+}
+
+impl Covered {
+    fn of(command: Option<&Command>) -> Self {
+        match command {
+            Some(
+                Command::Goto(_) | Command::Back(_) | Command::Forward(_) | Command::Reload(_),
+            ) => Self::Navigates,
+            Some(
+                Command::Click(_)
+                | Command::Dblclick(_)
+                | Command::Tap(_)
+                | Command::Hover(_)
+                | Command::Fill(_)
+                | Command::FillForm(_)
+                | Command::Type(_)
+                | Command::Press(_)
+                | Command::Keyboard(_)
+                | Command::Mouse(_)
+                | Command::Select(_)
+                | Command::Check(_)
+                | Command::Uncheck(_)
+                | Command::Focus(_)
+                | Command::Drag(_)
+                | Command::Upload(_)
+                | Command::Dialog(_),
+            ) => Self::Acts,
+            _ => Self::Reads,
+        }
     }
 }
 
