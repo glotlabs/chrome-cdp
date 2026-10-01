@@ -115,6 +115,7 @@ at a time: run `--ui-coverage` with `--backend NAME`.
 ## What it costs
 
 A snapshot after each action and navigation: steps take longer with the
-flag, so it is off by default. The `ui_coverage_cost_per_step` benchmark
+flag, so it is off by default. The
+`fingerprints_and_ui_coverage_cost_per_step` benchmark
 (`crates/chrome-cdp/tests/bench.rs`, run by `cargo xtask bench micro`)
 compares the shop's steps with and without it.

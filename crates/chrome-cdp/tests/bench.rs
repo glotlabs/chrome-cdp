@@ -1,8 +1,8 @@
 //! Plan 11's timing goals: the test runner's own overhead under 100 ms per
 //! test, and the E2E example suite under 15 s with `--jobs 4`. (Plan 02's
 //! cold start and warm round trip, and plan 08's `batch` speedup, are in
-//! the micro suite of `crates/bench`.) And plan 18.4's: what `test
-//! --ui-coverage` adds to a step.
+//! the micro suite of `crates/bench`.) And plan 18.4's: what fingerprints
+//! and `test --ui-coverage` add to a step.
 //!
 //! Ignored: benchmarks run on a quiet machine after all plans are in.
 //! `cargo xtask bench micro` runs it, or run it alone with
@@ -28,6 +28,9 @@ const SHOP_SUITE: Duration = Duration::from_secs(15);
 /// average over the shop's steps (a criterion of this benchmark's own:
 /// the plan asks for the measurement).
 const UI_COVERAGE_PER_STEP: Duration = Duration::from_millis(50);
+/// Plan 18.2: what reading a fingerprint adds to a step, on average (the
+/// same; above it, cap the candidates `fingerprint` tries).
+const FINGERPRINT_PER_STEP: Duration = Duration::from_millis(10);
 
 /// Copies `from` to `to`, less `node_modules` and earlier results.
 fn copy_dir(from: &Path, to: &Path) {
@@ -131,7 +134,7 @@ fn step_time(value: &serde_json::Value) -> (Duration, u32) {
 
 #[test]
 #[ignore = "benchmark; run after all plans are implemented"]
-fn ui_coverage_cost_per_step() {
+fn fingerprints_and_ui_coverage_cost_per_step() {
     let Some(chrome) = chrome_path() else { return };
     let sandbox = Sandbox::with_chrome(&chrome);
     let root = sandbox.dir.path().join("e2e-shop");
@@ -145,8 +148,18 @@ fn ui_coverage_cost_per_step() {
         .unwrap()
         .port();
     let config = root.join("chrome-cdp.toml");
-    let text = std::fs::read_to_string(&config).unwrap();
-    std::fs::write(&config, text.replace("4173", &port.to_string())).unwrap();
+    let text = std::fs::read_to_string(&config)
+        .unwrap()
+        .replace("4173", &port.to_string());
+    std::fs::write(&config, &text).unwrap();
+    let fingerprints = |on: bool| {
+        let text = if on {
+            text.clone()
+        } else {
+            text.replacen("[e2e]\n", "[e2e]\nfingerprints = \"off\"\n", 1)
+        };
+        std::fs::write(&config, text).unwrap();
+    };
     let test = |args: &[&str]| {
         let out = common::run(
             sandbox
@@ -156,19 +169,27 @@ fn ui_coverage_cost_per_step() {
                 .args(args),
         );
         assert_eq!(code(&out), 0, "{}", common::stderr(&out));
-        common::json_out(&out)
+        step_time(&common::json_out(&out))
     };
     // Warm: the first run pays for Chrome's caches.
     test(&[]);
-    let (without, steps) = step_time(&test(&[]));
-    let (with, covered) = step_time(&test(&["--ui-coverage"]));
-    assert_eq!(steps, covered);
-    let per_step = with.saturating_sub(without) / steps;
+    fingerprints(false);
+    let (bare, steps) = test(&[]);
+    fingerprints(true);
+    let (fingerprinted, _) = test(&[]);
+    let (covered, _) = test(&["--ui-coverage"]);
+    let fingerprint = fingerprinted.saturating_sub(bare) / steps;
+    let coverage = covered.saturating_sub(fingerprinted) / steps;
     eprintln!(
-        "--ui-coverage: {steps} steps took {with:?}, {without:?} without it: {per_step:?} more per step"
+        "{steps} steps: {bare:?} without fingerprints, {fingerprinted:?} with ({fingerprint:?} more per step), \
+         {covered:?} with --ui-coverage too ({coverage:?} more per step)"
     );
     assert!(
-        per_step < UI_COVERAGE_PER_STEP,
-        "--ui-coverage added {per_step:?} per step"
+        fingerprint < FINGERPRINT_PER_STEP,
+        "fingerprints added {fingerprint:?} per step"
+    );
+    assert!(
+        coverage < UI_COVERAGE_PER_STEP,
+        "--ui-coverage added {coverage:?} per step"
     );
 }
