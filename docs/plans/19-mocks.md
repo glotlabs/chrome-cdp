@@ -1,6 +1,6 @@
 # Plan 19 — Mocks
 
-Status: NOT STARTED
+Status: IN PROGRESS (19.1 done)
 Depends on: 11 (the mock format, `mock record`/`import`/`check`/`serve`, WebSocket and SSE mocks), 13 §13.2 (mocks in every target), 14 §14.7 (WebSocket frames in the network log)
 Roadmap: track 8 of [plan 12](12-after-v1.md)
 
@@ -352,12 +352,12 @@ warnings are printed. Add:
 
 ## Acceptance criteria
 
-- [ ] A `FormData` POST with text and file fields matches `form = {
+- [x] A `FormData` POST with text and file fields matches `form = {
       email = "*@example.com", avatar = "*.png" }`, and `{{form.email}}`
       and `{{form_files.avatar.filename}}` render.
-- [ ] `/api/users/:user/todos` keeps each user's todos apart for list,
+- [x] `/api/users/:user/todos` keeps each user's todos apart for list,
       get, post, put, patch and delete, with and without `params`.
-- [ ] `mock record --match-bodies` on two logins as different users
+- [x] `mock record --match-bodies` on two logins as different users
       writes two mocks keyed by the email, not a sequence.
 - [ ] Recording a page that uses a WebSocket and an EventSource, then
       replaying the recorded set, gives the page the same messages and
@@ -402,3 +402,25 @@ warnings are printed. Add:
 ## Decisions log
 
 _(append here)_
+- 19.1: a multipart POST's recorded `form` match (text fields, files left
+  out) is written under `--match-bodies` only. Recordings match no body
+  today, and "without the flag, nothing changes" wins over the
+  multipart bullet.
+- 19.1: `--match-bodies` adds a body match only where it splits a mock
+  (requests of one method, path, query and operation with different
+  stable fields). A lone request keeps no `json`: its generated fields
+  cannot be told from chosen ones without a second request, and a
+  stricter match would buy nothing. Mocks of one path are ordered by how
+  many body fields they match, most first, so a subset never shadows a
+  superset. Names get the telling fields (`POST /api/login
+  (email=bob@example.com)`).
+- 19.1: GraphQL requests key on `graphql.variables` (not `json` over the
+  whole body), and "close to the recording time" is within two days of
+  the request's own time (the HAR's `startedDateTime`, else now).
+  Numbers count as seconds or milliseconds.
+- 19.1: a POST to a nested collection whose body names another parent
+  (`user = 8` under `/users/7/todos`) is refused with 400, as PUT and
+  PATCH are, rather than moved silently.
+- 19.1: `match.form` holds if any value of a repeated field matches. The
+  plan says this is today's behavior, but the code checked the first
+  value only.

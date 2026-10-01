@@ -139,7 +139,7 @@ Today: 138 rows; 125 ✅, 9 🟡, 0 ❌, 4 ➖. No row is ❌.
 | `page.route` + `fulfill` / `abort` / `continue` / `fetch` | `route URL --json-body … \| --status … \| --abort \| --set-header … \| --rewrite-url … \| --patch-json …`; `unroute`, `routes`, `block` | ✅ | yes |
 | `page.routeWebSocket` | a `[[websocket]]` mock, `mock ws send` | ✅ | no |
 | HAR record (`recordHar`) | `har start`, `har stop -o FILE` | ✅ | no |
-| HAR replay (`routeFromHAR`) | `mock import FILE.har`, then `mock use NAME` | ✅ | no |
+| HAR replay (`routeFromHAR`) | `mock import FILE.har`, then `mock use NAME`; `--match-bodies` tells POSTs to one URL apart by their bodies, as Playwright does by post data | ✅ | no |
 | `context.request` (`APIRequestContext`) | `http METHOD URL` with the context's cookies | ✅ | no |
 | `exposeFunction`, `exposeBinding` | `expose NAME`: calls are logged in `console` (`wait --binding NAME` waits for one); `--returns JSON` or `--returns-seq JSON-ARRAY` answers them. The answer is data, not a Node function | ✅ | no |
 | `addInitScript` | `init-script add FILE`, `init-script add --code 'JS'`, `open --init-script FILE` | ✅ | no |
