@@ -66,14 +66,48 @@ chrome-cdp test e2e/scenarios/cart.cdp --repeat 20
 
 runs each test 20 times (spread over `--jobs`), without retries, since
 retries would hide what `--repeat` looks for. A test fails if one of its
-runs fails; its line says how many did, with the first failure under it:
+runs fails; its line says how many did, then the likely cause, then the
+first failure:
 
 ```
-✗ e2e/scenarios/cart.cdp:6 adds an item (failed 2 of 20 runs, slowest 2.1s)
-    first failure at e2e/scenarios/cart.cdp:9:3: expect text=1 item visible
+✗ e2e/scenarios/cart.cdp:6 adds an item (failed 3 of 20 runs, slowest 4.6s)
+    flaky: 3 of 20 runs failed at e2e/scenarios/cart.cdp:9:3 (`expect role=status text 'Paid $5'`)
+    likely cause: acted before the page settled (confidence 0.90)
+      `GET /api/price` was still open when `click '#pay'` (e2e/scenarios/cart.cdp:8:3) acted, in all 3 failing runs; it was answered up to 691ms later
+      in all 17 passing runs it was answered before the step acted (627ms before, at the closest)
+      `click '#load'` (e2e/scenarios/cart.cdp:7:3) sent it
+      fix: add `wait --response '**/api/price'` after e2e/scenarios/cart.cdp:7:3 (which sends it), or an `expect` of what its answer shows before e2e/scenarios/cart.cdp:8:3
+    first failure at e2e/scenarios/cart.cdp:9:3: expect role=status text 'Paid $5'
 ```
 
 Run it before committing a new test.
+
+### Why a test is flaky
+
+Every run keeps its own folder (`run-1/`, `run-2/`, …; a retry's
+`try-2/`, …) with its `steps.jsonl` and its `requests.txt`, which says
+when each request was sent and answered, from the test's start. When
+some runs pass and some fail (or a retry passes), the runner takes the
+step most failing runs failed at and compares the failing runs with the
+passing ones up to it:
+
+| Cause | What the runs showed |
+|---|---|
+| acted before the page settled (`unsettled`) | A request sent before a step was still open when the step acted in failing runs, and answered before it in every passing run. Names the request, and the step that sent it. |
+| requests raced (`race`) | Two API requests were answered in one order in failing runs and in the other in every passing run. Names both. |
+| moving target (`moving-target`) | The failing step's element did not stop moving, was covered, or kept being replaced. Names the covering element. |
+| different requests (`different-requests`) | Failing runs sent a request no passing run did (or skipped one every passing run sent), or one no mock answered. |
+| time or randomness (`time-or-randomness`) | `freeze_time` or `random_seed` is off, and the failing assertion saw another value in each failing run. |
+| shared state (`shared-state`) | Against a real backend: the runs passed until one failed, and every run after it failed too. |
+| unknown | None of the above: the first step whose result differs between a passing and a failing run. |
+
+Several can fit; they are ranked by how many failing runs they explain,
+and the confidence (0 to 1) is that share, lowered for the rules that
+guess more. The text reporter prints the first under the test's line;
+the failure's `report.md` gets a "Flaky" section with the others and the
+runs to compare; `--json` adds `flake: {cause, summary, confidence,
+evidence, hint, …}` to the test's result. The browser's own favicon
+request is left out, since it comes in some runs only.
 
 ## Fonts and screenshot baselines
 

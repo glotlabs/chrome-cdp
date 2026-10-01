@@ -19,7 +19,7 @@ Options:
 - `--jobs-isolation <HOW>`: Where the tests run at once: in browser contexts of one Chrome (the default), or in a Chrome each (one of `context`, `browser`; default `context`)
 - `--shard <INDEX/TOTAL>`: Run only part INDEX of TOTAL near-equal parts, e.g. 2/4 (for CI machines that split a suite)
 - `--retries <N>`: Run a failed test again up to N times. Default: `retries` in the config, else 0; a test's @retries wins
-- `--repeat <N>`: Run each test N times, without retries, to find flaky tests: a test fails if any of its runs does
+- `--repeat <N>`: Run each test N times, without retries, to find flaky tests: a test fails if any of its runs does, and the likely cause of its failures is named
 - `--bail`: Stop after the first failed test
 - `--headed`: Show a browser window
 - `--update-snapshots`: Write the baselines of expect-snapshot and expect-screenshot steps (in e2e/snapshots) instead of comparing with them
@@ -51,7 +51,10 @@ zone (UTC) and no animations; [e2e.determinism] changes that, and `time
 advance 5m` moves the time on and runs the timers due by then. `--jobs N`
 runs N tests at once in one Chrome; a test that fails, then passes on a
 retry, is reported as flaky; `--repeat 20` runs each test 20 times to
-find flaky ones. A request no mock answers, in a set's scope with
+find flaky ones. A flaky test's line names the likely cause (acted
+before the page settled, requests raced, a moving target, different
+requests, time or randomness, shared state), with the request or element
+and a fix, from comparing its failing and passing runs. A request no mock answers, in a set's scope with
 unmatched = "fail", fails the test at the step after which it was
 sent, naming the closest mocks; so does a console error in any of its
 tabs (unless @allow-console-errors, or allow_console_errors = true in

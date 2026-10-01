@@ -204,7 +204,7 @@ Today: 137 rows; 123 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
 | HAR replay in tests | `mock import FILE.har` writes a mock set the scenarios use | ✅ | no |
 | `webServer` | `[e2e.web_server]`: a command to start, or a folder to serve | ✅ | yes |
 | the same tests against other environments | backends: `test --backend staging` | ✅ | no |
-| `retries`, `workers`, sharding, `--repeat-each` | `test --retries 2 --jobs 4 --shard 2/4 --repeat 20` | ✅ | no |
+| `retries`, `workers`, sharding, `--repeat-each` | `test --retries 2 --jobs 4 --shard 2/4 --repeat 20`; a flaky test names its likely cause, with the request or element (Playwright only marks it flaky) | ✅ | no |
 | reporters (`list`, `junit`, `json`, `html`) | `test --reporter text,junit,json,html`, and a `report.md` per failure | ✅ | yes |
 | `--update-snapshots` | `test --update-snapshots` | ✅ | no |
 | fixtures, `test.step` | step files through `@include` with parameters; `#` comments name steps | 🟡 | no |

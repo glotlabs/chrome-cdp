@@ -106,7 +106,8 @@ tests in `e2e/scenarios/*.cdp` and fake API answers in
    test). Each test gets a fresh context, frozen time and seeded random.
 5. A failure prints a `report.md` path: the step, the error, the page,
    console errors, requests. Read it, fix the app or the test, rerun.
-   Locators a redesign broke: `test --heal --write`.
+   Locators a redesign broke: `test --heal --write`. Before committing a
+   test, `test file.cdp --repeat 20`: a flaky one names its likely cause.
 
 ```
 @mocks base checkout
