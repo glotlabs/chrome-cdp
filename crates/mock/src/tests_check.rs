@@ -529,18 +529,23 @@ respond = { status = 503 }
         .collect();
     assert_eq!(
         warnings,
+        // At the operation's method line in the spec, in its order.
         [
             (
                 "warning",
-                0,
+                8,
+                "GET /products: no mock or collection answers it"
+            ),
+            (
+                "warning",
+                27,
                 "POST /orders: no mock or collection answers it"
             ),
             (
                 "warning",
-                0,
-                "GET /products: no mock or collection answers it"
+                41,
+                "GET /todos: no mock or collection answers it"
             ),
-            ("warning", 0, "GET /todos: no mock or collection answers it"),
         ]
     );
     let hint = checked
@@ -549,7 +554,7 @@ respond = { status = 503 }
         .find(|p| p.rule == "openapi-uncovered");
     assert_eq!(
         hint.and_then(|p| p.hint.as_deref()),
-        Some("add a [[mock]] for it (`chrome-cdp mock gen --scope '/orders' -o …` writes one)")
+        Some("add a [[mock]] for it (`chrome-cdp mock gen --scope '/products' -o …` writes one)")
     );
     // Without a spec, nothing to cover.
     assert!(
@@ -585,10 +590,7 @@ fn many_uncovered_operations_are_counted() {
         .map(|p| p.message.as_str())
         .collect();
     assert_eq!(lines.len(), 21);
-    assert_eq!(
-        lines[20],
-        "4 more spec operations have no mock (--json lists them all)"
-    );
+    assert!(lines.contains(&"4 more spec operations have no mock (--json lists them all)"));
 }
 
 #[test]

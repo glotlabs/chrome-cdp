@@ -1023,7 +1023,7 @@
           "type": "string"
         },
         "rule": {
-          "description": "`load`, `unreachable`, `collection-shadowed`, `duplicate-collection`,\n`undeclared-state`, `ws-unreachable`, `ws-rule-unreachable`,\n`openapi-path`, `openapi-method`, `openapi-status`, `openapi-body`\nor `openapi-uncovered` (its `file` is the spec, line 0).",
+          "description": "`load`, `unreachable`, `collection-shadowed`, `duplicate-collection`,\n`undeclared-state`, `ws-unreachable`, `ws-rule-unreachable`,\n`openapi-path`, `openapi-method`, `openapi-status`, `openapi-body`\nor `openapi-uncovered` (its `file` is the spec, `line` the\noperation's).",
           "type": "string"
         },
         "severity": {

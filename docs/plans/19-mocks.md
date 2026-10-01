@@ -490,7 +490,7 @@ _(append here)_
   and method land on it in the spec (`/pets/:id`, `/pets/7`), not when a
   catch-all (`/api/**`, a regex, no path) merely matches it: the shop's
   `errors/api-down` would otherwise cover every operation of every run.
-  Its problems name the spec file at line 0.
+  Its problems name the spec file at the operation's line.
 - 19.4: a set scoped only to full URLs that no server of the spec is
   under (a third party's, like the shop's payment provider) is not
   checked against the spec, and a collection's paths need to be in the

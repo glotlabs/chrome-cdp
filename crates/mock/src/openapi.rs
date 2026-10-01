@@ -34,6 +34,8 @@ pub struct OpenApi {
     servers: Vec<String>,
     /// Where it was read from.
     file: Option<std::path::PathBuf>,
+    /// Its text, to find an operation's line.
+    text: String,
 }
 
 #[derive(Debug, Clone)]
@@ -168,6 +170,7 @@ impl OpenApi {
             swagger,
             servers,
             file: None,
+            text: text.to_owned(),
         })
     }
 
@@ -246,6 +249,48 @@ impl OpenApi {
     /// The whole document, for walking what the helpers do not cover.
     pub(crate) fn doc(&self) -> &Value {
         &self.doc
+    }
+
+    /// The line (1-based) of operation `method` (lower case) of `path`
+    /// in the spec's text: its method key under the path's key, else the
+    /// path's key; 0 when neither is found (a one-line JSON spec gives
+    /// the line of the path).
+    pub fn line_of(&self, path: &str, method: &str) -> usize {
+        let keys = [
+            format!("{path}:"),
+            format!("'{path}':"),
+            format!("\"{path}\":"),
+            format!("\"{path}\" :"),
+        ];
+        let lines: Vec<&str> = self.text.lines().collect();
+        let Some(at) = lines
+            .iter()
+            .position(|l| keys.iter().any(|k| l.trim_start().starts_with(k.as_str())))
+        else {
+            return 0;
+        };
+        let indent = |l: &str| l.len() - l.trim_start().len();
+        let depth = indent(lines[at]);
+        let method_keys = [
+            format!("{method}:"),
+            format!("\"{method}\":"),
+            format!("\"{method}\" :"),
+        ];
+        for (i, l) in lines.iter().enumerate().skip(at + 1) {
+            if l.trim().is_empty() || l.trim_start().starts_with('#') {
+                continue;
+            }
+            if indent(l) <= depth {
+                break;
+            }
+            if method_keys
+                .iter()
+                .any(|k| l.trim_start().starts_with(k.as_str()))
+            {
+                return i + 1;
+            }
+        }
+        at + 1
     }
 
     /// The file it was loaded from, if it was.

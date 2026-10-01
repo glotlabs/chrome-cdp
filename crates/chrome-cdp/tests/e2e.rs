@@ -1258,7 +1258,7 @@ fn mock_check_errors_stop_the_run_before_the_browser_starts() {
     assert_eq!(out.status.code(), Some(1));
     let err = stderr(&out);
     assert!(
-        err.contains("api/openapi.json: warning [openapi-uncovered] POST /orders (placeOrder): no mock or collection answers it"),
+        err.contains("api/openapi.json:5:1: warning [openapi-uncovered] POST /orders (placeOrder): no mock or collection answers it"),
         "{err}"
     );
     assert!(err.contains("hint: fix the warnings (mock_check = \"warnings\" in [e2e] stops on them), then run chrome-cdp mock check shop sale again"), "{err}");

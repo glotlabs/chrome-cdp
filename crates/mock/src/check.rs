@@ -25,7 +25,7 @@
 //!   status, or its schema does not fit the JSON body;
 //! - `openapi-uncovered` (warning): an operation of the spec that no mock
 //!   or collection of the sets answers (at most [`UNCOVERED_LISTED`],
-//!   then one line with the count).
+//!   then one line with the count), at its line in the spec.
 //!
 //! A set scoped to full URLs that none of the spec's servers is under
 //! (a third party's API) is not checked against the spec.
@@ -101,15 +101,16 @@ pub fn check(sources: &[Source], layers: &[String], openapi: Option<&OpenApi>) -
         for set in out.sets.iter().filter(|s| spec.covers_scope(&s.scope_text)) {
             against_spec(set, spec, &mut out.problems);
         }
-        out.uncovered = uncovered(&out.sets, spec);
+        let found = uncovered(&out.sets, spec);
+        out.uncovered = found.iter().map(|(op, _)| op.clone()).collect();
         let file = spec
             .file()
             .map_or_else(|| Path::new("openapi").to_path_buf(), Path::to_path_buf);
-        for op in out.uncovered.iter().take(UNCOVERED_LISTED) {
+        for (op, line) in found.iter().take(UNCOVERED_LISTED) {
             out.problems.push(problem(
                 &file,
-                0,
-                0,
+                *line,
+                usize::from(*line > 0),
                 Severity::Warning,
                 "openapi-uncovered",
                 format!("{op}: no mock or collection answers it"),
@@ -801,7 +802,7 @@ fn gen_scope(op: &str) -> String {
 /// (`/api/**`, a regex, no path) answers for many and stands for none,
 /// so an `errors/api-down` set does not hide the operations no other
 /// mock has.
-fn uncovered(sets: &[MockSet], spec: &OpenApi) -> Vec<String> {
+fn uncovered(sets: &[MockSet], spec: &OpenApi) -> Vec<(String, usize)> {
     let takes = |glob: &str, method: &str, path: &str| {
         matches!(spec.lookup(glob, &[method.to_owned()]),
             Lookup::Found(ops) if ops.iter().any(|o| o.path == path))
@@ -825,7 +826,7 @@ fn uncovered(sets: &[MockSet], spec: &OpenApi) -> Vec<String> {
             if let Some(id) = op.id {
                 let _ = std::fmt::Write::write_fmt(&mut name, format_args!(" ({id})"));
             }
-            out.push(name);
+            out.push((name, spec.line_of(op.path, &op.method.to_ascii_lowercase())));
         }
     }
     out

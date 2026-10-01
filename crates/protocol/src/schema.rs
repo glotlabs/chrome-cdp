@@ -5915,7 +5915,8 @@ pub struct MockProblem {
     /// `load`, `unreachable`, `collection-shadowed`, `duplicate-collection`,
     /// `undeclared-state`, `ws-unreachable`, `ws-rule-unreachable`,
     /// `openapi-path`, `openapi-method`, `openapi-status`, `openapi-body`
-    /// or `openapi-uncovered` (its `file` is the spec, line 0).
+    /// or `openapi-uncovered` (its `file` is the spec, `line` the
+    /// operation's).
     pub rule: String,
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
