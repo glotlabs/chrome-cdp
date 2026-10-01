@@ -665,7 +665,8 @@ _(append here)_
   replay's policy answers it); one answered otherwise is `dialog accept
   [TEXT]|dismiss`. The command a confirm interrupts fails with exit 5, so
   the runner now passes a step that failed with `DialogOpen` when the next
-  step is `dialog …` (`test/exec.rs`, `dialog_answered_next`).
+  step is `dialog …` (`test/exec.rs`, `dialog_answered_next`), and so does
+  `run` (`script::run_steps`).
 - 18.6 tabs: a tab first seen after the start that no page opened is `tab
   new [URL]` (its first browser navigation the URL); any other switch is
   `tab tN` with the session's id, and a popup's first load is no step. Tab

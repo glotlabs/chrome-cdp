@@ -79,8 +79,8 @@ Some events make no step, because the replay repeats them by itself:
 - A dialog the session's policy answered (an `alert`, by default): the
   replay's policy answers it too. A `confirm` or `prompt` answered by
   someone, with `chrome-cdp dialog` or in the window, is a `dialog` step.
-  In `test`, a step that a dialog interrupts (exit 5, `DialogOpen`) passes
-  when the next step answers it.
+  In `test` and `run`, a step that a dialog interrupts (exit 5,
+  `DialogOpen`) passes when the next step answers it.
 
 ## Limits
 

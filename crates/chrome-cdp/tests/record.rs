@@ -287,3 +287,40 @@ fn a_new_tab_and_a_switch_back_are_tab_steps() {
         "@test \"two tabs\"\n  goto /record/form.html\n  tab new /record/help.html\n  click 'role=link[name=\"Back to the form\"]'\n  tab t1\n  check 'role=checkbox[name=\"I accept the terms\"]'\n  # add expect steps: the recorder does not guess what to check\n"
     );
 }
+
+#[test]
+fn run_passes_a_step_whose_dialog_the_next_step_answers() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let site = Fixtures::shared().a();
+    std::fs::write(
+        project.root.join("flow.cdp"),
+        format!(
+            "goto {site}/record/form.html\nclick 'role=button[name=\"Delete draft\"]'\ndialog accept\nexpect role=status text 'draft deleted'\n"
+        ),
+    )
+    .unwrap();
+    let out = project.run(&["run", "flow.cdp"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}{}",
+        stdout(&out),
+        stderr(&out)
+    );
+    assert!(
+        stdout(&out).contains(
+            "dialog open in tab t1: confirm \"Delete the draft?\"; the next step answers it"
+        ),
+        "{}",
+        stdout(&out)
+    );
+    // Not when nothing answers it.
+    std::fs::write(
+        project.root.join("flow.cdp"),
+        "click 'role=button[name=\"Delete draft\"]'\n",
+    )
+    .unwrap();
+    let out = project.run(&["run", "flow.cdp"]);
+    assert_eq!(out.status.code(), Some(5), "{}", stderr(&out));
+}

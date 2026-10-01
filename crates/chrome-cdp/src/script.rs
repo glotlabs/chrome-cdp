@@ -490,6 +490,12 @@ fn run_steps(steps: Vec<Step>, keep_going: bool, mode: Mode) -> u8 {
     let total = steps.len();
     let mut failed: Vec<usize> = Vec::new();
     let mut exit = 0;
+    // A step a dialog interrupts passes when the next one answers it (as
+    // `record` writes a click that opens a confirm).
+    let answers: Vec<bool> = steps
+        .iter()
+        .map(|s| matches!(s.cli.command, Some(crate::cli::Command::Dialog(_))))
+        .collect();
     for (index, step) in steps.into_iter().enumerate() {
         let n = index + 1;
         let Step {
@@ -510,6 +516,18 @@ fn run_steps(steps: Vec<Step>, keep_going: bool, mode: Mode) -> u8 {
             info
         });
         daemon::client::set_history_line(None);
+        let result = match result {
+            Err(info)
+                if info.kind == ErrorKind::DialogOpen
+                    && answers.get(index + 1).copied().unwrap_or(false) =>
+            {
+                Ok(protocol::Output::new(
+                    serde_json::json!({ "dialog": info.details }),
+                    format!("{}; the next step answers it", info.message),
+                ))
+            }
+            result => result,
+        };
         let code = match &result {
             Ok(out) if exit_on_finding && crate::found(out) => 1,
             Ok(_) => 0,
