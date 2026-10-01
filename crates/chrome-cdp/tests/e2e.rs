@@ -1275,6 +1275,30 @@ fn mock_check_errors_stop_the_run_before_the_browser_starts() {
         "{err}"
     );
     assert!(!err.contains("[openapi-uncovered]"), "{err}");
+
+    // mock_check = "off": no check, so a mock that does not fit the spec
+    // runs as it is.
+    std::fs::write(
+        project.root.join("api/openapi.json"),
+        r#"{"openapi": "3.0.3", "servers": [{"url": "/e2e/api"}], "paths": {
+            "/price": {"get": {"responses": {"200": {"description": "the price",
+                "content": {"application/json": {"schema": {"type": "object",
+                    "required": ["price_cents"], "properties": {"price_cents": {"type": "integer"}}}}}}}}},
+            "/orders": {"post": {"responses": {"201": {"description": "made"}}}}
+        }}"#,
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(
+        &config,
+        text.replace("[e2e]\n", "[e2e]\nmock_check = \"off\"\n"),
+    )
+    .unwrap();
+    let out = project.test(&[]);
+    let err = stderr(&out);
+    assert_eq!(out.status.code(), Some(0), "{err}");
+    assert!(!err.contains("openapi"), "{err}");
+    assert!(!err.contains("spec operation"), "{err}");
 }
 
 /// Every file below `dir` whose text contains `needle`.

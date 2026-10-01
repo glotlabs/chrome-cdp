@@ -357,6 +357,49 @@ fn mock_serve_talks_websocket_to_a_client_that_is_not_a_browser() {
         stderr(&out)
     );
 
+    // `mock sse send --serve` reaches an open stream, after its own events.
+    let mut news = TcpStream::connect(&addr).unwrap();
+    news.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    write!(
+        news,
+        "GET /mock/api/news HTTP/1.1\r\nHost: {addr}\r\nAccept: text/event-stream\r\n\r\n"
+    )
+    .unwrap();
+    let out = cli()
+        .args([
+            "mock",
+            "sse",
+            "send",
+            "--serve",
+            &url,
+            "/mock/api/news",
+            "pushed",
+        ])
+        .args(["--event", "extra"])
+        .output()
+        .unwrap();
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert!(stdout(&out).contains("1 stream"), "{}", stdout(&out));
+    let mut got = String::new();
+    let mut buf = [0; 4096];
+    while !got.contains("data: pushed") {
+        let n = news.read(&mut buf).unwrap();
+        assert!(n > 0, "the stream ended: {got}");
+        got.push_str(&String::from_utf8_lossy(&buf[..n]));
+    }
+    let (first, pushed) = (
+        got.find("data: first").unwrap(),
+        got.find("event: extra\ndata: pushed").unwrap(),
+    );
+    assert!(first < pushed, "{got}");
+    drop(news);
+    // The stream's request and the push are in the log.
+    while !lines.next().unwrap().unwrap().contains("/mock/api/news") {}
+    assert_eq!(
+        lines.next().unwrap().unwrap(),
+        "SSE /mock/api/news → pushed"
+    );
+
     // The page's message gets its rule's answer; bye closes it.
     socket
         .send(Message::text(r#"{"type":"ping","id":3}"#))

@@ -361,6 +361,27 @@ fn cycles_and_depth_stop() {
 }
 
 #[test]
+fn any_of_takes_the_first_branch_and_deep_objects_stop() {
+    assert_eq!(
+        generated("{anyOf: [{type: boolean}, {type: string}]}"),
+        json!(true)
+    );
+    // Ten objects nested without a `$ref`: those past a depth of 8 (the
+    // body is 0, `v` 1) are left out.
+    let mut prop = "{type: string}".to_owned();
+    for _ in 0..10 {
+        prop = format!("{{type: object, properties: {{a: {prop}}}}}");
+    }
+    let mut v = generated(&prop);
+    let mut levels = 1;
+    while let Some(inner) = v.get("a") {
+        v = inner.clone();
+        levels += 1;
+    }
+    assert_eq!((levels, v), (7, json!({})));
+}
+
+#[test]
 fn scope_limits_operations() {
     let spec = OpenApi::load(&testdata("petstore.yaml")).expect("spec");
     let mut opts = options(1, false);

@@ -65,7 +65,8 @@ own servers and setup. Real backends' artifacts go below
   "http://localhost:8080" } }`, and point the app at port 4010. It
   answers with the backend's `mocks` and forwards their `passthrough`
   answers (and requests in their scope no mock takes, with `unmatched =
-  "passthrough"`) to the real API ([beyond-fetch.md](beyond-fetch.md)).
+  "passthrough"`) to the real API, each within `upstream_timeout`
+  (default `"30s"`; [beyond-fetch.md](beyond-fetch.md)).
 - **Determinism is best-effort.** Time is not frozen (tokens and server
   time checks need the real time) unless the backend's `determinism` says
   so; random values stay seeded and animations off. Failed tests are
