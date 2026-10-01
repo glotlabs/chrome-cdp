@@ -202,6 +202,7 @@ Today: 138 rows; 125 ✅, 9 🟡, 0 ❌, 4 ➖. No row is ❌.
 | isolation between tests | a fresh browser context per test (cookies, storage, mocks, emulation) | ✅ | yes |
 | `page.route` mocking in tests | mock files (`@mocks`, `default_mocks`), or `route` lines | ✅ | yes |
 | HAR replay in tests | `mock import FILE.har` writes a mock set the scenarios use | ✅ | no |
+| — | `mock gen --openapi SPEC` writes a starting mock set from an OpenAPI spec (the spec's examples, else generated values; collections for list and item paths), and `mock check` (run by every `test`) checks the mocks against the spec and names its operations no mock answers | ✅ | no |
 | `webServer` | `[e2e.web_server]`: a command to start, or a folder to serve | ✅ | yes |
 | the same tests against other environments | backends: `test --backend staging` | ✅ | no |
 | `retries`, `workers`, sharding, `--repeat-each` | `test --retries 2 --jobs 4 --shard 2/4 --repeat 20`; a flaky test names its likely cause, with the request or element (Playwright only marks it flaky) | ✅ | no |

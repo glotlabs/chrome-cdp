@@ -150,7 +150,7 @@ nightly job runs the scenarios against a real backend with
 - [mocks.md](mocks.md): every key of a mock file;
 - [recipes.md](recipes.md): common app flows, mocked;
 - [authoring.md](authoring.md): `history --as-scenario`, `mock record`,
-  `mock import`, `mock check`, `fmt`, `lint`;
+  `mock import`, `mock gen`, `mock check`, `fmt`, `lint`;
 - [determinism.md](determinism.md): frozen time, seeded random values;
 - [backends.md](backends.md): the same scenarios against a real backend;
 - [beyond-fetch.md](beyond-fetch.md): WebSockets, Server-Sent Events,

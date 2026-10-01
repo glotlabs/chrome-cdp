@@ -129,6 +129,60 @@ The same conversion, from a HAR file: `chrome-cdp har stop`, the DevTools
 Network panel's "Save all as HAR", or Playwright's `recordHar`. The mock
 file is `<mocks dir>/<HAR's name>.toml` unless `-o` says otherwise.
 
+## Mocks from an OpenAPI spec: `mock gen`
+
+```
+$ chrome-cdp mock gen --openapi api/openapi.yaml --collections
+wrote e2e/mocks/generated.toml: 7 mocks, 2 collections, 2 data files (2 TODOs)
+next: chrome-cdp mock use generated
+warning: TODO getAvatar: the answer is image/png, which the spec gives no example of: add a body (body, body_file or file)
+warning: TODO collection todos: $[].code: pattern ^[A-Z]{3}$ is not honored
+```
+
+For a project that has a spec (OpenAPI 3.x or Swagger 2.0, JSON or YAML;
+`openapi` in `[e2e]` when `--openapi` is not given) and no mocks yet. It
+writes `generated.toml` in the mocks directory (`-o` names another file;
+it does not overwrite one without `--force`):
+
+- **one `[[mock]]` per operation**, named by its `operationId` (else
+  `GET /pets/{id}`), matching its method and path (`{id}` is `:id`, under
+  the first server's path) and answering its lowest 2xx status (200 when
+  the spec lists only `default`);
+- **the body** is the media type's `example`, else the first of its
+  `examples`, else built from the schema, where a schema's own `example`
+  wins at every level and the rest is generated: `default`, `enum[0]` or
+  `const`; objects with all their properties; arrays of two items (or
+  `minItems`); strings by `format` (`date-time` from 2026-01-01 plus the
+  seed in hours, a seeded `uuid`, `user1@example.com`,
+  `https://example.com/…`, `192.0.2.1`, base64 for `byte`), else the
+  property's name and a counter (`name-1`) within `minLength` and
+  `maxLength`; numbers in `[minimum, maximum]` (1–100 by default), a
+  multiple of `multipleOf`; `true`; the first of `oneOf`/`anyOf`, all of
+  `allOf`. `$ref`s are followed until a cycle or a depth of 8: the
+  property is left out there (`null` if it is required and nullable,
+  else `{}` or `[]`);
+- bodies over 100 characters go to `data/<set>/<operation>.json`; an
+  answer with no JSON body (204, an image, text) has its status and an
+  empty (or the example's) body;
+- `[settings] scope` is the servers' paths (`/v1/**`), else the paths'
+  first segments; `--scope GLOB` generates only the operations whose path
+  it matches.
+
+The values are deterministic: each operation draws from a generator
+seeded by `--seed` (default 1) and its name, so the same spec and seed
+give the same bytes, and a new operation leaves the others alone. What
+the generator cannot make fit the spec (a `pattern`, a binary body, an
+example the schema refuses) is a `# TODO:` comment above its mock, and is
+listed. The file is then checked against the spec, as `mock check` would.
+
+`--collections` makes each list and item path pair (`/pets` with a GET,
+`/pets/{id}` with a GET) one `[[collection]]` of three generated items
+instead of mocks, so create-then-list flows work: its `id` key is `id`
+(or the item parameter's name, if only that is a property), a list body
+that wraps the array in an object gets `list = { wrap = "…" }`, and a
+nested pair (`/users/{userId}/todos`) gets `params` naming the field each
+parent id is in (`{ userId = "user_id" }`).
+
 ## Keeping mocks right: `mock check`
 
 ```
@@ -152,6 +206,7 @@ It checks every mock file in the mocks directory (or the sets named):
 | `openapi-method` | error | the path has no such method |
 | `openapi-status` | error | the operation does not list the status (exact, `4XX` or `default`) |
 | `openapi-body` | error | the JSON body does not fit the response schema |
+| `openapi-uncovered` | warning | an operation of the spec that no mock or collection stands for (the first 20, then a count) |
 
 With `openapi = "api/openapi.yaml"` in `[e2e]` (or `--openapi FILE`), every
 mock's path, method, status and JSON body (inline, or a data file whose
@@ -161,13 +216,25 @@ OpenAPI 3 or Swagger 2, JSON or YAML; paths are matched below the servers'
 (or `basePath`'s) path, so `/api/products/:id` is `/products/{id}` of a
 server at `/api`. Bodies are checked for their shape (types, required and
 unknown properties, enums, array items, `allOf`/`anyOf`/`oneOf`, local
-`$ref`s); template strings stand for any value. Collections' paths and
-seed items are checked too.
+`$ref`s); template strings stand for any value. Collections' paths (with
+any method) and seed items are checked too. A set scoped to full URLs
+that none of the spec's servers is under (a third party's mocks, such as
+`http://127.0.0.1:*/v1/**`) is not checked against it.
+
+`openapi-uncovered` names each operation of the spec that no mock or
+collection of the checked sets stands for: a mock whose path and method
+land on that operation (`/api/products/:id`, `/api/products/7`). A
+catch-all such as `path = "/api/**"` answers every operation and stands
+for none, so an `errors/api-down` set does not hide the gaps.
 
 Errors exit 1, warnings alone 0; `--json` has every problem with its
 `file`, `line`, `col`, `severity`, `rule`, `message` and `hint`.
 `chrome-cdp test` runs the check on the sets it uses before it starts a
-browser, stops on errors and shows the warnings.
+browser, stops on errors and shows the warnings; the operations with no
+mock are one line (`12 spec operations have no mock (chrome-cdp mock
+check … --openapi to list)`). `mock_check` in `[e2e]` says what stops the
+run: `"errors"` (the default), `"warnings"` (for CI that wants the mocks
+to follow the spec), or `"off"` (no check).
 
 ## Tidy files: `fmt`
 

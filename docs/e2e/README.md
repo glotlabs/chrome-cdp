@@ -12,7 +12,7 @@ small React app.
 | [scenarios.md](scenarios.md) | scenario files: directives, `expect request`, the checks the runner adds, running and output |
 | [mocks.md](mocks.md) | every key of a mock file (generated from [the JSON Schema](mocks.schema.json)) |
 | [recipes.md](recipes.md) | authentication, pagination, file upload, optimistic UI, polling, feature flags, error states |
-| [authoring.md](authoring.md) | `history --as-scenario`, `mock record`, `mock import`, `mock check`, `fmt`, `lint` |
+| [authoring.md](authoring.md) | `history --as-scenario`, `mock record`, `mock import`, `mock gen`, `mock check`, `fmt`, `lint` |
 | [debugging.md](debugging.md) | artifacts, `report.md`, reporters, `--debug`, `--watch` |
 | [determinism.md](determinism.md) | frozen time, seeded random values, no animations, `--repeat`, fonts |
 | [healing.md](healing.md) | fingerprints, the likely element of a broken locator, `--heal`, `heal.patch` and `--write` |
