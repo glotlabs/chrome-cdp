@@ -1,0 +1,368 @@
+$ chrome-cdp convert <convert>/playwright-todomvc/integration.spec.ts --max-chars 0
+exit: 0
+--- stdout
+# Converted from <convert>/playwright-todomvc/integration.spec.ts by chrome-cdp convert: check the TODO lines.
+# Run it with chrome-cdp test: each test gets a fresh browser context.
+
+@before
+  goto https://demo.playwright.dev/todomvc
+
+@test "New Todo > should allow me to add todo items"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  expect testid=todo-title count 1
+  expect 'testid=todo-title >> nth=0' text 'buy some cheese' --exact
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  expect testid=todo-title count 2
+  expect 'testid=todo-title >> nth=0' text 'buy some cheese' --exact
+  expect 'testid=todo-title >> nth=1' text 'feed the cat' --exact
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(2)"
+
+@test "New Todo > should clear text input field when an item is added"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  expect 'placeholder=What needs to be done?' value ''
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(1)"
+
+@test "New Todo > should append new items to the bottom of the list"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  expect 'text=3 items left' visible
+  expect testid=todo-count text '3 items left' --exact
+  expect testid=todo-count text 3
+  expect testid=todo-count text /3/
+  expect testid=todo-title count 3
+  expect 'testid=todo-title >> nth=0' text 'buy some cheese' --exact
+  expect 'testid=todo-title >> nth=1' text 'feed the cat' --exact
+  expect 'testid=todo-title >> nth=2' text 'book a doctors appointment' --exact
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(3)"
+
+@test "New Todo > should show #main and #footer when items added"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  expect .main visible
+  expect .footer visible
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(1)"
+
+@test "Mark all as completed > should allow me to mark all items as completed"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(3)"
+  check 'label=Mark all as complete'
+  expect testid=todo-item count 3
+  expect 'testid=todo-item >> nth=0' attr class completed
+  expect 'testid=todo-item >> nth=1' attr class completed
+  expect 'testid=todo-item >> nth=2' attr class completed
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).filter((todo) => todo.completed).length === e;\n  })(3)"
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(3)"
+
+@test "Mark all as completed > should allow me to clear the complete state of all items"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(3)"
+  check 'label=Mark all as complete'
+  uncheck 'label=Mark all as complete'
+  expect testid=todo-item count 3
+  expect 'testid=todo-item >> nth=0' class '/^$/'
+  expect 'testid=todo-item >> nth=1' class '/^$/'
+  expect 'testid=todo-item >> nth=2' class '/^$/'
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(3)"
+
+@test "Mark all as completed > complete all checkbox should update state when items are completed / cleared"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(3)"
+  check 'label=Mark all as complete'
+  expect 'label=Mark all as complete' checked
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).filter((todo) => todo.completed).length === e;\n  })(3)"
+  uncheck 'testid=todo-item >> nth=0 >> role=checkbox'
+  expect 'label=Mark all as complete' checked --not
+  check 'testid=todo-item >> nth=0 >> role=checkbox'
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).filter((todo) => todo.completed).length === e;\n  })(3)"
+  expect 'label=Mark all as complete' checked
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(3)"
+
+@test "Item > should allow me to mark items as complete"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  check 'testid=todo-item >> nth=0 >> role=checkbox'
+  expect 'testid=todo-item >> nth=0' attr class completed
+  expect 'testid=todo-item >> nth=1' attr class completed --not
+  check 'testid=todo-item >> nth=1 >> role=checkbox'
+  expect 'testid=todo-item >> nth=0' attr class completed
+  expect 'testid=todo-item >> nth=1' attr class completed
+
+@test "Item > should allow me to un-mark items as complete"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  check 'testid=todo-item >> nth=0 >> role=checkbox'
+  expect 'testid=todo-item >> nth=0' attr class completed
+  expect 'testid=todo-item >> nth=1' attr class completed --not
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).filter((todo) => todo.completed).length === e;\n  })(1)"
+  uncheck 'testid=todo-item >> nth=0 >> role=checkbox'
+  expect 'testid=todo-item >> nth=0' attr class completed --not
+  expect 'testid=todo-item >> nth=1' attr class completed --not
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).filter((todo) => todo.completed).length === e;\n  })(0)"
+
+@test "Item > should allow me to edit an item"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  dblclick 'testid=todo-item >> nth=1'
+  expect 'testid=todo-item >> nth=1 >> role=textbox[name=Edit]' value 'feed the cat'
+  fill 'testid=todo-item >> nth=1 >> role=textbox[name=Edit]' 'buy some sausages'
+  press Enter --in 'testid=todo-item >> nth=1 >> role=textbox[name=Edit]'
+  expect testid=todo-item count 3
+  expect 'testid=todo-item >> nth=0' text 'buy some cheese' --exact
+  expect 'testid=todo-item >> nth=1' text 'buy some sausages' --exact
+  expect 'testid=todo-item >> nth=2' text 'book a doctors appointment' --exact
+  wait --fn "(t => {\n    return JSON.parse(localStorage['react-todos']).map((todo) => todo.title).includes(t);\n  })(\"buy some sausages\")"
+
+@test "Editing > should hide other controls when editing"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(3)"
+  dblclick 'testid=todo-item >> nth=1'
+  expect 'testid=todo-item >> nth=1 >> role=checkbox' visible --not
+  expect 'testid=todo-item >> nth=1 >> css=label >> has-text=feed the cat' visible --not
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(3)"
+
+@test "Editing > should save edits on blur"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(3)"
+  dblclick 'testid=todo-item >> nth=1'
+  fill 'testid=todo-item >> nth=1 >> role=textbox[name=Edit]' 'buy some sausages'
+  eval --in 'testid=todo-item >> nth=1 >> role=textbox[name=Edit]' 'el => el.dispatchEvent(new Event("blur", { bubbles: true }))'
+  expect testid=todo-item count 3
+  expect 'testid=todo-item >> nth=0' text 'buy some cheese' --exact
+  expect 'testid=todo-item >> nth=1' text 'buy some sausages' --exact
+  expect 'testid=todo-item >> nth=2' text 'book a doctors appointment' --exact
+  wait --fn "(t => {\n    return JSON.parse(localStorage['react-todos']).map((todo) => todo.title).includes(t);\n  })(\"buy some sausages\")"
+
+@test "Editing > should trim entered text"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(3)"
+  dblclick 'testid=todo-item >> nth=1'
+  fill 'testid=todo-item >> nth=1 >> role=textbox[name=Edit]' '    buy some sausages    '
+  press Enter --in 'testid=todo-item >> nth=1 >> role=textbox[name=Edit]'
+  expect testid=todo-item count 3
+  expect 'testid=todo-item >> nth=0' text 'buy some cheese' --exact
+  expect 'testid=todo-item >> nth=1' text 'buy some sausages' --exact
+  expect 'testid=todo-item >> nth=2' text 'book a doctors appointment' --exact
+  wait --fn "(t => {\n    return JSON.parse(localStorage['react-todos']).map((todo) => todo.title).includes(t);\n  })(\"buy some sausages\")"
+
+@test "Editing > should remove the item if an empty text string was entered"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(3)"
+  dblclick 'testid=todo-item >> nth=1'
+  fill 'testid=todo-item >> nth=1 >> role=textbox[name=Edit]' ''
+  press Enter --in 'testid=todo-item >> nth=1 >> role=textbox[name=Edit]'
+  expect testid=todo-item count 2
+  expect 'testid=todo-item >> nth=0' text 'buy some cheese' --exact
+  expect 'testid=todo-item >> nth=1' text 'book a doctors appointment' --exact
+
+@test "Editing > should cancel edits on escape"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(3)"
+  dblclick 'testid=todo-item >> nth=1'
+  fill 'testid=todo-item >> nth=1 >> role=textbox[name=Edit]' 'buy some sausages'
+  press Escape --in 'testid=todo-item >> nth=1 >> role=textbox[name=Edit]'
+  expect testid=todo-item count 3
+  expect 'testid=todo-item >> nth=0' text 'buy some cheese' --exact
+  expect 'testid=todo-item >> nth=1' text 'feed the cat' --exact
+  expect 'testid=todo-item >> nth=2' text 'book a doctors appointment' --exact
+
+@test "Counter > should display the current number of todo items"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  expect testid=todo-count text 1
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  expect testid=todo-count text 2
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).length === e;\n  })(2)"
+
+@test "Clear completed button > should display the correct text"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  check '.todo-list li .toggle >> nth=0'
+  expect 'role=button[name=Clear completed]' visible
+
+@test "Clear completed button > should remove completed items when clicked"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  check 'testid=todo-item >> nth=1 >> role=checkbox'
+  click 'role=button[name=Clear completed]'
+  expect testid=todo-item count 2
+  expect testid=todo-item count 2
+  expect 'testid=todo-item >> nth=0' text 'buy some cheese' --exact
+  expect 'testid=todo-item >> nth=1' text 'book a doctors appointment' --exact
+
+@test "Clear completed button > should be hidden when there are no items that are completed"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  check '.todo-list li .toggle >> nth=0'
+  click 'role=button[name=Clear completed]'
+  expect 'role=button[name=Clear completed]' hidden
+
+@test "Persistence > should persist its data"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  check 'testid=todo-item >> nth=0 >> role=checkbox'
+  expect testid=todo-item count 2
+  expect 'testid=todo-item >> nth=0' text 'buy some cheese' --exact
+  expect 'testid=todo-item >> nth=1' text 'feed the cat' --exact
+  expect testid=todo-item count 2
+  expect 'testid=todo-item >> nth=0' attr class completed
+  expect 'testid=todo-item >> nth=1' class '/^$/'
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).filter((todo) => todo.completed).length === e;\n  })(1)"
+  reload
+  expect testid=todo-item count 2
+  expect 'testid=todo-item >> nth=0' text 'buy some cheese' --exact
+  expect 'testid=todo-item >> nth=1' text 'feed the cat' --exact
+  expect testid=todo-item count 2
+  expect 'testid=todo-item >> nth=0' attr class completed
+  expect 'testid=todo-item >> nth=1' class '/^$/'
+
+@test "Routing > should allow me to display active items"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  wait --fn "(t => {\n    return JSON.parse(localStorage['react-todos']).map((todo) => todo.title).includes(t);\n  })(\"buy some cheese\")"
+  check '.todo-list li .toggle >> nth=1'
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).filter((todo) => todo.completed).length === e;\n  })(1)"
+  click 'role=link[name=Active]'
+  expect testid=todo-item count 2
+  expect testid=todo-item count 2
+  expect 'testid=todo-item >> nth=0' text 'buy some cheese' --exact
+  expect 'testid=todo-item >> nth=1' text 'book a doctors appointment' --exact
+
+@test "Routing > should respect the back button"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  wait --fn "(t => {\n    return JSON.parse(localStorage['react-todos']).map((todo) => todo.title).includes(t);\n  })(\"buy some cheese\")"
+  check '.todo-list li .toggle >> nth=1'
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).filter((todo) => todo.completed).length === e;\n  })(1)"
+  # step: Showing all items
+  click 'role=link[name=All]'
+  expect testid=todo-item count 3
+  # step: Showing active items
+  click 'role=link[name=Active]'
+  # step: Showing completed items
+  click 'role=link[name=Completed]'
+  expect testid=todo-item count 1
+  back
+  expect testid=todo-item count 2
+  back
+  expect testid=todo-item count 3
+
+@test "Routing > should allow me to display completed items"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  wait --fn "(t => {\n    return JSON.parse(localStorage['react-todos']).map((todo) => todo.title).includes(t);\n  })(\"buy some cheese\")"
+  check '.todo-list li .toggle >> nth=1'
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).filter((todo) => todo.completed).length === e;\n  })(1)"
+  click 'role=link[name=Completed]'
+  expect testid=todo-item count 1
+
+@test "Routing > should allow me to display all items"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  wait --fn "(t => {\n    return JSON.parse(localStorage['react-todos']).map((todo) => todo.title).includes(t);\n  })(\"buy some cheese\")"
+  check '.todo-list li .toggle >> nth=1'
+  wait --fn "(e => {\n    return JSON.parse(localStorage['react-todos']).filter((todo) => todo.completed).length === e;\n  })(1)"
+  click 'role=link[name=Active]'
+  click 'role=link[name=Completed]'
+  click 'role=link[name=All]'
+  expect testid=todo-item count 3
+
+@test "Routing > should highlight the currently applied filter"
+  fill 'placeholder=What needs to be done?' 'buy some cheese'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'feed the cat'
+  press Enter --in 'placeholder=What needs to be done?'
+  fill 'placeholder=What needs to be done?' 'book a doctors appointment'
+  press Enter --in 'placeholder=What needs to be done?'
+  wait --fn "(t => {\n    return JSON.parse(localStorage['react-todos']).map((todo) => todo.title).includes(t);\n  })(\"buy some cheese\")"
+  expect 'role=link[name=All]' attr class selected
+  click 'role=link[name=Active]'
+  expect 'role=link[name=Active]' attr class selected
+  click 'role=link[name=Completed]'
+  expect 'role=link[name=Completed]' attr class selected
+

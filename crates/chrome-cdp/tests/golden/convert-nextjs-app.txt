@@ -1,0 +1,12 @@
+$ chrome-cdp convert <convert>/nextjs-with-playwright/app.spec.ts --max-chars 0
+exit: 0
+--- stdout
+# Converted from <convert>/nextjs-with-playwright/app.spec.ts by chrome-cdp convert: check the TODO lines.
+# Run it with chrome-cdp test: each test gets a fresh browser context.
+
+@test "should navigate to the about page"
+  goto /
+  click text=About
+  expect --url /about
+  expect css=h1 text About
+

@@ -1,0 +1,28 @@
+$ chrome-cdp convert <convert>/freecodecamp/academic-honesty.spec.ts --max-chars 0
+exit: 0
+--- stdout
+# Converted from <convert>/freecodecamp/academic-honesty.spec.ts by chrome-cdp convert: check the TODO lines.
+# Run it with chrome-cdp test: each test gets a fresh browser context.
+
+# beforeEach: no step to run
+# TODO line 6 (the userPreset option): test.use({ userPreset: 'development' });
+
+@test "When the user has not accepted the Academic Honesty Policy > they should be able to accept it"
+  goto '/settings#honesty'
+  # TODO line 11 (a value computed at run time): const agreeButton = page.getByRole('button', { name: translations.buttons['agree-honesty'] });
+  # TODO line 14 (agreeButton is set on line 11, which convert could not translate (a value computed at run time)): await agreeButton.click();
+  # TODO line 16 (a value computed at run time): await expect( page.getByRole('button', { name: translations.buttons['accepted-honesty'] }) ).toBeVisible();
+
+@test "When the user has not accepted the Academic Honesty Policy > Should show an error message"
+  goto '/settings#cert-responsive-web-design'
+  click 'role=button[name=Claim Certification Legacy Responsive Web Design V8]'
+  # TODO line 31 (alertToBeVisible() is not defined in this file: inline its steps): await alertToBeVisible(page, translations.flash['honest-first']);
+  # TODO line 33 (a value computed at run time): const agreeButton = page.getByRole('button', { name: translations.buttons['agree-honesty'] });
+  # TODO line 36 (agreeButton is set on line 33, which convert could not translate (a value computed at run time)): await agreeButton.click();
+  # TODO line 37 (alertToBeVisible() is not defined in this file: inline its steps): await alertToBeVisible(page, translations.buttons['accepted-honesty']);
+  reload
+  click 'role=button[name=Claim Certification Legacy Responsive Web Design V8]'
+  # TODO line 43 (alertToBeVisible() is not defined in this file: inline its steps): await alertToBeVisible( page, 'It looks like you have not completed the necessary steps. Please complete the required p…
+--- stderr
+warning: 9 TODO lines: statements convert could not translate; rewrite them before running the script
+

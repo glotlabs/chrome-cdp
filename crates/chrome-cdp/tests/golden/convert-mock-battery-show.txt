@@ -1,0 +1,15 @@
+$ chrome-cdp convert <convert>/playwright-examples/mock-battery/show-battery-status.spec.js --max-chars 0
+exit: 0
+--- stdout
+# Converted from <convert>/playwright-examples/mock-battery/show-battery-status.spec.js by chrome-cdp convert: check the TODO lines.
+# Run it with chrome-cdp test: each test gets a fresh browser context.
+
+@before
+  init-script add --code "(() => {\n    const mockBattery = {\n      level: 0.90,\n      charging: true,\n      chargingTime: 1800, // seconds\n      dischargingTime: Infinity,\n      addEventListener: () => { }\n    };\n    // application tries navigator.battery first\n    // so we delete this method\n    delete window.navigator.battery;\n    // Override the method to always return mock battery info.\n    window.navigator.getBattery = async () => mockBattery;\n  })()"
+
+@test "show battery status"
+  goto /
+  expect .battery-percentage text 90% --exact
+  expect .battery-status text Adapter --exact
+  expect .battery-fully text 00:30 --exact
+

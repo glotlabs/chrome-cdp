@@ -1,0 +1,22 @@
+$ chrome-cdp convert <convert>/freecodecamp/bread-crumb.spec.ts --max-chars 0
+exit: 0
+--- stdout
+# Converted from <convert>/freecodecamp/bread-crumb.spec.ts by chrome-cdp convert: check the TODO lines.
+# Run it with chrome-cdp test: each test gets a fresh browser context.
+
+@before
+  init-script add --code "(() => {\n    localStorage.setItem('hideMobileAppModal', 'true');\n  })()"
+  goto /learn/responsive-web-design-v9/workshop-cat-photo-app/step-2
+
+@test "Challenge Breadcrumb Tests > should display correctly"
+  # TODO line 42 (conditions and loops: split into scripts, or drive chrome-cdp from a shell): if (!isMobile) { await expect(page.getByTestId('breadcrumb-mobile')).toBeHidden(); await expect(page.getByTestId('bread…
+  expect testid=breadcrumb-desktop hidden
+  expect 'testid=breadcrumb-mobile >> role=listitem >> nth=0' visible
+  expect 'testid=breadcrumb-mobile >> role=listitem >> nth=0 >> role=link[name=Responsive Web Design Certification]' visible
+  expect 'testid=breadcrumb-mobile >> role=listitem >> nth=0 >> role=link[name=Responsive Web Design Certification]' attr href /learn/responsive-web-design-v9
+  expect 'testid=breadcrumb-mobile >> role=listitem >> nth=0' visible
+  expect 'testid=breadcrumb-mobile >> role=listitem >> nth=-1 >> role=link[name=Build a Cat Photo App]' visible
+  expect 'testid=breadcrumb-mobile >> role=listitem >> nth=-1 >> role=link[name=Build a Cat Photo App]' attr href '/learn/responsive-web-design-v9/#workshop-cat-photo-app'
+--- stderr
+warning: 1 TODO line: statements convert could not translate; rewrite them before running the script
+

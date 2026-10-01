@@ -1,0 +1,23 @@
+$ chrome-cdp convert <convert>/freecodecamp/delete-modal.spec.ts --max-chars 0
+exit: 0
+--- stdout
+# Converted from <convert>/freecodecamp/delete-modal.spec.ts by chrome-cdp convert: check the TODO lines.
+# Run it with chrome-cdp test: each test gets a fresh browser context.
+
+@before
+  goto /settings
+
+# afterAll: no step to run
+# TODO line 15 (execP() is not a Playwright call): async () => await Promise.all([ execP('node ../tools/scripts/seed/seed-demo-user --certified-user'), execP('node ../too…
+
+@test "Delete Modal component > should close the modal and sign the user out after they fill in the verify input text and click delete"
+  # TODO line 27 (a value computed at run time): await page .getByRole('button', { name: translations.settings.danger.delete }) .click();
+  # TODO line 31 (a value computed at run time): await expect( page.getByRole('dialog', { name: translations.settings.danger['delete-title'] }) ).toBeVisible();
+  # TODO line 37 (a value computed at run time): const verifyDeleteText = translations.settings.danger['verify-delete-text'];
+  # TODO line 42 (verifyDeleteText is set on line 37, which convert could not translate (a value computed at run time)): await verifyDeleteInput.fill(verifyDeleteText);
+  # TODO line 44 (a value computed at run time): await page .getByRole('button', { name: translations.settings.danger.certain }) .click();
+  # TODO line 48 (a value computed at run time): await expect( page.getByRole('dialog', { name: translations.settings.danger['delete-title'] }) ).not.toBeVisible();
+  expect 'role=link[name=Sign in] >> nth=0' visible
+--- stderr
+warning: 7 TODO lines: statements convert could not translate; rewrite them before running the script
+

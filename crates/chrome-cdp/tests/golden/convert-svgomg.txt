@@ -1,0 +1,64 @@
+$ chrome-cdp convert <convert>/playwright-examples/svgomg/example.spec.ts --max-chars 0
+exit: 0
+--- stdout
+# Converted from <convert>/playwright-examples/svgomg/example.spec.ts by chrome-cdp convert: check the TODO lines.
+# Run it with chrome-cdp test: each test gets a fresh browser context.
+
+@before
+  goto https://demo.playwright.dev/svgomg
+
+@test "verify menu items"
+  expect '.menu li' count 4
+  expect '.menu li >> nth=0' text 'Open SVG' --exact
+  expect '.menu li >> nth=1' text 'Paste markup' --exact
+  expect '.menu li >> nth=2' text Demo --exact
+  expect '.menu li >> nth=3' text Contribute --exact
+
+@test "demo tests > verify default global settings"
+  click '.menu-item >> text=Demo'
+  expect '.settings-scroller .global .setting-item-toggle' count 4
+  expect '.settings-scroller .global .setting-item-toggle >> nth=0' text 'Show original' --exact
+  expect '.settings-scroller .global .setting-item-toggle >> nth=1' text 'Compare gzipped' --exact
+  expect '.settings-scroller .global .setting-item-toggle >> nth=2' text 'Prettify markup' --exact
+  expect '.settings-scroller .global .setting-item-toggle >> nth=3' text Multipass --exact
+  expect '.setting-item-toggle >> text=Show original' checked --not
+  expect '.setting-item-toggle >> text=Compare gzipped' checked
+  expect '.setting-item-toggle >> text=Prettify markup' checked --not
+  expect '.setting-item-toggle >> text=Multipass' checked --not
+
+@test "demo tests > verify default features"
+  click '.menu-item >> text=Demo'
+  expect '.setting-item-toggle >> text=Clean up attribute whitespace' checked
+  expect '.setting-item-toggle >> text=Clean up IDs' checked
+  expect '.setting-item-toggle >> text=Collapse useless groups' checked
+  expect '.setting-item-toggle >> text=Convert non-eccentric <ellipse> to <circle>' checked
+  expect '.setting-item-toggle >> text=Inline styles' checked
+  expect '.setting-item-toggle >> text=Prefer viewBox to width/height' checked --not
+  expect '.setting-item-toggle >> text=Remove raster images' checked --not
+  expect '.setting-item-toggle >> text=Remove script elements' checked --not
+  expect '.setting-item-toggle >> text=Remove style elements' checked --not
+
+@test "demo tests > reset settings"
+  click '.menu-item >> text=Demo'
+  click '.setting-item-toggle >> text=Show original'
+  expect '.setting-item-toggle >> text=Show original' checked
+  click 'css=button >> text=Reset all'
+  expect '.setting-item-toggle >> text=Show original' checked --not
+
+@test "demo tests > download result"
+  click '.menu-item >> text=Demo'
+  expect 'css=a[title=Download]' attr href /blob/
+  click 'css=a[title=Download]'
+  wait --download
+  # TODO line 84 (toBe on a value, not a locator: compare a command's -q output in a shell): expect(download.suggestedFilename()).toBe('car-lite.svg');
+  # TODO line 85 (a value the script cannot keep): const result = fs.readFileSync(await download.path(), 'utf-8');
+  # TODO line 86 (toContain on a value, not a locator: compare a command's -q output in a shell): expect(result).toContain('<svg');
+
+@test "open svg" @skip "convert: rewrite its TODO lines"
+  # TODO line 92 (upload <button> <file> clicks it and answers the chooser): const [fileChooser] = await Promise.all([ page.waitForEvent('filechooser'), page.click('text=Open SVG'), ]);
+  # TODO line 98 (fileChooser is set on line 92, which convert could not translate (upload <button> <file> clicks it and answers the chooser)): await fileChooser.setFiles({ name: 'file.svg', mimeType: 'image/svg+xml', buffer: Buffer.from(`<svg xmlns="http://www.w…
+  # TODO line 105 (the frame .svg-frame: frame= takes the frame's name, id or a part of its URL): const markup = await page.frameLocator('.svg-frame').locator('svg').evaluate(svg => svg.outerHTML);
+  # TODO line 106 (toMatch on a value, not a locator: compare a command's -q output in a shell): expect(markup).toMatch(/<svg.*<\/svg>/);
+--- stderr
+warning: 7 TODO lines: statements convert could not translate; rewrite them before running the script
+

@@ -1,0 +1,29 @@
+$ chrome-cdp convert <convert>/freecodecamp/portfolio.spec.ts --max-chars 0
+exit: 0
+--- stdout
+# Converted from <convert>/freecodecamp/portfolio.spec.ts by chrome-cdp convert: check the TODO lines.
+# Run it with chrome-cdp test: each test gets a fresh browser context.
+
+# beforeEach: no step to run
+# TODO line 4 (the userPreset option): test.use({ userPreset: 'certified' });
+
+@test "Portfolio item management > It should be possible to add and remove a portfolio item"
+  # TODO line 11 (a value computed at run time): await page.goto(`/${isolatedUser.username}`);
+  # TODO line 13 (a value computed at run time): await page .getByRole('button', { name: translations.aria['add-portfolio'] }) .click();
+  # TODO line 16 (a value computed at run time): await expect( page.getByLabel(translations.settings.labels.title) ).toBeVisible();
+  # TODO line 20 (a value computed at run time): await page .getByLabel(translations.settings.labels.title) .fill('My portfolio');
+  # TODO line 23 (a value computed at run time): await page .getByLabel(translations.settings.labels.url) .fill('https://my-portfolio.com');
+  # TODO line 26 (a value computed at run time): await page .getByLabel(translations.settings.labels.image) .fill( 'https://cdn.freecodecamp.org/universal/favicons/favi…
+  # TODO line 31 (a value computed at run time): await page .getByLabel(translations.settings.labels.description) .fill('My description');
+  # TODO line 35 (a value computed at run time): const saveButton = page.getByRole('button', { name: translations.buttons['save-portfolio'] });
+  # TODO line 38 (saveButton is set on line 35, which convert could not translate (a value computed at run time)): await expect(saveButton).toBeEnabled();
+  # TODO line 39 (saveButton is set on line 35, which convert could not translate (a value computed at run time)): await saveButton.click();
+  expect 'role=alert >> nth=0' text '/We have updated your portfolio/'
+  expect 'role=link[name=/My portfolio/]' visible
+  # TODO line 48 (a value computed at run time): await page .getByRole('button', { name: translations.aria['edit-portfolio'] }) .click();
+  # TODO line 51 (a value computed at run time): await page .getByRole('button', { name: translations.buttons['remove-portfolio'] }) .click();
+  expect 'role=alert >> nth=0' text '/We have updated your portfolio/'
+  expect 'role=link[name=/My portfolio/]' visible --not
+--- stderr
+warning: 13 TODO lines: statements convert could not translate; rewrite them before running the script
+

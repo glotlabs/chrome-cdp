@@ -470,6 +470,45 @@ fn a_converted_playwright_test_passes_with_chrome_cdp_test() {
     assert!(text.contains("\n2 tests: 2 passed ("), "{text}");
 }
 
+/// Playwright's TodoMVC suite (testdata/convert), converted without a TODO
+/// line, passes on a TodoMVC with the demo app's DOM: what convert writes
+/// is right, not only well-formed.
+#[test]
+fn the_converted_todomvc_suite_passes() {
+    let Some(chrome) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let spec = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../testdata/convert/playwright-todomvc/integration.spec.ts");
+    let out = sandbox.run(&[
+        "convert",
+        spec.to_str().unwrap(),
+        "--json",
+        "--max-chars",
+        "0",
+    ]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let data = &common::json_out(&out)["data"];
+    assert_eq!(data["tests"], 25);
+    assert_eq!(data["todos"].as_array().unwrap().len(), 0, "{data}");
+    let script = data["script"].as_str().unwrap().replace(
+        "https://demo.playwright.dev/todomvc",
+        &site.url("/convert/todomvc.html"),
+    );
+    let root = sandbox.dir.path().join("app");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("todomvc.cdp"), script).unwrap();
+    let out = common::run(
+        sandbox
+            .cli()
+            .current_dir(&root)
+            .args(["test", "todomvc.cdp"]),
+    );
+    let text = stdout(&out);
+    assert_eq!(code(&out), 0, "{text}\n{}", stderr(&out));
+    assert!(text.contains("\n25 tests: 25 passed ("), "{text}");
+}
+
 #[test]
 fn expect_perf_is_a_step_like_any_other() {
     let Some(chrome) = chrome_path() else { return };
