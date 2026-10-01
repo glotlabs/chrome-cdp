@@ -89,8 +89,8 @@ fn a_request_open_when_a_step_acted_is_unsettled() {
     assert_eq!(
         flake.evidence,
         [
-            "`GET /api/price` was still open when `click \"Pay\"` (flaky.cdp:6:3) started, in all 2 failing runs; in some it was never answered",
-            "in all 2 passing runs it was answered before the step started (20ms before, at the closest)",
+            "`GET /api/price` was still open when `click \"Pay\"` (flaky.cdp:6:3) acted, in all 2 failing runs; in some it was never answered",
+            "in all 2 passing runs it was answered before the step acted (70ms before, at the closest)",
             "`goto /flaky.html` (flaky.cdp:5:3) sent it",
         ]
     );

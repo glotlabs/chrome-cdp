@@ -8,7 +8,7 @@
 //!
 //! | Cause | Rule |
 //! |---|---|
-//! | `unsettled` | a request open when a step (an action, or the failing step) started in failing runs was answered before it in every passing run |
+//! | `unsettled` | a request open when a step (an action, or the failing step) acted in failing runs was answered before it acted in every passing run |
 //! | `race` | two API requests were answered in one order in failing runs and in the other in every passing run |
 //! | `moving-target` | the failing step's element was moving, covered or replaced |
 //! | `different-requests` | failing runs sent a request no passing run sent (or not one every passing run sent), or one no mock answered |
@@ -320,11 +320,19 @@ fn response_pattern(key: &str) -> String {
 /// the key the run sent before it.
 type RequestId = (String, usize);
 
+/// `run`'s requests the page sent: not the browser's own favicon fetch,
+/// which comes in some runs only.
+fn sent(run: &RunRecord) -> impl Iterator<Item = &Timed> {
+    run.requests.iter().filter(|r| {
+        let path = r.url.split(['?', '#']).next().unwrap_or_default();
+        !path.ends_with("/favicon.ico")
+    })
+}
+
 /// `run`'s requests with their identity.
 fn requests(run: &RunRecord) -> Vec<(RequestId, &Timed)> {
     let mut seen: Vec<String> = Vec::new();
-    run.requests
-        .iter()
+    sent(run)
         .map(|r| {
             let key = request_key(r);
             let nth = seen.iter().filter(|k| **k == key).count();
@@ -350,9 +358,11 @@ fn of(n: usize, total: usize, what: &str) -> String {
     }
 }
 
-/// Acted before the page settled: a request was open when a step started
-/// in failing runs, and answered before it started in every passing run.
-/// The steps looked at are the actions up to the failing step, and it.
+/// Acted before the page settled: a request sent before a step started
+/// was still open when the step acted in failing runs, and answered
+/// before it acted in every passing run.
+/// A step acts when it ends, after waiting for its element; the steps
+/// looked at are the actions up to the failing step, and it.
 fn unsettled(here: &[Failed<'_>], passing: &[&RunRecord]) -> Option<Found> {
     /// The request that fits best so far.
     struct Best {
@@ -379,29 +389,31 @@ fn unsettled(here: &[Failed<'_>], passing: &[&RunRecord]) -> Option<Found> {
             continue;
         }
         let key = step_key(steps, index);
-        // Every passing run ran the step: when it started there.
-        let Some(passed_starts) = passing
+        // Every passing run ran the step: when it acted there.
+        let Some(passed_acts) = passing
             .iter()
-            .map(|p| find_step(&p.steps, key).map(|at| (*p, start(&p.steps[at]))))
+            .map(|p| find_step(&p.steps, key).map(|at| (*p, end(&p.steps[at]))))
             .collect::<Option<Vec<_>>>()
         else {
             continue;
         };
-        // The requests open when it started, in each failing run, with
-        // how long after its start they were answered (`None`: never).
+        // The requests open when it acted, in each failing run, with how
+        // long after that they were answered (`None`: never).
         let mut open: Vec<(RequestId, usize, Option<i64>)> = Vec::new();
         for failed in here {
             let Some(at) = find_step(&failed.run.steps, key) else {
                 continue;
             };
-            let began = start(&failed.run.steps[at]);
+            // Sent before the step started (not by the step), and not
+            // answered when it acted.
+            let (began, acted) = (start(&failed.run.steps[at]), end(&failed.run.steps[at]));
             for (id, request) in requests(failed.run) {
                 let is_open =
-                    request.sent_ms < began && request.answered_ms.is_none_or(|a| a > began);
+                    request.sent_ms < began && request.answered_ms.is_none_or(|a| a > acted);
                 if !is_open {
                     continue;
                 }
-                let lag = request.answered_ms.map(|a| a - began);
+                let lag = request.answered_ms.map(|a| a - acted);
                 match open.iter_mut().find(|(o, _, _)| *o == id) {
                     Some((_, runs, worst)) => {
                         *runs += 1;
@@ -417,14 +429,14 @@ fn unsettled(here: &[Failed<'_>], passing: &[&RunRecord]) -> Option<Found> {
         for (id, runs, lag) in open {
             // Answered before the step in every passing run: by how much,
             // at the closest.
-            let margins: Option<Vec<i64>> = passed_starts
+            let margins: Option<Vec<i64>> = passed_acts
                 .iter()
-                .map(|(p, began)| {
+                .map(|(p, acted)| {
                     let request = requests(p).into_iter().find(|(o, _)| *o == id)?.1;
                     request
                         .answered_ms
-                        .filter(|a| a <= began)
-                        .map(|a| began - a)
+                        .filter(|a| a <= acted)
+                        .map(|a| acted - a)
                 })
                 .collect();
             let Some(margin) = margins.and_then(|m| m.into_iter().min()) else {
@@ -445,18 +457,18 @@ fn unsettled(here: &[Failed<'_>], passing: &[&RunRecord]) -> Option<Found> {
     let key = &best.id.0;
     let step = &steps[best.step];
     let answered = match best.lag {
-        Some(lag) => format!("it was answered up to {} after", duration(lag)),
+        Some(lag) => format!("it was answered up to {} later", duration(lag)),
         None => "in some it was never answered".to_owned(),
     };
     let mut evidence = vec![
         format!(
-            "{} was still open when {} started, {}; {answered}",
+            "{} was still open when {} acted, {}; {answered}",
             shown(key),
             step_name(step),
             of(best.runs, here.len(), "failing runs"),
         ),
         format!(
-            "{} it was answered before the step started ({} before, at the closest)",
+            "{} it was answered before the step acted ({} before, at the closest)",
             of(passing.len(), passing.len(), "passing runs"),
             duration(best.margin)
         ),
@@ -631,7 +643,7 @@ fn different_requests(here: &[Failed<'_>], passing: &[&RunRecord]) -> Option<Fou
     let sent = |run: &RunRecord| -> Vec<(String, bool)> {
         let limit = limit_of(run, Some(key));
         let mut keys: Vec<(String, bool)> = Vec::new();
-        for r in run.requests.iter().filter(|r| r.sent_ms <= limit) {
+        for r in sent(run).filter(|r| r.sent_ms <= limit) {
             let k = request_key(r);
             match keys.iter_mut().find(|(o, _)| *o == k) {
                 Some((_, unmatched)) => *unmatched |= r.unmatched,
@@ -890,11 +902,7 @@ fn normalized(text: &str) -> String {
 pub(super) fn text(flake: &TestFlake) -> String {
     let mut text = String::new();
     let _ = writeln!(text, "    flaky: {}", headline(flake));
-    let _ = writeln!(
-        text,
-        "    likely cause: {} (confidence {:.2})",
-        flake.summary, flake.confidence
-    );
+    let _ = writeln!(text, "    {}", cause_line(flake));
     for line in &flake.evidence {
         let _ = writeln!(text, "      {line}");
     }
@@ -902,6 +910,18 @@ pub(super) fn text(flake: &TestFlake) -> String {
         let _ = writeln!(text, "      fix: {hint}");
     }
     text
+}
+
+/// `likely cause: requests raced (confidence 0.85)`, or `cause unknown`.
+fn cause_line(flake: &TestFlake) -> String {
+    if flake.cause == Cause::Unknown.name() {
+        "cause unknown".to_owned()
+    } else {
+        format!(
+            "likely cause: {} (confidence {:.2})",
+            flake.summary, flake.confidence
+        )
+    }
 }
 
 /// `3 of 20 runs failed at checkout.cdp:14:3 (click "Pay")`.
@@ -919,11 +939,15 @@ fn headline(flake: &TestFlake) -> String {
 pub(super) fn section(flake: &TestFlake, runs: &[RunRecord]) -> String {
     let mut md = String::from("\n## Flaky\n\n");
     let _ = writeln!(md, "{}; the others passed.\n", headline(flake));
-    let _ = writeln!(
-        md,
-        "Likely cause: **{}** (confidence {:.2})\n",
-        flake.summary, flake.confidence
-    );
+    if flake.cause == Cause::Unknown.name() {
+        md.push_str("Cause unknown: no rule fits.\n\n");
+    } else {
+        let _ = writeln!(
+            md,
+            "Likely cause: **{}** (confidence {:.2})\n",
+            flake.summary, flake.confidence
+        );
+    }
     for line in &flake.evidence {
         let _ = writeln!(md, "- {line}");
     }
