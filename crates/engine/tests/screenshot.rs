@@ -306,7 +306,7 @@ async fn viewport_element_and_full_page() {
         &engine,
         ScreenshotRequest {
             locator: Some("#nothing".into()),
-            timeout_ms: 300,
+            timeout_ms: 1000,
             ..request()
         },
     )
@@ -450,7 +450,7 @@ async fn full_page_of_an_app_that_scrolls_inside() {
     let err = shoot_err(
         &engine,
         ScreenshotRequest {
-            timeout_ms: 300,
+            timeout_ms: 1000,
             ..full(Some("#nothing"))
         },
     )
