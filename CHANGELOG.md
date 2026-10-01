@@ -30,3 +30,43 @@ the top of the GitHub release notes.
   releases, checking the archive's checksum.
 - `chrome-cdp doctor` checks Chrome, its libraries and sandbox, the
   session directory, macOS quarantine and version skew, and prints fixes.
+- Every frame, every worker (plan 13): network, routes, mocks, console,
+  errors, emulation, determinism and coverage apply to out-of-process
+  iframes and dedicated, shared and service workers, including ones that
+  attach later. `frames` prints a tab's iframes and workers.
+- Parity with Playwright (plan 14): `has=`, `has-not=`, `has-not-text=`,
+  `and=` and `or=` in locators; `locator <loc>` prints a ref's stable
+  locator; paused timers (`time pause`, `run-for`, `pause-at`);
+  `keyboard down|up`; HTML and image clipboard; directory uploads;
+  `extensions`; `open --init-script`; read commands that wait for their
+  element; HAR pages per navigation; `pdf` header and footer templates;
+  `expose` functions that return a value; WebSocket frames in `network`;
+  `expect-snapshot` templates with wildcards and regexes.
+- From page to source (plan 15): `source <loc>` (the file, line and
+  component chain behind an element, from React, Vue and Svelte debug
+  info or the stack that made the node), `components [loc]` (props and state), logpoints
+  (`debug log FILE:LINE EXPR`), `errors --locals`, request initiators in
+  `network show`, and `wait --hmr` with hot updates in action reports.
+- Seeing more (plan 16): `why <loc>` (why an action would wait),
+  `layout` and `expect --layout` (overlap, clipping, overflow, small
+  targets, contrast), `snapshot --budget` and `--expand`, `forms` and
+  `fill-form`, `compare` (two pages, one diff), and `explore` (map an
+  app).
+- Page audits (plan 17): `issues` (Chrome's Issues panel), `audit` and
+  `expect --audit` with a baseline, `expect --perf` budgets, and more
+  accessibility rules.
+- Tests that maintain themselves (plan 18): `test --heal` (writes a fix
+  for a broken locator), flake diagnosis with `--repeat`,
+  `test --ui-coverage`, `repro start|save` bundles that `test` replays
+  offline, a recorder (`record`), and `convert` on real suites.
+- Mocks (plan 19): multipart bodies, nested collections,
+  `--match-bodies` for `mock record`, `mock import` and
+  `test --record-mocks`; WebSocket and SSE recording, `mock sse send`,
+  and `mock serve` answering WebSocket upgrades; `mock serve --upstream`
+  for a hybrid backend; `mock gen --openapi` and the spec check in
+  `test` (`[e2e] mock_check`).
+
+### Changed
+
+- A mocked CORS preflight names no mock when the mock matches on headers
+  or a body, which a preflight does not show.
