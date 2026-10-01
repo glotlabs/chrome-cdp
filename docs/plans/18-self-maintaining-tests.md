@@ -1,6 +1,6 @@
 # Plan 18 — Tests that maintain themselves
 
-Status: IN PROGRESS (18.1-18.5 done)
+Status: IN PROGRESS (18.1-18.6 done)
 Depends on: 11 (the test runner, `history --as-scenario`, `mock record`), 13 (the target graph, for `record` in iframes)
 Roadmap: track 7 of [plan 12](12-after-v1.md)
 
@@ -398,8 +398,8 @@ and `convert-real-world-specs` (18.7):
       used; the numbers match a hand count on two pages.
 - [x] A repro bundle replays offline and fails at the same step with
       the same error; with the fix in its mocks it passes.
-- [ ] `record` round trip: recorded fixture flows pass with `test`.
-- [ ] No password or `${secret:…}` value appears in fingerprints,
+- [x] `record` round trip: recorded fixture flows pass with `test`.
+- [x] No password or `${secret:…}` value appears in fingerprints,
       patches, bundles or recordings (a test searches for it).
 - [ ] The track 7 backlog notes of 18.1 and 18.7 are done and their
       files deleted.
@@ -626,3 +626,66 @@ _(append here)_
   and runs with no paths, as `cd DIR; chrome-cdp test` would; relative
   inputs (`state load state.json`) then resolve there. Any other path list
   keeps the old rule.
+- 18.6 how: the recorder is the bundle's `record` (`injected/src/record.ts`),
+  called by an isolated-world script the `Injector` keeps beside its
+  binding (`Key::Recorder`, at most one, in the recorded scope), so every
+  page, same-process iframe and OOPIF session gets it like an init script.
+  The binding is added with `executionContextName`, so only chrome-cdp's
+  world has it; a report's context id finds its frame in the tab's tree,
+  and the frame its `frame=` step (`frame_step`, as `history` does). The
+  daemon keeps the raw events in arrival order and makes lines when
+  `status` or `stop` asks (`engine::record::steps`, unit-tested).
+- 18.6 the test starts with `goto` the active tab's URL at `record start`
+  (not in the plan): a test starts on a blank page.
+- 18.6 navigations: Chrome sends `Page.frameRequestedNavigation` for a
+  navigation the page asked for (a link, a form, `location`, `reload()`),
+  then `Page.frameStartedNavigating` for every one; a main-frame one not
+  asked for is a step (`goto`, `reload`, or back/forward by the Navigation
+  API's `currentEntry.index` the page reports at each document start,
+  `pageshow` and `currententrychange`). A script's `history.back()` is not
+  asked for in Chrome's sense and records as `back` (docs/e2e/recording.md
+  says so). The headless tests drive these with `Page.navigate`, `back`,
+  `forward` and `reload`; a typed URL in a real window is a note.
+- 18.6 clicks: only trusted events count, except `change` (chrome-cdp's
+  own `select` and a set-value `fill` dispatch untrusted ones). A click on
+  a label is its control's (the control's click is recorded); one on a
+  `<select>`, an option, a file input or a set-value input is left to
+  `change`; one a key made (`detail` 0 after Enter or Space) is the
+  `press`. A click becomes the nearest element around it with a role that
+  acts (a button around a span). A click on a field is dropped when the
+  field's `fill` follows it; two clicks before a `dblclick` on the same
+  element are part of it.
+- 18.6 keys: in a field only Enter (not in a textarea or contenteditable),
+  Escape and Tab, with any modifier; in a `<select>` or set-value input
+  only those too (`change` records the choice); elsewhere every key but a
+  modifier alone, named as `press` takes it (`Space`, `Shift+Equal` for
+  `+`). A `press` gets `--in LOC` when its element is not the one the step
+  before acted on, unless that step was a `press` (focus moved with it).
+- 18.6 dialogs: a dialog the session's policy answered is no step (the
+  replay's policy answers it); one answered otherwise is `dialog accept
+  [TEXT]|dismiss`. The command a confirm interrupts fails with exit 5, so
+  the runner now passes a step that failed with `DialogOpen` when the next
+  step is `dialog …` (`test/exec.rs`, `dialog_answered_next`).
+- 18.6 tabs: a tab first seen after the start that no page opened is `tab
+  new [URL]` (its first browser navigation the URL); any other switch is
+  `tab tN` with the session's id, and a popup's first load is no step. Tab
+  ids are the session's, so a test with `tab tN` replays only where the
+  ids match (a note); `tab new` replays anywhere.
+- 18.6 `record stop -o FILE` appends to FILE (made if missing), so several
+  recordings make one file and nothing is overwritten. `stop` waits 100ms
+  for reports still on their way before it ends the recording.
+- 18.6 test ids: the recorder always writes `testid=…` (`stable`'s
+  `short`): the test runs where the same config holds. `history
+  --as-scenario` now does too for a configured attribute (the
+  `history-testid-locator-form` note).
+- 18.6 secrets: a password field's value never leaves the page; the step
+  fills `"${secret:PASSWORD}"`. Double quotes, since single ones keep
+  `${…}` as text: 18.5's bundles wrote `'${secret:PASSWORD}'` and their
+  replay typed the placeholder. `history::script_word` now writes a word
+  with the placeholder or a line break in double quotes, for both, and the
+  repro test checks the field's value.
+- 18.6 tests: raw `cdp Input.*` events drive `record/form.html` (mouse by
+  `box` coordinates, `insertText`, `dispatchKeyEvent`); `upload` and the
+  navigations use chrome-cdp's commands (`DOM.setFileInputFiles` needs a
+  node id), which record alike. `?card=` loads the iframe from origin B
+  for the OOPIF case. Expected files are in `crates/chrome-cdp/tests/record/`.
