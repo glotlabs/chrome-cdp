@@ -527,7 +527,9 @@ fn ui_coverage(
     }
     let mut data = all.report(&plan.config.pages);
     let path = plan.config.artifacts.join(coverage::FILE);
-    let mut text = serde_json::to_string_pretty(&data).unwrap_or_default();
+    // A control's name may hold a secret the page shows.
+    let json = serde_json::to_string_pretty(&data).unwrap_or_default();
+    let mut text = output::mask(&json).into_owned();
     text.push('\n');
     let written =
         std::fs::create_dir_all(&plan.config.artifacts).and_then(|()| std::fs::write(&path, text));
