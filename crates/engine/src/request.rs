@@ -1554,6 +1554,26 @@ pub struct MockWsSendRequest {
     pub timeout_ms: u64,
 }
 
+/// `mock sse send`: push an event to the page's mocked EventSources.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MockSseSendRequest {
+    /// `*`, a path glob or a full-URL glob.
+    pub url: String,
+    /// The event's data; newlines make several `data:` lines.
+    pub data: String,
+    /// `--event`: its type (`message` when not given).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event: Option<String>,
+    /// `--id`: its id (the stream's `lastEventId`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    /// `--retry`: the reconnection time it sets, in ms.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry: Option<u64>,
+    pub max_chars: usize,
+    pub timeout_ms: u64,
+}
+
 /// `mock off`: turn mock sets off.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MockOffRequest {

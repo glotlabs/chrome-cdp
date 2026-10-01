@@ -212,7 +212,7 @@ the `mock check` rules above. Scenario rules:
 | `undefined-var` | error | a `${var:x}` missing from the vars of a backend that runs the test; a `${saved.x}` no `http --save` saves; a missing `data:` file |
 | `ref` | error | a ref (`e12`): refs belong to one session's snapshot |
 | `duplicate-test` | error | two tests of a file with one name |
-| `mock-only` | warning | `mock state`, `mock seed`, `mock ws send` or `expect mock-state` in a test a real backend runs (mark it `@backend mock`) |
+| `mock-only` | warning | `mock state`, `mock seed`, `mock ws send`, `mock sse send` or `expect mock-state` in a test a real backend runs (mark it `@backend mock`) |
 | `mock-literal` | warning | a value of the mock data files written into a test a real backend runs; the real data may differ (use `${var:…}`) |
 | `sleep` | warning | `wait 500`: wait for a condition instead |
 | `no-expect` | warning | a test with no `expect` step |

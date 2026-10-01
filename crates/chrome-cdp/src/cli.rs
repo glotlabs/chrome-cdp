@@ -2410,7 +2410,7 @@ include-cycle, include-param (a ${name} the @include line does not
 pass), undefined-var (a ${var:x} missing from a backend's vars, an
 unknown ${saved.x}, a missing data file), ref (e12 refs are
 session-only; write a stable locator), duplicate-test, and the warnings
-mock-only (mock state/seed/ws send or expect mock-state in a test that
+mock-only (mock state/seed/ws send/sse send or expect mock-state in a test that
 real backends run), mock-literal (a value from the mock data, in a test
 real backends run), sleep (wait <ms>) and no-expect (a test that checks
 nothing). Mock files get the `mock check` rules (unreachable,
@@ -5211,6 +5211,30 @@ Examples:
     /// Talk to the page's mocked WebSockets.
     #[command(subcommand)]
     Ws(MockWsCommand),
+
+    /// Push events to the page's mocked EventSources.
+    #[command(subcommand)]
+    Sse(MockSseCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum MockSseCommand {
+    /// Push an event to the page's EventSources that an `sse` mock answers.
+    #[command(after_help = "\
+Hands one event to every open EventSource of the context whose URL the
+glob matches (a path glob such as /api/prices, a full-URL glob, or * for
+all), after the mock's own `sse` events, as if the server sent it. DATA is
+sent as it is (`-` reads stdin); its newlines make several `data:` lines,
+so the page gets them back as newlines. Waits (up to --timeout) for such
+a stream to open. Only streams an `sse` mock answers can be pushed to:
+the page's `EventSource`s talk to the mocks after `mock use`.
+
+Examples:
+  chrome-cdp mock sse send /api/prices '{\"price\":42}'
+  chrome-cdp mock sse send '/api/**' 'sold out' --event stock --id 7
+  chrome-cdp mock sse send '*' bye --retry 5000
+  echo '{\"price\":43}' | chrome-cdp mock sse send /api/prices -")]
+    Send(MockSseSendArgs),
 }
 
 #[derive(Debug, Subcommand)]
@@ -5269,6 +5293,34 @@ pub(crate) struct MockWsSendArgs {
     /// MESSAGE is base64: send its bytes as a binary message.
     #[arg(long)]
     pub(crate) base64: bool,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MockSseSendArgs {
+    /// Which streams: a path glob (/api/prices), a full-URL glob, or * for all.
+    #[arg(value_name = "URL-GLOB")]
+    pub(crate) url: String,
+
+    /// The event's data, sent as it is; `-` reads stdin.
+    #[arg(value_name = "DATA")]
+    pub(crate) data: String,
+
+    /// The event's type (the page's `addEventListener(TYPE)`); `message`
+    /// when not given.
+    #[arg(long, value_name = "TYPE")]
+    pub(crate) event: Option<String>,
+
+    /// The event's id (the stream's `lastEventId`).
+    #[arg(long, value_name = "ID")]
+    pub(crate) id: Option<String>,
+
+    /// The reconnection time the event sets, in ms.
+    #[arg(long, value_name = "MS")]
+    pub(crate) retry: Option<u64>,
 
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]

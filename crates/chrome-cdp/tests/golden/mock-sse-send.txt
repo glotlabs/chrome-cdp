@@ -1,0 +1,16 @@
+$ chrome-cdp mock sse send /mock/api/news '{"title":"Third"}' --event headline
+exit: 0
+--- stdout
+sent to 1 stream (/mock/api/news)
+  t1 <site>/mock/api/news (live.toml:15 "news")
+
+$ chrome-cdp mock sse send /mock/api/news '{"title":"Third"}' --event headline --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"size":17,"streams":[{"mock":{"at":"live.toml:15","file":"<mocks>/live.toml","line":15,"name":"news","set":"live"},"tab":"t1","url":"<site>/mock/api/news"}],"url":"/mock/api/news"}}
+
+$ chrome-cdp mock sse send /mock/api/news '{"title":"Third"}' --event headline -q
+exit: 0
+--- stdout
+1
+

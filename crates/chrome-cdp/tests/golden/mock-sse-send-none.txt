@@ -1,0 +1,12 @@
+$ chrome-cdp mock sse send '/nope/**' hi --timeout 200ms
+exit: 3
+--- stderr
+error: no mocked EventSource matching /nope/** opened within 200ms
+  open: <site>/mock/api/news
+  hint: chrome-cdp mock sse send '*' hi   (sends to every mocked stream)
+
+$ chrome-cdp mock sse send '/nope/**' hi --timeout 200ms --json
+exit: 3
+--- stdout
+{"ok":false,"error":{"kind":"Timeout","message":"no mocked EventSource matching /nope/** opened within 200ms","hint":"chrome-cdp mock sse send '*' hi   (sends to every mocked stream)","notes":[{"label":"open","text":"<site>/mock/api/news"}]}}
+

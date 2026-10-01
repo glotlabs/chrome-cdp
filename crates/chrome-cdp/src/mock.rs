@@ -1,6 +1,7 @@
 //! `mock use|off|list|log|reset|explain` (plan 11, milestone 11.2),
 //! `mock state|seed` (milestone 11.3) and `mock record|import|check`
-//! (milestone 11.8); `mock serve` and `mock ws send` (milestone 11.9).
+//! (milestone 11.8); `mock serve` and `mock ws send` (milestone 11.9);
+//! `mock sse send` (plan 19, milestone 19.2).
 //!
 //! The CLI finds the project (the mocks directory, `default_mocks`, the
 //! random seed) and the sets' files; the daemon reads and applies them.
@@ -16,7 +17,8 @@ use daemon::rpc;
 use e2e::mock_server::{MockServer, Served};
 use engine::{
     HarExportRequest, MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest,
-    MockSeedRequest, MockStateRequest, MockTestTag, MockUseRequest, MockWsSendRequest,
+    MockSeedRequest, MockSseSendRequest, MockStateRequest, MockTestTag, MockUseRequest,
+    MockWsSendRequest,
 };
 use mock::{MockSet, Mocks, Source};
 use protocol::schema::{
@@ -27,8 +29,8 @@ use serde_json::{Value, json};
 
 use crate::cli::{
     GlobalArgs, MockArgs, MockCheckArgs, MockCommand, MockExplainArgs, MockImportArgs,
-    MockRecordArgs, MockSeedArgs, MockServeArgs, MockStateArgs, MockUseArgs, MockWsCommand,
-    MockWsSendArgs,
+    MockRecordArgs, MockSeedArgs, MockServeArgs, MockSseCommand, MockSseSendArgs, MockStateArgs,
+    MockUseArgs, MockWsCommand, MockWsSendArgs,
 };
 use crate::{input, output, route, session};
 
@@ -166,6 +168,7 @@ pub(crate) fn run(args: &MockArgs, global: &GlobalArgs) -> Result<Output, ErrorI
         MockCommand::Check(args) => check(args),
         MockCommand::Serve(args) => serve(args, global),
         MockCommand::Ws(MockWsCommand::Send(args)) => ws_send(args, global),
+        MockCommand::Sse(MockSseCommand::Send(args)) => sse_send(args, global),
     }
 }
 
@@ -908,6 +911,21 @@ fn ws_send(args: &MockWsSendArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
         timeout_ms: session::timeout_ms(global),
     };
     session::call_session(global, rpc::MOCK_WS_SEND, &request, "mocked sockets")
+}
+
+/// `mock sse send`.
+fn sse_send(args: &MockSseSendArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let data = input::text_arg(&args.data, "the data")?;
+    let request = MockSseSendRequest {
+        url: args.url.clone(),
+        data,
+        event: args.event.clone(),
+        id: args.id.clone(),
+        retry: args.retry,
+        max_chars: args.max_chars,
+        timeout_ms: session::timeout_ms(global),
+    };
+    session::call_session(global, rpc::MOCK_SSE_SEND, &request, "mocked streams")
 }
 
 fn mock_use(args: &MockUseArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {

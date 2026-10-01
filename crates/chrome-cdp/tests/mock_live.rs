@@ -1,6 +1,6 @@
 //! Mocks beyond fetches, end to end (plan 11, milestone 11.9): the page's
 //! WebSockets and EventSources answered by `[[websocket]]` and `sse`
-//! mocks, `mock ws send`, and `mock serve`.
+//! mocks, `mock ws send`, `mock sse send` (plan 19.2), and `mock serve`.
 //!
 //! The real-Chrome tests need `CHROME_PATH` (see `cli.rs`).
 
@@ -94,6 +94,50 @@ fn websocket_and_event_source_mocks() {
     let out = sandbox.run(&["expect", "#price", "text", "42"]);
     assert_eq!(code(&out), 0, "{}", stderr(&out));
 
+    // A scenario pushes an event to the stream, after the mock's own; a
+    // `.cdp` file runs the same command.
+    let out = sandbox.run(&[
+        "mock",
+        "sse",
+        "send",
+        "/mock/api/news",
+        "third",
+        "--event",
+        "headline",
+        "--id",
+        "3",
+    ]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
+    assert!(
+        stdout(&out).starts_with("sent to 1 stream (/mock/api/news)\n  t1 http://"),
+        "{}",
+        stdout(&out)
+    );
+    assert!(
+        stdout(&out).contains(r#"(live.toml:15 "news")"#),
+        "{}",
+        stdout(&out)
+    );
+    let got = seen(&sandbox, 7);
+    assert_eq!(got[6], "headline third #3");
+    let script = sandbox.tmp().join("push.cdp");
+    std::fs::write(
+        &script,
+        "mock sse send '/mock/api/**' \"line 1\\nline 2\"\nwait --fn 'seen.length >= 8'\n",
+    )
+    .unwrap();
+    let out = sandbox.run(&["run", script.to_str().unwrap()]);
+    assert_eq!(code(&out), 0, "{}{}", stdout(&out), stderr(&out));
+    let got = seen(&sandbox, 8);
+    assert_eq!(got[7], "sse line 1\nline 2");
+    let out = sandbox.run(&["mock", "sse", "send", "/nope/**", "x", "--timeout", "200ms"]);
+    assert_eq!(code(&out), 3, "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("no mocked EventSource matching /nope/** opened within 200ms"),
+        "{}",
+        stderr(&out)
+    );
+
     // The journal has the socket and the stream, as mocked requests.
     let out = sandbox.run(&["mock", "log"]);
     let log = stdout(&out);
@@ -131,8 +175,8 @@ fn websocket_and_event_source_mocks() {
     // nothing to send to.
     let out = sandbox.run(&["eval", "socket.send('bye')"]);
     assert_eq!(code(&out), 0, "{}", stderr(&out));
-    let got = seen(&sandbox, 7);
-    assert_eq!(got[6], "close 4000 bye");
+    let got = seen(&sandbox, 9);
+    assert_eq!(got[8], "close 4000 bye");
     let out = sandbox.run(&["mock", "ws", "send", "*", "hi", "--timeout", "300ms"]);
     assert_eq!(code(&out), 3, "{}", stderr(&out));
     assert!(

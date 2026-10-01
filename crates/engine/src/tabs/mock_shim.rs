@@ -4,7 +4,7 @@
 //! The shim (`route/shim.js`) calls [`MOCK_BINDING`] with a JSON message:
 //! `ws-open`, `ws-send` (`data`, or a binary message's bytes as `base64`),
 //! `ws-close`, `sse-open` or `sse-close`, each with the shim's id of the
-//! socket. The router decides (see
+//! socket or stream. The router decides (see
 //! `route::sockets`); the answers are handed to the document the call
 //! came from with `Runtime.evaluate`, each after its delay, in a task of
 //! their own.
@@ -17,7 +17,7 @@ use cdp::{RawEvent, Session};
 use serde_json::{Value, json};
 
 use super::{Shared, Tabs};
-use crate::route::{self, Socket, SseReply, WsReply, frame_json, frame_message};
+use crate::route::{self, Socket, SseReply, Stream, WsReply, frame_json, frame_message};
 
 /// How long a delivery may take.
 const DELIVER_TIMEOUT: Duration = Duration::from_secs(5);
@@ -137,6 +137,23 @@ pub(super) fn called(shared: &Arc<Shared>, session_id: &str, tab: Option<u32>, e
         "ws-close" => routes.remove_socket(session_id, context, id),
         "sse-open" => {
             let reply = routes.sse_open(&request("EventSource"));
+            let stream = match &reply {
+                SseReply::Mock { mock, .. } => Some(Stream {
+                    scope: scope.clone(),
+                    session: session_id.to_owned(),
+                    context,
+                    id,
+                    url: url.clone(),
+                    tab,
+                    mock: mock.clone(),
+                    ready: false,
+                }),
+                SseReply::Real | SseReply::Fail => None,
+            };
+            if let Some(stream) = &stream {
+                routes.add_stream(stream.clone());
+            }
+            let settings = shared.settings.clone();
             shared.spawn(async move {
                 match reply {
                     SseReply::Real => {
@@ -145,34 +162,52 @@ pub(super) fn called(shared: &Arc<Shared>, session_id: &str, tab: Option<u32>, e
                     SseReply::Fail => {
                         deliver(&session, context, &json!({ "id": id, "decision": "fail" })).await;
                     }
-                    SseReply::Mock { delay, events } => {
+                    SseReply::Mock { delay, events, .. } => {
+                        let routes = &settings.routes;
+                        let session_id = stream.as_ref().map(|s| s.session.clone());
+                        let forget = || {
+                            if let Some(s) = &session_id {
+                                routes.remove_stream(s, context, id);
+                            }
+                        };
                         tokio::time::sleep(delay).await;
                         let open = json!({ "id": id, "decision": "mock" });
                         if !deliver(&session, context, &open).await {
+                            forget();
                             return;
                         }
                         for event in events {
                             tokio::time::sleep(event.delay).await;
-                            let message = json!({
-                                "id": id,
-                                "event": {
-                                    "event": event.event,
-                                    "data": event.data,
-                                    "id": event.id,
-                                },
-                            });
+                            let message = sse_message(id, &event);
                             // A closed stream (or document) takes no more.
                             if !deliver(&session, context, &message).await {
+                                forget();
                                 return;
                             }
+                        }
+                        if let Some(s) = &session_id {
+                            routes.stream_ready(s, context, id);
                         }
                     }
                 }
             });
         }
+        "sse-close" => routes.remove_stream(session_id, context, id),
         // The shim stops taking its events; nothing to keep.
         _ => {}
     }
+}
+
+/// The JSON that hands `event` to stream `id`.
+fn sse_message(id: u64, event: &mock::SseEvent) -> Value {
+    json!({
+        "id": id,
+        "event": {
+            "event": event.event,
+            "data": event.data,
+            "id": event.id,
+        },
+    })
 }
 
 /// Hands `steps` to `socket`, each after its delay; a socket that is
@@ -197,6 +232,30 @@ async fn send_steps(
 }
 
 impl Tabs {
+    /// Hands `event` to `stream`, after its mock's events; whether it was
+    /// still there to take it (if not, it is forgotten).
+    pub(crate) async fn sse_deliver(&self, stream: &Stream, event: &mock::SseEvent) -> bool {
+        let session = self
+            .shared
+            .lock()
+            .targets
+            .get(&stream.session)
+            .map(|t| t.session.clone());
+        let known = match session {
+            Some(session) => {
+                deliver(&session, stream.context, &sse_message(stream.id, event)).await
+            }
+            None => false,
+        };
+        if !known {
+            self.shared
+                .settings
+                .routes
+                .remove_stream(&stream.session, stream.context, stream.id);
+        }
+        known
+    }
+
     /// Hands `message` (text, or binary) to `socket`, as its mock would;
     /// whether it was still there to take it (if not, it is forgotten).
     pub(crate) async fn ws_deliver(&self, socket: &Socket, message: &mock::WsFrame) -> bool {

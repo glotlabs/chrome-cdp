@@ -81,6 +81,19 @@ other answer fails the `EventSource`, as it would a real one. A `fetch` of
 the URL gets all the events at once, since `Fetch` answers are not
 streamed.
 
+A scenario pushes one more event with `mock sse send`, which waits (up to
+`--timeout`) for a matching stream to open and have its mock's own
+events, then sends it to every such stream:
+
+```
+click 'Refresh prices'
+mock sse send /api/prices '{"price":43}' --event price --id 7
+expect '#price' text 43
+```
+
+`DATA` is sent as it is (`-` reads stdin); its newlines make several
+`data:` lines, so the page gets them back as newlines.
+
 ## How: a stand-in in the page
 
 Chrome's request interception sees neither WebSocket traffic nor a stream
@@ -94,7 +107,8 @@ what it gets (a mock, a failure, or the real thing, which it then wraps),
 so real sockets take one more round trip to start. `mock off` gives
 sockets opened later the browser's own classes back.
 
-Limits: `mock ws send` only reaches sockets a `[[websocket]]` answers.
+Limits: `mock ws send` only reaches sockets a `[[websocket]]` answers,
+and `mock sse send` only streams an `sse` mock answers.
 
 ## `mock serve`: the mocks as an HTTP server
 

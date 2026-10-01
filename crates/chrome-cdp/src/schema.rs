@@ -122,6 +122,7 @@ const MOCK_ONLY: &[&str] = &[
     "mock state",
     "mock seed",
     "mock ws send",
+    "mock sse send",
     "expect mock-state",
 ];
 

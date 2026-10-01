@@ -606,6 +606,10 @@ impl Daemon {
                 Ok(p) => output(self.engine.mock_ws_send(p).await),
                 Err(e) => Err(e),
             },
+            rpc::MOCK_SSE_SEND => match params(req.params) {
+                Ok(p) => output(self.engine.mock_sse_send(p).await),
+                Err(e) => Err(e),
+            },
             rpc::HTTP => match params(req.params) {
                 Ok(p) => output(self.engine.http(p).await),
                 Err(e) => Err(e),

@@ -7,7 +7,7 @@ next: chrome-cdp mock use <sandbox>/app/recorded.toml
 $ chrome-cdp mock record --scope /items -o <sandbox>/app/recorded.toml --force --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"files":["<sandbox>/app/data/recorded/items.n-2.json","<sandbox>/app/data/recorded/items.n-30.json"],"mocks":2,"path":"<sandbox>/app/recorded.toml","requests":2,"scope":["/items"],"set":"<sandbox>/app/recorded.toml","skipped":[]}}
+{"ok":true,"data":{"by_body":0,"files":["<sandbox>/app/data/recorded/items.n-2.json","<sandbox>/app/data/recorded/items.n-30.json"],"mocks":2,"path":"<sandbox>/app/recorded.toml","requests":2,"scope":["/items"],"set":"<sandbox>/app/recorded.toml","skipped":[]}}
 
 $ chrome-cdp mock record --scope /items -o <sandbox>/app/recorded.toml --force -q
 exit: 0

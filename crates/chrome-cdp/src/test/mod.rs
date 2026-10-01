@@ -46,8 +46,8 @@ use plan::Plan;
 pub(crate) use vars::saved_names as vars_saved_names;
 
 /// The command `cli` runs when it needs the mocks (it fails against a
-/// real backend): `mock state`, `mock seed`, `mock ws send` and `expect
-/// mock-state`.
+/// real backend): `mock state`, `mock seed`, `mock ws send`, `mock sse
+/// send` and `expect mock-state`.
 pub(crate) fn mock_only(cli: &crate::cli::Cli) -> Option<&'static str> {
     use crate::cli::{Command, MockCommand};
     match &cli.command {
@@ -55,6 +55,7 @@ pub(crate) fn mock_only(cli: &crate::cli::Cli) -> Option<&'static str> {
             MockCommand::State(_) => Some("mock state"),
             MockCommand::Seed(_) => Some("mock seed"),
             MockCommand::Ws(_) => Some("mock ws send"),
+            MockCommand::Sse(_) => Some("mock sse send"),
             _ => None,
         },
         Some(Command::Expect(args)) if args.target.as_deref() == Some("mock-state") => {

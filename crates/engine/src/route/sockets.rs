@@ -7,7 +7,8 @@
 //! opens: [`Router::ws_open`] and [`Router::sse_open`] decide with the
 //! scope's mocks and journal it, as a paused request would be. Sockets a
 //! `[[websocket]]` answers are kept ([`Socket`]) so the page's messages
-//! find their mock and `mock ws send` finds them.
+//! find their mock and `mock ws send` finds them; streams an `sse` mock
+//! answers are kept ([`Stream`]) so `mock sse send` finds them.
 //!
 //! Also here: the header a test run tags its browser requests with
 //! (`x-chrome-cdp-test`, for `mock serve`'s per-test state), given to the
@@ -37,6 +38,24 @@ pub(crate) struct Socket {
     pub(crate) mock: MockRef,
 }
 
+/// A page's `EventSource` that a mock's `sse` answers.
+#[derive(Debug, Clone)]
+pub(crate) struct Stream {
+    pub(crate) scope: Option<String>,
+    /// The page or iframe session, and the execution context (document)
+    /// the stream lives in.
+    pub(crate) session: String,
+    pub(crate) context: i64,
+    /// The shim's id of it, within its document.
+    pub(crate) id: u64,
+    pub(crate) url: String,
+    pub(crate) tab: Option<u32>,
+    pub(crate) mock: MockRef,
+    /// Its mock's own events are all handed over: pushed events go after
+    /// them.
+    pub(crate) ready: bool,
+}
+
 /// What a page's socket gets.
 #[derive(Debug)]
 pub(crate) enum WsReply {
@@ -58,6 +77,7 @@ pub(crate) enum SseReply {
     Mock {
         delay: Duration,
         events: Vec<SseEvent>,
+        mock: MockRef,
     },
     Real,
     Fail,
@@ -195,6 +215,7 @@ impl Router {
                                 SseReply::Mock {
                                     delay: answer.delay,
                                     events,
+                                    mock: answer.mock.clone(),
                                 },
                                 Some(note),
                             )
@@ -268,6 +289,45 @@ impl Router {
     pub(crate) fn sockets(&self, scope: Option<&str>) -> Vec<Socket> {
         lock(&self.table)
             .sockets
+            .iter()
+            .filter(|s| s.scope.as_deref() == scope)
+            .cloned()
+            .collect()
+    }
+
+    /// Keeps a stream a mock answers.
+    pub(crate) fn add_stream(&self, stream: Stream) {
+        let mut table = lock(&self.table);
+        if table.streams.len() >= 1000 {
+            table.streams.remove(0);
+        }
+        table.streams.push(stream);
+    }
+
+    /// Stream `id` of document `context` of `session` has had its mock's
+    /// own events.
+    pub(crate) fn stream_ready(&self, session: &str, context: i64, id: u64) {
+        let mut table = lock(&self.table);
+        if let Some(s) = table
+            .streams
+            .iter_mut()
+            .find(|s| s.session == session && s.context == context && s.id == id)
+        {
+            s.ready = true;
+        }
+    }
+
+    /// Forgets stream `id` of document `context` of `session` (closed).
+    pub(crate) fn remove_stream(&self, session: &str, context: i64, id: u64) {
+        lock(&self.table)
+            .streams
+            .retain(|s| !(s.session == session && s.context == context && s.id == id));
+    }
+
+    /// The open streams of `scope`, oldest first.
+    pub(crate) fn streams(&self, scope: Option<&str>) -> Vec<Stream> {
+        lock(&self.table)
+            .streams
             .iter()
             .filter(|s| s.scope.as_deref() == scope)
             .cloned()

@@ -359,6 +359,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<MockWsSendData>),
     },
     CommandSchema {
+        name: "mock sse send",
+        summary: "the mocked EventSources an event was pushed to",
+        schema: || schema_for!(Envelope<MockSseSendData>),
+    },
+    CommandSchema {
         name: "mock check",
         summary: "the problems found in the mock files: file:line:col, severity, rule and message",
         schema: || schema_for!(Envelope<MockCheckData>),
@@ -5942,6 +5947,17 @@ pub struct MockWsSendData {
     pub size: usize,
     /// The sockets that got it.
     pub sockets: Vec<MockSocketInfo>,
+}
+
+/// `data` of `chrome-cdp mock sse send --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockSseSendData {
+    /// The URL glob given.
+    pub url: String,
+    /// The data's size in bytes.
+    pub size: usize,
+    /// The mocked EventSources that got it.
+    pub streams: Vec<MockSocketInfo>,
 }
 
 /// `data` of `chrome-cdp mock record|import --json`.

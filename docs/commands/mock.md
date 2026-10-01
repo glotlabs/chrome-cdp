@@ -474,3 +474,47 @@ Examples:
   echo '{"type":"bye"}' | chrome-cdp mock ws send /ws/prices -
 ```
 
+## `chrome-cdp mock sse`
+
+Push events to the page's mocked EventSources
+
+```text
+chrome-cdp mock sse [OPTIONS] <COMMAND>
+```
+
+### `chrome-cdp mock sse send`
+
+Push an event to the page's EventSources that an `sse` mock answers
+
+```text
+chrome-cdp mock sse send [OPTIONS] <URL-GLOB> <DATA>
+```
+
+Arguments:
+
+- `<URL-GLOB>`: Which streams: a path glob (/api/prices), a full-URL glob, or \* for all
+- `<DATA>`: The event's data, sent as it is; `-` reads stdin
+
+Options:
+
+- `--event <TYPE>`: The event's type (the page's `addEventListener(TYPE)`); `message` when not given
+- `--id <ID>`: The event's id (the stream's `lastEventId`)
+- `--retry <MS>`: The reconnection time the event sets, in ms
+- `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
+
+```text
+Hands one event to every open EventSource of the context whose URL the
+glob matches (a path glob such as /api/prices, a full-URL glob, or * for
+all), after the mock's own `sse` events, as if the server sent it. DATA is
+sent as it is (`-` reads stdin); its newlines make several `data:` lines,
+so the page gets them back as newlines. Waits (up to --timeout) for such
+a stream to open. Only streams an `sse` mock answers can be pushed to:
+the page's `EventSource`s talk to the mocks after `mock use`.
+
+Examples:
+  chrome-cdp mock sse send /api/prices '{"price":42}'
+  chrome-cdp mock sse send '/api/**' 'sold out' --event stock --id 7
+  chrome-cdp mock sse send '*' bye --retry 5000
+  echo '{"price":43}' | chrome-cdp mock sse send /api/prices -
+```
+

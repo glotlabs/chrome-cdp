@@ -353,7 +353,7 @@ rule that matches handles a request.
 | blocking images, fonts, ads | `block --images --fonts --ads`, `block PATTERN` | ✅ |
 | `setExtraHTTPHeaders(h)` | `route '**' --set-header 'Name: v'` | 🟡 |
 | `page.routeWebSocket(url, handler)` | a `[[websocket]]` mock (`on_open`, `on_message`), and `mock ws send` ([docs/e2e/beyond-fetch.md](e2e/beyond-fetch.md)) | ✅ |
-| Server-Sent Events | a mock's `respond = { sse = [...] }`, streamed to the page's `EventSource` | ✅ |
+| Server-Sent Events | a mock's `respond = { sse = [...] }`, streamed to the page's `EventSource`; `mock sse send` pushes more | ✅ |
 | server-side fetches (SSR) | `mock serve` (not interceptable in Playwright) | ✅ |
 | `recordHar: { path }`, `routeFromHAR(file, { update: true })` | `har start`, then `har stop -o FILE` | ✅ |
 | `routeFromHAR(file)` (replay) | `mock import FILE.har` writes a mock set (`--scope '**'` for every request, not only fetch and XHR), then `mock use NAME` | ✅ |

@@ -36,7 +36,7 @@ mod mocking;
 mod sockets;
 
 pub(crate) use mocking::unknown_state;
-pub(crate) use sockets::{Socket, SseReply, Tag, WsReply, frame_json, frame_message};
+pub(crate) use sockets::{Socket, SseReply, Stream, Tag, WsReply, frame_json, frame_message};
 
 use std::collections::VecDeque;
 use std::fmt::Write as _;
@@ -84,6 +84,7 @@ impl Default for Router {
                 journal: VecDeque::new(),
                 seq: 0,
                 sockets: Vec::new(),
+                streams: Vec::new(),
                 tags: std::collections::HashMap::new(),
             }),
         }
@@ -106,6 +107,8 @@ struct Table {
     seq: u64,
     /// The page's sockets mocks answer (plan 11.9), oldest first.
     sockets: Vec<sockets::Socket>,
+    /// The page's EventSources mocks answer (plan 19.2), oldest first.
+    streams: Vec<sockets::Stream>,
     /// The header a test run tags requests with, by scope (`""` for the
     /// default one).
     tags: std::collections::HashMap<String, sockets::Tag>,
@@ -277,6 +280,7 @@ impl Router {
         table.scoped.remove(scope);
         table.journal.retain(|(s, _)| s.as_deref() != Some(scope));
         table.sockets.retain(|s| s.scope.as_deref() != Some(scope));
+        table.streams.retain(|s| s.scope.as_deref() != Some(scope));
         table.tags.remove(scope);
     }
 

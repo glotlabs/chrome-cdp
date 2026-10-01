@@ -1,6 +1,7 @@
 //! `mock use`, `mock off`, `mock list`, `mock log`, `mock reset` and
 //! `mock explain` (plan 11, milestone 11.2); `mock state` and `mock seed`
-//! (milestone 11.3); `mock ws send` (milestone 11.9).
+//! (milestone 11.3); `mock ws send` (milestone 11.9); `mock sse send`
+//! (plan 19, milestone 19.2).
 //!
 //! Mock sets belong to the session, as routing rules do: they apply to
 //! every tab, popup and frame, and stay when the browser is restarted.
@@ -15,16 +16,16 @@ use base64::Engine as _;
 use mock::{MockSet, Mocks, Seed, SocketGlob, StateItem};
 use protocol::schema::{
     MockCollectionInfo, MockExplainData, MockLogData, MockOffData, MockSeedData, MockSetInfo,
-    MockSetsData, MockSocketInfo, MockStateData, MockWsSendData,
+    MockSetsData, MockSocketInfo, MockSseSendData, MockStateData, MockWsSendData,
 };
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, suggest};
 use serde_json::Value;
 
-use super::{Request, Router, Socket, Tag, lock, route_name};
+use super::{Request, Router, Socket, Stream, Tag, lock, route_name};
 use crate::context::Scoped as _;
 use crate::request::{
     MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest, MockSeedRequest,
-    MockStateRequest, MockUseRequest, MockWsSendRequest, millis,
+    MockSseSendRequest, MockStateRequest, MockUseRequest, MockWsSendRequest, millis,
 };
 use crate::{Engine, State};
 
@@ -344,6 +345,148 @@ impl Engine {
                         .scoped(&self.session),
                 )
                 .why("sends to every mocked socket"),
+            )
+        }
+    }
+
+    /// `mock sse send`: hands an event to the page's EventSources that a
+    /// mock's `sse` answers, once there is one (after the mock's own
+    /// events).
+    pub async fn mock_sse_send(&self, req: MockSseSendRequest) -> Result<Output, ErrorInfo> {
+        let glob = SocketGlob::parse(&req.url).map_err(|e| {
+            ErrorInfo::new(ErrorKind::BadArgs, format!("mock sse send: {e}")).hint(Hint::text(
+                "e.g. mock sse send '/api/prices' '{\"price\":42}'",
+            ))
+        })?;
+        let event = mock::SseEvent {
+            delay: std::time::Duration::ZERO,
+            event: req.event.clone().filter(|e| !e.is_empty()),
+            data: Some(req.data.replace("\r\n", "\n").replace('\r', "\n")),
+            id: req.id.clone(),
+            retry: req.retry,
+            comment: None,
+        };
+        let scope = self.context_key()?;
+        let running = match &*self.lock_state() {
+            State::Running(running) => Some(running.clone()),
+            State::Crashed(_) | State::Empty => None,
+        };
+        let Some(running) = running else {
+            return Err(ErrorInfo::new(
+                ErrorKind::NotFound,
+                "no browser is running, so there are no streams",
+            )
+            .hint(Hint::run(Cmd::new("open").session(&self.session))));
+        };
+        let deadline = tokio::time::Instant::now() + millis(req.timeout_ms);
+        let mut sent = Vec::new();
+        loop {
+            let streams: Vec<Stream> = self
+                .settings
+                .routes
+                .streams(scope.as_deref())
+                .into_iter()
+                .filter(|s| s.ready && glob.matches(&s.url))
+                .collect();
+            for stream in streams {
+                if running.tabs.sse_deliver(&stream, &event).await {
+                    sent.push(MockSocketInfo {
+                        tab: stream.tab.map(crate::tabs::tab_name),
+                        url: stream.url.clone(),
+                        mock: stream.mock.clone(),
+                    });
+                }
+            }
+            if !sent.is_empty() || tokio::time::Instant::now() >= deadline {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        if sent.is_empty() {
+            return Err(self.no_stream(scope.as_deref(), &req));
+        }
+        let mut text = format!(
+            "sent to {} {} ({})",
+            sent.len(),
+            if sent.len() == 1 { "stream" } else { "streams" },
+            req.url
+        );
+        for s in &sent {
+            let tab = s
+                .tab
+                .as_deref()
+                .map(|t| format!("{t} "))
+                .unwrap_or_default();
+            let _ = write!(
+                text,
+                "\n  {tab}{} ({} \"{}\")",
+                s.url, s.mock.at, s.mock.name
+            );
+        }
+        let quiet = sent.len().to_string();
+        let data = MockSseSendData {
+            url: req.url.clone(),
+            size: req.data.len(),
+            streams: sent,
+        };
+        Ok(Output::typed(&data, text)
+            .quiet(quiet)
+            .limit(req.max_chars, "--max-chars 0 for all of it"))
+    }
+
+    /// No stream of the scope matched `mock sse send`'s glob in time.
+    fn no_stream(&self, scope: Option<&str>, req: &MockSseSendRequest) -> ErrorInfo {
+        let streams = self.settings.routes.streams(scope);
+        let open: Vec<String> = streams
+            .iter()
+            .filter(|s| s.ready)
+            .map(|s| s.url.clone())
+            .collect();
+        let busy: Vec<String> = streams
+            .iter()
+            .filter(|s| !s.ready && glob_matches(&req.url, &s.url))
+            .map(|s| s.url.clone())
+            .collect();
+        let waited = protocol::format::duration(millis(req.timeout_ms));
+        let mut info = ErrorInfo::new(
+            ErrorKind::Timeout,
+            format!(
+                "no mocked EventSource matching {} opened within {waited}",
+                req.url
+            ),
+        );
+        if !busy.is_empty() {
+            info = info.note(
+                "still sending",
+                format!("{} (its mock's own events come first)", busy.join(", ")),
+            );
+            return info.hint(Hint::text(
+                "give a longer --timeout, so the mock's events are all sent first",
+            ));
+        }
+        if open.is_empty() {
+            let wants = if self.settings.routes.has_mocks(scope) {
+                "the page has no EventSource an `sse` mock answers; streams opened before `mock use` (or in a page not loaded since) are real"
+            } else {
+                "no mock sets are in use, so no stream is mocked"
+            };
+            info = info.note("streams", wants);
+            info.hint(
+                Hint::run(Cmd::new("mock").arg("list").scoped(&self.session))
+                    .why("shows the mocks in use"),
+            )
+        } else {
+            info = info.note("open", open.join(", "));
+            info.hint(
+                Hint::run(
+                    Cmd::new("mock")
+                        .arg("sse")
+                        .arg("send")
+                        .arg("*")
+                        .arg(&req.data)
+                        .scoped(&self.session),
+                )
+                .why("sends to every mocked stream"),
             )
         }
     }
@@ -679,4 +822,9 @@ fn unknown_collection(session: &str, name: &str, names: &[String]) -> ErrorInfo 
         ),
         None => info.hint("add a [[collection]] to a mock file (see `chrome-cdp mock --help`)"),
     }
+}
+
+/// Whether `url` is one of `glob`'s (a bad glob takes none).
+fn glob_matches(glob: &str, url: &str) -> bool {
+    SocketGlob::parse(glob).is_ok_and(|g| g.matches(url))
 }

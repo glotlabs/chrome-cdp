@@ -28,7 +28,7 @@ include-cycle, include-param (a ${name} the @include line does not
 pass), undefined-var (a ${var:x} missing from a backend's vars, an
 unknown ${saved.x}, a missing data file), ref (e12 refs are
 session-only; write a stable locator), duplicate-test, and the warnings
-mock-only (mock state/seed/ws send or expect mock-state in a test that
+mock-only (mock state/seed/ws send/sse send or expect mock-state in a test that
 real backends run), mock-literal (a value from the mock data, in a test
 real backends run), sleep (wait <ms>) and no-expect (a test that checks
 nothing). Mock files get the `mock check` rules (unreachable,
