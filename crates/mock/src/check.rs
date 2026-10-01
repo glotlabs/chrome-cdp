@@ -390,6 +390,7 @@ fn undeclared(sets: &[MockSet], out: &mut Vec<MockProblem>) {
 /// The `state.x` names an action's templates read.
 fn state_names(action: &WsAction, out: &mut BTreeSet<String>) {
     static STATE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        #[allow(clippy::expect_used)] // a constant pattern
         regex::Regex::new(
             r#"\bstate\s*(?:\.\s*([A-Za-z_][A-Za-z0-9_]*)|\[\s*["']([^"']+)["']\s*\])"#,
         )
