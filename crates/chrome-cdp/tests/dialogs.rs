@@ -164,8 +164,9 @@ fn dialog_waits_for_the_next_dialog() {
         .unwrap();
     let out = child.wait_with_output().unwrap();
     eprintln!("stdout: {}\nstderr: {}", stdout(&out), stderr(&out));
-    // The click ran into the confirm (exit 5); every other step passed.
-    assert_eq!(code(&out), 5, "{}", stderr(&out));
+    // The click ran into the confirm, which the next step answers, so it
+    // passes as in `test` (plan 18.6); every other step passed too.
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
     let text = stdout(&out);
     assert!(
         text.contains("accepted confirm \"Delete your account? This cannot be undone.\""),
