@@ -1,6 +1,6 @@
 # Plan 19 — Mocks
 
-Status: IN PROGRESS (19.1 done)
+Status: IN PROGRESS (19.1-19.2 done)
 Depends on: 11 (the mock format, `mock record`/`import`/`check`/`serve`, WebSocket and SSE mocks), 13 §13.2 (mocks in every target), 14 §14.7 (WebSocket frames in the network log)
 Roadmap: track 8 of [plan 12](12-after-v1.md)
 
@@ -359,13 +359,13 @@ warnings are printed. Add:
       get, post, put, patch and delete, with and without `params`.
 - [x] `mock record --match-bodies` on two logins as different users
       writes two mocks keyed by the email, not a sequence.
-- [ ] Recording a page that uses a WebSocket and an EventSource, then
+- [x] Recording a page that uses a WebSocket and an EventSource, then
       replaying the recorded set, gives the page the same messages and
       events (fixture pages on the fixture server).
-- [ ] `mock sse send` pushes an event a page's `EventSource` receives,
+- [x] `mock sse send` pushes an event a page's `EventSource` receives,
       in a session and in a `.cdp` scenario.
-- [ ] `mock check` reports each new websocket rule on a fixture file.
-- [ ] A WebSocket client that is not a browser (a test using
+- [x] `mock check` reports each new websocket rule on a fixture file.
+- [x] A WebSocket client that is not a browser (a test using
       `tokio-tungstenite`) talks to `mock serve`'s `[[websocket]]`
       mock, and `mock ws send --serve` reaches it.
 - [ ] `mock serve --upstream` forwards passthrough mocks and unmatched
@@ -428,3 +428,26 @@ _(append here)_
   outside 1000 and 3000–4999, so `mock check` reports it as `load`.
   Websocket templates do read state (`{{state.x}}`), so
   `undeclared-state` scans their messages and close reasons.
+- 19.2: recorded `[[websocket]]`s match the socket's path, never its full
+  URL: recorded `[[mock]]`s match paths only today too (a repro bundle's
+  other origins are a backlog note), and a path glob takes the socket on
+  any host.
+- 19.2: a page message's answers after the first are always left out
+  (and listed): a rule sends one message, and a second rule for the same
+  message would never be reached, so no extra rule can be keyed.
+- 19.2: the default record scope takes the page's EventSources too, not
+  only its WebSockets: an `sse` answer is the point of recording them.
+- 19.2: the network log keeps each frame's payload (up to 64 KB) and an
+  EventSource's messages (`Network.eventSourceMessageReceived`), and the
+  HAR export writes them: `_webSocketMessages` gets the whole payload, and
+  `_eventSourceMessages` (our extension) the messages. Without them a
+  still-open stream has no body to record.
+- 19.2: an upgrade no `[[websocket]]` takes is answered by the HTTP mocks
+  as before (404 when no set owns it, the set's `unmatched` answer in a
+  scope). A WebSocket open is journalled (resource type `websocket`) but
+  not counted in `mock serve`'s requests; the socket log has it.
+- 19.2: control requests also take `base64` (a binary message) and
+  `timeout_ms` (the server waits for a socket), and without `test` reach
+  every partition. In a `test` run, a push step polls the browser and the
+  mock server with no wait until either has a match, so a step whose
+  socket is only in the browser is as fast as before.
