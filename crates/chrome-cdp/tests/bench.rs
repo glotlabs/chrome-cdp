@@ -1,7 +1,8 @@
 //! Plan 11's timing goals: the test runner's own overhead under 100 ms per
 //! test, and the E2E example suite under 15 s with `--jobs 4`. (Plan 02's
 //! cold start and warm round trip, and plan 08's `batch` speedup, are in
-//! the micro suite of `crates/bench`.)
+//! the micro suite of `crates/bench`.) And plan 18.4's: what `test
+//! --ui-coverage` adds to a step.
 //!
 //! Ignored: benchmarks run on a quiet machine after all plans are in.
 //! `cargo xtask bench micro` runs it, or run it alone with
@@ -22,6 +23,11 @@ const RUNNER_OVERHEAD: Duration = Duration::from_millis(100);
 /// Plan 11: the whole example suite with `--jobs 4` (planned as 30 tests;
 /// examples/e2e-shop has 17).
 const SHOP_SUITE: Duration = Duration::from_secs(15);
+
+/// Plan 18.4: what `test --ui-coverage`'s snapshots add to a step, on
+/// average over the shop's steps (a criterion of this benchmark's own:
+/// the plan asks for the measurement).
+const UI_COVERAGE_PER_STEP: Duration = Duration::from_millis(50);
 
 /// Copies `from` to `to`, less `node_modules` and earlier results.
 fn copy_dir(from: &Path, to: &Path) {
@@ -99,4 +105,70 @@ fn e2e_runner_overhead_and_the_shop_suite() {
         "runner overhead was {per_test:?} per test"
     );
     assert!(suite < SHOP_SUITE, "the suite took {suite:?}");
+}
+
+/// The time of the steps of a `test --json` run's tests (their own and
+/// their hooks', not the runner's setup and checks), and how many.
+fn step_time(value: &serde_json::Value) -> (Duration, u32) {
+    let mut total = Duration::ZERO;
+    let mut count = 0;
+    for t in value["data"]["tests"].as_array().unwrap() {
+        let steps = std::fs::read_to_string(
+            Path::new(t["artifacts"].as_str().unwrap()).join("steps.jsonl"),
+        )
+        .unwrap();
+        for step in steps
+            .lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+            .filter(|s| !matches!(s["hook"].as_str(), Some("setup" | "check")))
+        {
+            total += Duration::from_millis(step["duration_ms"].as_u64().unwrap());
+            count += 1;
+        }
+    }
+    (total, count)
+}
+
+#[test]
+#[ignore = "benchmark; run after all plans are implemented"]
+fn ui_coverage_cost_per_step() {
+    let Some(chrome) = chrome_path() else { return };
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let root = sandbox.dir.path().join("e2e-shop");
+    copy_dir(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/e2e-shop"),
+        &root,
+    );
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let config = root.join("chrome-cdp.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(&config, text.replace("4173", &port.to_string())).unwrap();
+    let test = |args: &[&str]| {
+        let out = common::run(
+            sandbox
+                .cli()
+                .current_dir(&root)
+                .args(["test", "--jobs", "1", "--json"])
+                .args(args),
+        );
+        assert_eq!(code(&out), 0, "{}", common::stderr(&out));
+        common::json_out(&out)
+    };
+    // Warm: the first run pays for Chrome's caches.
+    test(&[]);
+    let (without, steps) = step_time(&test(&[]));
+    let (with, covered) = step_time(&test(&["--ui-coverage"]));
+    assert_eq!(steps, covered);
+    let per_step = with.saturating_sub(without) / steps;
+    eprintln!(
+        "--ui-coverage: {steps} steps took {with:?}, {without:?} without it: {per_step:?} more per step"
+    );
+    assert!(
+        per_step < UI_COVERAGE_PER_STEP,
+        "--ui-coverage added {per_step:?} per step"
+    );
 }
