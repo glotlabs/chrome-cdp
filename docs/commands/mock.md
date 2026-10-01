@@ -415,6 +415,8 @@ Options:
 - `--host <ADDR>`: The address to listen on (default `127.0.0.1`)
 - `--no-defaults`: Leave out the project's default_mocks
 - `--dir <DIR>`: The mocks directory (default: `mocks` of [e2e], else ./e2e/mocks)
+- `--upstream <URL>`: Forward `passthrough` requests to this real server (its path is a prefix), instead of answering 502
+- `--upstream-timeout <DURATION>`: How long a forwarded request may take before it answers 502 (default `30s`)
 
 ```text
 Answers HTTP requests with the same mocks as `mock use` (the default_mocks
@@ -428,9 +430,16 @@ State (counters, sequences, named values, collections) is shared by all
 requests, except that a request with an `x-chrome-cdp-test: <id>` header
 gets state of its own for that id. `chrome-cdp test` sends the header with
 its browser requests; an app that forwards it to its API calls gets state
-per test. `abort` closes the connection, `passthrough` answers 502 (there
-is no real server behind), a request no set owns answers 404, and an `sse`
-answer streams its events.
+per test. `abort` closes the connection, a request no set owns answers
+404, and an `sse` answer streams its events.
+
+`passthrough` (a mock's, or a set's unmatched = "passthrough") answers
+502, as there is no real server behind, unless --upstream URL names one:
+then the request goes there (same method, path under URL's path, query,
+headers and body; Host is the upstream's), `patch` is merged into its JSON
+answer, and the log says `passthrough → upstream 200`. An upstream that
+does not answer within --upstream-timeout is a 502 naming it. Mock some
+endpoints, and let the real server answer the rest.
 
 A WebSocket upgrade a [[websocket]] mock matches is served by it, and the
 log shows each socket's open, its messages in (←) and out (→), and its
@@ -439,12 +448,14 @@ send --serve URL` push to its open sockets and streams, through control
 requests under /__chrome-cdp/ that it takes from this machine only.
 
 In a test run, `mock_server = { port = 4010 }` in [e2e.web_server] starts
-one before the web server, with each test's own mock sets.
+one before the web server, with each test's own mock sets (`upstream =
+"http://localhost:8080"` and `upstream_timeout = "30s"` forward too).
 
 Examples:
   chrome-cdp mock serve --port 4010
   chrome-cdp mock serve checkout --no-defaults --port 0
   chrome-cdp mock serve base --host 0.0.0.0 --port 4010
+  chrome-cdp mock serve third-party --upstream http://localhost:8080
 ```
 
 ## `chrome-cdp mock ws`

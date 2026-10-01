@@ -954,6 +954,13 @@
           },
           "type": "array"
         },
+        "upstream": {
+          "description": "Where `passthrough` requests went (`--upstream`), if anywhere.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "url": {
           "description": "Where it listened, e.g. `http://127.0.0.1:4010`.",
           "type": "string"

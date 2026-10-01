@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use base64::Engine as _;
 use daemon::rpc;
-use e2e::mock_server::{MockServer, Served, SocketLog};
+use e2e::mock_server::{MockServer, Served, SocketLog, Upstream};
 use engine::{
     HarExportRequest, MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest,
     MockSeedRequest, MockSseSendRequest, MockStateRequest, MockTestTag, MockUseRequest,
@@ -213,6 +213,19 @@ fn serve(args: &MockServeArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo>
         ))
     })?;
     let addr = std::net::SocketAddr::new(ip, args.port);
+    let upstream = args
+        .upstream
+        .as_deref()
+        .map(|url| {
+            Upstream::new(url, args.upstream_timeout).map_err(|e| {
+                ErrorInfo::new(ErrorKind::BadArgs, format!("--upstream: {e}")).hint(Hint::run(
+                    Cmd::new("mock")
+                        .arg("serve")
+                        .flag("upstream", "http://localhost:8080"),
+                ))
+            })
+        })
+        .transpose()?;
     let mode = global.mode();
     let answered = Arc::new(AtomicU64::new(0));
     let count = answered.clone();
@@ -240,16 +253,20 @@ fn serve(args: &MockServeArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo>
             Mode::Quiet => {}
         }
     };
-    let server =
-        MockServer::start(addr, sets, project.seed, Some(Box::new(on_request))).map_err(|e| {
-            ErrorInfo::new(
-                ErrorKind::LaunchFailed,
-                format!("mock serve cannot listen on {addr}: {e}"),
-            )
-            .hint(
-                Hint::run(Cmd::new("mock").arg("serve").flag("port", "0")).why("picks a free port"),
-            )
-        })?;
+    let server = MockServer::start_with(
+        addr,
+        sets,
+        project.seed,
+        Some(Box::new(on_request)),
+        upstream,
+    )
+    .map_err(|e| {
+        ErrorInfo::new(
+            ErrorKind::LaunchFailed,
+            format!("mock serve cannot listen on {addr}: {e}"),
+        )
+        .hint(Hint::run(Cmd::new("mock").arg("serve").flag("port", "0")).why("picks a free port"))
+    })?;
     server.on_socket(Box::new(move |entry: &SocketLog| match mode {
         Mode::Json => {
             let line = serde_json::to_string(entry).unwrap_or_default();
@@ -259,13 +276,24 @@ fn serve(args: &MockServeArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo>
         Mode::Quiet => {}
     }));
     let url = server.url();
+    let upstream = server.upstream().map(|u| u.url().to_owned());
     // The sets in the order they are tried.
     let tried: Vec<String> = names.iter().rev().cloned().collect();
     match mode {
-        Mode::Json => output::stdout(&format!("{}\n", json!({ "listening": url, "sets": tried }))),
+        Mode::Json => {
+            let mut line = json!({ "listening": url, "sets": tried });
+            if let Some(upstream) = &upstream {
+                line["upstream"] = json!(upstream);
+            }
+            output::stdout(&format!("{line}\n"));
+        }
         Mode::Text => output::stdout(&format!(
-            "mock server on {url}: {} (Ctrl-C stops it)\n",
-            tried.join(", ")
+            "mock server on {url}: {}{} (Ctrl-C stops it)\n",
+            tried.join(", "),
+            upstream
+                .as_deref()
+                .map(|u| format!("; passthrough to {u}"))
+                .unwrap_or_default()
         )),
         Mode::Quiet => output::stdout(&format!("{url}\n")),
     }
@@ -286,6 +314,7 @@ fn serve(args: &MockServeArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo>
         url,
         sets: tried,
         requests,
+        upstream,
     };
     Ok(Output::typed(&data, text).quiet(String::new()))
 }

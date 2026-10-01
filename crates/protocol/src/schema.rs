@@ -5923,6 +5923,9 @@ pub struct MockServeData {
     pub sets: Vec<String>,
     /// How many requests it answered.
     pub requests: u64,
+    /// Where `passthrough` requests went (`--upstream`), if anywhere.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream: Option<String>,
 }
 
 /// A page's WebSocket that a `[[websocket]]` mock answers (plan 11,
