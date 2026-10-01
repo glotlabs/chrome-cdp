@@ -1,0 +1,36 @@
+<!doctype html>
+<!-- `test --heal` with `testid_attribute = "data-test"` (plan 18): ?v=2
+     names both buttons "Buy", so only the test id tells them apart and the
+     healed locator must be `testid=…`. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tickets</title>
+</head>
+<body>
+<main id="app"></main>
+<script>
+  const v2 = new URLSearchParams(location.search).get('v') === '2';
+  const app = document.getElementById('app');
+  app.innerHTML = v2
+    ? `<h1>Tickets</h1>
+       <form aria-label="Order">
+         <button type="button" data-test="buy-adult" class="btn btn--primary">Buy</button>
+         <button type="button" data-test="buy-child" class="btn">Buy</button>
+       </form>
+       <p role="status"></p>`
+    : `<h1>Tickets</h1>
+       <form aria-label="Order">
+         <button type="button" data-test="buy-adult" class="button primary">Buy ticket</button>
+         <button type="button" data-test="buy-child" class="button">Buy child ticket</button>
+       </form>
+       <p role="status"></p>`;
+  for (const button of document.querySelectorAll('button')) {
+    button.addEventListener('click', () => {
+      document.querySelector('[role=status]').textContent =
+        'Bought ' + button.dataset.test.slice(4);
+    });
+  }
+</script>
+</body>
+</html>

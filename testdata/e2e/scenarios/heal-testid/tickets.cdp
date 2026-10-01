@@ -1,0 +1,7 @@
+# Healing with testid_attribute = "data-test": crates/chrome-cdp/tests/e2e.rs
+# runs it once on ?v=1 for the fingerprints, then on the redesigned ?v=2.
+
+@test "buys an adult ticket"
+  goto /e2e/heal-testid.html?v=${var:heal_version}
+  click 'role=button[name="Buy ticket"]'
+  expect role=status text 'Bought adult'

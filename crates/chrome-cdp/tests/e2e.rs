@@ -1894,6 +1894,50 @@ fn a_redesigned_page_is_healed() {
     assert_ne!(std::fs::read_to_string(&fingerprints).unwrap(), taken);
 }
 
+/// Heal with another `testid_attribute`: when only the test id tells the
+/// redesigned element apart, the healed locator is `testid=…` (not
+/// `css=[data-test=…]`), and after `--write` it replays without `--heal`.
+#[test]
+fn a_heal_by_a_configured_test_id_writes_testid() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let config = project.root.join("chrome-cdp.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(&config, format!("testid_attribute = \"data-test\"\n{text}")).unwrap();
+    let run = |args: &[&str]| {
+        common::run(
+            project
+                .sandbox
+                .cli()
+                .current_dir(&project.root)
+                .env_remove("CI")
+                .args(["test", "scenarios/heal-testid", "--timeout", "2s"])
+                .args(args),
+        )
+    };
+    let out = run(&[]);
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+
+    let vars = project.root.join("vars/mock.toml");
+    let text = std::fs::read_to_string(&vars).unwrap();
+    std::fs::write(&vars, text.replace("heal_version = 1", "heal_version = 2")).unwrap();
+    let out = run(&["--heal", "--write"]);
+    let text = stdout(&out);
+    assert_eq!(out.status.code(), Some(0), "{text}");
+    assert!(
+        text.contains(": role=button[name=\"Buy ticket\"] -> testid=buy-adult ("),
+        "{text}"
+    );
+    let scenario =
+        std::fs::read_to_string(project.root.join("scenarios/heal-testid/tickets.cdp")).unwrap();
+    assert!(
+        scenario.contains("\n  click testid=buy-adult\n"),
+        "{scenario}"
+    );
+    let out = run(&[]);
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
+}
+
 /// Plan 18.3: each planted flake of `scenarios/flaky` fails some of its
 /// 20 runs (the page picks them with a PRNG seeded with the run's number,
 /// so they are the same every time) and is diagnosed as its own cause,
