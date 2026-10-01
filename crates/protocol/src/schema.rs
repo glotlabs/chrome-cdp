@@ -6058,6 +6058,55 @@ pub struct TestResult {
     /// with the element their fingerprint matched instead.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub healed: Vec<TestHeal>,
+    /// A test whose runs disagreed (a retry passed, or `--repeat` had both
+    /// outcomes; plan 18.3): the likely cause, with its evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flake: Option<TestFlake>,
+}
+
+/// Why a flaky test's runs disagreed: the likely cause first, from
+/// comparing its failing runs with its passing ones up to the step that
+/// failed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TestFlake {
+    /// `unsettled` (acted before the page settled), `race` (requests
+    /// raced), `moving-target`, `different-requests`,
+    /// `time-or-randomness`, `shared-state`, or `unknown`.
+    pub cause: String,
+    /// The cause in words: `acted before the page settled`.
+    pub summary: String,
+    /// 0 to 1: how sure the diagnosis is, from how many failing runs the
+    /// cause explains; 0 for `unknown`.
+    pub confidence: f64,
+    /// What the runs showed, naming the request or element.
+    pub evidence: Vec<String>,
+    /// How to fix it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
+    /// How many times the test ran, and how many of those failed.
+    pub runs: u32,
+    pub failed_runs: u32,
+    /// `file:line:col` of the step most failing runs failed at, and the
+    /// step.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<String>,
+    /// The other causes that fit, ranked like the first: by how many
+    /// failing runs they explain.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub others: Vec<FlakeCause>,
+}
+
+/// A cause of [`TestFlake::others`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FlakeCause {
+    pub cause: String,
+    pub summary: String,
+    pub confidence: f64,
+    pub evidence: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
 }
 
 /// A step `test --heal` ran with another locator.

@@ -39,15 +39,18 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use protocol::schema::{HealCandidate, HealMatchData, MockLogData, RoutedRequest, TestFailure};
+use protocol::schema::{
+    HealCandidate, HealMatchData, MockLogData, RoutedRequest, TestFailure, TestFlake,
+};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output};
 use serde_json::Value;
 
 use e2e::scenario::Settings;
 
-use super::artifacts::{self, Capture, Logs, Recorder, StepRecord};
+use super::artifacts::{self, Capture, Logs, Recorder, StepRecord, Timed};
 use super::determinism;
 use super::fingerprints::{self, Taken};
+use super::flake::{self, RunRecord};
 use super::heal::{self, Heal};
 use super::plan::{Plan, Planned, Prepared};
 use super::report_md::{self, Subject};
@@ -88,6 +91,10 @@ pub(super) struct Outcome {
     pub(super) artifacts: Option<PathBuf>,
     /// `--heal`: the steps its last try healed.
     pub(super) healed: Vec<Heal>,
+    /// Its runs (or tries), for the flake diagnosis; empty once merged.
+    pub(super) runs: Vec<RunRecord>,
+    /// Why its runs disagreed, when they did (plan 18.3).
+    pub(super) flake: Option<TestFlake>,
 }
 
 /// How a run's steps are made.
@@ -159,7 +166,10 @@ pub(super) fn execute(
     // other, so they spread over the workers.
     let items = count * repeat;
     let next = AtomicUsize::new(0);
-    let results: Mutex<(Vec<Option<Outcome>>, usize)> = Mutex::new((vec![None; items], 0));
+    // Each run's outcome until its test's runs are all in, then each
+    // test's, merged.
+    let results: Mutex<(Vec<Option<Outcome>>, Vec<Outcome>)> =
+        Mutex::new((vec![None; items], Vec::new()));
     let before_all: Vec<Mutex<Once>> = plan
         .scenarios
         .iter()
@@ -213,6 +223,8 @@ pub(super) fn execute(
                             warnings: Vec::new(),
                             artifacts: None,
                             healed: Vec::new(),
+                            runs: Vec::new(),
+                            flake: None,
                         }
                     } else {
                         let runner = Runner {
@@ -232,6 +244,7 @@ pub(super) fn execute(
                             taken: RefCell::new(Vec::new()),
                             healed: RefCell::new(Vec::new()),
                             likely: RefCell::new(None),
+                            last: RefCell::new(None),
                         };
                         let index = item / repeat;
                         let outcome = match runner.before_all(test, &before_all[test.file]) {
@@ -245,6 +258,8 @@ pub(super) fn execute(
                                 warnings: Vec::new(),
                                 artifacts: None,
                                 healed: Vec::new(),
+                                runs: Vec::new(),
+                                flake: None,
                             },
                             Ok(()) => {
                                 runner.test(test, index, (repeat > 1).then_some(item % repeat + 1))
@@ -267,35 +282,65 @@ pub(super) fn execute(
                         outcome.reason = test.skipped().map(str::to_owned);
                     }
                     let mut guard = results.lock().unwrap_or_else(PoisonError::into_inner);
-                    let (done, printed) = &mut *guard;
+                    let (done, merged) = &mut *guard;
                     done[item] = Some(outcome);
-                    while *printed < count {
-                        let runs = &done[*printed * repeat..(*printed + 1) * repeat];
-                        let Some(runs) = runs.iter().cloned().collect::<Option<Vec<_>>>() else {
+                    while merged.len() < count {
+                        let at = merged.len();
+                        let runs = &mut done[at * repeat..(at + 1) * repeat];
+                        if runs.iter().any(Option::is_none) {
                             break;
-                        };
-                        report(*printed, &merge(runs, repeat));
-                        *printed += 1;
+                        }
+                        let runs = runs.iter_mut().filter_map(Option::take).collect();
+                        let outcome = diagnosed(plan, merge(runs, repeat));
+                        report(at, &outcome);
+                        merged.push(outcome);
                     }
                 }
             });
         }
     });
-    let (done, _) = results.into_inner().unwrap_or_else(PoisonError::into_inner);
-    done.chunks(repeat)
-        .map(|runs| {
-            let runs = runs
-                .iter()
-                .map(|o| o.clone().unwrap_or_else(|| not_run(options)))
-                .collect();
-            merge(runs, repeat)
-        })
-        .collect()
+    let (done, mut merged) = results.into_inner().unwrap_or_else(PoisonError::into_inner);
+    // The tests whose runs did not all end (the run was stopped).
+    for runs in done.chunks(repeat).skip(merged.len()) {
+        let runs = runs
+            .iter()
+            .map(|o| o.clone().unwrap_or_else(|| not_run(options)))
+            .collect();
+        merged.push(diagnosed(plan, merge(runs, repeat)));
+    }
+    merged
+}
+
+/// `outcome` with why its runs disagreed, if they did: the diagnosis goes
+/// into its `flake` and into the report of the failure it shows.
+fn diagnosed(plan: &Plan, mut outcome: Outcome) -> Outcome {
+    let runs = std::mem::take(&mut outcome.runs);
+    let setting = flake::Setting {
+        real: plan.real(),
+        unfixed: [
+            ("freeze_time", plan.determinism.freeze_time.is_none()),
+            ("random_seed", plan.determinism.random_seed.is_none()),
+        ]
+        .into_iter()
+        .filter_map(|(name, off)| off.then_some(name))
+        .collect(),
+        animations: !plan.determinism.disable_animations,
+    };
+    outcome.flake = flake::diagnose(&runs, &setting);
+    if let Some(flake) = &outcome.flake
+        && let Some(report) = outcome.failure.as_ref().and_then(|f| f.report.as_deref())
+    {
+        let path = Path::new(report);
+        if let Ok(text) = std::fs::read_to_string(path) {
+            artifacts::write(path, &format!("{text}{}", flake::section(flake, &runs)));
+        }
+    }
+    outcome
 }
 
 /// A test's result from its runs (one without `--repeat`): failed if one
 /// failed, then not run if one was not, then skipped if all were; the
-/// slowest run's duration, and the first failure.
+/// slowest run's duration, the first failure, and every run's record.
 fn merge(mut runs: Vec<Outcome>, repeat: usize) -> Outcome {
     if repeat == 1 && runs.len() == 1 {
         return runs.remove(0);
@@ -319,10 +364,16 @@ fn merge(mut runs: Vec<Outcome>, repeat: usize) -> Outcome {
         .or(runs.first());
     let artifacts = shown.and_then(|o| o.artifacts.clone());
     let healed = shown.map(|o| o.healed.clone()).unwrap_or_default();
+    let records = runs
+        .iter_mut()
+        .flat_map(|o| std::mem::take(&mut o.runs))
+        .collect();
     Outcome {
         status,
         artifacts,
         healed,
+        runs: records,
+        flake: None,
         duration: runs.iter().map(|o| o.duration).max().unwrap_or_default(),
         tries: runs.iter().map(|o| o.tries).sum(),
         failure: runs.iter().find_map(|o| o.failure.clone()),
@@ -358,6 +409,8 @@ fn not_run(options: &Options) -> Outcome {
         warnings: Vec::new(),
         artifacts: None,
         healed: Vec::new(),
+        runs: Vec::new(),
+        flake: None,
     }
 }
 
@@ -395,6 +448,8 @@ struct Runner<'a> {
     healed: RefCell<Vec<Heal>>,
     /// The element a failed step's fingerprint matches now.
     likely: RefCell<Option<HealCandidate>>,
+    /// The steps and requests of the last test (or hook) that ran.
+    last: RefCell<Option<(Vec<StepRecord>, Vec<Timed>)>>,
 }
 
 /// A step's place in a test, for its failure.
@@ -410,6 +465,7 @@ impl Runner<'_> {
     fn test(&self, test: &Planned, index: usize, run: Option<usize>) -> Outcome {
         let tries = self.plan.retries(test) + 1;
         let mut first_failure = None;
+        let mut runs = Vec::new();
         for attempt in 1..=tries {
             let started = Instant::now();
             *self.test_id.borrow_mut() = vars::test_id(&self.plan.run, index, attempt, run);
@@ -431,6 +487,18 @@ impl Runner<'_> {
             let result = self.attempt(test, index, &dir, label);
             *self.current.borrow_mut() = None;
             let duration = started.elapsed();
+            let (steps, requests) = self.last.take().unwrap_or_default();
+            runs.push(RunRecord {
+                label: match run {
+                    Some(run) => format!("run {run}"),
+                    None => format!("try {attempt}"),
+                },
+                number: run.unwrap_or(attempt as usize),
+                dir: dir.clone(),
+                failure: result.as_ref().err().map(|f| f.as_ref().clone()),
+                steps,
+                requests,
+            });
             match result {
                 Ok(()) => {
                     if self.options.fingerprints.is_some() {
@@ -457,6 +525,8 @@ impl Runner<'_> {
                         warnings: Vec::new(),
                         artifacts: Some(dir),
                         healed: self.healed.take(),
+                        runs,
+                        flake: None,
                     };
                 }
                 Err(failure) if attempt == tries => {
@@ -470,6 +540,8 @@ impl Runner<'_> {
                         warnings: Vec::new(),
                         artifacts: Some(dir),
                         healed: self.healed.take(),
+                        runs,
+                        flake: None,
                     };
                 }
                 Err(failure) => {
@@ -589,6 +661,13 @@ impl Runner<'_> {
             }
         };
         let recorder = self.recorder.borrow_mut().take();
+        *self.last.borrow_mut() = Some((
+            recorder
+                .as_ref()
+                .map(|r| r.steps().to_vec())
+                .unwrap_or_default(),
+            std::mem::take(&mut logs.requests),
+        ));
         result.map_err(|mut failure| {
             if !kept {
                 artifacts::point_hint_at_files(&mut failure.error, dir);

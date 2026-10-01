@@ -18,6 +18,7 @@ mod backend;
 mod determinism;
 mod exec;
 mod fingerprints;
+mod flake;
 mod heal;
 mod outputs;
 pub(crate) mod plan;

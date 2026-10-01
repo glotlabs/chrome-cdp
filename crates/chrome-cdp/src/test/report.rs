@@ -60,6 +60,9 @@ pub(super) fn line(plan: &Plan, test: &Planned, outcome: &Outcome) -> String {
         };
         let _ = writeln!(text, "    healed {}{suspect}", heal.line());
     }
+    if let Some(flake) = &outcome.flake {
+        text.push_str(&super::flake::text(flake));
+    }
     if let Some(failure) = &outcome.failure {
         let label = if outcome.status == Status::Flaky {
             "first try failed"
@@ -157,6 +160,7 @@ fn result(plan: &Plan, test: &Planned, outcome: &Outcome) -> TestResult {
         error: outcome.failure.as_deref().cloned(),
         backend: None,
         healed: Vec::new(),
+        flake: outcome.flake.clone(),
     }
 }
 
@@ -329,6 +333,7 @@ pub(super) fn listed(plan: &Plan, shard: Option<&str>, max_chars: usize) -> Outp
             error: None,
             backend: None,
             healed: Vec::new(),
+            flake: None,
         });
     }
     let skipped = tests.iter().filter(|t| t.status == "skipped").count();

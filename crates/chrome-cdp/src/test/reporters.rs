@@ -447,6 +447,7 @@ mod tests {
             }),
             backend: None,
             healed: Vec::new(),
+            flake: None,
         }
     }
 

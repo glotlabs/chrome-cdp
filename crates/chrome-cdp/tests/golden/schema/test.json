@@ -796,6 +796,40 @@
       },
       "type": "object"
     },
+    "FlakeCause": {
+      "description": "A cause of [`TestFlake::others`].",
+      "properties": {
+        "cause": {
+          "type": "string"
+        },
+        "confidence": {
+          "format": "double",
+          "type": "number"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cause",
+        "summary",
+        "confidence",
+        "evidence"
+      ],
+      "type": "object"
+    },
     "HealCandidate": {
       "description": "An element of the page matched against a step's fingerprint.",
       "properties": {
@@ -1368,6 +1402,78 @@
       ],
       "type": "object"
     },
+    "TestFlake": {
+      "description": "Why a flaky test's runs disagreed: the likely cause first, from\ncomparing its failing runs with its passing ones up to the step that\nfailed.",
+      "properties": {
+        "at": {
+          "description": "`file:line:col` of the step most failing runs failed at, and the\nstep.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cause": {
+          "description": "`unsettled` (acted before the page settled), `race` (requests\nraced), `moving-target`, `different-requests`,\n`time-or-randomness`, `shared-state`, or `unknown`.",
+          "type": "string"
+        },
+        "confidence": {
+          "description": "0 to 1: how sure the diagnosis is, from how many failing runs the\ncause explains; 0 for `unknown`.",
+          "format": "double",
+          "type": "number"
+        },
+        "evidence": {
+          "description": "What the runs showed, naming the request or element.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "failed_runs": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "hint": {
+          "description": "How to fix it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "others": {
+          "description": "The other causes that fit, ranked like the first: by how many\nfailing runs they explain.",
+          "items": {
+            "$ref": "#/$defs/FlakeCause"
+          },
+          "type": "array"
+        },
+        "runs": {
+          "description": "How many times the test ran, and how many of those failed.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "step": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "summary": {
+          "description": "The cause in words: `acted before the page settled`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cause",
+        "summary",
+        "confidence",
+        "evidence",
+        "runs",
+        "failed_runs"
+      ],
+      "type": "object"
+    },
     "TestHeal": {
       "description": "A step `test --heal` ran with another locator.",
       "properties": {
@@ -1494,6 +1600,17 @@
         "file": {
           "description": "The scenario file, relative to the current directory.",
           "type": "string"
+        },
+        "flake": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TestFlake"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A test whose runs disagreed (a retry passed, or `--repeat` had both\noutcomes; plan 18.3): the likely cause, with its evidence."
         },
         "healed": {
           "description": "`--heal` (plan 18.2): the steps whose locator found nothing and ran\nwith the element their fingerprint matched instead.",
