@@ -13,8 +13,9 @@
 //! - `duplicate-collection` (warning): two files with a collection of one
 //!   name (`mock state` and `mock seed` reach only one);
 //! - `undeclared-state` (warning): a `when`, `set_state` or `unset_state`
-//!   name, or a `{{state.x}}` in a `[[websocket]]`'s messages, that no
-//!   file's `[state]` declares;
+//!   name, or a `{{state.x}}` in an answer (a `[[mock]]`'s, its `.tmpl.`
+//!   data files', a `[[websocket]]`'s messages), that no file's `[state]`
+//!   declares;
 //! - `ws-unreachable` (warning): a `[[websocket]]` an earlier one of its
 //!   file takes every socket of;
 //! - `ws-rule-unreachable` (warning): an `on_message` rule after one that
@@ -362,16 +363,38 @@ fn undeclared(sets: &[MockSet], out: &mut Vec<MockProblem>) {
                 }
             }
         }
+        for mock in &set.mocks {
+            let mut texts = Vec::new();
+            mock_texts(mock, &set.source.base, &mut texts);
+            for name in state_names(&texts)
+                .iter()
+                .filter(|n| !declared.contains(n.as_str()))
+            {
+                out.push(report(
+                    set,
+                    mock.line,
+                    format!(
+                        "mock \"{}\": its answer reads `state.{name}`, which no mock file's \
+                         [state] declares",
+                        mock.name
+                    ),
+                    name,
+                ));
+            }
+        }
         for ws in &set.websockets {
-            let actions = ws
+            let mut texts = Vec::new();
+            for action in ws
                 .on_open
                 .iter()
-                .chain(ws.on_message.iter().map(|r| &r.action));
-            let mut names = BTreeSet::new();
-            for action in actions {
-                state_names(action, &mut names);
+                .chain(ws.on_message.iter().map(|r| &r.action))
+            {
+                ws_texts(action, &mut texts);
             }
-            for name in names.iter().filter(|n| !declared.contains(n.as_str())) {
+            for name in state_names(&texts)
+                .iter()
+                .filter(|n| !declared.contains(n.as_str()))
+            {
                 out.push(report(
                     set,
                     ws.line,
@@ -387,8 +410,72 @@ fn undeclared(sets: &[MockSet], out: &mut Vec<MockProblem>) {
     }
 }
 
-/// The `state.x` names an action's templates read.
-fn state_names(action: &WsAction, out: &mut BTreeSet<String>) {
+/// The strings of `value` (keys too), where templates can be.
+fn json_texts(value: &Value, out: &mut Vec<String>) {
+    match value {
+        Value::String(s) => out.push(s.clone()),
+        Value::Array(items) => items.iter().for_each(|v| json_texts(v, out)),
+        Value::Object(map) => map.iter().for_each(|(k, v)| {
+            out.push(k.clone());
+            json_texts(v, out);
+        }),
+        _ => {}
+    }
+}
+
+/// The texts of a websocket action that are templates.
+fn ws_texts(action: &WsAction, out: &mut Vec<String>) {
+    match &action.send {
+        Some(WsSend::Text(value)) => json_texts(value, out),
+        Some(WsSend::Base64(text)) => out.push(text.clone()),
+        None => {}
+    }
+    if let Some((_, reason)) = &action.close {
+        out.push(reason.clone());
+    }
+}
+
+/// The texts of a mock's answers that are templates: inline bodies,
+/// headers, `sse` events, data file names, and `.tmpl.` data files
+/// (read from `base`).
+fn mock_texts(mock: &Mock, base: &Path, out: &mut Vec<String>) {
+    for step in &mock.steps {
+        let (headers, body) = match &step.respond {
+            Respond::Fulfill { headers, body, .. } => (headers, body),
+            Respond::Passthrough(Some(patch)) => {
+                json_texts(patch, out);
+                continue;
+            }
+            Respond::Passthrough(None) | Respond::Abort(_) => continue,
+        };
+        out.extend(headers.iter().map(|(_, v)| v.clone()));
+        match body {
+            Body::Json(value) => json_texts(value, out),
+            Body::Text(text) => out.push(text.clone()),
+            Body::JsonFile(path) | Body::TextFile(path) | Body::File(path) => {
+                out.push(path.clone());
+                if path.contains(".tmpl.")
+                    && !is_template(path)
+                    && let Ok(text) = std::fs::read_to_string(base.join(path))
+                {
+                    out.push(text);
+                }
+            }
+            Body::Sse(events) => {
+                for e in events {
+                    out.extend(e.event.iter().chain(&e.id).chain(&e.comment).cloned());
+                    if let Some(data) = &e.data {
+                        json_texts(data, out);
+                    }
+                }
+            }
+            Body::Empty => {}
+        }
+    }
+}
+
+/// The `state.x` names `texts`' templates read.
+fn state_names(texts: &[String]) -> BTreeSet<String> {
     static STATE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
         #[allow(clippy::expect_used)] // a constant pattern
         regex::Regex::new(
@@ -396,26 +483,7 @@ fn state_names(action: &WsAction, out: &mut BTreeSet<String>) {
         )
         .expect("valid regex")
     });
-    fn walk(value: &Value, out: &mut Vec<String>) {
-        match value {
-            Value::String(s) => out.push(s.clone()),
-            Value::Array(items) => items.iter().for_each(|v| walk(v, out)),
-            Value::Object(map) => map.iter().for_each(|(k, v)| {
-                out.push(k.clone());
-                walk(v, out);
-            }),
-            _ => {}
-        }
-    }
-    let mut texts = Vec::new();
-    match &action.send {
-        Some(WsSend::Text(value)) => walk(value, &mut texts),
-        Some(WsSend::Base64(text)) => texts.push(text.clone()),
-        None => {}
-    }
-    if let Some((_, reason)) = &action.close {
-        texts.push(reason.clone());
-    }
+    let mut out = BTreeSet::new();
     for text in texts.iter().filter(|t| is_template(t)) {
         for c in STATE.captures_iter(text) {
             if let Some(name) = c.get(1).or_else(|| c.get(2)) {
@@ -423,6 +491,7 @@ fn state_names(action: &WsAction, out: &mut BTreeSet<String>) {
             }
         }
     }
+    out
 }
 
 /// Whether a rule answers every message (text and binary).

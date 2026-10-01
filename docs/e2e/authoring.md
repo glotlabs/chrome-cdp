@@ -145,7 +145,7 @@ It checks every mock file in the mocks directory (or the sets named):
 | `unreachable` | warning | a mock an earlier mock of its file always answers for |
 | `collection-shadowed` | warning | a collection a mock answers every request of (in its file, or in a `default_mocks` set applied after it) |
 | `duplicate-collection` | warning | two files with a collection of one name |
-| `undeclared-state` | warning | a `when`, `set_state` or `unset_state` name, or a `{{state.x}}` in a `[[websocket]]`'s messages, no `[state]` declares |
+| `undeclared-state` | warning | a `when`, `set_state` or `unset_state` name, or a `{{state.x}}` in an answer (a mock's body, headers or `.tmpl.` data file, a `[[websocket]]`'s messages), no `[state]` declares |
 | `ws-unreachable` | warning | a `[[websocket]]` an earlier one of its file takes every socket of |
 | `ws-rule-unreachable` | warning | an `on_message` rule after one that answers every message (no `match`, or `match = "*"`) |
 | `openapi-path` | error | the spec has no such path |

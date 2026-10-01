@@ -427,7 +427,8 @@ _(append here)_
 - 19.2: no `ws-close-code` rule: `load` already refuses a close code
   outside 1000 and 3000–4999, so `mock check` reports it as `load`.
   Websocket templates do read state (`{{state.x}}`), so
-  `undeclared-state` scans their messages and close reasons.
+  `undeclared-state` scans their messages and close reasons; it scans
+  `[[mock]]` answers (bodies, headers, `.tmpl.` data files) the same way.
 - 19.2: recorded `[[websocket]]`s match the socket's path, never its full
   URL: recorded `[[mock]]`s match paths only today too (a repro bundle's
   other origins are a backlog note), and a path glob takes the socket on

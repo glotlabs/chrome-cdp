@@ -312,6 +312,49 @@ on_message = [{ match = "*", send = "text" }, { send_base64 = "AAE=" }]
 }
 
 #[test]
+fn state_read_by_mock_answers_must_be_declared() {
+    let d = dir(&[
+        (
+            "m.toml",
+            r#"
+[state]
+cart = 0
+
+[[mock]]
+name = "cart"
+match = { path = "/api/cart" }
+respond = { json = { count = "{{state.cart}}", user = "{{state.usr}}" } }
+
+[[mock]]
+name = "profile"
+match = { path = "/api/profile" }
+respond = { json_file = "data/profile.tmpl.json", headers = { x-cart = "{{ state['cart'] }}" } }
+"#,
+        ),
+        ("data/profile.tmpl.json", r#"{"name": "{{state.name}}"}"#),
+    ]);
+    let checked = check(&sources(d.path(), &["m"]), &[], None);
+    let got: Vec<(usize, &str)> = checked
+        .problems
+        .iter()
+        .map(|p| (p.line, p.message.as_str()))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            (
+                5,
+                "mock \"cart\": its answer reads `state.usr`, which no mock file's [state] declares"
+            ),
+            (
+                10,
+                "mock \"profile\": its answer reads `state.name`, which no mock file's [state] declares"
+            ),
+        ]
+    );
+}
+
+#[test]
 fn a_later_default_set_can_shadow_a_collection() {
     let d = dir(&[
         (
