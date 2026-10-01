@@ -18,7 +18,7 @@ around it. **The v1 gate: no ❌ in an agent-critical row.** A test
 (`crates/chrome-cdp/tests/parity.rs`) holds the tables to that, checks the
 counts below, and checks that every command a row names exists.
 
-Today: 137 rows; 123 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
+Today: 138 rows; 124 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
 
 ## Navigation
 
@@ -205,6 +205,7 @@ Today: 137 rows; 123 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
 | `webServer` | `[e2e.web_server]`: a command to start, or a folder to serve | ✅ | yes |
 | the same tests against other environments | backends: `test --backend staging` | ✅ | no |
 | `retries`, `workers`, sharding, `--repeat-each` | `test --retries 2 --jobs 4 --shard 2/4 --repeat 20`; a flaky test names its likely cause, with the request or element (Playwright only marks it flaky) | ✅ | no |
+| code coverage (`page.coverage`, third-party reporters) | `test --ui-coverage`: per page, the controls no test acted on or checked, and the mocks no request matched (`coverage` has the code coverage) | ✅ | no |
 | reporters (`list`, `junit`, `json`, `html`) | `test --reporter text,junit,json,html`, and a `report.md` per failure | ✅ | yes |
 | `--update-snapshots` | `test --update-snapshots` | ✅ | no |
 | fixtures, `test.step` | step files through `@include` with parameters; `#` comments name steps | 🟡 | no |

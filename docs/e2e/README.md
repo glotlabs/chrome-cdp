@@ -16,6 +16,7 @@ small React app.
 | [debugging.md](debugging.md) | artifacts, `report.md`, reporters, `--debug`, `--watch` |
 | [determinism.md](determinism.md) | frozen time, seeded random values, no animations, `--repeat`, fonts |
 | [healing.md](healing.md) | fingerprints, the likely element of a broken locator, `--heal`, `heal.patch` and `--write` |
+| [coverage.md](coverage.md) | `--ui-coverage`: per page, the controls no test acted on, and the mocks no test used |
 | [backends.md](backends.md) | the same scenarios against a real backend, hybrid mode, `--verify-mocks` |
 | [beyond-fetch.md](beyond-fetch.md) | WebSockets, Server-Sent Events, `mock serve` for server-side rendering |
 | [migrating.md](migrating.md) | from `@playwright/test` and `page.route` |

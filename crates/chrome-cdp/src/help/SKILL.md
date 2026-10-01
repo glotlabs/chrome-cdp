@@ -108,6 +108,8 @@ tests in `e2e/scenarios/*.cdp` and fake API answers in
    console errors, requests. Read it, fix the app or the test, rerun.
    Locators a redesign broke: `test --heal --write`. Before committing a
    test, `test file.cdp --repeat 20`: a flaky one names its likely cause.
+   What to test next: `test --ui-coverage` lists, per page, the controls
+   no test acted on and the mocks no test used.
 
 ```
 @mocks base checkout
