@@ -1,7 +1,9 @@
 //! `examples/e2e-shop` (plan 11, milestone 11.10), the acceptance suite
-//! of plan 11: its scenarios pass against the mocks with `--jobs 4` and
-//! against the real API (`fixtures::Shop`, `--backend local`), the mocks
-//! match that API (`--verify-mocks`), its deliberately failing fixture
+//! of plan 11: its scenarios pass against the mocks with `--jobs 4`,
+//! against the real API and payment provider (`fixtures::Shop`,
+//! `--backend local`) and against the real API with the provider mocked
+//! (`--backend hybrid`, plan 19.3), the mocks match that API
+//! (`--verify-mocks`), its deliberately failing fixture
 //! gets the unmatched-request diagnostics, and `fmt --check` and `lint`
 //! pass on it. Its committed fingerprints are what a run writes, and a
 //! redesign of it (`testdata/heal/redesign.toml`) is healed (plan 18.2).
@@ -9,7 +11,7 @@
 //! Needs a real Chrome (`CHROME_PATH`; skipped without it unless
 //! `CHROME_CDP_REQUIRE_CHROME` is set). Each test copies the example to a
 //! temp dir and moves its ports (4173 for the mocks' static server, 4174
-//! for the real API) to free ones.
+//! for the real API, 4175 for the payment provider) to free ones.
 
 #![allow(clippy::unwrap_used, clippy::print_stderr)]
 
@@ -36,13 +38,17 @@ impl Example {
         // The real backend: already running, so the run reuses it rather
         // than building the fixture server with cargo.
         let real = Shop::start(root.join("dist"), 0).unwrap();
-        let real_port = real.url().rsplit_once(':').unwrap().1.to_owned();
-        let config = root.join("chrome-cdp.toml");
-        let text = std::fs::read_to_string(&config)
-            .unwrap()
-            .replace("4173", &free_port().to_string())
-            .replace("4174", &real_port);
-        std::fs::write(&config, text).unwrap();
+        let port = |url: &str| url.rsplit_once(':').unwrap().1.to_owned();
+        let (real_port, payments_port) = (port(real.url()), port(real.payments()));
+        for file in ["chrome-cdp.toml", "dist/config.js"] {
+            let path = root.join(file);
+            let text = std::fs::read_to_string(&path)
+                .unwrap()
+                .replace("4173", &free_port().to_string())
+                .replace("4174", &real_port)
+                .replace("4175", &payments_port);
+            std::fs::write(&path, text).unwrap();
+        }
         Self { sandbox, root }
     }
 
@@ -110,7 +116,7 @@ fn the_shop_passes_against_the_mocks() {
     let Some(chrome) = chrome_path() else { return };
     let example = Example::new(Sandbox::with_chrome(&chrome));
     let value = example.json(&["test", "--jobs", "4"]);
-    assert_eq!(counts(&value), (17, 0, 0), "{value:#}");
+    assert_eq!(counts(&value), (18, 0, 0), "{value:#}");
     assert!(example.sandbox.daemons().is_empty());
     // The run writes the fingerprints the example has, byte for byte.
     let committed = crate::example().join("e2e/fingerprints");
@@ -194,7 +200,7 @@ fn a_redesign_is_healed() {
     // Without --heal: the tests fail, and each names the element its
     // broken locator's fingerprint matches now.
     let value = example.json(&run);
-    assert_eq!(counts(&value), (6, 11, 0), "{value:#}");
+    assert_eq!(counts(&value), (6, 12, 0), "{value:#}");
     for (name, test) in tests_by_name(&value) {
         if test["status"] != "failed" {
             continue;
@@ -226,7 +232,7 @@ fn a_redesign_is_healed() {
     let out = example.cli(&run.iter().copied().chain(["--heal"]).collect::<Vec<_>>());
     let text = stdout(&out);
     assert_eq!(out.status.code(), Some(1), "{text}");
-    assert!(text.contains("17 tests: 16 passed, 1 failed ("), "{text}");
+    assert!(text.contains("18 tests: 17 passed, 1 failed ("), "{text}");
     assert!(
         text.contains(
             "    healed e2e/scenarios/cart.cdp:5: role=button[name=\"Add to cart\"] -> role=button[name=\"Add to basket\"] (0.84: same testid, role, container and tag; similar name)\n"
@@ -281,7 +287,7 @@ fn a_redesign_is_healed() {
         .unwrap();
     assert_eq!(written.len(), 6, "{value:#}");
     let value = example.json(&run);
-    assert_eq!(counts(&value), (16, 1, 0), "{value:#}");
+    assert_eq!(counts(&value), (17, 1, 0), "{value:#}");
     assert_eq!(
         value["error"]["details"]["tests"]
             .as_array()
@@ -328,7 +334,7 @@ fn ui_coverage_names_what_the_suite_never_touched() {
     std::fs::write(&config, text).unwrap();
 
     let value = example.json(&["test", "--jobs", "4", "--ui-coverage"]);
-    assert_eq!(counts(&value), (17, 0, 0), "{value:#}");
+    assert_eq!(counts(&value), (18, 0, 0), "{value:#}");
     let coverage = &value["data"]["ui_coverage"];
     let pages: Vec<&str> = coverage["pages"]
         .as_array()
@@ -374,6 +380,7 @@ fn ui_coverage_names_what_the_suite_never_touched() {
         acted,
         [
             "button \"Sign out\"",
+            "textbox \"Card number\"",
             "button \"Place order\"",
             "button \"Try again\""
         ]
@@ -425,7 +432,7 @@ fn ui_coverage_names_what_the_suite_never_touched() {
     assert_eq!(out.status.code(), Some(0));
     let text = stdout(&out);
     let from = text.find("ui coverage:").unwrap();
-    let to = text.find("17 tests:").unwrap();
+    let to = text.find("18 tests:").unwrap();
     let summary = text[from..to].replace(&example.root.display().to_string(), "<root>");
     let golden = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/ui-coverage/shop.txt");
     if std::env::var_os("UPDATE_GOLDEN").is_some_and(|v| !v.is_empty() && v != "0") {
@@ -452,14 +459,15 @@ fn the_same_scenarios_pass_against_the_real_api_and_the_mocks_match_it() {
     ]);
     let text = stdout(&out);
     assert_eq!(out.status.code(), Some(0), "{text}{}", stderr(&out));
-    // Only the @backend mock tests are skipped.
-    assert!(text.contains("17 tests: 12 passed, 5 skipped ("), "{text}");
+    // Only the tests that need the mocks are skipped.
+    assert!(text.contains("18 tests: 12 passed, 6 skipped ("), "{text}");
     let skipped: Vec<&str> = text.lines().filter(|l| l.starts_with("- ")).collect();
-    assert_eq!(skipped.len(), 5, "{text}");
+    assert_eq!(skipped.len(), 6, "{text}");
     assert!(
-        skipped
-            .iter()
-            .all(|l| l.ends_with("(skipped: @backend mock; this run's backend is local)")),
+        skipped.iter().all(|l| {
+            l.ends_with("(skipped: @backend mock; this run's backend is local)")
+                || l.ends_with("(skipped: @backend mock hybrid; this run's backend is local)")
+        }),
         "{skipped:?}"
     );
     // The page's requests (the WebSocket too) and the http arrange steps
@@ -469,6 +477,28 @@ fn the_same_scenarios_pass_against_the_real_api_and_the_mocks_match_it() {
     assert!(text.contains("\napi requests: "), "{text}");
     assert!(text.contains("\napi requests: GET /api/cart ×"), "{text}");
     assert!(text.contains(", DELETE /api/cart/:id ×"), "{text}");
+}
+
+/// Plan 19.3: the real API with the payment provider mocked, so a
+/// declined card (a mock) can be tested against the real shop.
+#[test]
+fn the_scenarios_pass_against_the_real_api_with_the_provider_mocked() {
+    let Some(chrome) = chrome_path() else { return };
+    let example = Example::new(Sandbox::with_chrome(&chrome));
+    let out = example.cli(&["test", "--backend", "hybrid"]);
+    let text = stdout(&out);
+    assert_eq!(out.status.code(), Some(0), "{text}{}", stderr(&out));
+    assert!(text.contains("18 tests: 13 passed, 5 skipped ("), "{text}");
+    assert!(
+        text.contains("✓ e2e/scenarios/checkout.cdp:27 a declined card is not charged ("),
+        "{text}"
+    );
+    assert!(
+        text.lines()
+            .filter(|l| l.starts_with("- "))
+            .all(|l| l.ends_with("(skipped: @backend mock; this run's backend is hybrid)")),
+        "{text}"
+    );
 }
 
 #[test]
@@ -488,7 +518,10 @@ fn an_unmatched_request_names_the_closest_mock() {
         ),
         "{text}"
     );
-    assert!(text.contains("/api/prodcts --mocks base\n"), "{text}");
+    assert!(
+        text.contains("/api/prodcts --mocks base,third-party/payments\n"),
+        "{text}"
+    );
     let report = example
         .root
         .join("e2e/.results/e2e/fixtures/unmatched.cdp/asks-for-a-path-no-mock-answers/report.md");
@@ -532,10 +565,16 @@ fn the_committed_dist_is_built_from_the_current_sources() {
     // What vite.config.js's `sourcesHash` computes: FNV-1a over each
     // source's path, a NUL, its bytes and a NUL, in path order.
     let root = example();
-    let mut paths: Vec<String> = ["index.html", "package-lock.json", "vite.config.js", "src"]
-        .iter()
-        .flat_map(|p| files(&root, &root.join(p)))
-        .collect();
+    let mut paths: Vec<String> = [
+        "index.html",
+        "package-lock.json",
+        "public",
+        "src",
+        "vite.config.js",
+    ]
+    .iter()
+    .flat_map(|p| files(&root, &root.join(p)))
+    .collect();
     paths.sort();
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     for path in paths {

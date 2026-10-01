@@ -6,7 +6,7 @@ import react from "@vitejs/plugin-react";
 // The files dist/ is built from. dist/ is committed (the tests need no
 // Node), so `npm run build` writes a hash of them to dist/sources.txt and
 // crates/chrome-cdp/tests/e2e_shop.rs checks it is current.
-const SOURCES = ["index.html", "package-lock.json", "vite.config.js", "src"];
+const SOURCES = ["index.html", "package-lock.json", "public", "src", "vite.config.js"];
 
 function files(path) {
   try {

@@ -24,6 +24,14 @@
   expect 'role=heading[name="Thank you!"]' visible
   expect request POST /api/orders --count 2
 
+@test "a declined card is not charged"
+  @backend mock hybrid   # the provider's decline is a mock
+  @allow-console-errors  # the 402 is a failed load
+  fill 'label=Card number' '4000 0000 0000 0002'
+  click 'role=button[name="Place order"]'
+  expect role=alert text 'Your card was declined.'
+  expect request POST /api/orders --count 0
+
 @test "needs a signed-in user"
   click 'role=button[name="Sign out"]'
   expect 'text=Sign in to check out.' visible

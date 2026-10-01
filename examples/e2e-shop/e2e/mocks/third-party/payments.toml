@@ -1,0 +1,20 @@
+#:schema https://raw.githubusercontent.com/glotlabs/chrome-cdp/main/docs/e2e/mocks.schema.json
+# Mock set "third-party/payments": the payment provider checkout charges
+# the card at, from the browser (POST http://127.0.0.1:4175/v1/charges, as
+# Stripe.js would). It is in default_mocks, and it is the one mocked part
+# of backend hybrid: the real shop API, a provider the tests never charge.
+
+[settings]
+scope = ["http://127.0.0.1:*/v1/**"]   # the provider's origin, on any port
+unmatched = "fail"
+
+# The provider's test card that is always declined.
+[[mock]]
+name = "charge: declined card"
+match = { method = "POST", path = "/v1/charges", json = { card = "4000000000000002" } }
+respond = { status = 402, json = { error = { code = "card_declined", message = "Your card was declined." } } }
+
+[[mock]]
+name = "charge: succeeded"
+match = { method = "POST", path = "/v1/charges" }
+respond = { json = { id = "ch_{{seq}}", object = "charge", amount = "{{json.amount}}", currency = "{{json.currency}}", status = "succeeded" } }

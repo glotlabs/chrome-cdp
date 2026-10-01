@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, api, livePrices, money } from "./api.js";
+import { ApiError, api, livePrices, money, payments } from "./api.js";
 import { Link, match, navigate, useLocation } from "./router.jsx";
 
 export function App() {
@@ -251,6 +251,9 @@ function Cart({ cart, refreshCart }) {
 function Checkout({ user, cart, refreshCart }) {
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState(null);
+  const [card, setCard] = useState("4242 4242 4242 4242");
+  // A charge that went through is kept, so trying again does not pay twice.
+  const [charge, setCharge] = useState(null);
   if (!user) {
     return (
       <>
@@ -264,6 +267,8 @@ function Checkout({ user, cart, refreshCart }) {
     setPlacing(true);
     setError(null);
     try {
+      const paid = charge ?? (await payments.charge(total(cart), card));
+      setCharge(paid);
       const order = await api.placeOrder(cart, total(cart));
       await Promise.all(cart.map((item) => api.removeFromCart(item.id)));
       await refreshCart();
@@ -279,6 +284,16 @@ function Checkout({ user, cart, refreshCart }) {
       <p>
         {cart.length} {cart.length === 1 ? "item" : "items"}, total {money(total(cart))}
       </p>
+      <label>
+        Card number{" "}
+        <input
+          inputMode="numeric"
+          autoComplete="cc-number"
+          value={card}
+          onChange={(e) => setCard(e.target.value)}
+          disabled={charge !== null}
+        />
+      </label>
       {error ? (
         <div role="alert">
           {error}{" "}

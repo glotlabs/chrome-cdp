@@ -1,6 +1,7 @@
-// The shop's REST API. In the tests, chrome-cdp answers these requests
-// from e2e/mocks (mock mode) or lets them through to the real API
-// (`--backend local`).
+// The shop's REST API, and the payment provider checkout charges the card
+// at. In the tests, chrome-cdp answers these requests from e2e/mocks (mock
+// mode), lets them through to the real API and provider (`--backend
+// local`), or mocks only the provider (`--backend hybrid`).
 
 export class ApiError extends Error {
   constructor(status, message) {
@@ -52,5 +53,27 @@ export function livePrices(onPrice) {
   });
   return () => socket.close();
 }
+
+// The payment provider, a third party on another origin (its URL is in
+// public/config.js), called from the browser as Stripe.js would be.
+export const payments = {
+  charge: async (amount, card) => {
+    const url = `${window.SHOP_CONFIG?.paymentsUrl ?? ""}/v1/charges`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        amount: Math.round(amount * 100),
+        currency: "usd",
+        card: card.replace(/\s/g, ""),
+      }),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new ApiError(response.status, data?.error?.message ?? `HTTP ${response.status}`);
+    }
+    return data;
+  },
+};
 
 export const money = (n) => `$${Number(n).toFixed(2)}`;

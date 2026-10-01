@@ -35,28 +35,28 @@ from = '"data-testid":`price`'
 to = '"data-testid":`product-price`'
 
 [[js]]
-from = '[`Signed in as `,e.email,` `,(0,_.jsx)(`button`,{className:`button`,'
-to = '[`Signed in as `,e.email,` `,(0,_.jsx)(`nav`,{"aria-label":`Account`,children:(0,_.jsx)(`button`,{className:`btn`,'
+from = '[`Signed in as `,e.email,` `,(0,v.jsx)(`button`,{className:`button`,'
+to = '[`Signed in as `,e.email,` `,(0,v.jsx)(`nav`,{"aria-label":`Account`,children:(0,v.jsx)(`button`,{className:`btn`,'
 
 [[js]]
 from = 'children:`Sign out`})]'
 to = 'children:`Sign out`})})]'
 
 [[js]]
-from = '(0,_.jsx)(`button`,{className:`button button-primary`,"data-testid":`place-order`,'
-to = '(0,_.jsx)(`section`,{"aria-label":`Payment`,children:(0,_.jsx)(`button`,{className:`btn btn--primary`,"data-testid":`checkout-submit`,'
+from = '(0,v.jsx)(`button`,{className:`button button-primary`,"data-testid":`place-order`,'
+to = '(0,v.jsx)(`section`,{"aria-label":`Payment`,children:(0,v.jsx)(`button`,{className:`btn btn--primary`,"data-testid":`checkout-submit`,'
 
 [[js]]
 from = ':`Place order`})'
 to = ':`Place order`})})'
 
 [[js]]
-from = ',(0,_.jsx)(x,{to:`/`,children:`Back to products`})'
+from = ',(0,v.jsx)(x,{to:`/`,children:`Back to products`})'
 to = ''
 
 [[js]]
-from = '(0,_.jsx)(`main`,{children:te(e,o)})'
-to = '(0,_.jsx)(`main`,{children:te(e,o)}),(0,_.jsx)(`footer`,{children:(0,_.jsx)(x,{to:`/`,children:`All products`})})'
+from = '(0,v.jsx)(`main`,{children:ne(e,o)})'
+to = '(0,v.jsx)(`main`,{children:ne(e,o)}),(0,v.jsx)(`footer`,{children:(0,v.jsx)(x,{to:`/`,children:`All products`})})'
 
 [[js]]
 from = 'className:`button button-small`'

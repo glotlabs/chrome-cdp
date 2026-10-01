@@ -1,8 +1,158 @@
 {
   "version": 1,
   "tests": {
+    "a declined card is not charged": {
+      "30:label=Card number": {
+        "role": "textbox",
+        "name": "Card number",
+        "tag": "input",
+        "label": "Card number",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/checkout",
+        "candidates": [
+          "role=textbox[name=\"Card number\"]",
+          "label=\"Card number\""
+        ]
+      },
+      "31:role=button[name=\"Place order\"]": {
+        "role": "button",
+        "name": "Place order",
+        "tag": "button",
+        "testid": "place-order",
+        "text": "Place order",
+        "classes": [
+          "button",
+          "button-primary"
+        ],
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/checkout",
+        "candidates": [
+          "role=button[name=\"Place order\"]",
+          "testid=place-order",
+          "text=\"Place order\""
+        ]
+      },
+      "32:role=alert": {
+        "role": "alert",
+        "tag": "div",
+        "text": "Your card was declined. Try again",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/checkout",
+        "candidates": [
+          "text=\"Your card was declined. Try again\""
+        ]
+      },
+      "6:role=button[name=\"Add to cart\"]": {
+        "role": "button",
+        "name": "Add to cart",
+        "tag": "button",
+        "testid": "add-to-cart",
+        "text": "Add to cart",
+        "classes": [
+          "button",
+          "button-primary"
+        ],
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "role=button[name=\"Add to cart\"]",
+          "testid=add-to-cart",
+          "text=\"Add to cart\""
+        ]
+      },
+      "7:role=status": {
+        "role": "status",
+        "tag": "p",
+        "text": "Added to cart",
+        "container": {
+          "role": "main"
+        },
+        "index": 0,
+        "page": "/products/:id",
+        "candidates": [
+          "text=\"Added to cart\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:3:label=Email": {
+        "role": "textbox",
+        "name": "Email",
+        "tag": "input",
+        "type": "email",
+        "label": "Email",
+        "container": {
+          "role": "form"
+        },
+        "index": 0,
+        "page": "/login",
+        "candidates": [
+          "role=textbox[name=\"Email\"]",
+          "label=\"Email\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:4:label=Password": {
+        "role": "textbox",
+        "name": "Password",
+        "tag": "input",
+        "type": "password",
+        "label": "Password",
+        "container": {
+          "role": "form"
+        },
+        "index": 1,
+        "page": "/login",
+        "candidates": [
+          "role=textbox[name=\"Password\"]",
+          "label=\"Password\""
+        ]
+      },
+      "e2e/steps/sign-in.cdp:5:role=button[name=\"Sign in\"]": {
+        "role": "button",
+        "name": "Sign in",
+        "tag": "button",
+        "testid": "sign-in",
+        "text": "Sign in",
+        "classes": [
+          "button",
+          "button-primary"
+        ],
+        "container": {
+          "role": "form"
+        },
+        "index": 0,
+        "page": "/login",
+        "candidates": [
+          "role=button[name=\"Sign in\"]",
+          "testid=sign-in"
+        ]
+      },
+      "e2e/steps/sign-in.cdp:6:text=Signed in as ${email} [email=ada@example.com]": {
+        "role": "paragraph",
+        "tag": "p",
+        "text": "Signed in as ada@example.com Sign out",
+        "container": {
+          "role": "banner"
+        },
+        "index": 0,
+        "page": "/",
+        "candidates": [
+          "text=\"Signed in as ada@example.com Sign out\""
+        ]
+      }
+    },
     "needs a signed-in user": {
-      "28:role=button[name=\"Sign out\"]": {
+      "36:role=button[name=\"Sign out\"]": {
         "role": "button",
         "name": "Sign out",
         "tag": "button",
@@ -20,7 +170,7 @@
           "text=\"Sign out\""
         ]
       },
-      "29:text=Sign in to check out.": {
+      "37:text=Sign in to check out.": {
         "role": "paragraph",
         "tag": "p",
         "text": "Sign in to check out.",
