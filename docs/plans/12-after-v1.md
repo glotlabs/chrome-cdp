@@ -1,6 +1,7 @@
 # Plan 12 — After v1.0: roadmap
 
-Status: DRAFT (a proposal to review; nothing here is scheduled)
+Status: IN PROGRESS (tracks 1 and 3-8 done in plans 13-19; tracks 0, 2
+and 9 open)
 Depends on: v1.0 released (plan 10's release checklist)
 
 ## Goal
@@ -10,8 +11,8 @@ web page from a shell, and commit the result as a test. This plan says
 what comes next and why. It has two sources:
 
 - **The backlog.** The 92 LOW notes in `.looper/tasks/` that were found
-  while building v1. Each one is filed under a track in §6, so none is
-  lost.
+  while building v1. Each one was filed under a track in §6, so none is
+  lost; §6 now lists those still open.
 - **First principles.** What an agent that changes web code still
   cannot do with chrome-cdp, or with any other tool. Items marked ★ go
   beyond Playwright (library, CLI and MCP).
@@ -446,18 +447,15 @@ gaps in any release.
 
 ## 6. Backlog map
 
-Every LOW note in `.looper/tasks/`, by track.
+The LOW notes still open in `.looper/tasks/`, by track. Plans 13-19
+did the rest (each plan names the notes it absorbed). The notes those
+plans' tasks left are in `.looper/tasks/v1/`; they are not mapped here.
 
 | Track | Notes |
 |---|---|
 | 0 | batch-benchmark-run, docker-apparmor-unconfined-sandbox, doctor-newer-release, doctor-on-macos, extensions-headed-and-macos, headed-highlight-inspect-verify, headed-viewport-window, latency-benchmark-fixed-host, locator-benchmark, mock-schema-versioned-url, readme-playwright-cli-column, report-brief-settle-busy-pages, route-overhead-benchmark, runner-unmatched-check-cost, soak-budgets-tune, tabs-headed-activate, tokens-real-world-corpus, with-deps-end-to-end-test |
-| 1 | cdp-listen-child-sessions, console-shared-service-workers, context-permissions, coverage-cross-site-iframes, determinism-workers-shadow-dom, drag-scroll-edge-cases, emulate-workers, expect-a11y-iframes, frame-order-on-connect, frames-listing-command, history-frame-locators, mock-shim-workers-binary, network-worker-requests, read-page-text-iframes, report-focus-in-iframes, route-worker-requests, tabs-other-workers, wait-text-in-iframes |
 | 2 | actionability-emulated-viewports, cdp-enum-unknown-raw-value, cdp-protocol-vs-installed-chrome, check-first-click-miss, connect-autoattach-scope, daemon-runtime-threads, dom-walker-layout-tables, download-quota, har-stream-large-files, keys-table-regenerate-check, mock-serve-cors-host, mock-shim-binding-trust, obscured-ref-always, page-world-reports, pdf-more-options (streaming), route-rules-daemon-upgrade, rpc-line-limits, session-options-off, shrink-release-binary, snapshot-baseline-memory, snapshot-dom-engine-keys |
-| 3 | cdp-method-did-you-mean, clipboard-rich-content, clock-fake-timers, downloads-dir-option, eval-in-auto-wait, extensions-command, har-pages-per-navigation, locator-for-ref, locator-has-filter, no-failed-requests-all-tabs, open-init-script, pdf-more-options (templates), screenshot-annotate-top-layer, upload-directory-inputs, wait-for-binding-call |
-| 4 | report-sourcemapped-console-errors |
-| 6 | expect-a11y-more-rules |
-| 7 | convert-real-world-specs, e2e-runner-baselines, editor-support-cdp, history-testid-attribute, lint-after-load-errors, runner-context-leftovers, saved-list-indexes, secrets-in-screenshots, watch-data-files |
-| 8 | e2e-shop-hybrid-backend, mock-check-websockets, mock-collection-nested-paths, mock-multipart-forms, mock-record-request-bodies, mock-record-websockets, mock-serve-upstream, mock-serve-websockets, mock-sse-send |
+| 7 | editor-support-cdp |
 | 9 | cdp-wss-support |
 
 ## 7. Rules for every task
@@ -521,3 +519,8 @@ _(append here)_
   frameworks, not examples to copy. The agent benchmark's four
   find-the-code tasks record files read; running them (the "measured"
   part) is deferred: benchmarks run after all plans.
+- Close-out of plans 13-19: every plan is DONE (plan 15 with its agent
+  benchmark's run deferred). §6 keeps only the notes whose files are
+  still in `.looper/tasks/`; `pdf-more-options` left Track 3, since its
+  templates half was done in 14.6 and the note is now only the
+  streaming half (Track 2).
