@@ -152,6 +152,9 @@ fn failure_text(test: &TestResult) -> String {
     if let Some(report) = &failure.report {
         let _ = writeln!(text, "report: {report}");
     }
+    if let Some(flake) = &test.flake {
+        text.push_str(&super::flake::text(flake));
+    }
     text
 }
 
@@ -490,11 +493,24 @@ mod tests {
 
     #[test]
     fn junit_has_a_suite_per_file_and_escapes_text() {
+        let mut flakes = result("flakes", "flaky");
+        flakes.flake = Some(protocol::schema::TestFlake {
+            cause: "race".into(),
+            summary: "requests raced".into(),
+            confidence: 0.85,
+            evidence: vec!["`GET /a` was answered before `GET /b`".into()],
+            hint: None,
+            runs: 2,
+            failed_runs: 1,
+            at: Some("e2e/a.cdp:4:3".into()),
+            step: Some("click text=Buy".into()),
+            others: Vec::new(),
+        });
         let xml = junit(&data(vec![
             result("passes", "passed"),
             result("fails", "failed"),
             result("is skipped", "skipped"),
-            result("flakes", "flaky"),
+            flakes,
         ]));
         assert!(xml.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuites name=\"chrome-cdp test\" tests=\"4\" failures=\"1\" skipped=\"1\" time=\"4.200\">\n"), "{xml}");
         assert!(xml.contains("  <testsuite name=\"e2e/a.cdp\" tests=\"4\" failures=\"1\" skipped=\"1\" time=\"4.936\">\n"), "{xml}");
@@ -505,6 +521,10 @@ mod tests {
             "{xml}"
         );
         assert!(xml.contains("<flakyFailure message="), "{xml}");
+        assert!(
+            xml.contains("    likely cause: requests raced (confidence 0.85)\n      `GET /a` was answered before `GET /b`\n</flakyFailure>"),
+            "{xml}"
+        );
         assert!(xml.ends_with("  </testsuite>\n</testsuites>\n"), "{xml}");
     }
 

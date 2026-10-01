@@ -227,6 +227,21 @@ fn failures_skips_and_flaky_tests_are_reported() {
     let flaky = &details["tests"][3];
     assert_eq!(flaky["tries"], 2);
     assert_eq!(flaky["error"]["at"], "scenarios/fail/flaky.cdp:7:3");
+    // Its tries disagreed: no rule fits a missing file, so the diagnosis
+    // names the first step whose result differs (plan 18.3).
+    let flake = &flaky["flake"];
+    assert_eq!(flake["cause"], "unknown", "{flake}");
+    assert_eq!(
+        (flake["runs"].as_u64(), flake["failed_runs"].as_u64()),
+        (Some(2), Some(1))
+    );
+    assert!(
+        flake["evidence"][0]
+            .as_str()
+            .unwrap()
+            .starts_with("the first step whose result differs is `state load flaky-marker.json` (scenarios/fail/flaky.cdp:7:3): try 2 (passed) gave \"loaded "),
+        "{flake}"
+    );
 
     // --bail stops after the first failure.
     let (_, value) = project.json(&["scenarios/fail/fails.cdp", "--bail", "--jobs", "1"]);
