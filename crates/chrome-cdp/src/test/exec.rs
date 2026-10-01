@@ -1463,6 +1463,7 @@ impl Runner<'_> {
         let request = engine::HarExportRequest {
             tab: None,
             scope,
+            repro: false,
             timeout_ms: 10_000,
         };
         let global = self.global(Some(context), None);
@@ -1779,6 +1780,7 @@ fn http_exchange(data: &Value, body: Option<String>, headers: &[String]) -> mock
             .unwrap_or_default()
             .to_owned(),
         resource_type: "other".into(),
+        left_out: None,
     }
 }
 

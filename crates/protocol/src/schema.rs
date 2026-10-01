@@ -869,6 +869,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<HistoryData>),
     },
     CommandSchema {
+        name: "repro start",
+        summary: "when the repro starts, the state it keeps, and the requests whose bodies it keeps",
+        schema: || schema_for!(Envelope<ReproStartData>),
+    },
+    CommandSchema {
+        name: "repro save",
+        summary: "the repro bundle written: its test, mocks, left-out bodies and the secrets a replay needs",
+        schema: || schema_for!(Envelope<ReproSaveData>),
+    },
+    CommandSchema {
         name: "convert",
         summary: "the .cdp script translated from a Playwright test file, and its TODO lines",
         schema: || schema_for!(Envelope<ConvertData>),
@@ -5618,9 +5628,95 @@ pub struct HistoryEntry {
     /// The error's kind, if it failed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// The error's message, if it failed, then a line for each of its
+    /// notes (`  actual: text "…"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
     /// The refs it named, with their stable locators when it ran.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub refs: Vec<RefLocator>,
+    /// Whether it typed into a password field (`fill`, `type`): a repro
+    /// bundle writes `${secret:PASSWORD}` instead of its value.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub password: bool,
+}
+
+/// `data` of `chrome-cdp repro start --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ReproStartData {
+    /// When it started (ISO 8601, UTC): the bundle's test freezes time
+    /// here.
+    pub started: String,
+    /// The requests whose response bodies are kept (`/**`: every one).
+    pub scope: Vec<String>,
+    /// The cookies kept for the bundle's `state.json`.
+    pub cookies: usize,
+    /// The origins whose storage was kept.
+    pub origins: usize,
+    /// The active tab's URL, where the bundle's test starts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// The bodies of the open pages' requests kept right away.
+    pub bodies: usize,
+    /// Whether an earlier `repro start` was dropped for this one.
+    pub restarted: bool,
+}
+
+/// `data` of `chrome-cdp repro save --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ReproSaveData {
+    /// The bundle's directory.
+    pub path: String,
+    /// Its test's name.
+    pub name: String,
+    /// Whether it starts at `repro start` (else: the whole history, an
+    /// empty state and the network log as it is).
+    pub started: bool,
+    /// The steps of its test.
+    pub steps: usize,
+    /// The failed command the test ends with, if the session's last one
+    /// failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failed: Option<ReproFailure>,
+    /// The requests recorded into `mocks/repro.toml`.
+    pub requests: usize,
+    /// The mocks written.
+    pub mocks: usize,
+    /// Response bodies replaced by a placeholder (too big, or Chrome no
+    /// longer had them).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub left_out: Vec<ReproLeftOut>,
+    /// The `${secret:NAME}`s the test needs to replay.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secrets: Vec<String>,
+    /// The files written, relative to `path`.
+    pub files: Vec<String>,
+}
+
+/// The failed command a repro bundle's test ends with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ReproFailure {
+    /// Its number in the session's history.
+    pub n: u64,
+    /// Its line in the test.
+    pub step: String,
+    /// The error's kind (`ExpectFailed`).
+    pub kind: String,
+    /// The error's message, if the history has it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+/// A response body a repro bundle left out.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ReproLeftOut {
+    /// `GET https://…`.
+    pub request: String,
+    /// Its size in bytes, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<u64>,
+    /// Why: `over 5MB`, `not kept`.
+    pub why: String,
 }
 
 /// A ref and the most robust locator that found its element alone.

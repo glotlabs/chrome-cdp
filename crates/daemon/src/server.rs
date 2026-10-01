@@ -313,7 +313,13 @@ impl Daemon {
             .fingerprint
             .clone()
             .map(|locator| (locator, testid.clone()));
-        let (refs, (result, fingerprint)) = engine::in_context(
+        // A `fill` or `type` kept in the history: whether it typed into a
+        // password field, whose value a repro bundle must not hold.
+        let typing = line.is_some()
+            && req.method == rpc::ACT
+            && matches!(req.params["action"]["kind"].as_str(), Some("fill" | "type"));
+        let tab = req.params["tab"].as_str().map(str::to_owned);
+        let (refs, (result, fingerprint), password) = engine::in_context(
             context.clone(),
             Box::pin(engine::in_root(root, async {
                 // A ref's element may be gone once the command ran.
@@ -328,13 +334,14 @@ impl Daemon {
                     |(result, _)| result.is_ok(),
                 ))
                 .await;
-                (refs, (with_notices(result, notices), fingerprint))
+                let password = typing && self.typed_password(tab.as_deref()).await;
+                (refs, (with_notices(result, notices), fingerprint), password)
             })),
         )
         .await;
         if let Some(words) = line {
             let error = result.as_ref().err().map(|e| {
-                e.data.as_ref().map_or_else(
+                let kind = e.data.as_ref().map_or_else(
                     || "ProtocolError".to_owned(),
                     |info| {
                         serde_json::to_value(info.kind)
@@ -342,9 +349,19 @@ impl Daemon {
                             .and_then(|v| v.as_str().map(str::to_owned))
                             .unwrap_or_default()
                     },
-                )
+                );
+                // The message with its notes (`expected: …`, `actual: …`),
+                // which say what went wrong.
+                let mut message = e.message.clone();
+                for note in e.data.iter().flat_map(|info| &info.notes) {
+                    message.push_str("\n  ");
+                    message.push_str(&note.label);
+                    message.push_str(": ");
+                    message.push_str(&note.text);
+                }
+                (kind, message)
             });
-            lock_ignoring_poison(&self.history).push(words, context, error, refs);
+            lock_ignoring_poison(&self.history).push(words, context, error, refs, password);
         }
         let mut response = match result {
             Ok(value) => Response::ok(id, value),
@@ -352,6 +369,25 @@ impl Daemon {
         };
         response.fingerprint = fingerprint.map(Box::new);
         (response, exit)
+    }
+
+    /// Whether the focused element of tab `tab` (the active one if
+    /// `None`), through open shadow roots, is a password field: where a
+    /// `fill` or `type` just typed.
+    async fn typed_password(&self, tab: Option<&str>) -> bool {
+        const FOCUSED: &str = "(() => { let e = document.activeElement; \
+             while (e && e.shadowRoot && e.shadowRoot.activeElement) e = e.shadowRoot.activeElement; \
+             return !!e && e.localName === 'input' && e.type === 'password'; })()";
+        self.engine
+            .evaluate(
+                tab,
+                None,
+                engine::World::Isolated,
+                FOCUSED,
+                Duration::from_secs(2),
+            )
+            .await
+            .is_ok_and(|v| v == Value::Bool(true))
     }
 
     /// The stable locators of the refs `words` name, in the tab its
@@ -636,6 +672,11 @@ impl Daemon {
                 Ok(p) => output(self.engine.heal_match(p).await),
                 Err(e) => Err(e),
             },
+            rpc::REPRO_START => match params(req.params) {
+                Ok(p) => output(Box::pin(self.engine.repro_start(p)).await),
+                Err(e) => Err(e),
+            },
+            rpc::REPRO_INFO => output(self.engine.repro_info()),
             rpc::HAR_EXPORT => match params(req.params) {
                 Ok(p) => output(Box::pin(self.engine.har_export(p)).await),
                 Err(e) => Err(e),

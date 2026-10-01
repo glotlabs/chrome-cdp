@@ -12,7 +12,7 @@ use std::fmt::Write as _;
 use clap::{ArgMatches, CommandFactory as _};
 use daemon::rpc;
 use protocol::format::shell_quote;
-use protocol::schema::{HistoryData, HistoryEntry};
+use protocol::schema::{HistoryData, HistoryEntry, ReproFailure};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Output};
 use serde_json::json;
 
@@ -75,6 +75,7 @@ const TOOLS: &[&str] = &[
     "init",
     "install",
     "perf",
+    "repro",
     "schema",
     "sessions",
     "skill",
@@ -193,13 +194,33 @@ fn listing(mut data: HistoryData, args: &HistoryCmdArgs) -> Output {
 
 /// A scenario made of commands.
 #[derive(Debug, Default)]
-struct Scenario {
-    text: String,
-    steps: usize,
+pub(crate) struct Scenario {
+    pub(crate) text: String,
+    /// The test's lines (comments and steps), indented, without the
+    /// `@test` and `@mocks` lines.
+    pub(crate) body: Vec<String>,
+    pub(crate) steps: usize,
     /// `12: snapshot -i (only reads)`.
-    left_out: Vec<String>,
-    warnings: Vec<String>,
+    pub(crate) left_out: Vec<String>,
+    pub(crate) warnings: Vec<String>,
+    /// With [`Rules::repro`]: the failed command the test ends with.
+    pub(crate) failed: Option<ReproFailure>,
+    /// Whether the first step is a `goto`.
+    pub(crate) starts_with_goto: bool,
 }
+
+/// How [`build`] writes the test.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct Rules {
+    /// `repro save`: the last failed command stays, as the last step, with
+    /// its error in a comment; a value typed into a password field becomes
+    /// `${secret:PASSWORD}`; `mock` commands are left out (the bundle's
+    /// own mocks answer).
+    pub(crate) repro: bool,
+}
+
+/// The secret a password typed in the session becomes.
+pub(crate) const PASSWORD_SECRET: &str = "PASSWORD";
 
 /// "left out 3 commands: 4 snapshot (only reads), …".
 fn left_out_summary(left: &[String]) -> String {
@@ -225,75 +246,128 @@ fn left_out_summary(left: &[String]) -> String {
 }
 
 fn scenario(name: &str, entries: &[HistoryEntry], base_url: Option<&str>) -> Scenario {
+    build(name, entries, base_url, Rules::default())
+}
+
+/// What a command is to a scenario.
+enum Kind {
+    /// A step: its words (without the global flags that say where it ran)
+    /// and its parse.
+    Step(Vec<String>, Box<ArgMatches>),
+    /// `mock use SETS`: the test's `@mocks`.
+    Mocks(Vec<String>),
+    /// Left out, and why.
+    Out(String),
+}
+
+/// Sorts command `e` (its success aside).
+fn kind(e: &HistoryEntry, rules: Rules) -> Kind {
+    let words = strip_globals(&e.words);
+    let Some(matches) = parse(&words) else {
+        return Kind::Out("does not parse".to_owned());
+    };
+    let path = command_path(&matches);
+    let first_two = path.iter().take(2).cloned().collect::<Vec<_>>().join(" ");
+    let first = path.first().cloned().unwrap_or_default();
+    let listed =
+        |list: &[&str]| list.contains(&first.as_str()) || list.contains(&first_two.as_str());
+    if listed(READS) {
+        return Kind::Out("only reads".to_owned());
+    }
+    if listed(TOOLS) {
+        return Kind::Out("not a step".to_owned());
+    }
+    if first == "cookies" && path.len() == 1 {
+        return Kind::Out("only reads".to_owned());
+    }
+    if first == "storage"
+        && matches!(
+            words.get(1).map(String::as_str),
+            Some("list" | "get") | None
+        )
+    {
+        return Kind::Out("only reads".to_owned());
+    }
+    if rules.repro && first == "mock" {
+        return Kind::Out("the bundle's mocks answer instead".to_owned());
+    }
+    if first_two == "mock state" && !words.iter().any(|w| w.starts_with("--set")) {
+        return Kind::Out("only reads".to_owned());
+    }
+    if first_two == "mock use" {
+        let flags = words.iter().skip(2).any(|w| w.starts_with('-'));
+        if !flags {
+            let sets: Vec<String> = words.iter().skip(2).cloned().collect();
+            if sets.is_empty() {
+                return Kind::Out("the defaults apply to every test anyway".to_owned());
+            }
+            return Kind::Mocks(sets);
+        }
+    }
+    if first == "open" && positional_url(&words).is_none() {
+        return Kind::Out("opens the session".to_owned());
+    }
+    Kind::Step(words, Box::new(matches))
+}
+
+/// Error kinds of a command typed wrong, not of a page that misbehaved:
+/// not the failure a repro ends with.
+const USAGE: &[&str] = &["BadArgs", "BadLocator"];
+
+pub(crate) fn build(
+    name: &str,
+    entries: &[HistoryEntry],
+    base_url: Option<&str>,
+    rules: Rules,
+) -> Scenario {
     let mut out = Scenario::default();
     let mut body: Vec<String> = Vec::new();
     let mut mocks: Option<Vec<String>> = None;
-    for e in entries {
-        let words = strip_globals(&e.words);
-        let shown = words
+    // The failed command a repro ends with: the last failed step.
+    let last_failure = if rules.repro {
+        entries.iter().rposition(|e| {
+            !e.ok
+                && !e.error.as_deref().is_some_and(|k| USAGE.contains(&k))
+                && matches!(kind(e, rules), Kind::Step(..))
+        })
+    } else {
+        None
+    };
+    for (index, e) in entries.iter().enumerate() {
+        let shown = strip_globals(&e.words)
             .iter()
             .map(|w| shell_quote(w).into_owned())
             .collect::<Vec<_>>()
             .join(" ");
         let skip = |why: &str| format!("{}: {shown} ({why})", e.n);
-        if !e.ok {
+        if last_failure.is_some_and(|last| index > last) {
+            out.left_out
+                .push(skip("after the failure the test ends with"));
+            continue;
+        }
+        let failure = last_failure == Some(index);
+        if !e.ok && !failure {
             let kind = e.error.as_deref().unwrap_or("failed");
             out.left_out.push(skip(&format!("failed: {kind}")));
             continue;
         }
-        let Some(matches) = parse(&words) else {
-            out.left_out.push(skip("does not parse"));
-            continue;
+        let (mut words, matches) = match kind(e, rules) {
+            Kind::Step(words, matches) => (words, matches),
+            Kind::Mocks(sets) => {
+                mocks = Some(sets);
+                continue;
+            }
+            Kind::Out(why) => {
+                out.left_out.push(skip(&why));
+                continue;
+            }
         };
         let path = command_path(&matches);
         let first_two = path.iter().take(2).cloned().collect::<Vec<_>>().join(" ");
         let first = path.first().cloned().unwrap_or_default();
-        let listed =
-            |list: &[&str]| list.contains(&first.as_str()) || list.contains(&first_two.as_str());
-        if listed(READS) {
-            out.left_out.push(skip("only reads"));
-            continue;
-        }
-        if listed(TOOLS) {
-            out.left_out.push(skip("not a step"));
-            continue;
-        }
-        if first == "cookies" && path.len() == 1 {
-            out.left_out.push(skip("only reads"));
-            continue;
-        }
-        if first == "storage"
-            && matches!(
-                words.get(1).map(String::as_str),
-                Some("list" | "get") | None
-            )
+        if first == "open"
+            && let Some(url) = positional_url(&words)
         {
-            out.left_out.push(skip("only reads"));
-            continue;
-        }
-        if first_two == "mock state" && !words.iter().any(|w| w.starts_with("--set")) {
-            out.left_out.push(skip("only reads"));
-            continue;
-        }
-        if first_two == "mock use" {
-            let flags = words.iter().skip(2).any(|w| w.starts_with('-'));
-            if !flags {
-                let sets: Vec<String> = words.iter().skip(2).cloned().collect();
-                if sets.is_empty() {
-                    out.left_out
-                        .push(skip("the defaults apply to every test anyway"));
-                } else {
-                    mocks = Some(sets);
-                }
-                continue;
-            }
-        }
-        let mut words = words;
-        if first == "open" {
-            let Some(url) = positional_url(&words) else {
-                out.left_out.push(skip("opens the session"));
-                continue;
-            };
             words = vec!["goto".to_owned(), url];
         }
         if matches!(first.as_str(), "goto" | "open") || (first_two == "tab new" && words.len() > 2)
@@ -301,6 +375,17 @@ fn scenario(name: &str, entries: &[HistoryEntry], base_url: Option<&str>) -> Sce
             relative_urls(&mut words, base_url);
         }
         let mut comments = Vec::new();
+        if rules.repro
+            && e.password
+            && let Some(index) = typed_text_index(&matches)
+        {
+            if let Some(word) = words.get_mut(index) {
+                *word = format!("${{secret:{PASSWORD_SECRET}}}");
+            }
+            comments.push(format!(
+                "# typed into a password field; the replay reads it from ${PASSWORD_SECRET}"
+            ));
+        }
         for index in locator_indices(&matches) {
             let Some(word) = words.get_mut(index) else {
                 continue;
@@ -329,9 +414,29 @@ fn scenario(name: &str, entries: &[HistoryEntry], base_url: Option<&str>) -> Sce
                 ));
             }
         }
-        body.extend(comments.into_iter().map(|c| format!("  {c}")));
         let line: Vec<String> = words.iter().map(|w| shell_quote(w).into_owned()).collect();
-        body.push(format!("  {}", line.join(" ")));
+        let line = line.join(" ");
+        if failure {
+            let kind = e.error.clone().unwrap_or_else(|| "failed".to_owned());
+            let error = match &e.message {
+                Some(message) => format!("{kind}: {}", one_line(message)),
+                None => kind.clone(),
+            };
+            comments.push(format!(
+                "# failed in the session ({error}); passes once the bug is fixed"
+            ));
+            out.failed = Some(ReproFailure {
+                n: e.n,
+                step: line.clone(),
+                kind,
+                message: e.message.clone(),
+            });
+        }
+        if out.steps == 0 {
+            out.starts_with_goto = words.first().is_some_and(|w| w == "goto");
+        }
+        body.extend(comments.into_iter().map(|c| format!("  {c}")));
+        body.push(format!("  {line}"));
         out.steps += 1;
     }
     let _ = writeln!(out.text, "@test {}", quoted_name(name));
@@ -339,10 +444,30 @@ fn scenario(name: &str, entries: &[HistoryEntry], base_url: Option<&str>) -> Sce
         let sets: Vec<String> = sets.iter().map(|s| shell_quote(s).into_owned()).collect();
         let _ = writeln!(out.text, "  @mocks {}", sets.join(" "));
     }
-    for line in body {
+    for line in &body {
         let _ = writeln!(out.text, "{line}");
     }
+    out.body = body;
     out
+}
+
+/// `text`'s first line, cut to 300 characters, for a comment.
+fn one_line(text: &str) -> String {
+    let line = text.lines().next().unwrap_or_default();
+    match line.char_indices().nth(300) {
+        Some((cut, _)) => format!("{}…", &line[..cut]),
+        None => line.to_owned(),
+    }
+}
+
+/// The index in the words of `fill`'s or `type`'s TEXT.
+fn typed_text_index(matches: &ArgMatches) -> Option<usize> {
+    let (name, sub) = matches.subcommand()?;
+    if !matches!(name, "fill" | "type") {
+        return None;
+    }
+    // A subcommand's indices count from its name (0).
+    sub.indices_of("text")?.next()
 }
 
 /// `"adds item to cart"`, with `"` and `\` escaped and `${` made literal.
@@ -380,6 +505,14 @@ fn parse(words: &[String]) -> Option<ArgMatches> {
     Cli::command()
         .try_get_matches_from(std::iter::once(protocol::PROGRAM.to_owned()).chain(words.to_vec()))
         .ok()
+}
+
+/// The command `words` run (`["mock", "use"]`), global flags aside;
+/// empty if they do not parse.
+pub(crate) fn command_of(words: &[String]) -> Vec<String> {
+    parse(&strip_globals(words))
+        .map(|m| command_path(&m))
+        .unwrap_or_default()
 }
 
 /// `["mock", "use"]`.
@@ -470,6 +603,8 @@ mod tests {
             context: None,
             ok: true,
             error: None,
+            message: None,
+            password: false,
             refs: refs
                 .iter()
                 .map(|(r, l, how)| RefLocator {

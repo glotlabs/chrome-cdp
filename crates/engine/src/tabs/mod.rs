@@ -78,6 +78,7 @@ use crate::observe::SourceMaps;
 use crate::observe::console::{self, Console, ConsoleError, FromWorker};
 use crate::observe::hmr::{HotUpdates, Outcome};
 use crate::observe::issues::{self, Issues};
+use crate::observe::kept::{KeptBodies, KeptBody};
 use crate::observe::netlog::{self, NetLog};
 use crate::request::{DialogPolicy, HttpCredentials, NodeStacks};
 use crate::route::Router;
@@ -316,6 +317,8 @@ struct Shared {
     /// The source maps of the scripts seen, shared with the commands
     /// that resolve places (logpoints bind with them).
     sourcemaps: Arc<SourceMaps>,
+    /// The response bodies of a `repro start` recording, while one runs.
+    kept: Mutex<Option<KeptBodies>>,
 }
 
 #[derive(Debug)]
@@ -501,6 +504,7 @@ impl Tabs {
             default_viewport,
             tasks: Mutex::default(),
             sourcemaps,
+            kept: Mutex::new(None),
         });
         // Subscribe before anything can attach. Lossless, as a missed
         // target event loses a tab.
@@ -1720,6 +1724,17 @@ impl Tabs {
             .map(|tab| f(&mut tab.netlog))
     }
 
+    /// Starts keeping the response bodies of requests in `scope` as they
+    /// finish loading (`repro start`), dropping those kept so far.
+    pub(crate) fn keep_bodies(&self, scope: mock::record::Scope) {
+        *lock(&self.shared.kept) = Some(KeptBodies::new(scope));
+    }
+
+    /// Calls `f` with the kept bodies, if a recording keeps them.
+    pub(crate) fn kept<R>(&self, f: impl FnOnce(&mut KeptBodies) -> R) -> Option<R> {
+        lock(&self.shared.kept).as_mut().map(f)
+    }
+
     /// The session with id `session_id`, if its target is still
     /// attached.
     pub(crate) fn host_session(&self, session_id: &str) -> Option<Session> {
@@ -2223,7 +2238,7 @@ async fn watch_host(
             }
             method if method.starts_with("Network.") => {
                 if let Some(tab) = tab {
-                    network_event(&shared, &session_id, tab, method, &event);
+                    network_event(&shared, &session, tab, method, &event);
                 }
             }
             "Runtime.bindingCalled" if event.params["name"] == SEED_BINDING => {
@@ -2425,19 +2440,73 @@ fn frame_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event:
 
 /// Applies a `Network` event of `session_id` to tab `tab`'s requests and
 /// network log.
-fn network_event(shared: &Shared, session_id: &str, tab: u32, method: &str, event: &RawEvent) {
+fn network_event(
+    shared: &Arc<Shared>,
+    session: &Session,
+    tab: u32,
+    method: &str,
+    event: &RawEvent,
+) {
+    let session_id = session.id().unwrap_or_default();
     let capacity = shared.settings.network_buffer();
+    let mut finished = None;
     let followed = shared.lock().tabs.get_mut(&tab).is_some_and(|t| {
         let followed = t.network.event(session_id, method, &event.params);
         let logged = t
             .netlog
             .event(session_id, method, &event.params, capacity, None);
         let hot = t.hmr.network(session_id, method, &event.params);
+        if method == "Network.loadingFinished"
+            && let Some(request_id) = event.params["requestId"].as_str()
+            && let Some(record) = t
+                .netlog
+                .id_of(session_id, request_id)
+                .and_then(|id| t.netlog.get(id))
+        {
+            finished = Some((
+                request_id.to_owned(),
+                record.entry.url.clone(),
+                record.entry.kind.clone(),
+            ));
+        }
         followed || logged || hot
     });
     if followed {
         shared.bump();
     }
+    if let Some((request_id, url, kind)) = finished {
+        keep_body(shared, session, request_id, &url, &kind);
+    }
+}
+
+/// Asks Chrome for the body of a request that finished loading, and keeps
+/// it, when a `repro start` recording wants it: Chrome drops it once the
+/// page that loaded it goes.
+fn keep_body(shared: &Arc<Shared>, session: &Session, request_id: String, url: &str, kind: &str) {
+    let session_id = session.id().unwrap_or_default().to_owned();
+    let wanted = lock(&shared.kept)
+        .as_ref()
+        .is_some_and(|kept| kept.wants(url, kind) && !kept.has(&session_id, &request_id));
+    if !wanted {
+        return;
+    }
+    let session = session.clone();
+    let shared2 = shared.clone();
+    shared.spawn(async move {
+        let params = cdp::domains::network::GetResponseBodyParams::new(request_id.clone());
+        if let Ok(body) = session.with_timeout(SETUP_TIMEOUT).call(params).await
+            && let Some(kept) = lock(&shared2.kept).as_mut()
+        {
+            kept.keep(
+                &session_id,
+                &request_id,
+                KeptBody {
+                    body: body.body,
+                    base64: body.base64_encoded,
+                },
+            );
+        }
+    });
 }
 
 /// Applies a console call, uncaught exception or browser message of

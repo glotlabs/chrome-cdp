@@ -24,12 +24,14 @@ pub(crate) struct History {
 }
 
 impl History {
+    /// Keeps a command; `error` is its error's kind and message.
     pub(crate) fn push(
         &mut self,
         words: Vec<String>,
         context: Option<String>,
-        error: Option<String>,
+        error: Option<(String, String)>,
         refs: Vec<RefLocator>,
+        password: bool,
     ) {
         self.last += 1;
         if self.entries.len() >= KEEP {
@@ -41,8 +43,10 @@ impl History {
             words,
             context,
             ok: error.is_none(),
-            error,
+            message: error.as_ref().map(|(_, m)| m.clone()),
+            error: error.map(|(kind, _)| kind),
             refs,
+            password,
         });
     }
 
@@ -90,7 +94,7 @@ mod tests {
     fn keeps_the_newest_and_counts_the_rest() {
         let mut h = History::default();
         for i in 0..KEEP + 2 {
-            h.push(words(&format!("goto /{i}")), None, None, Vec::new());
+            h.push(words(&format!("goto /{i}")), None, None, Vec::new(), false);
         }
         let data = h.data();
         assert_eq!(data.entries.len(), KEEP);
@@ -100,13 +104,19 @@ mod tests {
         h.push(
             words("click e1"),
             Some("c1".into()),
-            Some("NotFound".into()),
+            Some(("NotFound".into(), "no element matches e1".into())),
             Vec::new(),
+            false,
         );
         let data = h.data();
         assert_eq!(data.dropped, KEEP as u64 + 2);
         assert_eq!(data.entries[0].n, KEEP as u64 + 3);
         assert!(!data.entries[0].ok);
+        assert_eq!(data.entries[0].error.as_deref(), Some("NotFound"));
+        assert_eq!(
+            data.entries[0].message.as_deref(),
+            Some("no element matches e1")
+        );
     }
 
     #[test]

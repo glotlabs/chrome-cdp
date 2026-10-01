@@ -270,7 +270,18 @@ impl Engine {
             Some(tab) => vec![self.page(&running, Some(tab), timeout).await?.id],
             None => running.tabs.tab_ids_in(context.as_deref()),
         };
-        let tabs: Vec<(u32, u64)> = ids.into_iter().map(|id| (id, 0)).collect();
+        let marks = if req.repro {
+            super::repro::marks(&running)
+        } else {
+            None
+        };
+        let tabs: Vec<(u32, u64)> = ids
+            .into_iter()
+            .map(|id| {
+                let mark = marks.as_ref().and_then(|m| m.get(&id)).copied();
+                (id, mark.unwrap_or(0))
+            })
+            .collect();
         let keep = |r: &Record| scope.matches(&r.entry.url, &r.entry.kind);
         let collected = self.collect(&running, &tabs, &keep, true, timeout).await;
         let product = &running.info.product;
@@ -427,16 +438,22 @@ impl Engine {
             && entry.state == RequestState::Done
             && entry.websocket.is_none()
             && entry.redirect.is_none();
+        // A `repro start` recording kept it as it finished loading.
+        let kept = running
+            .tabs
+            .kept(|kept| kept.get(&record.session, &record.request_id).cloned())
+            .flatten();
         let response = if has_body {
-            Some(match &session {
-                Some(session) => {
+            Some(match (&session, kept) {
+                (_, Some(kept)) => Ok((kept.body, kept.base64)),
+                (None, None) => Err(()),
+                (Some(session), None) => {
                     let params = cdp_network::GetResponseBodyParams::new(record.request_id.clone());
                     match session.with_timeout(timeout).call(params).await {
                         Ok(body) => Ok((body.body, body.base64_encoded)),
                         Err(_) => Err(()),
                     }
                 }
-                None => Err(()),
             })
         } else {
             None
@@ -691,26 +708,7 @@ fn response_cookies(headers: &[Header]) -> Vec<Cookie> {
 
 /// Unix ms as ISO 8601 in UTC: `2026-09-28T10:04:05.123Z`.
 pub(crate) fn iso8601(ms: u64) -> String {
-    let secs = ms / 1000;
-    let days = i64::try_from(secs / 86_400).unwrap_or(0);
-    let rest = secs % 86_400;
-    // Howard Hinnant's civil_from_days.
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z",
-        rest / 3600,
-        rest / 60 % 60,
-        rest % 60,
-        ms % 1000
-    )
+    format::iso8601(ms)
 }
 
 /// A size or duration as HAR's signed number.

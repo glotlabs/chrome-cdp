@@ -108,6 +108,7 @@ pub use input::{ActionPoint, Checks, check_action, check_fill_form, parse_modifi
 pub use layout::check_layout;
 pub use locator::{DEFAULT_TESTID_ATTRIBUTE, LocateOptions, Locator, is_ref, parse_locator};
 pub use navigate::normalize_url;
+pub use observe::REPRO_EVERYTHING;
 pub use observe::issues::{CODES as ISSUE_CODES, Code as IssueCode};
 pub use observe::{RESOURCE_TYPES, check_eval, check_screenshot};
 pub use places::in_root;
@@ -132,11 +133,12 @@ pub use request::{
     MockWsSendRequest, Modifier, MouseOp, NavigateRequest, Navigation, NetworkClearRequest,
     NetworkFramesRequest, NetworkRequest, NetworkShowRequest, NodeStacks, OpenInitScript,
     OpenRequest, PaperFormat, PdfRequest, PerfRequest, PermissionsOp, PermissionsRequest, Read,
-    ReadRequest, RequestCheck, RouteAction, RouteBody, RouteRequest, RouteSpec, RoutesRequest,
-    ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest, SourceRequest,
-    StateLoadRequest, StateSaveRequest, StatusRange, StorageArea, StorageOp, StorageRequest,
-    TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest,
-    TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WaitUntil, WhyFor, WhyRequest,
+    ReadRequest, ReproStartRequest, RequestCheck, RouteAction, RouteBody, RouteRequest, RouteSpec,
+    RoutesRequest, ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest,
+    SourceRequest, StateLoadRequest, StateSaveRequest, StatusRange, StorageArea, StorageOp,
+    StorageRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target,
+    TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WaitUntil, WhyFor,
+    WhyRequest,
 };
 pub use snapshot::{
     DEFAULT_ENGINE, RefCall, check_find, check_snapshot, is_interactive, is_landmark,
@@ -203,6 +205,8 @@ struct Running {
     har: Mutex<Option<observe::HarRecording>>,
     /// The `trace start` recording, if one runs.
     trace: Mutex<Option<observe::TraceRecording>>,
+    /// The `repro start` recording, if one runs.
+    repro: Mutex<Option<observe::ReproRecording>>,
     /// Counts `highlight`s, so only the latest one's timer hides it.
     highlights: AtomicU64,
 }
@@ -718,6 +722,7 @@ impl Engine {
             sourcemaps,
             har: Mutex::new(None),
             trace: Mutex::new(None),
+            repro: Mutex::new(None),
             highlights: AtomicU64::new(0),
         });
         *self.lock_state() = State::Running(running.clone());

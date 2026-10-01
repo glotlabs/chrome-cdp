@@ -1297,6 +1297,23 @@ pub struct HarExportRequest {
     /// `fetch` and XHR requests if empty.
     #[serde(default)]
     pub scope: Vec<String>,
+    /// `repro save`: only the requests since `repro start` (each tab's
+    /// document then, and the tabs opened after).
+    #[serde(default)]
+    pub repro: bool,
+    pub timeout_ms: u64,
+}
+
+/// `repro start`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReproStartRequest {
+    /// `--scope` globs of the requests whose bodies are kept; every
+    /// request if empty.
+    #[serde(default)]
+    pub scope: Vec<String>,
+    /// The first history number after the start (the CLI reads it).
+    #[serde(default)]
+    pub history_from: u64,
     pub timeout_ms: u64,
 }
 

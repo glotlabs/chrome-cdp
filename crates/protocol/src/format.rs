@@ -139,6 +139,38 @@ pub fn shell_quote(arg: &str) -> Cow<'_, str> {
     }
 }
 
+/// Unix ms as ISO 8601 in UTC: `2026-09-28T10:04:05.123Z`.
+pub fn iso8601(ms: u64) -> String {
+    let secs = ms / 1000;
+    let days = i64::try_from(secs / 86_400).unwrap_or(0);
+    let rest = secs % 86_400;
+    // Howard Hinnant's civil_from_days.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z",
+        rest / 3600,
+        rest / 60 % 60,
+        rest % 60,
+        ms % 1000
+    )
+}
+
+/// Now as ISO 8601 in UTC (see [`iso8601`]).
+pub fn iso8601_now() -> String {
+    let ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
+    iso8601(ms)
+}
+
 /// Parses `time freeze`'s time: ISO 8601 (`2026-01-31`,
 /// `2026-01-31T09:30`, `2026-01-31T09:30:00.5+01:00`; UTC without an
 /// offset) or ms since the Unix epoch. Returns ms since the epoch.

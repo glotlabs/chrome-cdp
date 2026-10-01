@@ -34,6 +34,9 @@ pub struct Exchange {
     pub response_headers: Vec<(String, String)>,
     /// `None` when the body was not recorded.
     pub response_body: Option<Vec<u8>>,
+    /// Why the body was left out on purpose (`over 5MB`), when it was:
+    /// the mock's comment says so instead of "Chrome no longer had it".
+    pub left_out: Option<String>,
     /// The response's MIME type.
     pub mime: String,
     /// DevTools' resource type (`fetch`, `xhr`, `document`, …), lower case.
@@ -260,6 +263,7 @@ pub fn har_exchanges(har: &Value) -> Result<Vec<Exchange>, String> {
             response_body: body,
             mime: content.map(|c| text(c, "mimeType")).unwrap_or_default(),
             resource_type: text(entry, "_resourceType").to_ascii_lowercase(),
+            left_out: None,
         });
     }
     Ok(out)
@@ -599,11 +603,18 @@ struct Answer {
 
 #[derive(Debug, Clone, PartialEq)]
 enum Body {
-    NotRecorded,
+    /// With why, when it was left out on purpose.
+    NotRecorded(Option<String>),
     Empty,
     Json(Value),
-    Text { text: String, ext: &'static str },
-    Binary { bytes: Vec<u8>, ext: &'static str },
+    Text {
+        text: String,
+        ext: &'static str,
+    },
+    Binary {
+        bytes: Vec<u8>,
+        ext: &'static str,
+    },
 }
 
 impl Answer {
@@ -617,7 +628,7 @@ impl Answer {
             .unwrap_or_default();
         let mime = if mime.is_empty() { header_mime } else { mime };
         let body = match &ex.response_body {
-            None => Body::NotRecorded,
+            None => Body::NotRecorded(ex.left_out.clone()),
             Some(b) if b.is_empty() => Body::Empty,
             Some(b) => classify(b, &mime),
         };
@@ -651,7 +662,7 @@ impl Answer {
         let given = match &body {
             Body::Json(_) => Some("application/json"),
             Body::Text { ext, .. } | Body::Binary { ext, .. } => Some(ext_type(ext)),
-            Body::Empty | Body::NotRecorded => None,
+            Body::Empty | Body::NotRecorded(_) => None,
         };
         if let Some(given) = given
             && !mime.is_empty()
@@ -688,11 +699,14 @@ impl Answer {
             parts.push(format!("headers = {{ {} }}", pairs.join(", ")));
         }
         match &self.body {
-            Body::NotRecorded => {
+            Body::NotRecorded(None) => {
                 notes.push(
                     "the response body was not recorded (Chrome no longer had it); add one"
                         .to_owned(),
                 );
+            }
+            Body::NotRecorded(Some(why)) => {
+                notes.push(format!("the response body was left out ({why}); add one"));
             }
             Body::Empty => {}
             Body::Json(value) => {
