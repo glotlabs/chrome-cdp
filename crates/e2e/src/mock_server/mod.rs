@@ -20,6 +20,10 @@
 //! real server behind) answers 502, and a request no set owns answers 404.
 //! An `sse` answer streams its events, each after its delay, and then
 //! keeps the stream open.
+//!
+//! WebSocket upgrades a `[[websocket]]` matches are served by it, and
+//! loopback peers can push to the open sockets and streams with control
+//! requests under `/__chrome-cdp/` (plan 19, milestone 19.2; see `push`).
 
 use std::collections::{HashMap, VecDeque};
 use std::convert::Infallible;
@@ -36,9 +40,13 @@ use hyper::service::service_fn;
 use hyper::{Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
 use mock::{MockSet, Mocks, Outcome, SseEvent};
-use protocol::schema::RoutedRequest;
+use protocol::schema::{MockRef, RoutedRequest};
 use serde::Serialize;
 use serde_json::json;
+
+mod push;
+
+pub use push::{OnSocket, Push, PushError, Pushed, SocketLog, post_push};
 
 /// The request header that picks a request's partition.
 pub const TEST_HEADER: &str = "x-chrome-cdp-test";
@@ -87,6 +95,7 @@ struct Shared {
     seed: u64,
     state: Mutex<State>,
     on_request: Option<OnRequest>,
+    on_socket: std::sync::OnceLock<OnSocket>,
 }
 
 struct State {
@@ -96,6 +105,12 @@ struct State {
     made: VecDeque<String>,
     journal: VecDeque<Served>,
     seq: u64,
+    /// The open WebSockets a `[[websocket]]` answers, oldest first.
+    sockets: Vec<push::ServedSocket>,
+    /// The open streams an `sse` mock answers, oldest first.
+    streams: Vec<push::ServedStream>,
+    /// The last socket or stream id given.
+    last_id: u64,
 }
 
 struct Partition {
@@ -136,10 +151,14 @@ impl MockServer {
                 made: VecDeque::new(),
                 journal: VecDeque::new(),
                 seq: 0,
+                sockets: Vec::new(),
+                streams: Vec::new(),
+                last_id: 0,
             }),
             sets,
             seed,
             on_request,
+            on_socket: std::sync::OnceLock::new(),
         });
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -187,12 +206,22 @@ impl MockServer {
         state.partitions.insert(id.to_owned(), partition);
     }
 
-    /// Forgets partition `id` and its journal entries.
+    /// Forgets partition `id` and its journal entries; its sockets are
+    /// closed and its streams end.
     pub fn close_partition(&self, id: &str) {
         let mut state = lock(&self.shared.state);
         state.partitions.remove(id);
         state.made.retain(|m| m != id);
         state.journal.retain(|s| s.test.as_deref() != Some(id));
+        state.sockets.retain(|s| s.test.as_deref() != Some(id));
+        state.streams.retain(|s| s.test.as_deref() != Some(id));
+    }
+
+    /// Calls `on_socket` with what happens on the sockets it serves, and
+    /// with the events pushed to its streams (`mock serve` prints them).
+    /// Only the first call counts.
+    pub fn on_socket(&self, on_socket: OnSocket) {
+        let _ = self.shared.on_socket.set(on_socket);
     }
 
     /// The requests of partition `test` (`None`: those without the
@@ -229,7 +258,7 @@ impl Drop for MockServer {
 
 async fn accept(listener: tokio::net::TcpListener, shared: Arc<Shared>) {
     loop {
-        let Ok((stream, _)) = listener.accept().await else {
+        let Ok((stream, peer)) = listener.accept().await else {
             tokio::time::sleep(Duration::from_millis(10)).await;
             continue;
         };
@@ -238,10 +267,11 @@ async fn accept(listener: tokio::net::TcpListener, shared: Arc<Shared>) {
         tokio::spawn(async move {
             let service = service_fn(move |req| {
                 let shared = shared.clone();
-                async move { handle(&shared, req, local).await }
+                async move { handle(&shared, req, local, peer).await }
             });
             let _ = http1::Builder::new()
                 .serve_connection(TokioIo::new(stream), service)
+                .with_upgrades()
                 .await;
         });
     }
@@ -275,15 +305,26 @@ enum Reply {
         body: Vec<u8>,
         events: Option<Vec<SseEvent>>,
         delay: Duration,
+        /// The mock that answers (a stream is kept with it).
+        mock: Option<MockRef>,
     },
     Abort(Duration),
 }
 
 async fn handle(
-    shared: &Shared,
-    req: Request<Incoming>,
+    shared: &Arc<Shared>,
+    mut req: Request<Incoming>,
     local: Option<SocketAddr>,
+    peer: SocketAddr,
 ) -> Result<Response<Body>, Aborted> {
+    if req.uri().path().starts_with(push::CONTROL) {
+        return Ok(push::control(shared, req, peer).await);
+    }
+    if push::is_upgrade(&req)
+        && let Some(response) = push::upgrade(shared, &mut req, local)
+    {
+        return Ok(response);
+    }
     let (parts, body) = req.into_parts();
     let body = match Limited::new(body, MAX_BODY).collect().await {
         Ok(collected) => collected.to_bytes(),
@@ -322,7 +363,7 @@ async fn handle(
         headers: &headers,
         body: (!body.is_empty()).then_some(&body[..]),
     };
-    let reply = decide(shared, &request, test, origin.as_deref());
+    let reply = decide(shared, &request, test.clone(), origin.as_deref());
     match reply {
         Reply::Abort(delay) => {
             tokio::time::sleep(delay).await;
@@ -334,15 +375,20 @@ async fn handle(
             body,
             events,
             delay,
+            mock,
         } => {
             tokio::time::sleep(delay).await;
             let mut response = Response::builder().status(status);
             for (name, value) in &headers {
                 response = response.header(name, value);
             }
-            let body = match events {
-                Some(events) => stream(events),
-                None => Full::new(Bytes::from(body)).boxed(),
+            let body = match (events, mock) {
+                (Some(events), Some(mock)) => {
+                    let pushed = push::add_stream(shared, test, &url, mock);
+                    stream(events, Some(pushed))
+                }
+                (Some(events), None) => stream(events, None),
+                (None, _) => Full::new(Bytes::from(body)).boxed(),
             };
             Ok(response
                 .body(body)
@@ -351,19 +397,32 @@ async fn handle(
     }
 }
 
-/// An `sse` answer's events, each after its delay; then the stream stays
-/// open until the client goes.
-fn stream(events: Vec<SseEvent>) -> Body {
-    let frames = futures_util::stream::unfold(events.into_iter(), |mut events| async move {
-        match events.next() {
-            Some(event) => {
-                tokio::time::sleep(event.delay).await;
-                let frame = Frame::data(Bytes::from(event.text()));
-                Some((Ok::<_, Infallible>(frame), events))
-            }
-            None => futures_util::future::pending().await,
-        }
-    });
+/// An `sse` answer's events, each after its delay, then the events
+/// pushed to it (`pushed`); the stream stays open until the client goes.
+fn stream(
+    events: Vec<SseEvent>,
+    pushed: Option<tokio::sync::mpsc::UnboundedReceiver<SseEvent>>,
+) -> Body {
+    let frames = futures_util::stream::unfold(
+        (events.into_iter(), pushed),
+        |(mut events, mut pushed)| async move {
+            let event = match events.next() {
+                Some(event) => {
+                    tokio::time::sleep(event.delay).await;
+                    event
+                }
+                None => match pushed.as_mut() {
+                    Some(rx) => match rx.recv().await {
+                        Some(event) => event,
+                        None => futures_util::future::pending().await,
+                    },
+                    None => futures_util::future::pending().await,
+                },
+            };
+            let frame = Frame::data(Bytes::from(event.text()));
+            Some((Ok::<_, Infallible>(frame), (events, pushed)))
+        },
+    );
     StreamBody::new(frames).boxed()
 }
 
@@ -385,47 +444,17 @@ fn decide(
 ) -> Reply {
     let mut state = lock(&shared.state);
     let state = &mut *state;
-    let partition = match &test {
-        None => &mut state.shared,
-        Some(id) => {
-            if !state.partitions.contains_key(id) {
-                if state.made.len() >= PARTITIONS
-                    && let Some(old) = state.made.pop_front()
-                {
-                    state.partitions.remove(&old);
-                }
-                state.made.push_back(id.clone());
-                state.partitions.insert(
-                    id.clone(),
-                    Partition::new(shared.sets.clone(), shared.seed, None),
-                );
-            }
-            state
-                .partitions
-                .get_mut(id)
-                .unwrap_or_else(|| unreachable!("just made"))
-        }
-    };
+    let partition = partition_of(shared, state, test.as_deref());
     partition.mocks.refresh();
     let now = partition.now_ms.unwrap_or_else(now_ms);
-    let mut entry = RoutedRequest {
-        seq: 0,
-        time_ms: u64::try_from(now_ms()).unwrap_or(0),
-        tab: None,
-        method: request.method.to_owned(),
-        url: request.url.to_owned(),
-        resource_type: "server".into(),
-        route: None,
-        mock: None,
-        unmatched: None,
-        policy: None,
-        closest: Vec::new(),
-        outcome: String::new(),
-    };
+    let mut entry = entry(request.method, request.url, "server");
     let (reply, outcome) = match partition.mocks.decide(request, now) {
         Outcome::Answer(answer) => {
-            entry.mock = Some(answer.mock);
-            let (reply, note) = reply(answer.response, answer.events, answer.delay, origin);
+            entry.mock = Some(answer.mock.clone());
+            let (mut reply, note) = reply(answer.response, answer.events, answer.delay, origin);
+            if let Reply::Fulfill { mock, .. } = &mut reply {
+                *mock = Some(answer.mock);
+            }
             let outcome = match note {
                 Some(note) => format!("{} ({note})", answer.outcome),
                 None => answer.outcome,
@@ -467,26 +496,84 @@ fn decide(
                     body: body.to_string().into_bytes(),
                     events: None,
                     delay: Duration::ZERO,
+                    mock: None,
                 },
                 "no mock, 404".to_owned(),
             )
         }
     };
     entry.outcome = outcome;
+    journal(shared, state, test, entry, true);
+    reply
+}
+
+/// Partition `test` (`None`: the shared one), made from the served sets
+/// when first seen.
+fn partition_of<'a>(
+    shared: &Shared,
+    state: &'a mut State,
+    test: Option<&str>,
+) -> &'a mut Partition {
+    let Some(id) = test else {
+        return &mut state.shared;
+    };
+    if !state.partitions.contains_key(id) {
+        if state.made.len() >= PARTITIONS
+            && let Some(old) = state.made.pop_front()
+        {
+            state.partitions.remove(&old);
+        }
+        state.made.push_back(id.to_owned());
+        state.partitions.insert(
+            id.to_owned(),
+            Partition::new(shared.sets.clone(), shared.seed, None),
+        );
+    }
+    state
+        .partitions
+        .get_mut(id)
+        .unwrap_or_else(|| unreachable!("just made"))
+}
+
+/// Journals `entry` (numbered here); `notify` calls `on_request`.
+fn journal(
+    shared: &Shared,
+    state: &mut State,
+    test: Option<String>,
+    mut entry: RoutedRequest,
+    notify: bool,
+) {
     state.seq += 1;
     entry.seq = state.seq;
     let served = Served {
         test,
         request: entry,
     };
-    if let Some(on_request) = &shared.on_request {
+    if notify && let Some(on_request) = &shared.on_request {
         on_request(&served);
     }
     if state.journal.len() == JOURNAL {
         state.journal.pop_front();
     }
     state.journal.push_back(served);
-    reply
+}
+
+/// A journal entry for `method url`, its outcome to come.
+fn entry(method: &str, url: &str, resource_type: &str) -> RoutedRequest {
+    RoutedRequest {
+        seq: 0,
+        time_ms: u64::try_from(now_ms()).unwrap_or(0),
+        tab: None,
+        method: method.to_owned(),
+        url: url.to_owned(),
+        resource_type: resource_type.to_owned(),
+        route: None,
+        mock: None,
+        unmatched: None,
+        policy: None,
+        closest: Vec::new(),
+        outcome: String::new(),
+    }
 }
 
 /// A mock's response as an HTTP answer; the note says what the browser
@@ -531,6 +618,7 @@ fn reply(
                     body,
                     events,
                     delay,
+                    mock: None,
                 },
                 None,
             )
@@ -547,6 +635,7 @@ fn reply(
                     body: body.to_string().into_bytes(),
                     events: None,
                     delay,
+                    mock: None,
                 },
                 Some("502: no real server behind mock serve"),
             )
@@ -588,5 +677,6 @@ fn preflight(request: &mock::Request<'_>, origin: Option<&str>) -> Reply {
         body: Vec::new(),
         events: None,
         delay: Duration::ZERO,
+        mock: None,
     }
 }

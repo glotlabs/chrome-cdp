@@ -299,6 +299,7 @@ dependencies = [
 name = "chrome-cdp-e2e"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "bytes",
  "chrome-cdp-browser",
  "chrome-cdp-mock",
@@ -316,6 +317,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-tungstenite",
  "toml",
  "tracing",
 ]
