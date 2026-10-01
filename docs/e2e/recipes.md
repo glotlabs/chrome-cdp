@@ -130,7 +130,10 @@ a mock per page, the last page first when globs overlap.
 
 `upload` puts files into the file input (or the chooser a button opens);
 the mock answers the upload, and `expect request` checks what was sent.
-Mocks cannot match multipart fields yet, so match the path and method.
+`match.form` reads `multipart/form-data` bodies too: a text field's
+value is its text, a file field's is its file name. `{{form.x}}` and
+`{{form_files.x}}` (`filename`, `content_type`, `size` in bytes) put
+them in the answer.
 
 ```toml
 # e2e/mocks/upload.toml
@@ -139,8 +142,13 @@ scope = ["/api/**"]
 
 [[mock]]
 name = "upload avatar"
+match = { method = "POST", path = "/api/avatar", form = { avatar = "*.png" } }
+respond = { status = 201, json = { url = "/avatars/{{uuid}}.png", name = "{{form_files.avatar.filename}}" } }
+
+[[mock]]
+name = "upload avatar: not a PNG"
 match = { method = "POST", path = "/api/avatar" }
-respond = { status = 201, json = { url = "/avatars/{{uuid}}.png" } }
+respond = { status = 415, json = { error = "PNG only" } }
 ```
 
 ```cdp

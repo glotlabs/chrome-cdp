@@ -14,6 +14,8 @@ use std::sync::OnceLock;
 use minijinja::{Environment, UndefinedBehavior, Value};
 use serde_json::Value as Json;
 
+use crate::multipart::FormFile;
+
 /// The template environment: strict about undefined values, no escaping.
 pub(crate) fn env() -> &'static Environment<'static> {
     static ENV: OnceLock<Environment<'static>> = OnceLock::new();
@@ -123,6 +125,8 @@ pub(crate) struct Vars {
     pub(crate) json: Option<Json>,
     /// The body's fields, if it is a form.
     pub(crate) form: Option<BTreeMap<String, String>>,
+    /// A multipart body's file fields.
+    pub(crate) form_files: Option<BTreeMap<String, FormFile>>,
     /// The mock's hits, this one included.
     pub(crate) seq: u64,
     /// Now (the frozen time, if the session froze it), ms since the epoch.
@@ -159,6 +163,9 @@ impl Vars {
         }
         if let Some(form) = &self.form {
             ctx.insert("form", Value::from_serialize(form));
+        }
+        if let Some(files) = &self.form_files {
+            ctx.insert("form_files", Value::from_serialize(files));
         }
         Value::from_serialize(&ctx)
     }

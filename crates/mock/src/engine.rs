@@ -1109,6 +1109,13 @@ pub(crate) fn vars(
         }
         map
     });
+    let form_files = parsed.multipart.then(|| {
+        let mut map = BTreeMap::new();
+        for (k, f) in &parsed.files {
+            map.entry(k.clone()).or_insert_with(|| f.clone());
+        }
+        map
+    });
     Vars {
         method: parsed.method.clone(),
         url: parsed.url.clone(),
@@ -1119,6 +1126,7 @@ pub(crate) fn vars(
         body: parsed.body.clone(),
         json: parsed.json.clone(),
         form,
+        form_files,
         seq,
         now_ms,
         seed,

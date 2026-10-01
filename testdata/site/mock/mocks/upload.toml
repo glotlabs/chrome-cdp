@@ -1,0 +1,14 @@
+# A multipart form (plan 19, milestone 19.1): text and file fields in
+# `match.form`, `{{form.x}}` and `{{form_files.x}}` in the answer.
+[settings]
+scope = ["/mock/api/**"]
+
+[[mock]]
+name = "save profile"
+match = { method = "POST", path = "/mock/api/profile", form = { email = "*@example.com", avatar = "*.png" } }
+respond = { json = { email = "{{form.email}}", avatar = "{{form_files.avatar.filename}}", type = "{{form_files.avatar.content_type}}", size = "{{form_files.avatar.size}}" } }
+
+[[mock]]
+name = "save profile: other files"
+match = { method = "POST", path = "/mock/api/profile" }
+respond = { status = 422, json = { error = "a PNG avatar and an example.com email, please" } }

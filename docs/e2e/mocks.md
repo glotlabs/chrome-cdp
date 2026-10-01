@@ -13,7 +13,8 @@ The format as JSON Schema: [`mocks.schema.json`](mocks.schema.json) (or
 ```
 
 and Taplo (Even Better TOML) checks and completes it in the editor.
-Templates (`{{params.id}}`, `{{json.qty}}`, `{{uuid}}`, …) and how
+Templates (`{{params.id}}`, `{{json.qty}}`, `{{form.email}}`,
+`{{form_files.avatar.filename}}`, `{{uuid}}`, …) and how
 matching works are described in plan 11 and
 [scenarios.md](scenarios.md); `chrome-cdp mock explain` shows which
 mock answers a request.
@@ -95,7 +96,7 @@ Conditions on the request, all of which must hold.
 | Key | Type | What |
 |---|---|---|
 | `body` | text: A glob on the whole body.; or `{ regex = … }`: A regular expression searched in the body. | The body as text: a glob, or `{ regex = "…" }`. |
-| `form` | table of text; or integer; or number; or boolean | Fields of a form body (`application/x-www-form-urlencoded`) that must be present; values are globs. |
+| `form` | table of text; or integer; or number; or boolean | Fields of a form body (`application/x-www-form-urlencoded` or `multipart/form-data`) that must be present; values are globs, and a repeated field matches if any of its values does. A multipart file field's value is its file name: `avatar = "*.png"`. |
 | `graphql` | table ([`match.graphql`](#graphql)) | A GraphQL request (a POST body, or a GET query string). |
 | `headers` | table of text; or integer; or number; or boolean | Request headers that must be present (any case); values are globs. |
 | `json` | any TOML value | The JSON body must contain this: objects match a subset of keys, `"*"` matches any value and strings are globs. Arrays must match element by element unless `json_mode = "contains"`. |

@@ -14,6 +14,7 @@
 //! - [`format`]: `chrome-cdp fmt` of mock files;
 //! - `load`: finding sets by name and compiling them;
 //! - `matcher`: conditions on a request, with the reason one fails;
+//! - `multipart`: `multipart/form-data` bodies, for `match.form`;
 //! - `closest`: how close a request comes to them (unmatched requests'
 //!   closest mocks, and [`RequestFilter`] of `expect request`);
 //! - `respond`: answers, data files, content types;
@@ -40,6 +41,7 @@ pub mod format;
 mod glob;
 mod load;
 mod matcher;
+mod multipart;
 pub mod openapi;
 pub mod record;
 pub mod reference;

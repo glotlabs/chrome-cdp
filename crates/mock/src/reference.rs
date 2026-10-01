@@ -27,7 +27,8 @@ pub fn reference() -> String {
          #:schema https://raw.githubusercontent.com/glotlabs/chrome-cdp/main/docs/e2e/mocks.schema.json\n\
          ```\n\n\
          and Taplo (Even Better TOML) checks and completes it in the editor.\n\
-         Templates (`{{params.id}}`, `{{json.qty}}`, `{{uuid}}`, …) and how\n\
+         Templates (`{{params.id}}`, `{{json.qty}}`, `{{form.email}}`,\n\
+         `{{form_files.avatar.filename}}`, `{{uuid}}`, …) and how\n\
          matching works are described in plan 11 and\n\
          [scenarios.md](scenarios.md); `chrome-cdp mock explain` shows which\n\
          mock answers a request.\n\n",

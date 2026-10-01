@@ -629,3 +629,62 @@ fn the_schema_describes_the_format() {
         assert!(text.contains(&format!("\"{key}\"")), "{key}");
     }
 }
+
+#[test]
+fn multipart_forms_match_and_render() {
+    let d = dir(&[(
+        "upload.toml",
+        r#"
+[[mock]]
+name = "profile"
+match = { method = "POST", path = "/api/profile", form = { email = "*@example.com", avatar = "*.png", tag = "b" } }
+respond = { json = { email = "{{form.email}}", file = "{{form_files.avatar.filename}}", type = "{{form_files.avatar.content_type}}", size = "{{form_files.avatar.size}}" } }
+"#,
+    )]);
+    let mut m = mocks(d.path(), &["upload"]);
+    let sent = b"--XyZ\r\n\
+        Content-Disposition: form-data; name=\"email\"\r\n\r\n\
+        ada@example.com\r\n\
+        --XyZ\r\n\
+        Content-Disposition: form-data; name=\"tag\"\r\n\r\n\
+        a\r\n\
+        --XyZ\r\n\
+        Content-Disposition: form-data; name=\"tag\"\r\n\r\n\
+        b\r\n\
+        --XyZ\r\n\
+        Content-Disposition: form-data; name=\"avatar\"; filename=\"me.png\"\r\n\
+        Content-Type: image/png\r\n\r\n\
+        \x89PNG\x00\xff\r\n\
+        --XyZ--\r\n";
+    let headers = [(
+        "Content-Type".to_owned(),
+        "multipart/form-data; boundary=XyZ".to_owned(),
+    )];
+    let request = Request {
+        method: "POST",
+        url: "http://app/api/profile",
+        headers: &headers,
+        body: Some(sent),
+    };
+    let Outcome::Answer(a) = m.decide(&request, 0) else {
+        panic!("{:?}", m.explain(&request).checked);
+    };
+    let Response::Fulfill { body, .. } = a.response else {
+        panic!()
+    };
+    assert_eq!(
+        serde_json::from_slice::<Value>(&body).unwrap(),
+        json!({"email": "ada@example.com", "file": "me.png", "type": "image/png", "size": 6})
+    );
+    // A multipart body cut off before its closing boundary is no form,
+    // and the reason says why.
+    let request = Request {
+        body: Some(&sent[..sent.len() - 10]),
+        ..request
+    };
+    let data = m.explain(&request);
+    assert_eq!(
+        data.checked[0].reason.as_deref(),
+        Some("form: the body is not a form (multipart body without a closing boundary)")
+    );
+}

@@ -9,6 +9,7 @@ use regex::Regex;
 use serde_json::Value;
 
 use crate::glob::{Glob, PathGlob, decode};
+use crate::multipart::{self, FormFile};
 
 /// A request, as mocks see it.
 #[derive(Debug, Clone, Copy)]
@@ -36,7 +37,15 @@ pub(crate) struct Parsed {
     pub(crate) headers: Vec<(String, String)>,
     pub(crate) body: String,
     pub(crate) json: Option<Value>,
+    /// The fields of a urlencoded or multipart body; a multipart file
+    /// field's value is its file name.
     pub(crate) form: Option<Vec<(String, String)>>,
+    /// A multipart body's file fields.
+    pub(crate) files: Vec<(String, FormFile)>,
+    /// Whether the body is multipart (`{{form_files}}` is there).
+    pub(crate) multipart: bool,
+    /// Why a body that claims to be a form is not one.
+    pub(crate) form_error: Option<String>,
 }
 
 impl Parsed {
@@ -68,18 +77,45 @@ impl Parsed {
         } else {
             None
         };
-        let content_type = headers
+        let raw_type = headers
             .iter()
             .find(|(n, _)| n == "content-type")
-            .map(|(_, v)| v.to_ascii_lowercase())
+            .map(|(_, v)| v.as_str())
             .unwrap_or_default();
-        let form = (content_type.starts_with("application/x-www-form-urlencoded")
-            || (json.is_none() && !body.is_empty() && content_type.is_empty()))
-        .then(|| {
-            url::form_urlencoded::parse(body.as_bytes())
-                .map(|(k, v)| (k.into_owned(), v.into_owned()))
-                .collect()
-        });
+        let content_type = raw_type.to_ascii_lowercase();
+        let mut files = Vec::new();
+        let mut form_error = None;
+        let multipart = multipart::boundary(raw_type);
+        let form = if let Some(boundary) = &multipart {
+            match boundary
+                .clone()
+                .and_then(|b| multipart::parse(req.body.unwrap_or_default(), &b))
+            {
+                Ok(parts) => Some(
+                    parts
+                        .into_iter()
+                        .map(|p| {
+                            if let Some(file) = p.file {
+                                files.push((p.name.clone(), file));
+                            }
+                            (p.name, p.value)
+                        })
+                        .collect(),
+                ),
+                Err(e) => {
+                    form_error = Some(e);
+                    None
+                }
+            }
+        } else {
+            (content_type.starts_with("application/x-www-form-urlencoded")
+                || (json.is_none() && !body.is_empty() && content_type.is_empty()))
+            .then(|| {
+                url::form_urlencoded::parse(body.as_bytes())
+                    .map(|(k, v)| (k.into_owned(), v.into_owned()))
+                    .collect()
+            })
+        };
         Self {
             method: req.method.to_ascii_uppercase(),
             url: req.url.to_owned(),
@@ -90,6 +126,9 @@ impl Parsed {
             body,
             json,
             form,
+            files,
+            multipart: multipart.is_some(),
+            form_error,
         }
     }
 
@@ -298,17 +337,25 @@ pub(crate) fn check_body(body: &BodyMatcher, req: &Parsed) -> Result<(), String>
         }
         BodyMatcher::Form(fields) => {
             let Some(form) = &req.form else {
-                return Err("form: the body is not a form".into());
+                return Err(match &req.form_error {
+                    Some(why) => format!("form: the body is not a form ({why})"),
+                    None => "form: the body is not a form".into(),
+                });
             };
             for (name, glob) in fields {
-                let Some((_, value)) = form.iter().find(|(k, _)| k == name) else {
+                let values: Vec<&str> = form
+                    .iter()
+                    .filter(|(k, _)| k == name)
+                    .map(|(_, v)| v.as_str())
+                    .collect();
+                if values.is_empty() {
                     return Err(format!("form {name}: missing"));
-                };
-                if !glob.matches(value) {
+                }
+                if !values.iter().any(|v| glob.matches(v)) {
                     return Err(format!(
                         "form {name}: expects {}, got {}",
                         quoted(glob.as_str()),
-                        quoted(value)
+                        quoted(values[0])
                     ));
                 }
             }
@@ -635,6 +682,31 @@ mod tests {
         assert_eq!(
             form.check(&json_req, "POST", false).unwrap_err(),
             "form: the body is not a form"
+        );
+        // Repeated fields: any value may match.
+        let repeated = parsed(
+            "POST",
+            "http://x/login",
+            &[("Content-Type", "application/x-www-form-urlencoded")],
+            "email=a%40y.com&email=b%40x.com",
+        );
+        assert!(form.check(&repeated, "POST", false).is_ok());
+        let multipart = parsed(
+            "POST",
+            "http://x/login",
+            &[("Content-Type", "multipart/form-data; boundary=\"q b\"")],
+            "--q b\nContent-Disposition: form-data; name=\"email\"\n\na@x.com\n--q b--\n",
+        );
+        assert!(form.check(&multipart, "POST", false).is_ok());
+        let no_boundary = parsed(
+            "POST",
+            "http://x/login",
+            &[("Content-Type", "multipart/form-data")],
+            "email=a%40x.com",
+        );
+        assert_eq!(
+            form.check(&no_boundary, "POST", false).unwrap_err(),
+            "form: the body is not a form (multipart body without a boundary)"
         );
         let text = Matcher {
             body: Some(BodyMatcher::Glob(Glob::new("hello *"))),

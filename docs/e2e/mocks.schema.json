@@ -195,7 +195,7 @@
           "additionalProperties": {
             "$ref": "#/$defs/Scalar"
           },
-          "description": "Fields of a form body (`application/x-www-form-urlencoded`) that must\nbe present; values are globs.",
+          "description": "Fields of a form body (`application/x-www-form-urlencoded` or\n`multipart/form-data`) that must be present; values are globs, and\na repeated field matches if any of its values does. A multipart\nfile field's value is its file name: `avatar = \"*.png\"`.",
           "type": [
             "object",
             "null"

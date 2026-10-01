@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Upload</title>
+<h1>Profile</h1>
+<p>A form posted as <code>multipart/form-data</code> (a <code>FormData</code>
+fetch), for the <code>upload</code> mock set's <code>match.form</code>.</p>
+<form id="profile">
+  <label>Email <input name="email" type="email"></label>
+  <label>Avatar <input name="avatar" type="file"></label>
+  <button>Save</button>
+</form>
+<pre id="out"></pre>
+<script>
+  const form = document.getElementById("profile");
+  async function send() {
+    const r = await fetch("/mock/api/profile", { method: "POST", body: new FormData(form) });
+    const answer = [r.status, await r.json()];
+    document.getElementById("out").textContent = JSON.stringify(answer[1]);
+    return answer;
+  }
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    send();
+  });
+</script>

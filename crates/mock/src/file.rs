@@ -399,8 +399,10 @@ pub(crate) struct RawMatch {
     /// expected element matches some element).
     #[serde(default)]
     pub(crate) json_mode: Option<JsonMode>,
-    /// Fields of a form body (`application/x-www-form-urlencoded`) that must
-    /// be present; values are globs.
+    /// Fields of a form body (`application/x-www-form-urlencoded` or
+    /// `multipart/form-data`) that must be present; values are globs, and
+    /// a repeated field matches if any of its values does. A multipart
+    /// file field's value is its file name: `avatar = "*.png"`.
     #[serde(default)]
     pub(crate) form: Option<BTreeMap<String, At<Scalar>>>,
     /// The body as text: a glob, or `{ regex = "…" }`.

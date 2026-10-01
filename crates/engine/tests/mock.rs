@@ -946,3 +946,37 @@ async fn mocks_match_large_request_bodies() {
         "{answer}"
     );
 }
+
+#[tokio::test]
+async fn multipart_forms_match_by_field_and_file_name() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "mock-multipart").await;
+    goto(&engine, &site.url("/mock/upload.html")).await;
+    use_sets(&engine, &mocks_dir(), &["upload"], false).await;
+    // The form as a person fills it: an email and a picked file (a
+    // binary one, larger than Chrome puts in `Fetch.requestPaused`).
+    let pick = |email: &str, file: &str| {
+        format!(
+            "(() => {{ const f = document.forms.profile; f.email.value = {email:?}; \
+             const bytes = new Uint8Array(300000).map((_, i) => i % 256); \
+             const dt = new DataTransfer(); \
+             dt.items.add(new File([bytes], {file:?}, {{type: 'image/png'}})); \
+             f.avatar.files = dt.files; return send(); }})()"
+        )
+    };
+    let answer = eval(&engine, &pick("ada@example.com", "me.png")).await;
+    assert_eq!(answer[0], json!(200), "{answer}");
+    assert_eq!(answer[1]["email"], "ada@example.com");
+    assert_eq!(answer[1]["avatar"], "me.png");
+    assert_eq!(answer[1]["type"], "image/png");
+    assert_eq!(answer[1]["size"], 300_000);
+    let answer = eval(&engine, &pick("ada@example.com", "me.gif")).await;
+    assert_eq!(answer[0], json!(422), "{answer}");
+    let (_, data) = explain(&engine, "POST", &site.url("/mock/api/profile"));
+    assert_eq!(
+        data.checked[0].reason.as_deref(),
+        Some("form: the body is not a form"),
+        "{data:?}"
+    );
+}
