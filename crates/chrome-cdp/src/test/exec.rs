@@ -1782,6 +1782,7 @@ fn http_exchange(data: &Value, body: Option<String>, headers: &[String]) -> mock
             .to_owned(),
         resource_type: "other".into(),
         left_out: None,
+        started_ms: None,
     }
 }
 

@@ -289,3 +289,50 @@ fn history_uses_the_configured_testid_attribute() {
         common::stderr(&out)
     );
 }
+
+#[test]
+fn record_match_bodies_tells_two_logins_apart() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let site = Fixtures::shared().a();
+    project.ok(&["open", &format!("{site}/e2e/shop.html")]);
+    // Two logins as different users, each with a nonce and the time, as
+    // a client would send them.
+    let login = |email: &str| {
+        format!(
+            "fetch('/e2e/api/login', {{method: 'POST', headers: {{'content-type': 'application/json'}}, \
+             body: JSON.stringify({{email: '{email}', nonce: crypto.randomUUID(), at: Date.now()}})}}) \
+             .then((r) => r.json()).then((j) => j.email)"
+        )
+    };
+    project.ok(&["eval", &login("ada@example.com")]);
+    project.ok(&["eval", &login("bob@example.com")]);
+    let recorded = project.ok(&[
+        "mock",
+        "record",
+        "--scope",
+        "/e2e/api/login",
+        "--match-bodies",
+        "-o",
+        "mocks/logins.toml",
+    ]);
+    assert!(
+        recorded.contains("mocks/logins.toml: 2 mocks from 2 requests (2 told apart by body)"),
+        "{recorded}"
+    );
+    let toml = std::fs::read_to_string(project.root.join("mocks/logins.toml")).unwrap();
+    assert!(
+        toml.contains(r#"json = { email = "ada@example.com" } }"#)
+            && toml.contains(r#"json = { email = "bob@example.com" } }"#),
+        "{toml}"
+    );
+    assert!(!toml.contains("sequence"), "{toml}");
+    project.ok(&["mock", "check", "logins"]);
+
+    // Replayed: each login gets its own answer, whatever the nonce.
+    project.ok(&["mock", "use", "logins"]);
+    let bob = project.ok(&["eval", &login("bob@example.com")]);
+    assert_eq!(bob.trim(), "bob@example.com");
+    let log = project.ok(&["mock", "log"]);
+    assert!(log.contains("(email=bob@example.com)"), "{log}");
+}

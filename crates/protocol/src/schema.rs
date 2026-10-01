@@ -5962,6 +5962,10 @@ pub struct MockRecordData {
     pub scope: Vec<String>,
     /// Requests in scope left out, and why.
     pub skipped: Vec<String>,
+    /// Requests whose mock matches their body's stable fields
+    /// (`--match-bodies`), told apart from others to the same path.
+    #[serde(default)]
+    pub by_body: usize,
 }
 
 /// `data` of `chrome-cdp mock off --json`.

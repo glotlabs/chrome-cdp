@@ -19,6 +19,7 @@ use std::fmt::Write as _;
 use serde_json::Value;
 
 use crate::glob::PathGlob;
+use crate::stable::{self, Fields, Kind};
 use crate::template::is_template;
 
 /// One request and its answer.
@@ -41,6 +42,8 @@ pub struct Exchange {
     pub mime: String,
     /// DevTools' resource type (`fetch`, `xhr`, `document`, …), lower case.
     pub resource_type: String,
+    /// When it was sent (ms since the epoch), if known.
+    pub started_ms: Option<i64>,
 }
 
 /// What to record.
@@ -54,6 +57,9 @@ pub struct RecordOptions {
     pub data_dir: String,
     /// The first comment line of the file.
     pub origin: String,
+    /// Tell requests to one path apart by their bodies' stable fields
+    /// (`--match-bodies`).
+    pub match_bodies: bool,
 }
 
 /// A recorded mock set.
@@ -72,6 +78,9 @@ pub struct Recorded {
     pub skipped: Vec<String>,
     /// The scope written to `[settings]`.
     pub scope: Vec<String>,
+    /// Requests whose mock matches their body (`--match-bodies`): told
+    /// apart from others to the same path.
+    pub by_body: usize,
 }
 
 /// JSON bodies up to this many characters (compact) are written inline.
@@ -264,6 +273,10 @@ pub fn har_exchanges(har: &Value) -> Result<Vec<Exchange>, String> {
             mime: content.map(|c| text(c, "mimeType")).unwrap_or_default(),
             resource_type: text(entry, "_resourceType").to_ascii_lowercase(),
             left_out: None,
+            started_ms: entry
+                .get("startedDateTime")
+                .and_then(Value::as_str)
+                .and_then(crate::stable::date_ms),
         });
     }
     Ok(out)
@@ -303,6 +316,8 @@ struct Req<'a> {
     /// Cache busters left out.
     busters: Vec<String>,
     graphql: Option<String>,
+    /// Its body's fields (`--match-bodies`).
+    body: Option<Fields>,
 }
 
 /// What makes requests the same mock.
@@ -312,11 +327,26 @@ struct Key {
     path: String,
     query: Vec<(String, String)>,
     graphql: Option<String>,
+    /// The body's stable fields (`--match-bodies`), as canonical text.
+    body: Option<(Kind, String)>,
+}
+
+impl Key {
+    /// The key without its body.
+    fn base(&self) -> Self {
+        Self {
+            body: None,
+            ..self.clone()
+        }
+    }
 }
 
 /// Records `exchanges` as a mock set.
 pub fn record(exchanges: &[Exchange], options: &RecordOptions) -> Result<Recorded, String> {
     let scope = Scope::new(&options.scope)?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
     let mut out = Recorded::default();
     let mut reqs: Vec<Req<'_>> = Vec::new();
     for ex in exchanges {
@@ -354,12 +384,17 @@ pub fn record(exchanges: &[Exchange], options: &RecordOptions) -> Result<Recorde
         }
         query.sort();
         let graphql = graphql_operation(ex, &url);
+        let body = options
+            .match_bodies
+            .then(|| stable::fields(ex, graphql.is_some(), now_ms))
+            .flatten();
         reqs.push(Req {
             ex,
             path,
             query,
             busters,
             graphql,
+            body,
         });
     }
     out.requests = reqs.len();
@@ -369,15 +404,17 @@ pub fn record(exchanges: &[Exchange], options: &RecordOptions) -> Result<Recorde
         options.scope.clone()
     };
 
+    let bodies = body_keys(&reqs);
     // Groups in the order first seen.
     let mut order: Vec<Key> = Vec::new();
     let mut groups: HashMap<Key, Vec<&Req<'_>>> = HashMap::new();
-    for req in &reqs {
+    for (i, req) in reqs.iter().enumerate() {
         let key = Key {
             method: req.ex.method.clone(),
             path: req.path.clone(),
             query: req.query.clone(),
             graphql: req.graphql.clone(),
+            body: bodies.keys[i].clone(),
         };
         groups
             .entry(key.clone())
@@ -404,9 +441,19 @@ pub fn record(exchanges: &[Exchange], options: &RecordOptions) -> Result<Recorde
         (
             first_of_path[&(k.method.clone(), k.path.clone())],
             std::cmp::Reverse(k.query.len() + usize::from(k.graphql.is_some())),
+            std::cmp::Reverse(
+                k.body
+                    .as_ref()
+                    .map_or(0, |b| stable::count(&bodies.maps[b])),
+            ),
             first_seen[k],
         )
     });
+    out.by_body = order
+        .iter()
+        .filter(|k| k.body.is_some())
+        .map(|k| groups[k].len())
+        .sum();
 
     let needed_cookies = cookies_sent(exchanges);
     let mut files = Files::new(&options.data_dir);
@@ -478,7 +525,21 @@ pub fn record(exchanges: &[Exchange], options: &RecordOptions) -> Result<Recorde
             let _ = writeln!(text, "# {c}");
         }
         text.push_str("[[mock]]\n");
-        let _ = writeln!(text, "name = {}", toml_string(&mock_name(key)));
+        let mut name = mock_name(key);
+        if let Some(body) = &key.body {
+            let siblings: Vec<&(Kind, String)> = order
+                .iter()
+                .filter(|k| k.base() == key.base())
+                .filter_map(|k| k.body.as_ref())
+                .collect();
+            let i = siblings.iter().position(|b| *b == body).unwrap_or(0);
+            let maps: Vec<_> = siblings.iter().map(|b| &bodies.maps[*b]).collect();
+            let telling = stable::telling(&maps, i, 2);
+            if !telling.is_empty() {
+                let _ = write!(name, " ({})", telling.join(", "));
+            }
+        }
+        let _ = writeln!(text, "name = {}", toml_string(&name));
         let mut matcher = vec![
             format!("method = {}", toml_string(&key.method)),
             format!("path = {}", toml_string(&key.path)),
@@ -491,8 +552,24 @@ pub fn record(exchanges: &[Exchange], options: &RecordOptions) -> Result<Recorde
                 .collect();
             matcher.push(format!("query = {{ {} }}", pairs.join(", ")));
         }
-        if let Some(op) = &key.graphql {
-            matcher.push(format!("graphql = {{ operation = {} }}", toml_string(op)));
+        let body = key.body.as_ref().and_then(|b| {
+            let value = toml_value(&Value::Object(bodies.maps[b].clone()))?;
+            Some((b.0, value))
+        });
+        match (&key.graphql, &body) {
+            (Some(op), Some((Kind::Graphql, vars))) => matcher.push(format!(
+                "graphql = {{ operation = {}, variables = {vars} }}",
+                toml_string(op)
+            )),
+            (Some(op), _) => {
+                matcher.push(format!("graphql = {{ operation = {} }}", toml_string(op)));
+            }
+            _ => {}
+        }
+        match &body {
+            Some((Kind::Json, value)) => matcher.push(format!("json = {value}")),
+            Some((Kind::Form, value)) => matcher.push(format!("form = {value}")),
+            _ => {}
         }
         let _ = writeln!(text, "match = {{ {} }}", matcher.join(", "));
         if many {
@@ -507,6 +584,69 @@ pub fn record(exchanges: &[Exchange], options: &RecordOptions) -> Result<Recorde
     }
     out.toml = text;
     Ok(out)
+}
+
+/// The body keys of `--match-bodies`.
+#[derive(Default)]
+struct BodyKeys {
+    /// Each request's, in order: set only where its stable fields tell it
+    /// apart from another request of the same mock.
+    keys: Vec<Option<(Kind, String)>>,
+    /// The stable fields of each key.
+    maps: HashMap<(Kind, String), serde_json::Map<String, Value>>,
+}
+
+/// Works out which requests' bodies tell them apart: the stable fields of
+/// each body (over the requests of its method and path), kept only where
+/// requests that would be one mock differ in them.
+fn body_keys(reqs: &[Req<'_>]) -> BodyKeys {
+    let mut out = BodyKeys {
+        keys: vec![None; reqs.len()],
+        ..BodyKeys::default()
+    };
+    let mut by_path: HashMap<(&str, &str, Kind), Vec<usize>> = HashMap::new();
+    for (i, req) in reqs.iter().enumerate() {
+        if let Some(body) = &req.body {
+            by_path
+                .entry((&req.ex.method, &req.path, body.kind))
+                .or_default()
+                .push(i);
+        }
+    }
+    for list in by_path.values() {
+        let fields: Vec<&Fields> = list.iter().filter_map(|&i| reqs[i].body.as_ref()).collect();
+        let drop = stable::volatile(&fields);
+        for (&i, f) in list.iter().zip(&fields) {
+            let map = stable::stable(&f.value, &drop);
+            if map.is_empty() || toml_value(&Value::Object(map.clone())).is_none() {
+                continue;
+            }
+            let key = (f.kind, stable::canonical(&map));
+            out.maps.entry(key.clone()).or_insert(map);
+            out.keys[i] = Some(key);
+        }
+    }
+    // A body key only where it splits a mock.
+    let mut distinct: HashMap<Key, HashSet<Option<(Kind, String)>>> = HashMap::new();
+    let base = |req: &Req<'_>| Key {
+        method: req.ex.method.clone(),
+        path: req.path.clone(),
+        query: req.query.clone(),
+        graphql: req.graphql.clone(),
+        body: None,
+    };
+    for (i, req) in reqs.iter().enumerate() {
+        distinct
+            .entry(base(req))
+            .or_default()
+            .insert(out.keys[i].clone());
+    }
+    for (i, req) in reqs.iter().enumerate() {
+        if distinct[&base(req)].len() < 2 {
+            out.keys[i] = None;
+        }
+    }
+    out
 }
 
 /// `/api/products?page=2` of `url`, without the origin.

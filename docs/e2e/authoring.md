@@ -84,6 +84,23 @@ takes them; without it, the page's fetch and XHR requests) and writes:
 - `[settings] scope`: the `--scope` given, or the first path segment every
   recorded request shares.
 
+Requests are told apart by method, path, query and GraphQL operation, so
+two POSTs to one path with different bodies (logging in as two users)
+become one `sequence` in call order. `--match-bodies` (for `mock import`
+too) keys them by their bodies instead: the mock matches `json = { … }`
+(`form` for a form, a multipart form's text fields; `graphql.variables`
+for GraphQL) with the body's stable fields. A field is left out when its
+value differs between the recorded requests of that method and path and
+looks generated: a UUID, a number or date close to when the request was
+sent, a string over 64 characters. Bodies are only matched where they
+tell requests of one mock apart; requests with equal stable fields still
+form a `sequence`, and the summary says how many were told apart:
+
+```
+$ chrome-cdp mock record --scope '/api/**' --match-bodies
+e2e/mocks/recorded.toml: 3 mocks from 4 requests (2 told apart by body)
+```
+
 Chrome keeps response bodies only while the page that loaded them is open,
 so record before navigating away. The file is checked as `mock use` would
 read it. `-o` refuses to overwrite a file without `--force`.

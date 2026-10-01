@@ -478,6 +478,7 @@ fn record(args: &MockRecordArgs, global: &GlobalArgs) -> Result<Output, ErrorInf
         &args.scope,
         origin,
         args.max_chars,
+        args.match_bodies,
         || {
             Hint::run(Cmd::new("network").raw("--limit").arg("50"))
                 .why("lists what the session sent; browse the app first, then record")
@@ -514,7 +515,7 @@ pub(crate) fn record_for_test(
     let project = Project::of(config, cwd);
     let file = project.dir.join(format!("{name}.toml"));
     let out = Target::new(&project, Some(&file), name, true)?;
-    match write_recording(&out, exchanges, scope, origin, 0, || {
+    match write_recording(&out, exchanges, scope, origin, 0, false, || {
         Hint::text("the test sent no fetch or XHR request")
     }) {
         Ok(output) => Ok(serde_json::from_value(output.data).ok()),
@@ -539,7 +540,7 @@ pub(crate) fn record_bundle(
         data_dir: "data".to_owned(),
     };
     let scope = vec![engine::REPRO_EVERYTHING.to_owned()];
-    let data = match write_recording(&out, exchanges, &scope, origin.to_owned(), 0, || {
+    let data = match write_recording(&out, exchanges, &scope, origin.to_owned(), 0, false, || {
         Hint::text("the session sent no request")
     }) {
         Ok(output) => serde_json::from_value(output.data)
@@ -566,6 +567,7 @@ pub(crate) fn record_bundle(
                 files: Vec::new(),
                 scope,
                 skipped: Vec::new(),
+                by_body: 0,
             }
         }
         Err(info) => return Err(info),
@@ -627,6 +629,7 @@ fn import(args: &MockImportArgs) -> Result<Output, ErrorInfo> {
         &args.scope,
         origin,
         args.max_chars,
+        args.match_bodies,
         || {
             Hint::text(
                 "check --scope: the HAR has no request it matches (without it, fetch and XHR ones)",
@@ -711,12 +714,14 @@ fn write_recording(
     scope: &[String],
     origin: String,
     max_chars: usize,
+    match_bodies: bool,
     none_hint: impl FnOnce() -> Hint,
 ) -> Result<Output, ErrorInfo> {
     let options = mock::record::RecordOptions {
         scope: scope.to_vec(),
         data_dir: out.data_dir.clone(),
         origin,
+        match_bodies,
     };
     let recorded = mock::record::record(exchanges, &options)
         .map_err(|e| ErrorInfo::new(ErrorKind::BadArgs, e))?;
@@ -791,6 +796,9 @@ fn write_recording(
             "requests"
         },
     );
+    if recorded.by_body > 0 {
+        let _ = write!(text, " ({} told apart by body)", recorded.by_body);
+    }
     if !files.is_empty() {
         let _ = write!(
             text,
@@ -813,6 +821,7 @@ fn write_recording(
         files,
         scope: recorded.scope.clone(),
         skipped: recorded.skipped.clone(),
+        by_body: recorded.by_body,
     };
     let mut output = Output::typed(&data, text)
         .quiet(path)

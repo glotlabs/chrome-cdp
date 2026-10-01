@@ -23,7 +23,7 @@
 //!   an OpenAPI spec;
 //! - [`drift`]: real answers against the mocks' (`test --verify-mocks`);
 //! - [`record`]: mock files from recorded traffic (`mock record`, `mock
-//!   import`);
+//!   import`), and `stable`: the body fields `--match-bodies` keys them by;
 //! - `engine`: [`Mocks`];
 //! - `ws`: `[[websocket]]` mocks (milestone 11.9), for the page's
 //!   `WebSocket` stand-in;
@@ -46,6 +46,7 @@ pub mod openapi;
 pub mod record;
 pub mod reference;
 mod respond;
+mod stable;
 mod template;
 pub mod text;
 mod ws;

@@ -9,7 +9,7 @@ warning: left out OPTIONS /api/orders: a CORS preflight (cors = "auto" answers t
 $ chrome-cdp mock import requests.har --scope '/api/**' --json
 exit: 0
 --- stdout
-{"ok":true,"data":{"files":["<tmp>/app/e2e/mocks/data/requests/api/products/7.json"],"mocks":2,"path":"<tmp>/app/e2e/mocks/requests.toml","requests":3,"scope":["/api/**"],"set":"requests","skipped":["OPTIONS /api/orders: a CORS preflight (cors = \"auto\" answers them)"]},"warnings":["left out OPTIONS /api/orders: a CORS preflight (cors = \"auto\" answers them)"]}
+{"ok":true,"data":{"by_body":0,"files":["<tmp>/app/e2e/mocks/data/requests/api/products/7.json"],"mocks":2,"path":"<tmp>/app/e2e/mocks/requests.toml","requests":3,"scope":["/api/**"],"set":"requests","skipped":["OPTIONS /api/orders: a CORS preflight (cors = \"auto\" answers them)"]},"warnings":["left out OPTIONS /api/orders: a CORS preflight (cors = \"auto\" answers them)"]}
 
 $ chrome-cdp mock import requests.har --scope '/api/**' -q
 exit: 0

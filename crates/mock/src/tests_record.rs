@@ -28,6 +28,7 @@ fn options(scope: &[&str]) -> RecordOptions {
         scope: scope.iter().map(|s| (*s).to_owned()).collect(),
         data_dir: "data/recorded".into(),
         origin: "Recorded by a test.".into(),
+        match_bodies: false,
     }
 }
 
@@ -388,4 +389,295 @@ fn data_files_stay_in_their_dir() {
             .all(|c| matches!(c, std::path::Component::Normal(_)));
         assert!(normal, "{rel}");
     }
+}
+
+/// A POST of `body` (with its content type) answered by `answer`.
+fn post(url: &str, content_type: &str, body: &str, answer: &str) -> Exchange {
+    Exchange {
+        request_headers: vec![("Content-Type".into(), content_type.into())],
+        request_body: Some(body.into()),
+        started_ms: Some(1_790_000_000_000),
+        ..ex("POST", url, 200, answer)
+    }
+}
+
+fn login(email: &str, nonce: &str, answer: &str) -> Exchange {
+    post(
+        "http://app/api/login",
+        "application/json",
+        &json!({"email": email, "password": "s3cret", "nonce": nonce, "sentAt": 1_790_000_000_000_i64 + i64::from(nonce.as_bytes()[35])})
+            .to_string(),
+        answer,
+    )
+}
+
+#[test]
+fn match_bodies_tells_logins_apart_by_their_stable_fields() {
+    let exchanges = vec![
+        login(
+            "ada@example.com",
+            "6f1c2a5e-1d2b-4c3d-8e9f-0a1b2c3d4e51",
+            r#"{"user":"ada"}"#,
+        ),
+        login(
+            "bob@example.com",
+            "6f1c2a5e-1d2b-4c3d-8e9f-0a1b2c3d4e52",
+            r#"{"user":"bob"}"#,
+        ),
+        login(
+            "ada@example.com",
+            "6f1c2a5e-1d2b-4c3d-8e9f-0a1b2c3d4e53",
+            r#"{"user":"ada again"}"#,
+        ),
+        ex("GET", "http://app/api/me", 200, r#"{"user":"ada"}"#),
+    ];
+    // Without the flag: one mock, a sequence.
+    let plain = record(&exchanges, &options(&["/api/**"])).unwrap();
+    assert_eq!((plain.mocks, plain.by_body), (2, 0), "{}", plain.toml);
+    assert!(
+        plain
+            .toml
+            .contains("match = { method = \"POST\", path = \"/api/login\" }\nsequence"),
+        "{}",
+        plain.toml
+    );
+
+    let recorded = record(
+        &exchanges,
+        &RecordOptions {
+            match_bodies: true,
+            ..options(&["/api/**"])
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        (recorded.mocks, recorded.by_body),
+        (3, 3),
+        "{}",
+        recorded.toml
+    );
+    // The nonce and the time differ and look generated: left out.
+    assert!(
+        recorded.toml.contains(
+            r#"match = { method = "POST", path = "/api/login", json = { email = "ada@example.com", password = "s3cret" } }"#
+        ),
+        "{}",
+        recorded.toml
+    );
+    assert!(
+        recorded
+            .toml
+            .contains(r#"name = "POST /api/login (email=bob@example.com)""#),
+        "{}",
+        recorded.toml
+    );
+    let d = write(&recorded);
+    let mut m = mocks(d.path(), &["recorded"]);
+    let body =
+        |email: &str| json!({"email": email, "password": "s3cret", "nonce": "other"}).to_string();
+    let (_, got, _) = answer(
+        &mut m,
+        "POST",
+        "http://app/api/login",
+        Some(&body("bob@example.com")),
+    );
+    assert_eq!(got, json!({"user": "bob"}));
+    // Equal stable fields still form a sequence.
+    let (_, got, _) = answer(
+        &mut m,
+        "POST",
+        "http://app/api/login",
+        Some(&body("ada@example.com")),
+    );
+    assert_eq!(got, json!({"user": "ada"}));
+    let (_, got, _) = answer(
+        &mut m,
+        "POST",
+        "http://app/api/login",
+        Some(&body("ada@example.com")),
+    );
+    assert_eq!(got, json!({"user": "ada again"}));
+    // The GET has no body: as before.
+    let (_, got, name) = answer(&mut m, "GET", "http://app/api/me", None);
+    assert_eq!(
+        (got, name.as_str()),
+        (json!({"user": "ada"}), "GET /api/me")
+    );
+}
+
+#[test]
+fn match_bodies_puts_the_more_specific_body_first_and_skips_equal_ones() {
+    let exchanges = vec![
+        post(
+            "http://app/api/cart",
+            "application/json",
+            r#"{"sku":"a"}"#,
+            r#"{"n":1}"#,
+        ),
+        post(
+            "http://app/api/cart",
+            "application/json",
+            r#"{"sku":"a","gift":true}"#,
+            r#"{"n":2}"#,
+        ),
+        // One request per path: nothing to tell apart, no body match.
+        post(
+            "http://app/api/save",
+            "application/json",
+            r#"{"x":1}"#,
+            "{}",
+        ),
+    ];
+    let recorded = record(
+        &exchanges,
+        &RecordOptions {
+            match_bodies: true,
+            ..options(&["/api/**"])
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        (recorded.mocks, recorded.by_body),
+        (3, 2),
+        "{}",
+        recorded.toml
+    );
+    assert!(
+        recorded
+            .toml
+            .contains(r#"match = { method = "POST", path = "/api/save" }"#),
+        "{}",
+        recorded.toml
+    );
+    let d = write(&recorded);
+    let mut m = mocks(d.path(), &["recorded"]);
+    let (_, got, _) = answer(
+        &mut m,
+        "POST",
+        "http://app/api/cart",
+        Some(r#"{"sku":"a"}"#),
+    );
+    assert_eq!(got, json!({"n": 1}));
+    let (_, got, _) = answer(
+        &mut m,
+        "POST",
+        "http://app/api/cart",
+        Some(r#"{"sku":"a","gift":true}"#),
+    );
+    assert_eq!(got, json!({"n": 2}));
+}
+
+#[test]
+fn match_bodies_reads_forms_and_graphql_variables() {
+    let multipart = |user: &str| {
+        format!(
+            "--b\r\nContent-Disposition: form-data; name=\"user\"\r\n\r\n{user}\r\n\
+             --b\r\nContent-Disposition: form-data; name=\"avatar\"; filename=\"{user}.png\"\r\n\
+             Content-Type: image/png\r\n\r\nPNG\r\n--b--\r\n"
+        )
+    };
+    let gql = |id: u32| {
+        json!({"query": "query GetUser($id: ID!) { user(id: $id) { name } }", "variables": {"id": id}})
+            .to_string()
+    };
+    let exchanges = vec![
+        post(
+            "http://app/api/login",
+            "application/x-www-form-urlencoded",
+            "email=ada%40example.com&csrf=6f1c2a5e-1d2b-4c3d-8e9f-0a1b2c3d4e51",
+            r#"{"user":"ada"}"#,
+        ),
+        post(
+            "http://app/api/login",
+            "application/x-www-form-urlencoded",
+            "email=bob%40example.com&csrf=6f1c2a5e-1d2b-4c3d-8e9f-0a1b2c3d4e52",
+            r#"{"user":"bob"}"#,
+        ),
+        post(
+            "http://app/api/avatar",
+            "multipart/form-data; boundary=b",
+            &multipart("ada"),
+            r#"{"ok":"ada"}"#,
+        ),
+        post(
+            "http://app/api/avatar",
+            "multipart/form-data; boundary=b",
+            &multipart("bob"),
+            r#"{"ok":"bob"}"#,
+        ),
+        post(
+            "http://app/graphql",
+            "application/json",
+            &gql(1),
+            r#"{"data":1}"#,
+        ),
+        post(
+            "http://app/graphql",
+            "application/json",
+            &gql(2),
+            r#"{"data":2}"#,
+        ),
+    ];
+    let recorded = record(
+        &exchanges,
+        &RecordOptions {
+            match_bodies: true,
+            ..options(&[])
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        (recorded.mocks, recorded.by_body),
+        (6, 6),
+        "{}",
+        recorded.toml
+    );
+    let toml = &recorded.toml;
+    assert!(
+        toml.contains(r#"form = { email = "ada@example.com" }"#),
+        "{toml}"
+    );
+    // A multipart body's text fields; its file is left out.
+    assert!(toml.contains(r#"form = { user = "bob" }"#), "{toml}");
+    assert!(
+        toml.contains(r#"graphql = { operation = "GetUser", variables = { id = 2 } }"#),
+        "{toml}"
+    );
+    let d = write(&recorded);
+    let mut m = mocks(d.path(), &["recorded"]);
+    let (_, got, _) = answer(
+        &mut m,
+        "POST",
+        "http://app/api/login",
+        Some("email=bob%40example.com&csrf=x"),
+    );
+    assert_eq!(got, json!({"user": "bob"}));
+    let (_, got, _) = answer(&mut m, "POST", "http://app/graphql", Some(&gql(2)));
+    assert_eq!(got, json!({"data": 2}));
+    let headers = [(
+        "Content-Type".to_owned(),
+        "multipart/form-data; boundary=b".to_owned(),
+    )];
+    let sent = multipart("bob");
+    let request = crate::Request {
+        method: "POST",
+        url: "http://app/api/avatar",
+        headers: &headers,
+        body: Some(sent.as_bytes()),
+    };
+    let crate::Outcome::Answer(a) = m.decide(&request, 0) else {
+        panic!()
+    };
+    assert_eq!(a.mock.name, "POST /api/avatar (user=bob)");
+}
+
+#[test]
+fn a_har_entrys_start_is_read() {
+    let har = json!({"log": {"entries": [{
+        "startedDateTime": "2026-10-01T00:00:00.250Z",
+        "request": {"method": "GET", "url": "http://app/api/x", "headers": []},
+        "response": {"status": 200, "headers": [], "content": {"size": 0}},
+    }]}});
+    let exchanges = har_exchanges(&har).unwrap();
+    assert_eq!(exchanges[0].started_ms, Some(1_790_812_800_250));
 }

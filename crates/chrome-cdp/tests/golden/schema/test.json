@@ -1050,6 +1050,13 @@
     "MockRecordData": {
       "description": "`data` of `chrome-cdp mock record|import --json`.",
       "properties": {
+        "by_body": {
+          "default": 0,
+          "description": "Requests whose mock matches their body's stable fields\n(`--match-bodies`), told apart from others to the same path.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
         "files": {
           "description": "The data files written (absolute).",
           "items": {

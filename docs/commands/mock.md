@@ -287,6 +287,7 @@ Options:
 
 - `--scope <GLOB>`: Record the requests these globs match (repeatable, or comma-separated): paths (`/api/**`) or full URLs. Default: the page's fetch and XHR requests
 - `-o, --output <FILE>`: The mock file to write (default: recorded.toml in the mocks directory)
+- `--match-bodies`: Tell requests to one path apart by their bodies: match the JSON or form fields that do not look generated (ids, the time, tokens)
 - `--force`: Overwrite the mock file (and its data files) if it exists
 - `--dir <DIR>`: The mocks directory (default: `mocks` of [e2e], else ./e2e/mocks)
 - `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
@@ -302,11 +303,18 @@ etag, set-cookie unless a later request sent the cookie, …) are left out;
 ids and timestamps get a comment where a template would do. The file is
 checked as `mock use` would read it.
 
+--match-bodies tells requests to one path apart by their bodies (two
+logins as different users): their mocks match `json` (or `form`, or a
+GraphQL request's variables) with the body's stable fields, leaving out
+fields whose values differ and look generated (UUIDs, the time, long
+tokens). Requests with equal stable fields still form a sequence.
+
 Browse first, then record: bodies are asked of Chrome, which keeps them
 while the page that loaded them is open.
 
 Examples:
   chrome-cdp mock record --scope '/api/**'
+  chrome-cdp mock record --scope '/api/**' --match-bodies
   chrome-cdp mock record --scope '/api/**' -o e2e/mocks/checkout.toml --force
   chrome-cdp mock record --scope 'https://api.example.com/**' --tab t2
 ```
@@ -327,6 +335,7 @@ Options:
 
 - `--scope <GLOB>`: Import the requests these globs match (repeatable, or comma-separated): paths (`/api/**`) or full URLs. Default: the page's fetch and XHR requests
 - `-o, --output <FILE>`: The mock file to write (default: &lt;FILE's name&gt;.toml in the mocks directory)
+- `--match-bodies`: Tell requests to one path apart by their bodies: match the JSON or form fields that do not look generated (ids, the time, tokens)
 - `--force`: Overwrite the mock file (and its data files) if it exists
 - `--dir <DIR>`: The mocks directory (default: `mocks` of [e2e], else ./e2e/mocks)
 - `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
@@ -334,10 +343,12 @@ Options:
 ```text
 The same conversion as `mock record`, from a HAR file (`har stop`, the
 DevTools Network panel's "Save all as HAR", or Playwright's). The output is
-<mocks dir>/<file's name>.toml unless -o says otherwise.
+<mocks dir>/<file's name>.toml unless -o says otherwise. --match-bodies
+tells requests to one path apart by their bodies' stable fields.
 
 Examples:
   chrome-cdp mock import requests.har --scope '/api/**'
+  chrome-cdp mock import requests.har --match-bodies
   chrome-cdp mock import requests.har -o e2e/mocks/recorded.toml --force
 ```
 
