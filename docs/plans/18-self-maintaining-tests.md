@@ -739,3 +739,15 @@ _(append here)_
 - 18.7 `editor-support-cdp` (track 7) is left as a note: 18.1 leaves it
   out and no milestone takes it; a tree-sitter grammar and a VS Code
   extension belong in repositories of their own.
+- Close-out: every criterion checked against its test (`e2e_shop`'s
+  `the_shop_passes_against_the_mocks`, `a_redesign_is_healed` and
+  `ui_coverage_names_what_the_suite_never_touched`; `e2e`'s heal and
+  planted-flake tests; `repro`; `record`; the goldens), then `cargo xtask
+  ci` (1407 of 1411 passed; the 4 others are load flakes that pass alone,
+  each with a note) and `release check --since 6ec2a5e` (plan 17's
+  close-out): the schemas and the command line only grew. Added: a heal
+  test with `testid_attribute = "data-test"` whose healed locator is
+  `testid=…` (the `heal-testid-attribute-test` note). The twenty-runs
+  determinism flake is LCD text antialiasing that Chrome sometimes leaves
+  off (4 pixels at a glyph's edge): a launch-flag change for the runner,
+  left as a note since it moves pixel baselines.
