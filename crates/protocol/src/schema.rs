@@ -384,6 +384,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<MockRecordData>),
     },
     CommandSchema {
+        name: "mock gen",
+        summary: "the mock file written from an OpenAPI spec: its mocks, collections, data files and TODOs",
+        schema: || schema_for!(Envelope<MockGenData>),
+    },
+    CommandSchema {
         name: "init-script add",
         summary: "the init script added, and how many the session has",
         schema: || schema_for!(Envelope<InitScriptAddData>),
@@ -6017,6 +6022,62 @@ pub struct MockRecordData {
     /// The `[[websocket]]`s written (one per socket path).
     #[serde(default, skip_serializing_if = "is_zero_usize")]
     pub websockets: usize,
+}
+
+/// `data` of `chrome-cdp mock gen --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockGenData {
+    /// The mock file written (absolute).
+    pub path: String,
+    /// What `mock use` takes: its name in the mocks directory, else its
+    /// path.
+    pub set: String,
+    /// The OpenAPI spec (absolute).
+    pub openapi: String,
+    /// The seed of the generated values.
+    pub seed: u64,
+    /// The spec's operations generated (those in `--scope`).
+    pub operations: usize,
+    /// The `[[mock]]`s written, in the order they are tried.
+    pub mocks: Vec<MockGenMock>,
+    /// The `[[collection]]`s written (`--collections`).
+    pub collections: Vec<MockGenCollection>,
+    /// The data files written (absolute).
+    pub files: Vec<String>,
+    /// The set's `scope`.
+    pub scope: Vec<String>,
+    /// The `# TODO:` comments written: what the generator could not make
+    /// fit the spec (`getPet: $.code: pattern ^[A-Z]+$ is not honored`).
+    pub todos: Vec<String>,
+}
+
+/// A mock `mock gen` wrote.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockGenMock {
+    /// The `operationId`, else `METHOD path`.
+    pub name: String,
+    pub method: String,
+    /// Its path glob (`/v1/pets/:petId`).
+    pub path: String,
+    pub status: u16,
+    /// Its data file (relative to the mock file's directory), if the body
+    /// is in one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+}
+
+/// A collection `mock gen --collections` wrote.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct MockGenCollection {
+    pub name: String,
+    /// Its list path (`/v1/pets`).
+    pub path: String,
+    /// The spec's operations it answers (`GET /pets`, `POST /pets`, …).
+    pub operations: Vec<String>,
+    /// Its seed file (relative to the mock file's directory), if the
+    /// items are in one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
 }
 
 /// `data` of `chrome-cdp mock off --json`.

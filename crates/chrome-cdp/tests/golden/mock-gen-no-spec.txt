@@ -1,0 +1,11 @@
+$ chrome-cdp mock gen
+exit: 2
+--- stderr
+error: no OpenAPI spec: give --openapi, or set `openapi` in [e2e]
+  hint: chrome-cdp mock gen --openapi api/openapi.yaml
+
+$ chrome-cdp mock gen --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"no OpenAPI spec: give --openapi, or set `openapi` in [e2e]","hint":"chrome-cdp mock gen --openapi api/openapi.yaml"}}
+

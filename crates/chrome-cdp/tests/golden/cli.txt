@@ -606,12 +606,23 @@ command chrome-cdp mock check
   flag --openapi value=FILE
   flag --dir value=DIR
   flag --max-chars value=N
+command chrome-cdp mock gen
+  flag --openapi value=FILE
+  flag --output -o value=FILE
+  flag --force
+  flag --dir value=DIR
+  flag --seed value=N
+  flag --scope value=GLOB repeatable
+  flag --collections
+  flag --max-chars value=N
 command chrome-cdp mock serve
   arg SET multiple
   flag --port value=PORT
   flag --host value=ADDR
   flag --no-defaults
   flag --dir value=DIR
+  flag --upstream value=URL
+  flag --upstream-timeout value=DURATION
 command chrome-cdp mock ws
 command chrome-cdp mock ws send
   arg URL required

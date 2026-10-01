@@ -1,7 +1,8 @@
 //! `mock use|off|list|log|reset|explain` (plan 11, milestone 11.2),
 //! `mock state|seed` (milestone 11.3) and `mock record|import|check`
 //! (milestone 11.8); `mock serve` and `mock ws send` (milestone 11.9);
-//! `mock sse send` (plan 19, milestone 19.2).
+//! `mock sse send` (plan 19, milestone 19.2); `mock gen` (milestone
+//! 19.4).
 //!
 //! The CLI finds the project (the mocks directory, `default_mocks`, the
 //! random seed) and the sets' files; the daemon reads and applies them.
@@ -23,14 +24,15 @@ use engine::{
 };
 use mock::{MockSet, Mocks, Source};
 use protocol::schema::{
-    MockCheckData, MockExplainData, MockProblem, MockRecordData, MockServeData, MockServedPush,
-    MockServedSocket, MockSetsData, MockSseSendData, MockWsSendData,
+    MockCheckData, MockExplainData, MockGenCollection, MockGenData, MockGenMock, MockProblem,
+    MockRecordData, MockServeData, MockServedPush, MockServedSocket, MockSetsData, MockSseSendData,
+    MockWsSendData,
 };
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
 use serde_json::{Value, json};
 
 use crate::cli::{
-    GlobalArgs, MockArgs, MockCheckArgs, MockCommand, MockExplainArgs, MockImportArgs,
+    GlobalArgs, MockArgs, MockCheckArgs, MockCommand, MockExplainArgs, MockGenArgs, MockImportArgs,
     MockRecordArgs, MockSeedArgs, MockServeArgs, MockSseCommand, MockSseSendArgs, MockStateArgs,
     MockUseArgs, MockWsCommand, MockWsSendArgs,
 };
@@ -168,6 +170,7 @@ pub(crate) fn run(args: &MockArgs, global: &GlobalArgs) -> Result<Output, ErrorI
         MockCommand::Record(args) => record(args, global),
         MockCommand::Import(args) => import(args),
         MockCommand::Check(args) => check(args),
+        MockCommand::Gen(args) => generate(args),
         MockCommand::Serve(args) => serve(args, global),
         MockCommand::Ws(MockWsCommand::Send(args)) => ws_send(args, global),
         MockCommand::Sse(MockSseCommand::Send(args)) => sse_send(args, global),
@@ -681,6 +684,173 @@ fn import(args: &MockImportArgs) -> Result<Output, ErrorInfo> {
     )
 }
 
+/// `mock gen`: a mock set from an OpenAPI spec.
+fn generate(args: &MockGenArgs) -> Result<Output, ErrorInfo> {
+    let project = Project::find(args.dir.as_deref())?;
+    let Some(spec_file) = args
+        .openapi
+        .as_ref()
+        .map(|p| project.cwd.join(p))
+        .or_else(|| project.openapi.clone())
+    else {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            "no OpenAPI spec: give --openapi, or set `openapi` in [e2e]",
+        )
+        .hint(Hint::run(
+            Cmd::new("mock")
+                .arg("gen")
+                .arg("--openapi")
+                .arg("api/openapi.yaml"),
+        )));
+    };
+    let spec = mock::openapi::OpenApi::load(&spec_file).map_err(|e| {
+        ErrorInfo::new(ErrorKind::BadArgs, format!("openapi: {e}")).hint(Hint::text(
+            "give an OpenAPI 3 (or Swagger 2) spec, JSON or YAML",
+        ))
+    })?;
+    let out = Target::new(&project, args.output.as_deref(), "generated", args.force)?;
+    let spec_name = spec_file.strip_prefix(&project.cwd).map_or_else(
+        |_| spec_file.display().to_string(),
+        |rel| rel.display().to_string(),
+    );
+    let options = mock::generate::GenOptions {
+        seed: args.seed,
+        scope: args.scope.clone(),
+        collections: args.collections,
+        data_dir: out.data_dir.clone(),
+        spec_name,
+    };
+    let generated = mock::generate::generate(&spec, &options).map_err(|e| {
+        let info = ErrorInfo::new(ErrorKind::BadArgs, format!("{}: {e}", spec_file.display()));
+        if args.scope.is_empty() {
+            info.hint(Hint::text("give a spec with `paths`"))
+        } else {
+            info.hint(Hint::text(
+                "check --scope: it takes the spec's paths (/pets/**)",
+            ))
+        }
+    })?;
+    let files = write_files(&out, &generated.files, &generated.toml)?;
+    let source = Source {
+        name: out.set.clone(),
+        file: out.file.clone(),
+        base: out.base.clone(),
+    };
+    let checked = mock::check::check(std::slice::from_ref(&source), &[], Some(&spec));
+    let path = out.file.display().to_string();
+    let mut text = format!(
+        "wrote {path}: {}, {}, {}",
+        count(generated.mocks.len(), "mock", "mocks"),
+        count(generated.collections.len(), "collection", "collections"),
+        count(files.len(), "data file", "data files"),
+    );
+    if !generated.todos.is_empty() {
+        let _ = write!(text, " ({})", count(generated.todos.len(), "TODO", "TODOs"));
+    }
+    let _ = write!(
+        text,
+        "\nnext: {}",
+        Cmd::new("mock").arg("use").arg(&out.set)
+    );
+    let data = MockGenData {
+        path: path.clone(),
+        set: out.set.clone(),
+        openapi: spec_file.display().to_string(),
+        seed: args.seed,
+        operations: generated.operations,
+        mocks: generated
+            .mocks
+            .iter()
+            .map(|m| MockGenMock {
+                name: m.name.clone(),
+                method: m.method.clone(),
+                path: m.path.clone(),
+                status: m.status,
+                file: m.file.clone(),
+            })
+            .collect(),
+        collections: generated
+            .collections
+            .iter()
+            .map(|c| MockGenCollection {
+                name: c.name.clone(),
+                path: c.path.clone(),
+                operations: c.operations.clone(),
+                file: c.file.clone(),
+            })
+            .collect(),
+        files,
+        scope: generated.scope.clone(),
+        todos: generated.todos.clone(),
+    };
+    let mut output = Output::typed(&data, text)
+        .quiet(path)
+        .limit(args.max_chars, "--max-chars 0 for all of it, or --json");
+    let listed = 5;
+    for todo in generated.todos.iter().take(listed) {
+        output = output.warning(format!("TODO {todo}"));
+    }
+    if generated.todos.len() > listed {
+        output = output.warning(format!(
+            "{} more TODOs (see --json, or the file's # TODO: comments)",
+            generated.todos.len() - listed
+        ));
+    }
+    // The set must pass `mock check`: a problem left is a bug to see.
+    for p in checked
+        .problems
+        .iter()
+        .filter(|p| p.rule != "openapi-uncovered")
+    {
+        output = output.warning(format!("mock check: {}", problem_line(p)));
+    }
+    Ok(output)
+}
+
+/// Writes data files `rel_files` (relative to `out`'s base) and the mock
+/// file `toml`: the data files' absolute paths.
+fn write_files(
+    out: &Target,
+    rel_files: &[(String, Vec<u8>)],
+    toml: &str,
+) -> Result<Vec<String>, ErrorInfo> {
+    let io = |path: &Path, e: std::io::Error| {
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("cannot write {}: {e}", path.display()),
+        )
+    };
+    let mut files = Vec::new();
+    for (rel, bytes) in rel_files {
+        // Data files are named from requests or specs: never outside the
+        // base.
+        if !Path::new(rel)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+        {
+            return Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!(
+                    "will not write the data file `{rel}` outside {}",
+                    out.base.display()
+                ),
+            ));
+        }
+        let path = out.base.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| io(parent, e))?;
+        }
+        std::fs::write(&path, bytes).map_err(|e| io(&path, e))?;
+        files.push(path.display().to_string());
+    }
+    if let Some(parent) = out.file.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| io(parent, e))?;
+    }
+    std::fs::write(&out.file, toml).map_err(|e| io(&out.file, e))?;
+    Ok(files)
+}
+
 /// Where a recorded set goes.
 struct Target {
     /// The mock file (absolute).
@@ -781,38 +951,7 @@ fn write_recording(
         }
         return Err(info);
     }
-    let io = |path: &Path, e: std::io::Error| {
-        ErrorInfo::new(
-            ErrorKind::BadArgs,
-            format!("cannot write {}: {e}", path.display()),
-        )
-    };
-    let mut files = Vec::new();
-    for (rel, bytes) in &recorded.files {
-        // The recorder names files from requests: never outside the base.
-        if !Path::new(rel)
-            .components()
-            .all(|c| matches!(c, std::path::Component::Normal(_)))
-        {
-            return Err(ErrorInfo::new(
-                ErrorKind::BadArgs,
-                format!(
-                    "will not write the data file `{rel}` outside {}",
-                    out.base.display()
-                ),
-            ));
-        }
-        let path = out.base.join(rel);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| io(parent, e))?;
-        }
-        std::fs::write(&path, bytes).map_err(|e| io(&path, e))?;
-        files.push(path.display().to_string());
-    }
-    if let Some(parent) = out.file.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| io(parent, e))?;
-    }
-    std::fs::write(&out.file, &recorded.toml).map_err(|e| io(&out.file, e))?;
+    let files = write_files(out, &recorded.files, &recorded.toml)?;
     let source = Source {
         name: out.set.clone(),
         file: out.file.clone(),

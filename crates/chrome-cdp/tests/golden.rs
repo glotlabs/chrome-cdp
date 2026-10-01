@@ -2374,6 +2374,30 @@ const CASES: &[Case] = &[
         ]),
     },
     Case {
+        name: "mock-gen",
+        args: &["mock", "gen", "--collections"],
+        modes: ALL,
+        fixture: Fixture::Project(&[
+            (
+                "chrome-cdp.toml",
+                "[e2e]\nbase_url = \"http://localhost:5173\"\nopenapi = \"api/openapi.yaml\"\n",
+            ),
+            (
+                "api/openapi.yaml",
+                include_str!("../../../testdata/openapi/todos.yaml"),
+            ),
+        ]),
+    },
+    Case {
+        name: "mock-gen-no-spec",
+        args: &["mock", "gen"],
+        modes: ERR,
+        fixture: Fixture::Project(&[(
+            "chrome-cdp.toml",
+            "[e2e]\nbase_url = \"http://localhost:5173\"\n",
+        )]),
+    },
+    Case {
         name: "fmt",
         args: &["fmt"],
         modes: ALL,

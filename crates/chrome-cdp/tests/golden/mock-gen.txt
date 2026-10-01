@@ -1,0 +1,22 @@
+$ chrome-cdp mock gen --collections
+exit: 0
+--- stdout
+wrote <tmp>/app/e2e/mocks/generated.toml: 7 mocks, 2 collections, 2 data files (2 TODOs)
+next: chrome-cdp mock use generated
+--- stderr
+warning: TODO getAvatar: the answer is image/png, which the spec gives no example of: add a body (body, body_file or file)
+warning: TODO collection todos: $[].code: pattern ^[A-Z]{3}$ is not honored
+
+$ chrome-cdp mock gen --collections --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"collections":[{"name":"users","operations":["GET /users","POST /users","GET /users/{userId}","DELETE /users/{userId}"],"path":"/v1/users"},{"file":"data/generated/todos.json","name":"todos","operations":["GET /users/{userId}/todos","POST /users/{userId}/todos","GET /users/{userId}/todos/{todoId}","PATCH /users/{userId}/todos/{todoId}","DELETE /users/{userId}/todos/{todoId}"],"path":"/v1/users/:userId/todos"}],"files":["<tmp>/app/e2e/mocks/data/generated/GET-tree.json","<tmp>/app/e2e/mocks/data/generated/todos.json"],"mocks":[{"method":"GET","name":"getAvatar","path":"/v1/avatar","status":200},{"method":"GET","name":"health","path":"/v1/health","status":200},{"method":"POST","name":"ping","path":"/v1/ping","status":200},{"method":"GET","name":"listShapes","path":"/v1/shapes","status":200},{"method":"GET","name":"getStats","path":"/v1/stats","status":200},{"file":"data/generated/GET-tree.json","method":"GET","name":"GET /tree","path":"/v1/tree","status":200},{"method":"GET","name":"getMe","path":"/v1/users/me","status":200}],"openapi":"<tmp>/app/api/openapi.yaml","operations":16,"path":"<tmp>/app/e2e/mocks/generated.toml","scope":["/v1/**"],"seed":1,"set":"generated","todos":["getAvatar: the answer is image/png, which the spec gives no example of: add a body (body, body_file or file)","collection todos: $[].code: pattern ^[A-Z]{3}$ is not honored"]},"warnings":["TODO getAvatar: the answer is image/png, which the spec gives no example of: add a body (body, body_file or file)","TODO collection todos: $[].code: pattern ^[A-Z]{3}$ is not honored"]}
+
+$ chrome-cdp mock gen --collections -q
+exit: 0
+--- stdout
+<tmp>/app/e2e/mocks/generated.toml
+--- stderr
+warning: TODO getAvatar: the answer is image/png, which the spec gives no example of: add a body (body, body_file or file)
+warning: TODO collection todos: $[].code: pattern ^[A-Z]{3}$ is not honored
+

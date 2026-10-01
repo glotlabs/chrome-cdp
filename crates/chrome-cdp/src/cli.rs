@@ -5190,6 +5190,35 @@ Examples:
   chrome-cdp mock check --json")]
     Check(MockCheckArgs),
 
+    /// Write a starting mock set from an OpenAPI spec: one mock per operation.
+    #[command(after_help = "\
+For a project with an OpenAPI spec (3.x or Swagger 2.0, JSON or YAML) and
+no mocks yet. Each operation gets a [[mock]] matching its method and path
+(`{id}` becomes `:id`, under the first server's path) that answers its
+lowest 2xx status (200 when the spec lists only `default`). The JSON body
+is the spec's example (the media type's `example`, then the first of its
+`examples`, then the schemas' own examples), and the rest is generated
+from the schema: `default`, `enum[0]` or `const`, else a value of the
+type and format (`name-1`, `user1@example.com`, a seeded UUID, a number
+in range). Values are the same for the same spec and --seed. Bodies over
+100 characters go to data files in data/<set>/.
+
+--collections makes a list path and its item path (`/pets` and
+`/pets/{id}`, both with a GET) one [[collection]] of three items instead
+of mocks, so create-then-list flows work; a nested one
+(`/users/{user}/todos`) keeps each parent's items apart.
+
+What the generator cannot make fit the spec (a `pattern`, a binary
+answer) is a `# TODO:` comment above its mock, and listed. The [settings]
+scope is the servers' paths (`/v1/**`), else the paths' first segments.
+--scope generates only the operations whose path a glob matches.
+
+Examples:
+  chrome-cdp mock gen
+  chrome-cdp mock gen --openapi api/openapi.yaml --collections
+  chrome-cdp mock gen --scope '/pets/**' -o e2e/mocks/pets.toml --force")]
+    Gen(MockGenArgs),
+
     /// Serve mock sets as a real HTTP server, for server-side fetches (SSR).
     #[command(after_help = "\
 Answers HTTP requests with the same mocks as `mock use` (the default_mocks
@@ -5421,6 +5450,46 @@ pub(crate) struct MockCheckArgs {
     /// The mocks directory (default: `mocks` of [e2e], else ./e2e/mocks).
     #[arg(long, value_name = "DIR")]
     pub(crate) dir: Option<PathBuf>,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 20_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct MockGenArgs {
+    /// The OpenAPI spec (JSON or YAML; default: `openapi` of [e2e]).
+    #[arg(long, value_name = "FILE")]
+    pub(crate) openapi: Option<PathBuf>,
+
+    /// The mock file to write (default: generated.toml in the mocks
+    /// directory).
+    #[arg(short = 'o', long = "output", value_name = "FILE")]
+    pub(crate) output: Option<PathBuf>,
+
+    /// Overwrite the mock file (and its data files) if it exists.
+    #[arg(long)]
+    pub(crate) force: bool,
+
+    /// The mocks directory (default: `mocks` of [e2e], else ./e2e/mocks).
+    #[arg(long, value_name = "DIR")]
+    pub(crate) dir: Option<PathBuf>,
+
+    /// Seeds the generated values: the same spec and seed give the same
+    /// file.
+    #[arg(long, default_value_t = 1, value_name = "N")]
+    pub(crate) seed: u64,
+
+    /// Only the operations whose path these globs match (repeatable, or
+    /// comma-separated): the spec's path (`/pets/**`) or the mock's, with
+    /// the server's path.
+    #[arg(long, value_name = "GLOB", value_delimiter = ',')]
+    pub(crate) scope: Vec<String>,
+
+    /// Make each list and item path pair (`/pets`, `/pets/{id}`) a
+    /// [[collection]] instead of mocks.
+    #[arg(long)]
+    pub(crate) collections: bool,
 
     /// Bound the output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 20_000, value_name = "N")]

@@ -397,6 +397,53 @@ Examples:
   chrome-cdp mock check --json
 ```
 
+## `chrome-cdp mock gen`
+
+Write a starting mock set from an OpenAPI spec: one mock per operation
+
+```text
+chrome-cdp mock gen [OPTIONS]
+```
+
+Options:
+
+- `--openapi <FILE>`: The OpenAPI spec (JSON or YAML; default: `openapi` of [e2e])
+- `-o, --output <FILE>`: The mock file to write (default: generated.toml in the mocks directory)
+- `--force`: Overwrite the mock file (and its data files) if it exists
+- `--dir <DIR>`: The mocks directory (default: `mocks` of [e2e], else ./e2e/mocks)
+- `--seed <N>`: Seeds the generated values: the same spec and seed give the same file (default `1`)
+- `--scope <GLOB>`: Only the operations whose path these globs match (repeatable, or comma-separated): the spec's path (`/pets/**`) or the mock's, with the server's path
+- `--collections`: Make each list and item path pair (`/pets`, `/pets/{id}`) a [[collection]] instead of mocks
+- `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
+
+```text
+For a project with an OpenAPI spec (3.x or Swagger 2.0, JSON or YAML) and
+no mocks yet. Each operation gets a [[mock]] matching its method and path
+(`{id}` becomes `:id`, under the first server's path) that answers its
+lowest 2xx status (200 when the spec lists only `default`). The JSON body
+is the spec's example (the media type's `example`, then the first of its
+`examples`, then the schemas' own examples), and the rest is generated
+from the schema: `default`, `enum[0]` or `const`, else a value of the
+type and format (`name-1`, `user1@example.com`, a seeded UUID, a number
+in range). Values are the same for the same spec and --seed. Bodies over
+100 characters go to data files in data/<set>/.
+
+--collections makes a list path and its item path (`/pets` and
+`/pets/{id}`, both with a GET) one [[collection]] of three items instead
+of mocks, so create-then-list flows work; a nested one
+(`/users/{user}/todos`) keeps each parent's items apart.
+
+What the generator cannot make fit the spec (a `pattern`, a binary
+answer) is a `# TODO:` comment above its mock, and listed. The [settings]
+scope is the servers' paths (`/v1/**`), else the paths' first segments.
+--scope generates only the operations whose path a glob matches.
+
+Examples:
+  chrome-cdp mock gen
+  chrome-cdp mock gen --openapi api/openapi.yaml --collections
+  chrome-cdp mock gen --scope '/pets/**' -o e2e/mocks/pets.toml --force
+```
+
 ## `chrome-cdp mock serve`
 
 Serve mock sets as a real HTTP server, for server-side fetches (SSR)
