@@ -1,6 +1,6 @@
 # Plan 18 — Tests that maintain themselves
 
-Status: IN PROGRESS (18.1-18.3 done)
+Status: IN PROGRESS (18.1-18.4 done)
 Depends on: 11 (the test runner, `history --as-scenario`, `mock record`), 13 (the target graph, for `record` in iframes)
 Roadmap: track 7 of [plan 12](12-after-v1.md)
 
@@ -393,7 +393,7 @@ and `convert-real-world-specs` (18.7):
       element it likely is now.
 - [x] Each planted flake of 18.3 is diagnosed as its own cause, first
       in rank, with evidence naming the right request or element.
-- [ ] `test --ui-coverage` on e2e-shop lists every page the suite
+- [x] `test --ui-coverage` on e2e-shop lists every page the suite
       visits, the controls it never acted on, and the mocks it never
       used; the numbers match a hand count on two pages.
 - [ ] A repro bundle replays offline and fails at the same step with
@@ -549,3 +549,39 @@ _(append here)_
   confidence, evidence, hint, runs, failed_runs, at, step, others}`; the
   section goes into the report.md of the failure the test shows (a
   retried test's first try's).
+- 18.4 reads: `snapshot -i --all --text-limit 0 --max-chars 0` after a
+  step whose URL changed (a `Navigated` event, or the URL `goto`, `back`,
+  `forward` or `reload` gives, unlike the last read's) and at the end of
+  each test unless the last step was read; after other actions
+  `snapshot -i --diff`, or the action's own `--snap` diff, whose added
+  nodes count. A diff costs the daemon a full read; it is the "action
+  report's new nodes" and keeps the JSON small. Two side effects: a
+  scenario's own `snapshot --diff` compares with the runner's last read,
+  and the refs in step outputs grow.
+- 18.4 keys: the container is the nearest landmark, form, region or
+  dialog in the `-i` tree (the only containers it keeps), not the
+  fingerprint's, which can be a list item or row that `-i` drops. A
+  touched element whose fingerprint container is no landmark, on a page
+  with several alike controls, counts on the first. Names compare on 80
+  characters, containers on 40 (what fingerprints keep). A touched
+  element of an interactive role that no read saw is a control; one of
+  another role (the text an `expect` checked) is not.
+- 18.4 touches come from fingerprints, so `--ui-coverage` takes them
+  with `fingerprints = "off"` too (and writes none). Failed tests'
+  reads and touches count: they show what was reached.
+- 18.4 mocks: `mock list` of the test's context after `@after`, plus the
+  mock server's journal; hits add up over every test, run and retry.
+  Requests (real backend only): fetch and XHR of `requests.txt`'s
+  journal, by method and path template, query left out.
+- 18.4 `pages` patterns: a `:name` or `*` segment matches one segment, a
+  last `**` the rest; a path no pattern matches keeps its template.
+- 18.4 summary: every page line says "acted on" (the plan's example
+  drops it after the first); its never-acted controls are ranked by how
+  few pages show them, so the header every page shares does not fill
+  every line. `--backend all` refuses `--ui-coverage`, like
+  `--record-mocks`. `ui-coverage.json` is masked like stdout.
+- 18.4 benchmark: `fingerprints_and_ui_coverage_cost_per_step` (also the
+  `fingerprint-overhead` note's fingerprints off/on comparison); its
+  bounds, 50ms per step for `--ui-coverage` and 10ms for fingerprints,
+  are its own, as the plan names none. Deferred: benchmarks run after
+  all plans.
