@@ -49,8 +49,9 @@ pub(crate) use refs::parse_ref;
 use regions::{Region, Regions, parse_region};
 pub use resolve::RefCall;
 pub(crate) use resolve::Target;
+pub(crate) use tree::Node;
 pub(crate) use tree::NodeKey;
-pub(crate) use tree::{Node, is_landmark};
+pub use tree::{is_interactive, is_landmark};
 
 /// The engine `snapshot` uses unless `--engine` says otherwise; chosen by
 /// the corpus comparison in plan 04's decisions log.

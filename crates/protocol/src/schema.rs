@@ -5933,6 +5933,10 @@ pub struct TestRunData {
     /// `--heal`: the patch of the healed locators.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub heal: Option<TestHealData>,
+    /// `--ui-coverage`: the pages the tests reached, the controls they
+    /// acted on and checked, and the mocks they used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui_coverage: Option<UiCoverageData>,
 }
 
 /// What `chrome-cdp test --verify-mocks` found: every real answer to a
@@ -6228,6 +6232,93 @@ pub struct TestHealData {
     /// `--write`: the files it changed (absolute).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub written: Vec<String>,
+}
+
+/// What `test --ui-coverage` found (plan 18.4): per page, the controls
+/// the tests' pages showed, and which a step acted on or checked; the
+/// mocks of the tests' sets, and whether a request matched each.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct UiCoverageData {
+    /// `<artifacts>/ui-coverage.json` (absolute), the same data; absent
+    /// when it could not be written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    /// How many controls the pages showed (each page's, counted apart).
+    pub controls: usize,
+    /// How many of them a step acted on (`click`, `fill`, …).
+    pub acted: usize,
+    /// How many more only an `expect` or a `wait` checked.
+    pub checked: usize,
+    /// The pages the tests visited, in the order first visited.
+    pub pages: Vec<UiCoveragePage>,
+    /// `[e2e] pages` that no test visited. Without that list, the pages
+    /// no test visited are not known.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unvisited: Vec<String>,
+    /// The mocks of the sets the tests used, in the order of their sets
+    /// and files, with how many requests each answered.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mocks: Vec<UiCoverageMock>,
+    /// Against a real backend: the API requests (fetch and XHR) the
+    /// tests' pages sent, by method and path template.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requests: Vec<UiCoverageRequest>,
+}
+
+/// A page of `test --ui-coverage`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct UiCoveragePage {
+    /// Its path as a template (`/products/:id`: numbers, UUIDs and long
+    /// hex runs become `:id`), or the `[e2e] pages` pattern it matches.
+    pub page: String,
+    /// How many tests visited it.
+    pub tests: usize,
+    /// How many of its controls a step acted on.
+    pub acted: usize,
+    /// How many more only an `expect` or a `wait` checked.
+    pub checked: usize,
+    /// Its controls (the elements `snapshot -i` gives refs), in the order
+    /// first seen.
+    pub controls: Vec<UiCoverageControl>,
+}
+
+/// A control of a page, by role and name, and its container when
+/// another control of the page has that role and name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct UiCoverageControl {
+    /// `button "Pay"`, or `button "Buy" in navigation`.
+    pub key: String,
+    pub role: String,
+    /// Its accessible name.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub name: String,
+    /// The landmark, form, region or dialog it is in, when the key needs
+    /// it: `navigation`, `dialog "Menu"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container: Option<String>,
+    /// How many steps acted on it.
+    pub acted: u64,
+    /// How many `expect` and `wait` steps checked it.
+    pub checked: u64,
+}
+
+/// A mock of `test --ui-coverage`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct UiCoverageMock {
+    #[serde(flatten)]
+    pub mock: MockRef,
+    /// How many requests it answered, over every test; 0: never used.
+    pub hits: u64,
+}
+
+/// An API request of `test --ui-coverage` against a real backend.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct UiCoverageRequest {
+    pub method: String,
+    /// The URL's path as a template (`/api/products/:id`).
+    pub path: String,
+    /// How many were sent, over every test.
+    pub count: u64,
 }
 
 /// The step a test failed at, and its error.

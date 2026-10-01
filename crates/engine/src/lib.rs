@@ -138,7 +138,9 @@ pub use request::{
     TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target, TraceStartRequest,
     TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WaitUntil, WhyFor, WhyRequest,
 };
-pub use snapshot::{DEFAULT_ENGINE, RefCall, check_find, check_snapshot};
+pub use snapshot::{
+    DEFAULT_ENGINE, RefCall, check_find, check_snapshot, is_interactive, is_landmark,
+};
 pub use state::{OriginState, StateCookie, StorageState};
 pub use tabs::commands::TabClosed;
 pub use tabs::parse_tab_id;

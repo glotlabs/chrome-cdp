@@ -134,6 +134,7 @@ pub(super) fn data(
         verify: None,
         recorded: Vec::new(),
         heal: None,
+        ui_coverage: None,
     }
 }
 
@@ -367,6 +368,7 @@ pub(super) fn listed(plan: &Plan, shard: Option<&str>, max_chars: usize) -> Outp
         verify: None,
         recorded: Vec::new(),
         heal: None,
+        ui_coverage: None,
     };
     Output::typed(&data, text)
         .quiet(quiet.join("\n"))

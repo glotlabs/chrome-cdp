@@ -472,6 +472,7 @@ mod tests {
             verify: None,
             recorded: Vec::new(),
             heal: None,
+            ui_coverage: None,
             tests,
         }
     }

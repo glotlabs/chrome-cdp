@@ -178,7 +178,7 @@ impl fmt::Display for NodeKey {
 }
 
 /// Roles an agent acts on: they get refs.
-pub(crate) fn is_interactive(role: &str) -> bool {
+pub fn is_interactive(role: &str) -> bool {
     matches!(
         role,
         "button"
@@ -205,7 +205,7 @@ pub(crate) fn is_interactive(role: &str) -> bool {
 }
 
 /// Roles `--interactive` keeps as context around the refs.
-pub(crate) fn is_landmark(role: &str) -> bool {
+pub fn is_landmark(role: &str) -> bool {
     matches!(
         role,
         "banner"

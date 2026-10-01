@@ -1781,6 +1781,17 @@
           },
           "type": "array"
         },
+        "ui_coverage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UiCoverageData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`--ui-coverage`: the pages the tests reached, the controls they\nacted on and checked, and the mocks they used."
+        },
         "verify": {
           "anyOf": [
             {
@@ -1848,6 +1859,221 @@
         "kind",
         "len",
         "kept"
+      ],
+      "type": "object"
+    },
+    "UiCoverageControl": {
+      "description": "A control of a page, by role and name, and its container when\nanother control of the page has that role and name.",
+      "properties": {
+        "acted": {
+          "description": "How many steps acted on it.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "checked": {
+          "description": "How many `expect` and `wait` steps checked it.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "container": {
+          "description": "The landmark, form, region or dialog it is in, when the key needs\nit: `navigation`, `dialog \"Menu\"`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "description": "`button \"Pay\"`, or `button \"Buy\" in navigation`.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Its accessible name.",
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "role",
+        "acted",
+        "checked"
+      ],
+      "type": "object"
+    },
+    "UiCoverageData": {
+      "description": "What `test --ui-coverage` found (plan 18.4): per page, the controls\nthe tests' pages showed, and which a step acted on or checked; the\nmocks of the tests' sets, and whether a request matched each.",
+      "properties": {
+        "acted": {
+          "description": "How many of them a step acted on (`click`, `fill`, …).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "checked": {
+          "description": "How many more only an `expect` or a `wait` checked.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "controls": {
+          "description": "How many controls the pages showed (each page's, counted apart).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "file": {
+          "description": "`<artifacts>/ui-coverage.json` (absolute), the same data; absent\nwhen it could not be written.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mocks": {
+          "description": "The mocks of the sets the tests used, in the order of their sets\nand files, with how many requests each answered.",
+          "items": {
+            "$ref": "#/$defs/UiCoverageMock"
+          },
+          "type": "array"
+        },
+        "pages": {
+          "description": "The pages the tests visited, in the order first visited.",
+          "items": {
+            "$ref": "#/$defs/UiCoveragePage"
+          },
+          "type": "array"
+        },
+        "requests": {
+          "description": "Against a real backend: the API requests (fetch and XHR) the\ntests' pages sent, by method and path template.",
+          "items": {
+            "$ref": "#/$defs/UiCoverageRequest"
+          },
+          "type": "array"
+        },
+        "unvisited": {
+          "description": "`[e2e] pages` that no test visited. Without that list, the pages\nno test visited are not known.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "controls",
+        "acted",
+        "checked",
+        "pages"
+      ],
+      "type": "object"
+    },
+    "UiCoverageMock": {
+      "description": "A mock of `test --ui-coverage`.",
+      "properties": {
+        "at": {
+          "description": "`base.toml:14`: the file relative to the mocks directory, and the\nline.",
+          "type": "string"
+        },
+        "file": {
+          "description": "The mock file (absolute).",
+          "type": "string"
+        },
+        "hits": {
+          "description": "How many requests it answered, over every test; 0: never used.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "line": {
+          "description": "The line of its `[[mock]]`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "name": {
+          "description": "Its `name`, or `METHOD path` when it has none.",
+          "type": "string"
+        },
+        "set": {
+          "description": "Its mock set, e.g. `base` or `errors/api-down`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "set",
+        "name",
+        "file",
+        "line",
+        "at",
+        "hits"
+      ],
+      "type": "object"
+    },
+    "UiCoveragePage": {
+      "description": "A page of `test --ui-coverage`.",
+      "properties": {
+        "acted": {
+          "description": "How many of its controls a step acted on.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "checked": {
+          "description": "How many more only an `expect` or a `wait` checked.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "controls": {
+          "description": "Its controls (the elements `snapshot -i` gives refs), in the order\nfirst seen.",
+          "items": {
+            "$ref": "#/$defs/UiCoverageControl"
+          },
+          "type": "array"
+        },
+        "page": {
+          "description": "Its path as a template (`/products/:id`: numbers, UUIDs and long\nhex runs become `:id`), or the `[e2e] pages` pattern it matches.",
+          "type": "string"
+        },
+        "tests": {
+          "description": "How many tests visited it.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "page",
+        "tests",
+        "acted",
+        "checked",
+        "controls"
+      ],
+      "type": "object"
+    },
+    "UiCoverageRequest": {
+      "description": "An API request of `test --ui-coverage` against a real backend.",
+      "properties": {
+        "count": {
+          "description": "How many were sent, over every test.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "method": {
+          "type": "string"
+        },
+        "path": {
+          "description": "The URL's path as a template (`/api/products/:id`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "path",
+        "count"
       ],
       "type": "object"
     },
