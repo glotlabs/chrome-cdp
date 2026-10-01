@@ -20,13 +20,12 @@ browser, tabs and refs between commands. Output is compact text; add
    - textbox "Password" [e7] (password)
    - button "Sign in" [e8]
    ```
-   Drop `-i` for the whole tree; `text` and `markdown` read the content,
-   iframes included.
+   Drop `-i` for the whole tree; `text` and `markdown` read the content.
 3. **Act by ref**: `chrome-cdp fill e6 ada@example.com`, `chrome-cdp click e8`.
    Actions wait until the element is visible, enabled and not covered,
    scroll it into view, and act like a real user.
 4. **Read the report**: each action prints what it did and what followed
-   (a navigation, a new tab, a dialog, a console error, a failed request):
+   (navigation, new tab, dialog, console error, failed request):
    ```
    clicked e8 button "Sign in"
    → http://localhost:3000/dashboard "Dashboard" (412ms)
@@ -53,7 +52,7 @@ locators in single quotes.
   `testid=submit`, `'text=Sign in'`
 - CSS: `#id`, `.class`, `'css=form button'`; XPath: `xpath=//a`
 - `'#list >> text=Delete >> nth=-1'` chains; `'frame=payment >> #card'`
-  looks inside an iframe (`chrome-cdp frames` lists them, and workers).
+  looks inside an iframe (`frames` lists them).
 - `'role=row >> has="text=Invoice 12" >> role=button'` keeps the rows
   with that text inside; also `has-not=`, `and=`, `or=`.
 
@@ -66,7 +65,6 @@ locators in single quotes.
   report.
 - `Obscured`: something covers the element (a cookie banner, a modal). The
   hint names a button to close it; run that first.
-- `Ambiguous`: the locator matched several; the error lists them.
 - A popup opens a new tab but stays in the background: `chrome-cdp tabs`,
   then `chrome-cdp tab t2`.
 - An `alert`/`confirm` blocks the page (exit 5): `chrome-cdp dialog accept`.
@@ -83,7 +81,8 @@ On a local dev server the page knows its sources; don't grep for them:
   components (`components e12`: their props and state).
 - `chrome-cdp debug log src/cart.ts:42 total item.qty`: log values each
   time that line runs, no code edits; the next action prints them.
-- `chrome-cdp errors --locals`: the variables where an error was thrown.
+- `chrome-cdp errors --locals`: the variables where an error was thrown;
+  `network show <id>`: the stack that sent a request.
 - After an edit, `chrome-cdp wait --hmr` until the page has it (or the
   compile error).
 
@@ -96,13 +95,12 @@ tests in `e2e/scenarios/*.cdp` and fake API answers in
 1. Explore with the mocks on: `chrome-cdp mock use`, then the usual
    commands. `mock explain GET /api/items` says which mock answers.
 2. Save what worked: `chrome-cdp history --as-scenario "adds an item"
-   >> e2e/scenarios/items.cdp` (refs become stable locators), or
-   `record start`, act, `record stop -o FILE`, add `expect`s.
+   >> e2e/scenarios/items.cdp` (refs become stable locators).
 3. Mock what the app fetches, in `e2e/mocks/base.toml`: a `[[mock]]` with
    `match = { method = "GET", path = "/api/items/:id" }` and
    `respond = { json_file = "data/items/{{params.id}}.json" }`, or a
    `[[collection]]` for data the app changes. `schema mocks` has every
-   key.
+   key. `mock gen --openapi spec.yaml` writes a set from a spec.
 4. `chrome-cdp lint`, then `chrome-cdp test` (`file.cdp:12` runs one
    test). Each test gets a fresh context, frozen time and seeded random.
 5. A failure prints a `report.md` path (step, error, page, console
@@ -149,6 +147,8 @@ expect --url u | --no-errors | --no-issues | --no-failed-requests | --a11y | --p
 expect-snapshot <name>         snapshot -i vs a stored baseline
 screenshot [loc] [--full] [-o f.png]
 errors | console | issues | network [--failed] | audit
+layout                         overlap, clipping, overflow, contrast
+explore [url] | compare <a> <b>  map an app | diff two pages
 eval '<js>'                    run JavaScript, print the value
 tabs | tab <id> | tab new <url> | tab close
 frames                         the tab's iframes and workers
@@ -156,7 +156,6 @@ dialog accept|dismiss          answer alert/confirm/prompt
 route '<url glob>' --json-body '{...}'   mock a request
 viewport 390x844 | emulate 'iPhone 15'   devices
 state save f.json | state load f.json    keep a login
-batch                          many commands from stdin, one per line
 test [file.cdp:12]             run the E2E scenarios (see above)
 ```
 
