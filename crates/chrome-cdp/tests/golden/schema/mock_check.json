@@ -1016,7 +1016,7 @@
           "type": "string"
         },
         "rule": {
-          "description": "`load`, `unreachable`, `collection-shadowed`, `duplicate-collection`,\n`undeclared-state`, `openapi-path`, `openapi-method`, `openapi-status`\nor `openapi-body`.",
+          "description": "`load`, `unreachable`, `collection-shadowed`, `duplicate-collection`,\n`undeclared-state`, `ws-unreachable`, `ws-rule-unreachable`,\n`openapi-path`, `openapi-method`, `openapi-status` or `openapi-body`.",
           "type": "string"
         },
         "severity": {

@@ -13,7 +13,12 @@
 //! - `duplicate-collection` (warning): two files with a collection of one
 //!   name (`mock state` and `mock seed` reach only one);
 //! - `undeclared-state` (warning): a `when`, `set_state` or `unset_state`
-//!   name no file's `[state]` declares;
+//!   name, or a `{{state.x}}` in a `[[websocket]]`'s messages, that no
+//!   file's `[state]` declares;
+//! - `ws-unreachable` (warning): a `[[websocket]]` an earlier one of its
+//!   file takes every socket of;
+//! - `ws-rule-unreachable` (warning): an `on_message` rule after one that
+//!   answers every message;
 //! - `openapi-path`, `openapi-method`, `openapi-status`, `openapi-body`
 //!   (errors): the spec has no such path or method, does not list the
 //!   status, or its schema does not fit the JSON body.
@@ -32,6 +37,7 @@ use crate::matcher::{Matcher, Target};
 use crate::openapi::{Lookup, OpenApi};
 use crate::respond::{Body, Respond};
 use crate::template::is_template;
+use crate::ws::{WsAction, WsMatch, WsSend};
 
 /// What [`check`] looked at, and found.
 #[derive(Debug, Default)]
@@ -72,6 +78,7 @@ pub fn check(sources: &[Source], layers: &[String], openapi: Option<&OpenApi>) -
         .sum();
     for set in &out.sets {
         unreachable(set, &mut out.problems);
+        ws_unreachable(set, &mut out.problems);
         shadowed_in_set(set, &mut out.problems);
     }
     shadowed_across(&out.sets, layers, &mut out.problems);
@@ -315,6 +322,21 @@ fn undeclared(sets: &[MockSet], out: &mut Vec<MockProblem>) {
         .iter()
         .flat_map(|s| s.state.iter().map(|(n, _)| n.as_str()))
         .collect();
+    let report = |set: &MockSet, line: usize, message: String, name: &str| {
+        let close = protocol::suggest::similar(name, declared.iter().copied(), 1);
+        problem(
+            &set.source.file,
+            line,
+            1,
+            Severity::Warning,
+            "undeclared-state",
+            message,
+            Some(match close.first() {
+                Some(c) => format!("did you mean `{c}`?"),
+                None => format!("declare it: [state] {name} = …"),
+            }),
+        )
+    };
     for set in sets {
         for mock in &set.mocks {
             for (key, names) in [("when", &mock.when), ("set_state", &mock.set_state)] {
@@ -327,25 +349,152 @@ fn undeclared(sets: &[MockSet], out: &mut Vec<MockProblem>) {
                     } else {
                         key
                     };
-                    let close = protocol::suggest::similar(name, declared.iter().copied(), 1);
-                    out.push(problem(
-                        &set.source.file,
+                    out.push(report(
+                        set,
                         mock.line,
-                        1,
-                        Severity::Warning,
-                        "undeclared-state",
                         format!(
                             "mock \"{}\": {key} names `{name}`, which no mock file's [state] \
                              declares",
                             mock.name
                         ),
-                        Some(match close.first() {
-                            Some(c) => format!("did you mean `{c}`?"),
-                            None => format!("declare it: [state] {name} = …"),
-                        }),
+                        name,
                     ));
                 }
             }
+        }
+        for ws in &set.websockets {
+            let actions = ws
+                .on_open
+                .iter()
+                .chain(ws.on_message.iter().map(|r| &r.action));
+            let mut names = BTreeSet::new();
+            for action in actions {
+                state_names(action, &mut names);
+            }
+            for name in names.iter().filter(|n| !declared.contains(n.as_str())) {
+                out.push(report(
+                    set,
+                    ws.line,
+                    format!(
+                        "websocket \"{}\": a message reads `state.{name}`, which no mock file's \
+                         [state] declares",
+                        ws.name
+                    ),
+                    name,
+                ));
+            }
+        }
+    }
+}
+
+/// The `state.x` names an action's templates read.
+fn state_names(action: &WsAction, out: &mut BTreeSet<String>) {
+    static STATE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(
+            r#"\bstate\s*(?:\.\s*([A-Za-z_][A-Za-z0-9_]*)|\[\s*["']([^"']+)["']\s*\])"#,
+        )
+        .expect("valid regex")
+    });
+    fn walk(value: &Value, out: &mut Vec<String>) {
+        match value {
+            Value::String(s) => out.push(s.clone()),
+            Value::Array(items) => items.iter().for_each(|v| walk(v, out)),
+            Value::Object(map) => map.iter().for_each(|(k, v)| {
+                out.push(k.clone());
+                walk(v, out);
+            }),
+            _ => {}
+        }
+    }
+    let mut texts = Vec::new();
+    match &action.send {
+        Some(WsSend::Text(value)) => walk(value, &mut texts),
+        Some(WsSend::Base64(text)) => texts.push(text.clone()),
+        None => {}
+    }
+    if let Some((_, reason)) = &action.close {
+        texts.push(reason.clone());
+    }
+    for text in texts.iter().filter(|t| is_template(t)) {
+        for c in STATE.captures_iter(text) {
+            if let Some(name) = c.get(1).or_else(|| c.get(2)) {
+                out.insert(name.as_str().to_owned());
+            }
+        }
+    }
+}
+
+/// Whether a rule answers every message (text and binary).
+fn takes_every_message(m: &WsMatch) -> bool {
+    match m {
+        WsMatch::Any => true,
+        WsMatch::Text(_) | WsMatch::Json(_) => false,
+    }
+}
+
+/// Whether a rule answers every text message: no match, or a text glob
+/// of only `*`s.
+fn takes_every_text(m: &WsMatch) -> bool {
+    match m {
+        WsMatch::Any => true,
+        WsMatch::Text(glob) => {
+            let text = glob.as_str();
+            !text.is_empty() && text.chars().all(|c| c == '*')
+        }
+        WsMatch::Json(_) => false,
+    }
+}
+
+fn ws_unreachable(set: &MockSet, out: &mut Vec<MockProblem>) {
+    for (j, b) in set.websockets.iter().enumerate() {
+        if let Some(a) = set.websockets[..j]
+            .iter()
+            .find(|a| glob_covers(&a.url, &b.url))
+        {
+            out.push(problem(
+                &set.source.file,
+                b.line,
+                1,
+                Severity::Warning,
+                "ws-unreachable",
+                format!(
+                    "websocket \"{}\" never opens: \"{}\" (line {}) comes first and takes every \
+                     socket it does",
+                    b.name, a.name, a.line
+                ),
+                Some(format!(
+                    "move \"{}\" above \"{}\", or narrow \"{}\"'s url",
+                    b.name, a.name, a.name
+                )),
+            ));
+        }
+        for (k, rule) in b.on_message.iter().enumerate() {
+            let Some(first) = b.on_message[..k].iter().find(|r| {
+                takes_every_message(&r.matcher)
+                    || (takes_every_text(&r.matcher) && !matches!(rule.matcher, WsMatch::Any))
+            }) else {
+                continue;
+            };
+            out.push(problem(
+                &set.source.file,
+                rule.line,
+                1,
+                Severity::Warning,
+                "ws-rule-unreachable",
+                format!(
+                    "websocket \"{}\": on_message rule {} never answers: rule {} (line {}) comes \
+                     first and answers every message",
+                    b.name,
+                    k + 1,
+                    b.on_message
+                        .iter()
+                        .position(|r| std::ptr::eq(r, first))
+                        .unwrap_or(0)
+                        + 1,
+                    first.line
+                ),
+                Some("move the rule above it, or give that rule a `match`".to_owned()),
+            ));
         }
     }
 }

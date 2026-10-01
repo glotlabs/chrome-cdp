@@ -206,6 +206,111 @@ fn lints_find_what_no_request_would() {
     assert_eq!(checked.mocks, 10);
 }
 
+const SOCKETS: &str = r#"
+[state]
+price = 40
+
+[[websocket]]
+name = "rooms"
+url = "/ws/rooms/:room"
+on_open = [{ send = { price = "{{state.price}}", user = "{{ state.usr }}" } }]
+on_message = [
+  { match = { type = "ping" }, send = { type = "pong" } },
+  { match = "*", send = "echo {{body}}" },
+  { match = { type = "join" }, send = "{{state['room']}}" },
+  { send_base64 = "AAE=" },
+  { send = "never" },
+  { match = "bye", close = 1000 },
+]
+
+[[websocket]]
+name = "room 7"
+url = "/ws/rooms/7"
+on_open = [{ send = "seven" }]
+
+[[websocket]]
+name = "all"
+url = "/ws/**"
+on_message = [{ send = "any" }, { match = "x", send = "y" }]
+
+[[websocket]]
+name = "push"
+url = "wss://push.example.com/**"
+"#;
+
+#[test]
+fn websocket_lints() {
+    let d = dir(&[("ws.toml", SOCKETS)]);
+    let checked = check(&sources(d.path(), &["ws"]), &[], None);
+    let got: Vec<(usize, &str, &str)> = checked
+        .problems
+        .iter()
+        .map(|p| (p.line, p.severity.as_str(), p.rule.as_str()))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            (5, "warning", "undeclared-state"),
+            (5, "warning", "undeclared-state"),
+            (12, "warning", "ws-rule-unreachable"),
+            (14, "warning", "ws-rule-unreachable"),
+            (15, "warning", "ws-rule-unreachable"),
+            (18, "warning", "ws-unreachable"),
+            (26, "warning", "ws-rule-unreachable"),
+        ],
+        "{:#?}",
+        checked.problems
+    );
+    let messages: Vec<&str> = checked
+        .problems
+        .iter()
+        .map(|p| p.message.as_str())
+        .collect();
+    assert_eq!(
+        messages[0],
+        "websocket \"rooms\": a message reads `state.room`, which no mock file's [state] declares"
+    );
+    assert_eq!(
+        messages[1],
+        "websocket \"rooms\": a message reads `state.usr`, which no mock file's [state] declares"
+    );
+    assert_eq!(
+        messages[2],
+        "websocket \"rooms\": on_message rule 3 never answers: rule 2 (line 11) comes first and answers every message"
+    );
+    assert_eq!(
+        messages[3],
+        "websocket \"rooms\": on_message rule 5 never answers: rule 4 (line 13) comes first and answers every message"
+    );
+    assert_eq!(
+        messages[5],
+        "websocket \"room 7\" never opens: \"rooms\" (line 5) comes first and takes every socket it does"
+    );
+    assert_eq!(
+        checked.problems[1].hint.as_deref(),
+        Some("declare it: [state] usr = …")
+    );
+
+    // A clean file: rules in a reachable order, every name declared.
+    let d = dir(&[(
+        "ok.toml",
+        r#"
+[state]
+price = 1
+
+[[websocket]]
+url = "/ws/rooms/7"
+on_message = [{ match = { type = "ping" }, send = "{{state.price}}" }, { send = "any" }]
+
+[[websocket]]
+url = "/ws/rooms/:room"
+on_message = [{ match = "*", send = "text" }, { send_base64 = "AAE=" }]
+"#,
+    )]);
+    let checked = check(&sources(d.path(), &["ok"]), &[], None);
+    assert!(checked.problems.is_empty(), "{:#?}", checked.problems);
+}
+
 #[test]
 fn a_later_default_set_can_shadow_a_collection() {
     let d = dir(&[

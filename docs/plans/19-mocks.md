@@ -424,3 +424,7 @@ _(append here)_
 - 19.1: `match.form` holds if any value of a repeated field matches. The
   plan says this is today's behavior, but the code checked the first
   value only.
+- 19.2: no `ws-close-code` rule: `load` already refuses a close code
+  outside 1000 and 3000–4999, so `mock check` reports it as `load`.
+  Websocket templates do read state (`{{state.x}}`), so
+  `undeclared-state` scans their messages and close reasons.

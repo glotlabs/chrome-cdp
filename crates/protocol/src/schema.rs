@@ -5898,8 +5898,8 @@ pub struct MockProblem {
     /// `error` or `warning`.
     pub severity: String,
     /// `load`, `unreachable`, `collection-shadowed`, `duplicate-collection`,
-    /// `undeclared-state`, `openapi-path`, `openapi-method`, `openapi-status`
-    /// or `openapi-body`.
+    /// `undeclared-state`, `ws-unreachable`, `ws-rule-unreachable`,
+    /// `openapi-path`, `openapi-method`, `openapi-status` or `openapi-body`.
     pub rule: String,
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

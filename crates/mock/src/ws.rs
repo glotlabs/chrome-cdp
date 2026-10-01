@@ -65,6 +65,7 @@ pub(crate) enum WsSend {
 pub(crate) struct WsRule {
     pub(crate) matcher: WsMatch,
     pub(crate) action: WsAction,
+    pub(crate) line: usize,
 }
 
 /// Which messages a rule answers.

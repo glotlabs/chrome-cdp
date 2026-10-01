@@ -445,7 +445,10 @@ impl Check<'_> {
                 .into_inner()
                 .into_iter()
                 .enumerate()
-                .map(|(i, r)| ws_rule(&format!("websocket.on_message[{i}]"), r))
+                .map(|(i, r)| {
+                    let (line, _) = line_col(self.text, r.span().start);
+                    ws_rule(&format!("websocket.on_message[{i}]"), line, r)
+                })
                 .collect::<Result<_, _>>()?,
         };
         let name = raw
@@ -985,7 +988,7 @@ fn ws_action(
     Ok(WsAction { send, close, delay })
 }
 
-fn ws_rule(key: &str, raw: At<RawWsRule>) -> Result<WsRule, Problem> {
+fn ws_rule(key: &str, line: usize, raw: At<RawWsRule>) -> Result<WsRule, Problem> {
     let span = raw.span();
     let raw = raw.into_inner();
     let matcher = match raw.matcher.map(At::into_inner) {
@@ -1009,7 +1012,11 @@ fn ws_rule(key: &str, raw: At<RawWsRule>) -> Result<WsRule, Problem> {
         raw.reason,
         raw.delay,
     )?;
-    Ok(WsRule { matcher, action })
+    Ok(WsRule {
+        matcher,
+        action,
+        line,
+    })
 }
 
 fn sse_event(i: usize, raw: At<RawSseEvent>) -> Result<SseSpec, Problem> {
