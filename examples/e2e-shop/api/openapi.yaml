@@ -1,0 +1,301 @@
+# The shop's API, as the real backend serves it (the repository's fixture
+# server, crates/fixtures/src/shop.rs). `openapi` in chrome-cdp.toml
+# points here, so `chrome-cdp mock check` and every `chrome-cdp test` run
+# check the mocks against it. The payment provider (another origin) and
+# the /api/live WebSocket are not in it.
+openapi: 3.0.3
+info:
+  title: e2e-shop
+  version: "1.0"
+servers:
+  - url: /api
+paths:
+  /products:
+    get:
+      operationId: listProducts
+      responses:
+        "200":
+          description: the catalogue
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProductSummary"
+  /products/{id}:
+    get:
+      operationId: getProduct
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: one product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /search:
+    get:
+      operationId: search
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: the products whose name contains q
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [query, results]
+                properties:
+                  query:
+                    type: string
+                    example: keyboard
+                  results:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProductSummary"
+  /login:
+    post:
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        "200":
+          description: signed in; sets the sid cookie
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    $ref: "#/components/schemas/User"
+        "401":
+          description: a wrong email or password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /logout:
+    post:
+      operationId: logout
+      responses:
+        "200":
+          description: signed out
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+  /me:
+    get:
+      operationId: me
+      responses:
+        "200":
+          description: who is signed in, if anyone
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [user]
+                properties:
+                  user:
+                    nullable: true
+                    allOf:
+                      - $ref: "#/components/schemas/User"
+  /cart:
+    get:
+      operationId: getCart
+      responses:
+        "200":
+          description: the cart of the cart cookie
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CartItem"
+    post:
+      operationId: addToCart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CartItem"
+      responses:
+        "201":
+          description: added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CartItem"
+        "400":
+          description: not a JSON object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /cart/{id}:
+    delete:
+      operationId: removeFromCart
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: the item removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CartItem"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /orders:
+    post:
+      operationId: placeOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, total]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/CartItem"
+                total:
+                  type: number
+      responses:
+        "201":
+          description: the order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "401":
+          description: not signed in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: busy; try again
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: one order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+        "404":
+          $ref: "#/components/responses/NotFound"
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+  responses:
+    NotFound:
+      description: no such thing
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    ProductSummary:
+      type: object
+      required: [id, name, price]
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: Mechanical keyboard
+        price:
+          type: number
+          example: 89
+    Product:
+      allOf:
+        - $ref: "#/components/schemas/ProductSummary"
+        - type: object
+          required: [description]
+          properties:
+            description:
+              type: string
+              example: Tactile switches and a steel frame.
+    User:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+    CartItem:
+      type: object
+      required: [product_id, name, price, qty]
+      properties:
+        id:
+          type: integer
+        product_id:
+          type: integer
+        name:
+          type: string
+        price:
+          type: number
+        qty:
+          type: integer
+          minimum: 1
+    Order:
+      type: object
+      required: [id, items, total]
+      properties:
+        id:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CartItem"
+        total:
+          type: number
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

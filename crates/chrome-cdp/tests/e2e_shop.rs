@@ -4,8 +4,9 @@
 //! `--backend local`) and against the real API with the provider mocked
 //! (`--backend hybrid`, plan 19.3), the mocks match that API
 //! (`--verify-mocks`), its deliberately failing fixture
-//! gets the unmatched-request diagnostics, and `fmt --check` and `lint`
-//! pass on it. Its committed fingerprints are what a run writes, and a
+//! gets the unmatched-request diagnostics, its mocks fit its OpenAPI
+//! spec and a run names the operations they miss (plan 19.4), and `fmt
+//! --check` and `lint` pass on it. Its committed fingerprints are what a run writes, and a
 //! redesign of it (`testdata/heal/redesign.toml`) is healed (plan 18.2).
 //!
 //! Needs a real Chrome (`CHROME_PATH`; skipped without it unless
@@ -529,6 +530,35 @@ fn an_unmatched_request_names_the_closest_mock() {
     assert!(
         report.contains("← unmatched in mock set base (fail); closest mock: base.toml:16"),
         "{report}"
+    );
+}
+
+#[test]
+fn a_run_says_which_spec_operations_have_no_mock() {
+    let Some(chrome) = chrome_path() else { return };
+    let example = Example::new(Sandbox::with_chrome(&chrome));
+    // The mocks fit api/openapi.yaml and answer all of it.
+    let check = example.json(&["mock", "check"]);
+    assert_eq!(check["data"]["errors"], 0, "{check:#}");
+    assert_eq!(check["data"]["warnings"], 0, "{check:#}");
+    // Without "sign out", POST /logout has no mock: one line in a run
+    // (errors/api-down's `/api/**` answers it, and stands for nothing).
+    let base = example.root.join("e2e/mocks/base.toml");
+    let text = std::fs::read_to_string(&base).unwrap();
+    let start = text.find("[[mock]]\nname = \"sign out\"").unwrap();
+    let end = start + text[start + 1..].find("[[mock]]").unwrap() + 1;
+    std::fs::write(&base, format!("{}{}", &text[..start], &text[end..])).unwrap();
+    let out = example.cli(&["test", "e2e/scenarios/products.cdp"]);
+    let err = stderr(&out);
+    assert_eq!(out.status.code(), Some(0), "{err}");
+    assert!(
+        err.contains("warning: 1 spec operation has no mock: POST /logout (logout)\n"),
+        "{err}"
+    );
+    let check = example.json(&["mock", "check"]);
+    assert_eq!(
+        check["data"]["uncovered"][0], "POST /logout (logout)",
+        "{check:#}"
     );
 }
 

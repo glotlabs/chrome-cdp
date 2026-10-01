@@ -248,12 +248,6 @@ impl OpenApi {
         &self.doc
     }
 
-    /// The path prefixes a mock's path may have (`""` when the servers
-    /// have none), longest first.
-    pub(crate) fn bases(&self) -> &[String] {
-        &self.bases
-    }
-
     /// The file it was loaded from, if it was.
     pub fn file(&self) -> Option<&Path> {
         self.file.as_deref()

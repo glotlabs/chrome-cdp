@@ -487,7 +487,7 @@ fn specs_are_read_as_json_or_yaml_and_swagger() {
 fn spec_operations_no_mock_answers_are_uncovered() {
     let spec = OpenApi::parse(SPEC, false).unwrap();
     // BASE answers every operation: GET /products/{id} by a parameter
-    // and by an id, /todos by its collection and a `**` mock.
+    // and by an id, /todos by its collection.
     let d = dir(&[("base.toml", BASE), ("data/products.json", PRODUCTS)]);
     let checked = check(&sources(d.path(), &["base"]), &[], Some(&spec));
     assert_eq!(checked.uncovered, Vec::<String>::new());
@@ -508,6 +508,12 @@ respond = { json = { id = 7, name = "Seven", price = 7 } }
 name = "any todo"
 match = { path = "/api/todos/*" }
 respond = { json = { id = 1, title = "Milk" } }
+
+# A catch-all answers every request, and stands for no operation.
+[[mock]]
+name = "down"
+match = { path = "/api/**" }
+respond = { status = 503 }
 "#;
     let d = dir(&[("few.toml", few)]);
     let checked = check(&sources(d.path(), &["few"]), &[], Some(&spec));
@@ -619,4 +625,38 @@ respond = { json = [] }
     assert!(spec.covers_scope(&[]));
     assert!(spec.covers_scope(&["/api/**".to_owned()]));
     assert!(!spec.covers_scope(&["https://api.stripe.com/**".to_owned()]));
+}
+
+#[test]
+fn a_collection_needs_its_paths_in_the_spec_not_every_method() {
+    // The spec's /orders has only POST: the collection's GET list is
+    // one the app never sends.
+    let spec = OpenApi::parse(SPEC, false).unwrap();
+    let orders = "[[collection]]\nname = \"orders\"\npath = \"/api/orders\"\nitems = []\n\n[[collection]]\nname = \"carts\"\npath = \"/api/carts\"\nitems = []\n";
+    let d = dir(&[("orders.toml", orders)]);
+    let checked = check(&sources(d.path(), &["orders"]), &[], Some(&spec));
+    let errors: Vec<(&str, Option<&str>)> = checked
+        .problems
+        .iter()
+        .filter(|p| p.severity == "error")
+        .map(|p| (p.message.as_str(), p.hint.as_deref()))
+        .collect();
+    assert_eq!(
+        errors,
+        [
+            // SPEC has no GET /orders/{id} either.
+            (
+                "collection \"orders\": the spec has no path /api/orders/:id",
+                None
+            ),
+            (
+                "collection \"carts\": the spec has no path /api/carts",
+                Some("the spec's closest: /todos")
+            ),
+            (
+                "collection \"carts\": the spec has no path /api/carts/:id",
+                None
+            ),
+        ]
+    );
 }

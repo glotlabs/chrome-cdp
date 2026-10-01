@@ -8,6 +8,7 @@ base_url = "http://localhost:4173"
 tests = ["e2e/scenarios/**/*.cdp"]
 mocks = "e2e/mocks"
 default_mocks = ["base", "third-party/payments"]
+openapi = "api/openapi.yaml"    # mock check (and every test run) checks the mocks against it
 vars = "e2e/vars/mock.toml"
 jobs = 4
 artifacts = "e2e/.results"

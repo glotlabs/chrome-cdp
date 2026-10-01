@@ -742,17 +742,18 @@ fn against_spec(set: &MockSet, spec: &OpenApi, out: &mut Vec<MockProblem>) {
             (c.path.text(), c.path.text()),
             (c.item.text(), item_path.as_str()),
         ] {
-            if let Lookup::NoPath { .. } | Lookup::NoMethod { .. } =
-                spec.lookup(path, &["GET".to_owned()])
-            {
+            // Any method will do: a collection answers them all, and the
+            // real API need not (a cart with no GET of one item).
+            if let Lookup::NoPath { closest } = spec.lookup(path, &[]) {
                 out.push(problem(
                     file,
                     c.line,
                     1,
                     Severity::Error,
                     "openapi-path",
-                    format!("collection \"{}\": the spec has no GET {shown}", c.name),
-                    None,
+                    format!("collection \"{}\": the spec has no path {shown}", c.name),
+                    (!closest.is_empty())
+                        .then(|| format!("the spec's closest: {}", closest.join(", "))),
                 ));
             }
         }
@@ -794,25 +795,16 @@ fn gen_scope(op: &str) -> String {
 }
 
 /// The spec's operations (`GET /pets/{id}`, with ` (operationId)`) that
-/// no mock or collection of `sets` answers.
+/// no mock or collection of `sets` stands for. A mock stands for the
+/// operations its path and methods land on in the spec (`/pets/:id`,
+/// `/pets/7`, `/pets/*`), as the spec checks see it; a catch-all
+/// (`/api/**`, a regex, no path) answers for many and stands for none,
+/// so an `errors/api-down` set does not hide the operations no other
+/// mock has.
 fn uncovered(sets: &[MockSet], spec: &OpenApi) -> Vec<String> {
-    let samples = |path: &str| -> Vec<String> {
-        let sample = crate::generate::sample_path(path);
-        spec.bases()
-            .iter()
-            .map(|b| format!("{b}{sample}"))
-            .collect()
-    };
-    // Whether a path glob takes the operation: a path the spec says is
-    // that operation's (`/pets/7`, `/pets/:id`), or a glob that matches
-    // it with any parameters (`/pets/**`).
-    let takes = |glob: &PathGlob, method: &str, path: &str| {
-        if let Lookup::Found(ops) = spec.lookup(glob.text(), &[method.to_owned()])
-            && ops.iter().any(|o| o.path == path)
-        {
-            return true;
-        }
-        samples(path).iter().any(|s| glob.matches(s))
+    let takes = |glob: &str, method: &str, path: &str| {
+        matches!(spec.lookup(glob, &[method.to_owned()]),
+            Lookup::Found(ops) if ops.iter().any(|o| o.path == path))
     };
     let mut out = Vec::new();
     for op in spec.operations() {
@@ -821,19 +813,11 @@ fn uncovered(sets: &[MockSet], spec: &OpenApi) -> Vec<String> {
             set.mocks.iter().any(|m| {
                 let methods =
                     m.matcher.methods.is_empty() || m.matcher.methods.iter().any(|x| x == method);
-                methods
-                    && match &m.matcher.target {
-                        None => true,
-                        Some(Target::Path(g)) => takes(g, method, op.path),
-                        Some(Target::Url(_)) => spec_path(&m.matcher)
-                            .and_then(|p| PathGlob::path(&p).ok())
-                            .is_some_and(|g| takes(&g, method, op.path)),
-                        Some(Target::Regex(r)) => samples(op.path).iter().any(|s| r.is_match(s)),
-                    }
+                methods && spec_path(&m.matcher).is_some_and(|p| takes(&p, method, op.path))
             }) || set.collections.iter().any(|c| {
-                (matches!(method, "GET" | "POST") && takes(&c.path, method, op.path))
+                (matches!(method, "GET" | "POST") && takes(c.path.text(), method, op.path))
                     || (matches!(method, "GET" | "PUT" | "PATCH" | "DELETE")
-                        && takes(&c.item, method, op.path))
+                        && takes(c.item.text(), method, op.path))
             })
         });
         if !covered {

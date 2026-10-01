@@ -36,6 +36,7 @@ older than them.
 
 ```
 chrome-cdp.toml          [e2e]: the mocks, the static server, the real backend
+api/openapi.yaml         the real API's spec; the mocks are checked against it
 e2e/scenarios/*.cdp      the tests
 e2e/steps/sign-in.cdp    a step file (@include … email=…)
 e2e/mocks/base.toml      the whole API (default_mocks)
@@ -80,3 +81,17 @@ plays the provider too (`--payments 4175`), accepting every card, so
 provider's declined test card, which only the mock declines. The mock
 set's scope is the provider's origin (`http://127.0.0.1:*/v1/**`), so the
 shop's own `/api` stays real.
+
+## Mocks that follow the spec
+
+`api/openapi.yaml` describes the real `/api` (not the payment provider,
+another origin, nor the `/api/live` socket), and `openapi` in
+`chrome-cdp.toml` points to it. `chrome-cdp mock check`, and every
+`chrome-cdp test` before it starts, check each mock's path, method,
+status and JSON body against it, and name the spec's operations no mock
+answers (`1 spec operation has no mock: POST /logout (logout)`).
+`mock_check = "warnings"` in `[e2e]` would fail the run on those too.
+
+A project with a spec and no mocks yet can start from `chrome-cdp mock
+gen --collections`, which writes a mock per operation (and a collection
+per list and item path pair) with the spec's examples.
