@@ -307,10 +307,19 @@ pub(crate) struct RawCollection {
     /// What `mock state`, `mock seed` and `expect mock-state` call it.
     pub(crate) name: At<String>,
     /// The list's path, e.g. `/api/todos`; items are at `/api/todos/:id`.
+    /// Its parameters (`/api/users/:user/todos`) scope the items by the
+    /// field of the same name (see `params`).
     pub(crate) path: At<String>,
     /// The items' id field; `id` when not set.
     #[serde(default)]
     pub(crate) id: Option<At<String>>,
+    /// For a nested resource (`/api/users/:user/todos`), the field each
+    /// path parameter scopes the items by, when it is not the parameter's
+    /// own name: `{ user = "userId" }`. A request sees only the items whose
+    /// field holds the parameter's value (compared as text), and a POST
+    /// sets it.
+    #[serde(default)]
+    pub(crate) params: Option<At<BTreeMap<String, String>>>,
     /// A data file (a JSON array of objects) with the items it starts
     /// with, relative to the mocks directory.
     #[serde(default)]

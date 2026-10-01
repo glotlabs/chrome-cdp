@@ -1,0 +1,42 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Todos per user</title>
+<h1>Todos per user</h1>
+<p>Each user's todos at <code>/mock/api/users/:user/todos</code>, the
+<code>nested</code> mock set's collection.</p>
+<label>User <select id="user"><option>1</option><option>2</option></select></label>
+<form id="add">
+  <label>New todo <input name="title"></label>
+  <button>Add</button>
+</form>
+<ul id="list"></ul>
+<script>
+  const list = document.getElementById("list");
+  const user = document.getElementById("user");
+  const base = () => `/mock/api/users/${user.value}/todos`;
+  async function load() {
+    const todos = await (await fetch(base())).json();
+    list.replaceChildren(...todos.map((t) => {
+      const li = document.createElement("li");
+      li.textContent = t.title;
+      return li;
+    }));
+    return todos.map((t) => t.title);
+  }
+  async function addTodo(title) {
+    await fetch(base(), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    return load();
+  }
+  user.addEventListener("change", load);
+  document.getElementById("add").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const input = e.target.elements.title;
+    addTodo(input.value);
+    input.value = "";
+  });
+  load();
+</script>

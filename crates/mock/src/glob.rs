@@ -116,6 +116,11 @@ impl PathGlob {
         })
     }
 
+    /// The names of its parameters (and regex groups), in order.
+    pub(crate) fn params(&self) -> Vec<&str> {
+        self.regex.capture_names().flatten().collect()
+    }
+
     /// The parameters when `subject` matches, percent-decoded.
     pub(crate) fn captures(&self, subject: &str) -> Option<BTreeMap<String, String>> {
         let caps = self.regex.captures(subject)?;

@@ -70,7 +70,8 @@ A fake REST resource. `GET path` lists the items, `GET path/:id` gets one, `POST
 | `list` | table ([`[[collection]] list`](#collectionlist)) | How `GET path` lists the items. |
 | `name` (required) | text | What `mock state`, `mock seed` and `expect mock-state` call it. |
 | `new_id` | `"increment"` \| `"uuid"` | How a POST without an id gets one: `increment` (the highest number plus one) or `uuid`. When not set: `increment` if the starting items' ids are numbers, else `uuid`. |
-| `path` (required) | text | The list's path, e.g. `/api/todos`; items are at `/api/todos/:id`. |
+| `params` | table of text | For a nested resource (`/api/users/:user/todos`), the field each path parameter scopes the items by, when it is not the parameter's own name: `{ user = "userId" }`. A request sees only the items whose field holds the parameter's value (compared as text), and a POST sets it. |
+| `path` (required) | text | The list's path, e.g. `/api/todos`; items are at `/api/todos/:id`. Its parameters (`/api/users/:user/todos`) scope the items by the field of the same name (see `params`). |
 | `seed` | text | A data file (a JSON array of objects) with the items it starts with, relative to the mocks directory. |
 
 <a id="websocket"></a>

@@ -76,8 +76,18 @@
           ],
           "description": "How a POST without an id gets one: `increment` (the highest number\nplus one) or `uuid`. When not set: `increment` if the starting\nitems' ids are numbers, else `uuid`."
         },
+        "params": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "For a nested resource (`/api/users/:user/todos`), the field each\npath parameter scopes the items by, when it is not the parameter's\nown name: `{ user = \"userId\" }`. A request sees only the items whose\nfield holds the parameter's value (compared as text), and a POST\nsets it.",
+          "type": [
+            "object",
+            "null"
+          ]
+        },
         "path": {
-          "description": "The list's path, e.g. `/api/todos`; items are at `/api/todos/:id`.",
+          "description": "The list's path, e.g. `/api/todos`; items are at `/api/todos/:id`.\nIts parameters (`/api/users/:user/todos`) scope the items by the\nfield of the same name (see `params`).",
           "type": "string"
         },
         "seed": {

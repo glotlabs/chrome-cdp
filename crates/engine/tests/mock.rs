@@ -980,3 +980,35 @@ async fn multipart_forms_match_by_field_and_file_name() {
         "{data:?}"
     );
 }
+
+#[tokio::test]
+async fn nested_collections_keep_each_users_todos() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path, "mock-nested").await;
+    use_sets(&engine, &mocks_dir(), &["nested"], false).await;
+    goto(&engine, &site.url("/mock/nested-todos.html")).await;
+    let todos = |user: u32, add: &str| {
+        format!(
+            "(() => {{ document.getElementById('user').value = '{user}'; \
+             return {add}; }})()"
+        )
+    };
+    assert_eq!(
+        eval(&engine, &todos(1, "load()")).await,
+        json!(["Buy milk"])
+    );
+    assert_eq!(
+        eval(&engine, &todos(2, "addTodo('Feed the cat')")).await,
+        json!(["Walk the dog", "Feed the cat"])
+    );
+    assert_eq!(
+        eval(&engine, &todos(1, "load()")).await,
+        json!(["Buy milk"])
+    );
+    // Another user's item is not found under this one.
+    let answer = fetch(&engine, "/mock/api/users/1/todos/3", "{}").await;
+    assert_eq!(answer[0], json!(404), "{answer}");
+    let answer = fetch(&engine, "/mock/api/users/2/todos/3", "{method: 'DELETE'}").await;
+    assert_eq!(answer[1]["title"], "Feed the cat", "{answer}");
+}

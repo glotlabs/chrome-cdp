@@ -4,7 +4,13 @@
 //! `DELETE path/:id` removes it, so create-then-list flows work without
 //! code. Validation is minimal on purpose: a `[[mock]]` in front of the
 //! collection handles anything special.
+//!
+//! A path with parameters (`/api/users/:user/todos`) is a nested resource:
+//! each parameter names a field (`params` maps it to another), and a
+//! request sees only the items whose field holds the parameter's value,
+//! so every user has their own list. Ids stay unique across all items.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde_json::{Map, Value, json};
@@ -41,6 +47,8 @@ pub(crate) struct Collection {
     pub(crate) item: PathGlob,
     /// The id field.
     pub(crate) id: String,
+    /// The path's parameters and the fields they scope the items by.
+    pub(crate) params: Vec<(String, String)>,
     pub(crate) new_id: NewId,
     /// The data file the items start from (relative to the mocks
     /// directory), if they come from one.
@@ -133,6 +141,38 @@ pub(crate) fn default_new_id(items: &[Value], id: &str) -> NewId {
     }
 }
 
+/// Each parameter of `path` and the field it scopes: the one `fields`
+/// maps it to, else the field of its own name. `fields` naming a parameter
+/// the path does not have is an error.
+pub(crate) fn scope_fields(
+    path: &PathGlob,
+    fields: &BTreeMap<String, String>,
+) -> Result<Vec<(String, String)>, String> {
+    let names = path.params();
+    if let Some(unknown) = fields.keys().find(|k| !names.contains(&k.as_str())) {
+        let has = if names.is_empty() {
+            "none".to_owned()
+        } else {
+            names
+                .iter()
+                .map(|n| format!(":{n}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        return Err(format!("{path} has no parameter :{unknown} (it has {has})"));
+    }
+    if let Some((param, _)) = fields.iter().find(|(_, f)| f.trim().is_empty()) {
+        return Err(format!(":{param} maps to an empty field name"));
+    }
+    Ok(names
+        .iter()
+        .map(|n| {
+            let field = fields.get(*n).cloned().unwrap_or_else(|| (*n).to_owned());
+            ((*n).to_owned(), field)
+        })
+        .collect())
+}
+
 fn shown(value: &Value) -> String {
     let text = value.to_string();
     let cut: String = text.chars().take(60).collect();
@@ -144,12 +184,15 @@ fn shown(value: &Value) -> String {
 }
 
 impl Collection {
+    /// `params` pairs each of the path's parameters with the field it
+    /// scopes the items by (see [`scope_fields`]).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         name: String,
         line: usize,
         path: PathGlob,
         id: String,
+        params: Vec<(String, String)>,
         new_id: NewId,
         seed_file: Option<String>,
         seed: Vec<Value>,
@@ -163,6 +206,7 @@ impl Collection {
             path,
             item,
             id,
+            params,
             new_id,
             seed_file,
             items: seed.clone(),
@@ -206,15 +250,84 @@ impl Collection {
         format!("{path}, {}/:id", path.trim_end_matches('/'))
     }
 
-    fn position(&self, id: &str) -> Option<usize> {
-        self.items
+    /// The fields a request for `path` scopes the items by, and their
+    /// values (the path's parameters, as text).
+    pub(crate) fn scope(&self, path: &str) -> Vec<(String, String)> {
+        if self.params.is_empty() {
+            return Vec::new();
+        }
+        let Some(caps) = self
+            .path
+            .captures(path)
+            .or_else(|| self.item.captures(path))
+        else {
+            return Vec::new();
+        };
+        self.params
             .iter()
-            .position(|item| item.get(&self.id).is_some_and(|value| id_text(value) == id))
+            .filter_map(|(param, field)| Some((field.clone(), caps.get(param)?.clone())))
+            .collect()
     }
 
-    /// Whether `id` names an item.
+    /// The path parameters of a request for `path` (without the item id).
+    pub(crate) fn path_params(&self, path: &str) -> BTreeMap<String, String> {
+        let mut caps = self
+            .path
+            .captures(path)
+            .or_else(|| self.item.captures(path))
+            .unwrap_or_default();
+        caps.remove(ITEM);
+        caps
+    }
+
+    /// Whether `item` is in `scope`: its fields hold the values, as text.
+    fn in_scope(item: &Value, scope: &[(String, String)]) -> bool {
+        scope
+            .iter()
+            .all(|(field, value)| item.get(field).is_some_and(|v| id_text(v) == *value))
+    }
+
+    fn position(&self, id: &str, scope: &[(String, String)]) -> Option<usize> {
+        self.items.iter().position(|item| {
+            item.get(&self.id).is_some_and(|value| id_text(value) == id)
+                && Self::in_scope(item, scope)
+        })
+    }
+
+    /// Whether `id` names an item (of any scope).
     pub(crate) fn has(&self, id: &str) -> bool {
-        self.position(id).is_some()
+        self.position(id, &[]).is_some()
+    }
+
+    /// Whether `id` names an item a request for `path` sees.
+    pub(crate) fn has_at(&self, id: &str, path: &str) -> bool {
+        self.position(id, &self.scope(path)).is_some()
+    }
+
+    /// The value a new item's scope field gets: a number when the seed's
+    /// values of the field are numbers, else the text.
+    fn scope_value(&self, field: &str, text: &str) -> Value {
+        let mut values = self
+            .seed
+            .iter()
+            .filter_map(|item| item.get(field))
+            .peekable();
+        let numbers = values.peek().is_some() && values.all(|v| v.is_i64() || v.is_u64());
+        if numbers && let Ok(n) = text.parse::<i64>() {
+            return json!(n);
+        }
+        Value::String(text.to_owned())
+    }
+
+    /// The first scope field `body` gives a value other than its scope's.
+    fn changes_scope<'a>(
+        body: &Map<String, Value>,
+        scope: &'a [(String, String)],
+    ) -> Option<(&'a str, &'a str, String)> {
+        scope.iter().find_map(|(field, value)| {
+            let given = body.get(field)?;
+            (id_text(given) != *value).then(|| (field.as_str(), value.as_str(), given.to_string()))
+        })
     }
 
     /// Gives the item `created` (as this collection answered a POST) the
@@ -231,7 +344,7 @@ impl Collection {
         if old == new_text || self.has(&new_text) {
             return false;
         }
-        let Some(i) = self.position(&old) else {
+        let Some(i) = self.position(&old, &[]) else {
             return false;
         };
         self.items[i][&self.id] = new.clone();
@@ -262,6 +375,15 @@ impl Collection {
             )
         };
         let not_found = |id: &str| error(404, format!("not found: {name}/{id}"));
+        let scope = self.scope(&req.path);
+        let changed = |field: &str, value: &str, given: &str| {
+            error(
+                400,
+                format!(
+                    "{name}: {field} is {value} here (the path says so); the body gives {given}"
+                ),
+            )
+        };
         match op {
             Op::NotAllowed(allow) => {
                 let (mut response, note) = error(
@@ -271,8 +393,8 @@ impl Collection {
                 push_header(&mut response, "Allow", allow);
                 (response, note)
             }
-            Op::List => self.list(req, cors),
-            Op::Get(id) => match self.position(id) {
+            Op::List => self.list(req, &scope, cors),
+            Op::Get(id) => match self.position(id, &scope) {
                 Some(i) => (
                     Response::json(200, &self.items[i], cors),
                     format!("{name}: get {id}"),
@@ -283,6 +405,12 @@ impl Collection {
                 let Some(Value::Object(mut item)) = req.json.clone() else {
                     return error(400, format!("{name}: POST needs a JSON object body"));
                 };
+                if let Some((field, value, given)) = Self::changes_scope(&item, &scope) {
+                    return changed(field, value, &given);
+                }
+                for (field, value) in &scope {
+                    item.insert(field.clone(), self.scope_value(field, value));
+                }
                 match item.get(&self.id).filter(|v| !v.is_null()) {
                     Some(id) if self.has(&id_text(id)) => {
                         let id = id_text(id);
@@ -303,7 +431,7 @@ impl Collection {
                 (response, format!("{name}: created {id}"))
             }
             Op::Replace(id) | Op::Update(id) => {
-                let Some(i) = self.position(id) else {
+                let Some(i) = self.position(id, &scope) else {
                     return not_found(id);
                 };
                 let Some(Value::Object(body)) = req.json.clone() else {
@@ -312,19 +440,28 @@ impl Collection {
                         format!("{name}: {} needs a JSON object body", req.method),
                     );
                 };
-                let key = self.items[i][&self.id].clone();
-                let item = if matches!(op, Op::Replace(_)) {
-                    let mut item = body;
-                    item.insert(self.id.clone(), key);
-                    Value::Object(item)
+                if let Some((field, value, given)) = Self::changes_scope(&body, &scope) {
+                    return changed(field, value, &given);
+                }
+                // The id and the scope fields stay as they are.
+                let mut kept = vec![(self.id.clone(), self.items[i][&self.id].clone())];
+                for (field, _) in &scope {
+                    if let Some(v) = self.items[i].get(field) {
+                        kept.push((field.clone(), v.clone()));
+                    }
+                }
+                let mut item = if matches!(op, Op::Replace(_)) {
+                    Value::Object(body)
                 } else {
                     let mut item = self.items[i].clone();
                     merge(&mut item, &Value::Object(body));
-                    if let Value::Object(map) = &mut item {
-                        map.insert(self.id.clone(), key);
-                    }
                     item
                 };
+                if let Value::Object(map) = &mut item {
+                    for (field, value) in kept {
+                        map.insert(field, value);
+                    }
+                }
                 self.items[i] = item.clone();
                 let what = if matches!(op, Op::Replace(_)) {
                     "replaced"
@@ -336,7 +473,7 @@ impl Collection {
                     format!("{name}: {what} {id}"),
                 )
             }
-            Op::Delete(id) => match self.position(id) {
+            Op::Delete(id) => match self.position(id, &scope) {
                 Some(i) => {
                     let item = self.items.remove(i);
                     (
@@ -351,7 +488,7 @@ impl Collection {
 
     /// `GET path`: the items the query filters, a page of them if the
     /// list pages, wrapped if it wraps.
-    fn list(&self, req: &Parsed, cors: bool) -> (Response, String) {
+    fn list(&self, req: &Parsed, scope: &[(String, String)], cors: bool) -> (Response, String) {
         let list = &self.list;
         let paging = |key: &Option<String>| {
             key.as_deref().and_then(|key| {
@@ -361,7 +498,11 @@ impl Collection {
                     .and_then(|(_, v)| v.trim().parse::<u64>().ok())
             })
         };
-        let mut items: Vec<&Value> = self.items.iter().collect();
+        let mut items: Vec<&Value> = self
+            .items
+            .iter()
+            .filter(|item| Self::in_scope(item, scope))
+            .collect();
         if list.filter_query {
             for (key, value) in &req.query {
                 let is_paging = [&list.page_param, &list.page_size_param]

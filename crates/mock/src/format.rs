@@ -36,7 +36,9 @@ const ORDERS: &[(&str, &[&str])] = &[
     ),
     (
         "collection",
-        &["name", "path", "id", "seed", "items", "new_id", "list"],
+        &[
+            "name", "path", "params", "id", "seed", "items", "new_id", "list",
+        ],
     ),
     (
         "websocket",

@@ -126,6 +126,29 @@ For hand-made pages (a cursor API, say), match the query instead:
 `match = { method = "GET", path = "/api/feed", query = { cursor = "abc*" } }`,
 a mock per page, the last page first when globs overlap.
 
+## Nested resources
+
+A collection whose path has parameters keeps each parent's items apart:
+`GET /api/users/7/todos` lists the items whose `user` field is 7 (as
+text, so a number in the seed matches), an item of another user is 404,
+and a POST gets `user` set. `params` names another field for a
+parameter, here `userId`. Ids stay unique across all users.
+
+```toml
+# e2e/mocks/todos.toml
+[settings]
+scope = ["/api/**"]
+
+[[collection]]
+name = "todos"
+path = "/api/users/:user/todos"
+params = { user = "userId" }
+items = [
+  { id = 1, userId = 1, title = "Buy milk" },
+  { id = 2, userId = 2, title = "Walk the dog" },
+]
+```
+
 ## File upload
 
 `upload` puts files into the file input (or the chooser a button opens);

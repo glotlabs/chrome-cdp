@@ -1,0 +1,12 @@
+# A nested collection (plan 19, milestone 19.1): each user's todos at
+# /mock/api/users/:user/todos, kept apart by their `user` field.
+[settings]
+scope = ["/mock/api/**"]
+
+[[collection]]
+name = "todos"
+path = "/mock/api/users/:user/todos"
+items = [
+  { id = 1, user = 1, title = "Buy milk" },
+  { id = 2, user = 2, title = "Walk the dog" },
+]

@@ -563,6 +563,18 @@ fn stateful_problems_point_at_the_line() {
             "[[collection]]\nname = \"t\"\npath = \"t\"\n",
             "base.toml:3:8: collection.path: `t` is no path",
         ),
+        (
+            "[[collection]]\nname = \"t\"\npath = \"/u/:user/t\"\nparams = { owner = \"ownerId\" }\n",
+            "base.toml:4:10: collection.params: /u/:user/t has no parameter :owner (it has :user)",
+        ),
+        (
+            "[[collection]]\nname = \"t\"\npath = \"/t\"\nparams = { user = \"userId\" }\n",
+            "collection.params: /t has no parameter :user (it has none)",
+        ),
+        (
+            "[[collection]]\nname = \"t\"\npath = \"/u/:user/t\"\nparams = { user = \"\" }\n",
+            "collection.params: :user maps to an empty field name",
+        ),
     ];
     for (text, expected) in cases {
         let err = load_err(&[("base.toml", text)]);
@@ -571,4 +583,189 @@ fn stateful_problems_point_at_the_line() {
             "{text}\n→ {err}\nexpected {expected}"
         );
     }
+}
+
+const NESTED: &str = r#"
+[settings]
+scope = ["/api/**"]
+
+[[collection]]
+name = "todos"
+path = "/api/users/:user/todos"
+seed = "data/todos.json"
+list = { filter_query = true, page_param = "page", page_size = 2 }
+
+[[collection]]
+name = "notes"
+path = "/api/teams/:team/notes"
+params = { team = "teamId" }
+items = [
+  { id = "a", teamId = "red", text = "one" },
+  { id = "b", teamId = "blue", text = "two" },
+]
+"#;
+
+fn nested() -> tempfile::TempDir {
+    dir(&[
+        ("base.toml", NESTED),
+        (
+            "data/todos.json",
+            r#"[{"id": 1, "user": 7, "title": "Buy milk", "done": false},
+                {"id": 2, "user": 8, "title": "Walk dog", "done": false},
+                {"id": 3, "user": 7, "title": "Write tests", "done": true},
+                {"id": 4, "user": 7, "title": "Ship it", "done": false}]"#,
+        ),
+    ])
+}
+
+fn ids(body: &Value) -> Vec<i64> {
+    body.as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["id"].as_i64().unwrap())
+        .collect()
+}
+
+#[test]
+fn nested_collections_keep_each_parents_items_apart() {
+    let d = nested();
+    let mut m = mocks(d.path(), &["base"]);
+    // A list sees its user's items only; paging and filters come after.
+    let (_, headers, body, outcome) = full(&mut m, "GET", "http://app/api/users/7/todos", None);
+    assert_eq!(ids(&body), [1, 3]);
+    assert_eq!(header(&headers, "x-total-count"), Some("3"));
+    assert_eq!(outcome, "fulfill 200 (todos: list page 1, 2 of 3 items)");
+    let (_, body, _) = answer(&mut m, "GET", "http://app/api/users/7/todos?page=2", None);
+    assert_eq!(ids(&body), [4]);
+    let (_, body, _) = answer(
+        &mut m,
+        "GET",
+        "http://app/api/users/7/todos?done=true",
+        None,
+    );
+    assert_eq!(ids(&body), [3]);
+    let (_, body, _) = answer(&mut m, "GET", "http://app/api/users/8/todos", None);
+    assert_eq!(ids(&body), [2]);
+    let (_, body, _) = answer(&mut m, "GET", "http://app/api/users/9/todos", None);
+    assert_eq!(body, json!([]));
+
+    // An item of another user is not found, for every method.
+    let (status, body, _) = answer(&mut m, "GET", "http://app/api/users/7/todos/2", None);
+    assert_eq!(
+        (status, body),
+        (404, json!({"error": "not found: todos/2"}))
+    );
+    let (_, body, _) = answer(&mut m, "GET", "http://app/api/users/8/todos/2", None);
+    assert_eq!(body["title"], "Walk dog");
+    for method in ["PUT", "PATCH", "DELETE"] {
+        let (status, _, _) = answer(
+            &mut m,
+            method,
+            "http://app/api/users/7/todos/2",
+            Some(r#"{"done": true}"#),
+        );
+        assert_eq!(status, 404, "{method}");
+    }
+
+    // A POST gets the user, a number as in the seed, and an id unique
+    // across every user's items.
+    let (status, headers, body, _) = full(
+        &mut m,
+        "POST",
+        "http://app/api/users/8/todos",
+        Some(r#"{"title": "Feed cat"}"#),
+    );
+    assert_eq!(status, 201);
+    assert_eq!(body, json!({"id": 5, "title": "Feed cat", "user": 8}));
+    assert_eq!(header(&headers, "location"), Some("/api/users/8/todos/5"));
+    let (_, body, _) = answer(&mut m, "GET", "http://app/api/users/8/todos", None);
+    assert_eq!(ids(&body), [2, 5]);
+    // A POST for a user no item has yet.
+    let (_, body, _) = answer(
+        &mut m,
+        "POST",
+        "http://app/api/users/12/todos",
+        Some(r#"{"title": "New here", "user": "12"}"#),
+    );
+    assert_eq!(body["user"], json!(12));
+    assert_eq!(body["id"], json!(6));
+    // A body naming another user is refused.
+    let (status, body, _) = answer(
+        &mut m,
+        "POST",
+        "http://app/api/users/8/todos",
+        Some(r#"{"title": "Sneaky", "user": 7}"#),
+    );
+    assert_eq!(status, 400);
+    assert_eq!(
+        body["error"],
+        "todos: user is 8 here (the path says so); the body gives 7"
+    );
+
+    // PUT and PATCH keep the user; a body that changes it is refused.
+    let (_, body, _) = answer(
+        &mut m,
+        "PUT",
+        "http://app/api/users/7/todos/1",
+        Some(r#"{"title": "Buy oat milk"}"#),
+    );
+    assert_eq!(body, json!({"title": "Buy oat milk", "id": 1, "user": 7}));
+    let (_, body, _) = answer(
+        &mut m,
+        "PATCH",
+        "http://app/api/users/7/todos/1",
+        Some(r#"{"done": true, "user": 7}"#),
+    );
+    assert_eq!(body["done"], json!(true));
+    for (method, patch) in [("PUT", r#"{"user": 8}"#), ("PATCH", r#"{"user": null}"#)] {
+        let (status, _, _) = answer(
+            &mut m,
+            method,
+            "http://app/api/users/7/todos/1",
+            Some(patch),
+        );
+        assert_eq!(status, 400, "{method} {patch}");
+    }
+
+    // DELETE removes only the user's item.
+    let (status, _, _) = answer(&mut m, "DELETE", "http://app/api/users/8/todos/3", None);
+    assert_eq!(status, 404);
+    let (status, _, _) = answer(&mut m, "DELETE", "http://app/api/users/7/todos/3", None);
+    assert_eq!(status, 200);
+    let (_, body, _) = answer(&mut m, "GET", "http://app/api/users/7/todos", None);
+    assert_eq!(ids(&body), [1, 4]);
+
+    // `mock state` shows every user's items.
+    let Some(StateItem::Collection { items, .. }) = m.lookup("todos") else {
+        panic!()
+    };
+    assert_eq!(ids(&Value::Array(items)), [1, 2, 4, 5, 6]);
+
+    // Explain names the parameters and whether the item is in scope.
+    let data = m.explain(&req("GET", "http://app/api/users/8/todos/1", None));
+    assert_eq!(data.params["user"], "8");
+    assert!(!data.params.contains_key("chrome_cdp_item"));
+    assert_eq!(data.outcome, "collection todos: get 1 (404, no todos/1)");
+}
+
+#[test]
+fn nested_collections_map_parameters_to_fields() {
+    let d = nested();
+    let mut m = mocks(d.path(), &["base"]);
+    let (_, body, _) = answer(&mut m, "GET", "http://app/api/teams/red/notes", None);
+    assert_eq!(body, json!([{"id": "a", "teamId": "red", "text": "one"}]));
+    let (status, _, _) = answer(&mut m, "GET", "http://app/api/teams/red/notes/b", None);
+    assert_eq!(status, 404);
+    // Text ids in the seed: the new item's field is text too.
+    let (status, body, _) = answer(
+        &mut m,
+        "POST",
+        "http://app/api/teams/blue/notes",
+        Some(r#"{"text": "three"}"#),
+    );
+    assert_eq!(status, 201);
+    assert_eq!(body["teamId"], json!("blue"));
+    assert!(body.get("team").is_none());
+    let (_, body, _) = answer(&mut m, "GET", "http://app/api/teams/blue/notes", None);
+    assert_eq!(body.as_array().unwrap().len(), 2);
 }

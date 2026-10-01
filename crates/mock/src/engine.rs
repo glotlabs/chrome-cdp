@@ -823,8 +823,8 @@ impl Mocks {
                     let coll = &set.collections[collection];
                     (
                         Some(collection_ref(set, coll)),
-                        collection_outcome(coll, &op),
-                        BTreeMap::new(),
+                        collection_outcome(coll, &op, &parsed.path),
+                        coll.path_params(&parsed.path),
                     )
                 }
             }
@@ -947,12 +947,12 @@ fn collection_info(set: &MockSet, c: &Collection) -> MockCollectionInfo {
 }
 
 /// What a collection would do: `collection todos: get 7 (200)`.
-fn collection_outcome(c: &Collection, op: &Op) -> String {
+fn collection_outcome(c: &Collection, op: &Op, path: &str) -> String {
     let status = match op {
         Op::List => "200".to_owned(),
         Op::Create => "201, or 400 without a JSON object body".to_owned(),
         Op::Get(id) | Op::Replace(id) | Op::Update(id) | Op::Delete(id) => {
-            if c.has(id) {
+            if c.has_at(id, path) {
                 "200".to_owned()
             } else {
                 format!("404, no {}/{id}", c.name)

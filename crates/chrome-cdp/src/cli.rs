@@ -1735,11 +1735,13 @@ files are relative to the mocks directory:
   respond = { json_file = \"data/products/{{params.id}}.json\" }
 
 Match on: method, path (:param, *, **), url, regex, query, headers, json
-(a subset; \"*\" matches anything), form, body, graphql. Answer with
+(a subset; \"*\" matches anything), form (urlencoded or multipart; a
+file field's value is its file name), body, graphql. Answer with
 status, headers and one of json, json_file, body, body_file or file; or
 with abort, or passthrough (plus patch); delay holds the answer. Templates:
-{{params.x}} {{query.x}} {{headers.x}} {{json.x}} {{uuid}} {{now}}
-{{seq}} {{faker.name}} {{state.x}}. A json_file that does not exist
+{{params.x}} {{query.x}} {{headers.x}} {{json.x}} {{form.x}}
+{{form_files.x.filename}} {{uuid}} {{now}} {{seq}} {{faker.name}}
+{{state.x}}. A json_file that does not exist
 answers 404. `chrome-cdp schema mocks` prints the file format's JSON
 Schema.
 
@@ -1748,7 +1750,9 @@ repeat-last, cycle or unmatched). [state] declares named values that
 mocks require (`when = { logged_in = true }`) and change (`set_state`,
 `unset_state`). A [[collection]] is a fake REST resource (name, path,
 seed = \"data/todos.json\"): GET lists, POST adds, GET/PUT/PATCH/DELETE
-path/:id. `mock state` shows it all, `mock reset` starts it over.
+path/:id; a path with parameters (/api/users/:user/todos) keeps each
+user's items apart by their `user` field. `mock state` shows it all,
+`mock reset` starts it over.
 
 Beyond fetches: a [[websocket]] (url, on_open, on_message) answers the
 page's WebSockets (`mock ws send` pushes more), `respond = { sse = [...] }`

@@ -629,7 +629,16 @@ impl Check<'_> {
                 ));
             }
         }
-        Collection::new(name, line, path, id, new_id, seed_file, seed, list)
+        let params = match raw.params {
+            Some(fields) => {
+                let span = fields.span();
+                collection::scope_fields(&path, fields.get())
+                    .map_err(|m| (span, format!("collection.params: {m}")))?
+            }
+            None => collection::scope_fields(&path, &BTreeMap::new())
+                .map_err(|m| (span.clone(), format!("collection.params: {m}")))?,
+        };
+        Collection::new(name, line, path, id, params, new_id, seed_file, seed, list)
             .map_err(|m| (span, format!("collection.path: {m}")))
     }
 
