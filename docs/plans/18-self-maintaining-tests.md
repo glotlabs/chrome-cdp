@@ -1,6 +1,6 @@
 # Plan 18 — Tests that maintain themselves
 
-Status: IN PROGRESS (18.1-18.6 done)
+Status: DONE (18.1-18.7)
 Depends on: 11 (the test runner, `history --as-scenario`, `mock record`), 13 (the target graph, for `record` in iframes)
 Roadmap: track 7 of [plan 12](12-after-v1.md)
 
@@ -401,9 +401,9 @@ and `convert-real-world-specs` (18.7):
 - [x] `record` round trip: recorded fixture flows pass with `test`.
 - [x] No password or `${secret:…}` value appears in fingerprints,
       patches, bundles or recordings (a test searches for it).
-- [ ] The track 7 backlog notes of 18.1 and 18.7 are done and their
+- [x] The track 7 backlog notes of 18.1 and 18.7 are done and their
       files deleted.
-- [ ] `cargo xtask release check` passes: the CLI and schemas only grew.
+- [x] `cargo xtask release check` passes: the CLI and schemas only grew.
 
 ## Tests
 
@@ -690,3 +690,52 @@ _(append here)_
   navigations use chrome-cdp's commands (`DOM.setFileInputFiles` needs a
   node id), which record alike. `?card=` loads the iframe from origin B
   for the OOPIF case. Expected files are in `crates/chrome-cdp/tests/record/`.
+- 18.7 suites (`testdata/convert/README.md`): Playwright's TodoMVC
+  `integration.spec.ts` and its mock-battery and svgomg examples (v1.48.0,
+  Apache-2.0), Next.js's `with-playwright` example (MIT), and six
+  freeCodeCamp e2e files (BSD-3-Clause): four suites, 13 files, unmodified,
+  with their licenses. A golden case per file (`convert-*.txt`, text only,
+  `--max-chars 0`), not one per suite, so every file's TODO lines are kept.
+- 18.7 TODO count (tests / steps / TODOs), before → after:
+  playwright-todomvc 25/89/81 → 25/307/0; playwright-examples 10/38/19 →
+  10/57/13; nextjs-with-playwright 2/8/0 → 2/8/0; freecodecamp 17/45/76 →
+  17/93/56. Total 176 → 69. The most common reasons were helpers of the
+  file (75 "not a Playwright call"), module constants (41 "a value
+  computed at run time", mostly `TODO_ITEMS[0]`), list matchers (16),
+  values in variables (16) and loops (7). What is left is outside the
+  file: freeCodeCamp's imported translations JSON and `./utils` helpers
+  (`getEditors`, `alertToBeVisible`), its `userPreset` fixture option, and
+  values only known at run time (a download's path, `log` arrays a Node
+  function fills).
+- 18.7 translations: constants (texts, numbers, lists and objects, through
+  `[i]`, `.key`, `.length`, `.slice()`); `for…of` over a known list,
+  unrolled (all or nothing: a body step convert cannot translate makes
+  the loop one TODO line, not one per item); helpers of the file inlined
+  with parameters bound to the call's arguments (a TODO line inside says
+  `in NAME(), called on line N`), and helpers that return a locator;
+  `toHaveText([…])`/`toHaveClass([…])` as a count and one check per
+  element (an empty class is `class '/^$/'`, which a missing attribute
+  passes as in Playwright); `waitForFunction`/`evaluate` with a JSON
+  argument; `toBeEmpty` on a `placeholder=` locator (only fields have
+  one) as `value ''`; `browserName` is `chromium`, so conditions on it
+  hold or not; and the `convert-test-tags-and-annotations` note (details
+  objects: `tag` → `@tags`, a skip or fixme annotation → `@skip`).
+- 18.7 constants are only names the file never changes: the parser lists
+  names assigned to again, `++`/`--`, or changed with an array method that
+  works in place (`parse::mutated`). `fill` is not one of those methods: it
+  is mostly a locator's.
+- 18.7 TypeScript: Playwright compiles the spec, so a function it sends to
+  the page is JavaScript; convert's sources kept the types (`(todo: any)
+  =>` failed in the page). The parser now records the byte ranges of the
+  TypeScript it reads past (annotations, return types, `as`, non-null `!`,
+  type arguments) and a function's source leaves them out. Types in code
+  the parser does not read (an `if`) are caught by `parse::has_types`,
+  which makes the call a TODO line instead.
+- 18.7 round trip: `site/convert/todomvc.html` is a TodoMVC with the demo
+  app's DOM (test ids, labels, classes, the `react-todos` key), so the
+  converted TodoMVC suite runs with `chrome-cdp test`: 25 of 25 pass
+  (`the_converted_todomvc_suite_passes`). This checks that what convert
+  writes is right, not only that it parses.
+- 18.7 `editor-support-cdp` (track 7) is left as a note: 18.1 leaves it
+  out and no milestone takes it; a tree-sitter grammar and a VS Code
+  extension belong in repositories of their own.

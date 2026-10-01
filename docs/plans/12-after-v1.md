@@ -318,6 +318,7 @@ finding and passes with it in the baseline.
 ### Track 7 ★ — Tests that maintain themselves
 
 Plan: [18-self-maintaining-tests](18-self-maintaining-tests.md).
+Status: DONE (plan 18, 18.1-18.7; `editor-support-cdp` stays a note).
 
 **Why.** v1 makes tests cheap to write. What costs over time is
 keeping them working: broken locators after a redesign, flakes nobody
