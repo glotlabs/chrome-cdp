@@ -1,6 +1,6 @@
 # Plan 19 — Mocks
 
-Status: IN PROGRESS (19.1-19.2 done)
+Status: IN PROGRESS (19.1-19.3 done)
 Depends on: 11 (the mock format, `mock record`/`import`/`check`/`serve`, WebSocket and SSE mocks), 13 §13.2 (mocks in every target), 14 §14.7 (WebSocket frames in the network log)
 Roadmap: track 8 of [plan 12](12-after-v1.md)
 
@@ -368,10 +368,10 @@ warnings are printed. Add:
 - [x] A WebSocket client that is not a browser (a test using
       `tokio-tungstenite`) talks to `mock serve`'s `[[websocket]]`
       mock, and `mock ws send --serve` reaches it.
-- [ ] `mock serve --upstream` forwards passthrough mocks and unmatched
+- [x] `mock serve --upstream` forwards passthrough mocks and unmatched
       owned requests, applies `patch`, and answers 502 with a reason
       when the upstream is down.
-- [ ] examples/e2e-shop passes with `--backend mock`, `--backend local`
+- [x] examples/e2e-shop passes with `--backend mock`, `--backend local`
       and `--backend hybrid`.
 - [ ] `mock gen` over the Petstore spec is deterministic and the set it
       writes passes `mock check --openapi` with no errors.
@@ -452,3 +452,19 @@ _(append here)_
   every partition. In a `test` run, a push step polls the browser and the
   mock server with no wait until either has a match, so a step whose
   socket is only in the browser is as fast as before.
+- 19.3: a real backend starts its web server's `mock_server` only when it
+  has an `upstream` (without one it would answer 404 for the real API),
+  and it serves the backend's `mocks`, as the browser does in hybrid
+  mode; mock mode is unchanged. `upstream_timeout` is the config's
+  `--upstream-timeout`.
+- 19.3: a forwarded answer is streamed as it comes (an upstream event
+  stream stays one) unless a `patch` reads it; then the request goes
+  without `Accept-Encoding`, so the body comes back plain. Redirects are
+  passed on, not followed, as a browser's fetch would see them.
+- 19.3: the shop reads the provider's URL from `public/config.js` (a
+  script the static server and the fixture server serve as is), not a
+  build-time variable: tests move it to a free port without a rebuild.
+  The mock set's scope is the provider's origin on any port
+  (`http://127.0.0.1:*/v1/**`), and the set is in `default_mocks` too.
+- 19.3: the fixture provider accepts every card, so the declined card is
+  the mock's alone and its scenario is `@backend mock hybrid`.
