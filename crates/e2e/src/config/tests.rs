@@ -125,6 +125,11 @@ fn defaults_fill_an_empty_section() {
         parse("[e2e]\nfingerprints = \"read\"\n").fingerprints,
         super::Fingerprints::Read
     );
+    assert!(c.pages.is_empty());
+    assert_eq!(
+        parse("[e2e]\npages = [\"/\", \"/products/:id\"]\n").pages,
+        ["/", "/products/:id"]
+    );
     assert_eq!(c.openapi, None);
     assert_eq!(
         parse("[e2e]\nopenapi = \"api/openapi.yaml\"\n").openapi,
@@ -264,6 +269,10 @@ fn a_web_server_may_have_a_mock_server() {
 
 #[test]
 fn errors_point_at_the_line_and_column() {
+    assert_eq!(
+        error("[e2e]\npages = [\"products\"]\n"),
+        "/p/chrome-cdp.toml:2:9: e2e.pages: `products` is not a path pattern; write paths such as \"/products/:id\""
+    );
     assert_eq!(
         error("[e2e]\ntimeout = \"30\"\n"),
         "/p/chrome-cdp.toml:2:11: e2e.timeout: `30` needs a unit; use e.g. 30s or 30ms"

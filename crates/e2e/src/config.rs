@@ -107,6 +107,9 @@ pub struct Config {
     pub allow_console_errors: bool,
     /// Whether `test` reads and writes `e2e/fingerprints` (plan 18.2).
     pub fingerprints: Fingerprints,
+    /// The app's pages as path patterns (`/products/:id`), which `test
+    /// --ui-coverage` groups by; empty: by path template (plan 18.4).
+    pub pages: Vec<String>,
     /// A test's time limit.
     pub timeout: Duration,
     /// Where test artifacts go (`.results`).
@@ -511,6 +514,7 @@ impl Check<'_> {
             retries: raw.retries.unwrap_or(0),
             allow_console_errors: raw.allow_console_errors.unwrap_or(false),
             fingerprints: raw.fingerprints.unwrap_or_default(),
+            pages: raw.pages.map(pages).transpose()?.unwrap_or_default(),
             timeout: raw
                 .timeout
                 .map(|t| duration("e2e.timeout", &t))
@@ -790,6 +794,21 @@ fn mock_sets(key: &str, raw: Spanned<Vec<String>>) -> Result<Vec<String>, Proble
     Ok(raw.into_inner())
 }
 
+/// `pages`: paths that start with `/`, without a query or fragment.
+fn pages(raw: Spanned<Vec<String>>) -> Result<Vec<String>, Problem> {
+    for page in raw.get_ref() {
+        if !page.starts_with('/') || page.contains(['?', '#', ' ']) {
+            return Err((
+                raw.span(),
+                format!(
+                    "e2e.pages: `{page}` is not a path pattern; write paths such as \"/products/:id\""
+                ),
+            ));
+        }
+    }
+    Ok(raw.into_inner())
+}
+
 fn commands(key: &str, raw: Option<Spanned<Vec<String>>>) -> Result<Vec<String>, Problem> {
     let Some(raw) = raw else {
         return Ok(Vec::new());
@@ -821,6 +840,7 @@ struct RawE2e {
     retries: Option<u32>,
     allow_console_errors: Option<bool>,
     fingerprints: Option<Fingerprints>,
+    pages: Option<Spanned<Vec<String>>>,
     timeout: Option<Spanned<String>>,
     artifacts: Option<String>,
     watch: Option<Vec<String>>,
