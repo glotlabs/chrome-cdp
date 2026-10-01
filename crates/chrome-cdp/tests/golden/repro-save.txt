@@ -1,0 +1,16 @@
+$ chrome-cdp repro save <sandbox>/bundle --name 'orders a mouse' --force
+exit: 0
+--- stdout
+<sandbox>/bundle: repro "orders a mouse" with 5 steps; 4 mocks from 4 requests
+next: chrome-cdp test <sandbox>/bundle
+
+$ chrome-cdp repro save <sandbox>/bundle --name 'orders a mouse' --force --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"files":["README.md","chrome-cdp.toml","evidence/console.txt","evidence/errors.txt","evidence/requests.txt","evidence/screenshot.png","evidence/snapshot.txt","mocks/data/favicon.ico.txt","mocks/data/record/api/products.json","mocks/data/record/shop.html","mocks/repro.toml","repro.cdp","state.json"],"mocks":4,"name":"orders a mouse","path":"<sandbox>/bundle","requests":4,"started":true,"steps":5}}
+
+$ chrome-cdp repro save <sandbox>/bundle --name 'orders a mouse' --force -q
+exit: 0
+--- stdout
+<sandbox>/bundle
+

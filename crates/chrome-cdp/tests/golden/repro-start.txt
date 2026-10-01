@@ -1,0 +1,11 @@
+$ chrome-cdp repro start --scope '/record/**'
+exit: 0
+--- stdout
+started a repro at <time>; kept 0 cookies and the storage of 0 origins; keeping the bodies of /record/**
+next: reproduce the bug, then chrome-cdp repro save repro
+
+$ chrome-cdp repro start --scope '/record/**' --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"bodies":0,"cookies":0,"origins":0,"restarted":false,"scope":["/record/**"],"started":"<time>"}}
+

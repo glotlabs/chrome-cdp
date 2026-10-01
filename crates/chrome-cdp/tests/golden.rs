@@ -150,6 +150,20 @@ const HISTORY: &[&[&str]] = &[
     ],
 ];
 
+/// [`HISTORY`]'s page after `repro start`, with an order sent.
+const REPRO: &[&[&str]] = &[
+    &["open", "{site}/record/shop.html"],
+    &["wait", "text=Monitor"],
+    &["repro", "start"],
+    &[
+        "click",
+        "role=listitem >> has-text=Mouse >> role=button[name=\"Add\"]",
+    ],
+    &["fill", "role=textbox[name=\"Quantity\"]", "2"],
+    &["click", "role=button[name=\"Buy\"]"],
+    &["expect", "role=status", "text", "ordered"],
+];
+
 /// The mock fixture page with the `base` and `cart` sets in use, after
 /// it sent an order and asked for the cart, which no mock answers (plan
 /// 11.5).
@@ -2080,6 +2094,32 @@ const CASES: &[Case] = &[
         fixture: Fixture::SessionAfter(HISTORY),
     },
     Case {
+        name: "repro-start",
+        args: &["repro", "start", "--scope", "/record/**"],
+        // -q prints the time it started, which changes.
+        modes: &["", "--json"],
+        fixture: Fixture::SessionPerMode,
+    },
+    Case {
+        name: "repro-save",
+        args: &[
+            "repro",
+            "save",
+            "{sandbox}/bundle",
+            "--name",
+            "orders a mouse",
+            "--force",
+        ],
+        modes: ALL,
+        fixture: Fixture::SessionAfter(REPRO),
+    },
+    Case {
+        name: "repro-save-not-empty",
+        args: &["repro", "save", "{sandbox}"],
+        modes: ERR,
+        fixture: Fixture::Session,
+    },
+    Case {
         name: "mock-check",
         args: &["mock", "check"],
         modes: ALL,
@@ -3700,6 +3740,7 @@ impl Normalizer {
         let digits = |c: char| c.is_ascii_digit();
         let uptime = |c: char| c.is_ascii_digit() || matches!(c, 'h' | 'm' | 's');
         let version = |c: char| c.is_ascii_digit() || c == '.';
+        let iso_time = |c: char| c.is_ascii_digit() || matches!(c, '-' | ':' | 'T' | '.' | 'Z');
         [
             ("pid ", &digits as &dyn Fn(char) -> bool, "<pid>"),
             ("\"pid\":", &digits, "<pid>"),
@@ -3738,6 +3779,9 @@ impl Normalizer {
                 "<rand>",
             ),
             ("Chrome/", &version, "<version>"),
+            // When `repro start` ran.
+            (" a repro at ", &iso_time, "<time>"),
+            ("\"started\":\"", &iso_time, "<time>"),
         ]
         .iter()
         .fold(text, |text, (prefix, keep, to)| {

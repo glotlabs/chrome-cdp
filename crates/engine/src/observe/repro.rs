@@ -125,7 +125,7 @@ impl Engine {
             scope.join(", ")
         };
         let text = format!(
-            "{} a repro at {started}: kept {} {} and storage of {} {}; keeping the bodies of {what}\nnext: reproduce the bug, then {save}",
+            "{} a repro at {started}; kept {} {} and the storage of {} {}; keeping the bodies of {what}\nnext: reproduce the bug, then {save}",
             if already { "restarted" } else { "started" },
             data.cookies,
             if data.cookies == 1 {

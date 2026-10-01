@@ -1,0 +1,11 @@
+$ chrome-cdp repro save <sandbox>
+exit: 2
+--- stderr
+error: <sandbox> has files already
+  hint: name a new directory, or --force replaces the bundle's files in it
+
+$ chrome-cdp repro save <sandbox> --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"<sandbox> has files already","hint":"name a new directory, or --force replaces the bundle's files in it"}}
+

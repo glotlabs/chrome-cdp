@@ -850,6 +850,13 @@
             "null"
           ]
         },
+        "message": {
+          "description": "The error's message, if it failed, then a line for each of its\nnotes (`  actual: text \"…\"`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "n": {
           "description": "Its number in the session's history, from 1.",
           "format": "uint64",
@@ -858,6 +865,10 @@
         },
         "ok": {
           "description": "Whether it succeeded.",
+          "type": "boolean"
+        },
+        "password": {
+          "description": "Whether it typed into a password field (`fill`, `type`): a repro\nbundle writes `${secret:PASSWORD}` instead of its value.",
           "type": "boolean"
         },
         "refs": {
