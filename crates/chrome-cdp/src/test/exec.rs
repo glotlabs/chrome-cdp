@@ -571,7 +571,12 @@ impl Runner<'_> {
                 let served = self
                     .served()
                     .map(|server| (server.url(), server.journal(Some(&id))));
-                logs = artifacts::logs(dir, &context, served, &|words| {
+                let started_ms = self
+                    .recorder
+                    .borrow()
+                    .as_ref()
+                    .map_or(0, Recorder::started_ms);
+                logs = artifacts::logs(dir, &context, served, started_ms, &|words| {
                     self.invoke(words, Some(&context), None)
                 });
                 if let Some(server) = self.served() {

@@ -501,6 +501,7 @@ mod tests {
         let logs = Logs {
             errors: vec!["t1 boom".into()],
             bad_requests: Vec::new(),
+            requests: Vec::new(),
         };
         let subject = Subject {
             title: "buys",

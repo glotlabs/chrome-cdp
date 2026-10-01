@@ -125,6 +125,9 @@ impl StepRecord {
 pub(super) struct Recorder {
     pub(super) dir: PathBuf,
     started: Instant,
+    /// The same moment, in ms since the Unix epoch, for the request
+    /// journal's times.
+    started_ms: u64,
     steps: Vec<StepRecord>,
     file: Option<BufWriter<File>>,
     trace: bool,
@@ -141,6 +144,7 @@ impl Recorder {
         Self {
             dir,
             started: Instant::now(),
+            started_ms: epoch_ms(),
             steps: Vec::new(),
             file,
             trace,
@@ -178,6 +182,18 @@ impl Recorder {
     pub(super) fn steps(&self) -> &[StepRecord] {
         &self.steps
     }
+
+    /// When it started, in ms since the Unix epoch.
+    pub(super) fn started_ms(&self) -> u64 {
+        self.started_ms
+    }
+}
+
+/// Now, in ms since the Unix epoch.
+fn epoch_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, millis)
 }
 
 /// Removes what `dir` holds and makes it again.
@@ -325,17 +341,36 @@ pub(super) struct Logs {
     /// Requests that failed, got a status of 400 or more, or no mock
     /// answered; one line each.
     pub(super) bad_requests: Vec<String>,
+    /// Every request of the browser's tabs, oldest first, with its times.
+    pub(super) requests: Vec<Timed>,
+}
+
+/// A request of the journal, with when it was sent and answered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Timed {
+    pub(super) method: String,
+    pub(super) url: String,
+    /// `document`, `fetch`, `xhr`, … (`network --type`).
+    pub(super) kind: String,
+    /// When it was sent, in ms since the test (or hook) started.
+    pub(super) sent_ms: i64,
+    /// When its answer ended (or it failed); `None` while it was open.
+    pub(super) answered_ms: Option<i64>,
+    /// It was in a mock set's scope, and no mock answered it.
+    pub(super) unmatched: bool,
 }
 
 /// Writes `console.txt` and `requests.txt` into `dir`, from every tab of
 /// `context`.
 /// `served` is the mock server's URL and its requests of the test, if
 /// the run has one (plan 11.9); `requests.txt` lists them after the
-/// browser's.
+/// browser's. `started_ms` is when the test started (ms since the Unix
+/// epoch): each request's times are from then.
 pub(super) fn logs(
     dir: &Path,
     context: &str,
     served: Option<(String, Vec<RoutedRequest>)>,
+    started_ms: u64,
     invoke: &Invoke<'_>,
 ) -> Logs {
     let mut logs = Logs::default();
@@ -386,7 +421,7 @@ pub(super) fn logs(
         .and_then(|out| serde_json::from_value::<MockLogData>(out.data).ok())
         .map(|data| data.log)
         .unwrap_or_default();
-    let (mut text, bad) = journal(&networks, routed);
+    let (mut text, bad, timed) = journal(&networks, routed, started_ms);
     if let Some((url, served)) = served {
         let _ = writeln!(text, "\n== mock server {url}");
         for entry in &served {
@@ -398,6 +433,7 @@ pub(super) fn logs(
     }
     write(&dir.join(REQUESTS), &text);
     logs.bad_requests = bad;
+    logs.requests = timed;
     logs
 }
 
@@ -413,11 +449,19 @@ fn console_line(tab: &str, e: &protocol::schema::ConsoleEntry) -> String {
     line
 }
 
-/// `requests.txt`: each tab's requests, each with the mock (or route) that
-/// answered it; and the lines of the ones that went wrong.
-fn journal(networks: &[NetworkData], mut routed: Vec<RoutedRequest>) -> (String, Vec<String>) {
+/// `requests.txt`: each tab's requests, each with its times from
+/// `started_ms` and the mock (or route) that answered it; the lines of the
+/// ones that went wrong; and every request with its times, oldest first.
+fn journal(
+    networks: &[NetworkData],
+    mut routed: Vec<RoutedRequest>,
+    started_ms: u64,
+) -> (String, Vec<String>, Vec<Timed>) {
     let mut text = String::new();
     let mut bad = Vec::new();
+    let mut timed = Vec::new();
+    let since =
+        |ms: u64| i64::try_from(ms).unwrap_or(i64::MAX) - i64::try_from(started_ms).unwrap_or(0);
     for data in networks {
         let _ = writeln!(text, "== {}", data.tab);
         for entry in &data.requests {
@@ -429,8 +473,20 @@ fn journal(networks: &[NetworkData], mut routed: Vec<RoutedRequest>) -> (String,
                     && r.url == entry.url
             });
             let route = at.map(|i| routed.remove(i));
-            let line = request_line(entry, route.as_ref());
+            let sent_ms = since(entry.time_ms);
+            let answered_ms = entry
+                .duration_ms
+                .map(|d| sent_ms + i64::try_from(d).unwrap_or(0));
+            let line = request_line(entry, route.as_ref(), sent_ms, answered_ms);
             let unmatched = route.as_ref().is_some_and(|r| r.unmatched.is_some());
+            timed.push(Timed {
+                method: entry.method.clone(),
+                url: entry.url.clone(),
+                kind: entry.kind.clone(),
+                sent_ms,
+                answered_ms,
+                unmatched,
+            });
             if unmatched || entry.error.is_some() || entry.status.is_some_and(|s| s >= 400) {
                 bad.push(format!("{} {line}", data.tab));
             }
@@ -450,10 +506,19 @@ fn journal(networks: &[NetworkData], mut routed: Vec<RoutedRequest>) -> (String,
             text.push('\n');
         }
     }
-    (text, bad)
+    timed.sort_by_key(|t| t.sent_ms);
+    (text, bad, timed)
 }
 
-fn request_line(entry: &NetworkEntry, route: Option<&RoutedRequest>) -> String {
+/// A journal line: `#3 GET 200 URL fetch 12ms (sent +120ms, answered
+/// +132ms) ← mock "price" (shop.toml:6)`; the times are from the test's
+/// start.
+fn request_line(
+    entry: &NetworkEntry,
+    route: Option<&RoutedRequest>,
+    sent_ms: i64,
+    answered_ms: Option<i64>,
+) -> String {
     let status = match (&entry.status, &entry.error) {
         (Some(status), _) => status.to_string(),
         (None, Some(_)) => "failed".to_owned(),
@@ -473,10 +538,27 @@ fn request_line(entry: &NetworkEntry, route: Option<&RoutedRequest>) -> String {
     if let Some(error) = &entry.error {
         let _ = write!(line, " {error}");
     }
+    let _ = write!(line, " (sent {}, ", offset(sent_ms));
+    match answered_ms {
+        Some(ms) => {
+            let _ = write!(line, "answered {})", offset(ms));
+        }
+        None => line.push_str("not answered)"),
+    }
     if let Some(route) = route {
         line.push_str(&answered_by(route));
     }
     line
+}
+
+/// `+120ms`, `+1.2s`, or `-40ms` for before the test started.
+fn offset(ms: i64) -> String {
+    let d = protocol::format::duration(Duration::from_millis(ms.unsigned_abs()));
+    if ms < 0 {
+        format!("-{d}")
+    } else {
+        format!("+{d}")
+    }
 }
 
 /// ` ← mock "price" (shop.toml:6)`, or the route or unmatched set.
