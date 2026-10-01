@@ -564,8 +564,9 @@ fn push_header(response: &mut Response, name: &str, value: &str) {
 }
 
 /// JSON merge patch (RFC 7386): objects merge, `null` removes a key,
-/// anything else replaces.
-pub(crate) fn merge(target: &mut Value, patch: &Value) {
+/// anything else replaces. Also `passthrough`'s `patch` outside a
+/// browser (`mock serve --upstream`).
+pub fn merge(target: &mut Value, patch: &Value) {
     let Value::Object(patch) = patch else {
         *target = patch.clone();
         return;

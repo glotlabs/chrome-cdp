@@ -54,6 +54,7 @@ pub mod text;
 mod ws;
 
 pub use closest::{RequestFilter, Verdict};
+pub use collection::merge as merge_patch;
 pub use engine::{Answer, Mocks, Outcome, Seed, StateItem};
 pub use file::{AfterSequence, Cors, Unmatched, schema};
 pub use load::{Located, MockSet, Source, available};

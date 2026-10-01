@@ -16,8 +16,10 @@
 //! that does not shares the state across tests.
 //!
 //! Answers are as in the browser, except for what only a browser can do:
-//! `abort` closes the connection without an answer, `passthrough` (with no
-//! real server behind) answers 502, and a request no set owns answers 404.
+//! `abort` closes the connection without an answer, `passthrough` answers
+//! 502 (there is no real server behind) unless an [`Upstream`] is given
+//! (plan 19, milestone 19.3; see `upstream`), and a request no set owns
+//! answers 404.
 //! An `sse` answer streams its events, each after its delay, and then
 //! keeps the stream open.
 //!
@@ -45,8 +47,10 @@ use serde::Serialize;
 use serde_json::json;
 
 mod push;
+mod upstream;
 
 pub use push::{OnSocket, Push, PushError, Pushed, SocketLog, post_push};
+pub use upstream::{UPSTREAM_TIMEOUT, Upstream};
 
 /// The request header that picks a request's partition.
 pub const TEST_HEADER: &str = "x-chrome-cdp-test";
@@ -96,6 +100,8 @@ struct Shared {
     state: Mutex<State>,
     on_request: Option<OnRequest>,
     on_socket: std::sync::OnceLock<OnSocket>,
+    /// Where `passthrough` requests go; none: they answer 502.
+    forwarder: Option<upstream::Forwarder>,
 }
 
 struct State {
@@ -141,6 +147,19 @@ impl MockServer {
         seed: u64,
         on_request: Option<OnRequest>,
     ) -> std::io::Result<Self> {
+        Self::start_with(addr, sets, seed, on_request, None)
+    }
+
+    /// [`MockServer::start`], with `passthrough` answers forwarded to
+    /// `upstream` if given.
+    pub fn start_with(
+        addr: SocketAddr,
+        sets: Vec<MockSet>,
+        seed: u64,
+        on_request: Option<OnRequest>,
+        upstream: Option<Upstream>,
+    ) -> std::io::Result<Self> {
+        let forwarder = upstream.map(upstream::Forwarder::new).transpose()?;
         let listener = TcpListener::bind(addr)?;
         listener.set_nonblocking(true)?;
         let addr = listener.local_addr()?;
@@ -159,6 +178,7 @@ impl MockServer {
             seed,
             on_request,
             on_socket: std::sync::OnceLock::new(),
+            forwarder,
         });
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -195,6 +215,11 @@ impl MockServer {
     /// `http://127.0.0.1:4010`.
     pub fn url(&self) -> String {
         format!("http://{}", self.addr)
+    }
+
+    /// Where `passthrough` requests go, if anywhere.
+    pub fn upstream(&self) -> Option<&Upstream> {
+        self.shared.forwarder.as_ref().map(|f| &f.upstream)
     }
 
     /// Makes partition `id` afresh from `sets` (a test's own), with
@@ -309,6 +334,13 @@ enum Reply {
         mock: Option<MockRef>,
     },
     Abort(Duration),
+    /// `passthrough` with an upstream: forward it, then journal `entry`
+    /// (set by `decide`) with the upstream's answer.
+    Forward {
+        patch: Option<serde_json::Value>,
+        delay: Duration,
+        entry: Option<RoutedRequest>,
+    },
 }
 
 async fn handle(
@@ -365,6 +397,34 @@ async fn handle(
     };
     let reply = decide(shared, &request, test.clone(), origin.as_deref());
     match reply {
+        Reply::Forward {
+            patch,
+            delay,
+            entry,
+        } => {
+            tokio::time::sleep(delay).await;
+            let Some(forwarder) = &shared.forwarder else {
+                unreachable!("only decided with an upstream");
+            };
+            let forward = upstream::Forward {
+                method: &method,
+                target,
+                headers: &headers,
+                connection: upstream::connection_names(
+                    headers
+                        .iter()
+                        .filter(|(n, _)| n.eq_ignore_ascii_case("connection"))
+                        .map(|(_, v)| v.as_str()),
+                ),
+                body: &body,
+            };
+            let (response, note) = forwarder.forward(forward, patch.as_ref()).await;
+            if let Some(mut entry) = entry {
+                entry.outcome = format!("{} → {note}", entry.outcome);
+                journal(shared, &mut lock(&shared.state), test, entry, true);
+            }
+            Ok(response)
+        }
         Reply::Abort(delay) => {
             tokio::time::sleep(delay).await;
             Err(Aborted)
@@ -448,10 +508,17 @@ fn decide(
     partition.mocks.refresh();
     let now = partition.now_ms.unwrap_or_else(now_ms);
     let mut entry = entry(request.method, request.url, "server");
-    let (reply, outcome) = match partition.mocks.decide(request, now) {
+    let forward = shared.forwarder.is_some();
+    let (mut reply, outcome) = match partition.mocks.decide(request, now) {
         Outcome::Answer(answer) => {
             entry.mock = Some(answer.mock.clone());
-            let (mut reply, note) = reply(answer.response, answer.events, answer.delay, origin);
+            let (mut reply, note) = reply(
+                answer.response,
+                answer.events,
+                answer.delay,
+                origin,
+                forward,
+            );
             if let Reply::Fulfill { mock, .. } = &mut reply {
                 *mock = Some(answer.mock);
             }
@@ -475,7 +542,7 @@ fn decide(
             entry.unmatched = Some(set);
             entry.policy = Some(policy.as_str().to_owned());
             entry.closest = closest;
-            let (reply, note) = reply(response, None, Duration::ZERO, origin);
+            let (reply, note) = reply(response, None, Duration::ZERO, origin, forward);
             let outcome = match note {
                 Some(note) => format!("{outcome} ({note})"),
                 None => outcome,
@@ -503,6 +570,11 @@ fn decide(
         }
     };
     entry.outcome = outcome;
+    if let Reply::Forward { entry: pending, .. } = &mut reply {
+        // Journalled when the upstream answers.
+        *pending = Some(entry);
+        return reply;
+    }
     journal(shared, state, test, entry, true);
     reply
 }
@@ -577,12 +649,14 @@ fn entry(method: &str, url: &str, resource_type: &str) -> RoutedRequest {
 }
 
 /// A mock's response as an HTTP answer; the note says what the browser
-/// would have done instead.
+/// would have done instead. `forward`: there is an upstream for
+/// `passthrough`.
 fn reply(
     response: mock::Response,
     events: Option<Vec<SseEvent>>,
     delay: Duration,
     origin: Option<&str>,
+    forward: bool,
 ) -> (Reply, Option<&'static str>) {
     match response {
         mock::Response::Fulfill {
@@ -624,9 +698,17 @@ fn reply(
             )
         }
         mock::Response::Abort { .. } => (Reply::Abort(delay), Some("connection closed")),
+        mock::Response::Passthrough { patch } if forward => (
+            Reply::Forward {
+                patch,
+                delay,
+                entry: None,
+            },
+            None,
+        ),
         mock::Response::Passthrough { .. } => {
             let body = json!({
-                "error": "chrome-cdp mock serve: `passthrough` sends a request to the real server, and mock serve has none",
+                "error": "chrome-cdp mock serve: `passthrough` sends a request to the real server, and mock serve has none (--upstream URL gives it one)",
             });
             (
                 Reply::Fulfill {

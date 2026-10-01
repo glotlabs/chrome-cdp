@@ -9,7 +9,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use e2e::mock_server::{MockServer, Push, Served, SocketLog, TEST_HEADER, post_push};
+use e2e::mock_server::{
+    MockServer, Push, Served, SocketLog, TEST_HEADER, UPSTREAM_TIMEOUT, Upstream, post_push,
+};
 use futures_util::{SinkExt as _, StreamExt as _};
 use mock::{MockSet, Source};
 use serde_json::{Value, json};
@@ -517,4 +519,243 @@ fn post_push_reports_what_it_reached() {
         "{}",
         err.message
     );
+}
+
+const UPSTREAM: &str = r#"
+[settings]
+scope = ["/api/**", "/legacy/**"]
+unmatched = "passthrough"
+
+[[mock]]
+name = "mocked"
+match = { path = "/api/mocked" }
+respond = { json = { mocked = true } }
+
+[[mock]]
+name = "real"
+match = { path = "/api/real" }
+respond = { passthrough = true }
+
+[[mock]]
+name = "patched"
+match = { path = "/api/patched" }
+respond = { passthrough = true, patch = { added = true, method = "PATCHED" } }
+"#;
+
+/// A real server for `--upstream`: it echoes the request as JSON
+/// (`/api/text` answers text, `/api/slow` after two seconds).
+async fn echo_server() -> SocketAddr {
+    use http_body_util::BodyExt as _;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        loop {
+            let Ok((stream, _)) = listener.accept().await else {
+                continue;
+            };
+            tokio::spawn(async move {
+                let service = hyper::service::service_fn(
+                    |req: hyper::Request<hyper::body::Incoming>| async move {
+                        let path = req.uri().path().to_owned();
+                        let target = req.uri().to_string();
+                        let method = req.method().to_string();
+                        let headers: serde_json::Map<String, Value> = req
+                            .headers()
+                            .iter()
+                            .map(|(n, v)| (n.to_string(), json!(v.to_str().unwrap_or_default())))
+                            .collect();
+                        let body = req.into_body().collect().await.unwrap().to_bytes();
+                        if path.ends_with("/slow") {
+                            tokio::time::sleep(Duration::from_secs(2)).await;
+                        }
+                        let (kind, text) = if path.ends_with("/text") {
+                            ("text/plain", "plain words".to_owned())
+                        } else {
+                            let echo = json!({
+                                "method": method,
+                                "target": target,
+                                "headers": headers,
+                                "body": String::from_utf8_lossy(&body),
+                                "gone": "here",
+                            });
+                            ("application/json", echo.to_string())
+                        };
+                        let response = hyper::Response::builder()
+                            .status(if path.ends_with("/missing") { 404 } else { 200 })
+                            .header("content-type", kind)
+                            .header("x-upstream", "real")
+                            .body(http_body_util::Full::new(bytes::Bytes::from(text)))
+                            .unwrap();
+                        Ok::<_, std::convert::Infallible>(response)
+                    },
+                );
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
+                    .await;
+            });
+        }
+    });
+    addr
+}
+
+fn upstream_server(upstream: &str, timeout: Duration) -> MockServer {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("up.toml"), UPSTREAM).unwrap();
+    MockServer::start_with(
+        local(),
+        sets(dir.path(), &["up"]),
+        0,
+        None,
+        Some(Upstream::new(upstream, timeout).unwrap()),
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn mock_serve_forwards_passthrough_to_the_upstream() {
+    let real = echo_server().await;
+    let server = upstream_server(&format!("http://{real}/prefix/"), UPSTREAM_TIMEOUT);
+    assert_eq!(
+        server.upstream().unwrap().url(),
+        format!("http://{real}/prefix")
+    );
+    let url = server.url();
+    let http = client();
+
+    // A passthrough mock: method, path and query (under the upstream's
+    // path), headers minus hop-by-hop ones, Host the upstream's.
+    let response = http
+        .get(format!("{url}/api/real?x=1&y=two"))
+        .header("x-custom", "kept")
+        .header("connection", "x-secret")
+        .header("x-secret", "dropped")
+        .header(TEST_HEADER, "t1")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.headers()["x-upstream"], "real");
+    let (status, echo) = json_of(response).await;
+    assert_eq!(status, 200);
+    assert_eq!(echo["method"], "GET");
+    assert_eq!(echo["target"], "/prefix/api/real?x=1&y=two");
+    assert_eq!(echo["headers"]["host"], real.to_string());
+    assert_eq!(echo["headers"]["x-custom"], "kept");
+    assert_eq!(echo["headers"][TEST_HEADER], "t1");
+    assert!(echo["headers"].get("x-secret").is_none(), "{echo}");
+
+    // `unmatched = "passthrough"`: the body as received.
+    let (status, echo) = json_of(
+        http.post(format!("{url}/legacy/orders"))
+            .header("content-type", "application/json")
+            .body(r#"{"id":7}"#)
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(echo["method"], "POST");
+    assert_eq!(echo["target"], "/prefix/legacy/orders");
+    assert_eq!(echo["body"], r#"{"id":7}"#);
+
+    // `patch` merges into the upstream's JSON, and an error status
+    // comes back as it is.
+    let (status, echo) = json_of(
+        http.put(format!("{url}/api/patched"))
+            .header("accept-encoding", "gzip")
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(echo["method"], "PATCHED");
+    assert_eq!(echo["added"], true);
+    assert_eq!(echo["gone"], "here");
+    assert!(echo["headers"].get("accept-encoding").is_none(), "{echo}");
+    let (status, _) = json_of(http.get(format!("{url}/api/missing")).send().await.unwrap()).await;
+    assert_eq!(status, 404);
+    let text = http.get(format!("{url}/api/text")).send().await.unwrap();
+    assert_eq!(text.text().await.unwrap(), "plain words");
+
+    // Mocks still answer, and a request no set owns is still 404.
+    let (_, mocked) = json_of(http.get(format!("{url}/api/mocked")).send().await.unwrap()).await;
+    assert_eq!(mocked, json!({"mocked": true}));
+    let (status, body) = json_of(http.get(format!("{url}/elsewhere")).send().await.unwrap()).await;
+    assert_eq!(status, 404);
+    assert!(body["error"].as_str().unwrap().contains("no mock set"));
+
+    let outcomes: Vec<String> = server
+        .journal(None)
+        .into_iter()
+        .map(|e| e.outcome)
+        .collect();
+    assert!(
+        outcomes.contains(&"unmatched, passthrough → upstream 200".to_owned()),
+        "{outcomes:?}"
+    );
+    assert!(
+        outcomes
+            .iter()
+            .any(|o| o.starts_with("passthrough, patch") && o.ends_with("→ upstream 200, patched")),
+        "{outcomes:?}"
+    );
+    assert!(
+        outcomes.contains(&"unmatched, passthrough → upstream 404".to_owned()),
+        "{outcomes:?}"
+    );
+    assert_eq!(
+        server.journal(Some("t1"))[0].outcome,
+        "passthrough → upstream 200"
+    );
+    server.stop();
+}
+
+#[tokio::test]
+async fn mock_serve_answers_502_when_the_upstream_fails() {
+    let real = echo_server().await;
+    let server = upstream_server(&format!("http://{real}"), Duration::from_millis(300));
+    let http = client();
+    let (status, body) = json_of(
+        http.get(format!("{}/api/slow", server.url()))
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, 502);
+    assert_eq!(body["upstream"], format!("http://{real}"));
+    assert!(
+        body["error"].as_str().unwrap().contains("timed out"),
+        "{body}"
+    );
+    assert_eq!(
+        server.journal(None)[0].outcome,
+        "unmatched, passthrough → upstream error: timed out, 502"
+    );
+    server.stop();
+
+    // Nothing listens there.
+    let dead = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let gone = dead.local_addr().unwrap();
+    drop(dead);
+    let server = upstream_server(&format!("http://{gone}"), UPSTREAM_TIMEOUT);
+    let (status, body) = json_of(
+        http.get(format!("{}/api/real", server.url()))
+            .send()
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, 502);
+    assert!(
+        body["error"].as_str().unwrap().contains("cannot connect"),
+        "{body}"
+    );
+    let outcome = &server.journal(None)[0].outcome;
+    assert!(
+        outcome.starts_with("passthrough → upstream error: cannot connect"),
+        "{outcome}"
+    );
+    server.stop();
 }
