@@ -96,20 +96,21 @@ tests in `e2e/scenarios/*.cdp` and fake API answers in
 1. Explore with the mocks on: `chrome-cdp mock use`, then the usual
    commands. `mock explain GET /api/items` says which mock answers.
 2. Save what worked: `chrome-cdp history --as-scenario "adds an item"
-   >> e2e/scenarios/items.cdp` (refs become stable locators).
+   >> e2e/scenarios/items.cdp` (refs become stable locators), or
+   `record start`, act, `record stop -o FILE`, add `expect`s.
 3. Mock what the app fetches, in `e2e/mocks/base.toml`: a `[[mock]]` with
    `match = { method = "GET", path = "/api/items/:id" }` and
    `respond = { json_file = "data/items/{{params.id}}.json" }`, or a
-   `[[collection]]` for data the app changes. `chrome-cdp schema mocks`
-   has every key.
+   `[[collection]]` for data the app changes. `schema mocks` has every
+   key.
 4. `chrome-cdp lint`, then `chrome-cdp test` (`file.cdp:12` runs one
    test). Each test gets a fresh context, frozen time and seeded random.
-5. A failure prints a `report.md` path: the step, the error, the page,
-   console errors, requests. Read it, fix the app or the test, rerun.
+5. A failure prints a `report.md` path (step, error, page, console
+   errors, requests). Read it, fix the app or the test, rerun.
    Broken locators: `test --heal --write`; flaky: `--repeat 20` names the
    cause; untested controls and mocks: `test --ui-coverage`.
-6. A bug found while exploring: `repro start`, reproduce it, `repro save
-   bugs/x`; `chrome-cdp test bugs/x` replays it offline.
+6. A bug found: `repro start`, reproduce it, `repro save bugs/x`;
+   `chrome-cdp test bugs/x` replays it offline.
 
 ```
 @mocks base checkout

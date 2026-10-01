@@ -94,6 +94,7 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`fmt`](fmt.md) | Format .cdp scenario files and mock files in place; --check only reports |
 | [`history`](history.md) | The commands the session ran; --as-scenario writes them as a test |
 | [`repro`](repro.md) | Pack what the session did into a bundle that replays it offline |
+| [`record`](record.md) | Record what happens in the page as test steps |
 
 ## Observing and debugging
 

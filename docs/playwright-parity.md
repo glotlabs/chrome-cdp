@@ -18,7 +18,7 @@ around it. **The v1 gate: no ❌ in an agent-critical row.** A test
 (`crates/chrome-cdp/tests/parity.rs`) holds the tables to that, checks the
 counts below, and checks that every command a row names exists.
 
-Today: 138 rows; 124 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
+Today: 138 rows; 125 ✅, 9 🟡, 0 ❌, 4 ➖. No row is ❌.
 
 ## Navigation
 
@@ -210,7 +210,7 @@ Today: 138 rows; 124 ✅, 9 🟡, 0 ❌, 5 ➖. No row is ❌.
 | `--update-snapshots` | `test --update-snapshots` | ✅ | no |
 | fixtures, `test.step` | step files through `@include` with parameters; `#` comments name steps | 🟡 | no |
 | `projects` (other browsers) | Chromium only | ➖ | no |
-| `codegen` (a recorder) | none; `history --as-scenario` turns an agent's session into a test | ➖ | no |
+| `codegen` (a recorder) | `record start`, `record stop -o FILE`: what a person or an agent does in the page (iframes and tabs too) as `.cdp` lines with stable locators; `history --as-scenario` turns an agent's commands into a test | ✅ | no |
 | converting existing tests | `convert spec.ts` (best effort) | ✅ | no |
 
 ## Gaps
