@@ -1,0 +1,94 @@
+<!doctype html>
+<!-- The planted flakes of `test --repeat` (plan 18.3), one per cause the
+     runner diagnoses: ?case=settle|race|moving|different|time. The page
+     reads the run's number from `${test.id}` after the `#` (its `-rN`;
+     run 1 has none) and draws from a PRNG seeded with it, so the same
+     runs fail every time: a quarter of them misbehave. The mocks are in
+     testdata/e2e/mocks/flaky.toml; a request with `x-flake: slow` gets
+     the slow answer. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flaky</title>
+<style>
+  @keyframes slide { from { transform: translateX(0); } to { transform: translateX(200px); } }
+  .sliding { animation: slide 400ms linear infinite alternate; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Checkout</h1>
+  <p id="banner"></p>
+  <p id="loaded"></p>
+  <p id="updated"></p>
+  <div id="actions"></div>
+  <p role="status"></p>
+</main>
+<script>
+  const CASES = ['settle', 'race', 'moving', 'different', 'time'];
+  const kase = new URLSearchParams(location.search).get('case');
+  const run = Number((location.hash.match(/-r(\d+)/) || [0, 1])[1]);
+  // mulberry32, seeded with the run and the case.
+  const random = ((a) => () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  })(run * 1000 + CASES.indexOf(kase) + 1);
+  const bad = random() < 0.25;
+  const $ = (id) => document.getElementById(id);
+  const status = document.querySelector('[role=status]');
+  const slow = bad ? { headers: { 'x-flake': 'slow' } } : {};
+  const get = (path, init) => fetch('/e2e/api/flaky/' + path, init).then((r) => r.json());
+  const button = (text, onClick) => {
+    const b = document.createElement('button');
+    b.id = 'pay';
+    b.textContent = text;
+    b.addEventListener('click', onClick);
+    $('actions').append(b);
+    return b;
+  };
+
+  if (kase === 'settle') {
+    // Load price asks for the price, and Pay shows the price it has. A
+    // click waits up to 1.5 s for the requests it sent; in a bad run the
+    // price takes longer, so the next step pays before it came.
+    let price;
+    const load = button('Load price', () => get('price', slow).then((body) => { price = body.price; }));
+    load.id = 'load';
+    button('Pay', () => { status.textContent = `Paid $${price ?? '?'}`; });
+  }
+
+  if (kase === 'race') {
+    // Whichever answer comes last fills the banner: the offer, usually.
+    let count = 0;
+    const done = (text) => {
+      $('banner').textContent = text;
+      $('loaded').textContent = `Loaded ${++count} of 2`;
+    };
+    get('stock', slow).then((body) => done(body.text));
+    get('offer').then((body) => done(body.text));
+  }
+
+  if (kase === 'moving') {
+    // In a bad run Pay slides back and forth, with animations not
+    // disabled.
+    const b = button('Pay', () => { status.textContent = 'Paid'; });
+    if (bad) b.className = 'sliding';
+  }
+
+  if (kase === 'different') {
+    // In a bad run the page asks for a promotion, which replaces the
+    // welcome.
+    if (bad) get('promo').then((body) => { $('banner').textContent = body.text; });
+    else $('banner').textContent = 'Welcome';
+  }
+
+  if (kase === 'time') {
+    // In a bad run the page shows the browser's clock, not the server's
+    // date.
+    $('updated').textContent = bad ? `Updated ${new Date().toISOString()}` : 'Updated today';
+  }
+</script>
+</body>
+</html>

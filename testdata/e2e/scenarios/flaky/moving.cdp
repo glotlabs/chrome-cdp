@@ -1,0 +1,8 @@
+# A moving target (plan 18.3): in some runs Pay slides back and forth,
+# and the run does not disable animations.
+@mocks flaky
+
+@test "pays"
+  goto "/e2e/flaky.html?case=moving#${test.id}"
+  click '#pay' --timeout 1s
+  expect role=status text Paid

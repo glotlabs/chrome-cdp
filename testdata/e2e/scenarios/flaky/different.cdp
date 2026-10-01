@@ -1,0 +1,7 @@
+# Different requests (plan 18.3): in some runs the page asks for a
+# promotion, which replaces the welcome.
+@mocks flaky
+
+@test "welcomes"
+  goto "/e2e/flaky.html?case=different#${test.id}"
+  expect '#banner' text Welcome --timeout 1s

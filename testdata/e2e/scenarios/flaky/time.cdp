@@ -1,0 +1,7 @@
+# Time (plan 18.3): in some runs the page shows the browser's clock, and
+# the run does not freeze time.
+@mocks flaky
+
+@test "shows the date"
+  goto "/e2e/flaky.html?case=time#${test.id}"
+  expect '#updated' text 'Updated today' --timeout 1s

@@ -1787,9 +1787,16 @@ fn record_mocks_writes_a_set_per_passed_test() {
 /// Compares `actual` with golden file `heal/<name>`, or writes it with
 /// UPDATE_GOLDEN=1.
 fn golden(name: &str, actual: &str) {
+    golden_in("heal", name, actual);
+}
+
+/// Compares `actual` with golden file `<dir>/<name>`, or writes it with
+/// UPDATE_GOLDEN=1.
+fn golden_in(dir: &str, name: &str, actual: &str) {
+    let name = format!("{dir}/{name}");
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/golden/heal")
-        .join(name);
+        .join("tests/golden")
+        .join(&name);
     if std::env::var_os("UPDATE_GOLDEN").is_some_and(|v| !v.is_empty() && v != "0") {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, actual).unwrap();
@@ -1798,19 +1805,21 @@ fn golden(name: &str, actual: &str) {
     let expected = std::fs::read_to_string(&path).unwrap_or_default();
     assert_eq!(
         expected, actual,
-        "golden/heal/{name} differs (UPDATE_GOLDEN=1 accepts it)"
+        "golden/{name} differs (UPDATE_GOLDEN=1 accepts it)"
     );
 }
 
 /// `text` without what changes from run to run: the project's path,
-/// durations and the fixture site's origin.
+/// durations, retry counts, tab ids and the fixture site's origin.
 fn steady(text: &str, root: &Path) -> String {
     let text = text
         .replace(&root.display().to_string(), "<root>")
         .replace(Fixtures::shared().a(), "<site>");
     let durations = regex::Regex::new(r"\b\d+(\.\d+)?(ms|s)\b").unwrap();
     let tabs = regex::Regex::new(r"\bt\d+\b").unwrap();
+    let retries = regex::Regex::new(r"\b\d+ retries\b").unwrap();
     let text = durations.replace_all(&text, "<t>");
+    let text = retries.replace_all(&text, "<n> retries");
     tabs.replace_all(&text, "<tab>").into_owned()
 }
 
@@ -1868,4 +1877,112 @@ fn a_redesigned_page_is_healed() {
     // Healed, the test passed: its fingerprints are the new elements', under
     // the old keys until the file changes.
     assert_ne!(std::fs::read_to_string(&fingerprints).unwrap(), taken);
+}
+
+/// Plan 18.3: each planted flake of `scenarios/flaky` fails some of its
+/// 20 runs (the page picks them with a PRNG seeded with the run's number,
+/// so they are the same every time) and is diagnosed as its own cause,
+/// first in rank, with evidence naming the request or element.
+#[test]
+fn planted_flakes_are_diagnosed() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    // The moving target and the clock need animations and real time.
+    let config = project.root.join("chrome-cdp.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    std::fs::write(
+        &config,
+        format!("{text}\n[e2e.determinism]\nfreeze_time = false\ndisable_animations = false\n"),
+    )
+    .unwrap();
+    let (out, value) = project.json(&["scenarios/flaky", "--repeat", "20", "--jobs", "4"]);
+    assert_eq!(out.status.code(), Some(1), "{value}");
+    let tests = value["error"]["details"]["tests"].as_array().unwrap();
+    let expected = [
+        (
+            "different.cdp",
+            "different-requests",
+            4,
+            "`GET /e2e/api/flaky/promo` was sent in all 4 failing runs, and in none of the 16 passing runs",
+        ),
+        (
+            "moving.cdp",
+            "moving-target",
+            3,
+            "in all 3 failing runs the step could not act: #pay did not stop moving",
+        ),
+        (
+            "race.cdp",
+            "race",
+            3,
+            "`GET /e2e/api/flaky/offer` was answered before `GET /e2e/api/flaky/stock`, in all 3 failing runs",
+        ),
+        (
+            "settle.cdp",
+            "unsettled",
+            3,
+            "`GET /e2e/api/flaky/price` was still open when `click '#pay'` (scenarios/flaky/settle.cdp:8:3) acted, in all 3 failing runs",
+        ),
+        (
+            "time.cdp",
+            "time-or-randomness",
+            4,
+            "the failing step saw another value in each failing run: \"Updated 20",
+        ),
+    ];
+    assert_eq!(tests.len(), expected.len(), "{value}");
+    for (test, (file, cause, failed, evidence)) in tests.iter().zip(expected) {
+        assert_eq!(test["file"], format!("scenarios/flaky/{file}"), "{test}");
+        assert_eq!(test["status"], "failed", "{test}");
+        assert_eq!(test["failed_runs"], failed, "{test}");
+        let flake = &test["flake"];
+        assert_eq!(flake["cause"], cause, "{flake}");
+        assert_eq!(
+            (flake["runs"].as_u64(), flake["failed_runs"].as_u64()),
+            (Some(20), Some(failed)),
+            "{flake}"
+        );
+        assert!(flake["confidence"].as_f64().unwrap() >= 0.8, "{flake}");
+        assert!(
+            flake["evidence"][0].as_str().unwrap().starts_with(evidence),
+            "{flake}"
+        );
+        assert!(flake["hint"].is_string(), "{flake}");
+    }
+
+    // The text reporter and report.md of one of them.
+    let out = project.test(&[
+        "scenarios/flaky/settle.cdp",
+        "--repeat",
+        "20",
+        "--jobs",
+        "4",
+    ]);
+    assert_eq!(out.status.code(), Some(1));
+    golden_in("flaky", "settle.txt", &steady(&stdout(&out), &project.root));
+    let report = project
+        .root
+        .join("e2e/.results/scenarios/flaky/settle.cdp/pays-the-price/run-1/report.md");
+    let report = std::fs::read_to_string(report).unwrap();
+    let from = report.find("\n## Flaky").unwrap();
+    golden_in(
+        "flaky",
+        "report.md",
+        &steady(&report[from..], &project.root),
+    );
+    // Each run keeps its own folder, with its requests' times.
+    let requests = std::fs::read_to_string(
+        project
+            .root
+            .join("e2e/.results/scenarios/flaky/settle.cdp/pays-the-price/run-2/requests.txt"),
+    )
+    .unwrap();
+    assert!(
+        regex::Regex::new(
+            r#"/e2e/api/flaky/price fetch \S+ \(sent \+\S+, answered \+\S+\) ← mock "slow price""#
+        )
+        .unwrap()
+        .is_match(&requests),
+        "{requests}"
+    );
 }

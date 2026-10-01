@@ -1,0 +1,35 @@
+# The planted flakes' API (testdata/site/e2e/flaky.html, plan 18.3). A
+# request with `x-flake: slow` (the page's bad runs) gets the slow
+# answer, so the URLs are the same in every run.
+[settings]
+scope = ["/e2e/api/flaky/**"]
+
+[[mock]]
+name = "slow price"
+match = { method = "GET", path = "/e2e/api/flaky/price", headers = { x-flake = "slow" } }
+respond = { json = { price = 5 }, delay = "2500ms" }
+
+[[mock]]
+name = "price"
+match = { method = "GET", path = "/e2e/api/flaky/price" }
+respond = { json = { price = 5 } }
+
+[[mock]]
+name = "slow stock"
+match = { method = "GET", path = "/e2e/api/flaky/stock", headers = { x-flake = "slow" } }
+respond = { json = { text = "In stock" }, delay = "900ms" }
+
+[[mock]]
+name = "stock"
+match = { method = "GET", path = "/e2e/api/flaky/stock" }
+respond = { json = { text = "In stock" }, delay = "100ms" }
+
+[[mock]]
+name = "offer"
+match = { method = "GET", path = "/e2e/api/flaky/offer" }
+respond = { json = { text = "Offer: 2 for 1" }, delay = "500ms" }
+
+[[mock]]
+name = "promo"
+match = { method = "GET", path = "/e2e/api/flaky/promo" }
+respond = { json = { text = "Promo: 10% off" } }

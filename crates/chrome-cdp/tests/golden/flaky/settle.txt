@@ -1,0 +1,18 @@
+running 1 test 20 times each from 1 file, 4 at once
+✗ scenarios/flaky/settle.cdp:5 pays the price (failed 3 of 20 runs, slowest <t>)
+    flaky: 3 of 20 runs failed at scenarios/flaky/settle.cdp:9:3 (`expect role=status text 'Paid $5' --timeout <t>`)
+    likely cause: acted before the page settled (confidence 0.90)
+      `GET /e2e/api/flaky/price` was still open when `click '#pay'` (scenarios/flaky/settle.cdp:8:3) acted, in all 3 failing runs; it was answered up to <t> later
+      in all 17 passing runs it was answered before the step acted (<t> before, at the closest)
+      `click '#load'` (scenarios/flaky/settle.cdp:7:3) sent it
+      fix: add `wait --response '**/e2e/api/flaky/price'` after scenarios/flaky/settle.cdp:7:3 (which sends it), or an `expect` of what its answer shows before scenarios/flaky/settle.cdp:8:3
+    first failure at scenarios/flaky/settle.cdp:9:3: expect role=status text 'Paid $5' --timeout <t>
+    error: expect failed: role=status text 'Paid $5'
+      expected: text containing "Paid $5"
+      actual: text "Paid $?" (after <t>, <n> retries)
+      element: status "Paid $?" [e3]
+      hint: see <root>/e2e/.results/scenarios/flaky/settle.cdp/pays-the-price/run-1/snapshot.txt   (the page when the test failed; the test's page is closed: --debug keeps it open)
+    report: <root>/e2e/.results/scenarios/flaky/settle.cdp/pays-the-price/run-1/report.md
+1 test: 0 passed, 1 failed (<t>)
+failure reports:
+  <root>/e2e/.results/scenarios/flaky/settle.cdp/pays-the-price/run-1/report.md

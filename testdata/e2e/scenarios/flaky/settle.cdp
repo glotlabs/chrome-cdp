@@ -1,0 +1,9 @@
+# Acted before the page settled (plan 18.3): in some runs the price
+# comes after Pay was clicked (testdata/site/e2e/flaky.html).
+@mocks flaky
+
+@test "pays the price"
+  goto "/e2e/flaky.html?case=settle#${test.id}"
+  click '#load'
+  click '#pay'
+  expect role=status text 'Paid $5' --timeout 1s
