@@ -30,6 +30,8 @@ pub struct OpenApi {
     bases: Vec<String>,
     paths: Vec<SpecPath>,
     swagger: bool,
+    /// The servers' URLs as written (`basePath` for Swagger 2), in order.
+    servers: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -65,6 +67,29 @@ pub enum Lookup<'a> {
     NoPath { closest: Vec<&'a str> },
     /// The mock's path is too broad to say (`/api/**`, a regex).
     Unknown,
+}
+
+/// An operation of the spec, as `mock gen` and the `openapi-uncovered`
+/// rule walk them.
+#[derive(Debug, Clone)]
+pub struct SpecOperation<'a> {
+    /// `/products/{id}`.
+    pub path: &'a str,
+    /// Upper case.
+    pub method: String,
+    /// `operationId`, if it has one.
+    pub id: Option<&'a str>,
+    pub(crate) op: &'a Value,
+    /// The path item (for parameters shared by its operations).
+    pub(crate) item: &'a Value,
+}
+
+impl SpecOperation<'_> {
+    /// `operationId`, else `GET /products/{id}`.
+    pub fn name(&self) -> String {
+        self.id
+            .map_or_else(|| format!("{} {}", self.method, self.path), str::to_owned)
+    }
 }
 
 const METHODS: &[&str] = &[
@@ -110,10 +135,10 @@ impl OpenApi {
                     .collect(),
             })
             .collect();
-        let mut bases: Vec<String> = if swagger {
+        let servers: Vec<String> = if swagger {
             doc.get("basePath")
                 .and_then(Value::as_str)
-                .map(|b| vec![b.trim_end_matches('/').to_owned()])
+                .map(|b| vec![b.to_owned()])
                 .unwrap_or_default()
         } else {
             doc.get("servers")
@@ -121,12 +146,12 @@ impl OpenApi {
                 .map(|servers| {
                     servers
                         .iter()
-                        .filter_map(|s| s.get("url")?.as_str())
-                        .map(server_path)
+                        .filter_map(|s| Some(s.get("url")?.as_str()?.to_owned()))
                         .collect()
                 })
                 .unwrap_or_default()
         };
+        let mut bases: Vec<String> = servers.iter().map(|s| server_path(s)).collect();
         if bases.is_empty() {
             bases.push(String::new());
         }
@@ -137,7 +162,96 @@ impl OpenApi {
             bases,
             paths,
             swagger,
+            servers,
         })
+    }
+
+    /// The path prefix of the spec's first server (`/v1`), `""` for none:
+    /// what `mock gen` puts before each path.
+    pub fn base(&self) -> String {
+        self.servers
+            .first()
+            .map(|s| server_path(s))
+            .unwrap_or_default()
+    }
+
+    /// The path prefixes of all its servers, first server first, without
+    /// repeats; empty when they have none.
+    pub fn server_paths(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for path in self.servers.iter().map(|s| server_path(s)) {
+            if !path.is_empty() && !out.contains(&path) {
+                out.push(path);
+            }
+        }
+        out
+    }
+
+    /// Whether the spec is about the requests of a set with `scope`: a
+    /// set with no scope or a path scope is (the spec's servers are the
+    /// app's own), a set scoped to full URLs only if one of them takes a
+    /// server of the spec that has a host. A set of a third party's
+    /// mocks (`https://api.stripe.com/**`) is not checked against the
+    /// app's spec.
+    pub fn covers_scope(&self, scope: &[String]) -> bool {
+        if scope.is_empty() || scope.iter().any(|g| !g.contains("://")) {
+            return true;
+        }
+        self.servers
+            .iter()
+            .filter(|s| s.contains("://"))
+            .any(|server| {
+                let sample = format!(
+                    "{}/__any__",
+                    server
+                        .split('{')
+                        .next()
+                        .unwrap_or(server)
+                        .trim_end_matches('/')
+                );
+                scope
+                    .iter()
+                    .any(|g| crate::glob::PathGlob::url(g).is_ok_and(|glob| glob.matches(&sample)))
+            })
+    }
+
+    /// Every operation, by path (as the spec's keys sort) and method.
+    pub fn operations(&self) -> Vec<SpecOperation<'_>> {
+        let mut out = Vec::new();
+        let Some(paths) = self.doc.get("paths").and_then(Value::as_object) else {
+            return out;
+        };
+        for (path, item) in paths {
+            let item = self.resolve(item, 0).unwrap_or(item);
+            for method in METHODS {
+                if let Some(op) = item.get(*method).filter(|o| o.is_object()) {
+                    out.push(SpecOperation {
+                        path,
+                        method: method.to_ascii_uppercase(),
+                        id: op.get("operationId").and_then(Value::as_str),
+                        op,
+                        item,
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    /// The whole document, for walking what the helpers do not cover.
+    pub(crate) fn doc(&self) -> &Value {
+        &self.doc
+    }
+
+    /// Whether it is a Swagger 2.0 spec.
+    pub(crate) fn is_swagger(&self) -> bool {
+        self.swagger
+    }
+
+    /// `schema` with a local `$ref` followed; `None` when it has none (or
+    /// it leads nowhere).
+    pub(crate) fn follow<'a>(&'a self, schema: &'a Value) -> Option<&'a Value> {
+        self.resolve(schema, 0)
     }
 
     /// The operations of a mock with path glob `path` and `methods` (upper
@@ -348,6 +462,12 @@ impl OpenApi {
         {
             return;
         }
+        // Before `allOf`: `nullable` next to `allOf: [$ref]` is how 3.0
+        // makes a reference nullable.
+        let nullable = obj.get("nullable").and_then(Value::as_bool) == Some(true);
+        if value.is_null() && nullable {
+            return;
+        }
         if let Some(all) = obj.get("allOf").and_then(Value::as_array) {
             for s in all {
                 self.validate(s, value, at, out, depth + 1);
@@ -365,10 +485,6 @@ impl OpenApi {
                     return;
                 }
             }
-        }
-        let nullable = obj.get("nullable").and_then(Value::as_bool) == Some(true);
-        if value.is_null() && nullable {
-            return;
         }
         if let Some(types) = obj.get("type") {
             let types: Vec<&str> = match types {

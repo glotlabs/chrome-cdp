@@ -21,6 +21,7 @@
 //! - `template`: `{{params.id}}` and friends (`minijinja`);
 //! - [`check`] and [`openapi`]: `mock check`'s lints, and mocks against
 //!   an OpenAPI spec;
+//! - [`generate`]: a starting mock set from an OpenAPI spec (`mock gen`);
 //! - [`drift`]: real answers against the mocks' (`test --verify-mocks`);
 //! - [`record`]: mock files from recorded traffic (`mock record`, `mock
 //!   import`), `record_streams`: their WebSockets and EventSources, and
@@ -39,6 +40,7 @@ pub mod drift;
 mod engine;
 pub mod file;
 pub mod format;
+pub mod generate;
 mod glob;
 mod load;
 mod matcher;
@@ -69,6 +71,8 @@ pub use ws::{SocketGlob, WsFrame, WsKey, WsMessage, WsOutcome, WsStep};
 mod tests;
 #[cfg(test)]
 mod tests_check;
+#[cfg(test)]
+mod tests_generate;
 #[cfg(test)]
 mod tests_record;
 #[cfg(test)]

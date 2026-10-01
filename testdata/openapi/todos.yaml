@@ -1,0 +1,298 @@
+# A small spec for `mock gen` tests: list and item pairs (one nested, one
+# wrapped), every generated type and format, examples at each level, a
+# cycle, and answers that are not JSON.
+openapi: 3.0.3
+info:
+  title: Todos
+  version: "1.0"
+servers:
+  - url: https://api.example.com/v1
+paths:
+  /users:
+    get:
+      operationId: listUsers
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+    post:
+      operationId: createUser
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+  /users/{userId}:
+    get:
+      operationId: getUser
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: no such user
+    delete:
+      operationId: deleteUser
+      responses:
+        "204":
+          description: deleted
+  /users/me:
+    get:
+      operationId: getMe
+      responses:
+        "200":
+          content:
+            application/json:
+              example:
+                id: 7
+                email: me@example.com
+                name: Me
+              schema:
+                $ref: "#/components/schemas/User"
+  /users/{userId}/todos:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      operationId: listTodos
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  todos:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Todo"
+                  total:
+                    type: integer
+    post:
+      operationId: createTodo
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Todo"
+  /users/{userId}/todos/{todoId}:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: todoId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getTodo
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Todo"
+    patch:
+      operationId: updateTodo
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Todo"
+    delete:
+      operationId: deleteTodo
+      responses:
+        "204":
+          description: deleted
+  /stats:
+    get:
+      operationId: getStats
+      responses:
+        "200":
+          content:
+            application/json:
+              examples:
+                busy:
+                  value:
+                    open: 12
+                    done: 30
+                quiet:
+                  value:
+                    open: 0
+                    done: 1
+              schema:
+                type: object
+                properties:
+                  open:
+                    type: integer
+                  done:
+                    type: integer
+  /tree:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+  /shapes:
+    get:
+      operationId: listShapes
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 1
+                items:
+                  oneOf:
+                    - $ref: "#/components/schemas/Circle"
+                    - $ref: "#/components/schemas/Square"
+  /health:
+    get:
+      operationId: health
+      responses:
+        "200":
+          content:
+            text/plain:
+              example: ok
+  /avatar:
+    get:
+      operationId: getAvatar
+      responses:
+        "200":
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+  /ping:
+    post:
+      operationId: ping
+      responses:
+        default:
+          description: pong
+components:
+  schemas:
+    User:
+      type: object
+      required: [id, email]
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+          example: Ada
+        homepage:
+          type: string
+          format: uri
+        password:
+          type: string
+          writeOnly: true
+    Todo:
+      allOf:
+        - $ref: "#/components/schemas/Entity"
+        - type: object
+          required: [title, user_id]
+          properties:
+            user_id:
+              type: integer
+            title:
+              type: string
+              minLength: 8
+              maxLength: 12
+            done:
+              type: boolean
+            priority:
+              type: integer
+              minimum: 10
+              maximum: 50
+              multipleOf: 5
+            status:
+              type: string
+              enum: [open, closed]
+            due:
+              type: string
+              format: date
+            code:
+              type: string
+              pattern: "^[A-Z]{3}$"
+            tags:
+              type: array
+              minItems: 3
+              maxItems: 3
+              items:
+                type: string
+            owner_ip:
+              type: string
+              format: ipv4
+            token:
+              type: string
+              format: byte
+            weight:
+              type: number
+              minimum: 0.1
+              maximum: 0.9
+    Entity:
+      type: object
+      required: [id, created]
+      properties:
+        id:
+          type: string
+          format: uuid
+        created:
+          type: string
+          format: date-time
+        kind:
+          type: string
+          default: todo
+    Node:
+      type: object
+      required: [name, parent]
+      properties:
+        name:
+          type: string
+        parent:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Node"
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/Node"
+    Circle:
+      type: object
+      properties:
+        radius:
+          type: number
+    Square:
+      type: object
+      properties:
+        side:
+          type: number
