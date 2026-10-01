@@ -457,6 +457,7 @@ fn record(args: &MockRecordArgs, global: &GlobalArgs) -> Result<Output, ErrorInf
     let request = HarExportRequest {
         tab: global.tab.clone(),
         scope: args.scope.clone(),
+        repro: false,
         timeout_ms: session::timeout_ms(global),
     };
     mock::record::Scope::new(&args.scope).map_err(|e| ErrorInfo::new(ErrorKind::BadArgs, e))?;
@@ -520,6 +521,69 @@ pub(crate) fn record_for_test(
         Err(info) if info.kind == ErrorKind::NotFound => Ok(None),
         Err(info) => Err(info),
     }
+}
+
+/// `repro save`: a bundle's requests as `<mocks>/repro.toml`, their
+/// bodies in `<mocks>/data/`, owning every request (`/**`), so one no mock
+/// answers fails instead of reaching the network. With no request, a set
+/// of no mocks that still owns them.
+pub(crate) fn record_bundle(
+    mocks: &Path,
+    exchanges: &[mock::record::Exchange],
+    origin: &str,
+) -> Result<MockRecordData, ErrorInfo> {
+    let out = Target {
+        file: mocks.join("repro.toml"),
+        base: mocks.to_path_buf(),
+        set: "repro".to_owned(),
+        data_dir: "data".to_owned(),
+    };
+    let scope = vec![engine::REPRO_EVERYTHING.to_owned()];
+    let data = match write_recording(&out, exchanges, &scope, origin.to_owned(), 0, || {
+        Hint::text("the session sent no request")
+    }) {
+        Ok(output) => serde_json::from_value(output.data)
+            .map_err(|e| ErrorInfo::new(ErrorKind::ProtocolError, format!("bad recording: {e}")))?,
+        Err(info) if info.kind == ErrorKind::NotFound => {
+            std::fs::create_dir_all(mocks).map_err(|e| {
+                ErrorInfo::new(
+                    ErrorKind::BadArgs,
+                    format!("cannot write {}: {e}", mocks.display()),
+                )
+            })?;
+            let toml = format!("# {origin}\n\n[settings]\nscope = [\"/**\"]\n");
+            std::fs::write(&out.file, toml).map_err(|e| {
+                ErrorInfo::new(
+                    ErrorKind::BadArgs,
+                    format!("cannot write {}: {e}", out.file.display()),
+                )
+            })?;
+            MockRecordData {
+                path: out.file.display().to_string(),
+                set: out.set.clone(),
+                requests: 0,
+                mocks: 0,
+                files: Vec::new(),
+                scope,
+                skipped: Vec::new(),
+            }
+        }
+        Err(info) => return Err(info),
+    };
+    // Said, though it is the default: the bundle replays offline.
+    let text = std::fs::read_to_string(&out.file).unwrap_or_default();
+    let text = text.replacen(
+        "\n[settings]\n",
+        "\n[settings]\nunmatched = \"fail\"  # a request no mock answers fails: nothing reaches the network\n",
+        1,
+    );
+    std::fs::write(&out.file, text).map_err(|e| {
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("cannot write {}: {e}", out.file.display()),
+        )
+    })?;
+    Ok(data)
 }
 
 /// `mock import <file.har>`.

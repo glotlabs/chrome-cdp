@@ -106,12 +106,22 @@ command chrome-cdp test
   flag --heal value=LEVEL values=high|medium
   flag --write
   flag --record-mocks
+  flag --ui-coverage
   flag --max-chars value=N
 command chrome-cdp history
   flag --as-scenario value=NAME
   flag --from value=N
   flag --clear
   flag --limit value=N
+  flag --max-chars value=N
+command chrome-cdp repro
+command chrome-cdp repro start
+  flag --scope value=GLOB repeatable
+command chrome-cdp repro save
+  arg DIR required
+  flag --name value=NAME
+  flag --max-body value=SIZE
+  flag --force
   flag --max-chars value=N
 command chrome-cdp goto
   arg URL required

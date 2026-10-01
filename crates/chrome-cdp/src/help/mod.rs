@@ -146,6 +146,7 @@ pub(crate) const GROUPS: &[(&str, &[&str])] = &[
             "lint",
             "fmt",
             "history",
+            "repro",
         ],
     ),
     (

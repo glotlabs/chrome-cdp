@@ -123,6 +123,8 @@ pub struct Fixtures {
     b: String,
     https: String,
     records: Records,
+    /// Ends the server ([`Fixtures::stop`]).
+    stop: Arc<tokio::sync::Notify>,
 }
 
 /// The bodies `POST /bench/record` kept, in order.
@@ -154,6 +156,7 @@ impl Fixtures {
             b: format!("http://localhost:{}", listener_b.local_addr()?.port()),
             https: format!("https://127.0.0.1:{}", listener_https.local_addr()?.port()),
             records: Records::default(),
+            stop: Arc::new(tokio::sync::Notify::new()),
         };
         let site = Arc::new(Site {
             root,
@@ -164,6 +167,7 @@ impl Fixtures {
             hmr: hmr::Channels::default(),
         });
         let https = fixtures.https.clone();
+        let stop = fixtures.stop.clone();
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?;
@@ -174,10 +178,29 @@ impl Fixtures {
                     let a = serve(listener_a, site.clone(), site.a.clone());
                     let b = serve(listener_b, site.clone(), site.b.clone());
                     let https = serve_tls(listener_https, tls, site.clone(), https);
-                    tokio::join!(a, b, https);
+                    tokio::select! {
+                        _ = async { tokio::join!(a, b, https) } => {}
+                        () = stop.notified() => {}
+                    }
                 });
+                // Dropping the runtime closes the listeners and every
+                // connection.
+                drop(runtime);
             })?;
         Ok(fixtures)
+    }
+
+    /// Stops the server: its ports refuse connections from now on (a
+    /// server that went down).
+    pub fn stop(&self) {
+        self.stop.notify_one();
+        let addr = self.a.trim_start_matches("http://").to_owned();
+        for _ in 0..200 {
+            if std::net::TcpStream::connect(&addr).is_err() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     /// Origin A, `http://127.0.0.1:<port>`.

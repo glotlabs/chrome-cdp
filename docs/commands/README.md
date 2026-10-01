@@ -93,6 +93,7 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`lint`](lint.md) | Check scenario, mock and audit baseline files for mistakes without running them |
 | [`fmt`](fmt.md) | Format .cdp scenario files and mock files in place; --check only reports |
 | [`history`](history.md) | The commands the session ran; --as-scenario writes them as a test |
+| [`repro`](repro.md) | Pack what the session did into a bundle that replays it offline |
 
 ## Observing and debugging
 

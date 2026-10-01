@@ -31,6 +31,7 @@ mod log;
 mod mock;
 mod output;
 mod progress;
+mod repro;
 mod route;
 mod schema;
 mod script;
@@ -66,6 +67,12 @@ fn main() -> ExitCode {
     }
     log::init(cli.global.verbose);
     let mode = cli.global.mode();
+    // `test DIR` of a folder with its own project file runs in it (18.5).
+    if let Some(Command::Test(args)) = &mut cli.command
+        && let Err(info) = test::enter_project(args)
+    {
+        return ExitCode::from(output::print(mode, Err(info)));
+    }
     if let Err(info) = config::apply(&mut cli.global, &matches) {
         return ExitCode::from(output::print(mode, Err(info)));
     }
@@ -173,6 +180,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Expect(args)) => session::expect(&args, &cli.global),
         Some(Command::Mark(args)) => session::mark(&args, &cli.global),
         Some(Command::History(args)) => history::run(&args, &cli.global),
+        Some(Command::Repro(args)) => repro::run(&args, &cli.global),
         Some(Command::ExpectSnapshot(args)) => session::expect_snapshot(&args, &cli.global),
         Some(Command::ExpectScreenshot(args)) => session::expect_screenshot(&args, &cli.global),
         Some(Command::Dialog(args)) => session::dialog(&args, &cli.global),

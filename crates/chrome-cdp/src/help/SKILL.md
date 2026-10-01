@@ -62,8 +62,8 @@ locators in single quotes.
 - Never `sleep`. Actions, reads (`text <loc>`, …) and `goto` wait by
   themselves. For later changes: `wait --text 'Saved'`, `wait '#results'`,
   `wait --url /done`, `wait .spinner --state hidden`, `wait --idle`.
-- Don't click with `eval "el.click()"` or coordinates: that skips the
-  checks and the report. Use `click`, `fill`, `select`, `check`, `press`.
+- Don't click with `eval` or coordinates: that skips the checks and the
+  report.
 - `Obscured`: something covers the element (a cookie banner, a modal). The
   hint names a button to close it; run that first.
 - `Ambiguous`: the locator matched several; the error lists them.
@@ -106,10 +106,10 @@ tests in `e2e/scenarios/*.cdp` and fake API answers in
    test). Each test gets a fresh context, frozen time and seeded random.
 5. A failure prints a `report.md` path: the step, the error, the page,
    console errors, requests. Read it, fix the app or the test, rerun.
-   Locators a redesign broke: `test --heal --write`. Before committing a
-   test, `test file.cdp --repeat 20`: a flaky one names its likely cause.
-   What to test next: `test --ui-coverage` lists, per page, the controls
-   no test acted on and the mocks no test used.
+   Broken locators: `test --heal --write`; flaky: `--repeat 20` names the
+   cause; untested controls and mocks: `test --ui-coverage`.
+6. A bug found while exploring: `repro start`, reproduce it, `repro save
+   bugs/x`; `chrome-cdp test bugs/x` replays it offline.
 
 ```
 @mocks base checkout
@@ -135,11 +135,10 @@ snapshot -i | --diff           refs to act on | what changed
 find <words> [--role button]   search elements, prints refs
 locator e12 [--all]            the stable locator to put in a script or test
 text [loc] | markdown | html   read the page or an element
-value <loc> | attr <loc> <a>   a field's value | an attribute
+value <loc> | attr <loc> <a>
 click | dblclick | hover <loc>
 fill <loc> <text>              set a field (type <text> types key by key)
 press Enter | 'Control+A'      keys and shortcuts
-keyboard down Shift           hold a key; keyboard up --all
 select <loc> <v> | check <loc>  an option; a checkbox or radio (uncheck)
 fill-form --values '{"Email":"a@b"}'  fill a whole form; see forms
 upload <loc> <file...> [--drop] file inputs; --drop for drop zones
@@ -147,11 +146,11 @@ wait <loc> | --text t | --url u | --idle
 expect <loc> visible|text t|value v|count n [--not]   assert, retrying
 expect --url u | --no-errors | --no-issues | --no-failed-requests | --a11y | --perf good | --audit
 expect-snapshot <name>         snapshot -i vs a stored baseline
-screenshot [loc] [--full [loc]] [-o f.png]   --full loc: all of a scrolling container
+screenshot [loc] [--full] [-o f.png]
 errors | console | issues | network [--failed] | audit
-eval '<js>'                    run JavaScript, print the value (elements with refs)
+eval '<js>'                    run JavaScript, print the value
 tabs | tab <id> | tab new <url> | tab close
-frames                         the tab's iframes (cross-site too) and workers
+frames                         the tab's iframes and workers
 dialog accept|dismiss          answer alert/confirm/prompt
 route '<url glob>' --json-body '{...}'   mock a request
 viewport 390x844 | emulate 'iPhone 15'   devices

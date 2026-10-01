@@ -9,7 +9,7 @@ chrome-cdp test [OPTIONS] [PATH]...
 
 Arguments:
 
-- `<PATH>`: Scenario files or folders, or FILE:LINE for the test at that line. Default: the config's `tests` globs
+- `<PATH>`: Scenario files or folders, or FILE:LINE for the test at that line. Default: the config's `tests` globs. One folder with its own chrome-cdp.toml runs as that project
 
 Options:
 
@@ -99,6 +99,10 @@ mocks no request matched; ui-coverage.json in the artifacts folder has
 it all. [e2e] pages = ["/products/:id", …] groups by those patterns
 and names the listed pages no test visited.
 
+Repro bundles (docs/e2e/repro.md): `test DIR`, where DIR has a
+chrome-cdp.toml of its own (as `repro save` writes), runs DIR's project
+as if started there: its tests, mocks and state, offline.
+
 Scenario syntax (docs/e2e/scenarios.md):
   @mocks base checkout          # file settings: @mocks @tags @skip @only
   @before                       #   @timeout @viewport @device @retries
@@ -124,6 +128,7 @@ Examples:
   chrome-cdp test --heal       # after a redesign: heal broken locators
   chrome-cdp test --heal --write   # and fix them in the files
   chrome-cdp test --ui-coverage    # what the suite never clicks
+  chrome-cdp test bugs/cart-total  # a repro bundle, offline
   chrome-cdp test --list
 ```
 

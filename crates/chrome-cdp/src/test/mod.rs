@@ -95,6 +95,45 @@ pub(crate) fn project_baselines(cli: &mut crate::cli::Cli, root: &std::path::Pat
 
 /// Runs `test` and returns the exit code; `explicit_session` says whether
 /// `--session` (or its env var) named the session to use.
+/// `test DIR`, where DIR holds a project file of its own that is not the
+/// current directory's project (a repro bundle, plan 18.5): the run is
+/// that project's, as if `test` were started in DIR with no paths. Called
+/// before the config is read, so DIR's config is the one that applies.
+pub(crate) fn enter_project(args: &mut TestArgs) -> Result<(), ErrorInfo> {
+    let [path] = args.paths.as_slice() else {
+        return Ok(());
+    };
+    let dir = std::path::Path::new(path);
+    let own = e2e::config::PROJECT_FILES
+        .iter()
+        .map(|name| dir.join(name))
+        .find(|file| file.is_file());
+    let Some(own) = own else {
+        return Ok(());
+    };
+    let cwd = std::env::current_dir().map_err(|e| {
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("cannot read the current directory: {e}"),
+        )
+    })?;
+    let same = |a: &std::path::Path, b: &std::path::Path| {
+        a.canonicalize()
+            .is_ok_and(|a| b.canonicalize().ok() == Some(a))
+    };
+    if e2e::find_project_file(&cwd)?.is_some_and(|current| same(&current, &own)) {
+        return Ok(());
+    }
+    std::env::set_current_dir(dir).map_err(|e| {
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("cannot run the project in {}: {e}", dir.display()),
+        )
+    })?;
+    args.paths.clear();
+    Ok(())
+}
+
 pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) -> u8 {
     let mode = global.mode();
     if args.backend.as_deref() == Some(e2e::backend::ALL) {

@@ -409,6 +409,10 @@ mocks no request matched; ui-coverage.json in the artifacts folder has
 it all. [e2e] pages = [\"/products/:id\", …] groups by those patterns
 and names the listed pages no test visited.
 
+Repro bundles (docs/e2e/repro.md): `test DIR`, where DIR has a
+chrome-cdp.toml of its own (as `repro save` writes), runs DIR's project
+as if started there: its tests, mocks and state, offline.
+
 Scenario syntax (docs/e2e/scenarios.md):
   @mocks base checkout          # file settings: @mocks @tags @skip @only
   @before                       #   @timeout @viewport @device @retries
@@ -434,6 +438,7 @@ Examples:
   chrome-cdp test --heal       # after a redesign: heal broken locators
   chrome-cdp test --heal --write   # and fix them in the files
   chrome-cdp test --ui-coverage    # what the suite never clicks
+  chrome-cdp test bugs/cart-total  # a repro bundle, offline
   chrome-cdp test --list")]
     Test(TestArgs),
 
@@ -462,6 +467,27 @@ Examples:
   chrome-cdp history --as-scenario checkout --from 12
   chrome-cdp history --clear -q")]
     History(HistoryCmdArgs),
+
+    /// Pack what the session did into a bundle that replays it offline.
+    #[command(
+        subcommand_required = true,
+        arg_required_else_help = true,
+        after_help = "\
+A repro bundle is a small project that replays a bug found in a session,
+with no server: `repro start` marks the start (it keeps the cookies and
+storage, the time, and from then on the response bodies of the session's
+requests, documents and scripts included); reproduce the bug; `repro save
+DIR` writes the bundle. `chrome-cdp test DIR` replays it from its own mocks
+and fails the way the session did; once the bug is fixed it passes, and it
+is a regression test. docs/e2e/repro.md has the layout.
+
+Examples:
+  chrome-cdp repro start
+  chrome-cdp click 'role=button[name=\"Pay\"]' && chrome-cdp expect role=status text Paid
+  chrome-cdp repro save bugs/pay-twice --name \"pays twice\"
+  chrome-cdp test bugs/pay-twice"
+    )]
+    Repro(ReproArgs),
 
     /// Load a URL in the current tab and wait for it.
     #[command(after_help = "\
@@ -4787,6 +4813,107 @@ pub(crate) struct HistoryCmdArgs {
 }
 
 #[derive(Debug, Args)]
+pub(crate) struct ReproArgs {
+    #[command(subcommand)]
+    pub(crate) command: ReproCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(crate) enum ReproCommand {
+    /// Mark where the repro starts, and keep the requests' bodies from now.
+    #[command(after_help = "\
+Keeps the session's cookies and storage (as `state save` does), the time
+(the bundle's test freezes it there), the page's viewport, locale and time
+zone, and the history position. From now on each request's response body
+is kept as it finishes loading (Chrome drops a page's bodies once it
+navigates away); --scope keeps only some (path or full-URL globs, as a
+mock set's scope). The page open now is where the bundle's test starts.
+Starting again starts over. Needs a running session.
+
+Examples:
+  chrome-cdp repro start
+  chrome-cdp repro start --scope '/api/**' --scope '/app/**'")]
+    Start(ReproStartArgs),
+
+    /// Write the bundle: a test, its mocks, the state and the evidence.
+    #[command(after_help = "\
+DIR gets chrome-cdp.toml (a project whose every request is answered by
+mocks/repro.toml; one no mock answers fails), repro.cdp (the commands since
+`repro start` as a test, as `history --as-scenario` writes them, ending
+with the last command that failed, its error in a comment), mocks/repro.toml and mocks/data/ (every request recorded),
+state.json (the cookies and storage at the start), evidence/ (the last
+snapshot, a screenshot, console, errors and requests) and README.md (what
+happened, the last error, versions, how to replay). Bodies over --max-body
+(5MB), and images and fonts over a fifth of it, become placeholders; the
+README lists them. Passwords typed into password fields become
+${secret:PASSWORD}; ${secret:…} values stay placeholders, and the README
+names the secrets a replay needs. Without `repro start` it uses the whole
+history, an empty state and the network log as it is, and warns. DIR must
+be empty or new, unless --force.
+
+Examples:
+  chrome-cdp repro save bugs/cart-total
+  chrome-cdp repro save bugs/cart-total --name \"cart total ignores the coupon\"
+  chrome-cdp test bugs/cart-total")]
+    Save(ReproSaveArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ReproStartArgs {
+    /// Keep only the bodies of these requests: a path glob (`/api/**`) or
+    /// a full-URL glob (`https://api.example.com/**`); repeatable.
+    #[arg(long, value_name = "GLOB")]
+    pub(crate) scope: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct ReproSaveArgs {
+    /// The bundle's directory: new or empty, unless --force.
+    #[arg(value_name = "DIR")]
+    pub(crate) dir: PathBuf,
+
+    /// The test's name (`@test "NAME"`); the directory's name if not given.
+    #[arg(long, value_name = "NAME")]
+    pub(crate) name: Option<String>,
+
+    /// Bodies bigger than this become placeholders (images and fonts: a
+    /// fifth of it): `5MB`, `200KB`, or bytes.
+    #[arg(long, default_value = "5MB", value_name = "SIZE", value_parser = parse_bytes)]
+    pub(crate) max_body: u64,
+
+    /// Write into a directory that has files (the bundle's own are
+    /// replaced).
+    #[arg(long)]
+    pub(crate) force: bool,
+
+    /// Bound the output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 4_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+/// `5MB`, `200KB`, `1.5MB`, `1024`: a size in bytes (K and M are 1024s).
+fn parse_bytes(text: &str) -> Result<u64, String> {
+    let t = text.trim();
+    let upper = t.to_ascii_uppercase();
+    let (number, scale) = if let Some(n) = upper.strip_suffix("MB").or(upper.strip_suffix('M')) {
+        (n, 1024.0 * 1024.0)
+    } else if let Some(n) = upper.strip_suffix("KB").or(upper.strip_suffix('K')) {
+        (n, 1024.0)
+    } else {
+        (upper.strip_suffix('B').unwrap_or(&upper), 1.0)
+    };
+    let number: f64 = number
+        .trim()
+        .parse()
+        .map_err(|_| format!("`{text}` is no size; write 5MB, 200KB or a number of bytes"))?;
+    if !(number.is_finite() && number >= 0.0) {
+        return Err(format!("`{text}` is no size"));
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Ok((number * scale).round() as u64)
+}
+
+#[derive(Debug, Args)]
 pub(crate) struct MockArgs {
     #[command(subcommand)]
     pub(crate) command: MockCommand,
@@ -7320,7 +7447,8 @@ pub(crate) struct FramesArgs {
 #[derive(Debug, Args)]
 pub(crate) struct TestArgs {
     /// Scenario files or folders, or FILE:LINE for the test at that line.
-    /// Default: the config's `tests` globs.
+    /// Default: the config's `tests` globs. One folder with its own
+    /// chrome-cdp.toml runs as that project.
     #[arg(value_name = "PATH")]
     pub(crate) paths: Vec<String>,
 
@@ -7818,6 +7946,7 @@ mod tests {
         "screenshot",
         "pdf",
         "har start",
+        "repro start",
         "har stop",
         "trace start",
         "trace stop",
