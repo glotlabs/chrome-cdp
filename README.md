@@ -82,6 +82,10 @@ running the suite against a real backend.
 | E2E tests | built in: `.cdp` scenarios, mock files, `chrome-cdp test` | no | no (`@playwright/test` is separate) |
 | Raw CDP | `chrome-cdp cdp Domain.method` | no | — |
 | From the page to the source | `source` (an element's file, line and components), `components` (props, state), logpoints (`debug log`), locals at errors, `wait --hmr` (did the page get my edit?) | no | no |
+| Seeing what is wrong | `why` (why an action would wait), `layout` (overlap, clipping, overflow, contrast), `compare` (two pages, one diff), `explore` (map an app) | no | no |
+| Page audits | `issues` (Chrome's Issues panel), `audit` (accessibility, layout, security, metadata), `expect --audit` with a baseline, `expect --perf` budgets | no | no |
+| Keeping tests working | `test --heal` (a patch for broken locators), flake diagnosis with `--repeat`, `test --ui-coverage`, `repro` bundles another agent replays | — | — |
+| Mocks | match by body, form or nested path; record and replay WebSocket and SSE; `mock gen --openapi`; `mock serve` for servers and other clients | — | — |
 | Browsers | Chrome and Chromium | Chromium, Firefox, WebKit | Chromium, Firefox, WebKit |
 | Agent task success, tokens and time ([agent benchmark](docs/benchmarks.md#agent-task-benchmark)) | pending | pending | not measured |
 | Warm command latency ([micro benchmark](docs/benchmarks.md#micro-suite)) | pending | pending | not measured |
@@ -112,7 +116,8 @@ Playwright tests.
 
 ## Status
 
-Pre-1.0: every command of the v1 surface is implemented, with
+Pre-1.0: every command of the v1 surface is implemented, and so are
+plans 13-19 of the [roadmap after v1](docs/plans/12-after-v1.md), with
 integration tests against real Chrome that CI runs on Linux and macOS,
 x86_64 and arm64. The CLI syntax
 and the `--json` output (`chrome-cdp schema <command>`) are the public API
