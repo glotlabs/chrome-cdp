@@ -1,4 +1,4 @@
-// CSS selectors that pierce open shadow roots, as Playwright's do: a
+// CSS selectors that pierce open shadow roots: a
 // descendant combinator (a space) may cross into a shadow root, so
 // `#app .item` finds `.item` inside `#app`'s shadow tree. Other
 // combinators (`>`, `+`, `~`) stay inside one tree.

@@ -27,8 +27,8 @@ async function (spec, budget, root) {
       throw e;
     }
   };
-  // Visible: a non-empty box and not `visibility: hidden` (Playwright's
-  // definition); `display: none` has no box.
+  // Visible: a non-empty box and not `visibility: hidden`; `display: none`
+  // has no box.
   const visible = (el) => {
     const box = el.getBoundingClientRect();
     if (box.width <= 0 || box.height <= 0) return false;

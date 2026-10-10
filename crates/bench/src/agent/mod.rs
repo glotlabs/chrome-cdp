@@ -1,6 +1,5 @@
 //! The agent task benchmark (plan 10.4): Claude Code headless on about 25
-//! scripted tasks, once with only `chrome-cdp skill` and once with only
-//! Playwright MCP, N times each. A verifier decides success; tokens, turns
+//! scripted tasks with only `chrome-cdp skill`, N times each. A verifier decides success; tokens, turns
 //! and wall time come from Claude Code's result.
 //!
 //! `--check` runs no agent: for each task it checks that the verifier
@@ -27,14 +26,13 @@ use crate::report::{self, Host};
 use crate::sandbox::Sandbox;
 use crate::stats;
 use run::{AgentOptions, AgentRun};
-use task::{Arm, Task, Vars};
+use task::{Task, Vars};
 use verify::Check;
 
 #[derive(Debug)]
 pub struct Options {
     /// Task ids to run (all when empty).
     pub tasks: Vec<String>,
-    pub arms: Vec<Arm>,
     pub reps: usize,
     /// Skip the tasks on public sites.
     pub offline: bool,
@@ -45,11 +43,10 @@ pub struct Options {
     pub out: PathBuf,
 }
 
-/// One task done once by one arm.
+/// One task done once.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Episode {
     pub task: String,
-    pub arm: Arm,
     pub rep: usize,
     pub success: bool,
     pub checks: Vec<CheckRecord>,
@@ -354,7 +351,7 @@ fn batch(sandbox: &Sandbox, dir: &Path, script: &str, keep_going: bool) -> Resul
     }
 }
 
-/// Runs the benchmark: every selected task × arm, `reps` times, one at a
+/// Runs the benchmark: every selected task, `reps` times, one at a
 /// time (tasks use fixed ports and a real browser each).
 pub fn run(opts: &Options) -> Result<AgentReport, String> {
     let tasks = select(&opts.tasks, opts.offline)?;
@@ -365,38 +362,31 @@ pub fn run(opts: &Options) -> Result<AgentReport, String> {
     let mut log = std::fs::File::create(&log_path)
         .map_err(|e| format!("create {}: {e}", log_path.display()))?;
     let mut episodes = Vec::new();
-    let total: usize = tasks
-        .iter()
-        .map(|t| t.arms().iter().filter(|a| opts.arms.contains(a)).count())
-        .sum::<usize>()
-        * opts.reps;
+    let total = tasks.len() * opts.reps;
     for rep in 1..=opts.reps {
         for task in &tasks {
-            for arm in task.arms().into_iter().filter(|a| opts.arms.contains(a)) {
-                crate::note(&format!(
-                    "[{}/{total}] {} · {} · run {rep}",
-                    episodes.len() + 1,
-                    task.id,
-                    arm.name()
-                ));
-                let e = episode(task, arm, rep, &site, opts);
-                crate::note(&format!(
-                    "  {} in {} turns, {} tokens, {} file reads (+{} in the shell), {:.0}s{}",
-                    if e.success { "passed" } else { "FAILED" },
-                    e.run.turns,
-                    e.run.tokens.total(),
-                    e.run.file_reads,
-                    e.run.shell_reads,
-                    Duration::from_millis(e.run.wall_ms).as_secs_f64(),
-                    e.error
-                        .as_deref()
-                        .map(|x| format!(" ({x})"))
-                        .unwrap_or_default()
-                ));
-                let line = serde_json::to_string(&e).map_err(|x| x.to_string())?;
-                writeln!(log, "{line}").map_err(|x| x.to_string())?;
-                episodes.push(e);
-            }
+            crate::note(&format!(
+                "[{}/{total}] {} · run {rep}",
+                episodes.len() + 1,
+                task.id
+            ));
+            let e = episode(task, rep, &site, opts);
+            crate::note(&format!(
+                "  {} in {} turns, {} tokens, {} file reads (+{} in the shell), {:.0}s{}",
+                if e.success { "passed" } else { "FAILED" },
+                e.run.turns,
+                e.run.tokens.total(),
+                e.run.file_reads,
+                e.run.shell_reads,
+                Duration::from_millis(e.run.wall_ms).as_secs_f64(),
+                e.error
+                    .as_deref()
+                    .map(|x| format!(" ({x})"))
+                    .unwrap_or_default()
+            ));
+            let line = serde_json::to_string(&e).map_err(|x| x.to_string())?;
+            writeln!(log, "{line}").map_err(|x| x.to_string())?;
+            episodes.push(e);
         }
     }
     Ok(AgentReport {
@@ -414,10 +404,9 @@ pub fn run(opts: &Options) -> Result<AgentReport, String> {
     })
 }
 
-fn episode(task: &Task, arm: Arm, rep: usize, site: &Fixtures, opts: &Options) -> Episode {
+fn episode(task: &Task, rep: usize, site: &Fixtures, opts: &Options) -> Episode {
     let mut e = Episode {
         task: task.id.clone(),
-        arm,
         rep,
         success: false,
         checks: Vec::new(),
@@ -428,9 +417,8 @@ fn episode(task: &Task, arm: Arm, rep: usize, site: &Fixtures, opts: &Options) -
         let setup = Setup::new(task, site, &opts.fixtures_bin)?;
         let sandbox = Sandbox::new(&opts.agent.bin, &opts.agent.chrome)?;
         let prompt = setup.vars.expand(&task.prompt);
-        let log = opts.out.join(format!("{}.{}.{rep}", task.id, arm.name()));
+        let log = opts.out.join(format!("{}.{rep}", task.id));
         let run = run::run_agent(
-            arm,
             &prompt,
             setup.workdir.path(),
             &sandbox,
@@ -457,10 +445,9 @@ fn episode(task: &Task, arm: Arm, rep: usize, site: &Fixtures, opts: &Options) -
     e
 }
 
-/// Per-arm aggregates.
+/// Aggregates over all episodes.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ArmSummary {
-    pub arm: Arm,
+pub struct Summary {
     pub episodes: usize,
     pub passed: usize,
     pub tokens_median: f64,
@@ -475,33 +462,32 @@ pub struct ArmSummary {
 }
 
 #[allow(clippy::cast_precision_loss)]
-pub fn summarize(episodes: &[Episode]) -> Vec<ArmSummary> {
-    Arm::ALL
-        .into_iter()
-        .filter_map(|arm| {
-            let mine: Vec<&Episode> = episodes.iter().filter(|e| e.arm == arm).collect();
-            if mine.is_empty() {
-                return None;
-            }
-            let tokens: Vec<f64> = mine.iter().map(|e| e.run.tokens.total() as f64).collect();
-            let turns: Vec<f64> = mine.iter().map(|e| e.run.turns as f64).collect();
-            let reads: Vec<f64> = mine.iter().map(|e| e.run.file_reads as f64).collect();
-            let shell: Vec<f64> = mine.iter().map(|e| e.run.shell_reads as f64).collect();
-            let wall: Vec<f64> = mine.iter().map(|e| e.run.wall_ms as f64 / 1000.0).collect();
-            Some(ArmSummary {
-                arm,
-                episodes: mine.len(),
-                passed: mine.iter().filter(|e| e.success).count(),
-                tokens_median: stats::percentile(&tokens, 50.0),
-                tokens_mean: stats::mean(&tokens),
-                turns_median: stats::percentile(&turns, 50.0),
-                file_reads_median: stats::percentile(&reads, 50.0),
-                shell_reads_median: stats::percentile(&shell, 50.0),
-                wall_median_s: stats::percentile(&wall, 50.0),
-                cost_usd: mine.iter().map(|e| e.run.cost_usd).sum(),
-            })
-        })
-        .collect()
+pub fn summarize(episodes: &[Episode]) -> Option<Summary> {
+    if episodes.is_empty() {
+        return None;
+    }
+    let tokens: Vec<f64> = episodes
+        .iter()
+        .map(|e| e.run.tokens.total() as f64)
+        .collect();
+    let turns: Vec<f64> = episodes.iter().map(|e| e.run.turns as f64).collect();
+    let reads: Vec<f64> = episodes.iter().map(|e| e.run.file_reads as f64).collect();
+    let shell: Vec<f64> = episodes.iter().map(|e| e.run.shell_reads as f64).collect();
+    let wall: Vec<f64> = episodes
+        .iter()
+        .map(|e| e.run.wall_ms as f64 / 1000.0)
+        .collect();
+    Some(Summary {
+        episodes: episodes.len(),
+        passed: episodes.iter().filter(|e| e.success).count(),
+        tokens_median: stats::percentile(&tokens, 50.0),
+        tokens_mean: stats::mean(&tokens),
+        turns_median: stats::percentile(&turns, 50.0),
+        file_reads_median: stats::percentile(&reads, 50.0),
+        shell_reads_median: stats::percentile(&shell, 50.0),
+        wall_median_s: stats::percentile(&wall, 50.0),
+        cost_usd: episodes.iter().map(|e| e.run.cost_usd).sum(),
+    })
 }
 
 /// The agent section of docs/benchmarks.md.
@@ -509,7 +495,7 @@ pub fn summarize(episodes: &[Episode]) -> Vec<ArmSummary> {
 pub fn markdown(r: &AgentReport) -> String {
     let tasks: BTreeSet<&str> = r.episodes.iter().map(|e| e.task.as_str()).collect();
     let mut md = format!(
-        "Last run: {} on {}, {}, model: {}; {} tasks, {} run(s) per task and arm.\n\n",
+        "Last run: {} on {}, {}, model: {}; {} tasks, {} run(s) per task.\n\n",
         report::date(r.created),
         r.host.key(),
         r.chrome,
@@ -517,12 +503,11 @@ pub fn markdown(r: &AgentReport) -> String {
         tasks.len(),
         r.reps
     );
-    md.push_str("| Arm | Success | Tokens (median) | Tokens (mean) | Turns (median) | Files read (median) | Shell reads (median) | Wall time (median) | Cost |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|\n");
-    for s in summarize(&r.episodes) {
+    md.push_str("| Success | Tokens (median) | Tokens (mean) | Turns (median) | Files read (median) | Shell reads (median) | Wall time (median) | Cost |\n|---:|---:|---:|---:|---:|---:|---:|---:|\n");
+    if let Some(s) = summarize(&r.episodes) {
         let _ = writeln!(
             md,
-            "| {} | {}/{} ({:.0}%) | {:.0} | {:.0} | {:.0} | {:.0} | {:.0} | {:.0}s | ${:.2} |",
-            s.arm.name(),
+            "| {}/{} ({:.0}%) | {:.0} | {:.0} | {:.0} | {:.0} | {:.0} | {:.0}s | ${:.2} |",
             s.passed,
             s.episodes,
             s.passed as f64 * 100.0 / s.episodes.max(1) as f64,
@@ -535,30 +520,17 @@ pub fn markdown(r: &AgentReport) -> String {
             s.cost_usd
         );
     }
-    md.push_str("\n| Task | chrome-cdp success | tokens (median) | Playwright MCP success | tokens (median) |\n|---|---:|---:|---:|---:|\n");
+    md.push_str("\n| Task | Success | Tokens (median) |\n|---|---:|---:|\n");
     for task in &tasks {
-        let cell = |arm: Arm| {
-            let mine: Vec<&Episode> = r
-                .episodes
-                .iter()
-                .filter(|e| e.task == *task && e.arm == arm)
-                .collect();
-            if mine.is_empty() {
-                return ("–".to_owned(), "–".to_owned());
-            }
-            let tokens: Vec<f64> = mine.iter().map(|e| e.run.tokens.total() as f64).collect();
-            (
-                format!(
-                    "{}/{}",
-                    mine.iter().filter(|e| e.success).count(),
-                    mine.len()
-                ),
-                format!("{:.0}", stats::percentile(&tokens, 50.0)),
-            )
-        };
-        let (a, at) = cell(Arm::ChromeCdp);
-        let (b, bt) = cell(Arm::PlaywrightMcp);
-        let _ = writeln!(md, "| `{task}` | {a} | {at} | {b} | {bt} |");
+        let mine: Vec<&Episode> = r.episodes.iter().filter(|e| e.task == *task).collect();
+        let tokens: Vec<f64> = mine.iter().map(|e| e.run.tokens.total() as f64).collect();
+        let _ = writeln!(
+            md,
+            "| `{task}` | {}/{} | {:.0} |",
+            mine.iter().filter(|e| e.success).count(),
+            mine.len(),
+            stats::percentile(&tokens, 50.0)
+        );
     }
     md
 }
@@ -568,10 +540,9 @@ mod tests {
     use super::*;
     use run::Tokens;
 
-    fn episode(task: &str, arm: Arm, success: bool, tokens: u64) -> Episode {
+    fn episode(task: &str, success: bool, tokens: u64) -> Episode {
         Episode {
             task: task.into(),
-            arm,
             rep: 1,
             success,
             checks: vec![],
@@ -592,19 +563,15 @@ mod tests {
     }
 
     #[test]
-    fn summaries_per_arm_and_task() {
+    fn summaries_overall_and_per_task() {
         let episodes = [
-            episode("login", Arm::ChromeCdp, true, 100),
-            episode("login", Arm::ChromeCdp, false, 300),
-            episode("login", Arm::PlaywrightMcp, true, 900),
+            episode("login", true, 100),
+            episode("login", false, 300),
+            episode("search", true, 900),
         ];
-        let s = summarize(&episodes);
-        assert_eq!(s.len(), 2);
-        assert_eq!(
-            (s[0].arm, s[0].passed, s[0].episodes),
-            (Arm::ChromeCdp, 1, 2)
-        );
-        assert!((s[0].tokens_mean - 200.0).abs() < 1e-9);
+        let s = summarize(&episodes[..2]).unwrap();
+        assert_eq!((s.passed, s.episodes), (1, 2));
+        assert!((s.tokens_mean - 200.0).abs() < 1e-9);
         let md = markdown(&AgentReport {
             suite: "agent".into(),
             created: 0,
@@ -619,10 +586,11 @@ mod tests {
             episodes: episodes.to_vec(),
         });
         assert!(
-            md.contains("| chrome-cdp | 1/2 (50%) | 100 | 200 | 4 | 6 | 2 | 30s | $1.00 |"),
+            md.contains("| 2/3 (67%) | 300 | 433 | 4 | 6 | 2 | 30s | $1.50 |"),
             "{md}"
         );
-        assert!(md.contains("| `login` | 1/2 | 100 | 1/1 | 900 |"), "{md}");
+        assert!(md.contains("| `login` | 1/2 | 100 |"), "{md}");
+        assert!(md.contains("| `search` | 1/1 | 900 |"), "{md}");
     }
 
     #[test]

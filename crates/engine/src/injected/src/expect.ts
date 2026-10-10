@@ -1,8 +1,7 @@
 // `expect` (plan 09, milestone 9.1): what one check of an assertion sees
 // of the elements a locator matched, or of the page. The engine's probe
 // (`wait/probe.js`) runs it on every animation frame until it passes (or,
-// with `--not`, fails) or the time is up, like Playwright's web-first
-// assertions.
+// with `--not`, fails) or the time is up.
 
 import { disabled, invisible, readOnly } from './actionable';
 import { roleOf } from './aria';

@@ -1,4 +1,4 @@
-# Plan 14 — Parity gaps and small commands
+# Plan 14 — Gaps and small commands
 
 Status: DONE (14.1-14.7)
 Depends on: v1 (plans 01–11). Track 3 of [plan 12](12-after-v1.md). Plan 13
@@ -7,16 +7,18 @@ target graph instead of adding per-session code.
 
 ## Goal
 
-Remove "chrome-cdp can't do X" from Playwright migrations. This plan closes
-the three ❌ rows of `docs/playwright-parity.md`, the 🟡 rows that agents or
-converted suites hit, and the small commands the backlog asked for. Each
-item is small; the milestones group them by the code they touch.
+Remove "chrome-cdp can't do X". This plan adds the locator filters, paused
+timers and input features agents still missed, finishes the partial ones
+they hit, and adds the small commands the backlog asked for. Each item is
+small; the milestones group them by the code they touch.
 
 When this plan is done:
 
-- `docs/playwright-parity.md` has no ❌ row.
-- The 🟡 rows for `keyboard.down`/`up`, `exposeFunction`, WebSocket frames,
-  `toMatchAriaSnapshot` and `browser_generate_locator` are ✅.
+- Locators filter by descendants and combine with `and=`/`or=`, and a
+  command prints a ref's stable locator.
+- Timers can be paused and run forward.
+- Held keys, exposed functions that answer, WebSocket frames in `network`
+  and `expect-snapshot` templates work.
 - Every backlog note filed under track 3 in plan 12 §6 is done and its file
   in `.looper/tasks/` is deleted.
 
@@ -30,9 +32,6 @@ When this plan is done:
   "do not edit"), golden output in `crates/chrome-cdp/tests/golden/`, and a
   line in `chrome-cdp skill` only when an agent should reach for it.
 - Errors follow plan 08 §3: what happened, why, and the next command.
-- When a parity row changes, update both `docs/playwright-parity.md` (its
-  row and the "Today:" line; `crates/chrome-cdp/tests/parity.rs` checks the
-  counts) and the matching row of `docs/migrating-from-playwright.md`.
 - Engine tests go in `crates/engine/tests/`, CLI tests in
   `crates/chrome-cdp/tests/`. Fixture pages go in `testdata/site/`.
 
@@ -48,13 +47,13 @@ error texts) and is evaluated by `query()` in
 filter or combinator of what the steps before it found, like `nth=`,
 `visible=` and `has-text=`, so none may be the first step.
 
-| Step | Keeps | Playwright |
-|---|---|---|
-| `has=<locator>` | elements with at least one descendant the inner locator matches (searched with the element as root) | `filter({ has })` |
-| `has-not=<locator>` | elements with no such descendant | `filter({ hasNot })` |
-| `has-not-text=<text>` | elements whose text does not match (same text rules as `has-text=`) | `filter({ hasNotText })` |
-| `and=<locator>` | elements the inner locator also matches, searched in the same scopes as the last finder step | `a.and(b)` |
-| `or=<locator>` | the elements so far plus those the inner locator matches in the same scopes, in document order, without duplicates | `a.or(b)` |
+| Step | Keeps |
+|---|---|
+| `has=<locator>` | elements with at least one descendant the inner locator matches (searched with the element as root) |
+| `has-not=<locator>` | elements with no such descendant |
+| `has-not-text=<text>` | elements whose text does not match (same text rules as `has-text=`) |
+| `and=<locator>` | elements the inner locator also matches, searched in the same scopes as the last finder step |
+| `or=<locator>` | the elements so far plus those the inner locator matches in the same scopes, in document order, without duplicates |
 
 - **Inner locators.** The value is a full locator. It needs double quotes
   when it contains `>>` or spaces at its ends:
@@ -114,17 +113,6 @@ chrome-cdp locator <LOCATOR> [--all] [--tab T] [--strict-refs]
   has="text=Invoice 12" >> role=button[name=Delete]`) where that is the
   only unique form; add it at the end of `stable.ts`'s preference order.
 
-### `convert`
-
-`crates/chrome-cdp/src/convert/translate.rs` (`filter()`, around line 2328)
-today turns `filter({ has })` into a TODO. Translate:
-
-- `filter({ has: X })` → `>> has="X"`, `hasNot` → `has-not=`,
-  `hasNotText` → `has-not-text=`, `hasText` stays `has-text=`.
-- `a.or(b)` → `A >> or="B"`, `a.and(b)` → `A >> and="B"`, when `b` is a
-  locator built from the same page or the same parent locator. Otherwise
-  keep the TODO with a reason.
-
 ### Tests
 
 - `parse.rs` unit tests: each kind parses, quoting, escapes, nesting depth,
@@ -134,10 +122,6 @@ today turns `filter({ has })` into a TODO. Translate:
   One test per kind against known counts, plus `and=`/`or=` scopes inside
   rows.
 - CLI: `locator e12`, `locator --all`, `--json`; golden output.
-- `convert`: snippets with each Playwright form, round-tripped through
-  `e2e::scenario::load`.
-- Parity: the two ❌ locator rows and the `browser_generate_locator` row
-  become ✅.
 
 ## Milestone 14.2 — Paused timers
 
@@ -149,7 +133,7 @@ real time; `time advance` moves `Date` and `performance.now()` and fires the
 due `setTimeout`/`setInterval` callbacks once each. The timers are wrapped
 by `wrapTimers` when the clock is first installed in a document.
 
-Add Playwright's paused clock without changing `freeze`/`advance`:
+Add a paused clock without changing `freeze`/`advance`:
 
 ```text
 chrome-cdp time pause [TIME]     # freeze Date at TIME (default: now) and stop timers
@@ -186,12 +170,12 @@ chrome-cdp time resume           # timers run in real time again, from the pause
 Tests: a fixture page with a countdown (interval), a debounce (timeout)
 and a rAF animation counter. Engine tests for each command, interval
 counts, nested timers, the runaway cap, `resume`, and a new tab opened
-while paused. Parity: the ❌ `clock.runFor, pauseAt` row becomes ✅.
+while paused.
 
 ## Milestone 14.3 — Input and files
 
 Backlog: `clipboard-rich-content`, `upload-directory-inputs`,
-`downloads-dir-option`. Parity row: `keyboard.down`/`up`.
+`downloads-dir-option`. Also `keyboard down`/`up`.
 
 ### `keyboard down|up`
 
@@ -208,11 +192,11 @@ chrome-cdp keyboard up --all
   unknown names get "did you mean" (`protocol::suggest::similar`).
 - The daemon keeps the held keys per tab. Held modifiers apply to later
   `click`, `dblclick`, `press`, `type`, `mouse` and `drag` events (the
-  `modifiers` bitmask of `Input.dispatch*Event`), as Playwright does.
+  `modifiers` bitmask of `Input.dispatch*Event`).
 - `keyboard up` of a key not held: a warning, not an error.
 - Output: `holding Shift` / `released Shift (holding nothing)`. JSON:
   `{ "held": ["Shift"] }`. `status` lists held keys when there are any.
-- Held keys stay held across navigations, as in Playwright, and are
+- Held keys stay held across navigations, and are
   dropped when the tab closes. Document it.
 
 ### Clipboard: HTML and images
@@ -387,7 +371,7 @@ or by extracting it). `--annotate` on a page with an open modal: the
 labels are in the image (compare a crop with the pixels helper in
 `crates/engine/src/expect/pixels.rs`).
 
-## Milestone 14.7 — The 🟡 rows
+## Milestone 14.7 — Finishing partial features
 
 - **`expose` functions that return a value.** Today an exposed function
   logs its call and returns `Promise.resolve()`
@@ -396,8 +380,7 @@ labels are in the image (compare a crop with the pixels helper in
   in call order (the last repeats). The answer is data, not code: logic
   that runs in the page is what `eval` and `init-script` are for. The binding's reply goes back through
   `Runtime.evaluate` in the calling context resolving the call's promise
-  (keep a call id). Calls are still logged. Parity row: ✅ with a note that
-  the answer is data, not a Node function.
+  (keep a call id). Calls are still logged.
 - **WebSocket frames in `network`.** The network log already keeps a
   socket's last 20 frames and `network show ID` lists them
   (`crates/engine/src/observe/netlog.rs`, `network.rs`). Add
@@ -405,8 +388,7 @@ labels are in the image (compare a crop with the pixels helper in
   [--limit N]`: every kept frame, and new ones with `--follow`. Keep up to
   500 frames per socket (text cut at the current length), dropping the
   oldest with a count. `wait --ws <URL-PATTERN> [--frame REGEX]` waits for
-  a frame on a matching socket. Update the stale parity rows (they say
-  frames are only reachable through `cdp --listen`).
+  a frame on a matching socket.
 - **`expect-snapshot` templates.** A baseline line may use:
   - `*` as a whole name or text value: any value
     (`button "*"`);
@@ -418,7 +400,7 @@ labels are in the image (compare a crop with the pixels helper in
   templates; it keeps `*`, `/…/` and `...` lines of the existing baseline
   that still match and rewrites the rest. A failure's diff shows the
   template's lines. Document it in `expect-snapshot --help` and
-  `docs/guide.md`. Parity: `toMatchAriaSnapshot` becomes ✅.
+  `docs/guide.md`.
 
 Tests: an exposed function returning a fixed value and a sequence to page
 code that awaits it; `network frames` on the WebSocket fixture with
@@ -428,13 +410,10 @@ match with changed dynamic text, fail on a missing button, and survive
 
 ## Acceptance criteria
 
-- [x] `docs/playwright-parity.md` has no ❌ row; its "Today:" line and
-      `tests/parity.rs` agree.
-- [x] The 🟡 rows for `keyboard.down`/`up`, `exposeFunction`, WebSocket
-      frames, `toMatchAriaSnapshot` and `browser_generate_locator` are ✅,
-      in both parity docs.
-- [x] `convert` translates `filter({ has, hasNot, hasNotText })`, `or()`
-      and `and()` on the same-parent forms, and its tests load the output.
+- [x] `has=`, `has-not=`, `has-not-text=`, `and=` and `or=` filter as
+      specified, and `locator` prints a ref's stable locator.
+- [x] Paused timers, `keyboard down`/`up`, exposed functions that answer,
+      `network frames`, `wait --ws` and `expect-snapshot` templates work.
 - [x] Every new command and flag has help with an example, a
       `docs/commands/` page, golden output and a `--json` form that only
       adds fields.
@@ -447,13 +426,13 @@ match with changed dynamic text, fail on a missing button, and survive
 | Area | Where |
 |---|---|
 | Locator grammar | `crates/engine/src/locator/parse.rs` unit tests; `crates/engine/tests/locator*.rs` with `testdata/site/locators/filters.html` |
-| `locator` command, `convert` | `crates/chrome-cdp/tests/cli.rs`, `convert/tests.rs`, golden |
+| `locator` command | `crates/chrome-cdp/tests/cli.rs`, golden |
 | Paused timers | engine test with a countdown, debounce and rAF fixture |
 | Clipboard, keyboard, upload, downloads | engine tests; CLI tests for `open --downloads-dir` and `downloads --clear` |
 | Extensions | `crates/chrome-cdp/tests/extensions.rs`, golden; `testdata/extensions/` fixture extension; tab routing unit tests |
 | Sessions and waits | `crates/chrome-cdp/tests/wait.rs`, `session.rs`, `cli.rs` |
 | HAR, PDF, annotate | `crates/chrome-cdp/tests/network.rs`, `screenshot.rs` |
-| 🟡 rows | engine and CLI tests per item; `tests/parity.rs` for the counts |
+| Expose, frames, templates | engine and CLI tests per item |
 
 ## Decisions log
 
@@ -481,12 +460,6 @@ match with changed dynamic text, fail on a missing button, and survive
   `has=` when nothing matched; the count is also `details.before_has`.
   When those steps match nothing either, the usual "no element matches"
   message stays.
-- **14.1, `convert` and `or()`/`and()`.** The parent is found on the
-  translated locators: `a`'s steps before its last finder step. `b` must
-  start with the same steps, and the rest becomes the inner locator.
-  `page.getByRole('button').or(page.locator('.row').getByRole('link'))`
-  is therefore `role=button >> or=".row >> role=link"`, while
-  `row.getByRole('button').or(page.getByRole('link'))` stays a TODO.
 - **14.2, errors.** `run-for`/`pause-at` on a clock that is not paused,
   and `pause-at` to an earlier time, are `BadArgs` (exit 2) with the hint
   `time pause`: there is no FailedPrecondition kind, and `time advance` on
@@ -506,10 +479,6 @@ match with changed dynamic text, fail on a missing button, and survive
 - **14.2, `resume`** hands queued animation frames to the browser, which
   gives them new ids; `cancelAnimationFrame` stays wrapped, mapping the
   old ids, until those frames have run.
-- **14.2, `convert`.** Playwright's `clock.pauseAt(t)` also jumps a
-  running clock there, while `time pause-at` needs a paused one, so it
-  becomes `time pause T`; `runFor` becomes `time run-for`, `resume` `time
-  resume`.
 - **14.2, skill.** `chrome-cdp skill` has no `time` line, and paused
   timers are for tests of countdowns and animations, so it gets none.
 - **14.3, clipboard permissions.** `clipboard` keeps granting
@@ -530,7 +499,7 @@ match with changed dynamic text, fail on a missing button, and survive
   `-o` is BadArgs, as planned. The `-o -` path follows `screenshot`'s.
 - **14.3, keyboard.** Held modifiers go with key, mouse, touch and drag
   events (`press` chords start with them, so `press a` with Shift held
-  types `A`); `fill` ignores them, as Playwright's does. `type` types its
+  types `A`); `fill` ignores them. `type` types its
   text as given: its keys carry the held modifier bits, and type nothing
   with a modifier other than Shift held. `keyboard down` of a held key is
   a warning, not an auto-repeat. A chord (`Shift+a`) is BadArgs with the
@@ -669,11 +638,7 @@ match with changed dynamic text, fail on a missing button, and survive
   starting with `@` is a file, read by the CLI. `--scale` is checked by
   clap (0.1 to 2); the text output says `scale 0.5` when it is not 1. The
   test reads the footer's text out of the PDF (Flate streams and the
-  fonts' ToUnicode maps) rather than trusting the page count. `convert`
-  translates `headerTemplate`/`footerTemplate` only with
-  `displayHeaderFooter: true` (as Playwright prints them), and that flag
-  alone is a TODO; it also adds `--margin` (Playwright's margins are 0
-  unless given, `pdf`'s 1cm).
+  fonts' ToUnicode maps) rather than trusting the page count.
 - **14.6, `--annotate` and the top layer.** The overlay is a manual
   popover only when the document has `:modal`, `:popover-open` or
   `:fullscreen` content (found with `querySelector`, so not inside shadow
@@ -692,9 +657,7 @@ match with changed dynamic text, fail on a missing button, and survive
   is the sequence `[X]`; the sequence is counted per function across the
   session's tabs and reloads, and `expose NAME` with other answers (or
   none) is a new binding that starts over. Workers still get no exposed
-  functions (backlog note `expose-in-workers`). `convert` turns an arrow
-  whose body is a JSON literal into `--returns`; other functions stay
-  `expose NAME`.
+  functions (backlog note `expose-in-workers`).
 - **14.7, frames.** Each frame has its number on the socket (`n`, a new
   field of `WebSocketFrame`) and the log's change count when it came,
   which `wait --ws` compares with a new per-command mark, as `--console`
@@ -712,7 +675,7 @@ match with changed dynamic text, fail on a missing button, and survive
   `wait --ws --frame`. HAR exports still write binary messages with no
   data: 32 bytes are not the message.
 - **14.7, templates.** A regex value is `/…/` or `/…/i` in place of the
-  quoted value, found anywhere in it (as Playwright's are); `"*"` must
+  quoted value, found anywhere in it; `"*"` must
   still be a value (a line without a name does not match). One
   alignment (fewest template lines left out, page lines added, and lines
   changed at the same depth) decides the match and writes the page in
@@ -720,8 +683,7 @@ match with changed dynamic text, fail on a missing button, and survive
   and `--update` stores it. A changed line counts as one change, so a
   `...` does not swallow the page's version of a line the template no
   longer matches. A regex that does not compile is BadArgs naming the
-  line. `convert` keeps `toMatchAriaSnapshot` a TODO: Playwright's YAML
-  (`[level=1]`, `- text: …`) is not the `snapshot -i` format.
+  line.
 - **14.7, template values (close-out).** A field's `value=` takes `"*"`
   and `/regex/` as the name does; a link's href takes only `→ "*"`: an
   href is not quoted, and `→ /docs/` is a path, not a regex.

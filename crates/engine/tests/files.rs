@@ -246,7 +246,7 @@ async fn uploads_into_file_inputs() {
         ["hello.txt", "notes.md"]
     );
 
-    // A hidden input takes files straight away, as Playwright's does.
+    // A hidden input takes files straight away.
     act(&engine, upload("#hidden", &["notes.md"])).await;
     assert_eq!(held(&engine, "#hidden").await, ["notes.md"]);
 

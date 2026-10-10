@@ -1,7 +1,6 @@
 //! The benchmark harness behind `cargo xtask bench` (plan 10.4). Three
-//! suites: `micro` (per-command timings next to the Playwright library's),
-//! `tokens` (snapshot sizes next to Playwright MCP's) and `agent` (Claude
-//! Code on scripted tasks, with chrome-cdp or with Playwright MCP).
+//! suites: `micro` (per-command timings), `tokens` (snapshot sizes) and
+//! `agent` (Claude Code on scripted tasks with chrome-cdp).
 //! docs/benchmarks.md says how to run each, and what they measure.
 
 // The results table goes to stdout.
@@ -41,11 +40,8 @@ enum Suite {
         /// Samples of every other measurement
         #[arg(long, default_value_t = 10)]
         samples: usize,
-        /// Leave out the Playwright comparison (bench/playwright/micro.mjs)
-        #[arg(long)]
-        no_playwright: bool,
     },
-    /// Snapshot tokens per corpus page, next to Playwright MCP's
+    /// Snapshot tokens per corpus page
     Tokens {
         #[command(flatten)]
         common: Common,
@@ -56,17 +52,14 @@ enum Suite {
         #[arg(long, default_value = "auto")]
         tokenizer: String,
     },
-    /// Claude Code on the tasks of bench/agent/tasks, per arm
+    /// Claude Code on the tasks of bench/agent/tasks
     Agent {
         #[command(flatten)]
         common: Common,
         /// Only these tasks (repeatable)
         #[arg(long = "task")]
         tasks: Vec<String>,
-        /// Only this arm: chrome-cdp or playwright-mcp (repeatable)
-        #[arg(long = "arm")]
-        arms: Vec<String>,
-        /// Runs per task and arm
+        /// Runs per task
         #[arg(long, default_value_t = 5)]
         reps: usize,
         /// Claude Code's --model (its default when unset)
@@ -149,7 +142,6 @@ fn run(suite: Suite) -> Result<(), String> {
             cold,
             warm,
             samples,
-            no_playwright,
         } => {
             let bin = binary(&common.bin_dir, "chrome-cdp")?;
             let r = micro::run(&micro::Options {
@@ -160,7 +152,6 @@ fn run(suite: Suite) -> Result<(), String> {
                     warm,
                     each: samples,
                 },
-                playwright: !no_playwright,
             })?;
             let path = report::results_dir().join("micro.json");
             report::write_json(&path, &r)?;
@@ -200,7 +191,6 @@ fn run(suite: Suite) -> Result<(), String> {
         Suite::Agent {
             common,
             tasks,
-            arms,
             reps,
             model,
             claude,
@@ -210,31 +200,17 @@ fn run(suite: Suite) -> Result<(), String> {
         } => {
             if list {
                 for t in agent::select(&tasks, offline)? {
-                    let arms: Vec<&str> = t.arms().iter().map(|a| a.name()).collect();
                     println!(
-                        "{:<22} {}{}  [{}]",
+                        "{:<22} {}{}",
                         t.id,
                         t.title,
-                        if t.network { " (internet)" } else { "" },
-                        arms.join(", ")
+                        if t.network { " (internet)" } else { "" }
                     );
                 }
                 return Ok(());
             }
-            let arms = if arms.is_empty() {
-                agent::task::Arm::ALL.to_vec()
-            } else {
-                arms.iter()
-                    .map(|a| {
-                        agent::task::Arm::parse(a).ok_or_else(|| {
-                            format!("no arm `{a}`; use chrome-cdp or playwright-mcp")
-                        })
-                    })
-                    .collect::<Result<_, _>>()?
-            };
             let opts = agent::Options {
                 tasks: tasks.clone(),
-                arms: arms.clone(),
                 reps,
                 offline,
                 agent: agent::run::AgentOptions {
@@ -257,13 +233,11 @@ fn run(suite: Suite) -> Result<(), String> {
             std::fs::write(opts.out.join("summary.md"), &md).map_err(|e| e.to_string())?;
             print!("{md}");
             note(&format!("wrote {}", opts.out.display()));
-            let whole = tasks.is_empty() && arms.len() == 2 && !offline;
+            let whole = tasks.is_empty() && !offline;
             if !common.no_publish && whole {
                 report::publish("agent", &md)?;
             } else if !common.no_publish {
-                note(
-                    "a partial run (--task, --arm or --offline): docs/benchmarks.md is left as it is",
-                );
+                note("a partial run (--task or --offline): docs/benchmarks.md is left as it is");
             }
             Ok(())
         }

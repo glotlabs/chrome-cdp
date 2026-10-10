@@ -1,7 +1,7 @@
 # Plan 21 — Named locators
 
 Status: NOT STARTED
-Depends on: 04 (the locator grammar), 09 §9.4 (`convert`), 11 (the
+Depends on: 04 (the locator grammar), 11 (the
 runner, `@include`, `lint`, `fmt`, `history --as-scenario`), 18
 (fingerprints, `--heal`, `record`)
 
@@ -21,10 +21,11 @@ reads the same hunk forty times. `@include` step files share *flows*
 (log in, check out), but there is no way to share one *element* between
 tests that do different things with it.
 
-Playwright suites solve this with page objects: a class per page whose
-fields are locators (`cartPage.addButton`). That is a code pattern, not
-a feature. Everyone writes it a little differently, and nothing checks
-that a field is used or that two fields mean the same element.
+Test suites written in code solve this with page objects: a class per
+page whose fields are locators (`cartPage.addButton`). That is a code
+pattern, not a feature. Everyone writes it a little differently, and
+nothing checks that a field is used or that two fields mean the same
+element.
 
 This plan adds named locators to the locator grammar:
 
@@ -47,23 +48,23 @@ What comes with them:
   `--heal` patches that line, not the call sites.
 - **Checked.** `lint` reports unknown names, unused names, entries that
   don't parse, and literal locators that duplicate an entry.
-- **Written for you.** `history --as-scenario`, `record` and `convert`
+- **Written for you.** `history --as-scenario` and `record`
   write `loc=…` when an entry matches. `locators extract` turns an
   existing suite's repeated literals into entries.
 - **Optional.** A suite without a locators file works exactly as
   before. Literal locators stay first-class: a locator used once doesn't
   need a name.
 
-### Why this beats Playwright page objects
+### What named locators give
 
-| | Playwright page objects | chrome-cdp named locators |
-|---|---|---|
-| Defining them | A class per page, written by hand | A TOML table, or `locators extract` from the suite |
-| After a redesign | A person edits the class | `--heal` patches the entry |
-| Unused or duplicate locators | Nothing notices | `lint` warnings |
-| A literal locator that should use the shared one | Nothing notices | `lint` suggests the name |
-| Using one from the shell | Not possible | `chrome-cdp click loc=cart.add` in the project |
-| Flows (log in, check out) | Methods on the class | `@include` step files (unchanged) |
+| | chrome-cdp named locators |
+|---|---|
+| Defining them | A TOML table, or `locators extract` from the suite |
+| After a redesign | `--heal` patches the entry |
+| Unused or duplicate locators | `lint` warnings |
+| A literal locator that should use the shared one | `lint` suggests the name |
+| Using one from the shell | `chrome-cdp click loc=cart.add` in the project |
+| Flows (log in, check out) | `@include` step files (unchanged) |
 
 Read plan 04 §4.4 (the grammar), plan 11 §11.4 (scenarios, `@include`)
 and §11.12 (lint, `fmt`), and plan 18 §Healing first. Code:
@@ -72,7 +73,7 @@ and §11.12 (lint, `fmt`), and plan 18 §Healing first. Code:
 (loading, `@include`), `crates/chrome-cdp/src/script.rs`
 (`locator_values`), `crates/chrome-cdp/src/lint.rs`,
 `crates/chrome-cdp/src/test/{heal,fingerprints,exec}.rs`,
-`crates/chrome-cdp/src/{history,record}.rs`, `crates/chrome-cdp/src/convert/`.
+`crates/chrome-cdp/src/{history,record}.rs`.
 
 ## Rules for every milestone
 
@@ -253,15 +254,6 @@ chrome-cdp locators extract [--min-uses N] [--write]
   stable locator equals an entry's text exactly, and keep the literal
   otherwise. `--no-locators` turns this off.
 - `locators extract`.
-- `convert`: a Playwright page-object class whose constructor assigns
-  locators to fields (`this.addButton = page.getByRole(…)`) becomes
-  entries named after the class and the field (`CartPage.addButton` →
-  `cart_page.add_button`), written to the file `--locators FILE` names
-  (default: printed after the scenario as a TOML block). Uses of the
-  field become `loc=…`. The class's methods are inlined where they are
-  called, like the helpers `convert` already inlines. Other classes stay
-  `# TODO`.
-- `docs/e2e/migrating.md`: page objects → named locators and step files.
 - The skill gets one line: "a locator the suite already names: `loc=`;
   `chrome-cdp locators` lists them".
 
@@ -300,8 +292,6 @@ chrome-cdp locators extract [--min-uses N] [--write]
       expanded to.
 - [ ] A suite with no locators file gives byte-identical goldens,
       fingerprints and patches before and after this plan.
-- [ ] `convert` on a Playwright spec with a page-object class gives
-      entries and a scenario that pass against the same fixture.
 - [ ] `cargo xtask release check` passes: the CLI and schemas only grew.
 
 ## Tests
@@ -314,8 +304,7 @@ chrome-cdp locators extract [--min-uses N] [--write]
   redesign heal on both; `extract` on the literal copy; interactive
   `loc=`.
 - Golden: each lint rule, `locators list/where/extract` text and
-  `--json`, `test --heal` output with an entry hunk, `convert` of the
-  page-object fixture.
+  `--json` and `test --heal` output with an entry hunk.
 
 ## Decisions log
 

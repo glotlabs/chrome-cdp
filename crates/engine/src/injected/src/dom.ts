@@ -63,8 +63,8 @@ export function contains(outer: Node, inner: Node): boolean {
   return false;
 }
 
-/** Visible: a non-empty box and not `visibility: hidden` (Playwright's
- * definition); `display: none` has no box. */
+/** Visible: a non-empty box and not `visibility: hidden`; `display: none`
+ * has no box. */
 export function visible(el: Element): boolean {
   const box = el.getBoundingClientRect();
   if (box.width <= 0 || box.height <= 0) {

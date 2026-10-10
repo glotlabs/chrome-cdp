@@ -13,8 +13,7 @@
 //! isolated` uses). An exposed function is a `Runtime.addBinding` under a
 //! name of our own ([`BINDING_PREFIX`]) plus a small script ([`wrapper`])
 //! that puts a function under the asked name in each document: it takes any
-//! arguments, sends them as JSON, and returns a promise, as Playwright's
-//! `exposeFunction` does. Each call goes into the tab's console as
+//! arguments, sends them as JSON, and returns a promise. Each call goes into the tab's console as
 //! `binding <name>(args)` (see `observe::console`). A function exposed with
 //! answers (`expose NAME --returns`, plan 14.7) numbers its calls and waits:
 //! the daemon hands each call its answer ([`Injector::answer`]) in the

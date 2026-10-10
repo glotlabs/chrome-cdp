@@ -1,12 +1,11 @@
-// An origin's storage, read and written the way Playwright's storageState
-// has it (plan 07, milestone 7.4). Evaluates to an object with `collect`,
+// An origin's storage, read and written as a storageState file has it
+// (plan 07, milestone 7.4). Evaluates to an object with `collect`,
 // `restore` and `seed`; it runs in chrome-cdp's isolated world, which shares
 // the page's storage but none of its globals.
 //
 // IndexedDB values that JSON can hold as they are go in `value`/`key`;
 // others (Dates, Maps, typed arrays, NaN, …) in `valueEncoded`/`keyEncoded`,
-// in Playwright's serialisation (`{d: iso}`, `{a: [...], id}`, …), so files
-// move between the two tools.
+// in the format's serialisation (`{d: iso}`, `{a: [...], id}`, …).
 (() => {
   const kinds = {
     i8: Int8Array,
@@ -237,7 +236,7 @@
     return state;
   }
 
-  // Replaces what `state` has: localStorage always (Playwright's files
+  // Replaces what `state` has: localStorage always (state files
   // always have it), sessionStorage and IndexedDB databases when given.
   function restoreSync(state) {
     fill(localStorage, state.localStorage || []);

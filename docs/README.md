@@ -22,7 +22,6 @@
 | [audits.md](audits.md) | `audit` and `expect --audit`: one report over a page, severities, stable keys, baselines, a CI recipe |
 | [ci.md](ci.md) | GitHub Actions (and other CI) workflows |
 | [docker.md](docker.md) | the `ghcr.io/glotlabs/chrome-cdp` image with Chrome and fonts |
-| [migrating-from-playwright.md](migrating-from-playwright.md) | Playwright's API, call by call, as chrome-cdp commands |
 | [security.md](security.md) | the security model: who can reach the browser, secrets, the sandbox, agents |
 | [threat-model.md](threat-model.md) | the threat model behind it: trust boundaries, each defence in the code, what is left |
 | [troubleshooting.md](troubleshooting.md) | every error kind: what it means and what to do |
@@ -41,10 +40,8 @@ mocked backend, and the same scenarios against a real one. Start with the
 - [e2e/mocks.md](e2e/mocks.md): every key of a mock file.
 - [chrome-flags.md](chrome-flags.md): the flags Chrome is launched with,
   the sandbox and profiles.
-- [playwright-parity.md](playwright-parity.md): each Playwright capability
-  and its status.
-- [benchmarks.md](benchmarks.md): chrome-cdp next to Playwright, and how
-  the numbers are made.
+- [benchmarks.md](benchmarks.md): latency, snapshot tokens and agent
+  tasks, and how the numbers are made.
 - `chrome-cdp help locators|refs|waiting|errors|config|scripts`: the same
   ideas, short, in the terminal.
 - `chrome-cdp schema <command>`: the JSON Schema of a command's `--json`

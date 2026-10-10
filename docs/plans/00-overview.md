@@ -4,9 +4,9 @@ Status: DRAFT (iterate on this first; every other plan depends on it)
 
 ## 1. Problem
 
-Coding agents that need to look at or test a web page usually reach for
-Playwright (library, `playwright-cli`, or Playwright MCP). That works, but it is
-built for humans writing test code, not agents issuing one command at a time:
+Coding agents that need to look at or test a web page usually reach for a
+browser automation library or an MCP server. That works, but those are built
+for humans writing test code, not agents issuing one command at a time:
 
 - **Heavy install.** Node runtime, npm package, and a patched browser download.
   This is slow and brittle in sandboxes and CI.
@@ -14,7 +14,7 @@ built for humans writing test code, not agents issuing one command at a time:
   The library wants a long-lived script, and MCP ties you to one client.
 - **Token-hungry output.** Full snapshots after every action and verbose stack
   traces cost context.
-- **Indirection.** Playwright's protocol layer hides CDP, so it is hard to reach
+- **Indirection.** A protocol layer of its own hides CDP, so it is hard to reach
   the raw power when needed.
 
 ## 2. Product statement
@@ -165,7 +165,7 @@ Locator grammar (shared by all commands, defined in plan 04):
 | 08 | [Agent UX, output & scripting](08-agent-ux-output-scripting.md) | 01 (cross-cutting) | Output contract, errors, batch, skill docs |
 | 09 | [Assertions & test mode](09-assertions-test-mode.md) | 05 | `expect`, script runner, test reports |
 | 11 | [E2E testing with a mocked backend](11-e2e-testing-mocked-backend.md) | 07, 08, 09 | Committed scenario + mock files, `chrome-cdp test`, stateful mocks, and the same scenarios against a real backend |
-| 10 | [Quality, benchmarks & release](10-quality-benchmarks-release.md) | all | CI matrix, Playwright parity, benchmarks, packaging |
+| 10 | [Quality, benchmarks & release](10-quality-benchmarks-release.md) | all | CI matrix, benchmarks, packaging |
 
 Plans 06, 07 and 08 can run in parallel once 03 is done. Plan 08 sets
 conventions early: **read 08 §2–§4 before implementing any command.**
@@ -177,8 +177,7 @@ far).
 ## 7. Definition of done for v1.0
 
 - [ ] Every command in §5 is implemented, documented, and covered by integration tests on Linux and macOS (amd64 and arm64).
-- [x] The Playwright parity matrix (plan 10) has no ❌ in the "agent-critical" rows.
-- [ ] The agent benchmark (plan 10) shows task success rate ≥ Playwright MCP, with ≤ 50% of its tokens and faster wall-clock time.
+- [ ] The agent benchmark (plan 10) shows a high task success rate at a low token cost.
 - [ ] Cold `open https://example.com` takes < 1.5 s. A warm command round trip takes < 30 ms (p50, excluding page work).
 - [ ] No crash, hang, or zombie Chrome across a 1,000-command soak test.
 - [ ] Install works with one command (brew, curl script, `cargo install`/`cargo binstall`, `npx`), and `chrome-cdp install` works on both OSes.

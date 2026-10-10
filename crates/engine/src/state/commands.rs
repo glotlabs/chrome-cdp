@@ -539,7 +539,7 @@ impl Engine {
     }
 
     /// `state save`: writes the browser's cookies and the storage of every
-    /// origin the context visited, as Playwright's `storageState`,
+    /// origin the context visited (a `storageState` file),
     /// readable by the user only. An origin open in a tab is read there;
     /// one no frame has open now, in a hidden page (see [`HiddenPage`]).
     pub async fn state_save(&self, req: StateSaveRequest) -> Result<Output, ErrorInfo> {

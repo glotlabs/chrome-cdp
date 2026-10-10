@@ -1,7 +1,7 @@
 //! The E2E docs' examples are valid (plan 11, milestone 11.10): every
-//! mock file and scenario block of `docs/e2e/recipes.md` and
-//! `docs/e2e/migrating.md` whose first line names its file (`# e2e/…`)
-//! is written into a project, and `fmt --check` and `lint` pass on it.
+//! mock file and scenario block of `docs/e2e/recipes.md` whose first
+//! line names its file (`# e2e/…`) is written into a project, and
+//! `fmt --check` and `lint` pass on it.
 
 #![allow(clippy::unwrap_used, clippy::print_stderr)]
 
@@ -91,9 +91,4 @@ fn check(doc: &str, at_least: usize) {
 #[test]
 fn the_recipes_are_valid() {
     check("recipes.md", 15);
-}
-
-#[test]
-fn the_migration_examples_are_valid() {
-    check("migrating.md", 3);
 }

@@ -35,7 +35,7 @@ export type Step =
 type Scope = Document | Element;
 
 function xpath(expression: string, scope: Scope): Element[] {
-  // In a chain, `//x` means "under the scope", as in Playwright.
+  // In a chain, `//x` means "under the scope".
   const expr = scope instanceof Document || !expression.startsWith('/') ? expression : '.' + expression;
   let found: XPathResult;
   try {

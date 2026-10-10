@@ -5,39 +5,13 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::report;
 
 /// The tasks' dir.
 pub fn tasks_dir() -> PathBuf {
     report::workspace_root().join("bench/agent/tasks")
-}
-
-/// The two ways an agent gets a browser (plan 10.4).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub enum Arm {
-    /// Only `chrome-cdp skill`, installed in the project.
-    #[serde(rename = "chrome-cdp")]
-    ChromeCdp,
-    /// Only Playwright MCP.
-    #[serde(rename = "playwright-mcp")]
-    PlaywrightMcp,
-}
-
-impl Arm {
-    pub const ALL: [Self; 2] = [Self::ChromeCdp, Self::PlaywrightMcp];
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::ChromeCdp => "chrome-cdp",
-            Self::PlaywrightMcp => "playwright-mcp",
-        }
-    }
-
-    pub fn parse(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|a| a.name() == name)
-    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -48,12 +22,9 @@ pub struct Task {
     #[serde(skip)]
     pub dir: PathBuf,
     pub title: String,
-    /// What the agent is told, after its arm's preamble. `{site}` and the
+    /// What the agent is told, after the preamble. `{site}` and the
     /// other placeholders are expanded (see [`Vars`]).
     pub prompt: String,
-    /// The arms that run it (both unless given).
-    #[serde(default)]
-    pub arms: Option<Vec<Arm>>,
     /// Needs the internet (a public sandbox site); `--offline` skips it.
     #[serde(default)]
     pub network: bool,
@@ -75,10 +46,6 @@ fn default_timeout() -> u64 {
 }
 
 impl Task {
-    pub fn arms(&self) -> Vec<Arm> {
-        self.arms.clone().unwrap_or_else(|| Arm::ALL.to_vec())
-    }
-
     /// The task's own files, copied into its working dir after
     /// `setup.copy` (so they can replace copied files).
     pub fn files(&self) -> PathBuf {
@@ -304,7 +271,6 @@ mod tests {
                 "{}: no solution for --check",
                 t.id
             );
-            assert!(!t.arms().is_empty(), "{}", t.id);
             if let Some(dev) = &t.setup.dev {
                 assert!(
                     dev.contains("{port}"),
@@ -324,12 +290,5 @@ mod tests {
             v.expand("go to {site}/a, keep {other} and {x:1}"),
             "go to http://127.0.0.1:1/a, keep {other} and {x:1}"
         );
-    }
-
-    #[test]
-    fn arms_by_name() {
-        assert_eq!(Arm::parse("chrome-cdp"), Some(Arm::ChromeCdp));
-        assert_eq!(Arm::parse("playwright-mcp"), Some(Arm::PlaywrightMcp));
-        assert_eq!(Arm::parse("x"), None);
     }
 }

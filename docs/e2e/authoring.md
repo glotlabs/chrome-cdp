@@ -126,7 +126,7 @@ chrome-cdp mock import requests.har --scope '/api/**'
 ```
 
 The same conversion, from a HAR file: `chrome-cdp har stop`, the DevTools
-Network panel's "Save all as HAR", or Playwright's `recordHar`. The mock
+Network panel's "Save all as HAR", or any other HAR recorder. The mock
 file is `<mocks dir>/<HAR's name>.toml` unless `-o` says otherwise.
 
 ## Mocks from an OpenAPI spec: `mock gen`

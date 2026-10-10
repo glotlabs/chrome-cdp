@@ -18,8 +18,7 @@ by then (each once), so expiry, polling and debounce can be tested without
 waiting. It is an init script that replaces `Date`, not Chrome's virtual
 time, which stalls page loads.
 `time pause` stops timers and animation frames as well, and `time run-for`
-fires them in order, each interval tick and a frame every 16ms, like
-Playwright's clock.runFor.
+fires them in order, each interval tick and a frame every 16ms.
 
 Examples:
   chrome-cdp time freeze 2026-01-31T09:30:00Z

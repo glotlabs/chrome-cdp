@@ -34,7 +34,7 @@ the top of the GitHub release notes.
   errors, emulation, determinism and coverage apply to out-of-process
   iframes and dedicated, shared and service workers, including ones that
   attach later. `frames` prints a tab's iframes and workers.
-- Parity with Playwright (plan 14): `has=`, `has-not=`, `has-not-text=`,
+- Locators, timers and more (plan 14): `has=`, `has-not=`, `has-not-text=`,
   `and=` and `or=` in locators; `locator <loc>` prints a ref's stable
   locator; paused timers (`time pause`, `run-for`, `pause-at`);
   `keyboard down|up`; HTML and image clipboard; directory uploads;
@@ -58,7 +58,7 @@ the top of the GitHub release notes.
 - Tests that maintain themselves (plan 18): `test --heal` (writes a fix
   for a broken locator), flake diagnosis with `--repeat`,
   `test --ui-coverage`, `repro start|save` bundles that `test` replays
-  offline, a recorder (`record`), and `convert` on real suites.
+  offline, and a recorder (`record`).
 - Mocks (plan 19): multipart bodies, nested collections,
   `--match-bodies` for `mock record`, `mock import` and
   `test --record-mocks`; WebSocket and SSE recording, `mock sse send`,
@@ -70,3 +70,10 @@ the top of the GitHub release notes.
 
 - A mocked CORS preflight names no mock when the mock matches on headers
   or a body, which a preflight does not show.
+
+### Removed
+
+- `chrome-cdp convert`, which translated test files from another tool
+  into `.cdp` scenarios.
+- The benchmark comparisons with other browser tools: `micro`, `tokens`
+  and `agent` now measure chrome-cdp alone.

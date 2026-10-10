@@ -52,8 +52,7 @@ Options:
 
 ```text
 Checks the active tab (or --tab) again on every animation frame until the
-assertion holds or --timeout (default 5s) passes, like Playwright's
-expect(). A failure exits 1 (ExpectFailed) and says what it expected, what
+assertion holds or --timeout (default 5s) passes. A failure exits 1 (ExpectFailed) and says what it expected, what
 it saw, the element (with a ref) and what to run next. --not inverts
 element matchers, --url and --title. Needs a running session.
 

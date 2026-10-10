@@ -12,7 +12,7 @@
 //! body { height: 100% }` and a scrolling `<main>`) has nothing beyond
 //! its viewport, so `--full` finds that container (or takes `--full
 //! <loc>`), grows the viewport until the container's whole content fits
-//! it, as Playwright's docs suggest for such pages, and gives the page its
+//! it, and gives the page its
 //! viewport and the container its scroll position back afterwards.
 //!
 //! `--mask` and `--annotate` draw into the page just before the capture
@@ -27,8 +27,7 @@
 //!
 //! `expect-screenshot` (plan 09) captures a still page: each frame's
 //! caret is hidden, finite animations and transitions are finished and
-//! endless ones cancelled for the capture, as Playwright's
-//! `toHaveScreenshot` does, so a focused field or a spinner does not make
+//! endless ones cancelled for the capture, so a focused field or a spinner does not make
 //! its baseline flaky. The endless ones play again afterwards.
 
 use std::collections::BTreeMap;

@@ -11,8 +11,7 @@ A coding agent that sees a wrong button asks next: **which file do I
 edit?** Today it greps the codebase for the button's text. The browser
 often knows the answer: the framework's dev build records where each
 element came from, Chrome can record the stack that created a node, and
-source maps turn bundle positions into source lines. Playwright asks
-none of this.
+source maps turn bundle positions into source lines.
 
 This plan connects what the browser shows to the agent's source files:
 
@@ -515,8 +514,6 @@ the apps are built once and their output is committed.
   skill's token budget.
 - `docs/debugging-a-dev-server.md`: rewrite §3 ("Find out why") and §5
   ("Fix, reload, check") around these commands.
-- `docs/playwright-parity.md`: these have no Playwright row; add them to
-  the "beyond Playwright" part of the README's comparison table.
 
 ## Tests
 

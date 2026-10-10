@@ -320,162 +320,6 @@ const CASES: &[Case] = &[
         fixture: Fixture::None,
     },
     Case {
-        name: "convert",
-        args: &["convert", "{scripts}/login.spec.ts"],
-        modes: ALL,
-        fixture: Fixture::None,
-    },
-    // The real suites of testdata/convert (plan 18.7).
-    Case {
-        name: "convert-todomvc",
-        args: &[
-            "convert",
-            "{convert}/playwright-todomvc/integration.spec.ts",
-            "--max-chars",
-            "0",
-        ],
-        modes: &[""],
-        fixture: Fixture::None,
-    },
-    Case {
-        name: "convert-mock-battery-show",
-        args: &[
-            "convert",
-            "{convert}/playwright-examples/mock-battery/show-battery-status.spec.js",
-            "--max-chars",
-            "0",
-        ],
-        modes: &[""],
-        fixture: Fixture::None,
-    },
-    Case {
-        name: "convert-mock-battery-update",
-        args: &[
-            "convert",
-            "{convert}/playwright-examples/mock-battery/update-battery-status.spec.js",
-            "--max-chars",
-            "0",
-        ],
-        modes: &[""],
-        fixture: Fixture::None,
-    },
-    Case {
-        name: "convert-mock-battery-calls",
-        args: &[
-            "convert",
-            "{convert}/playwright-examples/mock-battery/verify-calls.spec.js",
-            "--max-chars",
-            "0",
-        ],
-        modes: &[""],
-        fixture: Fixture::None,
-    },
-    Case {
-        name: "convert-svgomg",
-        args: &[
-            "convert",
-            "{convert}/playwright-examples/svgomg/example.spec.ts",
-            "--max-chars",
-            "0",
-        ],
-        modes: &[""],
-        fixture: Fixture::None,
-    },
-    Case {
-        name: "convert-nextjs-app",
-        args: &[
-            "convert",
-            "{convert}/nextjs-with-playwright/app.spec.ts",
-            "--max-chars",
-            "0",
-        ],
-        modes: &[""],
-        fixture: Fixture::None,
-    },
-    Case {
-        name: "convert-nextjs-pages",
-        args: &[
-            "convert",
-            "{convert}/nextjs-with-playwright/pages.spec.ts",
-            "--max-chars",
-            "0",
-        ],
-        modes: &[""],
-        fixture: Fixture::None,
-    },
-    Case {
-        name: "convert-fcc-academic-honesty",
-        args: &[
-            "convert",
-            "{convert}/freecodecamp/academic-honesty.spec.ts",
-            "--max-chars",
-            "0",
-        ],
-        modes: &[""],
-        fixture: Fixture::None,
-    },
-    Case {
-        name: "convert-fcc-bread-crumb",
-        args: &[
-            "convert",
-            "{convert}/freecodecamp/bread-crumb.spec.ts",
-            "--max-chars",
-            "0",
-        ],
-        modes: &[""],
-        fixture: Fixture::None,
-    },
-    Case {
-        name: "convert-fcc-delete-modal",
-        args: &[
-            "convert",
-            "{convert}/freecodecamp/delete-modal.spec.ts",
-            "--max-chars",
-            "0",
-        ],
-        modes: &[""],
-        fixture: Fixture::None,
-    },
-    Case {
-        name: "convert-fcc-email-settings",
-        args: &[
-            "convert",
-            "{convert}/freecodecamp/email-settings.spec.ts",
-            "--max-chars",
-            "0",
-        ],
-        modes: &[""],
-        fixture: Fixture::None,
-    },
-    Case {
-        name: "convert-fcc-hotkeys",
-        args: &[
-            "convert",
-            "{convert}/freecodecamp/hotkeys.spec.ts",
-            "--max-chars",
-            "0",
-        ],
-        modes: &[""],
-        fixture: Fixture::None,
-    },
-    Case {
-        name: "convert-fcc-portfolio",
-        args: &[
-            "convert",
-            "{convert}/freecodecamp/portfolio.spec.ts",
-            "--max-chars",
-            "0",
-        ],
-        modes: &[""],
-        fixture: Fixture::None,
-    },
-    Case {
-        name: "convert-missing",
-        args: &["convert", "{scripts}/missing.spec.ts"],
-        modes: ERR,
-        fixture: Fixture::None,
-    },
-    Case {
         name: "init-e2e",
         args: &["init", "e2e"],
         modes: ALL,
@@ -4219,8 +4063,6 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
     norm = norm.with(&files, "<files>");
     let scripts = testdata("scripts");
     norm = norm.with(&scripts, "<scripts>");
-    let convert = testdata("convert");
-    norm = norm.with(&convert, "<convert>");
     let mocks = mocks_dir();
     norm = norm.with(&mocks, "<mocks>");
     let extensions = testdata("extensions");
@@ -4254,7 +4096,6 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
             .map(|a| a.replace("{site_b}", site.b()))
             .map(|a| a.replace("{files}", &files.display().to_string()))
             .map(|a| a.replace("{scripts}", &scripts.display().to_string()))
-            .map(|a| a.replace("{convert}", &convert.display().to_string()))
             .map(|a| a.replace("{mocks}", &mocks.display().to_string()))
             .map(|a| a.replace("{extensions}", &extensions.display().to_string()))
             .map(|a| match &sandbox {

@@ -1,7 +1,6 @@
 //! The benchmark harness behind `cargo xtask bench` (plan 10.4). Three
-//! suites: `micro` (per-command timings next to the Playwright library's),
-//! `tokens` (snapshot sizes next to Playwright MCP's) and `agent` (Claude
-//! Code on scripted tasks, with chrome-cdp or with Playwright MCP).
+//! suites: `micro` (per-command timings), `tokens` (snapshot sizes) and
+//! `agent` (Claude Code on scripted tasks with chrome-cdp).
 //! docs/benchmarks.md says how to run each, and what they measure.
 
 pub mod agent;

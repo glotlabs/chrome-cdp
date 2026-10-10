@@ -66,7 +66,6 @@ const TOOLS: &[&str] = &[
     "completions",
     "connect",
     "context",
-    "convert",
     "coverage",
     "debug",
     "har",

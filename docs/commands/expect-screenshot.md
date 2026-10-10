@@ -35,8 +35,8 @@ failure exits 1 (ExpectFailed) and saves the screenshot and a diff image
 Experimental: fonts render differently on each OS (so each OS has its own
 baseline) and may change with Chrome's version. expect-snapshot is the
 sturdier check. For the capture the caret is hidden, animations and
-transitions are finished and endless ones stopped at their start (as
-Playwright does). --mask paints over what changes on every load (clocks,
+transitions are finished and endless ones stopped at their start.
+--mask paints over what changes on every load (clocks,
 ads). --update, a first run, CI and --dir work as in expect-snapshot.
 Needs a running session.
 

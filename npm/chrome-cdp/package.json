@@ -2,7 +2,7 @@
   "name": "chrome-cdp",
   "version": "0.0.0-dev",
   "description": "Drive Chrome over the DevTools Protocol from a shell; built for AI agents",
-  "keywords": ["chrome", "cdp", "devtools", "browser-automation", "agents", "playwright"],
+  "keywords": ["chrome", "cdp", "devtools", "browser-automation", "agents"],
   "repository": { "type": "git", "url": "git+https://github.com/glotlabs/chrome-cdp.git" },
   "homepage": "https://github.com/glotlabs/chrome-cdp",
   "bin": { "chrome-cdp": "bin/chrome-cdp.js" },

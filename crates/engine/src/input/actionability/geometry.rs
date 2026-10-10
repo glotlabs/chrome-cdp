@@ -47,7 +47,7 @@ pub(super) fn is_below(frames: &[FrameSource], frame: &str, ancestor: &str) -> b
 }
 
 /// The centre of the first quad that is in the viewport, clipped to it
-/// (Playwright's rule: a clipped area of at least one square pixel).
+/// (a clipped area of at least one square pixel).
 pub(super) fn pick(quads: &[dom::Quad], viewport: Viewport) -> Option<(f64, f64)> {
     quads.iter().filter(|q| q.len() == 8).find_map(|quad| {
         let clipped: Vec<f64> = quad

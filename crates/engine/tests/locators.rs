@@ -187,7 +187,7 @@ async fn every_grammar_form_finds_its_elements() {
         ("role=textbox[name=\"Email address\"]", &["email"]),
         ("role=button[name=Shadow save]", &["shadow-button"]),
         ("role=navigation", &["nav"]),
-        // Playwright's other getters.
+        // The other getters.
         ("label=Email", &["email"]),
         ("label=Password", &["password"]),
         ("label=\"Phone\"", &["phone"]),

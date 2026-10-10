@@ -1,7 +1,5 @@
 title = "Make a mocked suite also pass against the real backend"
-# `chrome-cdp test --backend` is chrome-cdp's; Playwright MCP has no
-# counterpart.
-arms = ["chrome-cdp"]
+# Exercises `chrome-cdp test --backend`.
 timeout_secs = 1200
 prompt = """
 This directory is a small shop (a React app; the built app is in dist/)

@@ -8,13 +8,12 @@
 //! it shares the page's storage but none of its globals, so a page that
 //! replaced `localStorage` cannot fool it.
 //!
-//! A state file is Playwright's `storageState` JSON ([`StorageState`]):
-//! `cookies` and `origins` with their `localStorage` (and `indexedDB` with
-//! `--indexeddb`, as Playwright's `storageState({ indexedDB: true })` has
-//! it). chrome-cdp adds `sessionStorage` to each origin; Playwright
-//! ignores it. `state save` reads every origin the context's frames
-//! visited: in a frame of it where one is open, else in a hidden page (see
-//! [`visited`]), as Playwright does. `state load` gives an origin with a frame open its storage at
+//! A state file is `storageState` JSON ([`StorageState`]): `cookies` and
+//! `origins` with their `localStorage` (and `indexedDB` with
+//! `--indexeddb`), plus `sessionStorage` for each origin, which other
+//! readers of the format ignore. `state save` reads every origin the
+//! context's frames visited: in a frame of it where one is open, else in a
+//! hidden page (see [`visited`]). `state load` gives an origin with a frame open its storage at
 //! once, and seeds the others: an init script for the origin's next
 //! document, which takes itself out once it ran (see
 //! [`crate::inject::Injector::seed`]).
@@ -31,7 +30,7 @@ use serde_json::Value;
 /// expression whose value has `collect`, `restore` and `seed`.
 pub(crate) const LIBRARY: &str = include_str!("storage.js");
 
-/// A storage state file: Playwright's `storageState` format, plus
+/// A storage state file: the `storageState` format, plus
 /// `sessionStorage` per origin.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct StorageState {
@@ -41,7 +40,7 @@ pub struct StorageState {
     pub origins: Vec<OriginState>,
 }
 
-/// A cookie as Playwright writes it.
+/// A cookie as a state file has it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StateCookie {
@@ -77,7 +76,7 @@ pub struct OriginState {
     /// chrome-cdp's extension: the saving tab's `sessionStorage`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub session_storage: Vec<StorageItem>,
-    /// Playwright's IndexedDB databases (`--indexeddb`), passed through to
+    /// The IndexedDB databases (`--indexeddb`), passed through to
     /// the page as they are.
     #[serde(default, rename = "indexedDB", skip_serializing_if = "Option::is_none")]
     pub indexed_db: Option<Vec<Value>>,
@@ -145,8 +144,8 @@ pub(crate) fn cookie_info(cookie: &Cookie) -> CookieInfo {
     }
 }
 
-/// A cookie as a state file has it. Playwright writes `Lax` for a cookie
-/// that did not say, since that is how Chrome treats it.
+/// A cookie as a state file has it: `Lax` for a cookie that did not say,
+/// since that is how Chrome treats it.
 pub(crate) fn state_cookie(cookie: &Cookie) -> StateCookie {
     StateCookie {
         name: cookie.name.clone(),
@@ -262,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn playwright_files_parse() {
+    fn storage_state_files_parse() {
         let state = StorageState::parse(
             r#"{"cookies":[{"name":"a","value":"1","domain":"example.com","path":"/",
                 "expires":-1,"httpOnly":true,"secure":false,"sameSite":"Lax"}],

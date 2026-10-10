@@ -154,8 +154,7 @@ chrome-cdp history --as-scenario "signs in" >> e2e/scenarios/login.cdp
 `history --as-scenario` writes the commands as a `@test`, with each ref
 replaced by the most robust locator that found its element (in an
 iframe, after a `frame=` step with the frame's name or URL), and leaves
-out reads such as `snapshot`. `chrome-cdp convert login.spec.ts` turns a
-simple Playwright test into a `.cdp` file ([migrating-from-playwright.md](migrating-from-playwright.md)).
+out reads such as `snapshot`.
 
 ## In CI
 

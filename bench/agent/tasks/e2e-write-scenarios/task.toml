@@ -1,7 +1,5 @@
 title = "Write E2E tests with mocks for a frontend"
-# The runner and its mock files are chrome-cdp's; Playwright MCP has no
-# counterpart to write them for.
-arms = ["chrome-cdp"]
+# Exercises chrome-cdp's test runner and its mock files.
 timeout_secs = 1200
 prompt = """
 This directory is a small shop (a React app; the built app is in dist/,

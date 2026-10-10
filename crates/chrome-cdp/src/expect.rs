@@ -12,8 +12,7 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 use crate::cli::{A11yLevelArg, ExpectArgs, PerfMissingArg, SeverityArg};
 use crate::input;
 
-/// How long `expect` retries unless `--timeout` says otherwise
-/// (Playwright's default too).
+/// How long `expect` retries unless `--timeout` says otherwise.
 pub(crate) const EXPECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn bad_args(message: impl Into<String>, hint: Hint) -> ErrorInfo {

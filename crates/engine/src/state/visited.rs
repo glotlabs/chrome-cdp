@@ -1,6 +1,6 @@
 //! `state save`'s storage of origins the context visited but has no frame
-//! open in now (an SSO provider the login went through), read the way
-//! Playwright's `storageState()` does: in a page of the context whose
+//! open in now (an SSO provider the login went through), read
+//! in a page of the context whose
 //! request for each origin is answered with an empty document.
 //!
 //! The page is a hidden target (`Target.createTarget` with `hidden`): no

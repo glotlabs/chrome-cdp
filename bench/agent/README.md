@@ -16,7 +16,6 @@ title = "Log in"
 prompt = """
 Sign in at {site}/bench/login.html as ada@example.com …
 """
-arms = ["chrome-cdp"]    # optional: both arms by default
 network = true           # optional: on a public site; --offline skips it
 timeout_secs = 600       # optional: the run fails after this long
 
@@ -67,8 +66,8 @@ which also serves e2e-shop's real backend: `{fixtures} --shop dist`).
   from `record.js`; a fixed app is checked by a `page` script; a test suite
   by `test`. Use `answer` only for questions, and have the prompt ask for an
   `ANSWER:` line.
-- Say what to do, not how: no locators, no tool names. The arm's preamble
-  says which browser tool the agent has.
+- Say what to do, not how: no locators, no tool names. The preamble
+  tells the agent it has `chrome-cdp`.
 - Give every task a `[solution]`, and run `--check`: the verifier must fail
   on the untouched task and pass after the solution.
 - The `find-code-*` tasks run a fixture app of `testdata/apps-src` on

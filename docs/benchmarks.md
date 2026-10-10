@@ -1,27 +1,27 @@
 # Benchmarks
 
-chrome-cdp claims to be a better browser tool for agents than Playwright.
-Three suites test that claim (plan 10, milestone 10.4). `cargo xtask bench`
-runs them; this page says what each measures, how to run it, and what it
+Three suites measure how fast chrome-cdp is, how few tokens its output
+costs, and how well an agent does with it (plan 10, milestone 10.4).
+`cargo xtask bench` runs them; this page says what each measures, how to run it, and what it
 found last time. The results sections are rewritten by the suites
 themselves (between the `<!-- bench:… -->` markers); edit the rest by hand.
 
 | Suite | What it measures | Needs | Cost |
 |---|---|---|---|
-| `micro` | Per-command latency, next to the Playwright library | Chrome, Node (for the comparison) | a few minutes; timing-sensitive |
-| `tokens` | Snapshot size in tokens, next to Playwright MCP | Chrome, Node | a minute; deterministic |
-| `agent` | Claude Code's success, tokens, turns, files read and time on ~30 tasks, with chrome-cdp vs Playwright MCP | Chrome, Node, `claude` logged in | hours and API spend |
+| `micro` | Per-command latency | Chrome | a few minutes; timing-sensitive |
+| `tokens` | Snapshot size in tokens | Chrome, Node | a minute; deterministic |
+| `agent` | Claude Code's success, tokens, turns, files read and time on ~30 tasks with chrome-cdp | Chrome, Node, `claude` logged in | hours and API spend |
 
 ## Setup
 
-All suites drive the same Chrome for both tools. Point `CHROME_PATH` at it
+All suites drive the Chrome that `CHROME_PATH` points at
 (`cargo xtask chrome stable` installs Chrome for Testing and prints its
-path). The Playwright side lives in `bench/playwright/`, a Node package
+path). The token suite's counter lives in `bench/tokens/`, a Node package
 used only by the benchmarks:
 
 ```sh
 export CHROME_PATH=$(cargo xtask chrome stable)
-(cd bench/playwright && npm ci)
+(cd bench/tokens && npm ci)
 ```
 
 `cargo xtask bench <suite>` builds the release `chrome-cdp` and `fixtures`
@@ -57,13 +57,6 @@ the socket round trip and the daemon's work: what an agent pays per step):
 - **batch vs single calls**: the same 10 cheap steps as 10 invocations and
   as one `batch`.
 
-The Playwright library does the same on the same pages and Chrome
-(`bench/playwright/micro.mjs`): its numbers are calls inside one Node
-process, as the library has no CLI, except the cold start, which times a
-fresh `node` that launches Chrome and opens `about:blank`. Its snapshot is
-`page._snapshotForAI()` (what Playwright MCP sends) when the installed
-Playwright has it, else `ariaSnapshot()`; the table's note says which.
-
 Every number is a median (p50) and a 95th percentile over its samples.
 The plans' budgets are checked in the second table: a cold start under
 1.5 s and a warm round trip under 30 ms (overview §7, plan 02), a batch at
@@ -96,54 +89,50 @@ cargo xtask bench tokens -- --tokenizer anthropic
 ```
 
 For each page of the snapshot corpus (`testdata/site/snapshot/`), it
-counts the tokens of `chrome-cdp snapshot`, `snapshot -i` and Playwright
-MCP's `browser_snapshot` (`bench/playwright/snapshot-tokens.mjs`). It
-also audits the trees: every element Playwright gives a ref to that an
-agent acts on (buttons, links, fields, …) should have a chrome-cdp ref of
-the same name; the last column counts the ones that do not.
+counts the tokens of `chrome-cdp snapshot`, `snapshot -i`,
+`snapshot --fold` and `snapshot --budget 2000`.
 
 The tokenizer is the Anthropic token counting API (`claude-opus-5-5`'s
 tokenizer) when `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is set,
 otherwise the offline `o200k_base` BPE as an approximation; the results
-say which. Both tools' outputs go through the same one, so the ratio holds
-either way. `--tokenizer anthropic|o200k` forces one.
+say which. `--tokenizer anthropic|o200k` forces one.
 
 Counts are deterministic, so `--check` is exact: it fails when a page's
 `snapshot` or `snapshot -i` grows more than 15% over the baseline for its
 tokenizer (`bench/baselines/tokens-<tokenizer>.json`).
 
 <!-- bench:tokens -->
-Last run: 2026-09-30 with Google Chrome for Testing 154.0.8037.57. Tokenizer: `o200k_base` (gpt-tokenizer, offline: an approximation; set ANTHROPIC_API_KEY for Claude's own counts).
+Last run: 2026-09-30 with Google Chrome for Testing 154.0.8037.57. Tokenizer: `o200k_base` (offline: an approximation; set ANTHROPIC_API_KEY for Claude's own counts).
 
-| Page | `snapshot` | `snapshot -i` | `--fold` | `--budget 2000` | Playwright MCP `browser_snapshot` | `snapshot` vs MCP | Actionable (MCP refs) | Without a chrome-cdp ref |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| simple | 65 | 40 | 65 | 65 | 128 | 51% | 1 | 0 |
-| login | 221 | 192 | 221 | 221 | 444 | 50% | 10 | 0 |
-| forms | 525 | 519 | 525 | 525 | 1014 | 52% | 31 | 0 |
-| hidden | 116 | 79 | 116 | 116 | 262 | 44% | 4 | 1 |
-| clickable | 229 | 194 | 229 | 229 | 379 | 60% | 3 | 0 |
-| lists-tables | 665 | 131 | 665 | 665 | 3813 | 17% | 8 | 0 |
-| widgets | 352 | 253 | 352 | 352 | 514 | 68% | 15 | 0 |
-| modal | 93 | 83 | 93 | 93 | 353 | 26% | 8 | 4 |
-| shadow | 68 | 47 | 68 | 68 | 115 | 59% | 1 | 0 |
-| frames | 132 | 100 | 132 | 132 | 236 | 56% | 4 | 0 |
-| article | 226 | 43 | 226 | 226 | 415 | 54% | 1 | 0 |
-| big-app | 4181 | 2782 | 894 | 2681 | 52898 | 8% | 1245 | 0 |
-| huge | 7752 | 7130 | 140 | 2775 | 415654 | 2% | 6000 | 0 |
-| cards | 2663 | 1228 | 349 | 2663 | 7848 | 34% | 129 | 0 |
-| **total** | **17288** | **12821** | **4075** | **10811** | **484073** | **4%** | | |
+| Page | `snapshot` | `snapshot -i` | `--fold` | `--budget 2000` |
+|---|---:|---:|---:|---:|
+| simple | 65 | 40 | 65 | 65 |
+| login | 221 | 192 | 221 | 221 |
+| forms | 525 | 519 | 525 | 525 |
+| hidden | 116 | 79 | 116 | 116 |
+| clickable | 229 | 194 | 229 | 229 |
+| lists-tables | 665 | 131 | 665 | 665 |
+| widgets | 352 | 253 | 352 | 352 |
+| modal | 93 | 83 | 93 | 93 |
+| shadow | 68 | 47 | 68 | 68 |
+| frames | 132 | 100 | 132 | 132 |
+| article | 226 | 43 | 226 | 226 |
+| big-app | 4181 | 2782 | 894 | 2681 |
+| huge | 7752 | 7130 | 140 | 2775 |
+| cards | 2663 | 1228 | 349 | 2663 |
+| **total** | **17288** | **12821** | **4075** | **10811** |
 <!-- /bench:tokens -->
 
 ## Agent task benchmark
 
-This is the headline number for v1 (overview §7): an agent must succeed at
-least as often with chrome-cdp as with Playwright MCP, with at most half
-its tokens, and faster.
+This is the headline number for v1 (overview §7): how often an agent
+with chrome-cdp succeeds at real browser tasks, with how many tokens, and
+how fast.
 
 ```sh
 cargo xtask bench agent -- --check      # no agent: test the tasks themselves
-cargo xtask bench agent                 # every task × both arms × 5 runs
-cargo xtask bench agent -- --task login --arm chrome-cdp --reps 1
+cargo xtask bench agent                 # every task × 5 runs
+cargo xtask bench agent -- --task login --reps 1
 cargo xtask bench agent -- --offline --model claude-opus-5-5
 ```
 
@@ -159,15 +148,11 @@ and mocks for it, fix an app change that broke checkout, and make the
 mocked suite also pass against the real backend.
 
 Each run is Claude Code headless (`claude -p`) in a fresh copy of the
-task's working dir, with the same built-in tools in both arms (Bash, Read,
-Edit, Write, Glob, Grep, Skill), no user settings (`--setting-sources
-project`: no CLAUDE.md, skills, hooks or MCP servers of the user's), and
-one browser tool:
-
-- **chrome-cdp**: `chrome-cdp skill --install` in the project and the
-  binary on `PATH`; nothing else about chrome-cdp;
-- **playwright-mcp**: Playwright MCP (`--headless --isolated`) as the
-  only MCP server, on the same Chrome, and no `chrome-cdp` on `PATH`.
+task's working dir, with the built-in tools Bash, Read, Edit, Write,
+Glob, Grep and Skill, no user settings (`--setting-sources project`: no
+CLAUDE.md, skills, hooks or MCP servers of the user's), and chrome-cdp:
+`chrome-cdp skill --install` in the project and the binary on `PATH`;
+nothing else about chrome-cdp.
 
 Permissions are skipped (`--dangerously-skip-permissions`) so nothing
 waits for a human: run it on a machine or VM you are happy to let an agent
@@ -185,7 +170,7 @@ transcript (how much code the agent looked through to find the place),
 shell reads the commands of its Bash calls that start with a reading
 tool (`cat`, `grep`, `rg`, `sed`, `find`, `ls`, …; a pipeline counts
 once), and wall time the whole `claude` process. Each task runs
-5 times per arm (`--reps`); the tables show the success rate and medians.
+5 times (`--reps`); the tables show the success rate and medians.
 
 `--check` runs no agent. For each task it checks that the verifier fails
 on the untouched task and passes after the task's known solution (a
@@ -202,7 +187,7 @@ the updated page.
 
 Each run's log is kept under `target/bench/agent/<time>/`: Claude Code's
 transcript (`stream-json`, the result last), its stderr, and `episodes.jsonl` with every check's outcome.
-Only a full run (every task, both arms) is published here.
+Only a full run (every task) is published here.
 
 <!-- bench:agent -->
 Not run yet: the agent benchmark runs once all plans are implemented.

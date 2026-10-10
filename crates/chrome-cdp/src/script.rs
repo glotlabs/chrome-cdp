@@ -215,7 +215,7 @@ fn no_globals() -> GlobalArgs {
         .global
 }
 
-/// Checks a generated script (`convert`'s) as `run` would, every
+/// Checks a generated script (`init`'s) as `run` would, every
 /// variable standing for `x`: its steps' text, or each problem.
 #[cfg(test)]
 pub(crate) fn check(src: &str) -> Result<Vec<String>, Vec<String>> {
@@ -225,47 +225,6 @@ pub(crate) fn check(src: &str) -> Result<Vec<String>, Vec<String>> {
             .into_iter()
             .map(|p| format!("line {}: {}", p.span.line, p.info.message))
             .collect()),
-    }
-}
-
-/// Checks a generated scenario (`convert`'s) as `test` would: loaded by
-/// [`e2e::scenario::load`], then every step of its hooks and tests as a
-/// command, each variable standing for `x`. The steps' text, or each
-/// problem.
-#[cfg(test)]
-pub(crate) fn check_scenario(src: &str) -> Result<Vec<String>, Vec<String>> {
-    let dir = tempfile::tempdir().expect("a temp dir");
-    let path = dir.path().join("generated.cdp");
-    std::fs::write(&path, src).expect("the file is written");
-    let scenario = e2e::scenario::load(&path, "generated.cdp").map_err(|errors| {
-        errors
-            .into_iter()
-            .map(|e| format!("line {}: {}", e.span.line, e.message))
-            .collect::<Vec<_>>()
-    })?;
-    let global = no_globals();
-    let hooks = [
-        &scenario.before_all,
-        &scenario.before,
-        &scenario.after,
-        &scenario.after_all,
-    ];
-    let mut texts = Vec::new();
-    let mut problems = Vec::new();
-    for s in hooks
-        .into_iter()
-        .flatten()
-        .chain(scenario.tests.iter().flat_map(|t| &t.steps))
-    {
-        match step(&s.line, &Any, &global) {
-            Ok(step) => texts.push(step.text),
-            Err(p) => problems.push(format!("line {}: {}", p.span.line, p.info.message)),
-        }
-    }
-    if problems.is_empty() {
-        Ok(texts)
-    } else {
-        Err(problems)
     }
 }
 

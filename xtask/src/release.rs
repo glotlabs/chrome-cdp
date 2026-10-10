@@ -796,7 +796,7 @@ mod tests {
         assert_eq!(group(&commit("tests: two flakes", "")), "Tests");
         assert_eq!(group(&commit("ci: weekly beta", "")), "Build and CI");
         assert_eq!(group(&commit("mock: a formatter", "")), "Changes");
-        assert_eq!(group(&commit("plan 10.3: parity", "")), "Changes");
+        assert_eq!(group(&commit("plan 10.4: benchmarks", "")), "Changes");
         assert_eq!(group(&commit("Publishable crates", "")), "Changes");
         let text = group_commits(&[
             commit("docs: a guide", ""),

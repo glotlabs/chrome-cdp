@@ -350,7 +350,7 @@ Options:
 
 ```text
 The same conversion as `mock record`, from a HAR file (`har stop`, the
-DevTools Network panel's "Save all as HAR", or Playwright's). The output is
+DevTools Network panel's "Save all as HAR", or any HAR recorder). The output is
 <mocks dir>/<file's name>.toml unless -o says otherwise. --match-bodies
 tells requests to one path apart by their bodies' stable fields.
 

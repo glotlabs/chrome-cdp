@@ -132,9 +132,8 @@ chrome-cdp click 'role=row >> has-text=Invoice 12 >> role=button[name="Delete"]'
 
 ### Inner locators: `has=`, `has-not=`, `and=`, `or=`
 
-These four take a whole locator, as Playwright's `filter({ has })`,
-`filter({ hasNot })`, `and()` and `or()` do. Like the other filters, they
-never come first.
+These four take a whole locator. Like the other filters, they never
+come first.
 
 ```sh
 # The rows that have a Delete button, and those that have none.

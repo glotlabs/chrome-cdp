@@ -3,7 +3,7 @@
 //! the key events a chord of them sends.
 //!
 //! The layout and the macOS editing commands ([`table`]) are generated
-//! from Playwright's data by `bench/playwright/gen-keys.cjs`. A key is
+//! from Playwright's data by `scripts/gen-keys/gen-keys.cjs`. A key is
 //! named by its `code` (`KeyA`, `Digit1`, `Numpad0`), by the `key` it
 //! types (`a`, `A`, `!`), or by a name (`Enter`, `ArrowDown`, `F5`,
 //! `Shift`); multi-letter names also match in any case, with a few

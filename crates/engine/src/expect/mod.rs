@@ -1,8 +1,7 @@
 //! `expect` and `mark` (plan 09, milestone 9.1).
 //!
 //! `expect` asserts something about the page and retries until it holds
-//! or its timeout (5s by default) passes, like Playwright's web-first
-//! assertions. Element matchers and `--title` are the wait engine's probe
+//! or its timeout (5s by default) passes. Element matchers and `--title` are the wait engine's probe
 //! (see [`crate::wait`]) running the checks of the injected `expect.ts` on
 //! every animation frame; `--url` watches the frame tree. `--no-errors`,
 //! `--no-failed-requests` and `--a11y` look once (see [`page`]): what

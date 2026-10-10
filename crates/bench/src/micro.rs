@@ -1,16 +1,12 @@
-//! The micro suite: chrome-cdp's per-command costs, each next to the
-//! Playwright library's equivalent where one exists
-//! (`bench/playwright/micro.mjs`).
+//! The micro suite: chrome-cdp's per-command costs.
 //!
-//! Every chrome-cdp number is a whole CLI invocation, as an agent pays
-//! it: process start, the socket round trip, the daemon's work. The
-//! Playwright numbers are calls inside one long-lived Node process (the
-//! library has no CLI), except the cold start, which starts Node too.
+//! Every number is a whole CLI invocation, as an agent pays it: process
+//! start, the socket round trip, the daemon's work.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
@@ -75,7 +71,7 @@ pub struct MicroReport {
     pub created: u64,
     pub host: Host,
     pub chrome: String,
-    /// Metrics by tool: `chrome-cdp`, `playwright`.
+    /// Metrics by tool: `chrome-cdp`.
     pub tools: BTreeMap<String, Vec<Metric>>,
     pub targets: Vec<Target>,
     #[serde(default)]
@@ -87,27 +83,13 @@ pub struct Options<'a> {
     pub bin: &'a Path,
     pub chrome: &'a Path,
     pub samples: Samples,
-    pub playwright: bool,
 }
 
 pub fn run(opts: &Options<'_>) -> Result<MicroReport, String> {
     let site = Fixtures::start(0, 0).map_err(|e| format!("start the fixture server: {e}"))?;
-    let mut notes = Vec::new();
     crate::note("micro: chrome-cdp");
     let ours = chrome_cdp(opts, &site)?;
-    let mut tools = BTreeMap::from([("chrome-cdp".to_owned(), ours)]);
-    if opts.playwright {
-        crate::note("micro: Playwright");
-        match playwright(opts, &site) {
-            Ok(theirs) => {
-                tools.insert("playwright".to_owned(), theirs);
-            }
-            Err(e) => {
-                crate::warn(&format!("skipping the Playwright comparison: {e}"));
-                notes.push(format!("Playwright comparison skipped: {e}"));
-            }
-        }
-    }
+    let tools = BTreeMap::from([("chrome-cdp".to_owned(), ours)]);
     let targets = targets(&tools["chrome-cdp"]);
     Ok(MicroReport {
         suite: "micro".to_owned(),
@@ -116,7 +98,7 @@ pub fn run(opts: &Options<'_>) -> Result<MicroReport, String> {
         chrome: chrome_version(opts.chrome),
         tools,
         targets,
-        notes,
+        notes: Vec::new(),
     })
 }
 
@@ -271,37 +253,6 @@ fn batch_vs_single(sandbox: &Sandbox, n: usize) -> Result<(Metric, Metric), Stri
     ))
 }
 
-/// The Playwright harness, `bench/playwright/micro.mjs`.
-fn playwright_dir() -> PathBuf {
-    report::workspace_root().join("bench/playwright")
-}
-
-fn playwright(opts: &Options<'_>, site: &Fixtures) -> Result<Vec<Metric>, String> {
-    let dir = playwright_dir();
-    if !dir.join("node_modules/playwright-core").is_dir() {
-        return Err(format!(
-            "no node_modules in {}; run `npm ci` there",
-            dir.display()
-        ));
-    }
-    let s = opts.samples;
-    let out = Command::new("node")
-        .arg("micro.mjs")
-        .args(["--origin", site.a()])
-        .args(["--cold", &s.cold.to_string()])
-        .args(["--warm", &s.warm.to_string()])
-        .args(["--each", &s.each.to_string()])
-        .env("CHROME_PATH", opts.chrome)
-        .current_dir(&dir)
-        .stderr(Stdio::inherit())
-        .output()
-        .map_err(|e| format!("run node: {e}"))?;
-    if !out.status.success() {
-        return Err(format!("micro.mjs failed ({})", out.status));
-    }
-    serde_json::from_slice(&out.stdout).map_err(|e| format!("micro.mjs printed no metrics: {e}"))
-}
-
 fn targets(metrics: &[Metric]) -> Vec<Target> {
     let find = |name: &str| metrics.iter().find(|m| m.name == name);
     let mut out = Vec::new();
@@ -353,17 +304,8 @@ pub fn markdown(r: &MicroReport) -> String {
     );
     let empty = Vec::new();
     let ours = r.tools.get("chrome-cdp").unwrap_or(&empty);
-    let theirs = r.tools.get("playwright");
-    md.push_str(
-        "| Metric | chrome-cdp p50 | p95 | Playwright p50 | Note |\n|---|---:|---:|---:|---|\n",
-    );
+    md.push_str("| Metric | p50 | p95 | Note |\n|---|---:|---:|---|\n");
     for m in ours {
-        let pw = theirs
-            .and_then(|t| t.iter().find(|p| p.name == m.name))
-            .map_or_else(
-                || "–".to_owned(),
-                |p| format!("{} {}", report::fmt_num(p.p50), p.unit),
-            );
         let p95 = if m.samples > 1 {
             format!("{} {}", report::fmt_num(m.p95), m.unit)
         } else {
@@ -371,7 +313,7 @@ pub fn markdown(r: &MicroReport) -> String {
         };
         let _ = writeln!(
             md,
-            "| `{}` | {} {} | {p95} | {pw} | {} |",
+            "| `{}` | {} {} | {p95} | {} |",
             m.name,
             report::fmt_num(m.p50),
             m.unit,
@@ -421,7 +363,7 @@ mod tests {
     }
 
     #[test]
-    fn the_markdown_lines_up_both_tools() {
+    fn the_markdown_has_a_row_per_metric() {
         let r = MicroReport {
             suite: "micro".into(),
             created: 0,
@@ -431,24 +373,15 @@ mod tests {
                 cpus: 4,
             },
             chrome: "Chrome 154".into(),
-            tools: BTreeMap::from([
-                (
-                    "chrome-cdp".into(),
-                    vec![Metric::value("click_report", "ms", Better::Lower, 12.0)],
-                ),
-                (
-                    "playwright".into(),
-                    vec![Metric::value("click_report", "ms", Better::Lower, 20.0)],
-                ),
-            ]),
+            tools: BTreeMap::from([(
+                "chrome-cdp".into(),
+                vec![Metric::value("click_report", "ms", Better::Lower, 12.0)],
+            )]),
             targets: vec![],
             notes: vec![],
         };
         let md = markdown(&r);
-        assert!(
-            md.contains("| `click_report` | 12 ms | – | 20 ms |  |"),
-            "{md}"
-        );
+        assert!(md.contains("| `click_report` | 12 ms | – |  |"), "{md}");
         assert!(md.starts_with("Last run: 1970-01-01 on linux-x86_64 (4 CPUs), Chrome 154."));
     }
 

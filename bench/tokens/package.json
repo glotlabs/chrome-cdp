@@ -1,0 +1,13 @@
+{
+  "name": "chrome-cdp-bench-tokens",
+  "private": true,
+  "type": "module",
+  "description": "The token suite's counter for chrome-cdp's benchmarks (plan 10); run only in bench jobs.",
+  "scripts": {
+    "snapshot-tokens": "node snapshot-tokens.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.129.0",
+    "gpt-tokenizer": "4.0.0"
+  }
+}

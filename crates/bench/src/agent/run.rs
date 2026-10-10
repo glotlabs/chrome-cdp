@@ -1,5 +1,5 @@
 //! Runs one agent: Claude Code headless (`claude -p`) in a task's working
-//! dir, with one arm's browser tooling and nothing else.
+//! dir, with chrome-cdp as its browser and nothing else.
 
 use std::ffi::OsString;
 use std::io::Read as _;
@@ -8,27 +8,15 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 
-use super::task::Arm;
-use crate::report;
 use crate::sandbox::Sandbox;
 
-/// What each arm's agent is told before the task.
-pub fn preamble(arm: Arm) -> &'static str {
-    match arm {
-        Arm::ChromeCdp => {
-            "You have a browser through the `chrome-cdp` command; its skill says how to use it. \
-             Use it for everything you do in the browser."
-        }
-        Arm::PlaywrightMcp => {
-            "You have a browser through the Playwright MCP tools. Use them for everything you \
-             do in the browser."
-        }
-    }
-}
+/// What the agent is told before the task.
+pub const PREAMBLE: &str = "You have a browser through the `chrome-cdp` command; its skill says how \
+     to use it. Use it for everything you do in the browser.";
 
-/// Both arms get the same built-in tools; the browser is the difference.
+/// The built-in tools the agent gets; the browser is `chrome-cdp`.
 pub const TOOLS: &str = "Bash,Read,Edit,Write,Glob,Grep,Skill";
 
 #[derive(Debug, Clone)]
@@ -196,83 +184,40 @@ pub fn parse_result(out: &Value) -> AgentRun {
     }
 }
 
-/// PATH without the dirs that hold a `chrome-cdp`, so the Playwright arm
-/// cannot reach it.
-fn path_without_chrome_cdp() -> OsString {
-    let path = std::env::var_os("PATH").unwrap_or_default();
-    let dirs: Vec<PathBuf> = std::env::split_paths(&path)
-        .filter(|d| !d.join("chrome-cdp").exists())
-        .collect();
-    std::env::join_paths(dirs).unwrap_or(path)
-}
-
-/// Gets `workdir` ready for `arm` and returns the arm's extra `claude`
-/// arguments and PATH.
-fn arm_setup(
-    arm: Arm,
+/// Gets `workdir` ready: `chrome-cdp skill` installed in it, and the
+/// binary under test first on the PATH returned.
+fn setup(
     workdir: &Path,
     scratch: &Path,
     sandbox: &Sandbox,
     opts: &AgentOptions,
-) -> Result<(Vec<String>, OsString), String> {
-    match arm {
-        Arm::ChromeCdp => {
-            let bin = scratch.join("bin");
-            std::fs::create_dir_all(&bin).map_err(|e| e.to_string())?;
-            #[cfg(unix)]
-            std::os::unix::fs::symlink(&opts.bin, bin.join("chrome-cdp"))
-                .map_err(|e| format!("link chrome-cdp: {e}"))?;
-            let out = sandbox
-                .cli()
-                .args(["skill", "--install"])
-                .current_dir(workdir)
-                .output()
-                .map_err(|e| format!("chrome-cdp skill --install: {e}"))?;
-            if !out.status.success() {
-                return Err(format!(
-                    "chrome-cdp skill --install failed: {}",
-                    String::from_utf8_lossy(&out.stderr).trim()
-                ));
-            }
-            let path = std::env::var_os("PATH").unwrap_or_default();
-            let path =
-                std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(&path)))
-                    .map_err(|e| e.to_string())?;
-            Ok((Vec::new(), path))
-        }
-        Arm::PlaywrightMcp => {
-            let cli = report::workspace_root()
-                .join("bench/playwright/node_modules/@playwright/mcp/cli.js");
-            if !cli.is_file() {
-                return Err(format!(
-                    "{} is missing; run `npm ci` in bench/playwright",
-                    cli.display()
-                ));
-            }
-            let config = json!({"mcpServers": {"playwright": {
-                "command": "node",
-                "args": [
-                    cli, "--headless", "--isolated", "--sandbox",
-                    "--executable-path", opts.chrome,
-                    "--output-dir", scratch.join("playwright-output"),
-                    "--allow-unrestricted-file-access",
-                ],
-            }}});
-            let file = scratch.join("mcp.json");
-            report::write_json(&file, &config)?;
-            Ok((
-                vec!["--mcp-config".to_owned(), file.display().to_string()],
-                path_without_chrome_cdp(),
-            ))
-        }
+) -> Result<OsString, String> {
+    let bin = scratch.join("bin");
+    std::fs::create_dir_all(&bin).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&opts.bin, bin.join("chrome-cdp"))
+        .map_err(|e| format!("link chrome-cdp: {e}"))?;
+    let out = sandbox
+        .cli()
+        .args(["skill", "--install"])
+        .current_dir(workdir)
+        .output()
+        .map_err(|e| format!("chrome-cdp skill --install: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "chrome-cdp skill --install failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
     }
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(&path)))
+        .map_err(|e| e.to_string())
 }
 
 /// Runs the agent on `prompt` in `workdir`; its output goes to `log`
-/// (the transcript in `<log>.jsonl`, and `<log>.stderr`). `sandbox` is chrome-cdp's session
-/// dirs for the chrome-cdp arm.
+/// (the transcript in `<log>.jsonl`, and `<log>.stderr`). `sandbox` is
+/// chrome-cdp's session dirs.
 pub fn run_agent(
-    arm: Arm,
     prompt: &str,
     workdir: &Path,
     sandbox: &Sandbox,
@@ -282,8 +227,8 @@ pub fn run_agent(
 ) -> Result<AgentRun, String> {
     let scratch = sandbox.dir.path().join("agent");
     std::fs::create_dir_all(&scratch).map_err(|e| e.to_string())?;
-    let (extra, path) = arm_setup(arm, workdir, &scratch, sandbox, opts)?;
-    let prompt = format!("{}\n\n{}", preamble(arm), prompt.trim());
+    let path = setup(workdir, &scratch, sandbox, opts)?;
+    let prompt = format!("{PREAMBLE}\n\n{}", prompt.trim());
 
     let mut cmd = Command::new(&opts.claude);
     cmd.arg("-p")
@@ -296,8 +241,7 @@ pub fn run_agent(
         .args(["--setting-sources", "project"])
         .arg("--strict-mcp-config")
         .arg("--dangerously-skip-permissions")
-        .args(["--tools", TOOLS])
-        .args(&extra);
+        .args(["--tools", TOOLS]);
     if let Some(model) = &opts.model {
         cmd.args(["--model", model]);
     }
@@ -306,13 +250,11 @@ pub fn run_agent(
             cmd.env_remove(key);
         }
     }
-    if arm == Arm::ChromeCdp {
-        for (key, value) in sandbox.env() {
-            // Claude Code keeps its own config under ~/.claude, but leave
-            // XDG_CONFIG_HOME alone all the same.
-            if key != "XDG_CONFIG_HOME" {
-                cmd.env(key, value);
-            }
+    for (key, value) in sandbox.env() {
+        // Claude Code keeps its own config under ~/.claude, but leave
+        // XDG_CONFIG_HOME alone all the same.
+        if key != "XDG_CONFIG_HOME" {
+            cmd.env(key, value);
         }
     }
     let stderr = std::fs::File::create(log.with_extension("stderr")).map_err(|e| e.to_string())?;
@@ -372,6 +314,7 @@ pub(super) fn kill_group(pid: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn results_sum_every_models_tokens() {

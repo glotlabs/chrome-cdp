@@ -52,8 +52,8 @@ Options:
 - `--expires <TIME>`: When it expires: seconds since 1970, an ISO time, or from now (30d)
 
 ```text
-Prints the cookie as Chrome stored it. --expires takes seconds since 1970
-(as Playwright's expires), an ISO time (2026-12-31T23:59:00Z), or a time
+Prints the cookie as Chrome stored it. --expires takes seconds since 1970,
+an ISO time (2026-12-31T23:59:00Z), or a time
 from now (90s, 30m, 12h, 30d); without it the cookie lasts the browser
 session. Chrome cuts expiry to at most 400 days. It refuses some cookies: SameSite=None needs --secure, and
 __Host- cookies need --secure, --path / and a --url.

@@ -20,9 +20,6 @@ picture for a human.
 | `compare` | What differs between these two pages (local vs production, before vs after)? |
 | `explore` | What pages and states does this app have, and which ones are broken? |
 
-Playwright has none of these. Its closest is the log of a timed-out
-action.
-
 ## Rules for every command in this plan
 
 - Plan 08 §2–§4 apply: text by default, `--json` with a schema,
@@ -704,7 +701,7 @@ _(append here)_
   `findings`, `stale`).
 - 16.2: no line for `layout` in `chrome-cdp skill`: it is at its 2,000
   token budget, and the lines this plan asks for (`forms`, `snapshot
-  --budget`) need the room. `docs/playwright-parity.md` has a row.
+  --budget`) need the room.
 - 16.3: with `--budget` (and no `--fold`) nothing folds while the page
   fits; over it, runs fold first, then regions, and then as many of each
   run's siblings as still fit are shown again (outer runs first, then in

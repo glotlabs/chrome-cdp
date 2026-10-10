@@ -1,18 +1,16 @@
 <!-- Generated from the CLI by `cargo xtask docs`; do not edit. -->
 # `chrome-cdp state`
 
-Save or load cookies and storage, e.g. a login (Playwright's format)
+Save or load cookies and storage, e.g. a login
 
 ```text
 chrome-cdp state [OPTIONS] <COMMAND>
 ```
 
 ```text
-A state file is Playwright's storageState JSON: the cookies, and each
-origin's localStorage. chrome-cdp adds sessionStorage, and IndexedDB with
-`state save --indexeddb` (as Playwright's indexedDB option has it), so
-Playwright's auth files load here and ours load in Playwright. The file
-holds secrets (session cookies, tokens): it is written readable by you
+A state file is storageState JSON: the cookies, and each origin's
+localStorage and sessionStorage, plus IndexedDB with
+`state save --indexeddb`. The file holds secrets (session cookies, tokens): it is written readable by you
 only; keep it out of version control. For a whole persistent browser
 profile instead, use `open --profile <name>`.
 
@@ -40,11 +38,10 @@ Options:
 
 ```text
 Saves the browser's cookies and the storage of every origin the session
-visited (in a page or an iframe): localStorage, sessionStorage (a
-chrome-cdp extension Playwright ignores) and, with --indexeddb, IndexedDB.
-An origin no tab has open now (a login provider the app redirected
-through) is read in a hidden page that gets an empty document of it, as
-Playwright does; its sessionStorage went with its tab.
+visited (in a page or an iframe): localStorage, sessionStorage
+and, with --indexeddb, IndexedDB. An origin no tab has open now (a login
+provider the app redirected through) is read in a hidden page that gets
+an empty document of it; its sessionStorage went with its tab.
 
 Examples:
   chrome-cdp state save auth.json
@@ -53,7 +50,7 @@ Examples:
 
 ## `chrome-cdp state load`
 
-Load cookies and storage from a file (ours or Playwright's)
+Load cookies and storage from a storageState file
 
 ```text
 chrome-cdp state load [OPTIONS] <FILE>
@@ -72,6 +69,6 @@ loads.
 
 Examples:
   chrome-cdp state load auth.json
-  chrome-cdp state load playwright/.auth/user.json
+  chrome-cdp state load .auth/user.json
 ```
 

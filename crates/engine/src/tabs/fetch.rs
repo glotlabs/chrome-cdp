@@ -6,8 +6,8 @@
 //! credentials, with one pattern (`*`, request stage): which rule applies
 //! is decided here, not by Chrome's wildcard patterns. While routes exist,
 //! requests also skip service workers (which would answer before `Fetch`
-//! sees them) and the HTTP cache (whose hits `Fetch` never sees), as
-//! Playwright does. Without routes or credentials, nothing is paused.
+//! sees them) and the HTTP cache (whose hits `Fetch` never sees).
+//! Without routes or credentials, nothing is paused.
 //!
 //! Chrome 154 has no `Fetch` domain in a dedicated worker: its requests
 //! are paused in the session of the frame that started it, with the

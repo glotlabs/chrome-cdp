@@ -2012,7 +2012,7 @@ fn read_state(path: &Path, global: &GlobalArgs) -> Result<StateLoadRequest, Erro
             ErrorKind::BadArgs,
             format!("{where_} is not a storage state file: {e}"),
         )
-        .hint(Hint::run(save).why("writes one, as does Playwright's storageState()"))
+        .hint(Hint::run(save).why("writes one"))
     })?;
     Ok(StateLoadRequest {
         state,

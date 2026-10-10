@@ -496,7 +496,7 @@ async fn state_survives_a_new_session() {
         .iter()
         .find(|s| s["name"] == "kv")
         .unwrap();
-    // A Date and a Map are not JSON: Playwright's encoding, with the key.
+    // A Date and a Map are not JSON: encoded, with the key.
     assert!(
         kv["records"]
             .as_array()
@@ -604,20 +604,21 @@ async fn state_load_gives_open_pages_their_storage_at_once() {
     engine.close().await;
 }
 
-/// A state file real Playwright (1.64) saved after logging in on the
-/// fixture (`bench/playwright/storage-state.mjs`) loads as it is; only its
+/// A state file another tool saved after logging in on the fixture
+/// loads as it is; only its
 /// origin is replaced by this run's fixture origin (the port differs).
 #[tokio::test(flavor = "multi_thread")]
-async fn playwright_state_files_load_unchanged() {
+async fn external_state_files_load_unchanged() {
     let Some(path) = chrome_path() else { return };
     let f = Fixtures::shared();
-    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/state/playwright.json");
+    let file =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/state/storage-state.json");
     let text = std::fs::read_to_string(&file).unwrap();
     let recorded: Value = serde_json::from_str(&text).unwrap();
     let origin = recorded["origins"][0]["origin"].as_str().unwrap();
     let state = StorageState::parse(&text.replace(origin, f.a())).unwrap();
 
-    let engine = Engine::new("state-playwright", None, None);
+    let engine = Engine::new("state-external", None, None);
     let mut open = open_request(&path);
     open.url = Some(f.url("/state/app.html"));
     open.state = Some(StateLoadRequest {
@@ -663,7 +664,7 @@ async fn tab_list(engine: &Engine) -> Vec<(String, String)> {
 
 /// A login through a single sign-on provider on the other origin: once
 /// back in the app, no frame of the provider is open, yet `state save`
-/// keeps its storage (read in a hidden page, as Playwright does), without
+/// keeps its storage (read in a hidden page), without
 /// a new tab or a hit on the session's routes.
 #[tokio::test(flavor = "multi_thread")]
 async fn state_save_keeps_origins_no_longer_open() {

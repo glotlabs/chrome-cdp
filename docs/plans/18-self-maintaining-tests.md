@@ -1,6 +1,6 @@
 # Plan 18 — Tests that maintain themselves
 
-Status: DONE (18.1-18.7)
+Status: DONE (18.1-18.6)
 Depends on: 11 (the test runner, `history --as-scenario`, `mock record`), 13 (the target graph, for `record` in iframes)
 Roadmap: track 7 of [plan 12](12-after-v1.md)
 
@@ -18,7 +18,7 @@ them working:
 
 This plan adds the tools for each: fingerprints and `test --heal`, flake
 diagnosis, UI coverage, repro bundles, and a recorder. It also finishes
-the runner's backlog notes and tunes `convert` on real suites.
+the runner's backlog notes.
 
 Rules that hold for every milestone:
 
@@ -29,15 +29,15 @@ Rules that hold for every milestone:
 - The CLI and `--json` schemas only grow (docs/output.md). New fields
   are optional.
 
-### Why this beats Playwright
+### What it gives
 
-| | Playwright | chrome-cdp |
-|---|---|---|
-| Broken locator after a redesign | The test fails; a person rewrites the locator | The report names the element it most likely is now; `--heal` writes the patch |
-| Flaky test | Marked flaky after a retry | `--repeat` names the likely cause with evidence from the runs |
-| What the suite misses | Code coverage at best | UI coverage: per page, the controls no test acted on, and mocks no test used |
-| Handing over a bug | A trace file for a GUI | A folder with a scenario, mocks and state that `test` replays offline |
-| Recording | `codegen` window (TypeScript) | `record` writes `.cdp` lines with the same stable locators as `history` |
+| | chrome-cdp |
+|---|---|
+| Broken locator after a redesign | The report names the element it most likely is now; `--heal` writes the patch |
+| Flaky test | `--repeat` names the likely cause with evidence from the runs |
+| What the suite misses | UI coverage: per page, the controls no test acted on, and mocks no test used |
+| Handing over a bug | A folder with a scenario, mocks and state that `test` replays offline |
+| Recording | `record` writes `.cdp` lines with the same stable locators as `history` |
 
 ## Design
 
@@ -292,8 +292,7 @@ and friends.
 
 ## Milestone 18.1 — Runner backlog
 
-Do the backlog notes filed under track 7, except `editor-support-cdp`
-and `convert-real-world-specs` (18.7):
+Do the backlog notes filed under track 7, except `editor-support-cdp`:
 
 - `e2e-runner-baselines`: `run file.cdp` inside a project uses
   `e2e/snapshots` like `test`.
@@ -368,17 +367,6 @@ and `convert-real-world-specs` (18.7):
 - Headed checks (a typed URL, a real window) cannot run on a machine
   without a display: file a `.looper/tasks/` note.
 
-## Milestone 18.7 — `convert` on real suites
-
-- `convert-real-world-specs`: vendor three to five small, permissively
-  licensed Playwright suites (for example Playwright's own TodoMVC demo
-  tests) into `testdata/convert/` with their license files; count the
-  TODO reasons in `convert --json`; add translations for the most
-  common ones; keep the rule that anything unclear becomes a TODO line,
-  not a wrong command.
-- A golden test per vendored suite, and a count of remaining TODOs in
-  the Decisions log.
-
 ## Acceptance criteria
 
 - [x] Two runs of an unchanged e2e-shop suite write byte-identical
@@ -401,7 +389,7 @@ and `convert-real-world-specs` (18.7):
 - [x] `record` round trip: recorded fixture flows pass with `test`.
 - [x] No password or `${secret:…}` value appears in fingerprints,
       patches, bundles or recordings (a test searches for it).
-- [x] The track 7 backlog notes of 18.1 and 18.7 are done and their
+- [x] The track 7 backlog notes of 18.1 are done and their
       files deleted.
 - [x] `cargo xtask release check` passes: the CLI and schemas only grew.
 
@@ -690,53 +678,7 @@ _(append here)_
   navigations use chrome-cdp's commands (`DOM.setFileInputFiles` needs a
   node id), which record alike. `?card=` loads the iframe from origin B
   for the OOPIF case. Expected files are in `crates/chrome-cdp/tests/record/`.
-- 18.7 suites (`testdata/convert/README.md`): Playwright's TodoMVC
-  `integration.spec.ts` and its mock-battery and svgomg examples (v1.48.0,
-  Apache-2.0), Next.js's `with-playwright` example (MIT), and six
-  freeCodeCamp e2e files (BSD-3-Clause): four suites, 13 files, unmodified,
-  with their licenses. A golden case per file (`convert-*.txt`, text only,
-  `--max-chars 0`), not one per suite, so every file's TODO lines are kept.
-- 18.7 TODO count (tests / steps / TODOs), before → after:
-  playwright-todomvc 25/89/81 → 25/307/0; playwright-examples 10/38/19 →
-  10/57/13; nextjs-with-playwright 2/8/0 → 2/8/0; freecodecamp 17/45/76 →
-  17/93/56. Total 176 → 69. The most common reasons were helpers of the
-  file (75 "not a Playwright call"), module constants (41 "a value
-  computed at run time", mostly `TODO_ITEMS[0]`), list matchers (16),
-  values in variables (16) and loops (7). What is left is outside the
-  file: freeCodeCamp's imported translations JSON and `./utils` helpers
-  (`getEditors`, `alertToBeVisible`), its `userPreset` fixture option, and
-  values only known at run time (a download's path, `log` arrays a Node
-  function fills).
-- 18.7 translations: constants (texts, numbers, lists and objects, through
-  `[i]`, `.key`, `.length`, `.slice()`); `for…of` over a known list,
-  unrolled (all or nothing: a body step convert cannot translate makes
-  the loop one TODO line, not one per item); helpers of the file inlined
-  with parameters bound to the call's arguments (a TODO line inside says
-  `in NAME(), called on line N`), and helpers that return a locator;
-  `toHaveText([…])`/`toHaveClass([…])` as a count and one check per
-  element (an empty class is `class '/^$/'`, which a missing attribute
-  passes as in Playwright); `waitForFunction`/`evaluate` with a JSON
-  argument; `toBeEmpty` on a `placeholder=` locator (only fields have
-  one) as `value ''`; `browserName` is `chromium`, so conditions on it
-  hold or not; and the `convert-test-tags-and-annotations` note (details
-  objects: `tag` → `@tags`, a skip or fixme annotation → `@skip`).
-- 18.7 constants are only names the file never changes: the parser lists
-  names assigned to again, `++`/`--`, or changed with an array method that
-  works in place (`parse::mutated`). `fill` is not one of those methods: it
-  is mostly a locator's.
-- 18.7 TypeScript: Playwright compiles the spec, so a function it sends to
-  the page is JavaScript; convert's sources kept the types (`(todo: any)
-  =>` failed in the page). The parser now records the byte ranges of the
-  TypeScript it reads past (annotations, return types, `as`, non-null `!`,
-  type arguments) and a function's source leaves them out. Types in code
-  the parser does not read (an `if`) are caught by `parse::has_types`,
-  which makes the call a TODO line instead.
-- 18.7 round trip: `site/convert/todomvc.html` is a TodoMVC with the demo
-  app's DOM (test ids, labels, classes, the `react-todos` key), so the
-  converted TodoMVC suite runs with `chrome-cdp test`: 25 of 25 pass
-  (`the_converted_todomvc_suite_passes`). This checks that what convert
-  writes is right, not only that it parses.
-- 18.7 `editor-support-cdp` (track 7) is left as a note: 18.1 leaves it
+- `editor-support-cdp` (track 7) is left as a note: 18.1 leaves it
   out and no milestone takes it; a tree-sitter grammar and a VS Code
   extension belong in repositories of their own.
 - Close-out: every criterion checked against its test (`e2e_shop`'s

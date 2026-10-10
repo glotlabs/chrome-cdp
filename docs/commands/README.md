@@ -153,7 +153,7 @@ same text as `chrome-cdp help <command>`. The guides in
 |---|---|
 | [`cookies`](cookies.md) | List, set or clear the browser's cookies |
 | [`storage`](storage.md) | Read or change a page's localStorage or sessionStorage |
-| [`state`](state.md) | Save or load cookies and storage, e.g. a login (Playwright's format) |
+| [`state`](state.md) | Save or load cookies and storage, e.g. a login |
 
 ## Scripts and raw CDP
 
@@ -161,7 +161,6 @@ same text as `chrome-cdp help <command>`. The guides in
 |---|---|
 | [`batch`](batch.md) | Run commands from stdin, one per line, in one call |
 | [`run`](run.md) | Run a .cdp script: commands one per line, with ${var} substitution |
-| [`convert`](convert.md) | Translate a Playwright test file into a .cdp scenario (best effort) |
 | [`cdp`](cdp.md) | Make one raw CDP call on the session's browser or current page |
 
 ## Help and tooling

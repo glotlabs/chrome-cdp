@@ -6,8 +6,7 @@ Roadmap: track 8 of [plan 12](12-after-v1.md)
 
 ## Goal
 
-Plan 11's mocks are the part of chrome-cdp furthest ahead of
-Playwright. This plan fills in their edges, so a real app's traffic
+Plan 11 gave chrome-cdp its mocks. This plan fills in their edges, so a real app's traffic
 can be mocked without falling back to hand-written workarounds:
 
 - **Matching and data:** multipart form bodies, nested REST resources,

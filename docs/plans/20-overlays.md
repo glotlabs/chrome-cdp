@@ -268,9 +268,7 @@ added 1.5 s after load: found with `--wait 3s`, not without).
   `overlays`, then `close-overlays`; put the printed clicks in tests"),
   within the skill's token budget.
 - **Docs.** `docs/commands/overlays.md` and `close-overlays.md`
-  (generated), the `Obscured` section of `docs/troubleshooting.md`, a
-  row in `docs/playwright-parity.md` (Playwright has none; its closest is
-  `page.addLocatorHandler`, which runs a handler the user writes).
+  (generated) and the `Obscured` section of `docs/troubleshooting.md`.
 
 ## Not in this plan
 
@@ -286,9 +284,9 @@ added 1.5 s after load: found with `--wait 3s`, not without).
   `explore --close-overlays` cover the cases seen so far.
 - **Setting consent cookies up front.** Per site and per consent tool,
   and `cookies set` already does it for a site the user knows.
-- **A `locator handler`** like Playwright's `addLocatorHandler`. The
-  scenario format has no control flow (plan 08); revisit with plan 18's
-  healing if tests keep breaking on overlays.
+- **A locator handler** (a handler the user writes, run when a locator
+  is blocked). The scenario format has no control flow (plan 08);
+  revisit with plan 18's healing if tests keep breaking on overlays.
 
 ## Acceptance criteria
 

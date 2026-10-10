@@ -37,8 +37,8 @@ tasks:
                       then check for leaks
   bench <micro|tokens|agent> [--no-tests] [-- <args>]
                       build the release binaries and run a benchmark suite
-                      (crates/bench; needs CHROME_PATH, and bench/playwright's
-                      node_modules for the Playwright side); see docs/benchmarks.md.
+                      (crates/bench; needs CHROME_PATH, and tokens needs
+                      bench/tokens' node_modules); see docs/benchmarks.md.
                       micro also runs the plans' ignored timing tests (--no-tests
                       skips them); `-- --help` lists the suite's own options
   dist [--target T] [--update-size]

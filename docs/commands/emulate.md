@@ -17,7 +17,7 @@ Options:
 
 ```text
 A device sets the viewport, pixel ratio, mobile mode, touch and user agent
-(the table comes from Playwright's device descriptors). Without DEVICE,
+(`emulate --list` shows the built-in table). Without DEVICE,
 prints everything the session emulates; `emulate reset` turns all of it
 off (viewport, user agent, locale, time zone, geolocation, media,
 network, CPU and time). Emulation belongs to the browser context (the session's own,

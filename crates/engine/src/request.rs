@@ -205,7 +205,7 @@ pub struct HttpCredentials {
     pub username: String,
     pub password: String,
     /// The only origin (`https://app.test`) whose challenges get them;
-    /// `None` for every origin, as Playwright's `httpCredentials`.
+    /// `None` for every origin.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
 }
@@ -1786,7 +1786,7 @@ pub struct CookieSpec {
     #[serde(default)]
     pub url: Option<String>,
     /// `--domain`: `example.com` for that host only, `.example.com` for
-    /// its subdomains too (as Playwright's `addCookies` has it).
+    /// its subdomains too.
     #[serde(default)]
     pub domain: Option<String>,
     #[serde(default)]

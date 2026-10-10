@@ -14,8 +14,8 @@ what comes next and why. It has two sources:
   while building v1. Each one was filed under a track in §6, so none is
   lost; §6 now lists those still open.
 - **First principles.** What an agent that changes web code still
-  cannot do with chrome-cdp, or with any other tool. Items marked ★ go
-  beyond Playwright (library, CLI and MCP).
+  cannot do with chrome-cdp, or with any other tool. Items marked ★ are
+  new ground for browser tools.
 
 This is a roadmap, not a plan to execute. Each track picked up gets its
 own plan file, written like plans 01–11: milestones sized for one
@@ -32,7 +32,7 @@ first three and weak on the last two.
 | Step | v1 | What is missing |
 |---|---|---|
 | **See** the page | `snapshot` with refs, `--diff`, `markdown`, `screenshot --annotate` | Iframes and workers are half-seen (§3 Track 1). Nothing says *why* an element can't be used until an action times out. Layout bugs (overlap, clipping, overflow) are invisible to the AX tree. |
-| **Act** | Every Playwright action, auto-wait, the action report | Forms are filled field by field. Some parity gaps (locator `has=`/`or`, paused timers, rich clipboard). |
+| **Act** | Clicks, typing, forms, uploads and the rest, auto-wait, the action report | Forms are filled field by field. Some gaps (locator `has=`/`or`, paused timers, rich clipboard). |
 | **Verify** | `expect`, `expect-snapshot`, `expect-screenshot`, `--a11y`, `test` | Checks are one element at a time. No audit of the whole page: Chrome's own Issues, security, performance budgets, layout. |
 | **Debug** | `errors` and `console` with source maps, `network`, `trace`, `perf` | The agent's real question is "**which line of my code** did this?". The page gives a DOM node or a request; the agent edits source files. Nothing connects the two. |
 | **Hand off** | `history --as-scenario`, `report.md` | A human is needed for CAPTCHA, 2FA and SSO, and there is no clean way to hand them the browser and take it back. A failure cannot be packed up and replayed by another agent. |
@@ -53,7 +53,7 @@ The v1 principles (overview §2) still hold. Three more:
 2. **Close the loop to the source.** Where the browser knows where
    something came from (a stack, a source map, a framework's debug
    info), show the agent the file and line, not the generated bundle.
-3. **Beyond Playwright only where an agent gains.** Human-only features
+3. **New ground only where an agent gains.** Human-only features
    (a GUI trace viewer, a codegen window) come last. A feature an agent
    can read in text wins over one a human watches.
 
@@ -77,7 +77,7 @@ the README are claims.
   `route-overhead-benchmark`, `latency-benchmark-fixed-host`,
   `locator-benchmark`, `soak-budgets-tune`,
   `report-brief-settle-busy-pages`, `runner-unmatched-check-cost`,
-  `tokens-real-world-corpus`, `readme-playwright-cli-column`.
+  `tokens-real-world-corpus`.
 - Checks that need a display, macOS or a clean machine:
   `doctor-on-macos`, `extensions-headed-and-macos`,
   `headed-highlight-inspect-verify`, `tabs-headed-activate`,
@@ -156,15 +156,14 @@ Done: the hostile-page suite passes; the daemon's RSS stays within
 budget with a 500 MB HAR and a 200-page PDF; the Beta job has been
 green for a month.
 
-### Track 3 — Parity gaps and small commands
+### Track 3 — Gaps and small commands
 
-Plan: [14-parity-gaps](14-parity-gaps.md).
+Plan: [14-gaps](14-gaps.md).
 Status: DONE (plan 14, 14.1-14.7).
 
-**Why.** The last ❌ rows of `docs/playwright-parity.md`, the 🟡 rows
-agents or converted suites hit, and small commands the backlog asked
-for. Each is small; together they remove "chrome-cdp can't do X" from
-migrations.
+**Why.** The locator, timer, clipboard and network features agents
+still missed, and small commands the backlog asked for. Each is small;
+together they remove "chrome-cdp can't do X".
 
 - Locators: `has=`, `has-not=`, `has-not-text=`, `or`/`and`
   (`locator-has-filter`); a command that prints a ref's stable locator
@@ -177,12 +176,12 @@ migrations.
   `no-failed-requests-all-tabs`, `har-pages-per-navigation`, the
   header and footer half of `pdf-more-options`,
   `screenshot-annotate-top-layer`, `cdp-method-did-you-mean`.
-- The 🟡 rows worth closing: `expose` functions that return a value;
+- Partial features worth finishing: `expose` functions that return a value;
   WebSocket frames in `network` (not only through `cdp --listen`);
   `keyboard down`/`up`; `expect-snapshot` templates with wildcards and
-  regexes (Playwright's `toMatchAriaSnapshot`).
+  regexes.
 
-Done: `docs/playwright-parity.md` has no ❌, and the 🟡 rows above are ✅.
+Done: every item above is done.
 
 ### Track 4 ★ — From page to source
 
@@ -191,8 +190,7 @@ Status: DONE (plan 15, 15.1-15.7; the agent benchmark's run is deferred).
 
 **Why.** §1: a coding agent's next step after "the button is wrong" is
 "which file do I edit?". Today it greps the codebase for the button's
-text. The browser often knows the answer, and Playwright does not ask
-it.
+text. The browser often knows the answer.
 
 - **`source <loc>`: element → file and line.** In order of preference:
   1. The framework's own debug info in dev builds: React's fiber
@@ -251,8 +249,8 @@ changed beyond one tab.
 - **`why <loc>`: explain actionability now, without acting.** Visible?
   In the viewport? Covered, and by what (with its ref)? Disabled, and
   by what (`disabled`, a disabled `<fieldset>`, `aria-disabled`,
-  `inert`, `pointer-events: none`)? Stable, or animating? Playwright only
-  says this in a timeout's log. The pipeline exists (plan 05); this
+  `inert`, `pointer-events: none`)? Stable, or animating? Today only a
+  timeout says this. The pipeline exists (plan 05); this
   prints its verdict for every check.
 - **`layout`: visual lint.** From `DOMSnapshot` boxes and computed
   styles, list: elements that overlap interactive ones; text clipped by
@@ -319,7 +317,7 @@ finding and passes with it in the baseline.
 ### Track 7 ★ — Tests that maintain themselves
 
 Plan: [18-self-maintaining-tests](18-self-maintaining-tests.md).
-Status: DONE (plan 18, 18.1-18.7; `editor-support-cdp` stays a note).
+Status: DONE (plan 18, 18.1-18.6; `editor-support-cdp` stays a note).
 
 **Why.** v1 makes tests cheap to write. What costs over time is
 keeping them working: broken locators after a redesign, flakes nobody
@@ -350,7 +348,7 @@ understands, and not knowing what the suite misses.
 - Runner backlog: `e2e-runner-baselines`, `runner-context-leftovers`,
   `secrets-in-screenshots`, `watch-data-files`, `saved-list-indexes`,
   `lint-after-load-errors`, `history-testid-attribute`,
-  `convert-real-world-specs`, `editor-support-cdp`.
+  `editor-support-cdp`.
 
 Done: the e2e-shop suite, run against a copy of the shop with renamed
 classes and moved buttons, heals every broken locator with a correct
@@ -361,8 +359,8 @@ patch; a planted flake is diagnosed as its cause.
 Plan: [19-mocks](19-mocks.md).
 Status: DONE (plan 19, 19.1-19.4).
 
-**Why.** Plan 11's mocks are the part of chrome-cdp furthest ahead of
-Playwright. The backlog fills in its edges.
+**Why.** Plan 11 gave chrome-cdp its mocks. The backlog fills in their
+edges.
 
 - Matching and data: `mock-multipart-forms`,
   `mock-collection-nested-paths`, `mock-record-request-bodies`.
@@ -453,7 +451,7 @@ plans' tasks left are in `.looper/tasks/v1/`; they are not mapped here.
 
 | Track | Notes |
 |---|---|
-| 0 | batch-benchmark-run, docker-apparmor-unconfined-sandbox, doctor-newer-release, doctor-on-macos, extensions-headed-and-macos, headed-highlight-inspect-verify, headed-viewport-window, latency-benchmark-fixed-host, locator-benchmark, mock-schema-versioned-url, readme-playwright-cli-column, report-brief-settle-busy-pages, route-overhead-benchmark, runner-unmatched-check-cost, soak-budgets-tune, tabs-headed-activate, tokens-real-world-corpus, with-deps-end-to-end-test |
+| 0 | batch-benchmark-run, docker-apparmor-unconfined-sandbox, doctor-newer-release, doctor-on-macos, extensions-headed-and-macos, headed-highlight-inspect-verify, headed-viewport-window, latency-benchmark-fixed-host, locator-benchmark, mock-schema-versioned-url, report-brief-settle-busy-pages, route-overhead-benchmark, runner-unmatched-check-cost, soak-budgets-tune, tabs-headed-activate, tokens-real-world-corpus, with-deps-end-to-end-test |
 | 2 | actionability-emulated-viewports, cdp-enum-unknown-raw-value, cdp-protocol-vs-installed-chrome, check-first-click-miss, connect-autoattach-scope, daemon-runtime-threads, dom-walker-layout-tables, download-quota, har-stream-large-files, keys-table-regenerate-check, mock-serve-cors-host, mock-shim-binding-trust, obscured-ref-always, page-world-reports, pdf-more-options (streaming), route-rules-daemon-upgrade, rpc-line-limits, session-options-off, shrink-release-binary, snapshot-baseline-memory, snapshot-dom-engine-keys |
 | 7 | editor-support-cdp |
 | 9 | cdp-wss-support |
@@ -486,7 +484,7 @@ touches. Build on that code instead of duplicating it.
 - **Docs move with code.** A new or changed command updates its help text
   (with an example), its page in `docs/commands/`, the golden tests
   (`crates/chrome-cdp/tests/golden/`), `chrome-cdp skill` when an agent
-  should know it, and `docs/playwright-parity.md` when a row changes.
+  should know it.
 - **CDP.** New domains or commands go in
   `crates/cdp/protocol/domains.txt`, then `cargo xtask gen-cdp`.
 - **Tests.** Integration tests need a real Chrome: Chrome for Testing 154

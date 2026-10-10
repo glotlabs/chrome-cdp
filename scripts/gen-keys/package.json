@@ -1,0 +1,8 @@
+{
+  "name": "chrome-cdp-gen-keys",
+  "private": true,
+  "description": "Generates crates/engine/src/input/keys/table.rs; see gen-keys.cjs.",
+  "dependencies": {
+    "playwright-core": "1.64.0-alpha-1789764292000"
+  }
+}

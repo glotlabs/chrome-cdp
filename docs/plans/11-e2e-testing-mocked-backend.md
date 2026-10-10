@@ -26,19 +26,19 @@ docker-compose stack, or staging) with `chrome-cdp test --backend <name>`
 frontend and backend actually work together, and `--verify-mocks` uses real
 runs to show where the mocks no longer match the real API.
 
-### Why this beats Playwright
+### What it gives
 
-| | Playwright | chrome-cdp |
-|---|---|---|
-| Scenarios | TypeScript test code | `.cdp` files in the **same syntax the agent already uses interactively**. An exploratory session can be saved as a test (§11.8). |
-| Mocks | `page.route` callbacks written in code, per test | Declarative mock files + data files, reusable, layered by name, and loadable into an interactive session |
-| Stateful backend | Build it yourself | Built-in fake REST collections and response sequences (§11.3) |
-| Missing mocks | Request goes to the network or hangs | Unmatched requests in scope fail the test, with a closest-match diagnosis (§11.5) |
-| Mock drift | Not addressed | `mock check` validates mocks against an OpenAPI spec (§11.8) |
-| Creating mocks | HAR replay (opaque blob) | `mock record` writes readable, editable mock files and data files |
-| Server-side fetches (SSR) | Not interceptable | `mock serve` runs the same mock files as a real HTTP server (§11.9) |
-| Mocked vs real backend | Separate test setups, or conditionals in code | Same scenario files; `--backend mock\|<real>`; hybrid mode mocks only chosen services; `--verify-mocks` compares mocks with real responses (§11.11) |
-| Failures | Trace viewer (for a human with a GUI) | `report.md` per failed test: failing step, snapshot, screenshot path, console errors, request journal. Written for an agent to read. |
+| | chrome-cdp |
+|---|---|
+| Scenarios | `.cdp` files in the **same syntax the agent already uses interactively**. An exploratory session can be saved as a test (§11.8). |
+| Mocks | Declarative mock files + data files, reusable, layered by name, and loadable into an interactive session |
+| Stateful backend | Built-in fake REST collections and response sequences (§11.3) |
+| Missing mocks | Unmatched requests in scope fail the test, with a closest-match diagnosis (§11.5) |
+| Mock drift | `mock check` validates mocks against an OpenAPI spec (§11.8) |
+| Creating mocks | `mock record` writes readable, editable mock files and data files |
+| Server-side fetches (SSR) | `mock serve` runs the same mock files as a real HTTP server (§11.9) |
+| Mocked vs real backend | Same scenario files; `--backend mock\|<real>`; hybrid mode mocks only chosen services; `--verify-mocks` compares mocks with real responses (§11.11) |
+| Failures | `report.md` per failed test: failing step, snapshot, screenshot path, console errors, request journal. Written for an agent to read. |
 
 ## Project layout (convention; every path is configurable)
 
@@ -372,8 +372,7 @@ these by default (configurable in `[e2e.determinism]`):
   - `json`;
   - `junit`;
   - `html`: one self-contained file with a timeline of steps, a screenshot per
-    step if `--trace` is on, and the request journal. This is the human
-    equivalent of the Playwright trace viewer.
+    step if `--trace` is on, and the request journal, for a human to read.
 - `--debug`:
   - on the first failure, stop and **leave the browser context alive** as
     session `test-debug`, with the mocks still active;
@@ -522,8 +521,7 @@ tools a real format needs.
   - `docs/e2e/` with a quickstart, the mock file reference (generated from the
     schema), scenario reference, determinism, and debugging failures;
   - a recipes page (auth, pagination, file upload, optimistic UI, polling,
-    feature flags, error states);
-  - "Migrating Playwright tests + `page.route` mocks".
+    feature flags, error states).
 - `chrome-cdp skill` (plan 08) gets an E2E section. It teaches agents the
   workflow: explore → `history --as-scenario` → add mocks/data → `test` →
   read `report.md` → fix.
@@ -763,7 +761,7 @@ commands (reset a database, run migrations, seed data).
 - 11.5: The automatic check is a new flag, `expect --no-errors --all-tabs`: every tab of the context, each since it opened, so an error on a page the test navigated away from still counts. It runs after the test's own steps pass and before `@after`; its failure is reported as `(checked after the test's steps)` (`hook: "check"`). `@allow-console-errors` (a setting of a file or a test) and `allow_console_errors = true` in `[e2e]` turn it off.
 - 11.5: `mark` ignored `--context` (it marked the session's active tab), so `--since` in a test never found its mark; it now takes the context's tab as other commands do.
 - 11.5: Since unmatched requests now fail tests, a body mocks cannot see would fail a good test. The worry that Chrome leaves large bodies out of `Fetch.requestPaused` did not hold on Chrome 154: 20 MB and `Blob` bodies arrive whole, so no `Network.getRequestPostData` fallback was added; `mocks_match_large_request_bodies` guards it. Multipart forms with files remain a follow-up.
-- 11.6: Time stays the init-script clock of plan 07 (Chrome's virtual time stalls page loads), so timers keep real time and a page never stalls. Moving the frozen time on (`time advance`, or a later `time freeze`) also moves `performance.now()` and runs the `setTimeout`/`setInterval` callbacks due by then, each once, in the order they are due (Playwright's `clock.fastForward`), which is what testing expiry, polling and debounce needs. `requestAnimationFrame` is left alone, and timers set in an open page before the freeze are not tracked; pausing timers (`clock.pauseAt`, `runFor`) is not done.
+- 11.6: Time stays the init-script clock of plan 07 (Chrome's virtual time stalls page loads), so timers keep real time and a page never stalls. Moving the frozen time on (`time advance`, or a later `time freeze`) also moves `performance.now()` and runs the `setTimeout`/`setInterval` callbacks due by then, each once, in the order they are due, which is what testing expiry, polling and debounce needs. `requestAnimationFrame` is left alone, and timers set in an open page before the freeze are not tracked; pausing timers (`clock.pauseAt`, `runFor`) is not done.
 - 11.6: Defaults when `[e2e.determinism]` says nothing: time frozen at `2026-01-01T10:00:00Z` (the plan's example), seed 0 (as the mocks' already was), animations off. The plan's fixed `en-US` and `UTC` became two new keys, `locale` and `timezone` (a name, or `false` for the browser's own), since an app for another market wants its own. `freeze_time` is checked when the config is read (`parse_time` moved to `protocol::format` for it). `Determinism::with` layers a backend's settings for 11.11.
 - 11.6: The runner sets a test's context up with the CLI's own commands after `mock use`: `viewport WxH --dpr 1` (a `@device` keeps its pixel ratio), `time freeze`, one `init-script add` (seeded random, no animations), `media --reduced-motion reduce`, `locale`, `tz`. Hooks' contexts get the same. Mocks' `{{now}}` already followed the context's frozen time and their random values the seed, reset per test by the context's `mock use`, so mock latency needed nothing new.
 - 11.6: Seeded random is sfc32, started over in every document, so a reload sees the same values. It covers `crypto.getRandomValues` (integer arrays) too, since uuid and nanoid libraries use it; workers keep real randomness.
@@ -825,7 +823,7 @@ commands (reset a database, run migrations, seed data).
 - 11.10: Running the example against its real API showed two `--verify-mocks` bugs, now fixed: an item a collection creates takes the id the real API gave it (`Mocks::adopt_id`), since the requests that follow name the real id; and a `ws://` request is matched against the `[[websocket]]` mocks instead of being reported as having no mock.
 - 11.10: "Generated from the schema": `mock::reference` renders `docs/e2e/mocks.md` from `chrome-cdp schema mocks`, and a test keeps it and the published `docs/e2e/mocks.schema.json` current (`UPDATE_GOLDEN=1 cargo test -p mock reference`). "Published" is that file at `https://raw.githubusercontent.com/glotlabs/chrome-cdp/main/docs/e2e/mocks.schema.json`, which the `#:schema` line of `init e2e`'s mock file (and the example's) names; a schema store entry can come with plan 10's release. The docs' mock and scenario blocks that name their file are linted and fmt-checked by `tests/docs.rs`.
 - 11.10: The Next.js example is `examples/e2e-ssr`: one server component that fetches from `mock_server` (port 4010) and forwards `x-chrome-cdp-test`, so a sequence-like counter and a layered set are per test. Its build is not committed; the `e2e-ssr` CI job installs Node, builds it and runs its scenarios. The nightly workflow runs e2e-shop with `--repeat 20` and `--backend local --verify-mocks` on Linux and macOS; `cargo xtask ci` runs `tests/e2e_shop.rs` on every runner with Chrome.
-- 11.10: `chrome-cdp skill` has an "E2E tests with mocks" section (explore with `mock use`, `history --as-scenario`, mocks, `lint`, `test`, `report.md`), and AGENTS.md a line; SKILL.md stays under 2k tokens. The Playwright migration guide's test runner section was brought up to date, and `docs/e2e/migrating.md` covers moving suites and `page.route` handlers.
+- 11.10: `chrome-cdp skill` has an "E2E tests with mocks" section (explore with `mock use`, `history --as-scenario`, mocks, `lint`, `test`, `report.md`), and AGENTS.md a line; SKILL.md stays under 2k tokens.
 - 11.10: The example has 17 tests, not the "30-test suite" the timing criterion names; that criterion is a timing: deferred, benchmarks run after all plans.
 - Close-out: the determinism test (`twenty_runs_record_the_same_steps_and_screenshots` in `tests/e2e.rs`) runs `scenarios/determinism` with `--repeat 20 --jobs 4 --trace` and compares each run's `steps.jsonl` and `--trace` screenshots with the first run's, byte for byte. "Timestamps excluded" covers each step's `start_ms`/`duration_ms` and the durations step outputs report (`goto`'s `(865ms)`), which stay in the file because they help debugging.
 - Close-out: the test list's gaps were filled: `lint` has a `bad-args` fixture; the `--verify-mocks` fixture drifts by a true rename (`title` → `name`) and a mocked endpoint the real API lacks (status drift), next to the changed type and the unmocked endpoint; the `mock record` round trip replays with the backend off (the page from a `static` web server with no API); mock files get a formatter property test like `.cdp` files; and a test keeps `examples/e2e-shop/dist` built from its current sources. Hybrid mode stays covered on `testdata/e2e` (see 11.11), since the shop has no third-party service to mock.

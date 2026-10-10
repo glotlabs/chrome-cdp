@@ -14,7 +14,6 @@ use protocol::{Cmd, ErrorInfo, ErrorKind, Mode, Output};
 mod cli;
 mod completions;
 mod config;
-mod convert;
 mod doctor;
 mod e2e_files;
 mod emulate;
@@ -147,7 +146,6 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Schema(args)) => schema::run(&args),
         Some(Command::Help(args)) => help::run(&args),
         Some(Command::Skill(args)) => skill::run(&args),
-        Some(Command::Convert(args)) => convert::run(&args),
         Some(Command::Fmt(args)) => fmt::run(&args),
         Some(Command::Init(args)) => init::run(&args),
         Some(Command::Completions(args)) => Ok(completions::run(&args)),

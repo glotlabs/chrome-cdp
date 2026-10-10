@@ -1,13 +1,9 @@
 //! The device table of `emulate <device>` (plan 07, milestone 7.2).
 //!
-//! Generated from Playwright's device descriptors
-//! (`packages/isomorphic/deviceDescriptorsSource.json` in playwright-core
-//! 1.63.0; Copyright (c) Microsoft Corporation, Apache License 2.0,
-//! <https://github.com/microsoft/playwright>): 45 common phones, tablets
-//! and desktops, with their landscape entries where Playwright has them.
-//! Each keeps Playwright's name, viewport, screen, device scale factor,
-//! `isMobile`, `hasTouch` and user agent. To update it, take the same
-//! entries from a newer playwright-core.
+//! Derived from Playwright's device descriptors (Apache-2.0, see NOTICE).
+//! 45 common phones, tablets and desktops, with their landscape entries:
+//! each has a name, viewport, screen, device scale factor, `isMobile`,
+//! `hasTouch` and user agent.
 
 /// A device `emulate` can be.
 #[derive(Debug, Clone, Copy, PartialEq)]

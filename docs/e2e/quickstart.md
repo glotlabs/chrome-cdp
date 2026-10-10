@@ -154,5 +154,4 @@ nightly job runs the scenarios against a real backend with
 - [determinism.md](determinism.md): frozen time, seeded random values;
 - [backends.md](backends.md): the same scenarios against a real backend;
 - [beyond-fetch.md](beyond-fetch.md): WebSockets, Server-Sent Events,
-  `mock serve` for server-side rendering;
-- [migrating.md](migrating.md): from Playwright tests and `page.route`.
+  `mock serve` for server-side rendering.

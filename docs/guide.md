@@ -412,7 +412,7 @@ decides).
 
 ```sh
 chrome-cdp emulate 'iPhone 15'          # a device: viewport, pixel ratio, mobile, touch, user agent
-chrome-cdp emulate --list               # 45 phones, tablets and desktops (from Playwright's table)
+chrome-cdp emulate --list               # 45 phones, tablets and desktops (a built-in table)
 chrome-cdp open --device 'Pixel 7' localhost:3000   # the same, before the first page loads
 chrome-cdp viewport 1440x900 --dpr 2    # or 390x844 --mobile --touch; `viewport reset`
 chrome-cdp geo 59.9139,10.7522          # navigator.geolocation (the permission is granted)
@@ -474,9 +474,8 @@ logic that runs in the page belongs in an init script.
 ## Cookies, storage and saved logins
 
 Cookies are the browser's, so they belong to every tab; Web Storage belongs
-to a page's origin. `state save` writes both to a file in Playwright's
-`storageState` format, so a login done once can be loaded into a new
-session, and Playwright's auth files load as they are:
+to a page's origin. `state save` writes both to a `storageState` JSON
+file, so a login done once can be loaded into a new session:
 
 ```sh
 chrome-cdp cookies                              # session=ab12  app.example.com/  HttpOnly Secure session
@@ -491,8 +490,8 @@ chrome-cdp open --state auth.json https://app.example.com   # logged in from the
 A state file holds secrets (session cookies, tokens): it is written readable
 by you only; keep it out of version control. `state load` adds the cookies
 and gives each origin its storage, at once if a tab has it open, else before
-the scripts of its next page load. chrome-cdp adds `sessionStorage` to the
-format (Playwright ignores it). For a whole persistent profile instead, use
+the scripts of its next page load. Each origin's `sessionStorage`
+is kept too. For a whole persistent profile instead, use
 `open --profile <name>`.
 
 ## Screenshots and PDFs
@@ -671,14 +670,6 @@ click 'role=button[name="Sign in"]'
 wait --url /dashboard
 EOF
 ```
-
-## Coming from Playwright
-
-Coming from Playwright? [migrating-from-playwright.md](migrating-from-playwright.md)
-maps its API (locators, actions, waits, `expect`, mocking, contexts) to
-commands, and `chrome-cdp convert tests/login.spec.ts -o login.cdp`
-translates a simple test file into a scenario for `chrome-cdp test`, with a
-`# TODO` line for each statement it cannot translate.
 
 ## E2E tests and mock files
 

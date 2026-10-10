@@ -88,7 +88,7 @@ const INPUT: &str = "function () {\n\
     return this.localName === 'label' && this.control ? this.control : this;\n\
 }";
 
-/// Clears the file input of `this` as Playwright does (a user cannot):
+/// Clears the file input of `this` (a user cannot):
 /// no files, then `input` and `change`. Whether it held any.
 const CLEAR: &str = "function () {\n\
     const input = this.localName === 'label' && this.control ? this.control : this;\n\

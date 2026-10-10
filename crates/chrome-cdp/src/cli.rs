@@ -613,8 +613,7 @@ Examples:
     /// Assert something about the page, retrying until it holds: an element's state, text, value, count, …
     #[command(after_help = "\
 Checks the active tab (or --tab) again on every animation frame until the
-assertion holds or --timeout (default 5s) passes, like Playwright's
-expect(). A failure exits 1 (ExpectFailed) and says what it expected, what
+assertion holds or --timeout (default 5s) passes. A failure exits 1 (ExpectFailed) and says what it expected, what
 it saw, the element (with a ref) and what to run next. --not inverts
 element matchers, --url and --title. Needs a running session.
 
@@ -778,8 +777,8 @@ failure exits 1 (ExpectFailed) and saves the screenshot and a diff image
 Experimental: fonts render differently on each OS (so each OS has its own
 baseline) and may change with Chrome's version. expect-snapshot is the
 sturdier check. For the capture the caret is hidden, animations and
-transitions are finished and endless ones stopped at their start (as
-Playwright does). --mask paints over what changes on every load (clocks,
+transitions are finished and endless ones stopped at their start.
+--mask paints over what changes on every load (clocks,
 ads). --update, a first run, CI and --dir work as in expect-snapshot.
 Needs a running session.
 
@@ -1850,7 +1849,7 @@ Examples:
     /// Make pages look like a phone, tablet or desktop; list or reset.
     #[command(after_help = "\
 A device sets the viewport, pixel ratio, mobile mode, touch and user agent
-(the table comes from Playwright's device descriptors). Without DEVICE,
+(`emulate --list` shows the built-in table). Without DEVICE,
 prints everything the session emulates; `emulate reset` turns all of it
 off (viewport, user agent, locale, time zone, geolocation, media,
 network, CPU and time). Emulation belongs to the browser context (the session's own,
@@ -2024,16 +2023,14 @@ Examples:
   chrome-cdp storage local --origin https://auth.example.com")]
     Storage(StorageArgs),
 
-    /// Save or load cookies and storage, e.g. a login (Playwright's format).
+    /// Save or load cookies and storage, e.g. a login.
     #[command(
         subcommand_required = true,
         arg_required_else_help = true,
         after_help = "\
-A state file is Playwright's storageState JSON: the cookies, and each
-origin's localStorage. chrome-cdp adds sessionStorage, and IndexedDB with
-`state save --indexeddb` (as Playwright's indexedDB option has it), so
-Playwright's auth files load here and ours load in Playwright. The file
-holds secrets (session cookies, tokens): it is written readable by you
+A state file is storageState JSON: the cookies, and each origin's
+localStorage and sessionStorage, plus IndexedDB with
+`state save --indexeddb`. The file holds secrets (session cookies, tokens): it is written readable by you
 only; keep it out of version control. For a whole persistent browser
 profile instead, use `open --profile <name>`.
 
@@ -2059,8 +2056,7 @@ by then (each once), so expiry, polling and debounce can be tested without
 waiting. It is an init script that replaces `Date`, not Chrome's virtual
 time, which stalls page loads.
 `time pause` stops timers and animation frames as well, and `time run-for`
-fires them in order, each interval tick and a frame every 16ms, like
-Playwright's clock.runFor.
+fires them in order, each interval tick and a frame every 16ms.
 
 Examples:
   chrome-cdp time freeze 2026-01-31T09:30:00Z
@@ -2342,35 +2338,6 @@ Examples:
   chrome-cdp run smoke.cdp --continue --session ci
   chrome-cdp run login.cdp --json    # one JSON line per step")]
     Run(RunArgs),
-
-    /// Translate a Playwright test file into a .cdp scenario (best effort).
-    #[command(after_help = "\
-Reads a Playwright test (TypeScript or JavaScript) and writes the .cdp
-scenario that does the same, following docs/migrating-from-playwright.md:
-goto, getBy… locators, click, fill, check, selectOption, press, waitFor…,
-route with fulfill or abort, and the expect matchers. Each test(…) becomes
-a @test \"describe > title\" block (docs/e2e/scenarios.md), beforeEach and
-afterEach become @before and @after, beforeAll and afterAll @before-all
-and @after-all, test.skip/fixme/only @skip and @only, and test.use a
-@viewport or @device setting plus emulation commands, and { tag } @tags.
-chrome-cdp test runs it, each test in a fresh browser context. A file
-without tests (a script that launches the browser itself) becomes a plain
-script for run.
-
-Values known now are read: the file's constants (texts, numbers, lists and
-objects), for…of over such a list, and its helper functions, inlined
-where they are called. What it cannot translate (conditions, helpers from
-other files, values only known at run time) becomes a `# TODO line N
-(why): code` line, and a warning counts them: rewrite those before running
-it. A test left with no steps gets @skip, so the file still loads. Nothing
-is run and no browser starts.
-
-Examples:
-  chrome-cdp convert tests/login.spec.ts
-  chrome-cdp convert tests/login.spec.ts -o login.cdp && chrome-cdp test login.cdp
-  chrome-cdp convert - < checkout.spec.ts > checkout.cdp
-  chrome-cdp convert tests/login.spec.ts --json    # the scenario and each TODO")]
-    Convert(ConvertArgs),
 
     /// Format .cdp scenario files and mock files in place; --check only reports.
     #[command(after_help = "\
@@ -2681,21 +2648,6 @@ pub(crate) struct RunArgs {
 
     #[command(flatten)]
     pub(crate) script: ScriptArgs,
-}
-
-#[derive(Debug, Args)]
-pub(crate) struct ConvertArgs {
-    /// The Playwright test file, e.g. tests/login.spec.ts; `-` reads stdin.
-    #[arg(value_name = "SPEC", allow_hyphen_values = true)]
-    pub(crate) file: PathBuf,
-
-    /// Write the scenario to this file instead of printing it.
-    #[arg(short = 'o', long = "output", value_name = "PATH")]
-    pub(crate) output: Option<PathBuf>,
-
-    /// Bound the printed scenario to this many characters (0 = no limit).
-    #[arg(long, default_value_t = 20_000, value_name = "N")]
-    pub(crate) max_chars: usize,
 }
 
 /// `--var KEY=VALUE`.
@@ -5160,7 +5112,7 @@ Examples:
     /// Write a mock set from a HAR file, as `mock record` does.
     #[command(after_help = "\
 The same conversion as `mock record`, from a HAR file (`har stop`, the
-DevTools Network panel's \"Save all as HAR\", or Playwright's). The output is
+DevTools Network panel's \"Save all as HAR\", or any HAR recorder). The output is
 <mocks dir>/<file's name>.toml unless -o says otherwise. --match-bodies
 tells requests to one path apart by their bodies' stable fields.
 
@@ -6232,8 +6184,8 @@ pub(crate) enum CookiesCommand {
     /// Set a cookie, for the active tab's URL unless given --url or
     /// --domain.
     #[command(after_help = "\
-Prints the cookie as Chrome stored it. --expires takes seconds since 1970
-(as Playwright's expires), an ISO time (2026-12-31T23:59:00Z), or a time
+Prints the cookie as Chrome stored it. --expires takes seconds since 1970,
+an ISO time (2026-12-31T23:59:00Z), or a time
 from now (90s, 30m, 12h, 30d); without it the cookie lasts the browser
 session. Chrome cuts expiry to at most 400 days. It refuses some cookies: SameSite=None needs --secure, and
 __Host- cookies need --secure, --path / and a --url.
@@ -6406,18 +6358,17 @@ pub(crate) enum StateCommand {
     /// Write the cookies and storage to a file (readable by you only).
     #[command(after_help = "\
 Saves the browser's cookies and the storage of every origin the session
-visited (in a page or an iframe): localStorage, sessionStorage (a
-chrome-cdp extension Playwright ignores) and, with --indexeddb, IndexedDB.
-An origin no tab has open now (a login provider the app redirected
-through) is read in a hidden page that gets an empty document of it, as
-Playwright does; its sessionStorage went with its tab.
+visited (in a page or an iframe): localStorage, sessionStorage
+and, with --indexeddb, IndexedDB. An origin no tab has open now (a login
+provider the app redirected through) is read in a hidden page that gets
+an empty document of it; its sessionStorage went with its tab.
 
 Examples:
   chrome-cdp state save auth.json
   chrome-cdp state save auth.json --indexeddb")]
     Save(StateSaveArgs),
 
-    /// Load cookies and storage from a file (ours or Playwright's).
+    /// Load cookies and storage from a storageState file.
     #[command(after_help = "\
 Adds the file's cookies, and gives each origin its storage: at once if a
 tab has it open, else its next page load gets it before the page's
@@ -6427,7 +6378,7 @@ loads.
 
 Examples:
   chrome-cdp state load auth.json
-  chrome-cdp state load playwright/.auth/user.json")]
+  chrome-cdp state load .auth/user.json")]
     Load(StateLoadArgs),
 }
 

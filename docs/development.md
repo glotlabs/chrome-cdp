@@ -67,6 +67,5 @@ checks it (`help::reference`) fails. `crates/chrome-cdp/tests/guides.rs`
 checks every relative link of the README and `docs/` (files and
 headings), that code blocks run real commands, and that
 [troubleshooting.md](troubleshooting.md) has a section for every error
-kind; `tests/parity.rs` does the same for
-[playwright-parity.md](playwright-parity.md), and `tests/docs.rs` checks
-the E2E docs' examples with `fmt` and `lint`.
+kind, and `tests/docs.rs` checks the E2E docs' examples with `fmt` and
+`lint`.

@@ -853,10 +853,6 @@ command chrome-cdp run
   arg FILE required
   flag --continue
   flag --var value=KEY=VALUE repeatable
-command chrome-cdp convert
-  arg SPEC required
-  flag --output -o value=PATH
-  flag --max-chars value=N
 command chrome-cdp fmt
   arg PATH multiple
   flag --check

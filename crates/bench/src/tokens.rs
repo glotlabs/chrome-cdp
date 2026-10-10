@@ -1,7 +1,7 @@
 //! The token suite: for each snapshot corpus page, the tokens of
-//! `chrome-cdp snapshot`, `snapshot -i`, `snapshot --fold`, `snapshot
-//! --budget 2000` and Playwright MCP's `browser_snapshot`. `bench/playwright/snapshot-tokens.mjs` does the
-//! counting (it drives Playwright MCP); this runs it and keeps the result.
+//! `chrome-cdp snapshot`, `snapshot -i`, `snapshot --fold` and `snapshot
+//! --budget 2000`. `bench/tokens/snapshot-tokens.mjs` does the counting;
+//! this runs it and keeps the result.
 //! Counts are deterministic for a given tokenizer, so the suite's gate is
 //! exact where the micro suite's is noisy.
 
@@ -25,11 +25,6 @@ pub struct Row {
     /// `snapshot --budget 2000`.
     #[serde(default)]
     pub budget: u64,
-    pub playwright: u64,
-    /// Elements Playwright gives a ref that an agent acts on.
-    pub actionable: u64,
-    /// Those of them with no chrome-cdp ref of the same name.
-    pub missing: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,7 +35,6 @@ pub struct Totals {
     pub fold: u64,
     #[serde(default)]
     pub budget: u64,
-    pub playwright: u64,
 }
 
 /// What snapshot-tokens.mjs prints with `--json`.
@@ -64,8 +58,8 @@ pub struct TokenReport {
 
 /// Runs the counter. `tokenizer` is `auto`, `anthropic` or `o200k`.
 pub fn run(bin_dir: &Path, chrome: &Path, tokenizer: &str) -> Result<TokenReport, String> {
-    let dir = report::workspace_root().join("bench/playwright");
-    if !dir.join("node_modules/@playwright/mcp").is_dir() {
+    let dir = report::workspace_root().join("bench/tokens");
+    if !dir.join("node_modules/gpt-tokenizer").is_dir() {
         return Err(format!(
             "no node_modules in {}; run `npm ci` there",
             dir.display()
@@ -116,8 +110,7 @@ pub fn baseline_name(tokenizer: &str) -> String {
     format!("tokens-{safe}")
 }
 
-/// chrome-cdp's counts as metrics (fewer is better); Playwright's are not
-/// ours to gate.
+/// The counts as metrics (fewer is better).
 #[allow(clippy::cast_precision_loss)]
 pub fn metrics(c: &Counts) -> Vec<Metric> {
     let tokens = |name: String, n: u64| Metric::value(&name, "tokens", Better::Lower, n as f64);
@@ -141,50 +134,32 @@ pub fn metrics(c: &Counts) -> Vec<Metric> {
 /// The tokens section of docs/benchmarks.md.
 pub fn markdown(r: &TokenReport) -> String {
     let c = &r.counts;
-    let pct = |a: u64, b: u64| {
-        (a * 100 + b / 2)
-            .checked_div(b)
-            .map_or_else(|| "–".to_owned(), |p| format!("{p}%"))
-    };
     let tokenizer = if c.tokenizer.starts_with("anthropic:") {
         format!("`{}` (the Anthropic token counting API)", c.tokenizer)
     } else {
         format!(
-            "`{}` (gpt-tokenizer, offline: an approximation; set ANTHROPIC_API_KEY for Claude's own counts)",
+            "`{}` (offline: an approximation; set ANTHROPIC_API_KEY for Claude's own counts)",
             c.tokenizer
         )
     };
     let mut md = format!(
         "Last run: {} with {}. Tokenizer: {tokenizer}.\n\n\
-         | Page | `snapshot` | `snapshot -i` | `--fold` | `--budget 2000` | Playwright MCP `browser_snapshot` | `snapshot` vs MCP | Actionable (MCP refs) | Without a chrome-cdp ref |\n\
-         |---|---:|---:|---:|---:|---:|---:|---:|---:|\n",
+         | Page | `snapshot` | `snapshot -i` | `--fold` | `--budget 2000` |\n\
+         |---|---:|---:|---:|---:|\n",
         report::date(r.created),
         r.chrome
     );
     for row in &c.rows {
         let _ = writeln!(
             md,
-            "| {} | {} | {} | {} | {} | {} | {} | {} | {} |",
-            row.page,
-            row.chrome_cdp,
-            row.interactive,
-            row.fold,
-            row.budget,
-            row.playwright,
-            pct(row.chrome_cdp, row.playwright),
-            row.actionable,
-            row.missing.len()
+            "| {} | {} | {} | {} | {} |",
+            row.page, row.chrome_cdp, row.interactive, row.fold, row.budget
         );
     }
     let _ = writeln!(
         md,
-        "| **total** | **{}** | **{}** | **{}** | **{}** | **{}** | **{}** | | |",
-        c.total.chrome_cdp,
-        c.total.interactive,
-        c.total.fold,
-        c.total.budget,
-        c.total.playwright,
-        pct(c.total.chrome_cdp, c.total.playwright)
+        "| **total** | **{}** | **{}** | **{}** | **{}** |",
+        c.total.chrome_cdp, c.total.interactive, c.total.fold, c.total.budget
     );
     md
 }
@@ -202,16 +177,12 @@ mod tests {
                 interactive: 20,
                 fold: 35,
                 budget: 40,
-                playwright: 100,
-                actionable: 3,
-                missing: vec![],
             }],
             total: Totals {
                 chrome_cdp: 40,
                 interactive: 20,
                 fold: 35,
                 budget: 40,
-                playwright: 100,
             },
         }
     }
@@ -241,10 +212,7 @@ mod tests {
             counts: counts(),
         };
         let md = markdown(&r);
-        assert!(
-            md.contains("| simple | 40 | 20 | 35 | 40 | 100 | 40% | 3 | 0 |"),
-            "{md}"
-        );
+        assert!(md.contains("| simple | 40 | 20 | 35 | 40 |"), "{md}");
         assert!(md.contains("approximation"), "{md}");
     }
 

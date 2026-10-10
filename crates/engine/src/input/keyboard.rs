@@ -10,7 +10,7 @@
 //!
 //! Keys `keyboard down` holds are kept per tab (across navigations, gone
 //! with the tab), as the mouse's buttons are. Held modifiers go with every
-//! later key, mouse, touch and drag event of the tab, as in Playwright;
+//! later key, mouse, touch and drag event of the tab;
 //! `fill` sets text without them.
 
 use std::fmt::Write as _;

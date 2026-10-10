@@ -10,9 +10,8 @@ and the next command to run. A background daemon keeps the browser warm
 between commands, and there is nothing else to install: no Node, no
 driver, no patched browser.
 
-It is built to replace Playwright for agents: to open, inspect, operate
-and verify web pages, debug a local dev server, and write and run E2E
-tests, with a fraction of the tokens.
+It is built for agents: to open, inspect, operate and verify web pages,
+debug a local dev server, and write and run E2E tests, in few tokens.
 
 ## Install
 
@@ -69,35 +68,26 @@ browser into a test. **[docs/e2e/](docs/e2e/README.md)** has the quickstart,
 scenarios, mock files with state and fake REST collections, recipes, and
 running the suite against a real backend.
 
-## Compared with Playwright
+## At a glance
 
-| | chrome-cdp | Playwright MCP | Playwright CLI |
-|---|---|---|---|
-| What you install | one static binary (≈20 MB) | Node.js, an npm package, a browser download | Node.js, an npm package, a browser download |
-| How an agent calls it | a shell command per step | MCP tool calls | a shell command per step |
-| Page snapshot tokens, 13-page corpus ([benchmarks](docs/benchmarks.md#token-suite)) | **14,625** (`snapshot`), **11,593** (`snapshot -i`) | 476,225 | not measured |
-| … on a 50,000-node page | **7,752** | 415,654 | not measured |
-| What an action returns | a short report: navigation, dialogs, errors, failed requests | the page's snapshot | — |
-| Errors | a kind, an exit code, and the next command to run | Playwright's error message | — |
-| E2E tests | built in: `.cdp` scenarios, mock files, `chrome-cdp test` | no | no (`@playwright/test` is separate) |
-| Raw CDP | `chrome-cdp cdp Domain.method` | no | — |
-| From the page to the source | `source` (an element's file, line and components), `components` (props, state), logpoints (`debug log`), locals at errors, `wait --hmr` (did the page get my edit?) | no | no |
-| Seeing what is wrong | `why` (why an action would wait), `layout` (overlap, clipping, overflow, contrast), `compare` (two pages, one diff), `explore` (map an app) | no | no |
-| Page audits | `issues` (Chrome's Issues panel), `audit` (accessibility, layout, security, metadata), `expect --audit` with a baseline, `expect --perf` budgets | no | no |
-| Keeping tests working | `test --heal` (a patch for broken locators), flake diagnosis with `--repeat`, `test --ui-coverage`, `repro` bundles another agent replays | — | — |
-| Mocks | match by body, form or nested path; record and replay WebSocket and SSE; `mock gen --openapi`; `mock serve` for servers and other clients | — | — |
-| Browsers | Chrome and Chromium | Chromium, Firefox, WebKit | Chromium, Firefox, WebKit |
-| Agent task success, tokens and time ([agent benchmark](docs/benchmarks.md#agent-task-benchmark)) | pending | pending | not measured |
-| Warm command latency ([micro benchmark](docs/benchmarks.md#micro-suite)) | pending | pending | not measured |
+| | |
+|---|---|
+| What you install | one static binary (≈20 MB) |
+| How an agent calls it | a shell command per step |
+| Page snapshot tokens, 13-page corpus ([benchmarks](docs/benchmarks.md#token-suite)) | 14,625 (`snapshot`), 11,593 (`snapshot -i`); 7,752 on a 50,000-node page |
+| What an action returns | a short report: navigation, dialogs, errors, failed requests |
+| Errors | a kind, an exit code, and the next command to run |
+| E2E tests | built in: `.cdp` scenarios, mock files, `chrome-cdp test` |
+| Raw CDP | `chrome-cdp cdp Domain.method` |
+| From the page to the source | `source` (an element's file, line and components), `components` (props, state), logpoints (`debug log`), locals at errors, `wait --hmr` (did the page get my edit?) |
+| Seeing what is wrong | `why` (why an action would wait), `layout` (overlap, clipping, overflow, contrast), `compare` (two pages, one diff), `explore` (map an app) |
+| Page audits | `issues` (Chrome's Issues panel), `audit` (accessibility, layout, security, metadata), `expect --audit` with a baseline, `expect --perf` budgets |
+| Keeping tests working | `test --heal` (a patch for broken locators), flake diagnosis with `--repeat`, `test --ui-coverage`, `repro` bundles another agent replays |
+| Mocks | match by body, form or nested path; record and replay WebSocket and SSE; `mock gen --openapi`; `mock serve` for servers and other clients |
+| Browsers | Chrome and Chromium |
 
 Token counts use the offline `o200k_base` tokenizer; the benchmarks page
-has the method and the per-page numbers. A dash is a cell nobody has
-checked yet. The agent and latency benchmarks
-are built but have not been run yet. Coming from Playwright?
-[docs/migrating-from-playwright.md](docs/migrating-from-playwright.md)
-maps its API to commands, [docs/playwright-parity.md](docs/playwright-parity.md)
-lists each capability's status, and `chrome-cdp convert` translates simple
-Playwright tests.
+has the method and the per-page numbers.
 
 ## Docs
 
