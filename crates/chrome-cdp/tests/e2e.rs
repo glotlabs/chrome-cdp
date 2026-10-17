@@ -428,7 +428,14 @@ fn layout_baselines_in_the_project() {
     let out = project.test(&["scenarios/pass/layout.cdp"]);
     assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
     std::fs::write(&baseline, "# nothing accepted\n").unwrap();
-    let out = project.test(&["scenarios/pass/layout.cdp", "--timeout", "1s"]);
+    // The step's own time limit, not the test's: on a busy machine the
+    // test's 1s could run out before the expect fails.
+    std::fs::write(
+        project.root.join("scenarios/pass/layout.cdp"),
+        "@test \"small targets\"\n  goto /layout/small.html\n  expect --layout --baseline small --timeout 1s\n",
+    )
+    .unwrap();
+    let out = project.test(&["scenarios/pass/layout.cdp"]);
     assert_eq!(out.status.code(), Some(1), "{}", stdout(&out));
     assert!(
         stdout(&out).contains("the baseline does not list"),
