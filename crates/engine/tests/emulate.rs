@@ -250,6 +250,8 @@ async fn each_setting_is_seen_by_page_js() {
     let site = Fixtures::shared();
     let engine = start(&path, "emulate-each").await;
     goto(&engine, &site.url("/emulate/permissions.html")).await;
+    // The machine's own time zone, which a reset goes back to.
+    let host_zone = eval(&engine, "Intl.DateTimeFormat().resolvedOptions().timeZone").await;
 
     // A device: viewport, pixel ratio, touch, user agent.
     let data = emulate(&engine, device("iphone 15")).await;
@@ -436,7 +438,7 @@ async fn each_setting_is_seen_by_page_js() {
     let seen = first(&engine, None, None).await;
     assert_eq!(seen["width"], json!(1280));
     assert_eq!(seen["language"], json!("en-US"));
-    assert_eq!(seen["timeZone"], json!("UTC"));
+    assert_eq!(seen["timeZone"], host_zone);
     assert_eq!(seen["touch"], json!(0));
     assert!(
         seen["userAgent"]

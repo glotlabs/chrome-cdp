@@ -519,14 +519,19 @@ async fn an_ambiguous_place_lists_the_candidates() {
     assert_eq!(err.kind, ErrorKind::Ambiguous, "{}", err.to_text());
     let candidates: Vec<String> =
         serde_json::from_value(err.details.clone().unwrap()["candidates"].clone()).unwrap();
-    assert!(
-        candidates.contains(&"node_modules/react/index.js".to_owned()),
-        "{candidates:?}"
-    );
-    assert!(
-        candidates.contains(&"node_modules/react-dom/index.js".to_owned()),
-        "{candidates:?}"
-    );
+    // Relative to the project when the file is on disk (after `cargo
+    // xtask apps` installs node_modules), else the URL's path.
+    for file in [
+        "node_modules/react/index.js",
+        "node_modules/react-dom/index.js",
+    ] {
+        assert!(
+            candidates
+                .iter()
+                .any(|c| c == file || c == &format!("/apps-src/react19/{file}")),
+            "{candidates:?}"
+        );
+    }
     assert!(err.to_text().contains("candidate: "), "{}", err.to_text());
     // Nothing was set.
     assert!(list(&engine, "react19").await.is_empty());

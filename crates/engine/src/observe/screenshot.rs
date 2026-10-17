@@ -6,7 +6,8 @@
 //! sets the image's size, so `--scale css` (image pixels are CSS pixels)
 //! and `--max-size` (the longest side, 1568 by default to suit vision
 //! models) need no image processing here: Chrome renders the smaller
-//! image itself.
+//! image itself. A PNG taller than 16,384 device pixels is taken in tiles
+//! and stacked, as Chrome on macOS does not capture one that tall whole.
 //!
 //! A page that does not scroll itself but inside a container (`html,
 //! body { height: 100% }` and a scrolling `<main>`) has nothing beyond
@@ -46,6 +47,7 @@ use tokio::time::Instant;
 use super::save::save;
 use crate::context::Scoped as _;
 use crate::errors::from_cdp;
+use crate::expect::pixels::Image;
 use crate::frames::World;
 use crate::input::waits_for;
 use crate::locator::{FrameOnly, LocateOptions, Locator, Want, release};
@@ -293,6 +295,20 @@ fn locators(req: &ScreenshotRequest) -> Result<Locators, ErrorInfo> {
     })
 }
 
+/// The tallest image, in device pixels, taken in one capture: past it,
+/// Chrome on macOS draws the rest shifted and without the page's end
+/// (its largest GPU texture). Taller ones are taken in tiles.
+const TILE: f64 = 16_384.0;
+
+/// A PNG of Chrome's that cannot be decoded, or tiles that cannot be
+/// stacked.
+fn not_an_image(e: &str) -> ErrorInfo {
+    ErrorInfo::new(
+        ErrorKind::ProtocolError,
+        format!("cannot stack the screenshot's tiles: {e}"),
+    )
+}
+
 /// A rectangle in CSS pixels.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Area {
@@ -512,7 +528,7 @@ impl Shot<'_> {
         }
         let result = async {
             self.draw(&locators.masks, mark, &capture, drawn).await?;
-            self.capture(&capture).await
+            self.capture(&capture, &mut drawn.warnings).await
         }
         .await;
         self.clear(&drawn.frames).await;
@@ -1269,8 +1285,14 @@ impl Shot<'_> {
         }
     }
 
-    /// Takes the image.
-    async fn capture(&self, capture: &Capture) -> Result<Vec<u8>, ErrorInfo> {
+    /// Takes the image. One taller than [`TILE`] device pixels is taken
+    /// in tiles and stacked (PNG only: there is no JPEG or WebP encoder
+    /// here, so those are taken whole, with a warning).
+    async fn capture(
+        &self,
+        capture: &Capture,
+        warnings: &mut Vec<String>,
+    ) -> Result<Vec<u8>, ErrorInfo> {
         let clip = capture.clip;
         if clip.width < 1.0 || clip.height < 1.0 {
             return Err(ErrorInfo::new(
@@ -1293,6 +1315,49 @@ impl Shot<'_> {
                 .await
                 .map_err(|e| from_cdp(&e, self.session()))?;
         }
+        let tall = clip.height * scale > TILE;
+        let result = if tall && self.req.format == ImageFormat::Png {
+            self.tiles(clip, scale, capture).await
+        } else {
+            if tall {
+                warnings.push(format!(
+                    "the image is taller than {TILE} px, which Chrome may not capture whole \
+                     on every platform; --format png takes it in tiles"
+                ));
+            }
+            self.shot(clip, scale, capture).await
+        };
+        if self.req.omit_background {
+            let _ = session
+                .call(emulation::SetDefaultBackgroundColorOverrideParams { color: None })
+                .await;
+        }
+        result
+    }
+
+    /// `clip` in tiles of at most [`TILE`] device pixels, stacked.
+    async fn tiles(&self, clip: Area, scale: f64, capture: &Capture) -> Result<Vec<u8>, ErrorInfo> {
+        let step = (TILE / scale).floor();
+        let mut tiles = Vec::new();
+        let mut y = 0.0;
+        while y < clip.height {
+            let tile = Area {
+                y: clip.y + y,
+                height: step.min(clip.height - y),
+                ..clip
+            };
+            let bytes = self.shot(tile, scale, capture).await?;
+            tiles.push(Image::decode(&bytes).map_err(|e| not_an_image(&e))?);
+            y += step;
+        }
+        Image::stack(&tiles)
+            .and_then(|image| image.encode())
+            .map_err(|e| not_an_image(&e))
+    }
+
+    /// One `Page.captureScreenshot` of `clip`.
+    async fn shot(&self, clip: Area, scale: f64, capture: &Capture) -> Result<Vec<u8>, ErrorInfo> {
+        let session = self.page.session.with_timeout(self.left());
         let params = cdp_page::CaptureScreenshotParams {
             format: Some(match self.req.format {
                 ImageFormat::Png => cdp_page::CaptureScreenshotFormat::Png,
@@ -1310,13 +1375,11 @@ impl Shot<'_> {
             capture_beyond_viewport: Some(capture.beyond_viewport),
             ..cdp_page::CaptureScreenshotParams::default()
         };
-        let result = session.call(params).await;
-        if self.req.omit_background {
-            let _ = session
-                .call(emulation::SetDefaultBackgroundColorOverrideParams { color: None })
-                .await;
-        }
-        let data = result.map_err(|e| from_cdp(&e, self.session()))?.data;
+        let data = session
+            .call(params)
+            .await
+            .map_err(|e| from_cdp(&e, self.session()))?
+            .data;
         base64::engine::general_purpose::STANDARD
             .decode(data)
             .map_err(|e| {

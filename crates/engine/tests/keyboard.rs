@@ -209,23 +209,30 @@ async fn presses_keys_and_chords() {
     );
 
     // Modifiers are held around the key, with their own events and bits.
+    // Select all is Mod+a: Meta on macOS (where Control+a moves to the
+    // line's start), Control elsewhere.
+    let (held, code, key_code, bit) = if cfg!(target_os = "macos") {
+        ("Meta", "MetaLeft", 91, "meta")
+    } else {
+        ("Control", "ControlLeft", 17, "ctrl")
+    };
     act(&engine, type_in("abc", Some("#field"))).await;
     let before = log_len(&engine, "#keys").await;
-    let out = act(&engine, press("Control+a Backspace", None)).await;
+    let out = act(&engine, press(&format!("{held}+a Backspace"), None)).await;
     assert_eq!(
         out.text,
-        "pressed Control+a Backspace in e1 textbox \"Field\""
+        format!("pressed {held}+a Backspace in e1 textbox \"Field\"")
     );
     assert_eq!(
         lines(&engine, "#keys", before).await,
         [
-            "keydown \"Control\" ControlLeft 17 L1 ctrl field trusted",
-            "keydown \"a\" KeyA 65 L0 ctrl field trusted",
-            "keyup \"a\" KeyA 65 L0 ctrl field trusted",
-            "keyup \"Control\" ControlLeft 17 L1 - field trusted",
-            "keydown \"Backspace\" Backspace 8 L0 - field trusted",
-            "input deleteContentBackward null field trusted",
-            "keyup \"Backspace\" Backspace 8 L0 - field trusted",
+            format!("keydown \"{held}\" {code} {key_code} L1 {bit} field trusted"),
+            format!("keydown \"a\" KeyA 65 L0 {bit} field trusted"),
+            format!("keyup \"a\" KeyA 65 L0 {bit} field trusted"),
+            format!("keyup \"{held}\" {code} {key_code} L1 - field trusted"),
+            "keydown \"Backspace\" Backspace 8 L0 - field trusted".to_owned(),
+            "input deleteContentBackward null field trusted".to_owned(),
+            "keyup \"Backspace\" Backspace 8 L0 - field trusted".to_owned(),
         ]
     );
     assert_eq!(value(&engine, "#field").await, "");
@@ -248,9 +255,9 @@ async fn presses_keys_and_chords() {
     let out = act(&engine, press("Escape", None)).await;
     assert_eq!(out.text, "pressed Escape in e1 textbox \"Field\"");
 
-    // Mod is Control on this (Linux) browser: the page's shortcut runs.
+    // Mod is the platform's: the page's shortcut runs.
     let out = act(&engine, press("Mod+k", Some("#btn"))).await;
-    assert_eq!(out.data["keys"], serde_json::json!(["Control+k"]));
+    assert_eq!(out.data["keys"], serde_json::json!([format!("{held}+k")]));
     assert_eq!(text(&engine, "#palette").await, "Command palette");
     let hidden = call(&engine, "#palette", "function () { return this.hidden; }").await;
     assert_eq!(hidden, Value::Bool(false));
@@ -269,7 +276,10 @@ async fn presses_keys_and_chords() {
         },
     )
     .await;
-    assert_eq!(out.text, "clicked e3 button \"Button\" with Control");
+    assert_eq!(
+        out.text,
+        format!("clicked e3 button \"Button\" with {held}")
+    );
 
     // Unknown keys fail before the browser; an element that cannot take
     // focus fails instead of sending keys elsewhere.
@@ -771,8 +781,8 @@ async fn types_into_cross_origin_iframes() {
         value(&engine, "frame=other >> #inner-field").await,
         "cross origin"
     );
-    // Keys go where focus is, in the iframe.
-    act(&engine, press("Control+a", None)).await;
+    // Keys go where focus is, in the iframe (Mod+a selects all).
+    act(&engine, press("Mod+a", None)).await;
     act(&engine, type_in("X", None)).await;
     assert_eq!(value(&engine, "frame=other >> #inner-field").await, "X");
 

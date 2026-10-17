@@ -53,6 +53,19 @@ impl Image {
         })
     }
 
+    /// `images`, of one width, one under the other.
+    pub(crate) fn stack(images: &[Self]) -> Result<Self, String> {
+        let width = images.first().map_or(0, |i| i.width);
+        if images.iter().any(|i| i.width != width) {
+            return Err("the images are not all as wide".to_owned());
+        }
+        Ok(Self {
+            width,
+            height: images.iter().map(|i| i.height).sum(),
+            rgba: images.iter().flat_map(|i| i.rgba.iter().copied()).collect(),
+        })
+    }
+
     /// Encodes the image as a PNG.
     pub(crate) fn encode(&self) -> Result<Vec<u8>, String> {
         let mut out = Vec::new();
@@ -224,6 +237,19 @@ mod tests {
 
     const WHITE: [u8; 4] = [255, 255, 255, 255];
     const BLACK: [u8; 4] = [0, 0, 0, 255];
+
+    #[test]
+    fn images_stack_top_to_bottom() {
+        let top = image(2, 1, &[WHITE, BLACK]);
+        let bottom = image(2, 2, &[BLACK, BLACK, WHITE, WHITE]);
+        let both = Image::stack(&[top, bottom.clone()]).unwrap();
+        assert_eq!((both.width, both.height), (2, 3));
+        assert_eq!((both.at(1, 0), both.at(0, 2)), (BLACK, WHITE));
+        let decoded = Image::decode(&both.encode().unwrap()).unwrap();
+        assert_eq!(decoded, both);
+        let narrow = image(1, 1, &[WHITE]);
+        assert!(Image::stack(&[bottom, narrow]).is_err());
+    }
 
     #[test]
     fn counts_pixels_past_the_threshold() {
