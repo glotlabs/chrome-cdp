@@ -2781,7 +2781,29 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent<'_>) {
     let session_id = attached.session_id;
     let session = shared.conn.session(session_id.clone());
     let contexts = &shared.settings.contexts;
-    let scope = contexts.scope_of(info.browser_context_id.as_deref());
+    let mut scope = contexts.scope_of(info.browser_context_id.as_deref());
+    // A child (a dedicated worker, an iframe) is in its parent's context,
+    // also when Chrome leaves the context out of its info: without it, it
+    // would miss its context's init scripts and routes.
+    if scope.is_none()
+        && info.browser_context_id.is_none()
+        && let Parent::Host {
+            session: parent, ..
+        } = &parent
+    {
+        scope = shared
+            .lock()
+            .targets
+            .get(*parent)
+            .and_then(|t| t.scope.clone());
+        if scope.is_some() {
+            tracing::debug!(
+                kind = %info.r#type,
+                "{} came without a context: its parent's it is",
+                info.target_id
+            );
+        }
+    }
     let context = scope.clone().zip(contexts.name_of(scope.as_deref()));
     let new_tab = if matches!(parent, Parent::Browser) && is_tab(&info) {
         let mut state = shared.lock();
