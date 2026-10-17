@@ -860,6 +860,24 @@ fn every_test_leaves_artifacts_and_a_failure_a_report() {
             .any(|s| s["hook"] == "setup" && s["command"] == "mock use")
     );
     assert!(steps.iter().any(|s| s["hook"] == "check"));
+    // The runner's work after the steps, last: the logs, then the close.
+    let teardown: Vec<&str> = steps
+        .iter()
+        .skip_while(|s| s["hook"] != "teardown")
+        .map(|s| s["command"].as_str().unwrap())
+        .collect();
+    assert!(
+        teardown
+            .first()
+            .is_some_and(|c| c.starts_with("context list"))
+            && teardown.contains(&"mock log --all --limit 0 --max-chars 0")
+            && teardown.last() == Some(&"context close"),
+        "{steps:?}"
+    );
+    assert!(
+        steps.iter().enumerate().all(|(i, s)| s["n"] == i + 1),
+        "{steps:?}"
+    );
     // No run's own session name in the outputs.
     assert!(
         !steps

@@ -51,8 +51,9 @@ pub(super) struct StepRecord {
     pub(super) at: String,
     /// The step as written.
     pub(super) command: String,
-    /// `before`, `after`, `before-all`, `after-all`, `setup` or `check`;
-    /// absent for the test's own steps.
+    /// `before`, `after`, `before-all`, `after-all`, `setup`, `check` or
+    /// `teardown` (the runner's work after the steps: reading the logs,
+    /// closing the context); absent for the test's own steps.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) hook: Option<String>,
     /// The `@include` lines it came through, outermost first.
@@ -129,6 +130,9 @@ pub(super) struct Recorder {
     /// journal's times.
     started_ms: u64,
     steps: Vec<StepRecord>,
+    /// How many `teardown` records the file has: they are numbered with
+    /// the steps, but only the file keeps them.
+    teardown: usize,
     file: Option<BufWriter<File>>,
     trace: bool,
 }
@@ -146,6 +150,7 @@ impl Recorder {
             started: Instant::now(),
             started_ms: epoch_ms(),
             steps: Vec::new(),
+            teardown: 0,
             file,
             trace,
         }
@@ -165,7 +170,25 @@ impl Recorder {
 
     /// Adds a step that started at `started` and took `took`.
     pub(super) fn record(&mut self, mut step: StepRecord, started: Instant, took: Duration) {
-        step.n = self.steps.len() + 1;
+        self.write(&mut step, started, took);
+        self.steps.push(step);
+    }
+
+    /// Adds a `teardown` record to `steps.jsonl` only: the report, the
+    /// flake diagnosis and `--json` see the steps as before, and the
+    /// runner's overhead can be split by phase from the file.
+    pub(super) fn record_teardown(
+        &mut self,
+        mut step: StepRecord,
+        started: Instant,
+        took: Duration,
+    ) {
+        self.write(&mut step, started, took);
+        self.teardown += 1;
+    }
+
+    fn write(&mut self, step: &mut StepRecord, started: Instant, took: Duration) {
+        step.n = self.steps.len() + self.teardown + 1;
         step.start_ms = millis(started.saturating_duration_since(self.started));
         step.duration_ms = millis(took);
         if let Some(file) = &mut self.file {
@@ -176,7 +199,6 @@ impl Recorder {
                 self.file = None;
             }
         }
-        self.steps.push(step);
     }
 
     pub(super) fn steps(&self) -> &[StepRecord] {
@@ -653,6 +675,38 @@ mod tests {
         assert_eq!(slug("  Ünïcode & more  "), "n-code-more");
         assert_eq!(slug("!!!"), "");
         assert!(slug(&"a b ".repeat(40)).len() <= 60);
+    }
+
+    #[test]
+    fn teardown_records_are_in_the_file_only() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut recorder = Recorder::new(tmp.path().join("t"), false);
+        let record = |command: &str, hook: Option<&str>| {
+            let error = ErrorInfo::new(protocol::ErrorKind::ProtocolError, "x");
+            StepRecord::new(
+                "a.cdp:1".to_owned(),
+                command.to_owned(),
+                hook.map(str::to_owned),
+                Vec::new(),
+                Err(&error),
+            )
+        };
+        let now = Instant::now();
+        recorder.record(record("goto /", None), now, Duration::from_millis(3));
+        recorder.record_teardown(
+            record("context close", Some("teardown")),
+            now,
+            Duration::from_millis(2),
+        );
+        assert_eq!(recorder.steps().len(), 1);
+        let lines: Vec<StepRecord> = std::fs::read_to_string(tmp.path().join("t").join(STEPS))
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(lines.len(), 2);
+        assert_eq!((lines[1].n, lines[1].duration_ms), (2, 2));
+        assert_eq!(lines[1].hook.as_deref(), Some("teardown"));
     }
 
     #[test]

@@ -12,7 +12,7 @@ its `tests` glob starts in, `<test>` its name as a slug):
 
 | File | What |
 |---|---|
-| `steps.jsonl` | One JSON object per step, the runner's setup included: `n`, `start_ms`, `duration_ms`, `at` (`file:line:col`), `command`, `hook`, `ok`, `output`, `warnings`, `error`, and with `--trace` a `screenshot` (and `masked`: how many fields holding a secret it paints over); with `--heal`, `healed` for a step that ran with another locator ([healing.md](healing.md)) |
+| `steps.jsonl` | One JSON object per step, the runner's own work included: `n`, `start_ms`, `duration_ms`, `at` (`file:line:col`), `command`, `hook` (the hook it ran in; `setup` for the runner's setup, `check` for its checks after the steps, `teardown` for reading the logs and closing the context, which only this file lists), `ok`, `output`, `warnings`, `error`, and with `--trace` a `screenshot` (and `masked`: how many fields holding a secret it paints over); with `--heal`, `healed` for a step that ran with another locator ([healing.md](healing.md)) |
 | `requests.txt` | Every request of every tab: method, status, URL, type, time, when it was sent and answered (from the test's start, as `steps.jsonl`'s times are), and the mock (or route) that answered it, or the set it went unmatched in |
 | `console.txt` | The console of every tab |
 | `failure.png` | A failed test: the page when it failed (before `@after`) |

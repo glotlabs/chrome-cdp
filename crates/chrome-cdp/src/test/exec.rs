@@ -686,7 +686,7 @@ impl Runner<'_> {
                     .as_ref()
                     .map_or(0, Recorder::started_ms);
                 logs = artifacts::logs(dir, &context, served, started_ms, &|words| {
-                    self.invoke(words, Some(&context), None)
+                    self.teardown(words, &context, subject.place)
                 });
                 if covering && self.plan.real() {
                     let requests = logs.requests.iter();
@@ -698,7 +698,7 @@ impl Runner<'_> {
                     server.close_partition(&id);
                 }
                 if !kept {
-                    self.close_context(&context);
+                    self.close_context(&context, subject.place);
                 }
                 result
             }
@@ -813,8 +813,12 @@ impl Runner<'_> {
             })
     }
 
-    fn close_context(&self, context: &str) {
-        if let Err(e) = self.invoke(&["context", "close", context], None, None) {
+    fn close_context(&self, context: &str, span: &str) {
+        let started = Instant::now();
+        let result = self.invoke(&["context", "close", context], None, None);
+        // Without the id, which changes from run to run.
+        self.record_teardown("context close", span, result.as_ref(), started);
+        if let Err(e) = result {
             tracing::warn!("cannot close context {context}: {}", e.message);
         }
     }
@@ -925,6 +929,39 @@ impl Runner<'_> {
         record.output.clear();
         self.record(record, started, None);
         result
+    }
+
+    /// Runs a command of the runner's teardown (reading the logs), and
+    /// records it.
+    fn teardown(&self, words: &[&str], context: &str, span: &str) -> Result<Output, ErrorInfo> {
+        let started = Instant::now();
+        let result = self.invoke(words, Some(context), None);
+        self.record_teardown(&words.join(" "), span, result.as_ref(), started);
+        result
+    }
+
+    /// Adds a `teardown` record of `command`, which started at `started`,
+    /// to `steps.jsonl`.
+    fn record_teardown(
+        &self,
+        command: &str,
+        span: &str,
+        result: Result<&Output, &ErrorInfo>,
+        started: Instant,
+    ) {
+        let took = started.elapsed();
+        let mut record = StepRecord::new(
+            span.to_owned(),
+            command.to_owned(),
+            Some("teardown".to_owned()),
+            Vec::new(),
+            result,
+        );
+        // The logs themselves are in their own files.
+        record.output.clear();
+        if let Some(recorder) = self.recorder.borrow_mut().as_mut() {
+            recorder.record_teardown(record, started, took);
+        }
     }
 
     /// Runs `steps` in `context` until one fails.
