@@ -936,7 +936,17 @@ impl Runner<'_> {
     fn teardown(&self, words: &[&str], context: &str, span: &str) -> Result<Output, ErrorInfo> {
         let started = Instant::now();
         let result = self.invoke(words, Some(context), None);
-        self.record_teardown(&words.join(" "), span, result.as_ref(), started);
+        // Without the tab's id, which changes from run to run.
+        let mut shown: Vec<&str> = Vec::with_capacity(words.len());
+        let mut rest = words.iter();
+        while let Some(&word) = rest.next() {
+            if word == "--tab" {
+                rest.next();
+            } else {
+                shown.push(word);
+            }
+        }
+        self.record_teardown(&shown.join(" "), span, result.as_ref(), started);
         result
     }
 
