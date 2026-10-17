@@ -519,10 +519,16 @@ fn open_reports_why_chrome_failed_to_start() {
 #[test]
 fn open_times_out_on_a_silent_chrome() {
     let dir = common::tempdir();
-    let chrome = fake_chrome(&dir, "exec sleep 30");
+    let starts = dir.path().join("starts");
+    let chrome = fake_chrome(
+        &dir,
+        &format!("echo started >> '{}'\nexec sleep 30", starts.display()),
+    );
     let sandbox = Sandbox::with_chrome(&chrome);
     let started = std::time::Instant::now();
     let out = sandbox.run(&["open", "--timeout", "300ms", "--json"]);
+    // One that does not answer in half the time is started once more.
+    assert_eq!(std::fs::read_to_string(&starts).unwrap().lines().count(), 2);
     assert_eq!(code(&out), 3);
     let v = json_out(&out);
     assert_eq!(v["error"]["kind"], json!("Timeout"));

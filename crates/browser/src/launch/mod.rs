@@ -100,10 +100,44 @@ pub struct Launched {
 /// Call it from a thread that lives as long as the browser should (the
 /// main thread or a runtime worker, not `spawn_blocking`): on Linux,
 /// Chrome is killed when the thread that spawned it exits.
+///
+/// A Chrome on a busy machine can start and then never answer its first
+/// call (seen on macOS, with nothing on stderr), where a second start
+/// answers at once. So the first start gets half of `opts.timeout`, and
+/// one that does not answer in it is killed and started once more with
+/// the rest.
 pub async fn launch(
     chrome: &Chrome,
     opts: &LaunchOptions,
     host: &Host,
+) -> Result<Launched, ErrorInfo> {
+    let first = opts.timeout / 2;
+    match launch_once(chrome, opts, host, first, first).await {
+        Err(e) if e.kind == ErrorKind::Timeout => {
+            tracing::warn!(
+                "Chrome did not answer within {}; starting it again",
+                format::duration(first)
+            );
+            let rest = opts.timeout.saturating_sub(first);
+            let mut launched = launch_once(chrome, opts, host, rest, opts.timeout).await?;
+            launched.warnings.push(format!(
+                "Chrome did not answer within {}, so it was started again",
+                format::duration(first)
+            ));
+            Ok(launched)
+        }
+        other => other,
+    }
+}
+
+/// One start of `chrome`, which must answer within `wait`; a failure says
+/// it did not answer within `said`.
+async fn launch_once(
+    chrome: &Chrome,
+    opts: &LaunchOptions,
+    host: &Host,
+    wait: Duration,
+    said: Duration,
 ) -> Result<Launched, ErrorInfo> {
     flags::check_extra(&opts.args)?;
     if opts.headed {
@@ -200,11 +234,20 @@ pub async fn launch(
         warnings,
         closed: false,
     };
-    match conn
-        .browser()
-        .call(cdp_browser::GetVersionParams::default())
-        .await
-    {
+    let answer = tokio::time::timeout(
+        wait,
+        conn.browser()
+            .call(cdp_browser::GetVersionParams::default()),
+    )
+    .await;
+    let answer = match answer {
+        Ok(Err(CdpError::Timeout { .. })) | Err(_) => Err(CdpError::Timeout {
+            method: "Browser.getVersion".to_owned(),
+            after: said,
+        }),
+        Ok(result) => result,
+    };
+    match answer {
         Ok(version) => {
             tracing::info!(product = %version.product, "connected to Chrome");
             launched.product = version.product;
