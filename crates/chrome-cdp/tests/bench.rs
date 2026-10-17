@@ -75,43 +75,69 @@ fn e2e_runner_overhead_and_the_shop_suite() {
     };
 
     // One test at a time: each test's time less its steps' (its own and
-    // its hooks'; the runner's setup and checks are overhead).
+    // its hooks'; the runner's setup, checks and teardown are overhead),
+    // split by phase from the records steps.jsonl has of them.
     let value = common::json_out(&test(&["--jobs", "1", "--json"]));
     let tests = value["data"]["tests"].as_array().unwrap();
-    let mut overhead = Duration::ZERO;
+    let mut phases = [Duration::ZERO; 4];
     for t in tests {
         let steps = std::fs::read_to_string(
             Path::new(t["artifacts"].as_str().unwrap()).join("steps.jsonl"),
         )
         .unwrap();
-        let page_ms: u64 = steps
+        let mut page = Duration::ZERO;
+        let mut runner = Duration::ZERO;
+        for s in steps
             .lines()
             .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
-            .filter(|s| !matches!(s["hook"].as_str(), Some("setup" | "check")))
-            .map(|s| s["duration_ms"].as_u64().unwrap())
-            .sum();
-        let total_ms = t["duration_ms"].as_u64().unwrap();
-        overhead += Duration::from_millis(total_ms.saturating_sub(page_ms));
+        {
+            let took = Duration::from_millis(s["duration_ms"].as_u64().unwrap());
+            let phase = match s["hook"].as_str() {
+                Some("setup") => 0,
+                Some("check") => 1,
+                Some("teardown") => 2,
+                _ => {
+                    page += took;
+                    continue;
+                }
+            };
+            phases[phase] += took;
+            runner += took;
+        }
+        let total = Duration::from_millis(t["duration_ms"].as_u64().unwrap());
+        phases[3] += total.saturating_sub(page + runner);
     }
-    let per_test = overhead / u32::try_from(tests.len()).unwrap();
+    let n = u32::try_from(tests.len()).unwrap();
+    let [setup, check, teardown, other] = phases.map(|d| d / n);
+    let per_test = setup + check + teardown + other;
 
     let start = Instant::now();
     test(&["--jobs", "4", "-q"]);
     let suite = start.elapsed();
 
+    // Everything first, then the budgets: a failed one still shows the rest.
     eprintln!(
-        "runner overhead: {per_test:?} per test ({} tests); suite with --jobs 4: {suite:?}",
+        "runner overhead: {per_test:?} per test ({} tests; setup {setup:?}, check {check:?}, \
+         teardown {teardown:?}, other {other:?}); suite with --jobs 4: {suite:?}",
         tests.len()
     );
-    assert!(
-        per_test < RUNNER_OVERHEAD,
-        "runner overhead was {per_test:?} per test"
-    );
-    assert!(suite < SHOP_SUITE, "the suite took {suite:?}");
+    let mut over = Vec::new();
+    if per_test >= RUNNER_OVERHEAD {
+        over.push(format!(
+            "runner overhead was {per_test:?} per test (budget {RUNNER_OVERHEAD:?})"
+        ));
+    }
+    if suite >= SHOP_SUITE {
+        over.push(format!(
+            "the suite took {suite:?} with --jobs 4 (budget {SHOP_SUITE:?})"
+        ));
+    }
+    assert!(over.is_empty(), "{}", over.join("; "));
 }
 
 /// The time of the steps of a `test --json` run's tests (their own and
-/// their hooks', not the runner's setup and checks), and how many.
+/// their hooks', not the runner's setup, checks and teardown), and how
+/// many.
 fn step_time(value: &serde_json::Value) -> (Duration, u32) {
     let mut total = Duration::ZERO;
     let mut count = 0;
@@ -123,7 +149,7 @@ fn step_time(value: &serde_json::Value) -> (Duration, u32) {
         for step in steps
             .lines()
             .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
-            .filter(|s| !matches!(s["hook"].as_str(), Some("setup" | "check")))
+            .filter(|s| !matches!(s["hook"].as_str(), Some("setup" | "check" | "teardown")))
         {
             total += Duration::from_millis(step["duration_ms"].as_u64().unwrap());
             count += 1;
