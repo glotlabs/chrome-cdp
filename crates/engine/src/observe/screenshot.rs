@@ -632,6 +632,9 @@ impl Shot<'_> {
         warnings: &mut Vec<String>,
     ) -> Result<(FrameContext, String), ErrorInfo> {
         let retry = |r: &str| Cmd::new("screenshot").flag("full", r);
+        // What the last try found: one with almost no time left can time
+        // out instead, which says less (as in `element`).
+        let mut last: Option<ErrorInfo> = None;
         let target = loop {
             let err = match self
                 .engine
@@ -647,11 +650,17 @@ impl Shot<'_> {
             {
                 Ok(target) => break target,
                 Err(err) if waits_for(&err) => err,
-                Err(err) => return Err(err),
+                Err(err) => match last {
+                    Some(last) if err.kind == ErrorKind::Timeout => {
+                        return Err(last.note("waited", format::duration(self.timeout)));
+                    }
+                    _ => return Err(err),
+                },
             };
             if Instant::now() + RETRY_DELAY >= self.deadline {
                 return Err(err.note("waited", format::duration(self.timeout)));
             }
+            last = Some(err);
             tokio::time::sleep(RETRY_DELAY).await;
         };
         let top = self
