@@ -15,6 +15,7 @@ use std::process::{Command, ExitCode};
 mod compat;
 mod json;
 mod release;
+mod scale;
 
 /// Each target's release binary size, in bytes: `dist` fails when a build
 /// is more than 20% over it (plan 10, milestone 10.2; it replaced plan 01's
@@ -41,6 +42,10 @@ tasks:
                       bench/tokens' node_modules); see docs/benchmarks.md.
                       micro also runs the plans' ignored timing tests (--no-tests
                       skips them); `-- --help` lists the suite's own options
+  scale-suite [--tests N]
+                      write the scale suite (plan 22.1) to testdata/scale/: N tests
+                      (default 1000) against e2e-shop's built app and mocks, the same
+                      files for the same N; e.g. `cargo xtask scale-suite --tests 200`
   dist [--target T] [--update-size]
                       build the release binary into dist/ and check its size: at most
                       20% over the target's baseline in xtask/binary-sizes.txt
@@ -84,6 +89,7 @@ fn main() -> ExitCode {
         "soak" => soak(rest),
         "fuzz" => fuzz(rest),
         "bench" => bench(rest),
+        "scale-suite" => scale::run(rest),
         "dist" => dist(rest),
         "release" => release::run(rest),
         "chrome" => chrome(rest),
