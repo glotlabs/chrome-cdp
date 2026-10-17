@@ -1,6 +1,6 @@
 # Plan 22 — Fast suites
 
-Status: NOT STARTED
+Status: IN PROGRESS (22.1 done)
 Depends on: 05 §5.5 (the post-action report and its settle), 08 §8.2
 (`batch`), 10 §10.4 (the benchmarks), 11 (the runner, `--jobs`,
 `--shard`), 18 §18.3 (flake diagnosis)
@@ -291,3 +291,13 @@ baseline, with no new flakes.
 - Durations live in a cached file, not in the scenarios or the config:
   they change on every run, and a committed file would conflict on
   every branch.
+- 22.1: the `teardown` records (the log reads and `context close`) are
+  in `steps.jsonl` only, not in the steps `report.md`, flake diagnosis
+  and `--json` read, so a failure's report and diagnosis stay the same
+  ("Failures look the same"). The HTML reporter's timeline reads the
+  file, so it shows them, tagged `[teardown]` as setup steps are tagged
+  `[setup]`.
+- 22.1: the scale suite copies e2e-shop's `dist/`, mocks, vars and
+  steps instead of pointing at them, so it is a project of its own that
+  `chrome-cdp test` runs as is, and serves on port 4183 so it can run
+  next to e2e-shop.
