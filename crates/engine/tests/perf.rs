@@ -142,7 +142,8 @@ async fn perf_reports_load_timing_and_web_vitals() {
         data.cls
     );
     let inp = data.inp.as_ref().unwrap();
-    assert!(inp.ms >= 250, "{inp:?}");
+    // Event timing rounds durations to 8ms: the 250ms task can read 248.
+    assert!(inp.ms >= 242, "{inp:?}");
     assert_eq!(inp.rating, "needs improvement");
     assert_eq!(inp.target.as_deref(), Some("button#slow"));
     assert!(data.interactions >= 1);
@@ -212,13 +213,54 @@ fn debug_chrome(path: &Path, url: &str) -> (DebugChrome, String) {
     (chrome, port)
 }
 
+/// Chrome's `/json/list` on its DevTools `port`, or nothing. HTTP/1.1:
+/// Chrome does not answer 1.0, and keeps the connection open, so the body
+/// is read to its `Content-Length`.
+fn json_list(port: &str) -> String {
+    use std::io::{Read as _, Write as _};
+    let Ok(mut stream) = std::net::TcpStream::connect(format!("127.0.0.1:{port}")) else {
+        return String::new();
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    let _ = write!(
+        stream,
+        "GET /json/list HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"
+    );
+    let mut data = Vec::new();
+    let mut chunk = [0; 8192];
+    while let Ok(n @ 1..) = stream.read(&mut chunk) {
+        data.extend_from_slice(&chunk[..n]);
+        let text = String::from_utf8_lossy(&data);
+        if let Some((head, body)) = text.split_once("\r\n\r\n") {
+            let length = head
+                .lines()
+                .find_map(|l| l.strip_prefix("Content-Length:"))
+                .and_then(|n| n.trim().parse::<usize>().ok());
+            if length.is_some_and(|n| body.len() >= n) {
+                return body.to_owned();
+            }
+        }
+    }
+    String::new()
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn perf_of_a_page_loaded_before_attaching() {
     let Some(path) = chrome_path() else { return };
     let site = Fixtures::shared();
     let (_chrome, port) = debug_chrome(&path, &site.url("/perf/index.html"));
-    // The page loads, paints and shifts while nobody watches.
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    // The page loads, paints and shifts while nobody watches: its title
+    // says when, in the targets Chrome lists over HTTP. Then a moment for
+    // the shift's frame.
+    let start = Instant::now();
+    while !json_list(&port).contains("Perf (shifted)") {
+        assert!(
+            start.elapsed() < Duration::from_secs(30),
+            "the page never shifted"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
     let engine = Engine::new("perf-connect", None, None);
     engine
         .connect(engine::ConnectRequest {
@@ -244,7 +286,8 @@ async fn perf_of_a_page_loaded_before_attaching() {
     // A slow interaction is still seen.
     click(&engine, "#slow").await;
     let (_, data) = perf(&engine).await;
-    assert!(data.inp.as_ref().unwrap().ms >= 250, "{:?}", data.inp);
+    // Event timing rounds durations to 8ms: the 250ms task can read 248.
+    assert!(data.inp.as_ref().unwrap().ms >= 242, "{:?}", data.inp);
     // An INP budget on what was seen says it saw only the slow ones.
     let (out, perf) = perf_passes(&engine, "inp<60s", false).await;
     assert!(!perf.from_start);
