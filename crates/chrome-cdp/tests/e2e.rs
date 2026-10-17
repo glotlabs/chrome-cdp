@@ -28,7 +28,9 @@ struct Project {
 impl Project {
     fn new(chrome: &Path) -> Self {
         let sandbox = Sandbox::with_chrome(chrome);
-        let root = sandbox.dir.path().join("app");
+        // Canonical, as the runner prints its paths (macOS's temp dir is
+        // under a symlink, /var to /private/var).
+        let root = sandbox.dir.path().canonicalize().unwrap().join("app");
         copy_dir(&testdata(), &root);
         let real = Fixtures::start(0, 0).unwrap();
         let config = root.join("chrome-cdp.toml");
