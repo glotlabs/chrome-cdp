@@ -143,7 +143,8 @@ fn one_run(opts: &Options<'_>, jobs: usize) -> Result<(ScaleRun, usize), String>
     let out = sandbox
         .cli()
         .current_dir(&opts.suite)
-        .args(["test", "--jobs", &jobs.to_string(), "--json"])
+        // Every test in the JSON: by default it is cut to fit --max-chars.
+        .args(["test", "--jobs", &jobs.to_string(), "--json", "--max-chars", "0"])
         .output()
         .map_err(|e| format!("run chrome-cdp test: {e}"));
     let wall = start.elapsed();
@@ -156,6 +157,12 @@ fn one_run(opts: &Options<'_>, jobs: usize) -> Result<(ScaleRun, usize), String>
             String::from_utf8_lossy(&out.stderr).trim()
         )
     })?;
+    if value["truncated"].as_array().is_some_and(|t| !t.is_empty()) {
+        return Err(format!(
+            "chrome-cdp test --json cut its output: {}",
+            value["truncated"]
+        ));
+    }
     let tests = value["data"]["tests"]
         .as_array()
         .cloned()
