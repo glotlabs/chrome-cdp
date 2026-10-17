@@ -3,3 +3,4 @@
 **/*.rs.bk
 *.profraw
 .DS_Store
+/install-local.sh
