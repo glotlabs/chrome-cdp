@@ -170,13 +170,42 @@ plan 22's later milestones compare with. Results go to
 Baseline (plan 22.1):
 
 <!-- bench:scale-baseline -->
-Not run yet.
+Last run: 2026-10-17 on macos-aarch64 (16 CPUs), Google Chrome for Testing 155.0.8059.84. 1000 tests (`cargo xtask scale-suite --tests 1000`).
+
+| `--jobs` | Wall time | Per test | Test p50 | Overhead | setup | check | teardown | other | Chrome RSS | Daemon RSS | Failed |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 1967 s | 1967 ms | 989 ms | 126 ms | 93.4 ms | 0.00 ms | 20.4 ms | 11.9 ms | 1.6 GB | 23 MB | 0 |
+| 2 | 995 s | 995 ms | 1029 ms | 129 ms | 110 ms | 0.01 ms | 6.46 ms | 12.1 ms | 1.9 GB | 24 MB | 0 |
+| 4 | 514 s | 514 ms | 1081 ms | 152 ms | 136 ms | 0.01 ms | 4.98 ms | 11.7 ms | 2.7 GB | 26 MB | 0 |
+| 8 | 286 s | 286 ms | 1294 ms | 236 ms | 218 ms | 0.02 ms | 6.88 ms | 11.4 ms | 4.1 GB | 29 MB | 0 |
+| 16 | 189 s | 189 ms | 1855 ms | 502 ms | 475 ms | 0.05 ms | 15.6 ms | 11.4 ms | 6.9 GB | 37 MB | 0 |
+| 32 | 175 s | 175 ms | 3638 ms | 1668 ms | 1614 ms | 0.11 ms | 42.0 ms | 11.6 ms | 12.4 GB | 49 MB | 0 |
 <!-- /bench:scale-baseline -->
+
+The same day, `tests/bench.rs` on e2e-shop (18 tests, release build):
+the serial suite took 40.8 s, the runner's overhead was 141 ms per test
+(setup 98 ms, check 0 ms, teardown 30 ms, other 13 ms; the budget is
+100 ms), and the suite took 11.9 s with `--jobs 4` (budget 15 s).
+
+What the baseline shows: wall time stops halving above 8 jobs on 16
+CPUs, and the runner's setup per test grows from 93 ms with 1 job to
+1.6 s with 32 (nearly all of it `context new`), so something in making
+a context serializes the workers (milestone 22.4's question). Chrome's
+memory grows by about 350 MB per job.
 
 Latest:
 
 <!-- bench:scale -->
-Not run yet.
+Last run: 2026-10-17 on macos-aarch64 (16 CPUs), Google Chrome for Testing 155.0.8059.84. 1000 tests (`cargo xtask scale-suite --tests 1000`).
+
+| `--jobs` | Wall time | Per test | Test p50 | Overhead | setup | check | teardown | other | Chrome RSS | Daemon RSS | Failed |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 1967 s | 1967 ms | 989 ms | 126 ms | 93.4 ms | 0.00 ms | 20.4 ms | 11.9 ms | 1.6 GB | 23 MB | 0 |
+| 2 | 995 s | 995 ms | 1029 ms | 129 ms | 110 ms | 0.01 ms | 6.46 ms | 12.1 ms | 1.9 GB | 24 MB | 0 |
+| 4 | 514 s | 514 ms | 1081 ms | 152 ms | 136 ms | 0.01 ms | 4.98 ms | 11.7 ms | 2.7 GB | 26 MB | 0 |
+| 8 | 286 s | 286 ms | 1294 ms | 236 ms | 218 ms | 0.02 ms | 6.88 ms | 11.4 ms | 4.1 GB | 29 MB | 0 |
+| 16 | 189 s | 189 ms | 1855 ms | 502 ms | 475 ms | 0.05 ms | 15.6 ms | 11.4 ms | 6.9 GB | 37 MB | 0 |
+| 32 | 175 s | 175 ms | 3638 ms | 1668 ms | 1614 ms | 0.11 ms | 42.0 ms | 11.6 ms | 12.4 GB | 49 MB | 0 |
 <!-- /bench:scale -->
 
 ## Agent task benchmark
