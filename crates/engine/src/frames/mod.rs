@@ -133,8 +133,17 @@ impl FrameTree {
 
     /// Adds the frames of `Page.getFrameTree` that are not known yet. The
     /// answer may be older than events already applied, so it never
-    /// overrides them.
+    /// overrides them, except for whose the tree's top frame is: a
+    /// session's own (an out-of-process iframe's), even if its parent's
+    /// tree listed it first.
     pub(crate) fn seed(&mut self, session: &str, tree: &page::FrameTree) {
+        self.seed_tree(session, tree);
+        if let Some(frame) = self.frames.get_mut(&tree.frame.id) {
+            session.clone_into(&mut frame.session);
+        }
+    }
+
+    fn seed_tree(&mut self, session: &str, tree: &page::FrameTree) {
         let frame = &tree.frame;
         if frame.parent_id.is_none() && session == self.root_session && frame.id != self.root {
             // Not expected: a tab's main frame has its target's id.
@@ -157,7 +166,7 @@ impl FrameTree {
             entry.url = full_url(frame);
         }
         for child in tree.child_frames.iter().flatten() {
-            self.seed(session, child);
+            self.seed_tree(session, child);
             let entry = self.entry(&child.frame.id, session);
             if entry.parent.is_none() {
                 entry.parent = Some(frame.id.clone());
@@ -749,6 +758,36 @@ mod tests {
         assert_eq!(list[1].id, "A");
         assert_eq!(list[1].name, "pay");
         assert_eq!(list[1].parent.as_deref(), Some("T"));
+    }
+
+    #[test]
+    fn an_out_of_process_frame_is_its_sessions_whichever_tree_comes_first() {
+        let main: page::FrameTree = serde_json::from_value(json!({
+            "frame": frame("T", None, "", "http://a.test/"),
+            "childFrames": [{ "frame": frame("B", Some("T"), "ad", "http://b.test/ad") }],
+        }))
+        .unwrap();
+        let own: page::FrameTree = serde_json::from_value(json!({
+            "frame": frame("B", Some("T"), "ad", "http://b.test/ad"),
+        }))
+        .unwrap();
+        for main_first in [true, false] {
+            let mut tree = FrameTree::new("T", "s1");
+            if main_first {
+                tree.seed("s1", &main);
+                tree.seed("s2", &own);
+            } else {
+                tree.seed("s2", &own);
+                tree.seed("s1", &main);
+            }
+            let list = tree.list();
+            assert_eq!(
+                (list[1].id.as_str(), list[1].oopif),
+                ("B", true),
+                "{main_first}"
+            );
+            assert!(!list[0].oopif);
+        }
     }
 
     #[test]
