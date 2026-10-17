@@ -3814,6 +3814,18 @@ impl Normalizer {
         Self(pairs)
     }
 
+    /// `sb` as `<sandbox>`, its sessions' dir as on Linux: macOS keeps
+    /// them under `TMPDIR` (`<sandbox>/tmp/chrome-cdp/`), Linux under
+    /// `XDG_RUNTIME_DIR` (`<sandbox>/run/chrome-cdp/`).
+    fn with_sandbox(&self, sb: &Sandbox) -> Self {
+        let mut norm = self.with(sb.dir.path(), "<sandbox>");
+        let sessions = format!("{}/chrome-cdp/", sb.runtime_dir().display());
+        norm.0.push((sessions, "<sandbox>/run/chrome-cdp/"));
+        norm.0
+            .sort_by_key(|(from, _)| std::cmp::Reverse(from.len()));
+        norm
+    }
+
     fn apply(&self, text: &str) -> String {
         let text = self
             .0
@@ -3938,8 +3950,14 @@ fn mask(text: &str, prefix: &str, keep: &dyn Fn(char) -> bool, to: &str) -> Stri
 
 /// Runs every mode of `case`; `None` if it needs a Chrome we do not have.
 fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
-    let dir = common::tempdir();
+    // Under /tmp, so paths are as short as on Linux and tables cut no
+    // column (macOS's own temp dir is three times as long).
+    let dir = tempfile::tempdir_in(Path::new("/tmp").canonicalize().unwrap()).unwrap();
     let mut norm = base.with(dir.path(), "<tmp>");
+    // The extension fixtures, copied here: `extensions` cuts a path that
+    // makes its table wider than 120 characters, and a checkout's can be.
+    let extensions = dir.path().join("extensions");
+    copy_tree(&testdata("extensions"), &extensions);
     let mut cwd = None;
     let mut env: Vec<(&str, String)> = Vec::new();
     let mut _server = None;
@@ -3954,7 +3972,7 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
             let chrome = chrome_path()?;
             norm = norm.with(&chrome, "<chrome>");
             let sb = Sandbox::with_chrome(&chrome);
-            norm = norm.with(sb.dir.path(), "<sandbox>");
+            norm = norm.with_sandbox(&sb);
             if case.fixture == Fixture::Session {
                 let out = sb.cli().arg("open").output().unwrap();
                 assert!(out.status.success(), "{out:?}");
@@ -3974,10 +3992,7 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
                             a.replace("{site}", site)
                                 .replace("{sandbox}", &dir)
                                 .replace("{mocks}", &mocks_dir().display().to_string())
-                                .replace(
-                                    "{extensions}",
-                                    &testdata("extensions").display().to_string(),
-                                )
+                                .replace("{extensions}", &extensions.display().to_string())
                         })
                         .collect();
                     let out = sb.cli().args(&args).output().unwrap();
@@ -3989,7 +4004,7 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
         }
         Fixture::NoSessions => {
             let sb = Sandbox::new();
-            norm = norm.with(sb.dir.path(), "<sandbox>");
+            norm = norm.with_sandbox(&sb);
             sandbox = Some(sb);
             None
         }
@@ -4013,7 +4028,7 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
         Fixture::MissingChromeEnv | Fixture::LinuxMissingChromeEnv => {
             env.push(("CHROME_CDP_CHROME", "/nonexistent/chrome".into()));
             let sb = Sandbox::new();
-            norm = norm.with(sb.dir.path(), "<sandbox>");
+            norm = norm.with_sandbox(&sb);
             sandbox = Some(sb);
             None
         }
@@ -4044,7 +4059,7 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
         Fixture::SandboxlessChrome | Fixture::SilentChrome | Fixture::OldChrome
     ) {
         let sb = Sandbox::new();
-        norm = norm.with(sb.dir.path(), "<sandbox>");
+        norm = norm.with_sandbox(&sb);
         sandbox = Some(sb);
     }
 
@@ -4065,7 +4080,6 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
     norm = norm.with(&scripts, "<scripts>");
     let mocks = mocks_dir();
     norm = norm.with(&mocks, "<mocks>");
-    let extensions = testdata("extensions");
     norm = norm.with(&extensions, "<extensions>");
     // Extension ids come from their directories' paths.
     let mut extension_ids: Vec<String> = Vec::new();
@@ -4153,7 +4167,38 @@ fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
     for id in &extension_ids {
         norm = norm.with(Path::new(id), "<ext-id>");
     }
-    Some(norm.apply(&out))
+    let out = norm.apply(&out);
+    // A PDF's size depends on the fonts it embeds, which are the platform's:
+    // `2 pages, Letter, scale 0.5, 12KB` and `"bytes":12678`.
+    if case.args.first() == Some(&"pdf") {
+        let size = |c: char| c.is_ascii_digit() || matches!(c, '.' | 'K' | 'M' | 'B');
+        let digits = |c: char| c.is_ascii_digit();
+        let sized: Vec<String> = out
+            .split('\n')
+            .map(|line| {
+                if line.contains(" pages, ") {
+                    mask(line, ", ", &size, "<size>")
+                } else {
+                    line.to_owned()
+                }
+            })
+            .collect();
+        return Some(mask(&sized.join("\n"), "\"bytes\":", &digits, "<n>"));
+    }
+    Some(out)
+}
+
+/// Copies the directory `from` to `to`.
+fn copy_tree(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        if entry.file_type().unwrap().is_dir() {
+            copy_tree(&entry.path(), &to.join(entry.file_name()));
+        } else {
+            std::fs::copy(entry.path(), to.join(entry.file_name())).unwrap();
+        }
+    }
 }
 
 /// The fixture site's mocks directory (`{mocks}`).
