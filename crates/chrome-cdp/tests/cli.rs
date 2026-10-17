@@ -125,7 +125,7 @@ fn typos_hint_the_corrected_command() {
 
 #[test]
 fn skill_installs_into_the_project_or_the_user_dir() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::tempdir();
     let repo = tmp.path().join("repo");
     let deep = repo.join("web").join("src");
     std::fs::create_dir_all(&deep).unwrap();
@@ -169,7 +169,7 @@ fn skill_installs_into_the_project_or_the_user_dir() {
 fn bash_completes_commands_flags_and_values() {
     let out = run(cli().args(["completions", "bash"]));
     assert_eq!(code(&out), 0);
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let script = dir.path().join("chrome-cdp.bash");
     std::fs::write(&script, stdout(&out)).unwrap();
     // COMPREPLY for the words typed so far, the last one being completed.
@@ -212,7 +212,7 @@ fn global_flags_have_env_vars() {
 
 #[test]
 fn config_files_set_defaults_below_env_and_flags() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let chrome = fake_chrome(&dir, "exec sleep 30");
     let project = dir.path().join("app/src");
     std::fs::create_dir_all(&project).unwrap();
@@ -262,7 +262,7 @@ fn config_files_set_defaults_below_env_and_flags() {
 
 #[test]
 fn bad_config_is_a_usage_error_naming_the_file() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let file = dir.path().join(".chrome-cdp.toml");
     std::fs::write(&file, "sesion = \"shop\"\n").unwrap();
     let out = run(cli().arg("-V").current_dir(dir.path()));
@@ -422,7 +422,7 @@ fn open_says_where_it_looked_for_chrome() {
 
 #[test]
 fn open_notes_a_too_old_chrome_when_launch_fails() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let chrome = dir.path().join("old-chrome");
     std::fs::write(
         &chrome,
@@ -481,7 +481,7 @@ fn open_finds_chrome_without_being_told() {
 
 #[test]
 fn open_reports_why_chrome_failed_to_start() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let chrome = fake_chrome(
         &dir,
         "echo '[1:1:0927/101010.1:FATAL:zygote_host_impl_linux.cc(128)] No usable sandbox! \
@@ -518,7 +518,7 @@ fn open_reports_why_chrome_failed_to_start() {
 
 #[test]
 fn open_times_out_on_a_silent_chrome() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let chrome = fake_chrome(&dir, "exec sleep 30");
     let sandbox = Sandbox::with_chrome(&chrome);
     let started = std::time::Instant::now();

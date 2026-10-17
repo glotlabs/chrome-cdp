@@ -149,7 +149,9 @@ pub fn userns_check(host: &Host, binary: &Path) -> UsernsCheck {
     let Ok(entries) = std::fs::read_dir(host.system_path(APPARMOR_DIR)) else {
         return UsernsCheck::Unknown;
     };
-    let home = host.home();
+    // Canonical, as the binary is: `@{HOME}` matches a home behind a
+    // symlink too.
+    let home = host.home().map(|h| std::fs::canonicalize(&h).unwrap_or(h));
     for entry in entries.filter_map(Result::ok) {
         let path = entry.path();
         if !path.is_file() {

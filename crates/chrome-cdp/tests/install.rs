@@ -51,7 +51,7 @@ fn install_list_and_uninstall() {
         return;
     }
     let server = FakeCft::start("linux64");
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let cache = dir.path();
     let id = "stable-154.0.8037.57-linux64";
     let binary = cache
@@ -109,7 +109,7 @@ fn parallel_installs_download_once() {
         return;
     }
     let server = FakeCft::start("linux64");
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let children: Vec<_> = (0..6)
         .map(|_| {
             with_fake(&server, dir.path())
@@ -133,7 +133,7 @@ fn parallel_installs_download_once() {
 
 #[test]
 fn offline_list_still_shows_the_installs() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let out = run(cli()
         .args(["install", "--list"])
         .env("CHROME_CDP_CFT_URL", "http://127.0.0.1:9")
@@ -158,7 +158,7 @@ fn auto_install_installs_when_no_chrome_is_found() {
         return;
     }
     let server = FakeCft::start("linux64");
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let empty = dir.path().join("empty");
     std::fs::create_dir_all(&empty).unwrap();
     let cache = dir.path().join("cache");
@@ -220,7 +220,7 @@ fn the_apparmor_rule_is_reported_by_install_and_launch() {
         return;
     }
     let server = FakeCft::start("linux64");
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let cache = dir.path().join("cache");
     let out = run(with_fake(&server, &cache)
         .args(["install", "--json"])

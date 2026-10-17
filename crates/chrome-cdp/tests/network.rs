@@ -60,7 +60,7 @@ fn list_show_and_clear() {
     assert!(text.contains("--max-chars 0 for all of it"), "{text}");
     // `-o` saves the body relative to the current directory and prints
     // the absolute path.
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let out = run(sandbox.cli().current_dir(dir.path()).args([
         "network",
         "show",

@@ -3938,7 +3938,7 @@ fn mask(text: &str, prefix: &str, keep: &dyn Fn(char) -> bool, to: &str) -> Stri
 
 /// Runs every mode of `case`; `None` if it needs a Chrome we do not have.
 fn run_case(case: &Case, base: &Normalizer) -> Option<String> {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let mut norm = base.with(dir.path(), "<tmp>");
     let mut cwd = None;
     let mut env: Vec<(&str, String)> = Vec::new();

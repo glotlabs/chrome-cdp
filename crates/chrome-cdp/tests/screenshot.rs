@@ -31,7 +31,7 @@ fn files_paths_and_stdout() {
     );
 
     // -o is relative to the current directory; .jpg makes a jpeg.
-    let cwd = tempfile::tempdir().unwrap();
+    let cwd = common::tempdir();
     let out = run(sandbox.cli().current_dir(cwd.path()).args([
         "screenshot",
         "#red",

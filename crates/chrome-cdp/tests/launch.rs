@@ -74,7 +74,7 @@ fn an_extension_loads_before_the_first_page() {
     assert_eq!(code(&relative), 0, "{}", stderr(&relative));
 
     // Another one needs --restart; without --extension it has none.
-    let other = tempfile::tempdir().unwrap();
+    let other = common::tempdir();
     std::fs::write(
         other.path().join("manifest.json"),
         r#"{"manifest_version": 3, "name": "other", "version": "1"}"#,
@@ -96,7 +96,7 @@ fn an_extension_loads_before_the_first_page() {
 fn a_broken_extension_fails_the_launch() {
     let Some(chrome) = chrome_path() else { return };
     let sandbox = Sandbox::with_chrome(&chrome);
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     std::fs::write(dir.path().join("manifest.json"), r#"{"name": "#).unwrap();
     let out = sandbox.run(&["open", "--extension", dir.path().to_str().unwrap()]);
     assert_eq!(code(&out), 2);
@@ -227,7 +227,7 @@ fn fake_media_gives_pages_a_camera_and_microphone() {
 
 #[test]
 fn launch_options_are_checked_before_launching() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     // It would hang if launched.
     let chrome = fake_chrome(&dir, "exec sleep 30");
     let sandbox = Sandbox::with_chrome(&chrome);

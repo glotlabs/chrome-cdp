@@ -504,7 +504,7 @@ fn a_recorded_websocket_and_event_source_replay() {
 /// answers the spec's requests with.
 #[test]
 fn a_set_generated_from_the_petstore_spec_is_served() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let mocks = dir.path().join("mocks");
     let spec = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../testdata/openapi/petstore.yaml")

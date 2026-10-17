@@ -304,7 +304,7 @@ fn lint_of_a_clean_file_passes() {
 
 #[test]
 fn lint_warnings_alone_pass() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     write(
         dir.path(),
         "e2e/scenarios/a.cdp",
@@ -320,7 +320,7 @@ fn lint_warnings_alone_pass() {
 
 #[test]
 fn test_refuses_to_start_on_lint_errors() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     write(
         dir.path(),
         "chrome-cdp.toml",
@@ -356,7 +356,7 @@ const MESSY_TOML: &str = "[[mock]]\nrespond={status=204}\nmatch = { path = \"/ap
 
 #[test]
 fn fmt_check_prints_a_diff_and_fmt_writes() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let cdp = write(dir.path(), "e2e/scenarios/a.cdp", MESSY_CDP);
     let toml = write(dir.path(), "e2e/mocks/base.toml", MESSY_TOML);
     let tidy = write(dir.path(), "e2e/scenarios/b.cdp", TIDY_CDP);
@@ -413,7 +413,7 @@ fn fmt_check_prints_a_diff_and_fmt_writes() {
 
 #[test]
 fn fmt_leaves_a_file_with_syntax_errors_alone() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let bad = write(dir.path(), "a.cdp", "@test \"x\"\n  click 'open\n");
     let good = write(dir.path(), "b.cdp", "goto   /\n");
     let out = run(cli()
@@ -435,7 +435,7 @@ fn fmt_leaves_a_file_with_syntax_errors_alone() {
 
 #[test]
 fn fmt_says_what_it_takes() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     write(dir.path(), "notes.txt", "x");
     let out = run(cli().current_dir(dir.path()).args(["fmt", "notes.txt"]));
     assert_eq!(code(&out), 2);

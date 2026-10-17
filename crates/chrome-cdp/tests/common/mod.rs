@@ -22,6 +22,19 @@ pub fn chrome_path() -> Option<PathBuf> {
     }
 }
 
+/// A temp dir under its canonical path. macOS's temp dir is behind a
+/// symlink (`/var` is `/private/var`), and chrome-cdp prints canonical
+/// paths, so a test that compares them needs the same form.
+pub fn tempdir() -> tempfile::TempDir {
+    tempfile::tempdir_in(temp_dir()).unwrap()
+}
+
+/// [`std::env::temp_dir`], canonical.
+pub fn temp_dir() -> PathBuf {
+    let dir = std::env::temp_dir();
+    dir.canonicalize().unwrap_or(dir)
+}
+
 /// An empty `XDG_CONFIG_HOME`, so no user config applies. It must exist and
 /// be writable: Chrome keeps its crash reports there and dies without it.
 pub fn empty_config_home() -> PathBuf {
@@ -54,7 +67,7 @@ pub fn cli() -> Command {
         .env("CHROME_CDP_NO_USERNS_CHECK", "1")
         .env("XDG_RUNTIME_DIR", no_sessions_dir())
         .env_remove("NO_COLOR")
-        .current_dir(std::env::temp_dir())
+        .current_dir(temp_dir())
         .stdin(Stdio::null());
     cmd
 }
@@ -100,7 +113,7 @@ pub struct Sandbox {
 
 impl Sandbox {
     pub fn new() -> Self {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempdir();
         std::fs::create_dir_all(dir.path().join("run")).unwrap();
         std::fs::create_dir_all(dir.path().join("tmp")).unwrap();
         Self { dir, chrome: None }
@@ -113,8 +126,14 @@ impl Sandbox {
         sandbox
     }
 
+    /// Where sessions live (under `chrome-cdp/`): `XDG_RUNTIME_DIR` on
+    /// Linux, `TMPDIR` on macOS, as `daemon::paths` has it.
     pub fn runtime_dir(&self) -> PathBuf {
-        self.dir.path().join("run")
+        if cfg!(target_os = "macos") {
+            self.tmp()
+        } else {
+            self.dir.path().join("run")
+        }
     }
 
     /// Chrome's `TMPDIR`: its run dirs and temporary profiles.
@@ -184,8 +203,12 @@ impl Sandbox {
     pub fn assert_all_gone(&self) {
         wait_until("the daemons to exit", || self.daemons().is_empty());
         wait_until("Chrome's processes to exit", || self.chromes().is_empty());
+        // On macOS the sessions' own dirs share TMPDIR with Chrome's.
         wait_until("Chrome's run dirs to be deleted", || {
-            std::fs::read_dir(self.tmp()).unwrap().next().is_none()
+            std::fs::read_dir(self.tmp())
+                .unwrap()
+                .flatten()
+                .all(|e| self.tmp() == self.runtime_dir() && e.file_name() == "chrome-cdp")
         });
     }
 }
@@ -202,7 +225,7 @@ impl Drop for Sandbox {
         if leaks.is_empty() || std::thread::panicking() {
             return;
         }
-        let kept = std::mem::replace(&mut self.dir, tempfile::tempdir().unwrap()).keep();
+        let kept = std::mem::replace(&mut self.dir, tempdir()).keep();
         panic!(
             "the sandbox leaked after `close --all` (kept in {}):\n  {}",
             kept.display(),

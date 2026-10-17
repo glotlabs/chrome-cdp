@@ -40,7 +40,7 @@ fn check<'a>(data: &'a Value, name: &str) -> &'a Value {
 #[test]
 fn looks_without_launching() {
     let sandbox = Sandbox::new();
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let chrome = fake_chrome(&dir, "exit 1");
     let out = run(sandbox.cli().env("CHROME_CDP_CHROME", &chrome).args([
         "doctor",
@@ -125,7 +125,7 @@ fn fails_without_a_chrome() {
 #[test]
 fn warns_about_an_old_chrome() {
     let sandbox = Sandbox::new();
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let chrome = dir.path().join("chrome");
     fs::write(&chrome, "#!/bin/sh\necho 'Chromium 100.0.0.0'\n").unwrap();
     fs::set_permissions(&chrome, fs::Permissions::from_mode(0o755)).unwrap();
@@ -158,7 +158,7 @@ fn fails_on_a_session_dir_others_can_enter() {
     let base = sandbox.runtime_dir().join("chrome-cdp");
     fs::create_dir_all(&base).unwrap();
     fs::set_permissions(&base, fs::Permissions::from_mode(0o755)).unwrap();
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     let chrome = fake_chrome(&dir, "exit 1");
     let out = run(sandbox
         .cli()

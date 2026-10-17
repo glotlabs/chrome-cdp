@@ -325,7 +325,7 @@ fn a_daemon_of_another_build_is_replaced() {
 fn connect_attaches_and_close_only_detaches() {
     let Some(chrome) = chrome_path() else { return };
     let sandbox = Sandbox::with_chrome(&chrome);
-    let profile = tempfile::tempdir().unwrap();
+    let profile = common::tempdir();
     let mut browser = Command::new(&chrome)
         .args([
             "--headless",

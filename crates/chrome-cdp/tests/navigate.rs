@@ -19,7 +19,7 @@ fn relative_urls_use_base_url_from_the_project_config() {
     let Some(chrome) = chrome_path() else { return };
     let site = Fixtures::shared();
     let sandbox = Sandbox::with_chrome(&chrome);
-    let project = tempfile::tempdir().unwrap();
+    let project = common::tempdir();
     std::fs::write(
         project.path().join(".chrome-cdp.toml"),
         format!("base_url = \"{}/nav/\"\n", site.b()),

@@ -41,7 +41,7 @@ fn mock_then_load() {
     assert_eq!(code(&out), 0, "{}", stderr(&out));
     // A mocked first request of the page, from a file; its text comes
     // from stdin.
-    let dir = tempfile::tempdir().unwrap();
+    let dir = common::tempdir();
     std::fs::write(dir.path().join("first.txt"), "from a file\n").unwrap();
     let out = run(sandbox.cli().current_dir(dir.path()).args([
         "route",
