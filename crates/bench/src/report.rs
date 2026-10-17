@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn the_published_doc_has_every_section() {
         let doc = std::fs::read_to_string(workspace_root().join(BENCHMARKS_DOC)).unwrap();
-        for name in ["micro", "tokens", "agent"] {
+        for name in ["micro", "tokens", "agent", "scale", "scale-baseline"] {
             replace_section(&doc, name, "x").unwrap();
         }
     }

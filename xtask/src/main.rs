@@ -36,12 +36,14 @@ tasks:
                       or a session dir still holds a socket file
   soak                run the ignored soak tests (release build; needs CHROME_PATH),
                       then check for leaks
-  bench <micro|tokens|agent> [--no-tests] [-- <args>]
+  bench <micro|tokens|agent|scale> [--no-tests] [-- <args>]
                       build the release binaries and run a benchmark suite
                       (crates/bench; needs CHROME_PATH, and tokens needs
                       bench/tokens' node_modules); see docs/benchmarks.md.
                       micro also runs the plans' ignored timing tests (--no-tests
-                      skips them); `-- --help` lists the suite's own options
+                      skips them); `-- --help` lists the suite's own options.
+                      scale [--tests N] writes the scale suite first (as
+                      scale-suite does), e.g. `cargo xtask bench scale -- --jobs 1,4`
   scale-suite [--tests N]
                       write the scale suite (plan 22.1) to testdata/scale/: N tests
                       (default 1000) against e2e-shop's built app and mocks, the same
@@ -456,19 +458,26 @@ const TIMING_TESTS: [(&str, &str, &str); 4] = [
 /// the `bench` harness (plan 10.4; see docs/benchmarks.md). `micro` also
 /// runs [`TIMING_TESTS`], after the suite, and fails if one does.
 fn bench(args: &[String]) -> Result {
-    let usage =
-        || "usage: cargo xtask bench <micro|tokens|agent> [--no-tests] [-- <args>]".to_owned();
+    let usage = || {
+        "usage: cargo xtask bench <micro|tokens|agent> [--no-tests] [-- <args>]\n       \
+         cargo xtask bench scale [--tests N] [-- <args>]"
+            .to_owned()
+    };
     let (own, extra) = match args.iter().position(|a| a == "--") {
         Some(i) => (&args[..i], &args[i + 1..]),
         None => (args, &[][..]),
     };
     let (suite, no_tests) = match own {
         [suite] => (suite.as_str(), false),
-        [suite, flag] if flag == "--no-tests" => (suite.as_str(), true),
+        [suite, flag] if flag == "--no-tests" && suite != "scale" => (suite.as_str(), true),
+        [suite, flag, _] if flag == "--tests" && suite == "scale" => (suite.as_str(), false),
         _ => return Err(usage()),
     };
-    if !matches!(suite, "micro" | "tokens" | "agent") {
+    if !matches!(suite, "micro" | "tokens" | "agent" | "scale") {
         return Err(usage());
+    }
+    if suite == "scale" {
+        scale::run(&own[1..])?;
     }
     cargo([
         "build",

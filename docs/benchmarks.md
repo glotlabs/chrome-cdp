@@ -1,7 +1,8 @@
 # Benchmarks
 
-Three suites measure how fast chrome-cdp is, how few tokens its output
-costs, and how well an agent does with it (plan 10, milestone 10.4).
+Four suites measure how fast chrome-cdp is, how few tokens its output
+costs, how well an agent does with it (plan 10, milestone 10.4), and how
+fast its test runner gets through a large suite (plan 22).
 `cargo xtask bench` runs them; this page says what each measures, how to run it, and what it
 found last time. The results sections are rewritten by the suites
 themselves (between the `<!-- bench:… -->` markers); edit the rest by hand.
@@ -11,6 +12,7 @@ themselves (between the `<!-- bench:… -->` markers); edit the rest by hand.
 | `micro` | Per-command latency | Chrome | a few minutes; timing-sensitive |
 | `tokens` | Snapshot size in tokens | Chrome, Node | a minute; deterministic |
 | `agent` | Claude Code's success, tokens, turns, files read and time on ~30 tasks with chrome-cdp | Chrome, Node, `claude` logged in | hours and API spend |
+| `scale` | `chrome-cdp test` on 1,000 generated tests at several `--jobs` | Chrome | about two hours |
 
 ## Setup
 
@@ -122,6 +124,60 @@ Last run: 2026-09-30 with Google Chrome for Testing 154.0.8037.57. Tokenizer: `o
 | cards | 2663 | 1228 | 349 | 2663 |
 | **total** | **17288** | **12821** | **4075** | **10811** |
 <!-- /bench:tokens -->
+
+## Scale suite
+
+```sh
+cargo xtask scale-suite                     # write testdata/scale/ (1,000 tests)
+cargo xtask bench scale                     # write it, run it, publish here
+cargo xtask bench scale --tests 200 -- --jobs 1,4,16 --no-publish
+```
+
+Plan 22 tunes the test runner, and tuning needs a suite of realistic
+size. `cargo xtask scale-suite [--tests N]` writes one to
+`testdata/scale/` (git-ignored; the same N always writes the same
+files): N tests (1,000 by default) against e2e-shop's built app
+(`dist/`) and mocks, copied in. About 60% are short (one `goto`, two
+`expect`s), 30% medium (sign in, act, check) and 10% long (a checkout
+of one or two products); files have 5 to 40 tests, and about a quarter
+have an `@before-all` that hands the tests a `state save` file.
+
+`cargo xtask bench scale` writes the suite (`--tests N` before the `--`),
+then runs `chrome-cdp test --json` on it once for each `--jobs` value
+(1, 2, 4, 8, 16 and 32; `-- --jobs 1,4` picks others), each in a fresh
+sandbox with its own daemon and Chrome. For each run, the table has:
+
+- **wall time**, and **per test**: the wall time over the number of
+  tests, what a test costs the suite;
+- **test p50**: the median of the tests' own durations;
+- **overhead**: what the runner adds to a test beyond its steps (its own
+  and its hooks'), on average, split by the records each test's
+  `steps.jsonl` has of the runner's work: `setup` (`context new`, the
+  mocks, the viewport, the determinism settings), `check` (`expect
+  --no-errors`), `teardown` (reading the logs, `context close`) and
+  `other` (what no record covers, and the records' rounding down to
+  whole ms; the mock-log look after each step is inside the steps'
+  times, not here);
+- **peak RSS** of Chrome (its main process and every process under it)
+  and of the daemon, read with `ps` every 250 ms;
+- how many tests failed (or were flaky). A run that was not clean fails
+  the suite, after the table is written.
+
+`--baseline` also writes the table into the baseline section, which
+plan 22's later milestones compare with. Results go to
+`target/bench/scale.json`.
+
+Baseline (plan 22.1):
+
+<!-- bench:scale-baseline -->
+Not run yet.
+<!-- /bench:scale-baseline -->
+
+Latest:
+
+<!-- bench:scale -->
+Not run yet.
+<!-- /bench:scale -->
 
 ## Agent task benchmark
 

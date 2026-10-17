@@ -1,6 +1,7 @@
-//! The benchmark harness behind `cargo xtask bench` (plan 10.4). Three
-//! suites: `micro` (per-command timings), `tokens` (snapshot sizes) and
-//! `agent` (Claude Code on scripted tasks with chrome-cdp).
+//! The benchmark harness behind `cargo xtask bench` (plan 10.4). Four
+//! suites: `micro` (per-command timings), `tokens` (snapshot sizes),
+//! `agent` (Claude Code on scripted tasks with chrome-cdp) and `scale`
+//! (the test runner on a suite of 1,000 tests, plan 22.1).
 //! docs/benchmarks.md says how to run each, and what they measure.
 
 // The results table goes to stdout.
@@ -9,7 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use bench::{agent, micro, note, report, tokens};
+use bench::{agent, micro, note, report, scale, tokens};
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -78,6 +79,22 @@ enum Suite {
         /// List the tasks and exit
         #[arg(long)]
         list: bool,
+    },
+    /// `chrome-cdp test` on the scale suite (cargo xtask scale-suite) with
+    /// several --jobs: wall time, overhead by phase, peak RSS
+    Scale {
+        #[command(flatten)]
+        common: Common,
+        /// The suite's directory (cargo xtask bench scale writes it first)
+        #[arg(long, default_value = "testdata/scale")]
+        suite: PathBuf,
+        /// The --jobs values to run, e.g. `--jobs 1,4,16`
+        #[arg(long, value_delimiter = ',', default_values_t = scale::JOBS)]
+        jobs: Vec<usize>,
+        /// Also publish the results as the baseline later milestones
+        /// compare with (the `scale-baseline` section)
+        #[arg(long)]
+        baseline: bool,
     },
 }
 
@@ -187,6 +204,56 @@ fn run(suite: Suite) -> Result<(), String> {
                 report::gate(&name, &tokens::metrics(&r.counts), gate.update_baseline)?;
             }
             Ok(())
+        }
+        Suite::Scale {
+            common,
+            suite,
+            jobs,
+            baseline,
+        } => {
+            let bin = binary(&common.bin_dir, "chrome-cdp")?;
+            let suite = if suite.is_relative() {
+                report::workspace_root().join(suite)
+            } else {
+                suite
+            };
+            let r = scale::run(&scale::Options {
+                bin: &bin,
+                chrome: &common.chrome,
+                suite,
+                jobs,
+            })?;
+            let path = report::results_dir().join("scale.json");
+            report::write_json(&path, &r)?;
+            let md = scale::markdown(&r);
+            print!("{md}");
+            note(&format!("wrote {}", path.display()));
+            if !common.no_publish {
+                report::publish("scale", &md)?;
+                if baseline {
+                    report::publish("scale-baseline", &md)?;
+                }
+            }
+            // Every number first, then whether the runs were clean.
+            let failed: Vec<String> = r
+                .runs
+                .iter()
+                .filter(|run| run.failed > 0 || run.flaky > 0)
+                .map(|run| {
+                    format!(
+                        "--jobs {}: {} failed, {} flaky",
+                        run.jobs, run.failed, run.flaky
+                    )
+                })
+                .collect();
+            if failed.is_empty() {
+                Ok(())
+            } else {
+                Err(format!(
+                    "the scale suite was not clean: {}",
+                    failed.join("; ")
+                ))
+            }
         }
         Suite::Agent {
             common,
