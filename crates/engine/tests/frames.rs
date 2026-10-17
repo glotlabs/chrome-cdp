@@ -496,11 +496,16 @@ async fn frames_lists_frames_and_workers_the_same_after_each_connect() {
     let mut first: Option<(String, Value)> = None;
     for run in 0..10 {
         let engine = connect(&port).await;
-        // Every frame and worker is there (the service worker last).
+        // Every frame and worker is there (the service worker last), and
+        // the iframe's process known (on a busy machine its mark can come
+        // after its worker).
         let out = eventually("the matrix's targets", async || {
             let ready = eval(&engine, None, World::Main, "document.title").await;
             let out = list(&engine).await;
-            (ready == json!("Targets: ready") && out.text.contains("service worker")).then_some(out)
+            (ready == json!("Targets: ready")
+                && out.text.contains("service worker")
+                && out.text.contains("(out of process)"))
+            .then_some(out)
         })
         .await;
         match &first {
