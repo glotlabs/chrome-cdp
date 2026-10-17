@@ -37,6 +37,11 @@ use crate::{Engine, Running};
 /// could not be read (a connected browser's files may be elsewhere).
 const POPUP_WAIT: Duration = Duration::from_secs(2);
 
+/// How often `extensions storage` tries while Chrome says a just-loaded
+/// extension is not found, and how long it waits between tries.
+const STORAGE_TRIES: u32 = 5;
+const STORAGE_RETRY: Duration = Duration::from_millis(200);
+
 /// Loads each extension in `dirs` (absolute paths) into the browser behind
 /// `conn`, in order, and describes them.
 pub(crate) async fn load(
@@ -507,14 +512,28 @@ impl Engine {
                 .why("reads it"),
             ));
         }
-        let (session, opened) = self
-            .extension_storage_session(running, extension, timeout)
-            .await?;
-        let result = self
-            .use_extension_storage(&session, extension, area, op, timeout)
-            .await;
-        if let Some(id) = opened {
-            let _ = running.tabs.close(id, timeout).await;
+        // Just after a load, Chrome can say the extension is not found in
+        // the session picked (its worker, starting): pick one again, a
+        // few times, before failing.
+        let mut result;
+        let mut tries = 0;
+        loop {
+            let (session, opened) = self
+                .extension_storage_session(running, extension, timeout)
+                .await?;
+            result = self
+                .use_extension_storage(&session, extension, area, op, timeout)
+                .await;
+            if let Some(id) = opened {
+                let _ = running.tabs.close(id, timeout).await;
+            }
+            tries += 1;
+            let not_found = matches!(&result, Err(CdpError::Protocol { message, .. })
+                if message.contains("Extension not found"));
+            if !not_found || tries == STORAGE_TRIES {
+                break;
+            }
+            tokio::time::sleep(STORAGE_RETRY).await;
         }
         let items = result.map_err(|e| match &e {
             CdpError::Protocol { message, .. } if message.contains("read-only") => ErrorInfo::new(
