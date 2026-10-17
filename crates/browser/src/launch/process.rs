@@ -21,11 +21,14 @@ use crate::launch::sys;
 /// The watchdog: waits for a line on stdin. `done` means we cleaned up;
 /// anything else (EOF, because we died) kills the group and deletes the
 /// run dir. It ignores terminal signals so Ctrl-C reaches only
-/// chrome-cdp, which then cleans up itself.
+/// chrome-cdp, which then cleans up itself. It kills twice: a process
+/// that a member was forking as the first kill came is not killed by it.
 const WATCHDOG: &str = "\
 trap '' INT HUP TERM QUIT
 IFS= read -r line
 [ \"$line\" = done ] && exit 0
+kill -s KILL -- \"-$1\" 2>/dev/null
+sleep 0.1
 kill -s KILL -- \"-$1\" 2>/dev/null
 [ -n \"$2\" ] && rm -rf -- \"$2\"
 exit 0";
