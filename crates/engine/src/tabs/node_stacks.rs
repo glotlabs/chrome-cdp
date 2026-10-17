@@ -131,6 +131,33 @@ impl Tabs {
         }
     }
 
+    /// Before a `goto` of `session`'s page to `url`: recording switched
+    /// for where it goes, and Chrome's answer awaited, so the new document
+    /// is recorded from its first node. ([`navigating`] does the same for
+    /// navigations the page starts, but its call can arrive after a fast
+    /// local page made its nodes.)
+    pub(crate) async fn node_stacks_for(&self, session: &Session, url: &str, timeout: Duration) {
+        let want = self.shared.settings.node_stacks().wants(url);
+        let id = session.id().unwrap_or_default();
+        let sent = {
+            let mut state = self.shared.lock();
+            let keep_dom = state.coverage.as_ref().is_some_and(|c| c.uses(id));
+            let Some(target) = state.targets.get_mut(id) else {
+                return;
+            };
+            if !target.kind.is_host() || target.node_stacks == want {
+                return;
+            }
+            target.node_stacks = want;
+            // Until the navigation starts, the old document is current.
+            target.node_stacks_since_load = false;
+            switch(&target.session.with_timeout(timeout), want, keep_dom)
+        };
+        if let Err(e) = sent.await {
+            tracing::debug!("turning node stacks {} failed: {e}", on_off(want));
+        }
+    }
+
     /// Whether `DOM` must stay on in `session`: node stacks record there.
     pub(crate) fn node_stacks_use(&self, session: &Session) -> bool {
         let id = session.id().unwrap_or_default();

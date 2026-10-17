@@ -214,6 +214,10 @@ impl Engine {
                     &self.session,
                 )?;
                 requested = Some(url.clone());
+                running
+                    .tabs
+                    .node_stacks_for(&page.session, &url, timeout)
+                    .await;
                 let nav = match session.call(page::NavigateParams::new(url.clone())).await {
                     Ok(nav) => nav,
                     Err(CdpError::Timeout { .. }) => {
