@@ -297,14 +297,24 @@ impl Actor<'_> {
             return self.drop_files(locator, files, *force).await;
         }
         let parsed = self.parse(locator)?;
+        // The last look's answer while the input is disabled: a look with
+        // almost no time left can time out instead, which says less.
+        let mut disabled: Option<ErrorInfo> = None;
+        let late = |err: ErrorInfo, disabled: &mut Option<ErrorInfo>| match disabled.take() {
+            Some(seen) if err.kind == ErrorKind::Timeout => seen,
+            _ => err,
+        };
         loop {
-            let target = self.locate_waiting(&parsed).await?;
+            let target = match self.locate_waiting(&parsed).await {
+                Ok(target) => target,
+                Err(err) => return Err(late(err, &mut disabled)),
+            };
             let probe = self.call(&target, PROBE, Vec::new()).await;
             let probe: Probe = match probe {
                 Ok(value) => serde_json::from_value(value).unwrap_or_default(),
                 Err(err) => {
                     target.release();
-                    return Err(err);
+                    return Err(late(err, &mut disabled));
                 }
             };
             if !probe.file {
@@ -315,16 +325,12 @@ impl Actor<'_> {
                 Ok(element) => element,
                 Err(err) => {
                     target.release();
-                    return Err(err);
+                    return Err(late(err, &mut disabled));
                 }
             };
             if probe.disabled && !*force {
                 target.release();
-                if Instant::now() + POLL < self.deadline {
-                    tokio::time::sleep(POLL).await;
-                    continue;
-                }
-                return Err(ErrorInfo::new(
+                let err = ErrorInfo::new(
                     ErrorKind::NotEnabled,
                     format!("{} is disabled", describe(&element)),
                 )
@@ -341,7 +347,13 @@ impl Actor<'_> {
                     Hint::run(Cmd::new("snapshot").scoped(self.session()))
                         .why("a control is often disabled until the form is complete"),
                 )
-                .details(json!({ "locator": locator, "check": "enabled" })));
+                .details(json!({ "locator": locator, "check": "enabled" }));
+                if Instant::now() + POLL < self.deadline {
+                    disabled = Some(err);
+                    tokio::time::sleep(POLL).await;
+                    continue;
+                }
+                return Err(err);
             }
             if let Err(err) = self.takes(locator, &element, &probe, &files) {
                 target.release();
