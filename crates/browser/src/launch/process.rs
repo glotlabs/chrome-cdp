@@ -136,7 +136,11 @@ mod tests {
         assert!(group_alive(pgid));
         kill_group(pgid);
         child.wait().await.unwrap();
-        wait_until("the group to die", || !group_alive(pgid));
+        // A child the shell was forking as the kill came outlives it.
+        wait_until("the group to die", || {
+            kill_group(pgid);
+            !group_alive(pgid)
+        });
     }
 
     #[tokio::test]
@@ -167,5 +171,10 @@ mod tests {
         assert!(profile.path().exists());
         kill_group(pgid);
         child.wait().await.unwrap();
+        // A child the shell was forking as the kill came outlives it.
+        wait_until("the group to die", || {
+            kill_group(pgid);
+            !group_alive(pgid)
+        });
     }
 }

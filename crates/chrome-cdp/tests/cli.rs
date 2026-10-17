@@ -527,8 +527,8 @@ fn open_times_out_on_a_silent_chrome() {
     let sandbox = Sandbox::with_chrome(&chrome);
     let started = std::time::Instant::now();
     let out = sandbox.run(&["open", "--timeout", "300ms", "--json"]);
-    // One that does not answer in half the time is started once more.
-    assert_eq!(std::fs::read_to_string(&starts).unwrap().lines().count(), 2);
+    // Started once: a timeout this short is not split for a second start.
+    assert_eq!(std::fs::read_to_string(&starts).unwrap().lines().count(), 1);
     assert_eq!(code(&out), 3);
     let v = json_out(&out);
     assert_eq!(v["error"]["kind"], json!("Timeout"));
@@ -538,6 +538,27 @@ fn open_times_out_on_a_silent_chrome() {
     );
     // The hung child is killed, not waited for.
     assert!(started.elapsed() < std::time::Duration::from_secs(10));
+    sandbox.assert_all_gone();
+}
+
+/// With a timeout of 10s or more, a Chrome that does not answer in half
+/// of it is started once more.
+#[test]
+fn a_silent_chrome_is_started_again_with_a_long_timeout() {
+    let dir = common::tempdir();
+    let starts = dir.path().join("starts");
+    let chrome = fake_chrome(
+        &dir,
+        &format!("echo started >> '{}'\nexec sleep 30", starts.display()),
+    );
+    let sandbox = Sandbox::with_chrome(&chrome);
+    let out = sandbox.run(&["open", "--timeout", "10s", "--json"]);
+    assert_eq!(code(&out), 3);
+    assert_eq!(
+        json_out(&out)["error"]["message"],
+        json!("Chrome started but did not answer within 10s")
+    );
+    assert_eq!(std::fs::read_to_string(&starts).unwrap().lines().count(), 2);
     sandbox.assert_all_gone();
 }
 

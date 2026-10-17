@@ -95,6 +95,9 @@ pub struct Launched {
     closed: bool,
 }
 
+/// The shortest timeout [`launch`] starts a silent Chrome again within.
+pub const RETRY_FROM: Duration = Duration::from_secs(10);
+
 /// Starts `chrome` and waits until it answers.
 ///
 /// Call it from a thread that lives as long as the browser should (the
@@ -103,14 +106,18 @@ pub struct Launched {
 ///
 /// A Chrome on a busy machine can start and then never answer its first
 /// call (seen on macOS, with nothing on stderr), where a second start
-/// answers at once. So the first start gets half of `opts.timeout`, and
-/// one that does not answer in it is killed and started once more with
-/// the rest.
+/// answers at once. So with a timeout of [`RETRY_FROM`] or more, the first
+/// start gets half of it, and one that does not answer in it is killed and
+/// started once more with the rest. (A shorter one is all a cold start
+/// may need.)
 pub async fn launch(
     chrome: &Chrome,
     opts: &LaunchOptions,
     host: &Host,
 ) -> Result<Launched, ErrorInfo> {
+    if opts.timeout < RETRY_FROM {
+        return launch_once(chrome, opts, host, opts.timeout, opts.timeout).await;
+    }
     let first = opts.timeout / 2;
     match launch_once(chrome, opts, host, first, first).await {
         Err(e) if e.kind == ErrorKind::Timeout => {
