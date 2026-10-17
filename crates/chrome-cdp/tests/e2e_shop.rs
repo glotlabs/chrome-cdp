@@ -326,6 +326,14 @@ fn ui_coverage_names_what_the_suite_never_touched() {
         "\n[[mock]]\nname = \"gift cards\"\nmatch = { method = \"GET\", path = \"/api/gift-cards\" }\nrespond = { json = [] }\n",
     );
     std::fs::write(&base, mocks).unwrap();
+    // The spec the mocks are checked against has it too.
+    let spec = example.root.join("api/openapi.yaml");
+    let text = std::fs::read_to_string(&spec).unwrap().replacen(
+        "paths:\n",
+        "paths:\n  /gift-cards:\n    get:\n      responses:\n        \"200\":\n          description: gift cards\n",
+        1,
+    );
+    std::fs::write(&spec, text).unwrap();
     let config = example.root.join("chrome-cdp.toml");
     let text = std::fs::read_to_string(&config).unwrap().replacen(
         "[e2e]\n",

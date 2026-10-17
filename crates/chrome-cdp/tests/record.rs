@@ -164,7 +164,9 @@ fn records_the_form(query: &str, expected_file: &str) {
     project.key("Enter", "Enter", 13, Some("\r"));
     project.type_text("line two");
     project.click("label=Size");
-    project.key("ArrowDown", "ArrowDown", 40, None);
+    // Type-ahead picks "Medium" everywhere; ArrowDown would open the
+    // list on macOS instead of choosing the next option.
+    project.key("m", "KeyM", 77, Some("m"));
     project.click("text=Pro");
     project.click("label=I accept the terms");
     project.click("text=Send me news");

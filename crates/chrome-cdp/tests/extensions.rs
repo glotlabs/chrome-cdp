@@ -49,9 +49,19 @@ fn extensions_load_reload_popup_storage_and_uninstall() {
         loaded["extensions"],
         json!([{"id": id, "name": "chrome-cdp fixture", "version": "1.2.3", "path": dir_arg}])
     );
-    assert_eq!(
-        session.ok(&["extensions"]),
-        format!("{id}  chrome-cdp fixture  1.2.3  {dir_arg}\n")
+    // The text cuts a long path (macOS's temp dir makes one); --json above
+    // has it whole.
+    let text = session.ok(&["extensions"]);
+    let path = text
+        .strip_prefix(&format!("{id}  chrome-cdp fixture  1.2.3  "))
+        .and_then(|rest| rest.strip_suffix('\n'))
+        .unwrap_or_else(|| panic!("{text}"));
+    assert!(
+        path == dir_arg
+            || path
+                .strip_suffix('…')
+                .is_some_and(|cut| dir_arg.starts_with(cut)),
+        "{text}"
     );
 
     // The popup opens as a tab, where its script ran: it reached the
