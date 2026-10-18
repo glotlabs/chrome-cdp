@@ -225,6 +225,18 @@ async fn list(engine: &Engine, app: &str) -> Vec<Logpoint> {
         .logpoints
 }
 
+/// The first logpoint of `app` once it has `hits` hits (or after 5 s).
+async fn hit(engine: &Engine, app: &str, hits: u64) -> Logpoint {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let first = list(engine, app).await.remove(0);
+        if first.hits >= hits || std::time::Instant::now() >= deadline {
+            return first;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+}
+
 async fn clear(engine: &Engine, id: Option<u32>) -> (Output, DebugClearData) {
     let output = engine
         .debug_clear(DebugClearRequest {
@@ -454,7 +466,8 @@ async fn a_logpoint_waits_for_its_script() {
         },
     )
     .await;
-    let listed = &list(&engine, "plain").await[0];
+    // The hit's console entry may come a moment after the title.
+    let listed = &hit(&engine, "plain", 1).await;
     assert_eq!(listed.state, "bound", "{listed:?}");
     assert_eq!(listed.hits, 1);
     assert_eq!(listed.scripts.len(), 1);
