@@ -523,14 +523,27 @@ impl Actor<'_> {
         // The page may update the state a little later (a framework's
         // render).
         let settle = Instant::now() + SETTLE;
+        // The state the last look saw: a look with almost no time left can
+        // time out instead, which says less.
+        let mut seen = None;
         let last = loop {
-            let target = self.locate_waiting(&parsed).await?;
-            let read = self.state(&target).await;
-            target.release();
-            let (now, _) = read?;
+            let read = match self.locate_waiting(&parsed).await {
+                Ok(target) => {
+                    let read = self.state(&target).await;
+                    target.release();
+                    read
+                }
+                Err(err) => Err(err),
+            };
+            let now = match (read, seen.take()) {
+                (Ok((now, _)), _) => now,
+                (Err(err), Some(seen)) if err.kind == ErrorKind::Timeout => break seen,
+                (Err(err), _) => return Err(err),
+            };
             if now.checked() == *want || Instant::now() + POLL >= settle.min(self.deadline) {
                 break now;
             }
+            seen = Some(now);
             tokio::time::sleep(POLL).await;
         };
         if last.checked() != *want {
