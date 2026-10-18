@@ -766,8 +766,28 @@ fn request(session: &str, id: &str, params: &Value) -> Record {
         .filter(|d| d.len() <= POST_DATA_LEN)
         .map(str::to_owned);
     record.started = params["timestamp"].as_f64();
+    if let Some(sent) = wall_time(params["wallTime"].as_f64(), record.entry.time_ms) {
+        record.entry.time_ms = sent;
+    }
     record
 }
+
+/// When Chrome sent a request (`wallTime`, seconds since the epoch), in
+/// ms, if it is within [`WALL_TIME_SKEW`] of `heard` (when the daemon
+/// heard of it). Busy, the daemon hears of a page's requests late, and a
+/// request's answer time (its start plus its duration, on Chrome's clock)
+/// would come after what the answer caused (plan 22.3's flake gate).
+fn wall_time(wall: Option<f64>, heard: u64) -> Option<u64> {
+    let wall = wall.filter(|w| w.is_finite() && *w > 0.0)?;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let sent = (wall * 1000.0).round() as u64;
+    (sent.abs_diff(heard) <= WALL_TIME_SKEW).then_some(sent)
+}
+
+/// How far Chrome's `wallTime` may be from when the daemon heard of the
+/// request and still be believed (a clock that jumped, a test's made-up
+/// event).
+const WALL_TIME_SKEW: u64 = 10_000;
 
 /// What sent a request, from its `Network.Initiator`.
 fn initiator(initiator: &Value) -> Option<Initiator> {
@@ -929,9 +949,23 @@ mod tests {
     use protocol::schema::{RequestState, Worker, WorkerKind};
     use serde_json::{Value, json};
 
-    use super::{NetLog, Record};
+    use super::{NetLog, Record, wall_time};
 
     const CAP: usize = 100;
+
+    /// A request's time is when Chrome sent it, unless that is far from
+    /// when the daemon heard of it.
+    #[test]
+    fn a_request_is_timed_by_chromes_wall_clock() {
+        let heard = 1_800_000_000_000;
+        assert_eq!(
+            wall_time(Some(1_799_999_999.95), heard),
+            Some(1_799_999_999_950)
+        );
+        assert_eq!(wall_time(Some(1.0), heard), None);
+        assert_eq!(wall_time(None, heard), None);
+        assert_eq!(wall_time(Some(f64::NAN), heard), None);
+    }
 
     fn sent(log: &mut NetLog, id: &str, method: &str, url: &str, kind: &str, at: f64) {
         let params = json!({
