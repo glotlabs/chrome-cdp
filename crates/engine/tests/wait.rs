@@ -824,7 +824,11 @@ async fn a_test_runs_goto_settles_for_less() {
     // `wait --settle` asks for the full settle, in a test run too: the
     // DOM quiet for 300 ms.
     goto(&engine, &site.url("/wait/beacon.html")).await;
-    let (data, _) = engine::in_settle(Settle::Test, met(&engine, WaitFor::Settle)).await;
+    let (data, _) = Box::pin(engine::in_settle(
+        Settle::Test,
+        met(&engine, WaitFor::Settle),
+    ))
+    .await;
     assert_eq!(data.met, "page settled: network idle, DOM quiet");
     assert!(data.elapsed_ms >= 300, "{}", data.elapsed_ms);
     engine.close().await;
