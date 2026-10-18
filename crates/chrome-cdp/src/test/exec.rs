@@ -686,7 +686,12 @@ impl Runner<'_> {
                 if covering {
                     self.cover_mocks(&context, &id);
                 }
-                if result.is_err() || self.keeps_logs() {
+                if keeps_logs(
+                    result.is_ok(),
+                    self.retried.get(),
+                    self.plan.repeat,
+                    self.logs_wanted(),
+                ) {
                     let served = self
                         .served()
                         .map(|server| (server.url(), server.journal(Some(&id))));
@@ -745,18 +750,13 @@ impl Runner<'_> {
         })
     }
 
-    /// Whether the running try keeps its console and requests though it
-    /// passed (plan 22.2). Nobody reads a passing first try's, so they
-    /// are read only for a try after a failed one, a run under
-    /// `--repeat` (flake diagnosis compares failing runs with passing
-    /// ones), `--trace`, `--ui-coverage` against a real backend (it counts
-    /// the requests), `--record-mocks`, `--verify-mocks`, and `[e2e]
+    /// Whether the run wants every try's console and requests: with
+    /// `--trace`, `--ui-coverage` against a real backend (it counts the
+    /// requests), `--record-mocks`, `--verify-mocks`, and `[e2e]
     /// keep_logs = true`.
-    fn keeps_logs(&self) -> bool {
+    fn logs_wanted(&self) -> bool {
         let options = self.options;
-        self.retried.get()
-            || self.plan.repeat > 1
-            || options.trace
+        options.trace
             || (options.ui_coverage && self.plan.real())
             || options.record.is_some()
             || options.verify.is_some()
@@ -1905,6 +1905,15 @@ impl Covered {
     }
 }
 
+/// Whether a try reads its console and requests (plan 22.2): a failed
+/// one does; a passed one only when it is a retry of a failed one or a
+/// run under `--repeat` `repeat` (flake diagnosis compares failing runs
+/// with passing ones), or when the run `wanted` them. Nobody reads a
+/// passing first try's.
+fn keeps_logs(passed: bool, retried: bool, repeat: u32, wanted: bool) -> bool {
+    !passed || retried || repeat > 1 || wanted
+}
+
 /// Now, in ms since 1970.
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
@@ -2101,4 +2110,30 @@ fn setup_failure(at: &str, step: &str, error: ErrorInfo) -> Box<TestFailure> {
         report: None,
         likely: None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::keeps_logs;
+
+    #[test]
+    fn which_tries_read_their_logs() {
+        // (passed, a retry, --repeat, wanted by the run) → read
+        let cases = [
+            ((true, false, 1, false), false),
+            ((false, false, 1, false), true),
+            ((true, true, 1, false), true),
+            ((false, true, 1, false), true),
+            ((true, false, 2, false), true),
+            ((true, false, 20, false), true),
+            ((true, false, 1, true), true),
+        ];
+        for ((passed, retried, repeat, wanted), read) in cases {
+            assert_eq!(
+                keeps_logs(passed, retried, repeat, wanted),
+                read,
+                "passed {passed}, retried {retried}, repeat {repeat}, wanted {wanted}"
+            );
+        }
+    }
 }
