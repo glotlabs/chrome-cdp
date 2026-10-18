@@ -1612,11 +1612,26 @@ impl Tabs {
         quiet: Duration,
         deadline: Instant,
     ) -> bool {
+        self.requests_done(id, since, quiet, true, deadline).await
+    }
+
+    /// Waits until tab `id` has no request in flight that counts (with
+    /// `own`, only those started since `since`) and its network was quiet
+    /// for `quiet` (see [`Network::idle_for`]); `false` if `deadline`
+    /// passed first.
+    pub(crate) async fn requests_done(
+        &self,
+        id: u32,
+        since: Instant,
+        quiet: Duration,
+        own: bool,
+        deadline: Instant,
+    ) -> bool {
         self.watch(deadline, |state, now| {
             let Some(tab) = state.tabs.get(&id) else {
                 return Check::Done(());
             };
-            match tab.network.idle_for(since, now, quiet, true) {
+            match tab.network.idle_for(since, now, quiet, own) {
                 Idle::Now => Check::Done(()),
                 Idle::At(at) | Idle::Busy(at) => Check::Later(Some(at)),
             }

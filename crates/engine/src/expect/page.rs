@@ -8,6 +8,7 @@ use std::time::Duration;
 use cdp::domains::accessibility::GetPartialAxTreeParams;
 use cdp::domains::emulation::SetFocusEmulationEnabledParams;
 use cdp::domains::runtime;
+use futures_util::future::join_all;
 use protocol::schema::{Event, ExpectData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde::Deserialize;
@@ -24,6 +25,7 @@ use crate::network::Failure;
 use crate::request::{A11yLevel, ExpectRequest, SnapshotEngine};
 use crate::snapshot::NodeKey;
 use crate::tabs::{FrameContext, Page, parse_tab_id, tab_name};
+use crate::wait::{TEST_QUIET, TEST_SETTLE, test_settle};
 use crate::{Engine, Running};
 
 /// How many errors, failed requests or violations a failure lists.
@@ -181,10 +183,27 @@ impl Engine {
     /// `--no-errors --all-tabs`: no uncaught exception or console error in
     /// any tab of the session (or context) since it opened, whatever it
     /// loaded since. The test runner checks it at the end of each test.
-    pub(super) fn no_errors_in_all_tabs(&self, req: &ExpectRequest) -> Result<Output, ErrorInfo> {
+    /// In a test run (plan 22.3), whose steps settle briefly, it first
+    /// waits for the tabs' requests to end (for at most [`TEST_SETTLE`]),
+    /// so an error one of them causes after the last step still counts.
+    pub(super) async fn no_errors_in_all_tabs(
+        &self,
+        req: &ExpectRequest,
+    ) -> Result<Output, ErrorInfo> {
         let start = Instant::now();
         let running = self.running()?;
         let tabs = self.all_tabs(&running)?;
+        if test_settle() {
+            let deadline = start + TEST_SETTLE;
+            // Quiet for a moment already counts.
+            let since = start.checked_sub(TEST_QUIET).unwrap_or(start);
+            join_all(tabs.iter().map(|&id| {
+                running
+                    .tabs
+                    .requests_done(id, since, TEST_QUIET, false, deadline)
+            }))
+            .await;
+        }
         // A shared or service worker's error is in each tab of its
         // origin: counted once, in the first.
         let mut seen = HashSet::new();

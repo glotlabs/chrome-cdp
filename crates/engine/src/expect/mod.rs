@@ -919,7 +919,7 @@ impl Engine {
         }
         match &req.expectation {
             Expectation::NoErrors { all_tabs: true, .. } => {
-                return self.no_errors_in_all_tabs(&req);
+                return self.no_errors_in_all_tabs(&req).await;
             }
             Expectation::NoIssues {
                 all_tabs: true,
