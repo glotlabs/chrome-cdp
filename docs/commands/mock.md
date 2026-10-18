@@ -149,6 +149,7 @@ Options:
 
 - `--unmatched`: Only the requests no mock answered (in a set's scope)
 - `--all`: Every request routing saw, not only mocked and unmatched ones
+- `--after <SEQ>`: Only the requests after this request number (`seq` in --json)
 - `--limit <N>`: Show at most this many requests, the newest (0 = all) (default `20`)
 - `--max-chars <N>`: Bound the output to this many characters (0 = no limit) (default `20000`)
 
@@ -156,11 +157,14 @@ Options:
 Each line reads: request number, tab, method, URL, type, then the mock
 that answered it (file:line and name) and what it answered; or `no mock
 in SET` for a request in a set's scope that no mock matched. --all adds
-the requests no set had anything to do with.
+the requests no set had anything to do with. --after N shows only the
+requests after request number N (`seq` in --json), the ones since an
+earlier look.
 
 Examples:
   chrome-cdp mock log
   chrome-cdp mock log --unmatched
+  chrome-cdp mock log --unmatched --after 12
   chrome-cdp mock log --all --limit 100
 ```
 

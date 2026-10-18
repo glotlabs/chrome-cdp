@@ -567,6 +567,7 @@ command chrome-cdp mock list
 command chrome-cdp mock log
   flag --unmatched
   flag --all
+  flag --after value=SEQ
   flag --limit value=N
   flag --max-chars value=N
 command chrome-cdp mock reset

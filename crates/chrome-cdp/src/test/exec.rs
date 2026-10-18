@@ -1069,10 +1069,20 @@ impl Runner<'_> {
         fresh
     }
 
-    /// [`Self::unmatched`] of the browser's requests.
+    /// [`Self::unmatched`] of the browser's requests: only those after
+    /// the last look come back (`--after`).
     fn unmatched_in(&self, context: &str) -> Vec<RoutedRequest> {
+        let seen = self.seen.get().to_string();
         let Ok(out) = self.invoke(
-            &["mock", "log", "--unmatched", "--limit", "0"],
+            &[
+                "mock",
+                "log",
+                "--unmatched",
+                "--after",
+                &seen,
+                "--limit",
+                "0",
+            ],
             Some(context),
             None,
         ) else {
@@ -1081,16 +1091,13 @@ impl Runner<'_> {
         let Ok(data) = serde_json::from_value::<MockLogData>(out.data) else {
             return Vec::new();
         };
-        let seen = self.seen.get();
-        let fresh: Vec<RoutedRequest> = data
-            .log
-            .into_iter()
-            .filter(|e| e.seq > seen && e.policy.as_deref() == Some("fail"))
-            .collect();
-        if let Some(last) = fresh.iter().map(|e| e.seq).max() {
+        if let Some(last) = data.log.iter().map(|e| e.seq).max() {
             self.seen.set(last);
         }
-        fresh
+        data.log
+            .into_iter()
+            .filter(|e| e.policy.as_deref() == Some("fail"))
+            .collect()
     }
 
     /// The names of the mock sets `context` uses, for a `mock explain`

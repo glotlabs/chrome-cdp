@@ -156,6 +156,7 @@ pub(crate) fn run(args: &MockArgs, global: &GlobalArgs) -> Result<Output, ErrorI
             let request = MockLogRequest {
                 unmatched: args.unmatched,
                 all: args.all,
+                after: args.after,
                 limit: args.limit,
                 max_chars: args.max_chars,
             };

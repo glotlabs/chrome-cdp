@@ -5011,11 +5011,14 @@ Examples:
 Each line reads: request number, tab, method, URL, type, then the mock
 that answered it (file:line and name) and what it answered; or `no mock
 in SET` for a request in a set's scope that no mock matched. --all adds
-the requests no set had anything to do with.
+the requests no set had anything to do with. --after N shows only the
+requests after request number N (`seq` in --json), the ones since an
+earlier look.
 
 Examples:
   chrome-cdp mock log
   chrome-cdp mock log --unmatched
+  chrome-cdp mock log --unmatched --after 12
   chrome-cdp mock log --all --limit 100")]
     Log(MockLogArgs),
 
@@ -5586,6 +5589,10 @@ pub(crate) struct MockLogArgs {
     /// Every request routing saw, not only mocked and unmatched ones.
     #[arg(long)]
     pub(crate) all: bool,
+
+    /// Only the requests after this request number (`seq` in --json).
+    #[arg(long, value_name = "SEQ")]
+    pub(crate) after: Option<u64>,
 
     /// Show at most this many requests, the newest (0 = all).
     #[arg(long, default_value_t = 20, value_name = "N")]

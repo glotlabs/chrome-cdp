@@ -1599,6 +1599,10 @@ pub struct MockLogRequest {
     /// `--all`: requests no mock set had anything to do with too.
     #[serde(default)]
     pub all: bool,
+    /// `--after`: only requests with a higher `seq` (plan 22.2: the test
+    /// runner's look after each step asks for the new ones only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<u64>,
     /// The newest this many (0 = all).
     pub limit: usize,
     /// The output budget (0 = none).

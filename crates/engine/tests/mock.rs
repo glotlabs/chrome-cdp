@@ -133,6 +133,7 @@ fn log(engine: &Engine, unmatched: bool) -> (String, MockLogData) {
         .mock_log(&MockLogRequest {
             unmatched,
             all: false,
+            after: None,
             limit: 0,
             max_chars: 0,
         })
@@ -245,6 +246,26 @@ async fn mock_sets_answer_the_page() {
     );
     let (text, data) = log(&engine, true);
     assert_eq!(data.log.len(), 1, "{text}");
+    // `--after`: only the requests after a request number.
+    let after = |after: u64| {
+        let out = engine
+            .mock_log(&MockLogRequest {
+                unmatched: false,
+                all: false,
+                after: Some(after),
+                limit: 0,
+                max_chars: 0,
+            })
+            .unwrap();
+        serde_json::from_value::<MockLogData>(out.data).unwrap().log
+    };
+    let all = log(&engine, false).1.log;
+    let middle = all[all.len() / 2].seq;
+    let newer = after(middle);
+    assert!(!newer.is_empty() && newer.len() < all.len(), "{newer:?}");
+    assert!(newer.iter().all(|e| e.seq > middle), "{newer:?}");
+    assert_eq!(newer, all[all.len() / 2 + 1..]);
+    assert!(after(all.last().unwrap().seq).is_empty());
 
     // Hits per mock.
     let out = engine.mock_list(&MockListRequest { max_chars: 0 }).unwrap();
@@ -325,6 +346,7 @@ async fn layers_routes_cors_and_explain() {
         .mock_log(&MockLogRequest {
             unmatched: false,
             all: true,
+            after: None,
             limit: 0,
             max_chars: 0,
         })

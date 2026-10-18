@@ -641,6 +641,7 @@ async fn probe(engine: &Arc<Engine>, probe: Probe, who: &str) -> Result<(), Stri
                     .mock_log(&MockLogRequest {
                         unmatched: true,
                         all: false,
+                        after: None,
                         limit: 0,
                         max_chars: 0,
                     })

@@ -527,6 +527,7 @@ impl Engine {
         let (all, _) = self.settings.routes.journal(scope.as_deref(), 0);
         let kept: Vec<_> = all
             .into_iter()
+            .filter(|e| req.after.is_none_or(|after| e.seq > after))
             .filter(|e| {
                 if req.unmatched {
                     e.unmatched.is_some()
@@ -549,6 +550,9 @@ impl Engine {
             }
             if req.all {
                 cmd = cmd.switch("all");
+            }
+            if let Some(after) = req.after {
+                cmd = cmd.flag("after", after.to_string());
             }
             let _ = writeln!(
                 text,
