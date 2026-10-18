@@ -110,6 +110,13 @@ fn take_kept(paths: &SessionPaths, build: &str) -> Option<Client> {
         })
         .ok()
         .flatten()?;
+    // A daemon that was started again since (it crashed, or a step closed
+    // the session) is another: a fresh hello says whether it has a
+    // browser, which a command that starts one needs to know.
+    let pid = std::fs::read_to_string(&kept.paths.pid).ok()?;
+    if pid.trim().parse::<u32>().ok()? != kept.hello.pid {
+        return None;
+    }
     let Kept {
         paths,
         build,

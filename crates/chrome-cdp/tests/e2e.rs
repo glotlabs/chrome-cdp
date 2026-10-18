@@ -792,6 +792,59 @@ fn steps_without_timings(path: &Path) -> Vec<Value> {
 }
 
 #[test]
+fn a_run_goes_on_when_its_daemon_dies() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let dir = project.root.join("scenarios/restart");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("restart.cdp"),
+        "@before\n  goto /e2e/shop.html\n\n\
+         @test \"sees its daemon die\"\n  eval \"new Promise((r) => setTimeout(r, 5000))\"\n\n\
+         @test \"runs on a new one\"\n  expect text='Price: 49' visible\n",
+    )
+    .unwrap();
+    // One worker, whose kept daemon connection (plan 22.2) breaks in the
+    // middle of the first test.
+    let child = project
+        .sandbox
+        .cli()
+        .current_dir(&project.root)
+        .args(["test", "scenarios/restart", "--jobs", "1", "--json"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let steps = project
+        .root
+        .join("e2e/.results/scenarios/restart/restart.cdp/sees-its-daemon-die/steps.jsonl");
+    common::wait_until("the first test's goto", || {
+        std::fs::read_to_string(&steps).is_ok_and(|s| s.contains("goto /e2e/shop.html"))
+    });
+    let [pid] = project.sandbox.daemons()[..] else {
+        panic!("one daemon")
+    };
+    let killed = std::process::Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .status()
+        .unwrap();
+    assert!(killed.success());
+    let out = child.wait_with_output().unwrap();
+    let value: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(1), "{value}");
+    assert_eq!(
+        statuses(&value),
+        [
+            ("failed".into(), "sees its daemon die".into()),
+            ("passed".into(), "runs on a new one".into()),
+        ],
+        "{value}"
+    );
+    let failure = &value["error"]["details"]["tests"][0]["error"]["error"];
+    assert_eq!(failure["kind"], "DaemonUnavailable", "{failure}");
+}
+
+#[test]
 fn twenty_runs_record_the_same_steps_and_screenshots() {
     let Some(chrome) = chrome_path() else { return };
     let project = Project::new(&chrome);
