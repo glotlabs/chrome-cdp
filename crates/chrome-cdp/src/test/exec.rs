@@ -7,7 +7,9 @@
 //! `@before` steps, its own steps and its `@after` steps run; the context
 //! is closed after.
 //! Every step goes through the same code as a CLI command
-//! ([`crate::run`]), with `--session` and `--context` set. A failed test
+//! ([`crate::run`]), with `--session` and `--context` set; a worker's
+//! calls share one runtime and one daemon connection
+//! ([`crate::session::Worker`], plan 22.2). A failed test
 //! runs again up to its retries; one that then passes is flaky.
 //!
 //! A file's `@before-all` runs once, before its first test (a worker that
@@ -209,6 +211,8 @@ pub(super) fn execute(
             let session = &options.sessions[worker % options.sessions.len()];
             let (next, results, before_all, left) = (&next, &results, &before_all, &left);
             scope.spawn(move || {
+                // One runtime and daemon connection for all its calls.
+                let _worker = crate::session::Worker::start();
                 loop {
                     let item = next.fetch_add(1, Ordering::SeqCst);
                     if item >= items {

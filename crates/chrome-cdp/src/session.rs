@@ -15,8 +15,10 @@
 //! Anything that needs no daemon (argument checks, finding and installing
 //! Chrome, with its progress bar) happens on this side first.
 
+use std::cell::RefCell;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::Duration;
 
 use daemon::client::{self, Session};
@@ -79,7 +81,7 @@ struct Ctx {
     env: Env,
     paths: SessionPaths,
     build: String,
-    runtime: Runtime,
+    runtime: Rc<Runtime>,
     timeout: Duration,
     /// `--tab`.
     tab: Option<String>,
@@ -102,15 +104,7 @@ impl Ctx {
         check_name(&global.session)?;
         let env = Env::current();
         let paths = SessionPaths::new(&env, &global.session);
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|e| {
-                ErrorInfo::new(
-                    ErrorKind::DaemonUnavailable,
-                    format!("cannot start the runtime: {e}"),
-                )
-            })?;
+        let runtime = runtime()?;
         Ok(Self {
             env,
             paths,
@@ -154,6 +148,58 @@ impl Ctx {
             });
         }
     }
+}
+
+thread_local! {
+    /// A `test` worker's runtime (plan 22.2): while the thread is a
+    /// [`Worker`], its commands share it, so the daemon connection the
+    /// thread keeps between them stays usable.
+    static WORKER: RefCell<Option<Rc<Runtime>>> = const { RefCell::new(None) };
+}
+
+/// A thread of `test` that runs many commands in one session: they share
+/// a runtime and one daemon connection (plan 22.2), instead of starting a
+/// runtime, connecting and saying hello for each. Over when dropped.
+pub(crate) struct Worker(());
+
+impl Worker {
+    /// Without a runtime of its own (it could not start), each command
+    /// starts one as on the command line.
+    pub(crate) fn start() -> Self {
+        if let Ok(runtime) = new_runtime() {
+            WORKER.with(|w| *w.borrow_mut() = Some(Rc::new(runtime)));
+            client::keep_connection(true);
+        }
+        Self(())
+    }
+}
+
+impl Drop for Worker {
+    fn drop(&mut self) {
+        // The connection first, while its runtime still runs.
+        client::keep_connection(false);
+        let _ = WORKER.try_with(|w| w.borrow_mut().take());
+    }
+}
+
+/// The runtime of a command: the worker's, else one of its own.
+fn runtime() -> Result<Rc<Runtime>, ErrorInfo> {
+    match WORKER.with(|w| w.borrow().clone()) {
+        Some(runtime) => Ok(runtime),
+        None => new_runtime().map(Rc::new),
+    }
+}
+
+fn new_runtime() -> Result<Runtime, ErrorInfo> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| {
+            ErrorInfo::new(
+                ErrorKind::DaemonUnavailable,
+                format!("cannot start the runtime: {e}"),
+            )
+        })
 }
 
 fn idle_ms(idle: &IdleArgs) -> Option<u64> {

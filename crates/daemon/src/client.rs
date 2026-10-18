@@ -64,6 +64,70 @@ pub fn take_fingerprint() -> Option<protocol::schema::Fingerprint> {
     FINGERPRINT.with(|f| f.borrow_mut().1.take())
 }
 
+thread_local! {
+    /// A `test` worker's connection (plan 22.2): while this thread keeps
+    /// connections, a [`Client`] that is dropped in good order is kept
+    /// here, and the next [`connect`] to the same daemon takes it instead
+    /// of connecting and saying hello again.
+    static KEPT: std::cell::RefCell<Keeping> = const { std::cell::RefCell::new(Keeping::Off) };
+}
+
+/// Whether this thread keeps its connection, and the one it keeps.
+#[derive(Debug)]
+enum Keeping {
+    Off,
+    On(Option<Box<Kept>>),
+}
+
+/// A connection kept for the next call of the thread.
+#[derive(Debug)]
+struct Kept {
+    paths: SessionPaths,
+    build: String,
+    hello: HelloResult,
+    conn: Conn,
+}
+
+/// Makes this thread keep one daemon connection between commands (`test`'s
+/// workers, which run on a runtime of their own that outlives them), or
+/// stop keeping it, closing the kept one.
+pub fn keep_connection(on: bool) {
+    let old = KEPT.with(|kept| {
+        std::mem::replace(
+            &mut *kept.borrow_mut(),
+            if on { Keeping::On(None) } else { Keeping::Off },
+        )
+    });
+    drop(old);
+}
+
+/// The kept connection to the daemon at `paths` of `build`, if there is one.
+fn take_kept(paths: &SessionPaths, build: &str) -> Option<Client> {
+    let kept = KEPT
+        .try_with(|kept| match &mut *kept.borrow_mut() {
+            Keeping::On(slot) => slot.take_if(|k| k.paths.sock == paths.sock && k.build == build),
+            Keeping::Off => None,
+        })
+        .ok()
+        .flatten()?;
+    let Kept {
+        paths,
+        build,
+        hello,
+        conn,
+    } = *kept;
+    Some(Client {
+        conn: Some(conn),
+        session: paths.name.clone(),
+        paths,
+        build,
+        hello,
+        context: None,
+        reused: true,
+        broken: false,
+    })
+}
+
 /// The project root every call carries (see `Request::root`). It is the
 /// process's, not a thread's: `test` runs its jobs on threads of their own.
 static ROOT: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
@@ -136,31 +200,74 @@ fn redact(mut words: Vec<String>) -> Vec<String> {
     words
 }
 
-/// A connection to a session's daemon.
+/// The socket of a connection.
 #[derive(Debug)]
-pub struct Client {
+struct Conn {
     reader: Lines<BufReader<ReadHalf>>,
     writer: WriteHalf,
     next_id: u64,
+}
+
+/// A connection to a session's daemon.
+#[derive(Debug)]
+pub struct Client {
+    /// Always there but while a dropped client hands it to [`KEPT`].
+    conn: Option<Conn>,
     session: String,
+    paths: SessionPaths,
+    build: String,
     /// What the daemon said to `hello`.
     pub hello: HelloResult,
     /// `--context`: the browser context every call acts in.
     pub context: Option<String>,
+    /// A kept connection not used since: its daemon may have gone, and
+    /// its first call connects again once if so.
+    reused: bool,
+    /// The connection may hold a late answer, or the daemon may be gone
+    /// or changed (`close`, `open`): it is not kept.
+    broken: bool,
+}
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        if self.broken || self.hello.state != protocol::schema::SessionState::Running {
+            return;
+        }
+        let Some(conn) = self.conn.take() else {
+            return;
+        };
+        let kept = Kept {
+            paths: self.paths.clone(),
+            build: self.build.clone(),
+            hello: self.hello.clone(),
+            conn,
+        };
+        // The thread may be ending; then the connection just closes.
+        let _ = KEPT.try_with(|slot| {
+            if let Keeping::On(slot @ None) = &mut *slot.borrow_mut() {
+                *slot = Some(Box::new(kept));
+            }
+        });
+    }
+}
+
+/// How a call's exchange of lines went wrong.
+enum Failed {
+    /// The connection broke before an answer came.
+    Lost(String),
+    /// No answer in time.
+    Late,
 }
 
 impl Client {
     /// Connects and says hello.
     async fn open(paths: &SessionPaths, build: &str) -> Result<Self, String> {
-        let stream = unix::connect(&paths.sock)
-            .await
-            .map_err(|e| format!("cannot connect to {}: {e}", paths.sock.display()))?;
-        let (read, writer) = stream.into_split();
+        let conn = Self::connect_socket(paths).await?;
         let mut client = Self {
-            reader: BufReader::new(read).lines(),
-            writer,
-            next_id: 1,
+            conn: Some(conn),
             session: paths.name.clone(),
+            paths: paths.clone(),
+            build: build.to_owned(),
             hello: HelloResult {
                 build: String::new(),
                 session: paths.name.clone(),
@@ -168,6 +275,8 @@ impl Client {
                 state: protocol::schema::SessionState::Idle,
             },
             context: None,
+            reused: false,
+            broken: false,
         };
         let hello = Hello {
             build: build.to_owned(),
@@ -180,6 +289,18 @@ impl Client {
         Ok(client)
     }
 
+    async fn connect_socket(paths: &SessionPaths) -> Result<Conn, String> {
+        let stream = unix::connect(&paths.sock)
+            .await
+            .map_err(|e| format!("cannot connect to {}: {e}", paths.sock.display()))?;
+        let (read, writer) = stream.into_split();
+        Ok(Conn {
+            reader: BufReader::new(read).lines(),
+            writer,
+            next_id: 1,
+        })
+    }
+
     /// Makes one call and waits up to `wait` for the answer.
     pub async fn call<P: Serialize>(
         &mut self,
@@ -187,8 +308,96 @@ impl Client {
         params: &P,
         wait: Duration,
     ) -> Result<Value, ErrorInfo> {
-        let id = self.next_id;
-        self.next_id += 1;
+        let reused = std::mem::take(&mut self.reused);
+        let mut request = self.request(method, params);
+        let mut answer = self.exchange(&request, wait).await;
+        if reused && matches!(answer, Err(Failed::Lost(_))) {
+            // The kept connection's daemon is gone (restarted, say):
+            // connect again, once, and send the call there.
+            tracing::debug!(
+                "the kept connection to session {} broke; connecting again",
+                self.session
+            );
+            if let Ok(fresh) = Box::pin(Self::open(&self.paths, &self.build))
+                .await
+                .as_mut()
+            {
+                self.conn = fresh.conn.take();
+                self.hello = fresh.hello.clone();
+                self.broken = false;
+                request.id = self.conn.as_ref().map_or(1, |c| c.next_id);
+                answer = self.exchange(&request, wait).await;
+            }
+        }
+        if matches!(
+            method,
+            rpc::CLOSE | rpc::OPEN | rpc::CONNECT | rpc::TAB_CLOSE
+        ) {
+            // The daemon may be gone, or its state other than `hello` said.
+            self.broken = true;
+        }
+        let line = match answer {
+            Ok(line) => line,
+            Err(Failed::Late) => {
+                return Err(ErrorInfo::new(
+                    ErrorKind::Timeout,
+                    format!(
+                        "the daemon of session {} did not answer {method} within {}",
+                        self.session,
+                        format::duration(wait)
+                    ),
+                )
+                .hint(Hint::run(Cmd::new("status").session(&self.session))));
+            }
+            Err(Failed::Lost(why)) => return Err(self.lost(&why)),
+        };
+        let mut response = protocol::rpc::decode_response(&line).map_err(|e| self.lost(&e))?;
+        if let Some(fingerprint) = response.fingerprint.take() {
+            FINGERPRINT.with(|f| f.borrow_mut().1 = Some(*fingerprint));
+        }
+        response
+            .into_result()
+            .map_err(protocol::rpc::RpcError::into_error_info)
+    }
+
+    fn lost(&self, why: &str) -> ErrorInfo {
+        ErrorInfo::new(
+            ErrorKind::DaemonUnavailable,
+            format!(
+                "lost the connection to the daemon of session {}: {why}",
+                self.session
+            ),
+        )
+        .hint(Hint::run(Cmd::new("status").session(&self.session)))
+    }
+
+    /// Sends `request` and reads its answer's line. A failure leaves the
+    /// connection broken: it is not kept.
+    async fn exchange(&mut self, request: &Request, wait: Duration) -> Result<String, Failed> {
+        let Some(conn) = self.conn.as_mut() else {
+            return Err(Failed::Lost("it is closed".into()));
+        };
+        conn.next_id = request.id + 1;
+        let mut line = serde_json::to_vec(request).unwrap_or_default();
+        line.push(b'\n');
+        let answer = match conn.writer.write_all(&line).await {
+            Err(e) => Err(Failed::Lost(e.to_string())),
+            Ok(()) => match tokio::time::timeout(wait, conn.reader.next_line()).await {
+                Err(_) => Err(Failed::Late),
+                Ok(Err(e)) => Err(Failed::Lost(e.to_string())),
+                Ok(Ok(None)) => Err(Failed::Lost("it closed the connection".into())),
+                Ok(Ok(Some(line))) => Ok(line),
+            },
+        };
+        if answer.is_err() {
+            self.broken = true;
+        }
+        answer
+    }
+
+    /// The request of a call, with what this thread's calls carry.
+    fn request<P: Serialize>(&self, method: &str, params: &P) -> Request {
+        let id = self.conn.as_ref().map_or(1, |c| c.next_id);
         let params = serde_json::to_value(params).unwrap_or(Value::Null);
         let mut request = Request::new(id, method, params).in_context(self.context.clone());
         if method != rpc::HELLO {
@@ -205,46 +414,7 @@ impl Client {
             );
             request.fingerprint = FINGERPRINT.with(|f| f.borrow().0.clone());
         }
-        let mut line = serde_json::to_vec(&request).unwrap_or_default();
-        line.push(b'\n');
-        let lost = |why: String| {
-            ErrorInfo::new(
-                ErrorKind::DaemonUnavailable,
-                format!(
-                    "lost the connection to the daemon of session {}: {why}",
-                    self.session
-                ),
-            )
-            .hint(Hint::run(Cmd::new("status").session(&self.session)))
-        };
-        self.writer
-            .write_all(&line)
-            .await
-            .map_err(|e| lost(e.to_string()))?;
-        let answer = tokio::time::timeout(wait, self.reader.next_line()).await;
-        let line = match answer {
-            Err(_) => {
-                return Err(ErrorInfo::new(
-                    ErrorKind::Timeout,
-                    format!(
-                        "the daemon of session {} did not answer {method} within {}",
-                        self.session,
-                        format::duration(wait)
-                    ),
-                )
-                .hint(Hint::run(Cmd::new("status").session(&self.session))));
-            }
-            Ok(Err(e)) => return Err(lost(e.to_string())),
-            Ok(Ok(None)) => return Err(lost("it closed the connection".into())),
-            Ok(Ok(Some(line))) => line,
-        };
-        let mut response = protocol::rpc::decode_response(&line).map_err(lost)?;
-        if let Some(fingerprint) = response.fingerprint.take() {
-            FINGERPRINT.with(|f| f.borrow_mut().1 = Some(*fingerprint));
-        }
-        response
-            .into_result()
-            .map_err(protocol::rpc::RpcError::into_error_info)
+        request
     }
 
     /// A call whose result is a command's [`Output`].
@@ -283,6 +453,9 @@ pub fn daemon_alive(paths: &SessionPaths) -> bool {
 /// A session dir that is not the user's own and private has no daemon of
 /// theirs: its socket could be another user's, listening for commands.
 pub async fn connect(paths: &SessionPaths, build: &str) -> Result<Option<Client>, ErrorInfo> {
+    if let Some(client) = take_kept(paths, build) {
+        return Ok(Some(client));
+    }
     if crate::paths::check_private(&paths.dir, browser::launch::effective_uid()).is_err() {
         return Ok(None);
     }
