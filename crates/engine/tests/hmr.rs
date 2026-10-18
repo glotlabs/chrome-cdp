@@ -381,7 +381,10 @@ async fn commands_say_what_came_since_the_last() {
     assert!(notices.is_empty(), "{notices:?}");
 
     send("warn-vite", &vite_update("/hmr/src/cart.js"));
-    until(&engine, "window.cartRuns === 2").await;
+    // The update's log, which the notice comes from, is out after the
+    // module ran; and the engine reads it from an event of its own.
+    until(&engine, "window.cartRuns === 2 && window.hotLogged === 1").await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
     let (output, notices) = call(text()).await;
     output.unwrap();
     assert_eq!(notices.warnings, ["hot update applied (src/cart.js)"]);

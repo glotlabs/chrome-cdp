@@ -46,6 +46,8 @@ a click ran.</p>
           // Vite logs this after a failure too.
           const logged = path === acceptedPath ? path : `${acceptedPath} via ${path}`;
           console.debug('[vite]', `hot updated: ${logged}`);
+          // For tests that wait until the log is out, not only the module.
+          window.hotLogged = (window.hotLogged || 0) + 1;
         }
         break;
       case 'full-reload':
