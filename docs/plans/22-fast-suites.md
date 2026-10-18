@@ -1,6 +1,6 @@
 # Plan 22 — Fast suites
 
-Status: IN PROGRESS (22.1 done)
+Status: IN PROGRESS (22.1 and 22.2 done; 22.2's < 30 ms target not met)
 Depends on: 05 §5.5 (the post-action report and its settle), 08 §8.2
 (`batch`), 10 §10.4 (the benchmarks), 11 (the runner, `--jobs`,
 `--shard`), 18 §18.3 (flake diagnosis)
@@ -301,3 +301,48 @@ baseline, with no new flakes.
   steps instead of pointing at them, so it is a project of its own that
   `chrome-cdp test` runs as is, and serves on port 4183 so it can run
   next to e2e-shop.
+- 22.2: one connection per worker is a property of the worker's thread
+  (`session::Worker`), not a second way into `crate::run`: while it
+  lives, every command on the thread takes the worker's runtime, and
+  `daemon::client::connect` hands back the connection the thread's last
+  command left, so each step still goes through the CLI's own code. A
+  connection is not kept after a timeout (a late answer could still
+  come), a broken socket, or `open`, `connect`, `close` and `tab close`
+  (the daemon's state changed); a kept one whose daemon has another pid
+  now is dropped, and a kept one that breaks on its first call connects
+  again once. The command line keeps a runtime and a connection per
+  command.
+- 22.2: `context new`'s setup is a list of calls, each a method and its
+  params as the setting's command sends them (only `mock_use`,
+  `emulate` and `init_script_add`), so the runner makes them from the
+  same words as before and a setting's record and failure read the
+  same; the daemon times each one. The mock server's partition for the
+  test is now made before `context new` rather than after.
+- 22.2: new unmatched requests: `mock log --after SEQ`, not a count in
+  each step's answer. On the kept connection the look is one cheap call
+  (under a millisecond), and a count would grow every command's
+  envelope for the runner's sake.
+- 22.2: the no-errors check stays one `expect --no-errors --all-tabs`
+  call whether or not the logs are read. It reads the daemon's buffers
+  (0.06 ms a test in the baseline, nothing measurable since), and it
+  runs before `@after` while the logs are read after it; taking the
+  errors from the console read would move that read and redo the
+  check's own deduplication of workers' errors and its failure text,
+  which "Failures look the same" forbids changing.
+- 22.2: "no history" was already the runner's behavior: only `main` and
+  `run`/`batch` give a call its words, and a call without words is
+  neither kept nor given stable locators. The worker now says so for its
+  whole thread (`daemon::client::keep_history`), which also covers a
+  step's own `run` or `batch`; the protocol needs no new field.
+- 22.2: the overhead target (< 30 ms) is not met: 123 ms per test on
+  the scale suite with one job (126 ms in 22.1), 131 ms in
+  `tests/bench.rs`. The round trips this milestone removed were a small
+  part of it; what is left is Chrome's: about 80 ms to make the new
+  context's first tab ready and about 20 ms to dispose of the context.
+  Meeting the target needs a context made before the test asks for one
+  (a fresh, unused one, so it is not the "reusing a context" this plan
+  leaves out) and the disposal off the test's path. Left for a later
+  milestone with 22.4's look at why `context new` slows down with more
+  jobs. Wall time above 8 jobs read about 5% higher than 22.1's table,
+  but the 22.1 build, run again the same day, was as slow: the
+  machine's, not the change's (docs/benchmarks.md).

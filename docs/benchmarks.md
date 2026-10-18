@@ -196,17 +196,39 @@ memory grows by about 350 MB per job.
 Latest:
 
 <!-- bench:scale -->
-Last run: 2026-10-17 on macos-aarch64 (16 CPUs), Google Chrome for Testing 155.0.8059.84. 1000 tests (`cargo xtask scale-suite --tests 1000`).
+Last run: 2026-10-18 on macos-aarch64 (16 CPUs), Google Chrome for Testing 155.0.8059.84. 1000 tests (`cargo xtask scale-suite --tests 1000`).
 
 | `--jobs` | Wall time | Per test | Test p50 | Overhead | setup | check | teardown | other | Chrome RSS | Daemon RSS | Failed |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1 | 1967 s | 1967 ms | 989 ms | 126 ms | 93.4 ms | 0.00 ms | 20.4 ms | 11.9 ms | 1.6 GB | 23 MB | 0 |
-| 2 | 995 s | 995 ms | 1029 ms | 129 ms | 110 ms | 0.01 ms | 6.46 ms | 12.1 ms | 1.9 GB | 24 MB | 0 |
-| 4 | 514 s | 514 ms | 1081 ms | 152 ms | 136 ms | 0.01 ms | 4.98 ms | 11.7 ms | 2.7 GB | 26 MB | 0 |
-| 8 | 286 s | 286 ms | 1294 ms | 236 ms | 218 ms | 0.02 ms | 6.88 ms | 11.4 ms | 4.1 GB | 29 MB | 0 |
-| 16 | 189 s | 189 ms | 1855 ms | 502 ms | 475 ms | 0.05 ms | 15.6 ms | 11.4 ms | 6.9 GB | 37 MB | 0 |
-| 32 | 175 s | 175 ms | 3638 ms | 1668 ms | 1614 ms | 0.11 ms | 42.0 ms | 11.6 ms | 12.4 GB | 49 MB | 0 |
+| 1 | 1965 s | 1965 ms | 987 ms | 123 ms | 94.0 ms | 0 ms | 21.7 ms | 7.51 ms | 1.5 GB | 22 MB | 0 |
+| 2 | 996 s | 996 ms | 1027 ms | 129 ms | 115 ms | 0.00 ms | 6.05 ms | 8.05 ms | 1.9 GB | 23 MB | 0 |
+| 4 | 516 s | 516 ms | 1087 ms | 150 ms | 138 ms | 0.00 ms | 4.37 ms | 7.74 ms | 2.7 GB | 24 MB | 0 |
+| 8 | 291 s | 291 ms | 1317 ms | 247 ms | 234 ms | 0.01 ms | 5.50 ms | 7.48 ms | 4.1 GB | 29 MB | 0 |
+| 16 | 199 s | 199 ms | 1998 ms | 560 ms | 541 ms | 0.02 ms | 10.8 ms | 7.71 ms | 6.9 GB | 35 MB | 0 |
+| 32 | 182 s | 182 ms | 3785 ms | 1767 ms | 1732 ms | 0.04 ms | 26.1 ms | 8.52 ms | 12.4 GB | 47 MB | 0 |
 <!-- /bench:scale -->
+
+What 22.2 (fewer round trips: one daemon connection per worker, a
+context and its setup in one call, only new unmatched requests, no logs
+for passing first tries) changed, measured this way: little. With one
+job the per-test overhead went from 126 ms to 123 ms. `other` dropped
+from 11.9 to 7.5 ms. `teardown` is now `context close` alone, yet stayed
+about the same (20.4 to 21.7 ms): Chrome disposing of the context is
+nearly all of it. `setup` stayed at 94 ms, nearly all of it Chrome
+making the context's first tab (about 80 ms; making the context itself
+takes 2 ms); the settings now take about 8 ms together. The higher
+wall times above 8 jobs are the machine's, not the change's: the 22.1
+build, run again the same day, took 197 s with 16 jobs and 181 s with
+32 (this build: 198 s and 180 s), with a teardown of 16 and 47 ms
+(this build: 10 and 25 ms). The look for unmatched requests after each
+step is inside the steps' times, so what it saves is not in this table.
+
+The same day, `tests/bench.rs` on e2e-shop: an overhead of 131 ms per
+test (before 22.2: 134 ms), of which setup 96 ms, teardown 26 ms and
+other 9 ms (before: 13 ms); the suite took 11.7 s with `--jobs 4`
+(before: 11.8 s). Plan 22.2's target of under 30 ms needs the
+context's tab made before the test asks for it, and its disposal moved
+off the test's path.
 
 ## Agent task benchmark
 
