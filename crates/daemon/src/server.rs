@@ -500,10 +500,15 @@ impl Daemon {
             rpc::CONTEXT_NEW => match params::<engine::ContextNewRequest>(req.params) {
                 Ok(mut p) => {
                     let setup = std::mem::take(&mut p.setup);
-                    match self.engine.context_new(p).await {
-                        Ok(out) if !setup.is_empty() => output(Ok(self.set_up(out, setup).await)),
-                        made => output(made),
+                    let (ahead, timeout_ms) = (p.ahead, p.timeout_ms);
+                    let made = match self.engine.context_new(p).await {
+                        Ok(out) if !setup.is_empty() => Ok(self.set_up(out, setup).await),
+                        made => made,
+                    };
+                    if ahead {
+                        self.engine.make_ahead(timeout_ms);
                     }
+                    output(made)
                 }
                 Err(e) => Err(e),
             },

@@ -106,7 +106,22 @@ struct Registry {
     last: u32,
     /// By id.
     entries: Vec<Scope>,
+    /// Chrome's contexts made ahead for `context new` (plan 22.2), each
+    /// with a ready tab, oldest first: fresh and unused, not listed, and
+    /// with settings of their own (none) until one is taken.
+    spares: Vec<String>,
+    /// Chrome's contexts being made ahead.
+    making: Vec<String>,
+    /// Chrome's contexts closed with `background`, still to dispose of:
+    /// while the next context is made ahead, not while its caller sets it
+    /// up (Chrome answers one call at a time, and disposing takes tens of
+    /// ms).
+    closing: Vec<String>,
 }
+
+/// How many contexts are made ahead at most: about one per `test`
+/// worker, each a blank tab's renderer.
+const SPARES: usize = 8;
 
 /// A context, as the code acting in it needs it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -156,7 +171,78 @@ impl Contexts {
 
     /// Forgets every context (their browser is gone); returns them.
     pub(crate) fn clear(&self) -> Vec<Scope> {
-        std::mem::take(&mut self.lock().entries)
+        let mut registry = self.lock();
+        registry.spares.clear();
+        registry.making.clear();
+        registry.closing.clear();
+        std::mem::take(&mut registry.entries)
+    }
+
+    /// Records Chrome's context `browser_id` as being made ahead, unless
+    /// enough are.
+    fn start_spare(&self, browser_id: &str) -> bool {
+        let mut registry = self.lock();
+        if registry.spares.len() + registry.making.len() >= SPARES {
+            return false;
+        }
+        registry.making.push(browser_id.to_owned());
+        true
+    }
+
+    /// Whether another context may be made ahead.
+    fn wants_spare(&self) -> bool {
+        let registry = self.lock();
+        registry.spares.len() + registry.making.len() < SPARES
+    }
+
+    /// Context `browser_id`, made ahead, is ready (`true`) or failed.
+    fn spare_made(&self, browser_id: &str, ready: bool) -> bool {
+        let mut registry = self.lock();
+        let Some(at) = registry.making.iter().position(|b| b == browser_id) else {
+            // Forgotten meanwhile: the browser went.
+            return false;
+        };
+        registry.making.remove(at);
+        if ready {
+            registry.spares.push(browser_id.to_owned());
+        }
+        ready
+    }
+
+    /// Takes the oldest context made ahead, as a context of ours.
+    fn take_spare(&self) -> Option<(u32, String)> {
+        let mut registry = self.lock();
+        if registry.spares.is_empty() {
+            return None;
+        }
+        let browser_id = registry.spares.remove(0);
+        registry.last += 1;
+        let id = registry.last;
+        registry.entries.push(Scope {
+            id,
+            browser_id: browser_id.clone(),
+        });
+        Some((id, browser_id))
+    }
+
+    /// Chrome's contexts made ahead and not taken, now forgotten.
+    fn take_spares(&self) -> Vec<String> {
+        let mut registry = self.lock();
+        let mut all = std::mem::take(&mut registry.spares);
+        all.append(&mut registry.making);
+        all.append(&mut registry.closing);
+        all
+    }
+
+    /// Chrome's context `browser_id`, forgotten, is to be disposed of with
+    /// the next [`Engine::make_ahead`].
+    fn close_later(&self, browser_id: String) {
+        self.lock().closing.push(browser_id);
+    }
+
+    /// Chrome's contexts closed with `background` and not disposed of.
+    fn take_closing(&self) -> Vec<String> {
+        std::mem::take(&mut self.lock().closing)
     }
 
     /// The settings scope of a target or request in Chrome's context
@@ -164,11 +250,13 @@ impl Contexts {
     /// (the session's default context, or one chrome-cdp did not make).
     pub(crate) fn scope_of(&self, browser_id: Option<&str>) -> Option<String> {
         let browser_id = browser_id?;
-        self.lock()
-            .entries
-            .iter()
-            .any(|e| e.browser_id == browser_id)
-            .then(|| browser_id.to_owned())
+        let registry = self.lock();
+        // One made ahead has its own (empty) settings too, as the context
+        // it becomes would.
+        (registry.entries.iter().any(|e| e.browser_id == browser_id)
+            || registry.spares.iter().any(|b| b == browser_id)
+            || registry.making.iter().any(|b| b == browser_id))
+        .then(|| browser_id.to_owned())
     }
 
     /// `c1` for Chrome's context `browser_id`, when it is one of ours.
@@ -190,6 +278,25 @@ fn forget_scope(settings: &Settings, browser_id: &str) {
     settings.answer_dialogs_in(browser_id, false);
 }
 
+/// Disposes of Chrome's context `browser_id`, closing its tabs.
+async fn dispose_browser_context(
+    running: &Running,
+    browser_id: &str,
+    timeout: std::time::Duration,
+) {
+    let result = running
+        .conn
+        .browser()
+        .with_timeout(timeout)
+        .call(target::DisposeBrowserContextParams::new(
+            browser_id.to_owned(),
+        ))
+        .await;
+    if let Err(e) = result {
+        tracing::debug!("cannot dispose of Chrome's context {browser_id}: {e}");
+    }
+}
+
 /// Disposes of context `id` in Chrome (closing its tabs) and forgets it
 /// and its settings. Needs no engine, so a context can be disposed of
 /// from a task of its own (`explore`'s, when its call is dropped).
@@ -199,20 +306,19 @@ pub(crate) async fn dispose(
     id: u32,
     timeout: std::time::Duration,
 ) {
-    let Some(scope) = settings.contexts.remove(id) else {
-        return;
-    };
-    let result = running
-        .conn
-        .browser()
-        .with_timeout(timeout)
-        .call(target::DisposeBrowserContextParams::new(
-            scope.browser_id.clone(),
-        ))
-        .await;
-    if let Err(e) = result {
-        tracing::debug!("cannot dispose of context {}: {e}", scope.name());
+    if let Some(scope) = settings.contexts.remove(id) {
+        dispose_scope(running, settings, &scope, timeout).await;
     }
+}
+
+/// [`dispose`] of context `scope`, already forgotten by the registry.
+async fn dispose_scope(
+    running: &Running,
+    settings: &Settings,
+    scope: &Scope,
+    timeout: std::time::Duration,
+) {
+    dispose_browser_context(running, &scope.browser_id, timeout).await;
     running.tabs.drop_context_tabs(&scope.browser_id);
     forget_scope(settings, &scope.browser_id);
     running.tabs.apply_interception(timeout, false).await;
@@ -285,29 +391,104 @@ impl Engine {
     pub async fn context_new(&self, req: ContextNewRequest) -> Result<Output, ErrorInfo> {
         let running = self.running()?;
         let timeout = millis(req.timeout_ms);
-        let browser = running.conn.browser().with_timeout(timeout);
-        let created = browser
-            .call(target::CreateBrowserContextParams {
-                // A connected browser keeps no context of ours once we
-                // go.
-                dispose_on_detach: Some(true),
-                ..target::CreateBrowserContextParams::default()
-            })
-            .await
-            .map_err(|e| from_cdp(&e, &self.session))?;
-        let browser_id = created.browser_context_id;
-        let id = self.settings.contexts.add(&browser_id);
-        let page = match running
-            .tabs
-            .create_in(BLANK, Some(&browser_id), timeout)
-            .await
-        {
-            Ok(page) => page,
-            Err(e) => {
-                let info = self.tab_error(&running, e);
-                self.dispose(&running, id, timeout).await;
-                return Err(info);
+        if !req.ahead {
+            return self.context_made(&running, req, None).await;
+        }
+        // One made ahead, if its tab is still there.
+        let mut taken = None;
+        while let Some((id, browser_id)) = self.settings.contexts.take_spare() {
+            running.tabs.name_context(&browser_id, &context_name(id));
+            match running.tabs.in_context(&browser_id).first() {
+                Some(&tab) => {
+                    taken = Some((id, browser_id, tab));
+                    break;
+                }
+                None => self.dispose(&running, id, timeout).await,
             }
+        }
+        self.context_made(&running, req, taken).await
+    }
+
+    /// Starts making a context ahead for the next `context new` with
+    /// `ahead`, in a task of its own, unless [`SPARES`] are made or being
+    /// made; and disposes of the contexts closed with `background` first.
+    /// The daemon calls it once the context the caller asked for has its
+    /// settings: a tab being made meanwhile would slow them down (turning
+    /// on request interception waits for every tab).
+    pub fn make_ahead(&self, timeout_ms: u64) {
+        let Ok(running) = self.running() else {
+            return;
+        };
+        let timeout = millis(timeout_ms);
+        let closing = self.settings.contexts.take_closing();
+        let spare = self.settings.contexts.wants_spare();
+        if closing.is_empty() && !spare {
+            return;
+        }
+        let settings = self.settings.clone();
+        tokio::spawn(async move {
+            for browser_id in closing {
+                dispose_browser_context(&running, &browser_id, timeout).await;
+            }
+            if !spare {
+                return;
+            }
+            let browser = running.conn.browser().with_timeout(timeout);
+            let Ok(created) = browser
+                .call(target::CreateBrowserContextParams {
+                    dispose_on_detach: Some(true),
+                    ..target::CreateBrowserContextParams::default()
+                })
+                .await
+            else {
+                return;
+            };
+            let browser_id = created.browser_context_id;
+            if !settings.contexts.start_spare(&browser_id) {
+                dispose_browser_context(&running, &browser_id, timeout).await;
+                return;
+            }
+            let ready = running
+                .tabs
+                .create_in(BLANK, Some(&browser_id), timeout)
+                .await
+                .is_ok();
+            if !settings.contexts.spare_made(&browser_id, ready) {
+                dispose_browser_context(&running, &browser_id, timeout).await;
+                running.tabs.drop_context_tabs(&browser_id);
+                forget_scope(&settings, &browser_id);
+            }
+        });
+    }
+
+    /// Disposes of the contexts made ahead and not taken.
+    pub(crate) async fn drop_spares(&self, running: &Running, timeout: std::time::Duration) {
+        for browser_id in self.settings.contexts.take_spares() {
+            dispose_browser_context(running, &browser_id, timeout).await;
+            running.tabs.drop_context_tabs(&browser_id);
+            forget_scope(&self.settings, &browser_id);
+        }
+    }
+
+    /// `context new`'s context: `taken` (one made ahead: its id, Chrome's
+    /// id and its tab), else a new one.
+    async fn context_made(
+        &self,
+        running: &std::sync::Arc<Running>,
+        req: ContextNewRequest,
+        taken: Option<(u32, String, u32)>,
+    ) -> Result<Output, ErrorInfo> {
+        let timeout = millis(req.timeout_ms);
+        let (id, browser_id, page) = match taken {
+            Some((id, browser_id, tab)) => match running.tabs.page(Some(tab), timeout).await {
+                Ok(page) => (id, browser_id, page),
+                Err(e) => {
+                    let info = self.tab_error(running, e);
+                    self.dispose(running, id, timeout).await;
+                    return Err(info);
+                }
+            },
+            None => self.new_context(running, timeout).await?,
         };
         running.tabs.activate_in(&browser_id, page.id);
         let mut warnings = Vec::new();
@@ -318,7 +499,7 @@ impl Engine {
                 base_url: req.base_url.clone(),
             };
             let navigated = self
-                .navigate_page(&running, &page, &navigation, WaitUntil::Settle, timeout)
+                .navigate_page(running, &page, &navigation, WaitUntil::Settle, timeout)
                 .await?;
             warnings = navigated.warnings;
         }
@@ -328,7 +509,7 @@ impl Engine {
             .contexts
             .get(id)
             .ok_or_else(|| self.no_context(id))?;
-        let context = self.context_info(&running, &scope);
+        let context = self.context_info(running, &scope);
         let tab = running.tabs.info(page.id).ok_or_else(|| {
             ErrorInfo::new(
                 ErrorKind::NotFound,
@@ -352,6 +533,40 @@ impl Engine {
         let data = ContextNewData { context, tab };
         let output = Output::typed(&data, text).quiet(quiet);
         Ok(warnings.into_iter().fold(output, Output::warning))
+    }
+
+    /// A new Chrome context with one blank tab: its id, Chrome's id and
+    /// the tab.
+    async fn new_context(
+        &self,
+        running: &Running,
+        timeout: std::time::Duration,
+    ) -> Result<(u32, String, crate::tabs::Page), ErrorInfo> {
+        let browser = running.conn.browser().with_timeout(timeout);
+        let created = browser
+            .call(target::CreateBrowserContextParams {
+                // A connected browser keeps no context of ours once we
+                // go.
+                dispose_on_detach: Some(true),
+                ..target::CreateBrowserContextParams::default()
+            })
+            .await
+            .map_err(|e| from_cdp(&e, &self.session))?;
+        let browser_id = created.browser_context_id;
+        let id = self.settings.contexts.add(&browser_id);
+        let page = match running
+            .tabs
+            .create_in(BLANK, Some(&browser_id), timeout)
+            .await
+        {
+            Ok(page) => page,
+            Err(e) => {
+                let info = self.tab_error(running, e);
+                self.dispose(running, id, timeout).await;
+                return Err(info);
+            }
+        };
+        Ok((id, browser_id, page))
     }
 
     /// `context list`: the contexts, their tabs and settings.
@@ -464,8 +679,30 @@ impl Engine {
                     .into_iter()
                     .map(tab_name),
             );
-            self.dispose(&running, id, timeout).await;
+            if req.background {
+                // Gone for every later call at once; Chrome closes its
+                // tabs meanwhile.
+                if let Some(scope) = self.settings.contexts.remove(id) {
+                    // Its tabs and settings too: a later call must not
+                    // wait on tabs that are closing (turning request
+                    // interception on or off waits for every tab).
+                    running.tabs.drop_context_tabs(&scope.browser_id);
+                    forget_scope(&self.settings, &scope.browser_id);
+                    // Chrome disposes of it when the next context is made
+                    // ahead. Request interception stays as it is:
+                    // switching it off in every other tab, only to switch
+                    // it on again for the next test's mocks, would cost
+                    // tens of ms; without the context's routes, a request
+                    // it pauses goes on as it would.
+                    self.settings.contexts.close_later(scope.browser_id);
+                }
+            } else {
+                self.dispose(&running, id, timeout).await;
+            }
             closed.push(scope.name());
+        }
+        if req.all {
+            self.drop_spares(&running, timeout).await;
         }
         let mut text = if closed.is_empty() {
             "no contexts to close".to_owned()

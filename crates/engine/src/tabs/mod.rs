@@ -424,6 +424,15 @@ struct Tab {
 }
 
 impl Tab {
+    /// Whether it is the tab of a context made ahead and not taken yet
+    /// (plan 22.2), which has no name until then: not listed, counted or
+    /// fallen back to.
+    fn made_ahead(&self) -> bool {
+        self.context
+            .as_ref()
+            .is_some_and(|(_, name)| name.is_empty())
+    }
+
     /// A tab for page `info`, not set up yet.
     fn new(
         info: &target::TargetInfo,
@@ -997,15 +1006,29 @@ impl Tabs {
         Ok(self.list_cached())
     }
 
-    /// Every ready tab, with the URL and title last seen.
+    /// Every ready tab, with the URL and title last seen; not the tabs of
+    /// contexts made ahead and not taken yet.
     pub(crate) fn list_cached(&self) -> Vec<TabInfo> {
         let state = self.shared.lock();
         state
             .tabs
             .iter()
-            .filter(|(_, t)| t.ready)
+            .filter(|(_, t)| t.ready && !t.made_ahead())
             .map(|(&id, _)| state.info(id))
             .collect()
+    }
+
+    /// Names the tabs of Chrome's context `browser_id`, made ahead and
+    /// just taken, `name` (`c3`).
+    pub(crate) fn name_context(&self, browser_id: &str, name: &str) {
+        let mut state = self.shared.lock();
+        for tab in state.tabs.values_mut() {
+            if let Some((b, n)) = &mut tab.context
+                && b == browser_id
+            {
+                name.clone_into(n);
+            }
+        }
     }
 
     /// Tab `id` as `tabs` shows it (URL and title as last seen).
@@ -1134,7 +1157,11 @@ impl Tabs {
 
     pub(crate) fn count(&self) -> u32 {
         let state = self.shared.lock();
-        let ready = state.tabs.values().filter(|t| t.ready).count();
+        let ready = state
+            .tabs
+            .values()
+            .filter(|t| t.ready && !t.made_ahead())
+            .count();
         u32::try_from(ready).unwrap_or(u32::MAX)
     }
 
@@ -2061,7 +2088,11 @@ impl State {
     /// most recently, else the newest; one outside the contexts of ours
     /// first.
     fn fallback(&self) -> Option<u32> {
-        let ready = |id: &u32| self.tabs.get(id).is_some_and(|t| t.ready);
+        let ready = |id: &u32| {
+            self.tabs
+                .get(id)
+                .is_some_and(|t| t.ready && !t.made_ahead())
+        };
         let default = |id: &u32| ready(id) && self.in_scope(*id, None);
         self.recent
             .iter()
@@ -2804,7 +2835,10 @@ fn attached(shared: &Arc<Shared>, event: &RawEvent, parent: Parent<'_>) {
             );
         }
     }
-    let context = scope.clone().zip(contexts.name_of(scope.as_deref()));
+    // A context made ahead has no name until it is taken.
+    let context = scope
+        .clone()
+        .map(|s| (s.clone(), contexts.name_of(Some(&s)).unwrap_or_default()));
     let new_tab = if matches!(parent, Parent::Browser) && is_tab(&info) {
         let mut state = shared.lock();
         let id = state.next_id;

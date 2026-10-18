@@ -396,6 +396,12 @@ pub struct ContextNewRequest {
     /// call's time and result, up to the first that failed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub setup: Vec<SetupCall>,
+    /// Make contexts ahead (plan 22.2): this call takes a fresh, unused
+    /// context made ahead if there is one, and the daemon starts making
+    /// the next once this one is set up ([`crate::Engine::make_ahead`]). For `test` in a session of
+    /// its own, whose contexts are made one after another.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ahead: bool,
 }
 
 /// A call of [`ContextNewRequest::setup`]: a method of the session's
@@ -437,6 +443,12 @@ pub struct ContextCloseRequest {
     #[serde(default)]
     pub all: bool,
     pub timeout_ms: u64,
+    /// Answer once the contexts are forgotten (their tabs, settings and
+    /// ids), and let Chrome dispose of them when the next context is made
+    /// ahead (`ContextNewRequest::ahead`), or with `--all` (`test`'s, plan
+    /// 22.2: nothing waits for it).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub background: bool,
 }
 
 /// `tab <id>`.

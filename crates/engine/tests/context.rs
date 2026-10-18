@@ -12,11 +12,11 @@ use std::sync::Arc;
 
 use browser::Host;
 use engine::{
-    ContextCloseRequest, ContextListRequest, ContextNewRequest, CookieFilter, CookiesOp,
-    CookiesRequest, EmulateRequest, EmulationChange, Engine, EvalRequest, EvalWorld,
+    CdpRequest, ContextCloseRequest, ContextListRequest, ContextNewRequest, CookieFilter,
+    CookiesOp, CookiesRequest, EmulateRequest, EmulationChange, Engine, EvalRequest, EvalWorld,
     InitScriptAddRequest, MockStateRequest, MockUseRequest, NavigateRequest, Navigation,
     OpenRequest, PermissionsOp, PermissionsRequest, RouteAction, RouteRequest, RouteSpec,
-    TabNewRequest, TabsRequest, WaitUntil, in_context,
+    TabNewRequest, TabsRequest, Target, WaitUntil, in_context,
 };
 use fixtures::Fixtures;
 use protocol::ErrorKind;
@@ -68,6 +68,7 @@ async fn new_context(engine: &Engine, url: &str) -> ContextNewData {
             base_url: None,
             timeout_ms: TIMEOUT_MS,
             setup: Vec::new(),
+            ahead: false,
         })
         .await
         .unwrap_or_else(|e| panic!("context new: {}", e.to_text()));
@@ -390,6 +391,7 @@ async fn a_context_has_its_own_tabs_emulation_and_init_scripts() {
             ids: vec!["c1".into()],
             all: false,
             timeout_ms: TIMEOUT_MS,
+            background: false,
         })
         .await
         .unwrap();
@@ -409,6 +411,130 @@ async fn a_context_has_its_own_tabs_emulation_and_init_scripts() {
     assert_eq!(err.kind, ErrorKind::NotFound);
     // Ids are never reused.
     assert_eq!(new_context(&engine, &page).await.context.id, "c2");
+}
+
+/// `test`'s contexts (plan 22.2): made ahead while the last one is used,
+/// out of sight until taken, and disposed of with `context close --all`.
+#[tokio::test]
+async fn contexts_made_ahead_stay_out_of_sight() {
+    let Some(path) = chrome_path() else { return };
+    let engine = start(&path, "context-ahead").await;
+    let ahead = || async {
+        let out = engine
+            .context_new(ContextNewRequest {
+                url: None,
+                base_url: None,
+                timeout_ms: TIMEOUT_MS,
+                setup: Vec::new(),
+                ahead: true,
+            })
+            .await
+            .unwrap_or_else(|e| panic!("context new: {}", e.to_text()));
+        // As the daemon does once the context has its settings.
+        engine.make_ahead(TIMEOUT_MS);
+        serde_json::from_value::<ContextNewData>(out.data).unwrap()
+    };
+    // Chrome's pages, the ones made ahead too.
+    let pages = || async {
+        let out = engine
+            .cdp(CdpRequest {
+                all_sessions: false,
+                method: Some("Target.getTargets".into()),
+                params: serde_json::Map::new(),
+                target: Target::Browser,
+                tab: None,
+                frame: None,
+                listen: Vec::new(),
+                count: 0,
+                timeout_ms: TIMEOUT_MS,
+                max_chars: 0,
+            })
+            .await
+            .unwrap();
+        let infos = out.data["targetInfos"].as_array().unwrap().iter();
+        infos.filter(|t| t["type"] == "page").count()
+    };
+    let settled = |n: usize| async move {
+        let start = std::time::Instant::now();
+        loop {
+            let now = pages().await;
+            if now == n {
+                break;
+            }
+            assert!(start.elapsed().as_secs() < 15, "{now} pages, not {n}");
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        // And it stays so.
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        assert_eq!(pages().await, n);
+    };
+    let session = pages().await;
+    let shown = tabs(&engine).await.tabs.len();
+
+    assert_eq!(ahead().await.context.id, "c1");
+    // c1's tab, and one of the next context's.
+    settled(session + 2).await;
+    let listed = || async {
+        let out = engine
+            .context_list(ContextListRequest {
+                timeout_ms: TIMEOUT_MS,
+                max_chars: 0,
+            })
+            .await
+            .unwrap();
+        let data: ContextsData = serde_json::from_value(out.data).unwrap();
+        data.contexts.into_iter().map(|c| c.id).collect::<Vec<_>>()
+    };
+    assert_eq!(listed().await, ["c1"]);
+    // The session's tabs and c1's, not the one made ahead.
+    assert_eq!(tabs(&engine).await.tabs.len(), shown + 1);
+    assert_eq!(
+        engine.status().tabs,
+        Some(u32::try_from(shown + 1).unwrap())
+    );
+
+    // c2 is the one made ahead (one more is made, not two).
+    let c2 = ahead().await;
+    assert_eq!(c2.context.id, "c2");
+    assert_eq!(c2.tab.context.as_deref(), Some("c2"));
+    settled(session + 3).await;
+    assert_eq!(listed().await, ["c1", "c2"]);
+
+    // Closed in the background: gone for every call at once, and
+    // disposed of in Chrome when the next context is made ahead.
+    let out = engine
+        .context_close(ContextCloseRequest {
+            ids: vec!["c2".into()],
+            all: false,
+            timeout_ms: TIMEOUT_MS,
+            background: true,
+        })
+        .await
+        .unwrap();
+    let closed: ContextCloseData = serde_json::from_value(out.data).unwrap();
+    assert_eq!(closed.closed, ["c2"]);
+    assert_eq!(listed().await, ["c1"]);
+    assert_eq!(
+        engine.status().tabs,
+        Some(u32::try_from(shown + 1).unwrap())
+    );
+    settled(session + 3).await;
+    assert_eq!(ahead().await.context.id, "c3");
+    // c1, c3 and the next one made ahead; c2 is gone.
+    settled(session + 3).await;
+
+    // --all disposes of the ones made ahead too.
+    engine
+        .context_close(ContextCloseRequest {
+            ids: Vec::new(),
+            all: true,
+            timeout_ms: TIMEOUT_MS,
+            background: false,
+        })
+        .await
+        .unwrap();
+    assert!(listed().await.is_empty());
+    settled(session).await;
 }
 
 async fn permissions(engine: &Engine, op: PermissionsOp, names: &[&str]) -> PermissionsData {

@@ -1,5 +1,6 @@
-//! Plan 11's timing goals: the test runner's own overhead under 100 ms per
-//! test, and the E2E example suite under 15 s with `--jobs 4`. (Plan 02's
+//! Plan 11's timing goals: the test runner's own overhead under 30 ms per
+//! test (plan 22.2; plan 11 had 100 ms), and the E2E example suite under
+//! 15 s with `--jobs 4`. (Plan 02's
 //! cold start and warm round trip, and plan 08's `batch` speedup, are in
 //! the micro suite of `crates/bench`.) And plan 18.4's: what fingerprints
 //! and `test --ui-coverage` add to a step.
@@ -17,9 +18,10 @@ use std::time::{Duration, Instant};
 
 use common::{Sandbox, chrome_path, code};
 
-/// Plan 11: what the runner adds to a test (a context, mocks, the checks
-/// after it, artifacts), beyond the time its steps take.
-const RUNNER_OVERHEAD: Duration = Duration::from_millis(100);
+/// Plan 22.2 (plan 11 had 100 ms): what the runner adds to a test (a
+/// context, mocks, the checks after it, artifacts), beyond the time its
+/// steps take.
+const RUNNER_OVERHEAD: Duration = Duration::from_millis(30);
 /// Plan 11: the whole example suite with `--jobs 4` (planned as 30 tests;
 /// examples/e2e-shop has 17).
 const SHOP_SUITE: Duration = Duration::from_secs(15);

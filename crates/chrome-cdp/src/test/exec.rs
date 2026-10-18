@@ -922,7 +922,7 @@ impl Runner<'_> {
             }
         }
         let started = Instant::now();
-        let result = crate::session::context_new(&self.global(None, None), calls);
+        let result = crate::session::context_new(&self.global(None, None), calls, self.ahead());
         let took = started.elapsed();
         let made = result.as_ref().ok().map(|out| {
             serde_json::from_value::<Vec<engine::SetupDone>>(out.data["setup"].clone())
@@ -983,12 +983,23 @@ impl Runner<'_> {
 
     fn close_context(&self, context: &str, span: &str) {
         let started = Instant::now();
-        let result = self.invoke(&["context", "close", context], None, None);
+        let result = if self.ahead() {
+            crate::session::context_close_soon(&self.global(None, None), context)
+        } else {
+            self.invoke(&["context", "close", context], None, None)
+        };
         // Without the id, which changes from run to run.
         self.record_teardown("context close", span, result.as_ref(), started);
         if let Err(e) = result {
             tracing::warn!("cannot close context {context}: {}", e.message);
         }
+    }
+
+    /// Whether the daemon makes the next contexts while the tests run, and
+    /// disposes of the closed ones then (plan 22.2): in a session of the
+    /// run's own, as nothing but the run sees those.
+    fn ahead(&self) -> bool {
+        self.options.own_sessions && self.options.debug.is_none()
     }
 
     /// Adds a `setup` record of command `words`, which started at

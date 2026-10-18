@@ -654,6 +654,7 @@ pub(crate) fn context(args: &ContextArgs, global: &GlobalArgs) -> Result<Output,
                 base_url: ctx.base_url.clone(),
                 timeout_ms: millis(ctx.timeout),
                 setup: Vec::new(),
+                ahead: false,
             };
             let output = ctx.runtime.block_on(session.client.call_output(
                 rpc::CONTEXT_NEW,
@@ -685,6 +686,7 @@ pub(crate) fn context(args: &ContextArgs, global: &GlobalArgs) -> Result<Output,
                 ids: close.ids.clone(),
                 all: close.all,
                 timeout_ms: millis(ctx.timeout),
+                background: false,
             };
             ctx.runtime
                 .block_on(client.call_output(rpc::CONTEXT_CLOSE, &request, ctx.long_wait()))
@@ -693,10 +695,12 @@ pub(crate) fn context(args: &ContextArgs, global: &GlobalArgs) -> Result<Output,
 }
 
 /// `context new` that makes `setup`'s calls in the new context before it
-/// answers (`test`'s setup in one round trip, plan 22.2).
+/// answers (`test`'s setup in one round trip, plan 22.2); with `ahead`,
+/// the daemon makes contexts ahead for the next such calls.
 pub(crate) fn context_new(
     global: &GlobalArgs,
     setup: Vec<engine::SetupCall>,
+    ahead: bool,
 ) -> Result<Output, ErrorInfo> {
     let ctx = Ctx::new(global)?;
     let (mut session, warnings) = with_browser(&ctx)?;
@@ -705,6 +709,7 @@ pub(crate) fn context_new(
         base_url: ctx.base_url.clone(),
         timeout_ms: millis(ctx.timeout),
         setup,
+        ahead,
     };
     let output = ctx.runtime.block_on(session.client.call_output(
         rpc::CONTEXT_NEW,
@@ -712,6 +717,19 @@ pub(crate) fn context_new(
         ctx.long_wait(),
     ))?;
     Ok(warnings.into_iter().fold(output, Output::warning))
+}
+
+/// `context close <id>` that answers once the daemon has forgotten the
+/// context; Chrome disposes of it when the next context is made ahead
+/// (`test`'s in a session of its own, plan 22.2: nothing waits for it).
+pub(crate) fn context_close_soon(global: &GlobalArgs, id: &str) -> Result<Output, ErrorInfo> {
+    let request = ContextCloseRequest {
+        ids: vec![id.to_owned()],
+        all: false,
+        timeout_ms: timeout_ms(global),
+        background: true,
+    };
+    call_running(global, rpc::CONTEXT_CLOSE, &request)
 }
 
 /// The call that setup command `cli` (`mock use`, `viewport`, `emulate`,
