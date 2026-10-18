@@ -356,3 +356,11 @@ baseline, with no new flakes.
   with 32 jobs, past where wall time stops dropping, a slower run (189 s
   against 180 s). How many to make ahead, and when to dispose, belongs
   with 22.4's curve.
+- 22.2: making the next context now happens during a test's first steps
+  rather than in its setup, so a loaded machine sees more of Chrome's
+  work while steps run. The flake gate showed it on the planted flakes
+  (18.3), whose margins were under a second: a good run's 1 s click
+  timed out, and a bad run's slow answer came between Pay and the log
+  read. Their margins are now about 1.5 s each; the diagnoses and
+  goldens are the same. Suites with sub-second timeouts may want them
+  looked at too; 22.3's shorter waits make that likelier.
