@@ -61,10 +61,12 @@ unmatched = "fail", fails the test at the step after which it was
 sent, naming the closest mocks; so does a console error in any of its
 tabs (unless @allow-console-errors, or allow_console_errors = true in
 [e2e]). Exit code 0: every test passed; 1: a test failed.
-Each test leaves steps.jsonl, requests.txt and console.txt in
-e2e/.results/<file>/<test>/; a failed one also failure.png, snapshot.txt
-and report.md (the step, the error, the page around it, console errors,
-failed requests), whose path is printed under its line. --trace adds a
+Each test leaves steps.jsonl in e2e/.results/<file>/<test>/; a failed
+one also requests.txt, console.txt, failure.png, snapshot.txt and
+report.md (the step, the error, the page around it, console errors,
+failed requests), whose path is printed under its line. Every try of a
+test that failed once, every --repeat run, and with [e2e] keep_logs =
+true every test, keeps requests.txt and console.txt. --trace adds a
 screenshot after every step; --reporter json,junit,html writes those
 files too (docs/e2e/debugging.md).
 A scenario that does not check (bad syntax, unknown command, missing

@@ -242,6 +242,7 @@ pub(super) fn execute(
                             options,
                             session,
                             seen: Cell::new(0),
+                            retried: Cell::new(false),
                             seen_served: Cell::new(0),
                             warnings: RefCell::new(Vec::new()),
                             recorder: RefCell::new(None),
@@ -443,6 +444,8 @@ struct Runner<'a> {
     session: &'a str,
     /// The last mock log entry looked at for unmatched requests.
     seen: Cell<u64>,
+    /// Whether the running try is a retry of a failed one.
+    retried: Cell<bool>,
     /// The same, of the mock server's journal.
     seen_served: Cell<u64>,
     /// The warnings of steps the report shows.
@@ -513,6 +516,7 @@ impl Runner<'_> {
                 None => None,
             };
             *self.current.borrow_mut() = Some((test.file, test.name.clone(), self.test_span(test)));
+            self.retried.set(attempt > 1);
             self.taken.borrow_mut().clear();
             self.healed.borrow_mut().clear();
             *self.covered.borrow_mut() = (String::new(), false);
@@ -682,17 +686,19 @@ impl Runner<'_> {
                 if covering {
                     self.cover_mocks(&context, &id);
                 }
-                let served = self
-                    .served()
-                    .map(|server| (server.url(), server.journal(Some(&id))));
-                let started_ms = self
-                    .recorder
-                    .borrow()
-                    .as_ref()
-                    .map_or(0, Recorder::started_ms);
-                logs = artifacts::logs(dir, &context, served, started_ms, &|words| {
-                    self.teardown(words, &context, subject.place)
-                });
+                if result.is_err() || self.keeps_logs() {
+                    let served = self
+                        .served()
+                        .map(|server| (server.url(), server.journal(Some(&id))));
+                    let started_ms = self
+                        .recorder
+                        .borrow()
+                        .as_ref()
+                        .map_or(0, Recorder::started_ms);
+                    logs = artifacts::logs(dir, &context, served, started_ms, &|words| {
+                        self.teardown(words, &context, subject.place)
+                    });
+                }
                 if covering && self.plan.real() {
                     let requests = logs.requests.iter();
                     self.coverage.borrow_mut().requests(
@@ -737,6 +743,24 @@ impl Runner<'_> {
             failure.report = Some(path.display().to_string());
             failure
         })
+    }
+
+    /// Whether the running try keeps its console and requests though it
+    /// passed (plan 22.2). Nobody reads a passing first try's, so they
+    /// are read only for a try after a failed one, a run under
+    /// `--repeat` (flake diagnosis compares failing runs with passing
+    /// ones), `--trace`, `--ui-coverage` against a real backend (it counts
+    /// the requests), `--record-mocks`, `--verify-mocks`, and `[e2e]
+    /// keep_logs = true`.
+    fn keeps_logs(&self) -> bool {
+        let options = self.options;
+        self.retried.get()
+            || self.plan.repeat > 1
+            || options.trace
+            || (options.ui_coverage && self.plan.real())
+            || options.record.is_some()
+            || options.verify.is_some()
+            || self.plan.config.keep_logs
     }
 
     /// `failure.png` and `snapshot.txt` of `context`'s page.
@@ -1826,6 +1850,7 @@ impl Runner<'_> {
         let dir = file_dir.join(format!("@{name}"));
         *self.reads.borrow_mut() = vec![file_dir.join("@before-all")];
         *self.test_id.borrow_mut() = format!("{}-f{}", self.plan.run.run_id, test.file + 1);
+        self.retried.set(false);
         self.in_context(
             &dir,
             &subject,

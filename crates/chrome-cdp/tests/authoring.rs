@@ -150,7 +150,10 @@ fn explore_record_save_and_run_the_test_on_the_recorded_mocks() {
         format!(
             "{}\n[e2e.web_server]\nstatic = \"site\"\nurl = \"http://127.0.0.1:{port}\"\n",
             text.replace(site, &format!("http://127.0.0.1:{port}"))
-                .replace("[e2e]\n", "[e2e]\ndefault_mocks = [\"recorded\"]\n")
+                .replace(
+                    "[e2e]\n",
+                    "[e2e]\ndefault_mocks = [\"recorded\"]\nkeep_logs = true\n"
+                )
         ),
     )
     .unwrap();

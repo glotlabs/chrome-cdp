@@ -13,12 +13,25 @@ its `tests` glob starts in, `<test>` its name as a slug):
 | File | What |
 |---|---|
 | `steps.jsonl` | One JSON object per step, the runner's own work included: `n`, `start_ms`, `duration_ms`, `at` (`file:line:col`), `command`, `hook` (the hook it ran in; `setup` for the runner's setup, `check` for its checks after the steps, `teardown` for reading the logs and closing the context, which only this file lists), `ok`, `output`, `warnings`, `error`, and with `--trace` a `screenshot` (and `masked`: how many fields holding a secret it paints over); with `--heal`, `healed` for a step that ran with another locator ([healing.md](healing.md)) |
-| `requests.txt` | Every request of every tab: method, status, URL, type, time, when it was sent and answered (from the test's start, as `steps.jsonl`'s times are), and the mock (or route) that answered it, or the set it went unmatched in |
-| `console.txt` | The console of every tab |
+| `requests.txt` | Every request of every tab: method, status, URL, type, time, when it was sent and answered (from the test's start, as `steps.jsonl`'s times are), and the mock (or route) that answered it, or the set it went unmatched in (see below for when) |
+| `console.txt` | The console of every tab (see below for when) |
 | `failure.png` | A failed test: the page when it failed (before `@after`) |
 | `snapshot.txt` | A failed test: `snapshot -i` when it failed |
 | `report.md` | A failed test: the summary below |
 | `trace/NNN.png` | `--trace`: the page after step NNN |
+
+`requests.txt` and `console.txt` are written for a failed test, for
+every try of a test that failed a try (a flaky one's passing try too),
+for every `--repeat` run, and with `--trace`, `--record-mocks`,
+`--verify-mocks` or `--ui-coverage` against a real backend. A test that
+passed on its first try skips them, as reading them costs time and
+nobody reads them; `keep_logs = true` in `[e2e]` keeps them for every
+test:
+
+```toml
+[e2e]
+keep_logs = true
+```
 
 A retry's files go to `try-2/`, `try-3/`, …; `--repeat`'s runs to
 `run-1/`, `run-2/`, …, so every run of a flaky test can be compared

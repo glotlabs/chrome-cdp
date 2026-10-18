@@ -54,8 +54,8 @@ own servers and setup. Real backends' artifacts go below
 ## What changes in real mode
 
 - **Mocks are off.** The app's requests go to the server. They are still
-  in each test's network log, so `expect request` and `requests.txt` work
-  as before.
+  in each test's network log, so `expect request` and `requests.txt` (a
+  failed test's, or every test's with `keep_logs = true`) work as before.
 - **Hybrid mode.** A backend's `mocks` stay on, for example a third-party
   payment, email or maps API, while the app's own API is real. Tests'
   `@mocks` and `default_mocks` are not applied; a request outside those

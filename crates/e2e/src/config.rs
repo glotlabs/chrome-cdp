@@ -109,6 +109,10 @@ pub struct Config {
     pub allow_console_errors: bool,
     /// Whether `test` reads and writes `e2e/fingerprints` (plan 18.2).
     pub fingerprints: Fingerprints,
+    /// Whether a test that passed on its first try keeps its console and
+    /// requests (`console.txt`, `requests.txt`); else only tests that
+    /// failed a try, or ran under `--repeat`, do (plan 22.2).
+    pub keep_logs: bool,
     /// The app's pages as path patterns (`/products/:id`), which `test
     /// --ui-coverage` groups by; empty: by path template (plan 18.4).
     pub pages: Vec<String>,
@@ -535,6 +539,7 @@ impl Check<'_> {
             retries: raw.retries.unwrap_or(0),
             allow_console_errors: raw.allow_console_errors.unwrap_or(false),
             fingerprints: raw.fingerprints.unwrap_or_default(),
+            keep_logs: raw.keep_logs.unwrap_or(false),
             pages: raw.pages.map(pages).transpose()?.unwrap_or_default(),
             timeout: raw
                 .timeout
@@ -886,6 +891,7 @@ struct RawE2e {
     retries: Option<u32>,
     allow_console_errors: Option<bool>,
     fingerprints: Option<Fingerprints>,
+    keep_logs: Option<bool>,
     pages: Option<Spanned<Vec<String>>>,
     timeout: Option<Spanned<String>>,
     artifacts: Option<String>,

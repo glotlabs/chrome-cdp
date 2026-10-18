@@ -173,6 +173,15 @@ fn a_bundle_replays_offline_and_passes_with_the_fix_in_its_mocks() {
         test.replace("expect role=status text ordered\n", ""),
     )
     .unwrap();
+    // Its requests are read below, though it passes.
+    let config = bundle.join("chrome-cdp.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    assert!(text.contains("[e2e]\n"), "{text}");
+    std::fs::write(
+        &config,
+        text.replacen("[e2e]\n", "[e2e]\nkeep_logs = true\n", 1),
+    )
+    .unwrap();
     let out = session.run(&["test", "bugs/shipped"]);
     assert_eq!(
         out.status.code(),

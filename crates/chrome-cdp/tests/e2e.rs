@@ -59,6 +59,18 @@ impl Project {
         )
     }
 
+    /// `[e2e] keep_logs = true`: passing tests keep their console and
+    /// requests too.
+    fn keep_logs(&self) {
+        let config = self.root.join("chrome-cdp.toml");
+        let text = std::fs::read_to_string(&config).unwrap();
+        std::fs::write(
+            &config,
+            text.replacen("[e2e]\n", "[e2e]\nkeep_logs = true\n", 1),
+        )
+        .unwrap();
+    }
+
     fn json(&self, args: &[&str]) -> (Output, Value) {
         let out = self.test(&[args, &["--json"]].concat());
         let value = serde_json::from_slice(&out.stdout).unwrap();
@@ -244,6 +256,15 @@ fn failures_skips_and_flaky_tests_are_reported() {
             .starts_with("the first step whose result differs is `state load flaky-marker.json` (scenarios/fail/flaky.cdp:7:3): try 2 (passed) gave \"loaded "),
         "{flake}"
     );
+    // Both tries keep their journals, the passing one too: the diagnosis
+    // compares them (plan 22.2).
+    let tried = Path::new(flaky["artifacts"].as_str().unwrap());
+    assert!(tried.ends_with("try-2"), "{}", tried.display());
+    for dir in [tried, tried.parent().unwrap()] {
+        for file in ["requests.txt", "console.txt"] {
+            assert!(dir.join(file).is_file(), "{}", dir.join(file).display());
+        }
+    }
 
     // --bail stops after the first failure.
     let (_, value) = project.json(&["scenarios/fail/fails.cdp", "--bail", "--jobs", "1"]);
@@ -841,18 +862,37 @@ fn every_test_leaves_artifacts_and_a_failure_a_report() {
     assert_eq!(out.status.code(), Some(1));
     let text = stdout(&out);
 
-    // A passing test: the journals, no failure files.
+    // A passing test: its steps, no failure files, and no journals: nobody
+    // reads a passing first try's (plan 22.2).
     let passes = results.join("fail/fails.cdp/passes");
+    let read_steps = || -> Vec<Value> {
+        std::fs::read_to_string(passes.join("steps.jsonl"))
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect()
+    };
+    assert!(passes.join("steps.jsonl").is_file());
+    for file in ["requests.txt", "console.txt", "failure.png"] {
+        assert!(!passes.join(file).exists(), "{file}");
+    }
+    assert!(!stale.exists());
+    let teardown: Vec<Value> = read_steps()
+        .into_iter()
+        .filter(|s| s["hook"] == "teardown")
+        .map(|s| s["command"].clone())
+        .collect();
+    assert_eq!(teardown, ["context close"]);
+
+    // With keep_logs, a passing test has the journals too.
+    project.keep_logs();
+    let out = project.test(&["scenarios/fail/fails.cdp:5"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stdout(&out));
     for file in ["steps.jsonl", "requests.txt", "console.txt"] {
         assert!(passes.join(file).is_file(), "{file}");
     }
-    assert!(!stale.exists());
     assert!(!passes.join("failure.png").exists());
-    let steps: Vec<Value> = std::fs::read_to_string(passes.join("steps.jsonl"))
-        .unwrap()
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect();
+    let steps = read_steps();
     let own: Vec<&Value> = steps.iter().filter(|s| s.get("hook").is_none()).collect();
     assert_eq!(own.len(), 1, "{steps:?}");
     assert_eq!(own[0]["command"], "expect text='Price: 49' visible");
@@ -1383,6 +1423,8 @@ fn files_containing(dir: &Path, needle: &str) -> Vec<PathBuf> {
 fn the_same_scenarios_pass_against_the_mocks_and_a_real_backend() {
     let Some(chrome) = chrome_path() else { return };
     let project = Project::new(&chrome);
+    // The requests of passing tests are read below.
+    project.keep_logs();
     let shop = "scenarios/backends/shop.cdp";
 
     // The mocks: the real-only test is skipped, and says why.
@@ -1566,6 +1608,8 @@ fn free_port() -> u16 {
 fn a_mock_server_answers_server_side_fetches_per_test() {
     let Some(chrome) = chrome_path() else { return };
     let project = Project::new(&chrome);
+    // The requests of passing tests are read below.
+    project.keep_logs();
     let config = project.root.join("chrome-cdp.toml");
     let base = std::fs::read_to_string(&config).unwrap();
     let port = free_port();
@@ -1633,6 +1677,8 @@ fn a_mock_server_answers_server_side_fetches_per_test() {
 fn a_hybrid_backends_mock_server_forwards_to_its_upstream() {
     let Some(chrome) = chrome_path() else { return };
     let project = Project::new(&chrome);
+    // The requests of passing tests are read below.
+    project.keep_logs();
     let config = project.root.join("chrome-cdp.toml");
     let base = std::fs::read_to_string(&config).unwrap();
     let port = free_port();

@@ -120,6 +120,8 @@ fn defaults_fill_an_empty_section() {
     assert_eq!(c.retries, 0);
     assert!(!c.allow_console_errors);
     assert!(parse("[e2e]\nallow_console_errors = true\n").allow_console_errors);
+    assert!(!c.keep_logs);
+    assert!(parse("[e2e]\nkeep_logs = true\n").keep_logs);
     assert_eq!(c.fingerprints, super::Fingerprints::Auto);
     assert_eq!(
         parse("[e2e]\nfingerprints = \"read\"\n").fingerprints,
@@ -323,6 +325,11 @@ fn rejects_bad_values() {
     );
     assert!(error("[e2e]\ndefault_mocks = [\"../x\"]\n").contains("leaves the mocks directory"));
     assert!(error("[e2e]\ntests = []\n").ends_with("e2e.tests: name at least one glob"));
+    let keep = error("[e2e]\nkeep_logs = \"yes\"\n");
+    assert!(
+        keep.starts_with("/p/chrome-cdp.toml:2:13: ") && keep.contains("expected a boolean"),
+        "{keep}"
+    );
     assert!(
         error("[e2e.determinism]\nfreeze_time = true\n")
             .contains("a time such as \"2026-01-01T10:00:00Z\", or false")

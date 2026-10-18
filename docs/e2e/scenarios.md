@@ -215,10 +215,11 @@ error: 1 of 4 tests failed
 and failure (the step's `file:line:col`, its text, and its error);
 `chrome-cdp schema test` has its schema.
 
-Every test leaves `steps.jsonl`, `requests.txt` and `console.txt` in
-`e2e/.results/<file>/<test>/`, and a failed one a `report.md` (its path is
+Every test leaves `steps.jsonl` in `e2e/.results/<file>/<test>/`, and a
+failed one `requests.txt`, `console.txt` and a `report.md` (its path is
 printed under the test's line) with the step, the error, the page around
-it, console errors and failed requests. `--debug` keeps the first failed
+it, console errors and failed requests (`keep_logs = true` in `[e2e]`
+keeps the requests and console of passing tests too). `--debug` keeps the first failed
 test's page open, `--watch` reruns tests as files change, and `--reporter
 junit,html` writes files for CI and humans: see
 [debugging.md](debugging.md).

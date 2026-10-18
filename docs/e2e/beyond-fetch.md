@@ -236,5 +236,6 @@ forward the header.
 
 Unmatched requests to the mock server in the scope of a `fail` set fail
 the test that sent them (when they carry its header), with the closest
-mocks, as browser requests do. Each test's `requests.txt` ends with the
+mocks, as browser requests do. A test's `requests.txt` (written for a
+failed test, or for every test with `keep_logs = true`) ends with the
 mock server's requests of the test (`== mock server …`).
