@@ -1,6 +1,6 @@
 # Plan 22 — Fast suites
 
-Status: IN PROGRESS (22.1 and 22.2 done; 22.2's < 30 ms target not met)
+Status: IN PROGRESS (22.1 and 22.2 done)
 Depends on: 05 §5.5 (the post-action report and its settle), 08 §8.2
 (`batch`), 10 §10.4 (the benchmarks), 11 (the runner, `--jobs`,
 `--shard`), 18 §18.3 (flake diagnosis)
@@ -334,15 +334,25 @@ baseline, with no new flakes.
   neither kept nor given stable locators. The worker now says so for its
   whole thread (`daemon::client::keep_history`), which also covers a
   step's own `run` or `batch`; the protocol needs no new field.
-- 22.2: the overhead target (< 30 ms) is not met: 123 ms per test on
-  the scale suite with one job (126 ms in 22.1), 131 ms in
-  `tests/bench.rs`. The round trips this milestone removed were a small
-  part of it; what is left is Chrome's: about 80 ms to make the new
-  context's first tab ready and about 20 ms to dispose of the context.
-  Meeting the target needs a context made before the test asks for one
-  (a fresh, unused one, so it is not the "reusing a context" this plan
-  leaves out) and the disposal off the test's path. Left for a later
-  milestone with 22.4's look at why `context new` slows down with more
-  jobs. Wall time above 8 jobs read about 5% higher than 22.1's table,
-  but the 22.1 build, run again the same day, was as slow: the
-  machine's, not the change's (docs/benchmarks.md).
+- 22.2: the round trips were a small part of the overhead (126 to 123
+  ms per test on the scale suite with one job). Nearly all of the rest
+  was Chrome's: about 80 ms to make a new context's tab ready and about
+  20 ms to dispose of a context. So in a session of its own (not with
+  `--session` or `--debug`, where the user sees the contexts) the runner
+  takes both off the test's path: `context new` with `ahead` takes a
+  context the daemon made while the last test ran, fresh and unused, so
+  this is not the "reusing a context" this plan leaves out; and `context
+  close` with `background` forgets the context at once and leaves its
+  disposal to when the next context is made ahead. Two things the
+  measurements showed: Chrome answers one call at a time, so the next
+  context is made (and the closed one disposed of) only once the test's
+  own context has its settings, else they slow the settings down; and
+  request interception is the whole session's, so a background close
+  leaves it on rather than switching every tab off and on again. Tabs of
+  a context made ahead have no context name until taken, which is how
+  `tabs`, `status` and the fallback tab leave them out. At most 8 are
+  made ahead. The cost, kept rather than reverted: Chrome's memory (1.9
+  GB instead of 1.5 with one job, 18 instead of 12.4 GB with 32), and
+  with 32 jobs, past where wall time stops dropping, a slower run (189 s
+  against 180 s). How many to make ahead, and when to dispose, belongs
+  with 22.4's curve.

@@ -200,35 +200,32 @@ Last run: 2026-10-18 on macos-aarch64 (16 CPUs), Google Chrome for Testing 155.0
 
 | `--jobs` | Wall time | Per test | Test p50 | Overhead | setup | check | teardown | other | Chrome RSS | Daemon RSS | Failed |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1 | 1965 s | 1965 ms | 987 ms | 123 ms | 94.0 ms | 0 ms | 21.7 ms | 7.51 ms | 1.5 GB | 22 MB | 0 |
-| 2 | 996 s | 996 ms | 1027 ms | 129 ms | 115 ms | 0.00 ms | 6.05 ms | 8.05 ms | 1.9 GB | 23 MB | 0 |
-| 4 | 516 s | 516 ms | 1087 ms | 150 ms | 138 ms | 0.00 ms | 4.37 ms | 7.74 ms | 2.7 GB | 24 MB | 0 |
-| 8 | 291 s | 291 ms | 1317 ms | 247 ms | 234 ms | 0.01 ms | 5.50 ms | 7.48 ms | 4.1 GB | 29 MB | 0 |
-| 16 | 199 s | 199 ms | 1998 ms | 560 ms | 541 ms | 0.02 ms | 10.8 ms | 7.71 ms | 6.9 GB | 35 MB | 0 |
-| 32 | 182 s | 182 ms | 3785 ms | 1767 ms | 1732 ms | 0.04 ms | 26.1 ms | 8.52 ms | 12.4 GB | 47 MB | 0 |
+| 1 | 1950 s | 1950 ms | 973 ms | 19.9 ms | 12.2 ms | 0.00 ms | 0 ms | 7.67 ms | 1.9 GB | 27 MB | 0 |
+| 2 | 985 s | 985 ms | 975 ms | 20.7 ms | 13.5 ms | 0.00 ms | 0 ms | 7.22 ms | 2.6 GB | 28 MB | 0 |
+| 4 | 509 s | 509 ms | 1041 ms | 27.0 ms | 20.2 ms | 0.01 ms | 0.00 ms | 6.83 ms | 3.9 GB | 30 MB | 0 |
+| 8 | 283 s | 283 ms | 1188 ms | 64.5 ms | 57.7 ms | 0.01 ms | 0.00 ms | 6.76 ms | 6.6 GB | 34 MB | 0 |
+| 16 | 188 s | 188 ms | 1766 ms | 292 ms | 285 ms | 0.03 ms | 0.00 ms | 7.34 ms | 9.6 GB | 40 MB | 0 |
+| 32 | 189 s | 189 ms | 4295 ms | 2204 ms | 2196 ms | 0.05 ms | 0.00 ms | 8.46 ms | 18.0 GB | 53 MB | 0 |
 <!-- /bench:scale -->
 
-What 22.2 (fewer round trips: one daemon connection per worker, a
-context and its setup in one call, only new unmatched requests, no logs
-for passing first tries) changed, measured this way: little. With one
-job the per-test overhead went from 126 ms to 123 ms. `other` dropped
-from 11.9 to 7.5 ms. `teardown` is now `context close` alone, yet stayed
-about the same (20.4 to 21.7 ms): Chrome disposing of the context is
-nearly all of it. `setup` stayed at 94 ms, nearly all of it Chrome
-making the context's first tab (about 80 ms; making the context itself
-takes 2 ms); the settings now take about 8 ms together. The higher
-wall times above 8 jobs are the machine's, not the change's: the 22.1
-build, run again the same day, took 197 s with 16 jobs and 181 s with
-32 (this build: 198 s and 180 s), with a teardown of 16 and 47 ms
-(this build: 10 and 25 ms). The look for unmatched requests after each
-step is inside the steps' times, so what it saves is not in this table.
+What 22.2 changed. Fewer round trips alone (one daemon connection per
+worker, a context and its setup in one call, only new unmatched
+requests, no logs for passing first tries) took the overhead with one
+job from 126 ms to 123 ms: the rest was Chrome making a context's tab
+(about 80 ms) and disposing of it (about 20 ms). With the runner's
+contexts made ahead and the closed ones disposed of meanwhile (in a
+session of the run's own), it is 19.9 ms with one job and under 30 ms
+up to 4 jobs, and wall time is lower up to 16 jobs (16: 188 s; the 22.1
+build, run again the same day, took 197 s). The cost is Chrome's
+memory, a context or two more per job, and with 32 jobs, past the point
+where wall time stops dropping, 8 contexts made ahead and the closed
+ones awaiting disposal slow the setup (2.2 s a test) and the run (189 s
+against 180 s). The look for unmatched requests after each step is
+inside the steps' times, so what it saves is not in this table.
 
-The same day, `tests/bench.rs` on e2e-shop: an overhead of 131 ms per
-test (before 22.2: 134 ms), of which setup 96 ms, teardown 26 ms and
-other 9 ms (before: 13 ms); the suite took 11.7 s with `--jobs 4`
-(before: 11.8 s). Plan 22.2's target of under 30 ms needs the
-context's tab made before the test asks for it, and its disposal moved
-off the test's path.
+The same day, `tests/bench.rs` on e2e-shop: an overhead of 26 ms per
+test (before 22.2: 134 ms), of which setup 18 ms, teardown 0 ms and
+other 8 ms; the suite took 12.1 s with `--jobs 4` (before: 11.8 s).
 
 ## Agent task benchmark
 
