@@ -3,9 +3,9 @@
 //! `jobs` worker threads take the tests in order. Each test runs in a
 //! fresh browser context of the worker's session (`context new`), which
 //! gets the test's mock sets, its viewport and the settings that make it
-//! behave the same in every run ([`super::determinism`], 11.6) before its
-//! `@before` steps, its own steps and its `@after` steps run; the context
-//! is closed after.
+//! behave the same in every run ([`super::determinism`], 11.6), all in
+//! the one call that makes it (plan 22.2), before its `@before` steps,
+//! its own steps and its `@after` steps run; the context is closed after.
 //! Every step goes through the same code as a CLI command
 //! ([`crate::run`]), with `--session` and `--context` set; a worker's
 //! calls share one runtime and one daemon connection
@@ -479,6 +479,9 @@ struct Runner<'a> {
     covered: RefCell<(String, bool)>,
 }
 
+/// How a part of a test went.
+type Ran = Result<(), Box<TestFailure>>;
+
 /// A step's place in a test, for its failure.
 #[derive(Clone, Copy)]
 enum Part {
@@ -655,12 +658,10 @@ impl Runner<'_> {
         let mut capture = None;
         let mut logs = Logs::default();
         let mut kept = false;
-        let result = match self.new_context(subject.place) {
+        let result = match self.new_context(settings, subject.place, deadline) {
             Err(failure) => Err(failure),
-            Ok(context) => {
-                let mut result = self
-                    .settle(&context, settings, subject.place, deadline)
-                    .and_then(|()| body(&context));
+            Ok((context, setup)) => {
+                let mut result = setup.and_then(|()| body(&context));
                 if result.is_err() {
                     capture = Some(self.capture(dir, &context));
                 }
@@ -800,42 +801,19 @@ impl Runner<'_> {
         format!("{}:{}", self.plan.scenarios[test.file].name, test.line)
     }
 
-    /// Makes the context a test (or hook) runs in.
-    fn new_context(&self, span: &str) -> Result<String, Box<TestFailure>> {
-        let out = self
-            .setup(&["context", "new"], None, None, span)
-            .map_err(|e| setup_failure(span, "context new", e))?;
-        out.data["context"]["id"]
-            .as_str()
-            .map(str::to_owned)
-            .ok_or_else(|| {
-                setup_failure(
-                    span,
-                    "context new",
-                    ErrorInfo::new(ErrorKind::ProtocolError, "context new gave no context id"),
-                )
-            })
-    }
-
-    fn close_context(&self, context: &str, span: &str) {
-        let started = Instant::now();
-        let result = self.invoke(&["context", "close", context], None, None);
-        // Without the id, which changes from run to run.
-        self.record_teardown("context close", span, result.as_ref(), started);
-        if let Err(e) = result {
-            tracing::warn!("cannot close context {context}: {}", e.message);
-        }
-    }
-
-    /// Gives a fresh context its mock sets, viewport and the settings
-    /// that make it behave the same in every run.
-    fn settle(
+    /// Makes the context a test (or hook) runs in, with its mock sets,
+    /// viewport and the settings that make it behave the same in every
+    /// run, in one call (plan 22.2); each setting is still a `setup`
+    /// record of its own, with the time it took. The context, and how
+    /// its setup went.
+    fn new_context(
         &self,
-        context: &str,
         settings: &Settings,
         span: &str,
         deadline: Instant,
-    ) -> Result<(), Box<TestFailure>> {
+    ) -> Result<(String, Ran), Box<TestFailure>> {
+        // Each setting's words as recorded, and as its failure names it.
+        let mut setup: Vec<(Vec<String>, String)> = Vec::new();
         // Real mode: only the backend's own sets (hybrid mode), without
         // the defaults or the tests' @mocks.
         let words: Option<Vec<&str>> = if self.plan.real() {
@@ -855,84 +833,162 @@ impl Runner<'_> {
         };
         let served = self.served();
         let id = self.test_id.borrow().clone();
-        let mut tagged: Vec<String> = Vec::new();
-        if let (Some(server), Some(_)) = (served, &words) {
-            // The server's partition for the test, with the test's sets;
-            // the context's requests to the app and to the server say
-            // which it is.
-            let sets = if self.plan.real() {
-                self.plan.backend.mocks.clone()
-            } else {
-                self.plan.mock_mode_sets(settings)
-            };
-            let loaded = self
-                .load_sets(&sets)
-                .map_err(|e| setup_failure(span, "mock serve", e))?;
-            let frozen = self
-                .plan
-                .determinism
-                .freeze_time
-                .as_deref()
-                .and_then(|t| protocol::format::parse_time(t).ok());
-            server.partition(&id, loaded, frozen);
-            tagged.extend(["--test-id".to_owned(), id.clone()]);
-            let origins = self
-                .plan
-                .backend
-                .web_servers
-                .iter()
-                .map(|w| w.url.clone())
-                .chain(self.plan.backend.base_url.clone())
-                .chain(std::iter::once(server.url()));
-            for origin in origins {
-                tagged.extend(["--test-origin".to_owned(), origin]);
-            }
-        }
-        if let Some(mut words) = words {
+        if let Some(words) = words {
             let text = words.join(" ");
-            words.extend(tagged.iter().map(String::as_str));
-            self.setup(&words, Some(context), Some(deadline), span)
-                .map_err(|e| setup_failure(span, &text, e))?;
+            let mut words: Vec<String> = words.into_iter().map(str::to_owned).collect();
+            if let Some(server) = served {
+                // The server's partition for the test, with the test's
+                // sets; the context's requests to the app and to the
+                // server say which it is.
+                let sets = if self.plan.real() {
+                    self.plan.backend.mocks.clone()
+                } else {
+                    self.plan.mock_mode_sets(settings)
+                };
+                let loaded = self
+                    .load_sets(&sets)
+                    .map_err(|e| setup_failure(span, "mock serve", e))?;
+                let frozen = self
+                    .plan
+                    .determinism
+                    .freeze_time
+                    .as_deref()
+                    .and_then(|t| protocol::format::parse_time(t).ok());
+                server.partition(&id, loaded, frozen);
+                words.extend(["--test-id".to_owned(), id.clone()]);
+                let origins = self
+                    .plan
+                    .backend
+                    .web_servers
+                    .iter()
+                    .map(|w| w.url.clone())
+                    .chain(self.plan.backend.base_url.clone())
+                    .chain(std::iter::once(server.url()));
+                for origin in origins {
+                    words.extend(["--test-origin".to_owned(), origin]);
+                }
+            }
+            setup.push((words, text));
         }
         let size = settings
             .viewport
             .unwrap_or(self.plan.config.viewport)
             .to_string();
-        let words: &[&str] = match settings.device.as_deref() {
-            Some(device) => &["emulate", device],
-            None => &["viewport", size.as_str(), "--dpr", "1"],
+        let words: Vec<String> = match settings.device.as_deref() {
+            Some(device) => vec!["emulate".into(), device.into()],
+            None => vec!["viewport".into(), size, "--dpr".into(), "1".into()],
         };
-        self.setup(words, Some(context), Some(deadline), span)
-            .map_err(|e| setup_failure(span, &words.join(" "), e))?;
+        let text = words.join(" ");
+        setup.push((words, text));
         for words in determinism::commands(&self.plan.determinism) {
-            let words: Vec<&str> = words.iter().map(String::as_str).collect();
-            self.setup(&words, Some(context), Some(deadline), span)
-                .map_err(|e| setup_failure(span, &setup_text(&words), e))?;
+            let text = setup_text(&words.iter().map(String::as_str).collect::<Vec<_>>());
+            setup.push((words, text));
         }
-        Ok(())
+        // The calls of the settings, up to the first that cannot be made.
+        let global = self.global(None, Some(deadline));
+        let mut calls = Vec::new();
+        let mut unmade = None;
+        for (words, _) in &setup {
+            match script::command(words, &global).and_then(|cli| crate::session::setup_call(&cli)) {
+                Ok(call) => calls.push(call),
+                Err(e) => {
+                    unmade = Some(e);
+                    break;
+                }
+            }
+        }
+        let started = Instant::now();
+        let result = crate::session::context_new(&self.global(None, None), calls);
+        let took = started.elapsed();
+        let made = result.as_ref().ok().map(|out| {
+            serde_json::from_value::<Vec<engine::SetupDone>>(out.data["setup"].clone())
+                .unwrap_or_default()
+        });
+        let setup_took: Duration = made
+            .iter()
+            .flatten()
+            .map(|d| Duration::from_millis(d.ms))
+            .sum();
+        let own = took.saturating_sub(setup_took);
+        self.record_setup(&["context", "new"], span, result.as_ref(), started, own);
+        let out = result.map_err(|e| setup_failure(span, "context new", e))?;
+        let context = out.data["context"]["id"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                setup_failure(
+                    span,
+                    "context new",
+                    ErrorInfo::new(ErrorKind::ProtocolError, "context new gave no context id"),
+                )
+            })?;
+        let mut at = started + own;
+        let mut done = made.unwrap_or_default().into_iter();
+        for (words, text) in &setup {
+            let words: Vec<&str> = words.iter().map(String::as_str).collect();
+            let (result, took) = match done.next() {
+                Some(engine::SetupDone { ms, output, error }) => {
+                    let result = match (output, error) {
+                        (_, Some(error)) => Err(error),
+                        (Some(output), None) => Ok(output),
+                        (None, None) => Err(ErrorInfo::new(
+                            ErrorKind::ProtocolError,
+                            "context new gave no result of this setting",
+                        )),
+                    };
+                    (result, Duration::from_millis(ms))
+                }
+                None => (
+                    Err(unmade.take().unwrap_or_else(|| {
+                        ErrorInfo::new(
+                            ErrorKind::ProtocolError,
+                            "context new did not make this setting",
+                        )
+                    })),
+                    Duration::ZERO,
+                ),
+            };
+            self.record_setup(&words, span, result.as_ref(), at, took);
+            at += took;
+            if let Err(e) = result {
+                return Ok((context, Err(setup_failure(span, text, e))));
+            }
+        }
+        Ok((context, Ok(())))
     }
 
-    /// Runs a command of the runner's setup, and records it.
-    fn setup(
+    fn close_context(&self, context: &str, span: &str) {
+        let started = Instant::now();
+        let result = self.invoke(&["context", "close", context], None, None);
+        // Without the id, which changes from run to run.
+        self.record_teardown("context close", span, result.as_ref(), started);
+        if let Err(e) = result {
+            tracing::warn!("cannot close context {context}: {}", e.message);
+        }
+    }
+
+    /// Adds a `setup` record of command `words`, which started at
+    /// `started` and took `took`.
+    fn record_setup(
         &self,
         words: &[&str],
-        context: Option<&str>,
-        deadline: Option<Instant>,
         span: &str,
-    ) -> Result<Output, ErrorInfo> {
-        let started = Instant::now();
-        let result = self.invoke(words, context, deadline);
+        result: Result<&Output, &ErrorInfo>,
+        started: Instant,
+        took: Duration,
+    ) {
         let mut record = StepRecord::new(
             span.to_owned(),
             setup_text(words),
             Some("setup".to_owned()),
             Vec::new(),
-            result.as_ref(),
+            result,
         );
         // Ids and session names that change from run to run.
         record.output.clear();
-        self.record(record, started, None);
-        result
+        if let Some(recorder) = self.recorder.borrow_mut().as_mut() {
+            recorder.record(record, started, took);
+        }
     }
 
     /// Runs a command of the runner's teardown (reading the logs), and

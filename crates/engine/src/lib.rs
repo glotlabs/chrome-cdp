@@ -136,11 +136,11 @@ pub use request::{
     OpenInitScript, OpenRequest, PaperFormat, PdfRequest, PerfRequest, PermissionsOp,
     PermissionsRequest, Read, ReadRequest, RecordStartRequest, RecordStopRequest,
     ReproStartRequest, RequestCheck, RouteAction, RouteBody, RouteRequest, RouteSpec,
-    RoutesRequest, ScreenshotRequest, ScrollTo, ShotScale, Since, SnapshotEngine, SnapshotRequest,
-    SourceRequest, StateLoadRequest, StateSaveRequest, StatusRange, StorageArea, StorageOp,
-    StorageRequest, TabCloseRequest, TabNewRequest, TabSelectRequest, TabsRequest, Target,
-    TraceStartRequest, TraceStopRequest, UnrouteRequest, WaitFor, WaitRequest, WaitUntil, WhyFor,
-    WhyRequest,
+    RoutesRequest, ScreenshotRequest, ScrollTo, SetupCall, SetupDone, ShotScale, Since,
+    SnapshotEngine, SnapshotRequest, SourceRequest, StateLoadRequest, StateSaveRequest,
+    StatusRange, StorageArea, StorageOp, StorageRequest, TabCloseRequest, TabNewRequest,
+    TabSelectRequest, TabsRequest, Target, TraceStartRequest, TraceStopRequest, UnrouteRequest,
+    WaitFor, WaitRequest, WaitUntil, WhyFor, WhyRequest,
 };
 pub use snapshot::{
     DEFAULT_ENGINE, RefCall, check_find, check_snapshot, is_interactive, is_landmark,

@@ -863,10 +863,42 @@ fn every_test_leaves_artifacts_and_a_failure_a_report() {
             .iter()
             .any(|s| s["hook"] == "before" && s["command"] == "goto /e2e/shop.html")
     );
+    // The context's setup, made in one call (plan 22.2), is a record per
+    // setting, in order, each with its own time.
+    let setup: Vec<&Value> = steps.iter().filter(|s| s["hook"] == "setup").collect();
+    let heads: Vec<String> = setup
+        .iter()
+        .map(|s| {
+            let words: Vec<&str> = s["command"].as_str().unwrap().split(' ').collect();
+            words[..2.min(words.len())].join(" ")
+        })
+        .collect();
+    assert_eq!(
+        heads,
+        [
+            "context new",
+            "mock use",
+            "viewport 1280x800",
+            "time freeze",
+            "init-script add",
+            "media --reduced-motion",
+            "locale en-US",
+            "tz UTC"
+        ],
+        "{setup:?}"
+    );
+    assert!(setup.iter().all(|s| s["ok"] == true), "{setup:?}");
+    let ends: Vec<u64> = setup
+        .iter()
+        .map(|s| s["start_ms"].as_u64().unwrap() + s["duration_ms"].as_u64().unwrap())
+        .collect();
     assert!(
-        steps
+        setup
             .iter()
-            .any(|s| s["hook"] == "setup" && s["command"] == "mock use")
+            .skip(1)
+            .zip(&ends)
+            .all(|(s, end)| s["start_ms"].as_u64().unwrap() + 1 >= *end),
+        "{setup:?}"
     );
     assert!(steps.iter().any(|s| s["hook"] == "check"));
     // The runner's work after the steps, last: the logs, then the close.

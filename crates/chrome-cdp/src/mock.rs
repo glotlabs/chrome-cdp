@@ -1403,6 +1403,15 @@ impl Pushing<'_> {
 }
 
 fn mock_use(args: &MockUseArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let request = use_request(args, global)?;
+    session::call_session(global, rpc::MOCK_USE, &request, "mock sets")
+}
+
+/// `mock use`'s request: the sets read from the project.
+pub(crate) fn use_request(
+    args: &MockUseArgs,
+    global: &GlobalArgs,
+) -> Result<MockUseRequest, ErrorInfo> {
     let project = Project::find(args.dir.as_deref())?;
     let mut names: Vec<String> = Vec::new();
     if !args.add && !args.no_defaults {
@@ -1420,14 +1429,13 @@ fn mock_use(args: &MockUseArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo
         id: id.clone(),
         origins: args.test_origins.clone(),
     });
-    let request = MockUseRequest {
+    Ok(MockUseRequest {
         sets: project.sources(&names)?,
         add: args.add,
         seed: project.seed,
         test,
         timeout_ms: session::timeout_ms(global),
-    };
-    session::call_session(global, rpc::MOCK_USE, &request, "mock sets")
+    })
 }
 
 /// `mock list --available`: the sets in the mocks directory.

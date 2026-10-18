@@ -653,6 +653,7 @@ pub(crate) fn context(args: &ContextArgs, global: &GlobalArgs) -> Result<Output,
                 url,
                 base_url: ctx.base_url.clone(),
                 timeout_ms: millis(ctx.timeout),
+                setup: Vec::new(),
             };
             let output = ctx.runtime.block_on(session.client.call_output(
                 rpc::CONTEXT_NEW,
@@ -689,6 +690,78 @@ pub(crate) fn context(args: &ContextArgs, global: &GlobalArgs) -> Result<Output,
                 .block_on(client.call_output(rpc::CONTEXT_CLOSE, &request, ctx.long_wait()))
         }
     }
+}
+
+/// `context new` that makes `setup`'s calls in the new context before it
+/// answers (`test`'s setup in one round trip, plan 22.2).
+pub(crate) fn context_new(
+    global: &GlobalArgs,
+    setup: Vec<engine::SetupCall>,
+) -> Result<Output, ErrorInfo> {
+    let ctx = Ctx::new(global)?;
+    let (mut session, warnings) = with_browser(&ctx)?;
+    let request = ContextNewRequest {
+        url: None,
+        base_url: ctx.base_url.clone(),
+        timeout_ms: millis(ctx.timeout),
+        setup,
+    };
+    let output = ctx.runtime.block_on(session.client.call_output(
+        rpc::CONTEXT_NEW,
+        &request,
+        ctx.long_wait(),
+    ))?;
+    Ok(warnings.into_iter().fold(output, Output::warning))
+}
+
+/// The call that setup command `cli` (`mock use`, `viewport`, `emulate`,
+/// `time`, `media`, `locale`, `tz` or `init-script add`) sends, for
+/// [`context_new`]'s `setup`.
+pub(crate) fn setup_call(cli: &crate::cli::Cli) -> Result<engine::SetupCall, ErrorInfo> {
+    use crate::cli::{Command, MockCommand};
+    let global = &cli.global;
+    let emulate = |change: EmulationChange| {
+        (
+            rpc::EMULATE,
+            json!(EmulateRequest {
+                change,
+                timeout_ms: millis(global.timeout_or(DEFAULT_TIMEOUT)),
+            }),
+        )
+    };
+    let (method, params) = match &cli.command {
+        Some(Command::Mock(crate::cli::MockArgs {
+            command: MockCommand::Use(args),
+        })) => (
+            rpc::MOCK_USE,
+            json!(crate::mock::use_request(args, global)?),
+        ),
+        Some(Command::Viewport(args)) => emulate(crate::emulate::viewport(args)?),
+        Some(Command::Emulate(args)) if !args.list => {
+            emulate(crate::emulate::emulate(args, &global.session)?)
+        }
+        Some(Command::Time(args)) => emulate(crate::emulate::time(&args.command)?),
+        Some(Command::Media(args)) => emulate(crate::emulate::media(args)?),
+        Some(Command::Locale(args)) => emulate(crate::emulate::locale(args)),
+        Some(Command::Tz(args)) => emulate(crate::emulate::timezone(args)),
+        Some(Command::InitScript(InitScriptArgs {
+            command: InitScriptCommand::Add(add),
+        })) => {
+            let mut request = init_script_request(add)?;
+            request.timeout_ms = millis(global.timeout_or(DEFAULT_TIMEOUT));
+            (rpc::INIT_SCRIPT_ADD, json!(request))
+        }
+        _ => {
+            return Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                "not a command of a context's setup",
+            ));
+        }
+    };
+    Ok(engine::SetupCall {
+        method: method.to_owned(),
+        params,
+    })
 }
 
 /// Checks a `--context` before any daemon starts.

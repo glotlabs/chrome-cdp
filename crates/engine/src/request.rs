@@ -389,6 +389,34 @@ pub struct ContextNewRequest {
     #[serde(default)]
     pub base_url: Option<String>,
     pub timeout_ms: u64,
+    /// Calls the daemon makes in the new context, in order, before it
+    /// answers: `test`'s setup of a context (its mock sets, viewport or
+    /// device, and the settings that make it behave the same in every
+    /// run) in one round trip (plan 22.2). The answer's `setup` has each
+    /// call's time and result, up to the first that failed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub setup: Vec<SetupCall>,
+}
+
+/// A call of [`ContextNewRequest::setup`]: a method of the session's
+/// protocol and its params, as a command would send them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetupCall {
+    pub method: String,
+    pub params: Value,
+}
+
+/// How a [`SetupCall`] went: in the answer's `setup`, in order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SetupDone {
+    /// How long it took.
+    pub ms: u64,
+    /// Its answer, if it succeeded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<protocol::Output>,
+    /// Its error, if it failed (the last of the list).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<protocol::ErrorInfo>,
 }
 
 /// `context list`.

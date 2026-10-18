@@ -17,7 +17,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use engine::{Engine, OpenInitScript, OpenRequest};
 use protocol::rpc::{Request, Response, RpcError};
 use protocol::schema::{ClosedSession, SessionState, StatusData};
-use protocol::{ErrorInfo, Output};
+use protocol::{ErrorInfo, ErrorKind, Output};
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
@@ -41,6 +41,10 @@ pub const NO_BROWSER_GRACE: Duration = Duration::from_secs(10);
 /// How long a starting daemon waits for another one to let go of the lock
 /// (a client probing it holds it for an instant).
 const LOCK_WAIT: Duration = Duration::from_secs(2);
+
+/// The calls `context new` makes in its context before it answers
+/// (`test`'s setup, plan 22.2): the settings of a context, no more.
+const SETUP_METHODS: [&str; 3] = [rpc::MOCK_USE, rpc::EMULATE, rpc::INIT_SCRIPT_ADD];
 
 /// How long working out a ref's stable locator for the history may take.
 const STABLE_WAIT: Duration = Duration::from_secs(2);
@@ -429,6 +433,46 @@ impl Daemon {
             .await
     }
 
+    /// Makes `setup`'s calls in the context `context new` made (`made`),
+    /// in order, until one fails; `made` gets how each went, as `setup`.
+    async fn set_up(&self, mut made: Output, setup: Vec<engine::SetupCall>) -> Output {
+        let context = made.data["context"]["id"].as_str().map(str::to_owned);
+        let mut done: Vec<engine::SetupDone> = Vec::new();
+        for call in setup {
+            let started = Instant::now();
+            let result = if SETUP_METHODS.contains(&call.method.as_str()) {
+                let req = Request::new(0, &call.method, call.params).in_context(context.clone());
+                let mut exit = false;
+                let answer =
+                    engine::in_context(context.clone(), Box::pin(self.call(req, &mut exit))).await;
+                answer
+                    .map_err(protocol::rpc::RpcError::into_error_info)
+                    .and_then(|value| {
+                        serde_json::from_value::<Output>(value).map_err(|e| {
+                            ErrorInfo::new(ErrorKind::ProtocolError, format!("bad answer: {e}"))
+                        })
+                    })
+            } else {
+                Err(ErrorInfo::new(
+                    ErrorKind::BadArgs,
+                    format!("{} cannot be part of a context's setup", call.method),
+                ))
+            };
+            let ms = millis(started.elapsed());
+            let failed = result.is_err();
+            let (output, error) = match result {
+                Ok(output) => (Some(output), None),
+                Err(error) => (None, Some(error)),
+            };
+            done.push(engine::SetupDone { ms, output, error });
+            if failed {
+                break;
+            }
+        }
+        made.data["setup"] = json!(done);
+        made
+    }
+
     /// Runs one call; sets `exit` when the daemon should exit after
     /// answering.
     async fn call(&self, req: Request, exit: &mut bool) -> Result<Value, RpcError> {
@@ -453,8 +497,14 @@ impl Daemon {
                 *exit = true;
                 Ok(json!(self.close_session().await))
             }
-            rpc::CONTEXT_NEW => match params(req.params) {
-                Ok(p) => output(self.engine.context_new(p).await),
+            rpc::CONTEXT_NEW => match params::<engine::ContextNewRequest>(req.params) {
+                Ok(mut p) => {
+                    let setup = std::mem::take(&mut p.setup);
+                    match self.engine.context_new(p).await {
+                        Ok(out) if !setup.is_empty() => output(Ok(self.set_up(out, setup).await)),
+                        made => output(made),
+                    }
+                }
                 Err(e) => Err(e),
             },
             rpc::CONTEXT_LIST => match params(req.params) {

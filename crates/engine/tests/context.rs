@@ -67,6 +67,7 @@ async fn new_context(engine: &Engine, url: &str) -> ContextNewData {
             url: Some(url.to_owned()),
             base_url: None,
             timeout_ms: TIMEOUT_MS,
+            setup: Vec::new(),
         })
         .await
         .unwrap_or_else(|e| panic!("context new: {}", e.to_text()));
