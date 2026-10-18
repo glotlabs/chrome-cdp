@@ -58,6 +58,25 @@ pub struct Request {
     /// [`Response::fingerprint`]. Beside the params, like `root`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fingerprint: Option<String>,
+    /// How navigations and actions settle (plan 22.3): `test` for a
+    /// `test` run's steps, else (`None` too) the full settle the command
+    /// line has. Beside the params, like `root`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settle: Option<Settle>,
+}
+
+/// How a call's navigations and actions settle (plan 22.3).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Settle {
+    /// The command line's: after the load event, network idle for 500 ms
+    /// and the DOM quiet for 300 ms; after an action, 150 ms of quiet.
+    #[default]
+    Full,
+    /// A test run's: after the load event, the requests the page started
+    /// done and the DOM quiet for 50 ms, 1 s at most; after an action,
+    /// 50 ms of quiet. The next `expect` retries for whatever comes later.
+    Test,
 }
 
 impl Request {
@@ -73,6 +92,7 @@ impl Request {
             root: None,
             testid_attribute: None,
             fingerprint: None,
+            settle: None,
         }
     }
 

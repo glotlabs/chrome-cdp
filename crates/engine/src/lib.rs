@@ -148,7 +148,7 @@ pub use snapshot::{
 pub use state::{OriginState, StateCookie, StorageState};
 pub use tabs::commands::TabClosed;
 pub use tabs::parse_tab_id;
-pub use wait::check_condition;
+pub use wait::{check_condition, in_settle};
 
 use request::millis;
 use tabs::{Settings, TabLocks, Tabs};

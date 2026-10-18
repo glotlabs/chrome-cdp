@@ -35,7 +35,6 @@ use crate::navigate::watch::{Loaded, Watch};
 use crate::navigate::{describe as describe_page, error_code};
 use crate::request::SnapshotRequest;
 use crate::tabs::BLANK;
-use crate::wait::NAVIGATION_SETTLE;
 
 /// The longest the brief settle after an action that did not navigate
 /// waits.
@@ -248,11 +247,10 @@ impl Actor<'_> {
             let deadline = Instant::now() + self.timeout.min(NAVIGATION_WAIT);
             let loaded = before.watch.until_loaded(deadline).await;
             if loaded == Loaded::Load && before.watch.unreachable.is_none() {
-                let limit = deadline.min(Instant::now() + NAVIGATION_SETTLE);
                 // Not settling is no failure: the page is there.
                 let _ = self
                     .engine
-                    .settle(self.running, self.page, before.start, limit)
+                    .navigation_settle(self.running, self.page, before.start, deadline)
                     .await?;
             }
             if loaded == Loaded::Stopped {

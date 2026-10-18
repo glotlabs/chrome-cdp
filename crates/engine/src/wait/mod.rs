@@ -20,6 +20,7 @@ mod websocket;
 
 use std::time::Duration;
 
+use protocol::rpc::Settle;
 use protocol::schema::{
     ConsoleEntry, DownloadInfo, HotOutcome, HotUpdate, RequestInfo, WaitData, WaitWebSocket,
 };
@@ -51,6 +52,33 @@ pub(crate) const NAVIGATION_SETTLE: Duration = Duration::from_secs(5);
 /// How long the network and the DOM must stay quiet after an action
 /// that did not navigate (see [`Engine::action_settle`]).
 const ACTION_QUIET: Duration = Duration::from_millis(150);
+
+/// How long the network (the requests since the navigation or action)
+/// and the DOM must stay quiet in a test run's settle (plan 22.3): the
+/// next `expect` retries until the page shows what it waits for, so the
+/// settle only gives the page a moment to react.
+pub(crate) const TEST_QUIET: Duration = Duration::from_millis(50);
+
+/// How long a test run's settle after a navigation may take past the load
+/// event (plan 22.3); past it the step goes on without a warning, as an
+/// `expect` waits for whatever comes later.
+pub(crate) const TEST_SETTLE: Duration = Duration::from_secs(1);
+
+tokio::task_local! {
+    /// How the call being handled settles (see [`in_settle`]).
+    static SETTLE: Settle;
+}
+
+/// Runs `fut` (a call's handling) with its navigations and actions
+/// settling as `settle` says (plan 22.3).
+pub async fn in_settle<F: Future>(settle: Settle, fut: F) -> F::Output {
+    SETTLE.scope(settle, fut).await
+}
+
+/// Whether the call being handled settles as a test run's step does.
+pub(crate) fn test_settle() -> bool {
+    SETTLE.try_with(|s| *s == Settle::Test).unwrap_or(false)
+}
 
 /// How many in-flight requests an error or warning lists.
 const LISTED_REQUESTS: usize = 3;
@@ -734,10 +762,10 @@ impl Engine {
 
     /// The brief settle after an action that did not navigate (plan 05,
     /// 5.5): waits until the requests `page` started since `since` are
-    /// done and its DOM went [`ACTION_QUIET`] without a change, up to
-    /// `deadline`; `false` if it did not. Shorter than [`Engine::settle`]:
-    /// most actions change nothing, and requests from before (a page's
-    /// polling) are not the action's.
+    /// done and its DOM went [`ACTION_QUIET`] without a change ([`TEST_QUIET`]
+    /// in a test run), up to `deadline`; `false` if it did not. Shorter
+    /// than [`Engine::settle`]: most actions change nothing, and requests
+    /// from before (a page's polling) are not the action's.
     pub(crate) async fn action_settle(
         &self,
         running: &Running,
@@ -745,20 +773,62 @@ impl Engine {
         since: Instant,
         deadline: Instant,
     ) -> Result<bool, ErrorInfo> {
+        let quiet = if test_settle() {
+            TEST_QUIET
+        } else {
+            ACTION_QUIET
+        };
+        self.quiet_settle(running, page, since, quiet, deadline)
+            .await
+    }
+
+    /// The settle after a navigation, from the load event: [`Engine::settle`]
+    /// for up to [`NAVIGATION_SETTLE`] (`Err`: what kept the network
+    /// busy), or in a test run (plan 22.3) the requests the page started
+    /// since `since` done and the DOM [`TEST_QUIET`] for up to
+    /// [`TEST_SETTLE`], which is never an error.
+    pub(crate) async fn navigation_settle(
+        &self,
+        running: &Running,
+        page: &Page,
+        since: Instant,
+        deadline: Instant,
+    ) -> Result<Result<(), Unmet>, ErrorInfo> {
+        if test_settle() {
+            let limit = deadline.min(Instant::now() + TEST_SETTLE);
+            self.quiet_settle(running, page, since, TEST_QUIET, limit)
+                .await?;
+            return Ok(Ok(()));
+        }
+        let limit = deadline.min(Instant::now() + NAVIGATION_SETTLE);
+        Ok(self.settle(running, page, since, limit).await?.map(drop))
+    }
+
+    /// Waits until the requests `page` started since `since` are done and
+    /// both they and its DOM went `quiet` without a change, up to
+    /// `deadline`; `false` if they did not.
+    async fn quiet_settle(
+        &self,
+        running: &Running,
+        page: &Page,
+        since: Instant,
+        quiet: Duration,
+        deadline: Instant,
+    ) -> Result<bool, ErrorInfo> {
         loop {
             if !running
                 .tabs
-                .own_requests_done(page.id, since, ACTION_QUIET, deadline)
+                .own_requests_done(page.id, since, quiet, deadline)
                 .await
             {
                 return Ok(false);
             }
             let left = deadline.saturating_duration_since(Instant::now());
-            let dom_quiet = self.dom_quiet(running, page, ACTION_QUIET, left).await?;
+            let dom_quiet = self.dom_quiet(running, page, quiet, left).await?;
             // A request the DOM change started: wait for it too.
             let done = running
                 .tabs
-                .own_requests_done(page.id, since, ACTION_QUIET, Instant::now())
+                .own_requests_done(page.id, since, quiet, Instant::now())
                 .await;
             if done {
                 return Ok(dom_quiet);

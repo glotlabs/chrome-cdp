@@ -316,8 +316,10 @@ impl Engine {
         let mut warnings = Vec::new();
         match wait {
             WaitUntil::Settle => {
-                let limit = deadline.min(Instant::now() + NAVIGATION_SETTLE);
-                if let Err(unmet) = self.settle(running, page, start, limit).await? {
+                if let Err(unmet) = self
+                    .navigation_settle(running, page, start, deadline)
+                    .await?
+                {
                     warnings.push(unsettled(&unmet));
                 }
             }

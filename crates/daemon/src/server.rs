@@ -325,32 +325,36 @@ impl Daemon {
                 || (req.method == rpc::ACT
                     && matches!(req.params["action"]["kind"].as_str(), Some("fill" | "type"))));
         let tab = req.params["tab"].as_str().map(str::to_owned);
+        let settle = req.settle.unwrap_or_default();
         let (refs, (result, fingerprint), passwords) = engine::in_context(
             context.clone(),
-            Box::pin(engine::in_root(root, async {
-                // A ref's element may be gone once the command ran.
-                let refs = match &line {
-                    Some(words) if kept => self.stable_locators(words, testid.as_deref()).await,
-                    _ => Vec::new(),
-                };
-                let call = engine::noting(self.call(req, &mut exit));
-                let ((result, notices), fingerprint) = Box::pin(self.engine.fingerprinting(
-                    wanted,
-                    call,
-                    |(result, _)| result.is_ok(),
-                ))
-                .await;
-                let passwords = if typing {
-                    self.password_values(tab.as_deref()).await
-                } else {
-                    Vec::new()
-                };
-                (
-                    refs,
-                    (with_notices(result, notices), fingerprint),
-                    passwords,
-                )
-            })),
+            Box::pin(engine::in_root(
+                root,
+                engine::in_settle(settle, async {
+                    // A ref's element may be gone once the command ran.
+                    let refs = match &line {
+                        Some(words) if kept => self.stable_locators(words, testid.as_deref()).await,
+                        _ => Vec::new(),
+                    };
+                    let call = engine::noting(self.call(req, &mut exit));
+                    let ((result, notices), fingerprint) = Box::pin(self.engine.fingerprinting(
+                        wanted,
+                        call,
+                        |(result, _)| result.is_ok(),
+                    ))
+                    .await;
+                    let passwords = if typing {
+                        self.password_values(tab.as_deref()).await
+                    } else {
+                        Vec::new()
+                    };
+                    (
+                        refs,
+                        (with_notices(result, notices), fingerprint),
+                        passwords,
+                    )
+                }),
+            )),
         )
         .await;
         if let Some(words) = line {

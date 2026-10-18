@@ -17,7 +17,7 @@ use std::path::Path;
 use std::process::{Child, Stdio};
 use std::time::{Duration, Instant};
 
-use protocol::rpc::Request;
+use protocol::rpc::{Request, Settle};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Output, format};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -173,6 +173,29 @@ thread_local! {
 /// out no stable locators for it.
 pub fn keep_history(on: bool) {
     NO_HISTORY.with(|off| off.set(!on));
+}
+
+thread_local! {
+    /// How this thread's calls ask navigations and actions to settle
+    /// (`test`'s workers, plan 22.3); `None`: the daemon's default, the
+    /// full settle.
+    static SETTLE: std::cell::Cell<Option<Settle>> = const { std::cell::Cell::new(None) };
+}
+
+/// Makes this thread's calls settle as `settle` says (`None`: as the
+/// command line does).
+pub fn set_settle(settle: Option<Settle>) {
+    SETTLE.with(|s| s.set(settle));
+}
+
+/// Runs `f` with this thread's calls asking for the full settle, whatever
+/// [`set_settle`] set: a step's own `goto --wait settle` asks for more
+/// than a test run's settle.
+pub fn full_settle<R>(f: impl FnOnce() -> R) -> R {
+    let was = SETTLE.with(|s| s.replace(None));
+    let out = f();
+    SETTLE.with(|s| s.set(was));
+    out
 }
 
 /// Sets the words of the command about to run on this thread (`None`
@@ -437,6 +460,7 @@ impl Client {
                     .unwrap_or_else(std::sync::PoisonError::into_inner),
             );
             request.fingerprint = FINGERPRINT.with(|f| f.borrow().0.clone());
+            request.settle = SETTLE.with(std::cell::Cell::get);
         }
         request
     }
