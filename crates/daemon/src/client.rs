@@ -153,6 +153,21 @@ pub fn set_testid_attribute(attribute: Option<String>) {
         .unwrap_or_else(std::sync::PoisonError::into_inner) = attribute;
 }
 
+thread_local! {
+    /// Whether this thread's calls leave the session's history alone
+    /// (`test`'s workers, plan 22.2: nothing reads a test session's
+    /// history, and keeping it costs the daemon the refs' locators).
+    static NO_HISTORY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Makes this thread's calls carry no words for the history (`false`),
+/// whatever [`set_history_line`] sets, or carry them again (`true`). A
+/// call without words is not kept in the history, and the daemon works
+/// out no stable locators for it.
+pub fn keep_history(on: bool) {
+    NO_HISTORY.with(|off| off.set(!on));
+}
+
 /// Sets the words of the command about to run on this thread (`None`
 /// for one that is not to be kept in the history). Its first call to a
 /// daemon carries them, with the password of `--http-credentials` hidden.
@@ -401,7 +416,9 @@ impl Client {
         let params = serde_json::to_value(params).unwrap_or(Value::Null);
         let mut request = Request::new(id, method, params).in_context(self.context.clone());
         if method != rpc::HELLO {
-            request.line = LINE.with(|line| line.borrow_mut().take());
+            request.line = LINE
+                .with(|line| line.borrow_mut().take())
+                .filter(|_| !NO_HISTORY.with(std::cell::Cell::get));
             request.root.clone_from(
                 &ROOT
                     .read()

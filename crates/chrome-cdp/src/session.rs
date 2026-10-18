@@ -159,7 +159,8 @@ thread_local! {
 
 /// A thread of `test` that runs many commands in one session: they share
 /// a runtime and one daemon connection (plan 22.2), instead of starting a
-/// runtime, connecting and saying hello for each. Over when dropped.
+/// runtime, connecting and saying hello for each; and they leave the
+/// session's history alone. Over when dropped.
 pub(crate) struct Worker(());
 
 impl Worker {
@@ -170,6 +171,7 @@ impl Worker {
             WORKER.with(|w| *w.borrow_mut() = Some(Rc::new(runtime)));
             client::keep_connection(true);
         }
+        client::keep_history(false);
         Self(())
     }
 }
@@ -178,6 +180,7 @@ impl Drop for Worker {
     fn drop(&mut self) {
         // The connection first, while its runtime still runs.
         client::keep_connection(false);
+        client::keep_history(true);
         let _ = WORKER.try_with(|w| w.borrow_mut().take());
     }
 }
