@@ -865,7 +865,7 @@ pub(crate) fn goto(args: &GotoArgs, global: &GlobalArgs) -> Result<Output, Error
         url,
         base_url: ctx.base_url.clone(),
     };
-    let output = navigate(&ctx, &mut session.client, navigation, args.wait.wait)?;
+    let output = navigate(&ctx, &mut session.client, navigation, &args.wait)?;
     Ok(warnings.into_iter().fold(output, Output::warning))
 }
 
@@ -878,7 +878,7 @@ pub(crate) fn history(
     check_tab(global.tab.as_deref())?;
     let ctx = Ctx::new(global)?;
     let mut client = running_session(&ctx)?;
-    navigate(&ctx, &mut client, navigation, args.wait.wait)
+    navigate(&ctx, &mut client, navigation, &args.wait)
 }
 
 /// `reload [--hard]`: needs a running session.
@@ -887,23 +887,32 @@ pub(crate) fn reload(args: &ReloadArgs, global: &GlobalArgs) -> Result<Output, E
     let ctx = Ctx::new(global)?;
     let mut client = running_session(&ctx)?;
     let navigation = Navigation::Reload { hard: args.hard };
-    navigate(&ctx, &mut client, navigation, args.wait.wait)
+    navigate(&ctx, &mut client, navigation, &args.wait)
 }
 
 fn navigate(
     ctx: &Ctx,
     client: &mut daemon::client::Client,
     navigation: Navigation,
-    wait: crate::cli::Wait,
+    wait: &crate::cli::WaitArgs,
 ) -> Result<Output, ErrorInfo> {
     let request = NavigateRequest {
         navigation,
-        wait: wait.to_engine(),
+        wait: wait.wait.to_engine(),
         tab: ctx.tab.clone(),
         timeout_ms: millis(ctx.timeout),
     };
-    ctx.runtime
-        .block_on(client.call_output(rpc::NAVIGATE, &request, ctx.long_wait()))
+    let mut call = || {
+        ctx.runtime
+            .block_on(client.call_output(rpc::NAVIGATE, &request, ctx.long_wait()))
+    };
+    // A `test` step's own `--wait settle` asks for more than the run's
+    // settle (plan 22.3).
+    if wait.given && wait.wait == crate::cli::Wait::Settle {
+        daemon::client::full_settle(call)
+    } else {
+        call()
+    }
 }
 
 /// `wait`: needs a running session.

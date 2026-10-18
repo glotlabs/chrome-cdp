@@ -7232,6 +7232,12 @@ pub(crate) struct WaitArgs {
     /// What to wait for before returning; --timeout bounds it.
     #[arg(long, value_enum, default_value_t = Wait::Settle, value_name = "EVENT")]
     pub(crate) wait: Wait,
+
+    /// Whether the line names `--wait` (a script's, see
+    /// `script::note_wait`): a `test` step's `--wait settle` asks for the
+    /// full settle, not the test run's (plan 22.3).
+    #[arg(skip)]
+    pub(crate) given: bool,
 }
 
 /// What a navigation waits for.

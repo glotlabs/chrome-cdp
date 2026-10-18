@@ -280,6 +280,7 @@ pub(crate) fn step(line: &Line, vars: &dyn Resolve, global: &GlobalArgs) -> Resu
         engine::check_perf_budgets(budgets).map_err(problem)?;
     }
     inherit(&mut cli.global, &matches, global);
+    note_wait(&mut cli, &matches);
     Ok(Step {
         cli,
         span: line.span.clone(),
@@ -297,6 +298,7 @@ pub(crate) fn command(words: &[String], global: &GlobalArgs) -> Result<Cli, Erro
         .map_err(|e| crate::usage_info(&e, words))?;
     let mut cli = Cli::from_arg_matches(&matches).map_err(|e| crate::usage_info(&e, words))?;
     inherit(&mut cli.global, &matches, global);
+    note_wait(&mut cli, &matches);
     Ok(cli)
 }
 
@@ -379,6 +381,20 @@ pub(crate) fn locator_values(matches: &ArgMatches) -> Vec<String> {
         }
     }
     out
+}
+
+/// Notes whether a navigation's line names `--wait` (see
+/// [`crate::cli::WaitArgs::given`]).
+fn note_wait(cli: &mut Cli, matches: &ArgMatches) {
+    let wait = match &mut cli.command {
+        Some(Command::Goto(args)) => &mut args.wait,
+        Some(Command::Back(args) | Command::Forward(args)) => &mut args.wait,
+        Some(Command::Reload(args)) => &mut args.wait,
+        _ => return,
+    };
+    wait.given = matches
+        .subcommand()
+        .is_some_and(|(_, sub)| sub.value_source("wait") == Some(ValueSource::CommandLine));
 }
 
 /// Gives a step the script's global flags, except those its line sets.
