@@ -5,7 +5,7 @@ running 1 test 20 times each from 1 file, 4 at once
       `GET /e2e/api/flaky/price` was still open when `click '#pay'` (scenarios/flaky/settle.cdp:8:3) acted, in all 3 failing runs; it was answered up to <t> later
       in all 17 passing runs it was answered before the step acted (<t> before, at the closest)
       `click '#load'` (scenarios/flaky/settle.cdp:7:3) sent it
-      fix: add `wait --response '**/e2e/api/flaky/price'` after scenarios/flaky/settle.cdp:7:3 (which sends it), or an `expect` of what its answer shows before scenarios/flaky/settle.cdp:8:3
+      fix: add an `expect` of what its answer shows before scenarios/flaky/settle.cdp:8:3, or `wait --response '**/e2e/api/flaky/price'` after scenarios/flaky/settle.cdp:7:3 (which sends it); `settle = "full"` in [e2e] waits for every request after each step, at a cost in time
     first failure at scenarios/flaky/settle.cdp:9:3: expect role=status text 'Paid $5' --timeout <t>
     error: expect failed: role=status text 'Paid $5'
       expected: text containing "Paid $5"

@@ -16,6 +16,7 @@ use engine::{
     WaitRequest, WaitUntil, World,
 };
 use fixtures::Fixtures;
+use protocol::rpc::Settle;
 use protocol::schema::{NavigateData, WaitData};
 use protocol::{ErrorInfo, ErrorKind, Output};
 use serde_json::json;
@@ -774,6 +775,58 @@ async fn goto_settles_by_default() {
         "{}",
         output.warnings[0]
     );
+    engine.close().await;
+}
+
+/// A test run's settle (plan 22.3): after the load event, the page's
+/// own requests and a brief quiet DOM, 1 s at most and without a warning;
+/// the command line's settle is unchanged.
+#[tokio::test]
+async fn a_test_runs_goto_settles_for_less() {
+    let Some(path) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let engine = start(&path).await;
+    let elapsed = |output: &Output| {
+        let nav: NavigateData = serde_json::from_value(output.data.clone()).unwrap();
+        nav.elapsed_ms
+    };
+    let page = site.url("/wait/spa-fetch.html");
+    let full = goto_with(&engine, &page, WaitUntil::Settle).await;
+    let test = engine::in_settle(Settle::Test, goto_with(&engine, &page, WaitUntil::Settle)).await;
+    // The full settle waits 500 ms of network idle after the data came.
+    assert!(elapsed(&full) >= 500, "{}", elapsed(&full));
+    assert!(
+        elapsed(&test) < elapsed(&full),
+        "test {} ms, full {} ms",
+        elapsed(&test),
+        elapsed(&full)
+    );
+    assert!(test.warnings.is_empty(), "{:?}", test.warnings);
+
+    // A page that keeps loading: 1 s after the load event, no warning.
+    let start = Instant::now();
+    let output = engine::in_settle(
+        Settle::Test,
+        goto_with(
+            &engine,
+            &site.url("/wait/slow-request.html?ms=20000"),
+            WaitUntil::Settle,
+        ),
+    )
+    .await;
+    assert!(output.warnings.is_empty(), "{:?}", output.warnings);
+    assert!(
+        start.elapsed() < Duration::from_secs(4),
+        "{:?}",
+        start.elapsed()
+    );
+
+    // `wait --settle` asks for the full settle, in a test run too: the
+    // DOM quiet for 300 ms.
+    goto(&engine, &site.url("/wait/beacon.html")).await;
+    let (data, _) = engine::in_settle(Settle::Test, met(&engine, WaitFor::Settle)).await;
+    assert_eq!(data.met, "page settled: network idle, DOM quiet");
+    assert!(data.elapsed_ms >= 300, "{}", data.elapsed_ms);
     engine.close().await;
 }
 

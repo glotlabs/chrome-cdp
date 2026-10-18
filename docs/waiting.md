@@ -128,6 +128,18 @@ chrome-cdp expect --url /dashboard
 chrome-cdp expect --no-errors
 ```
 
+## In tests, steps wait for less
+
+These waits suit reading the page after each command, which is what an
+agent at the command line does. A `chrome-cdp test` step does not need
+them: the next `expect` retries until it passes, and every action
+already waits for its element. So by default a test run's navigations
+wait for the load event, then until the requests the page started are
+done and the DOM went 50 ms without a change (1 s at most), and its
+actions for 50 ms of quiet instead of 150 ms. `settle = "full"` in
+`[e2e]` keeps the waits above; see
+[e2e/determinism.md](e2e/determinism.md#how-long-a-step-waits).
+
 ## Flaky pages
 
 - **Animations.** An element that keeps moving never becomes stable;

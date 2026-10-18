@@ -675,7 +675,15 @@ fn requests_unmatched_requests_and_console_errors() {
         text.contains("✓ scenarios/checks/checks.cdp:25 may log a console error ("),
         "{text}"
     );
-    assert!(text.contains("5 tests: 2 passed, 3 failed ("), "{text}");
+    // A test run's steps settle briefly (plan 22.3), so the request the
+    // last step started is still open after it: the check waits for it,
+    // and sees the error its answer causes.
+    assert!(
+        text.contains("    failed at scenarios/checks/checks.cdp:28: expect --no-errors --all-tabs (checked after the test's steps)\n"),
+        "{text}"
+    );
+    assert!(text.contains(": late: the offer came"), "{text}");
+    assert!(text.contains("6 tests: 2 passed, 4 failed ("), "{text}");
 
     // allow_console_errors in the config allows them everywhere.
     let config = project.root.join("chrome-cdp.toml");

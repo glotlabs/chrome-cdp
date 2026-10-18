@@ -113,6 +113,8 @@ pub struct Config {
     /// requests (`console.txt`, `requests.txt`); else only tests that
     /// failed a try, or ran under `--repeat`, do (plan 22.2).
     pub keep_logs: bool,
+    /// How a test's navigations and actions settle (plan 22.3).
+    pub settle: Settle,
     /// The app's pages as path patterns (`/products/:id`), which `test
     /// --ui-coverage` groups by; empty: by path template (plan 18.4).
     pub pages: Vec<String>,
@@ -165,6 +167,41 @@ impl Fingerprints {
             Self::Auto => !ci,
             Self::Write => true,
             Self::Read | Self::Off => false,
+        }
+    }
+}
+
+/// `settle`: how long a test's navigations and actions wait for the
+/// page before the next step (plan 22.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Settle {
+    /// After the load event, until the requests the page started are done
+    /// and the DOM was quiet for 50 ms, 1 s at most; 50 ms of quiet after
+    /// an action. The next `expect` waits for what comes later.
+    #[default]
+    Test,
+    /// The command line's waits: network idle for 500 ms and the DOM quiet
+    /// for 300 ms after a navigation, 150 ms of quiet after an action. For
+    /// apps that change the page late without anything an `expect` can
+    /// wait on.
+    Full,
+}
+
+impl Settle {
+    /// The setting as calls carry it.
+    pub fn to_protocol(self) -> protocol::rpc::Settle {
+        match self {
+            Self::Test => protocol::rpc::Settle::Test,
+            Self::Full => protocol::rpc::Settle::Full,
+        }
+    }
+
+    /// The setting as the config writes it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Test => "test",
+            Self::Full => "full",
         }
     }
 }
@@ -540,6 +577,7 @@ impl Check<'_> {
             allow_console_errors: raw.allow_console_errors.unwrap_or(false),
             fingerprints: raw.fingerprints.unwrap_or_default(),
             keep_logs: raw.keep_logs.unwrap_or(false),
+            settle: raw.settle.unwrap_or_default(),
             pages: raw.pages.map(pages).transpose()?.unwrap_or_default(),
             timeout: raw
                 .timeout
@@ -892,6 +930,7 @@ struct RawE2e {
     allow_console_errors: Option<bool>,
     fingerprints: Option<Fingerprints>,
     keep_logs: Option<bool>,
+    settle: Option<Settle>,
     pages: Option<Spanned<Vec<String>>>,
     timeout: Option<Spanned<String>>,
     artifacts: Option<String>,

@@ -24,3 +24,6 @@
 
 @test "may log a console error" @allow-console-errors
   eval "console.error('expected')"
+
+@test "fails on a console error that comes after its last step" @mocks flaky
+  eval "void fetch('/e2e/api/flaky/offer').then(() => console.error('late: the offer came'))"

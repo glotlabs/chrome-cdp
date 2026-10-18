@@ -9,7 +9,9 @@
 //! Every step goes through the same code as a CLI command
 //! ([`crate::run`]), with `--session` and `--context` set; a worker's
 //! calls share one runtime and one daemon connection
-//! ([`crate::session::Worker`], plan 22.2). A failed test
+//! ([`crate::session::Worker`], plan 22.2), and settle as `[e2e]
+//! settle` says: by default for less than on the command line, since the
+//! next `expect` retries (plan 22.3). A failed test
 //! runs again up to its retries; one that then passes is flaky.
 //!
 //! A file's `@before-all` runs once, before its first test (a worker that
@@ -213,6 +215,8 @@ pub(super) fn execute(
             scope.spawn(move || {
                 // One runtime and daemon connection for all its calls.
                 let _worker = crate::session::Worker::start();
+                // Its steps settle as the run's `settle` says (plan 22.3).
+                daemon::client::set_settle(Some(plan.config.settle.to_protocol()));
                 loop {
                     let item = next.fetch_add(1, Ordering::SeqCst);
                     if item >= items {
@@ -339,6 +343,7 @@ fn diagnosed(plan: &Plan, mut outcome: Outcome) -> Outcome {
         .filter_map(|(name, off)| off.then_some(name))
         .collect(),
         animations: !plan.determinism.disable_animations,
+        settle: plan.config.settle,
     };
     outcome.flake = flake::diagnose(&runs, &setting);
     if let Some(flake) = &outcome.flake

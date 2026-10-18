@@ -58,6 +58,39 @@ A step can change any of these for its test: `time freeze
 2026-12-24T18:00:00Z`, `time reset`, `locale de-DE`, `tz Asia/Tokyo`,
 `media --reduced-motion no-preference`.
 
+## How long a step waits
+
+On the command line, `goto` waits after the load event until the network
+has been idle for 500 ms and the DOM unchanged for 300 ms, and every
+action for 150 ms of quiet: whoever reads the page next reads it once.
+A test does not read once. Its `expect`s retry until they pass, and its
+actions wait until their element can be acted on, so those waits only
+add time (about 0.8 s for every `goto` of a page that is already done).
+A test run settles for less:
+
+- a navigation (a `goto`, or one a click caused) waits for the load
+  event, then until the requests the page started since are done and
+  the DOM went 50 ms without a change, 1 s at most;
+- an action that did not navigate waits for its own requests and 50 ms
+  of quiet.
+
+```toml
+[e2e]
+settle = "test"   # the default; "full" waits as the command line does
+```
+
+`settle = "full"` is for apps that change the page late without
+anything an `expect` can wait on: a value filled in by a request that
+ends after the step, with no text or element that shows it arrived.
+Most tests are better off waiting for what they need, which also says
+why: `expect text="Paid" visible`, or `wait --response '**/api/price'`.
+A step can still ask for the full wait itself: `goto /page --wait
+settle`, `wait --settle`, or `wait --idle`.
+
+The check for console errors at the end of a test still sees an error
+that comes late: it first waits for the context's requests to end (1 s
+at most).
+
 ## Finding flaky tests
 
 ```
@@ -76,7 +109,7 @@ first failure:
       `GET /api/price` was still open when `click '#pay'` (e2e/scenarios/cart.cdp:8:3) acted, in all 3 failing runs; it was answered up to 691ms later
       in all 17 passing runs it was answered before the step acted (627ms before, at the closest)
       `click '#load'` (e2e/scenarios/cart.cdp:7:3) sent it
-      fix: add `wait --response '**/api/price'` after e2e/scenarios/cart.cdp:7:3 (which sends it), or an `expect` of what its answer shows before e2e/scenarios/cart.cdp:8:3
+      fix: add an `expect` of what its answer shows before e2e/scenarios/cart.cdp:8:3, or `wait --response '**/api/price'` after e2e/scenarios/cart.cdp:7:3 (which sends it); `settle = "full"` in [e2e] waits for every request after each step, at a cost in time
     first failure at e2e/scenarios/cart.cdp:9:3: expect role=status text 'Paid $5'
 ```
 
@@ -93,7 +126,7 @@ passing ones up to it:
 
 | Cause | What the runs showed |
 |---|---|
-| acted before the page settled (`unsettled`) | A request sent before a step was still open when the step acted in failing runs, and answered before it in every passing run. Names the request, and the step that sent it. |
+| acted before the page settled (`unsettled`) | A request sent before a step was still open when the step acted in failing runs, and answered before it in every passing run. Names the request, and the step that sent it. The fix asks for an `expect` of what the answer shows (or a `wait --response`), and mentions `settle = "full"` last. |
 | requests raced (`race`) | Two API requests were answered in one order in failing runs and in the other in every passing run. Names both. |
 | moving target (`moving-target`) | The failing step's element did not stop moving, was covered, or kept being replaced. Names the covering element. |
 | different requests (`different-requests`) | Failing runs sent a request no passing run did (or skipped one every passing run sent), or one no mock answered. |

@@ -94,8 +94,26 @@ fn a_request_open_when_a_step_acted_is_unsettled() {
             "`goto /flaky.html` (flaky.cdp:5:3) sent it",
         ]
     );
+    // A test run's settle (plan 22.3): an `expect` first, the full
+    // settle last.
     assert_eq!(
         flake.hint.as_deref(),
+        Some(
+            "add an `expect` of what its answer shows before flaky.cdp:6:3, or `wait --response '**/api/price'` after flaky.cdp:5:3 (which sends it); `settle = \"full\"` in [e2e] waits for every request after each step, at a cost in time"
+        )
+    );
+    // The same diagnosis under the full settle, whose fix waits for it.
+    let full = Setting {
+        settle: e2e::config::Settle::Full,
+        ..Setting::default()
+    };
+    let same = diagnose(&runs, &full).unwrap();
+    assert_eq!(
+        (&same.cause, &same.evidence, same.confidence),
+        (&flake.cause, &flake.evidence, flake.confidence)
+    );
+    assert_eq!(
+        same.hint.as_deref(),
         Some(
             "add `wait --response '**/api/price'` after flaky.cdp:5:3 (which sends it), or an `expect` of what its answer shows before flaky.cdp:6:3"
         )
@@ -354,7 +372,7 @@ fn the_text_and_section_name_the_cause() {
         ),
         "{text}"
     );
-    assert!(text.contains("\n      fix: add `wait --response"), "{text}");
+    assert!(text.contains("\n      fix: add an `expect`"), "{text}");
     let md = section(&flake, &runs);
     assert!(
         md.starts_with("\n## Flaky\n\n1 of 2 runs failed at"),

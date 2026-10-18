@@ -38,6 +38,8 @@ writes one). Paths are relative to the file; its base_url is also the
   timeout = "30s"                      per test
   keep_logs = false                    true: passing tests keep their
                                        requests.txt and console.txt too
+  settle = "test"                      how long steps wait for the page;
+                                       "full": as on the command line
   artifacts = "e2e/.results"           reports, screenshots, logs
   viewport = "1280x800"
 

@@ -30,6 +30,10 @@ Waiting: chrome-cdp waits for you, so never sleep
 
 - To check a result rather than wait for it, use `expect`: it retries the
   same way (5s by default) and fails with exit 1, saying what it saw.
+- In `chrome-cdp test`, steps settle for less, since the next `expect`
+  retries: a navigation until its own requests are done and the DOM was
+  quiet for 50ms (1s at most), an action for 50ms of quiet. [e2e] settle
+  = "full" keeps the waits above (docs/e2e/determinism.md).
 
 Examples:
   chrome-cdp click e6 && chrome-cdp wait --text 'Order placed'

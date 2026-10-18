@@ -122,6 +122,11 @@ fn defaults_fill_an_empty_section() {
     assert!(parse("[e2e]\nallow_console_errors = true\n").allow_console_errors);
     assert!(!c.keep_logs);
     assert!(parse("[e2e]\nkeep_logs = true\n").keep_logs);
+    assert_eq!(c.settle, super::Settle::Test);
+    assert_eq!(
+        parse("[e2e]\nsettle = \"full\"\n").settle,
+        super::Settle::Full
+    );
     assert_eq!(c.fingerprints, super::Fingerprints::Auto);
     assert_eq!(
         parse("[e2e]\nfingerprints = \"read\"\n").fingerprints,
@@ -325,6 +330,12 @@ fn rejects_bad_values() {
     );
     assert!(error("[e2e]\ndefault_mocks = [\"../x\"]\n").contains("leaves the mocks directory"));
     assert!(error("[e2e]\ntests = []\n").ends_with("e2e.tests: name at least one glob"));
+    let settle = error("[e2e]\nsettle = \"fast\"\n");
+    assert!(
+        settle.starts_with("/p/chrome-cdp.toml:2:10: ")
+            && settle.contains("unknown variant `fast`, expected `test` or `full`"),
+        "{settle}"
+    );
     let keep = error("[e2e]\nkeep_logs = \"yes\"\n");
     assert!(
         keep.starts_with("/p/chrome-cdp.toml:2:13: ") && keep.contains("expected a boolean"),

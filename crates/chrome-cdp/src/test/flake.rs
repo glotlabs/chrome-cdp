@@ -27,6 +27,8 @@ use std::path::PathBuf;
 use protocol::ErrorKind;
 use protocol::schema::{FlakeCause, TestFailure, TestFlake};
 
+use e2e::config::Settle;
+
 use super::artifacts::{StepRecord, Timed, cut};
 
 /// One run (or try) of a test.
@@ -54,6 +56,9 @@ pub(super) struct Setting {
     pub(super) unfixed: Vec<&'static str>,
     /// `disable_animations = false`.
     pub(super) animations: bool,
+    /// `[e2e] settle`: under `test`, a step does not wait for every
+    /// request, so a fix names what to wait for (plan 22.3).
+    pub(super) settle: e2e::config::Settle,
 }
 
 /// The causes, in the order ties are ranked.
@@ -162,7 +167,7 @@ pub(super) fn diagnose(runs: &[RunRecord], setting: &Setting) -> Option<TestFlak
         .collect();
 
     let mut found: Vec<Found> = [
-        unsettled(&here, &passing),
+        unsettled(&here, &passing, setting),
         race(&here, &passing),
         moving_target(&here, setting),
         different_requests(&here, &passing),
@@ -363,7 +368,7 @@ fn of(n: usize, total: usize, what: &str) -> String {
 /// before it acted in every passing run.
 /// A step acts when it ends, after waiting for its element; the steps
 /// looked at are the actions up to the failing step, and it.
-fn unsettled(here: &[Failed<'_>], passing: &[&RunRecord]) -> Option<Found> {
+fn unsettled(here: &[Failed<'_>], passing: &[&RunRecord], setting: &Setting) -> Option<Found> {
     /// The request that fits best so far.
     struct Best {
         /// The failing runs it was open in.
@@ -480,16 +485,29 @@ fn unsettled(here: &[Failed<'_>], passing: &[&RunRecord]) -> Option<Found> {
         .map(|(_, r)| r.sent_ms);
     let sender = sent.and_then(|at| steps[..=best.step].iter().rev().find(|s| start(s) <= at));
     let wait = format!("wait --response '{}'", response_pattern(key));
-    let hint = match sender {
-        Some(sender) if sender.at != step.at => {
-            evidence.push(format!("{} sent it", step_name(sender)));
-            format!(
-                "add `{wait}` after {} (which sends it), or an `expect` of what its answer shows before {}",
-                sender.at, step.at
-            )
-        }
-        _ => format!(
+    let sender = sender.filter(|sender| sender.at != step.at);
+    if let Some(sender) = sender {
+        evidence.push(format!("{} sent it", step_name(sender)));
+    }
+    let hint = match (sender, setting.settle) {
+        (Some(sender), Settle::Full) => format!(
+            "add `{wait}` after {} (which sends it), or an `expect` of what its answer shows before {}",
+            sender.at, step.at
+        ),
+        (None, Settle::Full) => format!(
             "wait for it before {}: `{wait}` after the step that sends it, or an `expect` of what its answer shows",
+            step.at
+        ),
+        // A test run's steps do not wait for every request: the test
+        // says what it needs, and the full settle is the last resort.
+        (Some(sender), Settle::Test) => format!(
+            "add an `expect` of what its answer shows before {}, or `{wait}` after {} (which sends it); \
+             `settle = \"full\"` in [e2e] waits for every request after each step, at a cost in time",
+            step.at, sender.at
+        ),
+        (None, Settle::Test) => format!(
+            "wait for it before {}: an `expect` of what its answer shows, or `{wait}` after the step that sends it; \
+             `settle = \"full\"` in [e2e] waits for every request after each step, at a cost in time",
             step.at
         ),
     };
