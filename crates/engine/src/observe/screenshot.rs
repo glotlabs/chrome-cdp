@@ -874,31 +874,45 @@ impl Shot<'_> {
                 Ok(target) => {
                     let measured = self.measure(&target.context, &target.object_id).await;
                     let (frame, note) = (target.key.frame.clone(), target.note.clone());
-                    target.release();
                     let measured = match (measured, last.take()) {
                         (Err(e), Some(last)) if e.kind == ErrorKind::Timeout => {
+                            target.release();
                             return Err(last.note("waited", format::duration(self.timeout)));
                         }
-                        (measured, _) => measured?,
+                        (measured, _) => measured,
                     };
                     match measured {
-                        Some(rect) => {
-                            self.scroll_owners(rect, &frame).await?;
+                        Err(e) => {
+                            target.release();
+                            return Err(e);
+                        }
+                        Ok(Some(rect)) => {
+                            let scrolled = self.scroll_owners(rect, &frame).await;
+                            if scrolled.is_ok() && self.in_iframe(&frame) {
+                                // The frames scrolled: their pictures
+                                // reach the page's with their next frames.
+                                self.painted(&target.context, &target.object_id).await;
+                            }
+                            target.release();
+                            scrolled?;
                             return self.element_area(rect, &frame, note).await;
                         }
-                        None => ErrorInfo::new(
-                            ErrorKind::NotFound,
-                            format!("{locator} is not rendered, so it has no box to capture"),
-                        )
-                        .hint(
-                            Hint::run(
-                                Cmd::new("wait")
-                                    .arg(locator.to_string())
-                                    .scoped(self.session()),
+                        Ok(None) => {
+                            target.release();
+                            ErrorInfo::new(
+                                ErrorKind::NotFound,
+                                format!("{locator} is not rendered, so it has no box to capture"),
                             )
-                            .why("waits until it is visible"),
-                        )
-                        .details(json!({ "locator": locator.to_string(), "rendered": false })),
+                            .hint(
+                                Hint::run(
+                                    Cmd::new("wait")
+                                        .arg(locator.to_string())
+                                        .scoped(self.session()),
+                                )
+                                .why("waits until it is visible"),
+                            )
+                            .details(json!({ "locator": locator.to_string(), "rendered": false }))
+                        }
                     }
                 }
                 Err(err) if waits_for(&err) => err,
@@ -915,6 +929,38 @@ impl Shot<'_> {
             last = Some(err);
             tokio::time::sleep(RETRY_DELAY).await;
         }
+    }
+
+    /// Whether frame `frame` is an iframe of the page.
+    fn in_iframe(&self, frame: &str) -> bool {
+        self.running
+            .tabs
+            .frames(self.page.id)
+            .iter()
+            .any(|f| f.id == frame && f.parent.is_some())
+    }
+
+    /// Waits until the element's frame and the page have drawn two more
+    /// frames (at most 100 ms each: a frame Chrome does not draw does not
+    /// hold the capture up), so a scroll in an out-of-process iframe is in
+    /// the page's picture.
+    async fn painted(&self, context: &FrameContext, object_id: &str) {
+        const FRAMES: &str = "() => new Promise((done) => { \
+            setTimeout(done, 100); \
+            requestAnimationFrame(() => requestAnimationFrame(() => done())); })";
+        let mut params =
+            runtime::CallFunctionOnParams::new(format!("function () {{ return ({FRAMES})(); }}"));
+        params.object_id = Some(object_id.to_owned());
+        params.await_promise = Some(true);
+        let _ = context.session.with_timeout(self.left()).call(params).await;
+        let mut params = runtime::EvaluateParams::new(format!("({FRAMES})()"));
+        params.await_promise = Some(true);
+        let _ = self
+            .page
+            .session
+            .with_timeout(self.left())
+            .call(params)
+            .await;
     }
 
     /// Scrolls the element into view and reads its box in its frame's
