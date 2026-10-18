@@ -136,6 +136,10 @@ pub(crate) struct Target {
     /// The init scripts and exposed functions it has, with the id of
     /// each one's script (`None` while Chrome is adding it).
     pub(crate) injected: HashMap<Key, Option<String>>,
+    /// Its setup has compared `injected` with the list: until then a
+    /// change leaves it alone, as its setup gives it the whole list (a
+    /// new worker's scripts run only then, while it is paused).
+    pub(crate) injecting: bool,
     /// A worker's console events so far: numbers each, the same in every
     /// tab it goes to.
     pub(crate) events: u64,
@@ -170,6 +174,7 @@ impl Target {
             clock: None,
             interception: None,
             injected: HashMap::new(),
+            injecting: false,
             events: 0,
             ready: false,
             node_stacks: false,

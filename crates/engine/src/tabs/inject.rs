@@ -52,7 +52,7 @@ pub(super) fn setup_steps(
     let session_id = session.id().unwrap_or_default().to_owned();
     // A new worker is paused: what runs now runs before its own script.
     let now = kind.worker().is_some();
-    for call in sync(shared, &session_id, session, now) {
+    for call in sync(shared, &session_id, session, now, true) {
         steps.push(("an init script or exposed function", call));
     }
 }
@@ -69,7 +69,7 @@ pub(super) async fn apply(shared: &Arc<Shared>, now: bool, timeout: Duration) ->
         .collect();
     let calls: Vec<Step> = hosts
         .iter()
-        .flat_map(|(id, session)| sync(shared, id, session, now))
+        .flat_map(|(id, session)| sync(shared, id, session, now, false))
         .collect();
     let errors: Vec<String> = join_all(calls)
         .await
@@ -86,12 +86,25 @@ pub(super) async fn apply(shared: &Arc<Shared>, now: bool, timeout: Duration) ->
 
 /// Compares what session `session_id` has with the list, records the
 /// difference as done, and sends the calls for it (in order). Returns them
-/// to await.
-fn sync(shared: &Arc<Shared>, session_id: &str, session: &Session, now: bool) -> Vec<Step> {
+/// to await. A change (not its `setup`) leaves a session alone until its
+/// setup has done so: else a new worker would have an init script
+/// recorded as added that never ran in it.
+fn sync(
+    shared: &Arc<Shared>,
+    session_id: &str,
+    session: &Session,
+    now: bool,
+    setup: bool,
+) -> Vec<Step> {
     let mut state = shared.lock();
     let Some(host) = state.targets.get_mut(session_id) else {
         return Vec::new();
     };
+    if setup {
+        host.injecting = true;
+    } else if !host.injecting {
+        return Vec::new();
+    }
     let worker = host.kind.worker().is_some();
     // Each session gets its own context's items (see `crate::context`).
     let wanted: Vec<(Key, Wanted)> = shared
