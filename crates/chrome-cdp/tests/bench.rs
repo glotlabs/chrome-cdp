@@ -1,6 +1,7 @@
 //! Plan 11's timing goals: the test runner's own overhead under 30 ms per
 //! test (plan 22.2; plan 11 had 100 ms), and the E2E example suite under
-//! 15 s with `--jobs 4`. (Plan 02's
+//! 15 s with `--jobs 4`, and under 24.5 s with `--jobs 1` (plan 22.3).
+//! (Plan 02's
 //! cold start and warm round trip, and plan 08's `batch` speedup, are in
 //! the micro suite of `crates/bench`.) And plan 18.4's: what fingerprints
 //! and `test --ui-coverage` add to a step.
@@ -25,6 +26,9 @@ const RUNNER_OVERHEAD: Duration = Duration::from_millis(30);
 /// Plan 11: the whole example suite with `--jobs 4` (planned as 30 tests;
 /// examples/e2e-shop has 17).
 const SHOP_SUITE: Duration = Duration::from_secs(15);
+/// Plan 22.3: the example suite with `--jobs 1`, at least 40% below plan
+/// 22.1's baseline of 40.8 s.
+const SHOP_SERIAL: Duration = Duration::from_millis(24_480);
 
 /// Plan 18.4: what `test --ui-coverage`'s snapshots add to a step, on
 /// average over the shop's steps (a criterion of this benchmark's own:
@@ -79,7 +83,9 @@ fn e2e_runner_overhead_and_the_shop_suite() {
     // One test at a time: each test's time less its steps' (its own and
     // its hooks'; the runner's setup, checks and teardown are overhead),
     // split by phase from the records steps.jsonl has of them.
+    let start = Instant::now();
     let value = common::json_out(&test(&["--jobs", "1", "--json"]));
+    let serial = start.elapsed();
     let tests = value["data"]["tests"].as_array().unwrap();
     let mut phases = [Duration::ZERO; 4];
     for t in tests {
@@ -120,13 +126,19 @@ fn e2e_runner_overhead_and_the_shop_suite() {
     // Everything first, then the budgets: a failed one still shows the rest.
     eprintln!(
         "runner overhead: {per_test:?} per test ({} tests; setup {setup:?}, check {check:?}, \
-         teardown {teardown:?}, other {other:?}); suite with --jobs 4: {suite:?}",
+         teardown {teardown:?}, other {other:?}); suite with --jobs 1: {serial:?}, \
+         with --jobs 4: {suite:?}",
         tests.len()
     );
     let mut over = Vec::new();
     if per_test >= RUNNER_OVERHEAD {
         over.push(format!(
             "runner overhead was {per_test:?} per test (budget {RUNNER_OVERHEAD:?})"
+        ));
+    }
+    if serial >= SHOP_SERIAL {
+        over.push(format!(
+            "the suite took {serial:?} with --jobs 1 (budget {SHOP_SERIAL:?})"
         ));
     }
     if suite >= SHOP_SUITE {
