@@ -2295,6 +2295,23 @@ fn a_heal_by_a_configured_test_id_writes_testid() {
 /// 20 runs (the page picks them with a PRNG seeded with the run's number,
 /// so they are the same every time) and is diagnosed as its own cause,
 /// first in rank, with evidence naming the request or element.
+/// Each failed run of `test` (a `--repeat` result) with its error's first
+/// lines, for a failure message: which run failed besides the planted
+/// ones, and how.
+fn failed_runs(test: &Value) -> String {
+    let dir = Path::new(test["artifacts"].as_str().unwrap())
+        .parent()
+        .unwrap();
+    let mut text = format!("{test}\nfailed runs:");
+    for n in 1..=20 {
+        if let Ok(report) = std::fs::read_to_string(dir.join(format!("run-{n}/report.md"))) {
+            let head: Vec<&str> = report.lines().filter(|l| !l.is_empty()).take(6).collect();
+            let _ = write!(text, "\n  run-{n}: {}", head.join(" | "));
+        }
+    }
+    text
+}
+
 #[test]
 fn planted_flakes_are_diagnosed() {
     let Some(chrome) = chrome_path() else { return };
@@ -2346,7 +2363,7 @@ fn planted_flakes_are_diagnosed() {
     for (test, (file, cause, failed, evidence)) in tests.iter().zip(expected) {
         assert_eq!(test["file"], format!("scenarios/flaky/{file}"), "{test}");
         assert_eq!(test["status"], "failed", "{test}");
-        assert_eq!(test["failed_runs"], failed, "{test}");
+        assert_eq!(test["failed_runs"], failed, "{}", failed_runs(test));
         let flake = &test["flake"];
         assert_eq!(flake["cause"], cause, "{flake}");
         assert_eq!(
