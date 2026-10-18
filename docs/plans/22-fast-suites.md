@@ -1,6 +1,6 @@
 # Plan 22 — Fast suites
 
-Status: IN PROGRESS (22.1 and 22.2 done)
+Status: IN PROGRESS (22.1, 22.2 and 22.3 done)
 Depends on: 05 §5.5 (the post-action report and its settle), 08 §8.2
 (`batch`), 10 §10.4 (the benchmarks), 11 (the runner, `--jobs`,
 `--shard`), 18 §18.3 (flake diagnosis)
@@ -364,3 +364,46 @@ baseline, with no new flakes.
   read. Their margins are now about 1.5 s each; the diagnoses and
   goldens are the same. Suites with sub-second timeouts may want them
   looked at too; 22.3's shorter waits make that likelier.
+- 22.3: the runner chooses the settle through the request's envelope, a
+  `settle` field beside the params (like `root` and `fingerprint`), set
+  for a worker's thread (`daemon::client::set_settle`) as 22.2's "no
+  history" is, and scoped in the daemon to the call it came with. Not a
+  field of each request type: every navigation and action of a call
+  settles the same way, a step's `run` or `batch` included, and an
+  action's request has no business knowing about test runs. Without the
+  field a call settles as the command line does, so older CLIs and every
+  interactive command are unchanged.
+- 22.3: a step's own `goto --wait settle` (also `back`, `forward`,
+  `reload`) asks for the full settle: the script notes that the line
+  names `--wait`, and the call goes out without the test settle. The
+  default `--wait` stays `settle`, so the help and the command line
+  surface are the same; the test settle is what `settle` means in a test
+  run unless the step says it.
+- 22.3: after a navigation in a test run, not settling within 1 s is not
+  a warning, unlike the command line's 5 s: the page is there, and the
+  next `expect` waits for what it needs. A warning on every step of a
+  page that polls would bury the useful ones.
+- 22.3: the no-errors check waits for every tab's requests in flight
+  (not only those since some step) to end and 50 ms of quiet, at most
+  1 s, and reads the console then. A request that ended within the last
+  50 ms still gets the 50 ms, since its answer's handler logs the error a
+  little after the response. The check took 0 ms on e2e-shop before and
+  after: its tests leave nothing open.
+- 22.3: an `unsettled` flake's fix under `"test"` asks first for an
+  `expect` of what the open request's answer shows, then for `wait
+  --response`, and names `settle = "full"` last. The diagnosis itself
+  (the cause, evidence, confidence) does not depend on the setting, so
+  the planted flakes are diagnosed as before; only the fix's text
+  differs, and under `"full"` it is the old one. What the step waited
+  for is always a request here: the rule finds requests open when a step
+  acted, so "the element" is what the answer shows.
+- 22.3: the numbers. e2e-shop with `--jobs 1`: 12.8 s against 22.1's
+  40.8 s (69% less; the target was 40%). The scale suite: 560 s with one
+  job (1950 s before), 162 s with 8. Above 8 jobs the setup per test went
+  up (16 jobs: 779 ms against 285 ms) while wall time still went down
+  (166 s against 188 s): with tests this short, Chrome does not make the
+  next contexts ahead as fast as workers take them. Kept, not reverted:
+  it is the cost of the run's contexts arriving sooner, not new work, and
+  22.4 measures how many to make ahead and how many jobs to run. The
+  gates: e2e-shop `--repeat 20` (360 runs) and the scale suite `--repeat
+  5` with 16 jobs (5,000 runs) passed with no failure.

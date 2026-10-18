@@ -200,12 +200,12 @@ Last run: 2026-10-18 on macos-aarch64 (16 CPUs), Google Chrome for Testing 155.0
 
 | `--jobs` | Wall time | Per test | Test p50 | Overhead | setup | check | teardown | other | Chrome RSS | Daemon RSS | Failed |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1 | 1950 s | 1950 ms | 973 ms | 19.9 ms | 12.2 ms | 0.00 ms | 0 ms | 7.67 ms | 1.9 GB | 27 MB | 0 |
-| 2 | 985 s | 985 ms | 975 ms | 20.7 ms | 13.5 ms | 0.00 ms | 0 ms | 7.22 ms | 2.6 GB | 28 MB | 0 |
-| 4 | 509 s | 509 ms | 1041 ms | 27.0 ms | 20.2 ms | 0.01 ms | 0.00 ms | 6.83 ms | 3.9 GB | 30 MB | 0 |
-| 8 | 283 s | 283 ms | 1188 ms | 64.5 ms | 57.7 ms | 0.01 ms | 0.00 ms | 6.76 ms | 6.6 GB | 34 MB | 0 |
-| 16 | 188 s | 188 ms | 1766 ms | 292 ms | 285 ms | 0.03 ms | 0.00 ms | 7.34 ms | 9.6 GB | 40 MB | 0 |
-| 32 | 189 s | 189 ms | 4295 ms | 2204 ms | 2196 ms | 0.05 ms | 0.00 ms | 8.46 ms | 18.0 GB | 53 MB | 0 |
+| 1 | 560 s | 560 ms | 260 ms | 17.5 ms | 10.8 ms | 0.00 ms | 0 ms | 6.75 ms | 1.9 GB | 27 MB | 0 |
+| 2 | 308 s | 308 ms | 318 ms | 19.6 ms | 13.2 ms | 0.00 ms | 0 ms | 6.40 ms | 2.6 GB | 29 MB | 0 |
+| 4 | 199 s | 199 ms | 441 ms | 44.1 ms | 37.5 ms | 0.01 ms | 0 ms | 6.56 ms | 3.9 GB | 31 MB | 0 |
+| 8 | 162 s | 162 ms | 769 ms | 157 ms | 150 ms | 0.02 ms | 0.00 ms | 6.98 ms | 6.5 GB | 35 MB | 0 |
+| 16 | 166 s | 166 ms | 1802 ms | 787 ms | 779 ms | 0.05 ms | 0.00 ms | 7.44 ms | 9.3 GB | 42 MB | 0 |
+| 32 | 181 s | 181 ms | 4576 ms | 3175 ms | 3167 ms | 0.04 ms | 0.00 ms | 8.41 ms | 15.2 GB | 54 MB | 0 |
 <!-- /bench:scale -->
 
 What 22.2 changed. Fewer round trips alone (one daemon connection per
@@ -226,6 +226,25 @@ inside the steps' times, so what it saves is not in this table.
 The same day, `tests/bench.rs` on e2e-shop: an overhead of 26 ms per
 test (before 22.2: 134 ms), of which setup 18 ms, teardown 0 ms and
 other 8 ms; the suite took 12.1 s with `--jobs 4` (before: 11.8 s).
+
+What 22.3 changed. A test run's steps settle for less (a navigation
+until its own requests are done and the DOM was quiet for 50 ms, 1 s at
+most; an action for 50 ms of quiet), since the next `expect` retries.
+With one job the suite takes 560 s instead of 1950 s (72% less), and a
+test's median 260 ms instead of 973 ms; up to 8 jobs, wall time is 42%
+to 69% lower. Above 8 jobs it no longer drops (16: 166 s, 32: 181 s),
+and the setup per test is higher than before (16 jobs: 779 ms against
+285 ms): the tests are now shorter than the time Chrome takes to make the
+next context, so the contexts made ahead run out and workers wait on
+`context new`. That is Chrome's work for the whole run, not new work per
+test; how many contexts to make ahead, and how many jobs, is milestone
+22.4's question. The overhead per test with up to 2 jobs is 17.5 to 19.6
+ms (before: 19.9 to 20.7).
+
+The same day, `tests/bench.rs` on e2e-shop: with `--jobs 1` the suite
+took 12.8 s (22.1's baseline: 40.8 s; `settle = "full"`, the old waits,
+41.5 s), with `--jobs 4` 4.9 s (before: 12.1 s); the overhead was 25 ms
+per test (setup 18 ms, check 0 ms, teardown 0 ms, other 8 ms).
 
 ## Agent task benchmark
 
