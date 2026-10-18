@@ -52,7 +52,8 @@
   if (kase === 'settle') {
     // Load price asks for the price, and Pay shows the price it has. A
     // click waits up to 1.5 s for the requests it sent; in a bad run the
-    // price takes longer, so the next step pays before it came.
+    // price comes after 3.5 s (testdata/e2e/mocks/flaky.toml), so the next
+    // step pays well before it came, and the test fails well after.
     let price;
     const load = button('Load price', () => get('price', slow).then((body) => { price = body.price; }));
     load.id = 'load';

@@ -4,4 +4,4 @@
 
 @test "shows the date"
   goto "/e2e/flaky.html?case=time#${test.id}"
-  expect '#updated' text 'Updated today' --timeout 1s
+  expect '#updated' text 'Updated today' --timeout 2s

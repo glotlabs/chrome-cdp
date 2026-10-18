@@ -7,7 +7,7 @@ scope = ["/e2e/api/flaky/**"]
 [[mock]]
 name = "slow price"
 match = { method = "GET", path = "/e2e/api/flaky/price", headers = { x-flake = "slow" } }
-respond = { json = { price = 5 }, delay = "2500ms" }
+respond = { json = { price = 5 }, delay = "3500ms" }
 
 [[mock]]
 name = "price"

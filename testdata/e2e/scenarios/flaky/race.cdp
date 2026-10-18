@@ -5,4 +5,4 @@
 @test "shows the offer"
   goto "/e2e/flaky.html?case=race#${test.id}"
   expect '#loaded' text 'Loaded 2 of 2'
-  expect '#banner' text 'Offer: 2 for 1' --timeout 1s
+  expect '#banner' text 'Offer: 2 for 1' --timeout 2s

@@ -6,4 +6,4 @@
   goto "/e2e/flaky.html?case=settle#${test.id}"
   click '#load'
   click '#pay'
-  expect role=status text 'Paid $5' --timeout 1s
+  expect role=status text 'Paid $5' --timeout 3s

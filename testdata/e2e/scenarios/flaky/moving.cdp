@@ -4,5 +4,5 @@
 
 @test "pays"
   goto "/e2e/flaky.html?case=moving#${test.id}"
-  click '#pay' --timeout 1s
+  click '#pay' --timeout 2s
   expect role=status text Paid

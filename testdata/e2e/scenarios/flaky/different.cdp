@@ -4,4 +4,4 @@
 
 @test "welcomes"
   goto "/e2e/flaky.html?case=different#${test.id}"
-  expect '#banner' text Welcome --timeout 1s
+  expect '#banner' text Welcome --timeout 2s
