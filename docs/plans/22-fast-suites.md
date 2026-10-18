@@ -407,3 +407,12 @@ baseline, with no new flakes.
   22.4 measures how many to make ahead and how many jobs to run. The
   gates: e2e-shop `--repeat 20` (360 runs) and the scale suite `--repeat
   5` with 16 jobs (5,000 runs) passed with no failure.
+- 22.3: what the `cargo xtask e2e --repeat 20` gate found. The planted
+  race was once diagnosed `unknown`: its passing runs' answers seemed to
+  come after the step that showed them. A request was timed by when the
+  daemon heard of it, and a busy daemon hears of a page's requests late;
+  the 500 ms of idle a `goto` waited for hid that, and the test settle
+  does not. A request's time is now Chrome's `wallTime` (when within
+  10 s of when the daemon heard of it). A debug test also counted a
+  logpoint's hits before its console entry arrived; it now waits for
+  the hit.
