@@ -8,7 +8,11 @@
 //!   tests against a shared real backend do not collide;
 //! - `${saved.NAME.field}`: the JSON answer of an earlier `http … --save
 //!   NAME` of the test (or of its file's `@before-all`);
-//! - `${backend}`: the backend's name.
+//! - `${backend}`: the backend's name;
+//! - `${vu.id}`, `${iteration.id}` and `${row.COLUMN}` (plan 23.3): a load
+//!   run's user, its iteration, and the row of the journey's data it
+//!   took. Under `test` a test is one user's one iteration, and has no
+//!   row.
 //!
 //! The plan fills them in to check every step before the run
 //! ([`Resolver::checking`]: `${test.id}` and `${saved.…}` get stand-ins,
@@ -83,12 +87,34 @@ enum Saved<'a> {
     Values(&'a BTreeMap<String, Value>),
 }
 
+/// What `${row.…}` can be.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Rows<'a> {
+    /// The journey has no data (or this is `test`).
+    None,
+    /// While checking: the columns of the journey's data, and its file.
+    Columns(&'a [String], &'a str),
+    /// While running: the iteration's row.
+    Row(&'a BTreeMap<String, String>),
+}
+
+/// A load run's user and iteration.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct LoadVars<'a> {
+    /// `${vu.id}`.
+    pub(crate) vu: &'a str,
+    /// `${iteration.id}`.
+    pub(crate) iteration: &'a str,
+    pub(crate) rows: Rows<'a>,
+}
+
 /// Fills in a step's variables.
 pub(crate) struct Resolver<'a> {
     base: &'a Vars,
     run: &'a RunVars,
     test_id: &'a str,
     saved: Saved<'a>,
+    load: Option<LoadVars<'a>>,
 }
 
 impl<'a> Resolver<'a> {
@@ -100,6 +126,7 @@ impl<'a> Resolver<'a> {
             run,
             test_id: "0",
             saved: Saved::Names(names),
+            load: None,
         }
     }
 
@@ -115,6 +142,15 @@ impl<'a> Resolver<'a> {
             run,
             test_id,
             saved: Saved::Values(saved),
+            load: None,
+        }
+    }
+
+    /// For a load run's step: its user, iteration and row.
+    pub(crate) fn in_load(self, load: LoadVars<'a>) -> Self {
+        Self {
+            load: Some(load),
+            ..self
         }
     }
 }
@@ -136,13 +172,18 @@ impl Resolve for Resolver<'_> {
             Var::Secret(name) => secret(var, name),
             Var::Path(path) => match path.iter().map(String::as_str).collect::<Vec<_>>()[..] {
                 ["run", "id"] => Ok(self.run.run_id.clone()),
-                ["test", "id"] => Ok(match self.test_id {
-                    "0" => format!("{}-0", self.run.run_id),
-                    id => id.to_owned(),
-                }),
+                ["test", "id"] => Ok(self.test_id()),
+                ["vu", "id"] => Ok(self
+                    .load
+                    .map_or_else(|| format!("{}-u1", self.run.run_id), |l| l.vu.to_owned())),
+                ["iteration", "id"] => Ok(self
+                    .load
+                    .map_or_else(|| self.test_id(), |l| l.iteration.to_owned())),
                 ["saved", name, ref rest @ ..] => self.saved(var, name, rest),
+                ["row", column] => self.row(var, column),
                 _ => Err(Unresolved::new(format!("unknown variable {var}")).hint(
-                    "the dotted variables are ${run.id}, ${test.id} and ${saved.NAME.field}",
+                    "the dotted variables are ${run.id}, ${test.id}, ${saved.NAME.field}, and in a \
+                     load run ${vu.id}, ${iteration.id} and ${row.COLUMN}",
                 )),
             },
             _ => self.base.resolve(var),
@@ -151,6 +192,35 @@ impl Resolve for Resolver<'_> {
 }
 
 impl Resolver<'_> {
+    fn test_id(&self) -> String {
+        match self.test_id {
+            "0" => format!("{}-0", self.run.run_id),
+            id => id.to_owned(),
+        }
+    }
+
+    /// `${row.COLUMN}`: the column of the iteration's row.
+    fn row(&self, var: &Var, column: &str) -> Result<String, Unresolved> {
+        match self.load.map_or(Rows::None, |l| l.rows) {
+            Rows::None => Err(Unresolved::new(format!(
+                "{var}: only a load run's journey with data has rows"
+            ))
+            .hint(
+                "give the journey data = \"e2e/load/users.csv\" in its load profile; a test has no row",
+            )),
+            Rows::Columns(columns, _) if columns.iter().any(|c| c == column) => {
+                Ok("row".to_owned())
+            }
+            Rows::Columns(columns, file) => Err(Unresolved::new(format!(
+                "{var}: data {file} has no column {column}"
+            ))
+            .hint(format!("its columns are {}", columns.join(", ")))),
+            Rows::Row(row) => row.get(column).cloned().ok_or_else(|| {
+                Unresolved::new(format!("{var}: the row has no column {column}"))
+            }),
+        }
+    }
+
     fn saved(&self, var: &Var, name: &str, path: &[&str]) -> Result<String, Unresolved> {
         match &self.saved {
             Saved::Names(names) if names.contains(name) => Ok("saved".to_owned()),
@@ -351,6 +421,48 @@ mod tests {
         assert_eq!(
             expand("fill x ${secret:CHROME_CDP_TEST_NO_SUCH_SECRET}", &r).unwrap_err(),
             "${secret:CHROME_CDP_TEST_NO_SUCH_SECRET}: environment variable CHROME_CDP_TEST_NO_SUCH_SECRET is not set"
+        );
+    }
+
+    #[test]
+    fn load_runs_have_users_iterations_and_rows() {
+        let base = Vars::default();
+        let run = run();
+        let saved = BTreeMap::new();
+        // Under `test`: one user, one iteration, no row.
+        let r = Resolver::running(&base, &run, "abc12345-3", &saved);
+        assert_eq!(
+            expand("fill x ${vu.id} ${iteration.id}", &r).unwrap(),
+            "fill x abc12345-u1 abc12345-3"
+        );
+        let e = expand("fill x ${row.email}", &r).unwrap_err();
+        assert_eq!(
+            e,
+            "${row.email}: only a load run's journey with data has rows"
+        );
+        // A load run's iteration.
+        let row = BTreeMap::from([("email".to_owned(), "a@x.com".to_owned())]);
+        let r = Resolver::running(&base, &run, "abc12345-u4-2", &saved).in_load(LoadVars {
+            vu: "abc12345-u4",
+            iteration: "abc12345-u4-2",
+            rows: Rows::Row(&row),
+        });
+        assert_eq!(
+            expand("fill x ${vu.id} ${iteration.id} ${row.email}", &r).unwrap(),
+            "fill x abc12345-u4 abc12345-u4-2 a@x.com"
+        );
+        // Checked against the data's columns.
+        let names = BTreeSet::new();
+        let columns = ["email".to_owned(), "password".to_owned()];
+        let r = Resolver::checking(&base, &run, &names).in_load(LoadVars {
+            vu: "u",
+            iteration: "i",
+            rows: Rows::Columns(&columns, "e2e/load/users.csv"),
+        });
+        assert_eq!(expand("fill x ${row.password}", &r).unwrap(), "fill x row");
+        assert_eq!(
+            expand("fill x ${row.mail}", &r).unwrap_err(),
+            "${row.mail}: data e2e/load/users.csv has no column mail"
         );
     }
 
