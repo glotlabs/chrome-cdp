@@ -131,6 +131,7 @@ Last run: 2026-09-30 with Google Chrome for Testing 154.0.8037.57. Tokenizer: `o
 cargo xtask scale-suite                     # write testdata/scale/ (1,000 tests)
 cargo xtask bench scale                     # write it, run it, publish here
 cargo xtask bench scale --tests 200 -- --jobs 1,4,16 --no-publish
+cargo xtask bench scale -- --jobs 8,8:context,8:browser
 ```
 
 Plan 22 tunes the test runner, and tuning needs a suite of realistic
@@ -145,7 +146,11 @@ have an `@before-all` that hands the tests a `state save` file.
 `cargo xtask bench scale` writes the suite (`--tests N` before the `--`),
 then runs `chrome-cdp test --json` on it once for each `--jobs` value
 (1, 2, 4, 8, 16 and 32; `-- --jobs 1,4` picks others), each in a fresh
-sandbox with its own daemon and Chrome. For each run, the table has:
+sandbox with its own daemons and Chromes. A value runs with the runner's
+default `--jobs-isolation` (`auto`, a Chrome per 3 jobs), or the one
+after a colon: `16:context` (one Chrome), `16:browser` (a Chrome each).
+The first column says how many Chromes a run used, when more than one.
+For each run, the table has:
 
 - **wall time**, and **per test**: the wall time over the number of
   tests, what a test costs the suite;
@@ -196,16 +201,24 @@ memory grows by about 350 MB per job.
 Latest:
 
 <!-- bench:scale -->
-Last run: 2026-10-18 on macos-aarch64 (16 CPUs), Google Chrome for Testing 155.0.8059.84. 1000 tests (`cargo xtask scale-suite --tests 1000`).
+Last run: 2026-10-19 on macos-aarch64 (16 CPUs), Google Chrome for Testing 155.0.8059.84. 1000 tests (`cargo xtask scale-suite --tests 1000`).
 
 | `--jobs` | Wall time | Per test | Test p50 | Overhead | setup | check | teardown | other | Chrome RSS | Daemon RSS | Failed |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1 | 560 s | 560 ms | 260 ms | 17.5 ms | 10.8 ms | 0.00 ms | 0 ms | 6.75 ms | 1.9 GB | 27 MB | 0 |
-| 2 | 308 s | 308 ms | 318 ms | 19.6 ms | 13.2 ms | 0.00 ms | 0 ms | 6.40 ms | 2.6 GB | 29 MB | 0 |
-| 4 | 199 s | 199 ms | 441 ms | 44.1 ms | 37.5 ms | 0.01 ms | 0 ms | 6.56 ms | 3.9 GB | 31 MB | 0 |
-| 8 | 162 s | 162 ms | 769 ms | 157 ms | 150 ms | 0.02 ms | 0.00 ms | 6.98 ms | 6.5 GB | 35 MB | 0 |
-| 16 | 166 s | 166 ms | 1802 ms | 787 ms | 779 ms | 0.05 ms | 0.00 ms | 7.44 ms | 9.3 GB | 42 MB | 0 |
-| 32 | 181 s | 181 ms | 4576 ms | 3175 ms | 3167 ms | 0.04 ms | 0.00 ms | 8.41 ms | 15.2 GB | 54 MB | 0 |
+| 1 | 562 s | 562 ms | 260 ms | 17.4 ms | 10.6 ms | 0 ms | 0 ms | 6.79 ms | 1.9 GB | 28 MB | 0 |
+| 2 | 311 s | 311 ms | 310 ms | 18.5 ms | 12.1 ms | 0 ms | 0 ms | 6.42 ms | 2.6 GB | 28 MB | 0 |
+| 4 (2 Chromes) | 165 s | 165 ms | 329 ms | 20.6 ms | 14.1 ms | 0.01 ms | 0 ms | 6.55 ms | 5.1 GB | 52 MB | 0 |
+| 8 (3 Chromes) | 104 s | 104 ms | 446 ms | 34.3 ms | 26.9 ms | 0.08 ms | 0.01 ms | 7.27 ms | 8.9 GB | 77 MB | 0 |
+| 12 (4 Chromes) | 86.6 s | 86.6 ms | 623 ms | 61.0 ms | 52.2 ms | 0.32 ms | 0.04 ms | 8.45 ms | 12.7 GB | 102 MB | 0 |
+| 16 (6 Chromes) | 82.4 s | 82.4 ms | 828 ms | 86.3 ms | 75.9 ms | 0.69 ms | 0.20 ms | 9.54 ms | 17.7 GB | 149 MB | 0 |
+| 24 (8 Chromes) | 85.5 s | 85.5 ms | 1361 ms | 184 ms | 172 ms | 1.01 ms | 0.38 ms | 10.6 ms | 24.8 GB | 200 MB | 0 |
+| 32 (11 Chromes) | 88.7 s | 88.7 ms | 1880 ms | 258 ms | 245 ms | 1.20 ms | 0.58 ms | 11.1 ms | 33.6 GB | 270 MB | 0 |
+| 8 context | 170 s | 170 ms | 839 ms | 167 ms | 160 ms | 0.02 ms | 0.00 ms | 6.97 ms | 6.6 GB | 35 MB | 0 |
+| 16 context | 167 s | 167 ms | 1795 ms | 769 ms | 762 ms | 0.04 ms | 0.00 ms | 7.51 ms | 9.3 GB | 42 MB | 0 |
+| 32 context | 181 s | 181 ms | 4516 ms | 3159 ms | 3151 ms | 0.06 ms | 0.01 ms | 8.39 ms | 16.5 GB | 54 MB | 0 |
+| 8 browser (8 Chromes) | 91.4 s | 91.4 ms | 392 ms | 23.6 ms | 15.6 ms | 0.29 ms | 0.08 ms | 7.66 ms | 14.6 GB | 181 MB | 0 |
+| 16 browser (16 Chromes) | 81.7 s | 81.7 ms | 909 ms | 47.6 ms | 36.9 ms | 0.78 ms | 0.30 ms | 9.56 ms | 28.6 GB | 357 MB | 0 |
+| 32 browser (32 Chromes) | 103 s | 103 ms | 2406 ms | 102 ms | 87.4 ms | 0.96 ms | 0.19 ms | 13.0 ms | 43.8 GB | 596 MB | 0 |
 <!-- /bench:scale -->
 
 What 22.2 changed. Fewer round trips alone (one daemon connection per
@@ -245,6 +258,22 @@ The same day, `tests/bench.rs` on e2e-shop: with `--jobs 1` the suite
 took 12.8 s (22.1's baseline: 40.8 s; `settle = "full"`, the old waits,
 41.5 s), with `--jobs 4` 4.9 s (before: 12.1 s); the overhead was 25 ms
 per test (setup 18 ms, check 0 ms, teardown 0 ms, other 8 ms).
+
+What 22.4 changed. The runner's default is now as many tests at once as
+CPUs (fewer when free memory is short, at most 16), in a Chrome per 3
+of them (`--jobs-isolation auto`). Above 4 jobs in one Chrome (the
+`context` rows), every test's calls queue in Chrome's browser process:
+with 16 jobs it ran at 110% CPU while the machine was half idle, a
+trivial browser call took 15 to 60 ms instead of 11, and the setup calls
+that take under 1 ms with one job took 90 to 180 ms. The daemon was not
+the limit: it used 6% of a CPU and answered `status` as fast as when
+idle. With a Chrome per 3 jobs, wall time keeps dropping up to one job
+per CPU (16: 82.4 s, against 167 s in one Chrome and 162 s for 22.3's
+best, 8 jobs) and setup per test is 76 ms instead of 762 ms; past one
+per CPU it rises again (32: 88.7 s). A Chrome per job is as fast at 16
+(81.7 s) for 11 GB more; a Chrome per 2 or 4 jobs was measured too
+(16 jobs: 87.8 s and 89.1 s). Chrome's memory is about 1.1 GB per job.
+Only this machine was measured.
 
 ## Agent task benchmark
 
