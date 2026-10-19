@@ -323,7 +323,12 @@ is the proportions that matter.
 ```sh
 cargo xtask bench load                        # 15 runs of 60 s, publish here
 cargo xtask bench load -- --users 25,50 --per-browser 25 --duration 30 --no-publish
+cargo xtask bench load -- --per-browser 10 --cache returning
 ```
+
+The Chrome it drives is `CHROME_PATH` (or `--chrome`); point it at
+chrome-headless-shell, which `load` runs by default, or at full Chrome to
+measure `load --browser chrome`.
 
 bench: load. Plan 23 load-tests sites with hundreds of real browsers on
 one machine, and its headline number is **users per machine**: the most
@@ -361,36 +366,52 @@ chrome-cdp itself under 1 core and 500 MB. Results go to
 `target/bench/load.json`.
 
 <!-- bench:load -->
-Last run: 2026-10-19 on macos-aarch64 (16 CPUs), Google Chrome for Testing 155.0.8059.84. `testdata/load/scenarios/shop.cdp`, 60 s per run after a 10 s ramp-up.
+Last run: 2026-10-19 on macos-aarch64 (16 CPUs), Google Chrome for Testing 155.0.8059.84 as chrome-headless-shell. `testdata/load/scenarios/shop.cdp`, 60 s per run after a 10 s ramp-up, `cache = "new"`.
 
-**Users per machine: 50** (the most users of a run that held).
+**Users per machine: 400** (the most users of a run that held).
 
-| Users | Per Chrome | Chromes | Iterations | Failed | Step p50 | Step p95 | Chrome RSS / user | Chrome CPU / user | chrome-cdp CPU | chrome-cdp RSS | All CPUs | Held |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|
-| 25 | 10 | 3 | 255 | 0% | 70.2 ms | 201 ms | 490 MB | 8.38% | 0.02 | 24 MB | 2.12 | yes |
-| 50 | 10 | 5 | 507 | 0% | 103 ms | 201 ms | 467 MB | 8.58% | 0.05 | 26 MB | 4.34 | yes |
-| 100 | 10 | 10 | 806 | 0% | 121 ms | 991 ms | 403 MB | 8.11% | 0.08 | 32 MB | 8.18 | no |
-| 200 | 10 | 20 | 625 | 0% | 290 ms | 7434 ms | 336 MB | 4.06% | 0.07 | 44 MB | 8.18 | no |
-| 400 | 10 | 40 | 1096 | 96.5% | 145 ms | 32015 ms | 265 MB | 1.95% | 0.03 | 44 MB | 7.84 | no |
-| 25 | 25 | 1 | 244 | 0% | 103 ms | 285 ms | 400 MB | 7.67% | 0.02 | 22 MB | 1.94 | yes |
-| 50 | 25 | 2 | 471 | 0% | 104 ms | 448 ms | 399 MB | 7.67% | 0.05 | 27 MB | 3.89 | yes |
-| 100 | 25 | 4 | 715 | 0% | 171 ms | 1362 ms | 397 MB | 6.73% | 0.08 | 34 MB | 6.82 | no |
-| 200 | 25 | 8 | 718 | 0% | 608 ms | 5061 ms | 336 MB | 3.85% | 0.08 | 45 MB | 7.78 | no |
-| 400 | 25 | 16 | 1047 | 95.4% | 173 ms | 35209 ms | 242 MB | 2.01% | 0.04 | 46 MB | 8.06 | no |
-| 25 | 50 | 1 | 239 | 0% | 103 ms | 353 ms | 399 MB | 7.70% | 0.02 | 23 MB | 1.95 | yes |
-| 50 | 50 | 1 | 352 | 0% | 200 ms | 1354 ms | 377 MB | 5.89% | 0.05 | 28 MB | 3.00 | no |
-| 100 | 50 | 2 | 496 | 0% | 418 ms | 2779 ms | 375 MB | 4.60% | 0.09 | 36 MB | 4.69 | no |
-| 200 | 50 | 4 | 549 | 0.18% | 809 ms | 7926 ms | 331 MB | 2.78% | 0.10 | 50 MB | 5.66 | no |
-| 400 | 50 | 8 | 896 | 93.2% | 4486 ms | 47897 ms | 245 MB | 1.94% | 0.05 | 54 MB | 7.80 | no |
+| Users | Per Chrome | Chromes | Iterations | Failed | Step p50 | Step p95 | Chrome RSS / user | Chrome CPU / user | chrome-cdp CPU | chrome-cdp RSS | All CPUs | Contexts | Context setup | Held |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|
+| 25 | 10 | 3 | 260 | 0% | 4.49 ms | 158 ms | 152 MB | 2.26% | 0.02 | 24 MB | 0.59 | 260 | 44.3 ms | yes |
+| 50 | 10 | 5 | 520 | 0% | 3.10 ms | 157 ms | 147 MB | 2.15% | 0.04 | 29 MB | 1.11 | 520 | 46.5 ms | yes |
+| 100 | 10 | 10 | 1040 | 0% | 27.4 ms | 157 ms | 146 MB | 2.08% | 0.07 | 35 MB | 2.15 | 1040 | 57 ms | yes |
+| 200 | 10 | 20 | 2076 | 0% | 8.86 ms | 155 ms | 146 MB | 2.25% | 0.17 | 49 MB | 4.66 | 2076 | 85 ms | yes |
+| 400 | 10 | 40 | 3763 | 0% | 102 ms | 279 ms | 142 MB | 2.30% | 0.23 | 84 MB | 9.44 | 3763 | 485 ms | yes |
 <!-- /bench:load -->
 
-On the macOS run above, chrome-cdp itself stayed under 0.1 cores and
-60 MB at every size. From 100 users on, the limit was the machine: the
-Chromes held at about 8 of 16 CPUs while macOS's own services
-(WindowServer, kernel_task, WindowManager, fontd) took several cores for
-them and free memory ran out, which "All CPUs" does not count. More
-users per Chrome made steps slower at every size (plan 23's decisions
-log), so `load` defaults to 10.
+The table above is chrome-headless-shell with a Chrome per 10 users.
+`--cache returning` adds an `@before` of `cookies clear` to the journey,
+whose cart would otherwise grow from one iteration to the next; "Contexts"
+and "Context setup" are the browser contexts the users made and the mean
+time one took.
+
+Plan 23.2 (a lean browser), on the same Mac, a Chrome per 10 users
+unless said, 60 s runs (memory is RSS, which reads high on macOS):
+
+| Browser | Cache | Users per machine | Chrome RSS / user | Chrome CPU / user | Step p50 | Context setup | chrome-cdp at the most users |
+|---|---|---:|---:|---:|---:|---:|---|
+| Chrome (23.1) | new | 50 | 467 MB | 8.6% | 103 ms | | 0.08 cores, 44 MB |
+| Chrome, 23.2's flags | new | 50 | 442 MB | 8.0% | 104 ms | 265 ms | 0.08 cores, 43 MB |
+| chrome-headless-shell | new | 400 (200 in an earlier run) | 146 MB | 2.2% | 3-27 ms | 46-85 ms (485 ms at 400) | 0.23 cores, 84 MB |
+| chrome-headless-shell, 25 per Chrome | new | 200 | 132 MB | 2.2% | 7-12 ms | 44-85 ms | 0.25 cores, 76 MB |
+| chrome-headless-shell | returning | 400 | 164 MB | 1.2% | 1.4 ms | 32-48 ms, once per user | 0.25 cores, 315 MB |
+
+The shell is most of the gain: a third of full Chrome's memory and a
+quarter of its CPU per user, and its steps do not wait for frames. At
+400 users with a Chrome per 10, the shell's step p95 was 279 ms in the
+run above, just inside twice the smallest run's, and 471 ms in an
+earlier run of nearly the same code, so 400 is the edge. Returning
+users make one context each instead of one per iteration, fetch the
+app's hashed files once, and use about half the CPU; their Chrome keeps
+the cache, so memory per user is a little higher, and chrome-cdp's own
+memory grows with each user's long-lived tab (plan 23's decisions log).
+
+On the macOS runs, from 100 full-Chrome users on, the limit was the
+machine: the Chromes held at about 8 of 16 CPUs while macOS's own
+services (WindowServer, kernel_task, WindowManager, fontd) took several
+cores for them and free memory ran out, which "All CPUs" does not count.
+More users per full Chrome made steps slower at every size (plan 23's
+decisions log), so `load` defaults to 10.
 
 ## Agent task benchmark
 

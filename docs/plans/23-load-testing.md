@@ -1,6 +1,6 @@
 # Plan 23 — Load testing with real browsers
 
-Status: IN PROGRESS (23.1 done)
+Status: IN PROGRESS (23.1 and 23.2 done)
 Depends on: 03 §3.4 (the wait engine and settle), 06 §6.2 (each tab's
 network log), 07 §7.3 (init scripts), 11 (scenarios, the runner,
 `--jobs`, real backends, `${…}` variables), 22 (the test settle, one
@@ -494,3 +494,73 @@ server is wrong. This milestone makes chrome-cdp notice and say so.
   first `goto` moves it to a renderer of the site's; another is the
   closed contexts' renderers outliving them. 23.2 should find out, and
   try making the context with its first URL.
+- 23.2: chrome-headless-shell is most of the gain. On the same Mac
+  (`bench load`, 10 users per Chrome, 60 s), a user cost 148 MB of RSS
+  and 2.2% of a core in the shell against 442 MB and 8% in full Chrome,
+  and a step's p50 was 5 ms against 105 ms. Users per machine went from
+  50 (23.1) to 200 with the shell (4x, past the 1.5x target), while full
+  Chrome with 23.2's flags stayed at 50. 400 users in the shell ran
+  without a failure; their step p95 was 471 ms in one run (more than
+  twice the smallest run's, so not counted) and 279 ms in the final run
+  (counted: 400), so 400 is the edge on this Mac.
+- 23.2: each candidate flag was measured by leaving it out of the set
+  (50 users, 10 per Chrome, full Chrome; the shell showed no difference
+  for any of them). `--disable-gpu` cost about 100 MB and 4% of a core
+  per user, `--disable-software-rasterizer`, `--mute-audio`,
+  `--disable-extensions`, `--disable-domain-reliability` and turning
+  off `BackForwardCache` changed nothing, so all of them are out. Kept:
+  `--disable-component-extensions-with-background-pages` (about 20 MB a
+  user) and turning off `SpareRendererForSitePerProcess` (about 10 MB and
+  0.5% of a core a user). The flag set together saved 24 MB and 0.8% of
+  a core per user in full Chrome. The reference journey is a single-page
+  app, so the back-forward cache could not show a difference; it stays
+  on, as turning it off also changes what a back navigation asks the
+  server for.
+- 23.2: `--window-size=1280,720` makes the window each page's viewport
+  instead of emulating one per tab; it measured the same as 23.1's
+  emulated 1280x800 and saves an `Emulation.setDeviceMetricsOverride`
+  per context. A journey's `@device` or `@viewport` still sets its own.
+- 23.2: `[load] block` patterns are Chrome's URL Pattern syntax, not
+  `route`'s: Chrome fails them itself with `Network.setBlockedURLs`, in
+  every page, frame and worker, set up before the target runs. `route`
+  pauses every request of the browser for chrome-cdp to decide over the
+  one CDP connection per Chrome that 23.1 found to be the bottleneck,
+  and it turns the HTTP cache off, which would undo `cache =
+  "returning"`. `third-party` becomes an allow pattern for the backend's
+  origin and each of `allow_hosts`, then a block of every other URL; a
+  team's own patterns go first.
+- 23.2: `cache = "returning"` keeps a user's context between iterations
+  (a fresh one after a Chrome restart, a `memory` error, or a journey
+  that emulates nothing after one that did). On the reference journey
+  with an `@before` of `cookies clear` (its cart would otherwise grow),
+  making a context took 45 to 85 ms per iteration with the shell at 25
+  to 200 users, and 690 ms at 400 users; returning users made one each
+  and used about half the CPU per user (1.2% of a core), and 400 of them
+  held.
+- 23.2: a load run's Chromes keep few response bodies (1 MB per page,
+  not 64 MB, and no durable copies) and its tabs keep 300 console
+  entries and requests: a returning user's tab lives for the whole run,
+  and its users never read a body. Before that, chrome-cdp's own RSS
+  grew to 314 MB at 400 returning users.
+- 23.2: `renderer_memory` is checked against the page's heap as
+  `Runtime.getHeapUsage` reports it (V8's, Blink's, array buffers),
+  between steps and at most once a second per user, not the renderer
+  process's RSS: CDP does not tell which renderer process a context's
+  page runs in. It is the memory a leaking app grows.
+- 23.2: the shell also held 200 users with 25 users per Chrome, at 11%
+  less memory per user (132 MB) and a lower p95 at 400 users (317 ms).
+  The default stays at 10 per Chrome until the shell is measured at 50
+  per Chrome and on the Linux runner.
+- 23.2: 23.1's 24 renderers for 10 users: 10 users in one Chrome ran up
+  to 14 renderer processes in the shell and 37 in full Chrome, and the
+  same with `cache = "returning"`, whose contexts are never closed, so
+  it is not closed contexts' renderers outliving them. The shell's 1.4
+  per user is what the default runs; why full Chrome runs three or more
+  per context was not found (their command lines do not differ), and
+  making the context with its first URL was not tried.
+- 23.2: chrome-cdp's own memory grows with a returning user's tab: 40
+  returning users held 34 MB after 20 s, 73 MB after 120 s and 98 MB
+  after 240 s (fresh contexts each iteration stay flat), still growing
+  more slowly. It is not the console, network or issue logs (capped, and
+  turning issues off changed nothing). At 400 returning users for 60 s it
+  was 315 MB, inside 23.1's 500 MB, but a long run needs it found.
