@@ -2,7 +2,8 @@
 //! command line (a file, a folder, or `file.cdp:12` for the test at that
 //! line) or found by the config's `tests` globs, then `--grep`, `--tags`,
 //! `@only`, `@skip` and `--shard`. The order is always the same: files by
-//! path, tests as written.
+//! path, tests as written. With the tests' durations known, `--shard`
+//! splits by time instead of by count ([`pack`], plan 22.5).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -328,7 +329,7 @@ pub fn select(
     Ok(selected)
 }
 
-/// `--shard 2/4`: the second of four near-equal runs of consecutive tests.
+/// `--shard 2/4`: the second of four near-equal parts of the tests.
 pub fn parse_shard(text: &str) -> Result<(usize, usize), ErrorInfo> {
     let parsed = text
         .split_once('/')
@@ -350,4 +351,27 @@ pub fn shard<T>(items: Vec<T>, index: usize, total: usize) -> Vec<T> {
     let start = len * (index - 1) / total;
     let end = len * index / total;
     items.into_iter().skip(start).take(end - start).collect()
+}
+
+/// Which of `total` shards (from 0) each item goes to, so that their
+/// total `weights` are as equal as greedy packing gives: the heaviest item
+/// first (the earlier of equal ones), each into the shard with the least
+/// so far (the first of equal ones). The same weights always give the same
+/// shards, so every CI machine computes the same split.
+pub fn pack(weights: &[u64], total: usize) -> Vec<usize> {
+    let total = total.max(1);
+    let mut order: Vec<usize> = (0..weights.len()).collect();
+    order.sort_by_key(|&i| std::cmp::Reverse(weights[i]));
+    let mut loads = vec![0u64; total];
+    let mut shards = vec![0; weights.len()];
+    for i in order {
+        let (lightest, _) = loads
+            .iter()
+            .enumerate()
+            .min_by_key(|&(s, &load)| (load, s))
+            .unwrap_or((0, &0));
+        shards[i] = lightest;
+        loads[lightest] = loads[lightest].saturating_add(weights[i]);
+    }
+    shards
 }

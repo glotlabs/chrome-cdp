@@ -5,8 +5,8 @@ use protocol::script::Resolve;
 use regex::Regex;
 
 use super::select::{
-    Filter, Target, files_matching, files_of, glob_matches, parse_shard, parse_target, select,
-    shard,
+    Filter, Target, files_matching, files_of, glob_matches, pack, parse_shard, parse_target,
+    select, shard,
 };
 use super::{Scenario, Settings, load};
 use crate::config::Viewport;
@@ -427,6 +427,33 @@ fn shards_cover_every_test_once() {
     for bad in ["0/4", "5/4", "1/0", "x", "1-2"] {
         assert!(parse_shard(bad).is_err(), "{bad}");
     }
+}
+
+#[test]
+fn packing_by_time_balances_the_shards() {
+    // Longest first, each into the shard with the least time.
+    let weights = [5, 1, 9, 3, 7, 2, 8, 4, 6];
+    let shards = pack(&weights, 3);
+    let mut loads = [0u64; 3];
+    for (w, s) in weights.iter().zip(&shards) {
+        loads[*s] += w;
+    }
+    // Greedy, not optimal (15 each is possible): no shard exceeds another
+    // by more than its last item.
+    assert_eq!(loads, [16, 15, 14]);
+    // The same weights give the same shards; ties go to the earlier shard
+    // and the earlier item.
+    assert_eq!(pack(&weights, 3), shards);
+    assert_eq!(pack(&[1, 1, 1, 1], 2), [0, 1, 0, 1]);
+    // Every item lands in exactly one shard, and an empty one is fine.
+    for total in 1..6 {
+        let shards = pack(&weights, total);
+        assert_eq!(shards.len(), weights.len());
+        assert!(shards.iter().all(|&s| s < total));
+    }
+    assert!(pack(&[], 4).is_empty());
+    // One long test cannot be split: it is a shard of its own.
+    assert_eq!(pack(&[100, 1, 1, 1], 2), [0, 1, 1, 1]);
 }
 
 #[test]

@@ -74,6 +74,7 @@ fn parses_the_plan_example() {
     assert_eq!(c.jobs.count(), 4);
     assert_eq!(c.timeout, Duration::from_secs(30));
     assert_eq!(c.artifacts, Path::new("/p/e2e/.results"));
+    assert_eq!(c.durations, Path::new("/p/e2e/.durations.json"));
     assert_eq!(
         c.viewport,
         Viewport {
@@ -162,6 +163,15 @@ fn defaults_fill_an_empty_section() {
     assert!(!c.allow_console_errors);
     assert!(parse("[e2e]\nallow_console_errors = true\n").allow_console_errors);
     assert!(!c.keep_logs);
+    // Beside the artifacts directory, unless set.
+    assert_eq!(
+        parse("[e2e]\nartifacts = \"out/results\"\n").durations,
+        Path::new("/p/out/.durations.json")
+    );
+    assert_eq!(
+        parse("[e2e]\ndurations = \".cache/durations.json\"\n").durations,
+        Path::new("/p/.cache/durations.json")
+    );
     assert!(parse("[e2e]\nkeep_logs = true\n").keep_logs);
     assert_eq!(c.settle, super::Settle::Test);
     assert_eq!(
@@ -376,6 +386,10 @@ fn rejects_bad_values() {
         settle.starts_with("/p/chrome-cdp.toml:2:10: ")
             && settle.contains("unknown variant `fast`, expected `test` or `full`"),
         "{settle}"
+    );
+    assert_eq!(
+        error("[e2e]\ndurations = \" \"\n"),
+        "/p/chrome-cdp.toml:2:13: e2e.durations: name a file"
     );
     let keep = error("[e2e]\nkeep_logs = \"yes\"\n");
     assert!(

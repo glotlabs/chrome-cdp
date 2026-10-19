@@ -37,6 +37,9 @@ pub const DEFAULT_TESTS: &str = "e2e/scenarios/**/*.cdp";
 pub const DEFAULT_MOCKS: &str = "e2e/mocks";
 /// Where test artifacts go when `artifacts` is not set.
 pub const DEFAULT_ARTIFACTS: &str = "e2e/.results";
+/// The durations file's name beside the artifacts directory when
+/// `durations` is not set.
+pub const DURATIONS_FILE: &str = ".durations.json";
 /// A test's time limit when `timeout` is not set.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long a web server may take to answer when its `timeout` is not set.
@@ -122,6 +125,10 @@ pub struct Config {
     pub timeout: Duration,
     /// Where test artifacts go (`.results`).
     pub artifacts: PathBuf,
+    /// The file that keeps each test's duration and last status, which
+    /// order the tests and split `--shard` (plan 22.5): `.durations.json`
+    /// beside [`Self::artifacts`] unless set.
+    pub durations: PathBuf,
     /// Globs of more files whose change makes `test --watch` run every
     /// test again (a build's output, say), relative to [`Self::root`].
     pub watch: Vec<String>,
@@ -654,6 +661,14 @@ impl Check<'_> {
                 tests
             }
         };
+        let artifacts = self.path(raw.artifacts.as_deref().unwrap_or(DEFAULT_ARTIFACTS));
+        let durations = match raw.durations {
+            Some(path) if path.get_ref().trim().is_empty() => {
+                return Err((path.span(), "e2e.durations: name a file".into()));
+            }
+            Some(path) => self.path(path.get_ref()),
+            None => artifacts.parent().unwrap_or(self.root).join(DURATIONS_FILE),
+        };
         Ok(Config {
             file: file.to_path_buf(),
             root: self.root.to_path_buf(),
@@ -680,7 +695,8 @@ impl Check<'_> {
                 .map(|t| duration("e2e.timeout", &t))
                 .transpose()?
                 .unwrap_or(DEFAULT_TIMEOUT),
-            artifacts: self.path(raw.artifacts.as_deref().unwrap_or(DEFAULT_ARTIFACTS)),
+            artifacts,
+            durations,
             watch: raw.watch.unwrap_or_default(),
             viewport: raw
                 .viewport
@@ -1030,6 +1046,7 @@ struct RawE2e {
     pages: Option<Spanned<Vec<String>>>,
     timeout: Option<Spanned<String>>,
     artifacts: Option<String>,
+    durations: Option<Spanned<String>>,
     watch: Option<Vec<String>>,
     viewport: Option<Spanned<String>>,
     web_server: Option<Spanned<OneOrMany<RawWebServer>>>,
