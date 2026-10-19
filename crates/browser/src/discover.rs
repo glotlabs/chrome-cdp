@@ -22,7 +22,7 @@ use serde_json::json;
 
 use crate::deps::{Distro, chromium_package_line};
 use crate::host::{CHROME_ENV, Host, Os, is_executable};
-use crate::installed::{cache_dir, installed, platform_key};
+use crate::installed::{cache_dir, headless_shells, installed, platform_key};
 use crate::version::{self, ChromeVersion, MIN_CHROME_MAJOR};
 
 /// Linux browser names searched on `PATH`, in order.
@@ -284,6 +284,16 @@ pub fn locate(explicit: Option<&Path>, host: &Host) -> Result<Chrome, DiscoverEr
         None => Remedy::Package(chromium_package_line(Distro::detect(host).as_ref())),
     };
     Err(DiscoverError::NotFound { searched, remedy })
+}
+
+/// The best chrome-headless-shell `chrome-cdp install --headless-shell`
+/// installed, with its version; `None` without one.
+pub fn locate_headless_shell(host: &Host) -> Option<Chrome> {
+    let best = headless_shells(host).into_iter().next()?;
+    let mut chrome = Chrome::new(best.executable, Source::Installed { id: best.id }, host);
+    chrome.headless_shell = true;
+    chrome.version = ChromeVersion::new("chrome-headless-shell", &best.version);
+    Some(chrome)
 }
 
 fn search_path(names: &[&str], host: &Host) -> Option<Chrome> {

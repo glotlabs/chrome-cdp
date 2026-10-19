@@ -30,13 +30,17 @@ pub use cft::{
     parse_channels, version_release,
 };
 pub use deps::{CannotRun, DepsFix, Distro, check_runs, chromium_package_line, missing_libraries};
-pub use discover::{Chrome, DiscoverError, Problem, Remedy, Source, discover, locate};
+pub use discover::{
+    Chrome, DiscoverError, Problem, Remedy, Source, discover, locate, locate_headless_shell,
+};
 pub use host::{Arch, CACHE_ENV, CHROME_ENV, Host, INDEX_ENV, NO_USERNS_CHECK_ENV, Os};
 pub use install::{
     InstallError, Installation, PINNED, Progress, Request, channels, install, quarantined,
     uninstall,
 };
-pub use installed::{COMPLETE_MARKER, Installed, cache_dir, installed, platform_key};
+pub use installed::{
+    COMPLETE_MARKER, Installed, cache_dir, headless_shells, installed, platform_key,
+};
 pub use launch::{LaunchOptions, Launched, ProfileChoice, launch, sandbox_blocked_error};
 pub use version::{ChromeVersion, MIN_CHROME_MAJOR};
 

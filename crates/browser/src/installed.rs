@@ -80,6 +80,30 @@ pub fn installed(host: &Host) -> Vec<Installed> {
     found
 }
 
+/// The complete installs that hold a chrome-headless-shell (`install
+/// --headless-shell`), best first as [`installed`] orders them, each with
+/// the shell as its executable: what `chrome-cdp load` runs by default
+/// (plan 23.2).
+pub fn headless_shells(host: &Host) -> Vec<Installed> {
+    let (Some(cache), Some(platform)) = (cache_dir(host), platform_key(host)) else {
+        return Vec::new();
+    };
+    let mut shells: Vec<Installed> = installed(host)
+        .into_iter()
+        .filter(|i| i.products.contains(&Product::HeadlessShell))
+        .map(|i| Installed {
+            executable: cache
+                .join("browsers")
+                .join(&i.id)
+                .join(Product::HeadlessShell.binary(platform)),
+            headless_shell: true,
+            ..i
+        })
+        .collect();
+    shells.sort_by(better);
+    shells
+}
+
 /// `stable-154.0.8037.57-linux64` → an [`Installed`], if it is complete,
 /// for `platform`, and holds a binary.
 fn parse_install(dir: &Path, id: &str, platform: &str) -> Option<Installed> {
@@ -122,7 +146,7 @@ fn better(a: &Installed, b: &Installed) -> Ordering {
 mod tests {
     use std::path::Path;
 
-    use super::{cache_dir, installed, platform_key};
+    use super::{cache_dir, headless_shells, installed, platform_key};
     use crate::host::{Arch, Host, Os};
     use crate::tests::{executable, install};
 
@@ -251,6 +275,40 @@ mod tests {
             found[0]
                 .executable
                 .ends_with("MacOS/Google Chrome for Testing")
+        );
+    }
+
+    #[test]
+    fn headless_shells_are_found_beside_chrome_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = dir.path().join("cache");
+        let host =
+            Host::fake(Os::Linux, Arch::X86_64, dir.path()).with_var("CHROME_CDP_CACHE", &cache);
+        install(&cache, "stable-154.0.1.0-linux64", "chrome-linux64/chrome");
+        assert!(headless_shells(&host).is_empty());
+        install(
+            &cache,
+            "stable-153.0.1.0-linux64",
+            "chrome-headless-shell-linux64/chrome-headless-shell",
+        );
+        // The shell installed beside a Chrome of the same version.
+        install(
+            &cache,
+            "stable-154.0.1.0-linux64",
+            "chrome-headless-shell-linux64/chrome-headless-shell",
+        );
+        let shells = headless_shells(&host);
+        let ids: Vec<&str> = shells.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["stable-154.0.1.0-linux64", "stable-153.0.1.0-linux64"]
+        );
+        assert!(shells.iter().all(|i| i.headless_shell));
+        assert_eq!(
+            shells[0].executable,
+            cache.join(
+                "browsers/stable-154.0.1.0-linux64/chrome-headless-shell-linux64/chrome-headless-shell"
+            )
         );
     }
 }
