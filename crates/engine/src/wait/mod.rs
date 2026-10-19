@@ -80,6 +80,25 @@ pub(crate) fn test_settle() -> bool {
     SETTLE.try_with(|s| *s == Settle::Test).unwrap_or(false)
 }
 
+tokio::task_local! {
+    /// Whether the call being handled is a load run's step (see
+    /// [`in_lean`]).
+    static LEAN: bool;
+}
+
+/// Runs `fut` as a load run's step (plan 23.1): an action waits for what
+/// it caused as usual, but builds no report of it (no focus marks, no
+/// console errors, issues or failed requests listed), which one user of
+/// hundreds never reads.
+pub async fn in_lean<F: Future>(fut: F) -> F::Output {
+    LEAN.scope(true, fut).await
+}
+
+/// Whether the call being handled is a lean one (see [`in_lean`]).
+pub(crate) fn lean() -> bool {
+    LEAN.try_with(|l| *l).unwrap_or(false)
+}
+
 /// How many in-flight requests an error or warning lists.
 const LISTED_REQUESTS: usize = 3;
 

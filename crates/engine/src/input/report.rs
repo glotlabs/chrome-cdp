@@ -16,7 +16,8 @@
 //! error (plan 17.1), a logpoint's hit (plan 15.4), a dev server's hot
 //! update (plan 15.6), a failed request to the page's own origin, or
 //! focus moving to another form (`! …`). `--json` lists them
-//! in `events`. `--snap` appends `snapshot --diff -i`.
+//! in `events`. `--snap` appends `snapshot --diff -i`. A load run's step
+//! ([`crate::in_lean`]) waits as usual and reports nothing.
 
 use std::time::Duration;
 
@@ -105,7 +106,9 @@ impl Actor<'_> {
             .into_iter()
             .next()
             .and_then(|f| origin(&f.url).map(str::to_owned));
-        self.focus_mark().await;
+        if !crate::wait::lean() {
+            self.focus_mark().await;
+        }
         Before {
             start: Instant::now(),
             watch,
@@ -193,6 +196,10 @@ impl Actor<'_> {
         } else {
             self.wait_after(&mut before, mark).await?
         };
+        if crate::wait::lean() {
+            // A load run's step (plan 23.1): only whether it worked.
+            return Ok(output);
+        }
         let mut events: Vec<Event> = Vec::new();
         let mut warnings = Vec::new();
         let leaving = before.watch.leaving();
