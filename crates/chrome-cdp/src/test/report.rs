@@ -361,17 +361,21 @@ pub(super) fn listed(plan: &Plan, shard: Option<&str>, max_chars: usize) -> Outp
     if !shards.is_empty() {
         let _ = write!(
             text,
-            "\nexpected time by shard (from {}):",
-            super::durations::key(&plan.config.root, &plan.config.durations)
+            "\nexpected time by shard (from {}; the tests' times added up, and about how long with {} at once):",
+            super::durations::key(&plan.config.root, &plan.config.durations),
+            plan.jobs
         );
         for s in &shards {
             let _ = write!(
                 text,
-                "\n  {}: {} test{}, {}{}",
+                "\n  {}: {} test{}, {}, about {}{}",
                 s.shard,
                 s.tests,
                 if s.tests == 1 { "" } else { "s" },
                 format::duration(Duration::from_millis(s.expected_ms)),
+                format::duration(Duration::from_millis(
+                    s.expected_ms / u64::from(plan.jobs.max(1))
+                )),
                 if s.listed { " (listed)" } else { "" }
             );
         }

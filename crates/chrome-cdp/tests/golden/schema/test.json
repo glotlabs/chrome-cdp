@@ -1879,7 +1879,7 @@
       "description": "A shard of `chrome-cdp test --list --shard`, split by the tests'\ndurations (plan 22.5).",
       "properties": {
         "expected_ms": {
-          "description": "The sum of its tests' average durations; a test the file has no\ntime for counts as the mean of the others.",
+          "description": "The sum of its tests' average durations (one at a time; with N at\nonce, about this over N); a test the file has no time for counts\nas the mean of the others.",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"

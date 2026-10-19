@@ -73,16 +73,20 @@ the list, as before.
 `test --list --shard 2/4` shows every shard's expected time:
 
 ```
-$ chrome-cdp test --list --shard 2/4
+$ chrome-cdp test --list --shard 2/4 --jobs 4
 e2e/scenarios/cart.cdp:3 adds a product to the cart
 …
 251 tests
-expected time by shard (from e2e/.durations.json):
-  1/4: 250 tests, 1m31s
-  2/4: 251 tests, 1m32s (listed)
-  3/4: 249 tests, 1m30s
-  4/4: 250 tests, 1m33s
+expected time by shard (from e2e/.durations.json; the tests' times added up, and about how long with 4 at once):
+  1/4: 250 tests, 4m7s, about 1m1s
+  2/4: 251 tests, 4m8s, about 1m2s (listed)
+  3/4: 249 tests, 4m6s, about 1m1s
+  4/4: 250 tests, 4m7s, about 1m1s
 ```
+
+A test's time is what it took in the runs the file kept, and tests take
+longer when more run at once on the machine, so "about" is a guide; the
+split only needs the times in proportion.
 
 `--json` has them in `data.shards`.
 

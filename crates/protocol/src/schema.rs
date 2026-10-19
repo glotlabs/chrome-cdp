@@ -6225,8 +6225,9 @@ pub struct TestShard {
     pub shard: String,
     /// How many tests it has.
     pub tests: usize,
-    /// The sum of its tests' average durations; a test the file has no
-    /// time for counts as the mean of the others.
+    /// The sum of its tests' average durations (one at a time; with N at
+    /// once, about this over N); a test the file has no time for counts
+    /// as the mean of the others.
     pub expected_ms: u64,
     /// Whether it is the shard listed.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
