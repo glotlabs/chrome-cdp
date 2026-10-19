@@ -377,6 +377,139 @@ fn list_and_shards_need_no_browser() {
     assert!(sandbox.daemons().is_empty());
 }
 
+/// A durations file (plan 22.5) for the passing suite: "starts from the
+/// seed again" has no time, "a phone's viewport" failed last time, and
+/// two tests that no longer exist are in it.
+const DURATIONS: &str = r#"{"version": 1, "backends": {"mock": {
+  "scenarios/pass/layers.cdp": {
+    "the regular price": {"ms": 300, "runs": 5, "last": "passed"},
+    "a sale price from a layered set": {"ms": 200, "runs": 5, "last": "passed"},
+    "a phone's viewport": {"ms": 1000, "runs": 1, "last": "failed"},
+    "the state the @before-all saved": {"ms": 600, "runs": 5, "last": "passed"},
+    "a test renamed since": {"ms": 50, "runs": 5, "last": "passed"}
+  },
+  "scenarios/pass/todos.cdp": {
+    "adds a todo": {"ms": 800, "runs": 5, "last": "passed"},
+    "adds a todo through a step file": {"ms": 700, "runs": 5, "last": "flaky"}
+  },
+  "scenarios/pass/deleted.cdp": {
+    "gone": {"ms": 50, "runs": 5, "last": "passed"}
+  }
+}}}"#;
+
+#[test]
+fn shards_split_by_the_durations_file() {
+    let sandbox = Sandbox::new();
+    let root = sandbox.dir.path().join("app");
+    copy_dir(&testdata(), &root);
+    let run = |args: &[&str]| common::run(sandbox.cli().current_dir(&root).arg("test").args(args));
+    let file = root.join("e2e/.durations.json");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, DURATIONS).unwrap();
+    // Each shard's expected time; the unknown test counts as the mean.
+    let out = run(&["--list", "--shard", "1/2"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    golden_in("durations", "list-shard.txt", &stdout(&out));
+    let mut all = Vec::new();
+    for shard in ["1/2", "2/2"] {
+        let out = run(&["--list", "-q", "--shard", shard]);
+        all.extend(stdout(&out).lines().map(str::to_owned).collect::<Vec<_>>());
+    }
+    all.sort();
+    let mut every: Vec<String> = stdout(&run(&["--list", "-q"]))
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    every.sort();
+    assert_eq!(all, every);
+    let (_, value) = {
+        let out = run(&["--list", "--shard", "2/2", "--json"]);
+        let value: Value = serde_json::from_slice(&out.stdout).unwrap();
+        (out, value)
+    };
+    assert_eq!(
+        value["data"]["shards"],
+        serde_json::json!([
+            {"shard": "1/2", "tests": 4, "expected_ms": 2100},
+            {"shard": "2/2", "tests": 3, "expected_ms": 2100, "listed": true},
+        ])
+    );
+    // --list leaves the file as it was.
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), DURATIONS);
+    // A file that does not parse: a warning, and shards by count.
+    std::fs::write(&file, "{").unwrap();
+    let out = run(&["--list", "--shard", "1/2"]);
+    assert_eq!(out.status.code(), Some(0));
+    assert!(
+        stderr(&out).contains("is not a durations file"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(!stdout(&out).contains("expected time"), "{}", stdout(&out));
+    assert!(sandbox.daemons().is_empty());
+}
+
+/// Plan 22.5: with durations known the longest tests start first, a line
+/// prints as its test ends, the results keep the plan's order, and the
+/// run updates the file.
+#[test]
+fn durations_order_the_tests_and_their_lines() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::new(&chrome);
+    let file = project.root.join("e2e/.durations.json");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, DURATIONS).unwrap();
+    // Last time's failure first, then the unknown test, then the longest
+    // first; the files interleave, and layers.cdp's @before-all still
+    // runs before the first of its tests.
+    let out = project.test(&["--jobs", "1", "--failed-first"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    golden_in(
+        "durations",
+        "failed-first.txt",
+        &steady(&stdout(&out), &project.root),
+    );
+    // The file now has every test, as passed, and not the gone ones.
+    let written: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    let tests = &written["backends"]["mock"];
+    let files: Vec<&String> = tests.as_object().unwrap().keys().collect();
+    assert_eq!(
+        files,
+        ["scenarios/pass/layers.cdp", "scenarios/pass/todos.cdp"]
+    );
+    let layers = tests["scenarios/pass/layers.cdp"].as_object().unwrap();
+    assert_eq!(layers.len(), 4, "{layers:?}");
+    assert!(!layers.contains_key("a test renamed since"));
+    let phone = &layers["a phone's viewport"];
+    assert_eq!(
+        (phone["runs"].as_u64(), phone["last"].as_str()),
+        (Some(2), Some("passed"))
+    );
+    let seed = &tests["scenarios/pass/todos.cdp"]["starts from the seed again"];
+    assert_eq!(
+        (seed["runs"].as_u64(), seed["last"].as_str()),
+        (Some(1), Some("passed"))
+    );
+    assert!(seed["ms"].as_u64().is_some());
+
+    // --json keeps the plan's order.
+    let (out, value) = project.json(&["--jobs", "2"]);
+    assert_eq!(out.status.code(), Some(0), "{value}");
+    let names: Vec<String> = statuses(&value).into_iter().map(|(_, n)| n).collect();
+    assert_eq!(
+        names,
+        [
+            "the regular price",
+            "a sale price from a layered set",
+            "a phone's viewport",
+            "the state the @before-all saved",
+            "adds a todo",
+            "adds a todo through a step file",
+            "starts from the seed again",
+        ]
+    );
+}
+
 #[test]
 fn web_servers_are_reused_or_fail_the_run() {
     let Some(chrome) = chrome_path() else { return };

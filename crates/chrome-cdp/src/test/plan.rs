@@ -325,24 +325,19 @@ impl Plan {
     /// plan's order, so without durations it is the plan's order.
     pub(super) fn order(&self) -> Vec<usize> {
         let root = &self.config.root;
-        let keys: Vec<_> = self
+        let tests: Vec<Known> = self
             .tests
             .iter()
             .map(|test| {
                 let file = durations::key(root, &self.scenarios[test.file].path);
-                let failed = self.failed_first && self.durations.failed(&file, &test.name);
-                let ms = self.durations.ms(&file, &test.name);
-                (
-                    test.skipped().is_some(),
-                    !failed,
-                    ms.is_some(),
-                    std::cmp::Reverse(ms.unwrap_or(0)),
-                )
+                Known {
+                    skipped: test.skipped().is_some(),
+                    failed: self.failed_first && self.durations.failed(&file, &test.name),
+                    ms: self.durations.ms(&file, &test.name),
+                }
             })
             .collect();
-        let mut order: Vec<usize> = (0..self.tests.len()).collect();
-        order.sort_by_key(|&i| keys[i]);
-        order
+        order(&tests)
     }
 
     /// The time limit of a test (or hook) with `settings`.
@@ -375,6 +370,31 @@ impl Plan {
         }
         test.settings.retries.unwrap_or(self.retries)
     }
+}
+
+/// What the run order goes by of a test.
+#[derive(Debug, Clone, Copy, Default)]
+struct Known {
+    skipped: bool,
+    /// It failed last time, and the run has `--failed-first`.
+    failed: bool,
+    /// Its average duration.
+    ms: Option<u64>,
+}
+
+/// [`Plan::order`] of `tests`.
+fn order(tests: &[Known]) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..tests.len()).collect();
+    order.sort_by_key(|&i| {
+        let t = tests[i];
+        (
+            t.skipped,
+            !t.failed,
+            t.ms.is_some(),
+            std::cmp::Reverse(t.ms.unwrap_or(0)),
+        )
+    });
+    order
 }
 
 /// Shard `index` (from 1) of `total` of `selected`, split by time when
@@ -572,4 +592,83 @@ fn protect(name: &str, scenarios: &[Scenario], tests: &[Planned]) -> Result<(), 
             "mark read-only tests @safe (or pick them with --tags); --allow-writes runs the rest too",
         ))
         .details(serde_json::json!({ "unsafe": unsafe_tests })))
+}
+
+#[cfg(test)]
+mod tests {
+    use e2e::scenario::Settings;
+    use e2e::scenario::select::Selected;
+
+    use super::{Known, Shards, order, shard_by_time};
+
+    fn known(ms: Option<u64>) -> Known {
+        Known {
+            ms,
+            ..Known::default()
+        }
+    }
+
+    #[test]
+    fn the_longest_tests_start_first() {
+        // Unknown ones first (they may be long), then by time; ties and
+        // tests without times keep the plan's order.
+        let tests = [
+            known(Some(100)),
+            known(None),
+            known(Some(900)),
+            known(Some(100)),
+            known(None),
+            known(Some(500)),
+        ];
+        assert_eq!(order(&tests), [1, 4, 2, 5, 0, 3]);
+        // Without durations, the plan's order.
+        assert_eq!(order(&[known(None); 4]), [0, 1, 2, 3]);
+        // --failed-first: last time's failures before all; skipped last.
+        let mut tests = tests;
+        tests[3].failed = true;
+        tests[2].skipped = true;
+        assert_eq!(order(&tests), [3, 1, 4, 5, 0, 2]);
+    }
+
+    fn selected(n: usize) -> Vec<Selected> {
+        (0..n)
+            .map(|test| Selected {
+                file: 0,
+                test,
+                settings: Settings::default(),
+                title: format!("t{test}"),
+            })
+            .collect()
+    }
+
+    fn tests(part: &[Selected]) -> Vec<usize> {
+        part.iter().map(|s| s.test).collect()
+    }
+
+    #[test]
+    fn shards_split_by_time_once_times_are_known() {
+        let times = [Some(900), Some(100), Some(500), None, Some(400), Some(100)];
+        let ms = |s: &Selected| times[s.test];
+        // The unknown test counts as the mean of the others (400).
+        let (first, shards) = shard_by_time(selected(6), 1, 2, ms);
+        let (second, _) = shard_by_time(selected(6), 2, 2, ms);
+        assert_eq!(tests(&first), [0, 4]);
+        assert_eq!(tests(&second), [1, 2, 3, 5]);
+        assert_eq!(
+            shards,
+            Some(Shards {
+                index: 1,
+                expected: vec![(2, 1300), (4, 1100)],
+            })
+        );
+        // A skipped test counts as nothing, nor in the mean (now 275).
+        let mut skipping = selected(6);
+        skipping[0].settings.skip = Some(String::new());
+        let (_, shards) = shard_by_time(skipping, 1, 2, ms);
+        let expected = shards.unwrap().expected;
+        assert_eq!(expected.iter().map(|e| e.1).sum::<u64>(), 1375);
+        // With no time known, by count as before.
+        let (first, shards) = shard_by_time(selected(6), 1, 2, |_| None);
+        assert_eq!((tests(&first), shards), (vec![0, 1, 2], None));
+    }
 }

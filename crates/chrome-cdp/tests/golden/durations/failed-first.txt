@@ -1,0 +1,9 @@
+running 7 tests from 2 files, 1 at once
+✓ scenarios/pass/layers.cdp:18 a phone's viewport (<t>)
+✓ scenarios/pass/todos.cdp:19 starts from the seed again (<t>)
+✓ scenarios/pass/todos.cdp:9 adds a todo (<t>)
+✓ scenarios/pass/todos.cdp:15 adds a todo through a step file (<t>)
+✓ scenarios/pass/layers.cdp:22 the state the @before-all saved (<t>)
+✓ scenarios/pass/layers.cdp:11 the regular price (<t>)
+✓ scenarios/pass/layers.cdp:14 a sale price from a layered set (<t>)
+7 tests: 7 passed (<t>)

@@ -1,0 +1,8 @@
+scenarios/pass/layers.cdp:11 the regular price [smoke]
+scenarios/pass/layers.cdp:14 a sale price from a layered set
+scenarios/pass/layers.cdp:18 a phone's viewport
+scenarios/pass/layers.cdp:22 the state the @before-all saved
+4 tests
+expected time by shard (from e2e/.durations.json):
+  1/2: 4 tests, 2.1s (listed)
+  2/2: 3 tests, 2.1s
