@@ -229,10 +229,18 @@ pub(super) fn result(error: Option<&ErrorInfo>) -> (&'static str, Option<String>
 }
 
 /// An error's kind as the counts name it: `ExpectFailed`, `Timeout`, …,
-/// and `browser_crash` for a Chrome that went away.
+/// `browser_crash` for a Chrome that went away, and `memory` for a page
+/// above `[load] renderer_memory`.
 pub(super) fn kind(error: &ErrorInfo) -> String {
     if error.kind == ErrorKind::BrowserCrashed {
         return super::BROWSER_CRASH.to_owned();
+    }
+    if error
+        .details
+        .as_ref()
+        .is_some_and(|d| d["kind"] == super::MEMORY)
+    {
+        return super::MEMORY.to_owned();
     }
     serde_json::to_value(error.kind)
         .ok()

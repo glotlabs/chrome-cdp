@@ -75,6 +75,8 @@ pub(super) struct LoadPlan {
     pub(super) hooks: Vec<Hooks>,
     /// The flags steps get: the backend's base_url.
     pub(super) global: GlobalArgs,
+    /// What Chrome fails at once in every user's context (`[load] block`).
+    pub(super) blocked: Vec<engine::BlockedUrl>,
 }
 
 impl LoadPlan {
@@ -102,6 +104,7 @@ impl LoadPlan {
                 )),
             ));
         }
+        let blocked = blocked(&plan.config.load, plan.backend.base_url.as_deref())?;
         let mut global = global.clone();
         if let Some(url) = &plan.backend.base_url {
             global.base_url = Some(url.clone());
@@ -183,8 +186,74 @@ impl LoadPlan {
             journeys,
             hooks,
             global,
+            blocked,
         })
     }
+}
+
+/// What every user's context blocks: `[load] block`'s own patterns, in
+/// order, then the `third-party` preset, which lets the backend's origin
+/// and `[load] allow_hosts` through and blocks every other host. Chrome
+/// takes the first pattern that matches a request, so a pattern of your
+/// own blocks same-origin requests too.
+pub(super) fn blocked(
+    load: &e2e::config::Load,
+    base_url: Option<&str>,
+) -> Result<Vec<engine::BlockedUrl>, ErrorInfo> {
+    use e2e::config::Block;
+    let mut blocked: Vec<engine::BlockedUrl> = load
+        .block
+        .iter()
+        .filter_map(|b| match b {
+            Block::Pattern(p) => Some(engine::BlockedUrl {
+                pattern: p.clone(),
+                block: true,
+            }),
+            Block::ThirdParty => None,
+        })
+        .collect();
+    if !load.block.contains(&Block::ThirdParty) {
+        return Ok(blocked);
+    }
+    let origin = base_url.and_then(origin).ok_or_else(|| {
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!(
+                "[load] block = [\"{}\"] lets the backend's origin through, and the backend \
+                 has no base_url",
+                e2e::config::THIRD_PARTY
+            ),
+        )
+        .hint("give the backend a base_url in [e2e.backends.NAME]")
+    })?;
+    let allow = |pattern: String| engine::BlockedUrl {
+        pattern,
+        block: false,
+    };
+    blocked.push(allow(format!("*://{origin}/*")));
+    blocked.extend(
+        load.allow_hosts
+            .iter()
+            .map(|host| allow(format!("*://{host}:*/*"))),
+    );
+    blocked.push(engine::BlockedUrl {
+        pattern: "*://*:*/*".into(),
+        block: true,
+    });
+    Ok(blocked)
+}
+
+/// `http://localhost:4176/app` → `localhost:4176`: the host and port of an
+/// http(s) URL.
+fn origin(url: &str) -> Option<&str> {
+    let rest = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))?;
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let host = &rest[..end];
+    // Credentials are no part of the origin.
+    let host = host.rsplit_once('@').map_or(host, |(_, h)| h);
+    (!host.is_empty()).then_some(host)
 }
 
 /// The `emulate` request of a test's `@device` or `@viewport`, as `test`
@@ -361,5 +430,62 @@ impl Resolve for Fixed<'_> {
             }
             _ => self.0.resolve(var),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use e2e::config::{Block, Load};
+
+    use super::{blocked, origin};
+
+    fn patterns(load: &Load, base_url: Option<&str>) -> Vec<(String, bool)> {
+        blocked(load, base_url)
+            .unwrap()
+            .into_iter()
+            .map(|b| (b.pattern, b.block))
+            .collect()
+    }
+
+    #[test]
+    fn nothing_is_blocked_by_default() {
+        assert!(patterns(&Load::default(), Some("http://localhost:4176")).is_empty());
+    }
+
+    #[test]
+    fn own_patterns_come_before_the_third_party_preset() {
+        let load = Load {
+            block: vec![Block::ThirdParty, Block::Pattern("*://*:*/*.woff2".into())],
+            allow_hosts: vec!["cdn.example.com".into(), "*.stripe.com".into()],
+            ..Load::default()
+        };
+        assert_eq!(
+            patterns(&load, Some("https://shop.example.com/app/")),
+            [
+                ("*://*:*/*.woff2".to_owned(), true),
+                ("*://shop.example.com/*".to_owned(), false),
+                ("*://cdn.example.com:*/*".to_owned(), false),
+                ("*://*.stripe.com:*/*".to_owned(), false),
+                ("*://*:*/*".to_owned(), true),
+            ]
+        );
+    }
+
+    #[test]
+    fn the_preset_needs_a_base_url() {
+        let load = Load {
+            block: vec![Block::ThirdParty],
+            ..Load::default()
+        };
+        let err = blocked(&load, None).unwrap_err();
+        assert!(err.message.contains("has no base_url"), "{}", err.message);
+    }
+
+    #[test]
+    fn origins_are_host_and_port() {
+        assert_eq!(origin("http://localhost:4176"), Some("localhost:4176"));
+        assert_eq!(origin("https://u:p@shop.com/a?b#c"), Some("shop.com"));
+        assert_eq!(origin("ftp://x"), None);
+        assert_eq!(origin("http:///x"), None);
     }
 }

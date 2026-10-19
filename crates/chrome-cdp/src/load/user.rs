@@ -5,16 +5,22 @@
 //! failure too), then the context closes. Users loop until the run's
 //! duration is up, their iterations are done, or the run stops; all
 //! waiting is on the runtime's timers.
+//!
+//! With `[load] cache = "returning"` (plan 23.2) a user keeps its context,
+//! cookies, storage and HTTP cache from one iteration to the next, until
+//! its Chrome crashes or its page outgrows `[load] renderer_memory`. That
+//! limit is checked between steps, at most once a second per user.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use engine::{ContextCloseRequest, ContextNewRequest, Engine};
+use e2e::config::Cache;
+use engine::{CdpRequest, ContextCloseRequest, ContextNewRequest, EmulateRequest, Engine};
 use protocol::schema::SessionState;
 use protocol::{ErrorInfo, ErrorKind, Hint, Output};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tokio::time::Instant;
 
 use super::plan::{self, How, Journey, LoadPlan, Step};
@@ -43,6 +49,10 @@ pub(super) struct Shared {
     pub(super) file_saved: std::sync::OnceLock<Vec<BTreeMap<String, Value>>>,
     /// The seed of the users' think times.
     pub(super) seed: u64,
+    /// `[load] cache`: whether a user keeps its context.
+    pub(super) cache: Cache,
+    /// `[load] renderer_memory`, in bytes.
+    pub(super) renderer_memory: Option<u64>,
 }
 
 impl Shared {
@@ -58,6 +68,7 @@ pub(super) async fn run(shared: Arc<Shared>, vu: u32, browser: usize, start: Ins
     let mut random = Random::new(shared.seed ^ u64::from(vu).wrapping_mul(0x9e37_79b9));
     let journeys = shared.plan.journeys.len();
     let mut n: u64 = 0;
+    let mut kept = None;
     while !shared.stopped()
         && Instant::now() < shared.ends
         && shared.iterations.is_none_or(|most| n < u64::from(most))
@@ -71,8 +82,22 @@ pub(super) async fn run(shared: Arc<Shared>, vu: u32, browser: usize, start: Ins
             iteration: n,
             journey,
         };
-        Box::pin(user.iteration(browser, &mut random)).await;
+        Box::pin(user.iteration(browser, &mut random, &mut kept)).await;
     }
+    if let Some(kept) = kept {
+        close_context(&kept.engine, kept.context).await;
+    }
+}
+
+/// A returning user's context, kept from one iteration to the next.
+struct Kept {
+    engine: Arc<Engine>,
+    /// Its Chrome's start ([`Pool::generation`]): a Chrome started again
+    /// has none of the contexts of the one before.
+    generation: u64,
+    context: String,
+    /// What the context emulates.
+    emulate: Option<EmulateRequest>,
 }
 
 /// One iteration of a user.
@@ -96,30 +121,62 @@ impl User<'_> {
         &self.shared.plan.journeys[self.journey]
     }
 
-    async fn iteration(&self, browser: usize, random: &mut Random) {
+    async fn iteration(&self, browser: usize, random: &mut Random, kept: &mut Option<Kept>) {
         let shared = self.shared;
         let journey = self.journey();
         let started = Instant::now();
         let started_ms = epoch_ms();
         let setup = |error: ErrorInfo| {
-            self.record_runner_step(started, &error);
+            self.record_runner_step(started, &error, "setup", "context new");
             shared.records.iteration(self.journey, true);
         };
         let engine = match shared.pool.engine(browser).await {
             Ok(engine) => engine,
             Err(error) => return setup(error),
         };
-        let context = match new_context(&engine, &shared.plan).await {
-            Ok(context) => context,
-            Err(error) => return setup(crashed(&engine, error)),
+        let generation = shared.pool.generation(browser);
+        // A returning user's context, unless its Chrome is a new one or
+        // the journey emulates nothing where the context does.
+        let reused = match kept.take() {
+            Some(k)
+                if k.generation == generation
+                    && Arc::ptr_eq(&k.engine, &engine)
+                    && (journey.emulate.is_some() || k.emulate.is_none()) =>
+            {
+                Some(k)
+            }
+            Some(k) => {
+                if k.generation == generation {
+                    close_context(&k.engine, k.context).await;
+                }
+                None
+            }
+            None => None,
         };
-        if let Some(emulate) = &journey.emulate {
+        let (context, emulated) = if let Some(k) = reused {
+            (k.context, k.emulate)
+        } else {
+            let making = Instant::now();
+            match new_context(&engine, &shared.plan).await {
+                Ok(context) => {
+                    shared.records.context_made(making.elapsed());
+                    (context, None)
+                }
+                Err(error) => return setup(crashed(&engine, error)),
+            }
+        };
+        if let Some(emulate) = journey
+            .emulate
+            .as_ref()
+            .filter(|e| emulated.as_ref() != Some(*e))
+        {
             let made = engine::in_context(
                 Some(context.clone()),
                 Box::pin(engine.emulate(emulate.clone())),
             )
             .await;
             if let Err(error) = made {
+                close_context(&engine, context).await;
                 return setup(crashed(&engine, error));
             }
         }
@@ -136,6 +193,7 @@ impl User<'_> {
             shared.plan.plan.run.run_id, self.vu, self.iteration
         );
         let mut failure = None;
+        let mut memory_checked = Instant::now();
         let parts: [(&[Step], Option<&str>); 2] =
             [(&hooks.before, Some("before")), (&journey.steps, None)];
         'parts: for (steps, hook) in parts {
@@ -153,6 +211,14 @@ impl User<'_> {
                     )
                     .await;
                 if let Err(error) = ran {
+                    failure = Some(StepFailure {
+                        at: step.at.clone(),
+                        text: step.text.clone(),
+                        error,
+                    });
+                    break 'parts;
+                }
+                if let Err(error) = self.memory(&engine, &context, &mut memory_checked).await {
                     failure = Some(StepFailure {
                         at: step.at.clone(),
                         text: step.text.clone(),
@@ -207,17 +273,51 @@ impl User<'_> {
             // A crashed Chrome's failure has no page to keep; counted.
             let _ = shared.records.failure();
         }
+        let outgrown = failure
+            .as_ref()
+            .is_some_and(|f| step::kind(&f.error) == super::MEMORY);
         if engine.state() == SessionState::Running {
-            let _ = engine
-                .context_close(ContextCloseRequest {
-                    ids: vec![context],
-                    all: false,
-                    timeout_ms: CLOSE_TIMEOUT_MS,
-                    background: false,
-                })
-                .await;
+            if shared.cache == Cache::Returning && !outgrown {
+                *kept = Some(Kept {
+                    engine: engine.clone(),
+                    generation,
+                    context,
+                    emulate: journey.emulate.clone().or(emulated),
+                });
+            } else {
+                close_context(&engine, context).await;
+            }
         }
         shared.records.iteration(self.journey, failure.is_some());
+    }
+
+    /// With `[load] renderer_memory`, at most once a [`MEMORY_EVERY`]: the
+    /// page's heap, and a `memory` error (recorded) when it is above the
+    /// limit.
+    async fn memory(
+        &self,
+        engine: &Engine,
+        context: &str,
+        checked: &mut Instant,
+    ) -> Result<(), ErrorInfo> {
+        let Some(limit) = self.shared.renderer_memory else {
+            return Ok(());
+        };
+        if checked.elapsed() < MEMORY_EVERY {
+            return Ok(());
+        }
+        let start = Instant::now();
+        *checked = start;
+        // A page between two documents has no heap to read: next time.
+        let Ok(used) = heap(engine, context).await else {
+            return Ok(());
+        };
+        if used <= limit {
+            return Ok(());
+        }
+        let error = memory_error(used, limit);
+        self.record_runner_step(start, &error, "memory", "renderer memory");
+        Err(error)
     }
 
     /// Runs `step` of the iteration and records it; an `http --save`
@@ -301,18 +401,18 @@ impl User<'_> {
         }
     }
 
-    /// Records what the runner did around the steps (a new browser
-    /// context) when it failed.
-    fn record_runner_step(&self, start: Instant, error: &ErrorInfo) {
+    /// Records what the runner did around the steps when it failed: the
+    /// `setup` of a new browser context, a `memory` check.
+    fn record_runner_step(&self, start: Instant, error: &ErrorInfo, hook: &str, command: &str) {
         let (outcome, kind) = step::result(Some(error));
         let journey = self.journey();
         self.shared.records.step(&StepLine {
             vu: self.vu,
             iteration: self.iteration,
             journey: &journey.place,
-            hook: Some("setup"),
+            hook: Some(hook),
             at: &journey.place,
-            command: "context new",
+            command,
             start_ms: self.shared.records.since(start),
             end_ms: self.shared.records.since(Instant::now()),
             result: outcome,
@@ -324,6 +424,67 @@ impl User<'_> {
 
 /// How long closing an iteration's context may take.
 const CLOSE_TIMEOUT_MS: u64 = 10_000;
+
+/// How often a user's page heap is read, at most, with `[load]
+/// renderer_memory`.
+const MEMORY_EVERY: Duration = Duration::from_secs(1);
+
+/// Closes `context`, if its Chrome still runs.
+async fn close_context(engine: &Engine, context: String) {
+    if engine.state() != SessionState::Running {
+        return;
+    }
+    let _ = engine
+        .context_close(ContextCloseRequest {
+            ids: vec![context],
+            all: false,
+            timeout_ms: CLOSE_TIMEOUT_MS,
+            background: false,
+        })
+        .await;
+}
+
+/// The heap of `context`'s page, in bytes: V8's, Blink's, and the array
+/// buffers' and strings' storage outside it (`Runtime.getHeapUsage`).
+async fn heap(engine: &Engine, context: &str) -> Result<u64, ErrorInfo> {
+    let out = engine::in_context(
+        Some(context.to_owned()),
+        Box::pin(engine.cdp(CdpRequest {
+            method: Some("Runtime.getHeapUsage".into()),
+            params: serde_json::Map::new(),
+            target: engine::Target::Page,
+            tab: None,
+            frame: None,
+            listen: Vec::new(),
+            count: 0,
+            all_sessions: false,
+            timeout_ms: CLOSE_TIMEOUT_MS,
+            max_chars: 0,
+        })),
+    )
+    .await?;
+    let size = |name: &str| out.data[name].as_f64().unwrap_or(0.0).max(0.0);
+    let bytes = size("usedSize") + size("embedderHeapUsedSize") + size("backingStorageSize");
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Ok(bytes as u64)
+}
+
+/// The `memory` error of a page whose heap of `used` bytes is above
+/// `limit`.
+fn memory_error(used: u64, limit: u64) -> ErrorInfo {
+    ErrorInfo::new(
+        ErrorKind::ProtocolError,
+        format!(
+            "the page's heap is {}, above [load] renderer_memory ({})",
+            protocol::format::size(used),
+            protocol::format::size(limit)
+        ),
+    )
+    .hint(Hint::text(
+        "the app may leak memory as the journey loops; or raise renderer_memory in [load]",
+    ))
+    .details(json!({ "kind": super::MEMORY, "heap": used, "limit": limit }))
+}
 
 /// A fresh browser context with one tab; its id.
 pub(super) async fn new_context(engine: &Engine, plan: &LoadPlan) -> Result<String, ErrorInfo> {
@@ -393,14 +554,7 @@ pub(super) async fn hook_once(
             break;
         }
     }
-    let _ = engine
-        .context_close(ContextCloseRequest {
-            ids: vec![context],
-            all: false,
-            timeout_ms: CLOSE_TIMEOUT_MS,
-            background: false,
-        })
-        .await;
+    close_context(&engine, context).await;
     result.map(|()| saved)
 }
 

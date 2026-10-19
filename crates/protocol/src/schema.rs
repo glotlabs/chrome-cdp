@@ -5088,6 +5088,10 @@ pub struct LoadData {
     pub users: u32,
     /// How many Chromes they shared.
     pub browsers: u32,
+    /// Which browser the Chromes were: `chrome-headless-shell` or
+    /// `chrome` (`--browser`).
+    #[serde(default)]
+    pub browser: String,
     /// The most users in one Chrome.
     pub users_per_browser: u32,
     /// How long the run took, from its first user's start to its last
@@ -5104,6 +5108,16 @@ pub struct LoadData {
     pub errors: BTreeMap<String, u64>,
     /// How many times a Chrome crashed and was started again.
     pub browser_crashes: u64,
+    /// `[load] cache`: `new` (a fresh browser context each iteration) or
+    /// `returning` (a context per user, kept).
+    #[serde(default)]
+    pub cache: String,
+    /// The browser contexts made for the users.
+    #[serde(default)]
+    pub contexts: u64,
+    /// The mean time making one took, in ms.
+    #[serde(default)]
+    pub context_setup_ms: f64,
     /// The failed iterations whose page, console and requests were kept
     /// (`--keep-failures`), and where.
     pub failures_kept: u64,

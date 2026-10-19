@@ -73,6 +73,13 @@ the top of the GitHub release notes.
   step's timing. `testdata/load/server` is a load server with latency
   and errors per endpoint, and `cargo xtask bench load` measures users
   per machine.
+- A lean browser for load runs (plan 23.2): `load` runs its users in
+  chrome-headless-shell when installed (`--browser chrome` for full
+  Chrome), with flags of its own; the config's `[load]` section can
+  `block` third-party or matching requests in Chrome itself, keep each
+  user's cache and cookies across iterations (`cache = "returning"`), and
+  stop a page whose heap grows past `renderer_memory` (a `memory` error).
+  `load --json` reports the browser, the cache and the contexts made.
 
 ### Changed
 

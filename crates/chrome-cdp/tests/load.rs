@@ -2,7 +2,11 @@
 //! (`testdata/load/server`): users loop the reference journey in real
 //! Chromes and the server sees their requests, `--raw` writes every
 //! step's timing, `--keep-failures 3` keeps exactly three failures, and
-//! a Chrome killed mid-run is started again while its users go on.
+//! a Chrome killed mid-run is started again while its users go on. Plan
+//! 23.2's `[load]` settings: `block = ["third-party"]` stops a
+//! third-party request and nothing else, `cache = "returning"` fetches
+//! the app's files once per user, and `renderer_memory` stops a page that
+//! grows past it.
 //!
 //! Needs a real Chrome (`CHROME_PATH`; skipped without it).
 
@@ -41,6 +45,11 @@ struct Project {
 
 impl Project {
     fn new(chrome: &Path, scenarios: &[(&str, &str)]) -> Self {
+        Self::with_load(chrome, scenarios, "")
+    }
+
+    /// A project whose config ends with `load`, its `[load]` section.
+    fn with_load(chrome: &Path, scenarios: &[(&str, &str)], load: &str) -> Self {
         let sandbox = Sandbox::with_chrome(chrome);
         let server = LoadServer::start(Options::default()).unwrap();
         let root = sandbox.dir.path().join("project");
@@ -49,7 +58,7 @@ impl Project {
             root.join("chrome-cdp.toml"),
             format!(
                 "[e2e]\ntests = [\"e2e/**/*.cdp\"]\ndefault_backend = \"load\"\n\n\
-                 [e2e.backends.load]\nmode = \"real\"\nbase_url = \"{}\"\n",
+                 [e2e.backends.load]\nmode = \"real\"\nbase_url = \"{}\"\n\n{load}",
                 server.url()
             ),
         )
@@ -267,4 +276,100 @@ fn a_journeys_viewport_is_its_users() {
     let data = data(&out);
     assert_eq!(data["iterations"], 2, "{data}");
     assert_eq!(data["failed"], 0, "{data}");
+}
+
+/// The requests the server saw of `METHOD path`.
+fn seen(project: &Project, endpoint: &str) -> u64 {
+    project
+        .server
+        .stats()
+        .get(endpoint)
+        .map_or(0, |seen| seen.requests)
+}
+
+#[test]
+fn third_party_requests_are_blocked_and_nothing_else() {
+    let Some(chrome) = chrome_path() else { return };
+    // The same server as a third party: 127.0.0.1 is another host than
+    // the backend's localhost.
+    let journey = |port: &str| {
+        format!(
+            "@test \"fetches its own and a third party's\"\n  goto /\n  \
+             eval \"await Promise.allSettled([fetch('/own.js'), \
+             fetch('http://127.0.0.1:{port}/third-party.js', {{ mode: 'no-cors' }})])\"\n  \
+             expect 'role=heading[name=\"Products\"]' visible\n"
+        )
+    };
+    for (load, third_party) in [("", 2), ("[load]\nblock = [\"third-party\"]\n", 0)] {
+        let project = Project::with_load(&chrome, &[], load);
+        let port = project.server.url().rsplit(':').next().unwrap().to_owned();
+        std::fs::write(project.root.join("e2e/fetch.cdp"), journey(&port)).unwrap();
+        let out = project.load(&["e2e/fetch.cdp", "--users", "1", "--iterations", "2"]);
+        assert_eq!(common::code(&out), 0, "{}\n{}", stdout(&out), stderr(&out));
+        let data = data(&out);
+        assert_eq!(data["failed"], 0, "{data}");
+        assert_eq!(seen(&project, "GET /own.js"), 2, "{load}");
+        assert_eq!(seen(&project, "GET /third-party.js"), third_party, "{load}");
+        assert_eq!(seen(&project, "GET /api/products"), 2, "{load}");
+    }
+}
+
+#[test]
+fn returning_users_fetch_the_app_once() {
+    let Some(chrome) = chrome_path() else { return };
+    let journey =
+        "@test \"browses\"\n  goto /\n  expect 'role=heading[name=\"Products\"]' visible\n";
+    for (cache, files, contexts) in [("new", 3, 3), ("returning", 1, 1)] {
+        let project = Project::with_load(
+            &chrome,
+            &[("browse.cdp", journey)],
+            &format!("[load]\ncache = \"{cache}\"\n"),
+        );
+        let out = project.load(&["e2e/browse.cdp", "--users", "1", "--iterations", "3"]);
+        assert_eq!(common::code(&out), 0, "{}\n{}", stdout(&out), stderr(&out));
+        let data = data(&out);
+        assert_eq!(data["cache"], cache);
+        assert_eq!(data["iterations"], 3, "{data}");
+        assert_eq!(data["contexts"], contexts, "{data}");
+        let stats = project.server.stats();
+        let script = stats
+            .iter()
+            .find(|(k, _)| {
+                k.starts_with("GET /assets/")
+                    && Path::new(k.as_str()).extension().is_some_and(|e| e == "js")
+            })
+            .unwrap_or_else(|| panic!("no script in {stats:?}"));
+        assert_eq!(script.1.requests, files, "{cache}: {stats:?}");
+        // The page itself is not cacheable.
+        assert_eq!(seen(&project, "GET /"), 3, "{cache}");
+    }
+}
+
+#[test]
+fn a_page_above_renderer_memory_is_a_memory_error() {
+    let Some(chrome) = chrome_path() else { return };
+    let journey = "@test \"leaks\"\n  goto /\n  \
+                   eval \"window.leak = new Array(8e6).fill(0).map((_, i) => i + 0.5); 1\"\n  \
+                   think 1100ms\n  expect 'role=heading[name=\"Products\"]' visible\n";
+    let project = Project::with_load(
+        &chrome,
+        &[("leak.cdp", journey)],
+        "[load]\ncache = \"returning\"\nrenderer_memory = \"32MB\"\n",
+    );
+    let out = project.load(&["e2e/leak.cdp", "--users", "1", "--iterations", "2", "--raw"]);
+    // Every iteration failed.
+    assert_eq!(common::code(&out), 1, "{}\n{}", stdout(&out), stderr(&out));
+    let data = data(&out);
+    assert_eq!(data["errors"]["memory"], 2, "{data}");
+    // The user went on in a fresh context.
+    assert_eq!(data["contexts"], 2, "{data}");
+    let raw = std::fs::read_to_string(data["raw"].as_str().unwrap()).unwrap();
+    let line = raw
+        .lines()
+        .find(|l| l.contains("\"hook\":\"memory\""))
+        .unwrap_or_else(|| panic!("{raw}"));
+    assert!(
+        line.contains("above [load] renderer_memory (32MB)"),
+        "{line}"
+    );
 }

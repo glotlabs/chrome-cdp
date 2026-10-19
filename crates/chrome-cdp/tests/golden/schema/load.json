@@ -918,6 +918,11 @@
           "description": "The backend loaded.",
           "type": "string"
         },
+        "browser": {
+          "default": "",
+          "description": "Which browser the Chromes were: `chrome-headless-shell` or\n`chrome` (`--browser`).",
+          "type": "string"
+        },
         "browser_crashes": {
           "description": "How many times a Chrome crashed and was started again.",
           "format": "uint64",
@@ -927,6 +932,24 @@
         "browsers": {
           "description": "How many Chromes they shared.",
           "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cache": {
+          "default": "",
+          "description": "`[load] cache`: `new` (a fresh browser context each iteration) or\n`returning` (a context per user, kept).",
+          "type": "string"
+        },
+        "context_setup_ms": {
+          "default": 0.0,
+          "description": "The mean time making one took, in ms.",
+          "format": "double",
+          "type": "number"
+        },
+        "contexts": {
+          "default": 0,
+          "description": "The browser contexts made for the users.",
+          "format": "uint64",
           "minimum": 0,
           "type": "integer"
         },

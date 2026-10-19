@@ -26,7 +26,8 @@ Options:
 - `--keep-failures <N>`: Keep the page, console and requests of the first N failed iterations, e.g. 5; later failures are only counted (default `20`)
 - `--raw`: Write every step's start, end and result to steps.jsonl in the run's folder
 - `--allow-writes`: Run journeys not marked @safe on a protected backend too; `http` writes are then allowed in their steps
-- `--headed`: Show the browser windows
+- `--browser <BROWSER>`: The browser the users run: headless-shell (chrome-headless-shell, the default when installed; less memory per user) or chrome (full headless Chrome, for apps that need it) (one of `headless-shell`, `chrome`)
+- `--headed`: Show the browser windows (in full Chrome)
 - `--max-chars <N>`: Bound the JSON output to this many characters (0 = no limit) (default `200000`)
 
 ```text
@@ -49,13 +50,23 @@ debug, refs like e12) are an error before any browser starts.
 
 The run uses --browsers Chromes with up to --users-per-browser users
 each (10 by default; past 25, users in one Chrome slow each other
-down). A Chrome that crashes is started again, and its users record a
-browser_crash error and go on in the new one. The first
+down): chrome-headless-shell when installed (chrome-cdp install
+--headless-shell), else full Chrome with a warning; --browser chrome
+picks full Chrome. A Chrome that crashes is started again, and its users
+record a browser_crash error and go on in the new one. The first
 --keep-failures failed iterations keep failure.png, snapshot.txt,
 console.txt and requests.txt in
 e2e/.results/load/<run>/failures/<n>-vu<V>-i<I>/; later ones are only
 counted. --raw writes every step's start, end and result to steps.jsonl
 in the run's folder.
+
+The config's [load] section sets what the users' browsers fetch and
+keep: block = ["third-party"] (or URL patterns like
+"*://*.ads.example/*") fails those requests at once; cache =
+"returning" keeps each user's context, cookies and HTTP cache across
+its iterations ("new", a fresh context each time, is the default);
+renderer_memory = "512MB" makes a page whose heap grows past it a
+memory error, and its user goes on in a fresh context.
 
 Examples:
   chrome-cdp load e2e/scenarios/shop.cdp:12 --backend staging --users 50 --duration 5m
@@ -63,5 +74,6 @@ Examples:
   chrome-cdp load e2e/load/journeys.cdp --users 20 --iterations 5 --raw
   chrome-cdp load e2e/scenarios/shop.cdp --users 100 --browsers 4 --think 1s..3s
   chrome-cdp load e2e/scenarios/checkout.cdp --backend staging --allow-writes --keep-failures 5
+  chrome-cdp load e2e/scenarios/shop.cdp --users 50 --browser chrome
 ```
 

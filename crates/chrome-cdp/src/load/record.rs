@@ -71,6 +71,10 @@ pub(super) struct Tally {
     pub(super) errors: BTreeMap<String, u64>,
     /// Per journey: iterations and failed ones.
     pub(super) journeys: Vec<(u64, u64)>,
+    /// Browser contexts made for the users, and how long making them took
+    /// in all.
+    pub(super) contexts: u64,
+    pub(super) context_setup: std::time::Duration,
 }
 
 /// What the run keeps, shared by its users.
@@ -160,6 +164,13 @@ impl Records {
         }
     }
 
+    /// Counts a browser context made for a user, in `took`.
+    pub(super) fn context_made(&self, took: std::time::Duration) {
+        let mut tally = self.tally();
+        tally.contexts += 1;
+        tally.context_setup += took;
+    }
+
     /// A failed iteration: its number from 1 while the run keeps them
     /// (`--keep-failures`), else `None` (it is only counted).
     pub(super) fn failure(&self) -> Option<u64> {
@@ -181,6 +192,8 @@ impl Records {
             steps: tally.steps,
             errors: tally.errors.clone(),
             journeys: tally.journeys.clone(),
+            contexts: tally.contexts,
+            context_setup: tally.context_setup,
         }
     }
 

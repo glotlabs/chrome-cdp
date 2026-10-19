@@ -125,6 +125,7 @@ command chrome-cdp load
   flag --keep-failures value=N
   flag --raw
   flag --allow-writes
+  flag --browser value=BROWSER values=headless-shell|chrome
   flag --headed
   flag --max-chars value=N
 command chrome-cdp history

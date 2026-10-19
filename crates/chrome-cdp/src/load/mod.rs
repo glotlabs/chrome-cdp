@@ -28,10 +28,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use engine::OpenRequest;
 use protocol::schema::{LoadData, LoadJourney};
-use protocol::{ErrorInfo, ErrorKind, Hint, Mode, Output};
+use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
 use tokio::time::Instant;
 
-use crate::cli::{DEFAULT_TIMEOUT, GlobalArgs, LoadArgs};
+use crate::cli::{DEFAULT_TIMEOUT, GlobalArgs, LoadArgs, LoadBrowser};
 use crate::output;
 use plan::LoadPlan;
 use pool::Pool;
@@ -48,6 +48,15 @@ const CROWDED_BROWSER: u32 = 25;
 
 /// The error kind of a step whose Chrome crashed.
 pub(crate) const BROWSER_CRASH: &str = "browser_crash";
+
+/// The error kind of a user whose page outgrew `[load] renderer_memory`.
+pub(crate) const MEMORY: &str = "memory";
+
+/// How many console entries and requests each user's tab keeps, for a
+/// kept failure's `console.txt` and `requests.txt`: more than an
+/// iteration makes, far fewer than `open`'s, as a returning user's tab
+/// lives for the whole run.
+const LOGGED: usize = 300;
 
 /// The stack of the runtime's threads.
 const STACK_SIZE: usize = 8 * 1024 * 1024;
@@ -100,15 +109,19 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
         ));
     }
     let timeout = global.timeout_or(DEFAULT_TIMEOUT).max(DEFAULT_TIMEOUT);
-    let chrome = crate::install::find_chrome(None, false, timeout)?;
+    let chrome = find_browser(args, timeout)?;
     if mode == Mode::Text {
         for warning in &chrome.warnings {
             output::stderr(&format!("warning: {warning}\n"));
         }
     }
+    let kind = browser_kind(&chrome);
     let open = OpenRequest {
         chrome: Some(chrome),
         headed: Some(args.headed),
+        load: true,
+        console_buffer: Some(LOGGED),
+        network_buffer: Some(LOGGED),
         timeout_ms: millis(timeout),
         ..OpenRequest::default()
     };
@@ -122,7 +135,7 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
             )
         })?;
     if mode == Mode::Text {
-        output::stdout(&starting(&plan, args, browsers));
+        output::stdout(&starting(&plan, args, browsers, kind));
     }
     let stop = Arc::new(AtomicBool::new(false));
     let servers = std::sync::OnceLock::new();
@@ -168,6 +181,7 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
             .collect(),
         users: args.users,
         browsers,
+        browser: kind.to_owned(),
         users_per_browser: args.users.div_ceil(browsers),
         duration_ms: millis(took),
         iterations: counts.iterations,
@@ -175,9 +189,93 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
         steps: counts.steps,
         errors: counts.errors,
         browser_crashes: pool_restarts,
+        cache: plan.plan.config.load.cache.as_str().to_owned(),
+        contexts: counts.contexts,
+        context_setup_ms: mean_ms(counts.context_setup, counts.contexts),
         failures_kept: records.kept(),
         failures_dir: (records.kept() > 0).then(|| records.failures_dir.display().to_string()),
         raw: records.raw_path.as_ref().map(|p| p.display().to_string()),
+    })
+}
+
+/// The Chrome the users run (`--browser`): chrome-headless-shell unless
+/// `--browser chrome` or `--headed`, else full Chrome, with a warning
+/// when the shell was wanted and is not installed. `$CHROME_CDP_CHROME`
+/// beats both.
+fn find_browser(args: &LoadArgs, timeout: Duration) -> Result<browser::Chrome, ErrorInfo> {
+    let host = browser::Host::current();
+    let explicit = host.var(browser::CHROME_ENV).is_some();
+    let shell = if explicit {
+        None
+    } else {
+        browser::locate_headless_shell(&host)
+    };
+    match pick(args.browser, args.headed, explicit, shell.is_some())? {
+        Pick::Shell => shell.ok_or_else(|| {
+            ErrorInfo::new(ErrorKind::ChromeNotFound, "chrome-headless-shell went away")
+        }),
+        Pick::Chrome => crate::install::find_chrome(None, false, timeout),
+        Pick::ChromeInstead => {
+            let mut chrome = crate::install::find_chrome(None, false, timeout)?;
+            chrome.warnings.insert(
+                0,
+                format!(
+                    "chrome-headless-shell is not installed, so the users run in full Chrome, \
+                     which takes more memory per user; install it: {}",
+                    Cmd::new("install").switch("headless-shell")
+                ),
+            );
+            Ok(chrome)
+        }
+    }
+}
+
+/// Which browser a load run starts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pick {
+    /// The installed chrome-headless-shell.
+    Shell,
+    /// The Chrome `open` would start ($CHROME_CDP_CHROME's, if set).
+    Chrome,
+    /// Full Chrome, since the shell is not installed: with a warning.
+    ChromeInstead,
+}
+
+/// What to start for `--browser asked` (and `--headed`), with or without
+/// `$CHROME_CDP_CHROME` (`explicit`) and an installed shell.
+fn pick(
+    asked: Option<LoadBrowser>,
+    headed: bool,
+    explicit: bool,
+    shell_installed: bool,
+) -> Result<Pick, ErrorInfo> {
+    if headed && asked == Some(LoadBrowser::HeadlessShell) {
+        return Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            "chrome-headless-shell cannot show windows",
+        )
+        .hint("drop --headed, or use --browser chrome"));
+    }
+    let wanted = asked.unwrap_or(if headed {
+        LoadBrowser::Chrome
+    } else {
+        LoadBrowser::HeadlessShell
+    });
+    Ok(match wanted {
+        LoadBrowser::Chrome => Pick::Chrome,
+        _ if explicit => Pick::Chrome,
+        LoadBrowser::HeadlessShell if shell_installed => Pick::Shell,
+        LoadBrowser::HeadlessShell if asked.is_none() => Pick::ChromeInstead,
+        LoadBrowser::HeadlessShell => {
+            return Err(ErrorInfo::new(
+                ErrorKind::ChromeNotFound,
+                "chrome-headless-shell is not installed",
+            )
+            .hint(
+                Hint::run(Cmd::new("install").switch("headless-shell"))
+                    .or("--browser chrome runs the users in full Chrome"),
+            ));
+        }
     })
 }
 
@@ -203,12 +301,22 @@ fn browsers(args: &LoadArgs) -> Result<u32, ErrorInfo> {
     }
 }
 
-/// What the run is about to do: `load: 50 users in 2 Chromes, 1 journey,
-/// 1m against backend local (http://localhost:4174)`.
-fn starting(plan: &LoadPlan, args: &LoadArgs, browsers: u32) -> String {
+/// `chrome-headless-shell` or `chrome`.
+fn browser_kind(chrome: &browser::Chrome) -> &'static str {
+    if chrome.headless_shell {
+        "chrome-headless-shell"
+    } else {
+        "chrome"
+    }
+}
+
+/// What the run is about to do: `load: 50 users in 2 Chromes
+/// (chrome-headless-shell), 1 journey, 1m against backend local
+/// (http://localhost:4174)`.
+fn starting(plan: &LoadPlan, args: &LoadArgs, browsers: u32, kind: &str) -> String {
     let backend = &plan.plan.backend;
     let mut text = format!(
-        "load: {} {} in {} {}, {} {}, {}",
+        "load: {} {} in {} {} ({kind}), {} {}, {}",
         args.users,
         if args.users == 1 { "user" } else { "users" },
         browsers,
@@ -281,7 +389,7 @@ async fn users(drive: Drive<'_>) -> Result<(Records, u64, Duration), ErrorInfo> 
         }
     });
     let name = format!("load-{}", plan.plan.run.run_id);
-    let pool = Pool::start(&name, browsers, open).await?;
+    let pool = Pool::start(&name, browsers, open, &plan.blocked).await?;
     let mut records = records;
     records.start();
     let started = records.started;
@@ -295,6 +403,8 @@ async fn users(drive: Drive<'_>) -> Result<(Records, u64, Duration), ErrorInfo> 
         iterations: args.iterations,
         file_saved: std::sync::OnceLock::new(),
         seed: seed(&plan.plan.run.run_id),
+        cache: plan.plan.config.load.cache,
+        renderer_memory: plan.plan.config.load.renderer_memory,
     });
     let result = run_users(shared.clone(), args, started).await;
     listener.abort();
@@ -417,6 +527,13 @@ fn text(data: &LoadData) -> String {
     if !data.errors.is_empty() {
         let _ = writeln!(text, "errors: {}", errors_line(&data.errors));
     }
+    if data.contexts > 0 {
+        let _ = writeln!(
+            text,
+            "browser contexts: {} made ({} cache), {} ms each",
+            data.contexts, data.cache, data.context_setup_ms
+        );
+    }
     if data.browser_crashes > 0 {
         let _ = writeln!(
             text,
@@ -447,6 +564,50 @@ fn errors_line(errors: &BTreeMap<String, u64>) -> String {
         .join(", ")
 }
 
+/// `total` over `n`, in ms with a decimal.
+fn mean_ms(total: Duration, n: u64) -> f64 {
+    if n == 0 {
+        return 0.0;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let ms = total.as_secs_f64() * 1000.0 / n as f64;
+    (ms * 10.0).round() / 10.0
+}
+
 fn millis(d: Duration) -> u64 {
     u64::try_from(d.as_millis()).unwrap_or(u64::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Pick, pick};
+    use crate::cli::LoadBrowser;
+
+    #[test]
+    fn the_shell_unless_told_otherwise() {
+        assert_eq!(pick(None, false, false, true).unwrap(), Pick::Shell);
+        assert_eq!(
+            pick(None, false, false, false).unwrap(),
+            Pick::ChromeInstead
+        );
+        let shell = Some(LoadBrowser::HeadlessShell);
+        assert_eq!(pick(shell, false, false, true).unwrap(), Pick::Shell);
+        let err = pick(shell, false, false, false).unwrap_err();
+        assert_eq!(err.message, "chrome-headless-shell is not installed");
+        assert_eq!(
+            err.hint.as_deref(),
+            Some(
+                "chrome-cdp install --headless-shell, or --browser chrome runs the users in \
+                 full Chrome"
+            )
+        );
+        let chrome = Some(LoadBrowser::Chrome);
+        assert_eq!(pick(chrome, false, false, true).unwrap(), Pick::Chrome);
+        // $CHROME_CDP_CHROME is the browser.
+        assert_eq!(pick(None, false, true, false).unwrap(), Pick::Chrome);
+        assert_eq!(pick(shell, false, true, false).unwrap(), Pick::Chrome);
+        // Windows are full Chrome's.
+        assert_eq!(pick(None, true, false, true).unwrap(), Pick::Chrome);
+        assert!(pick(shell, true, false, true).is_err());
+    }
 }
