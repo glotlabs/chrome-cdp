@@ -361,8 +361,36 @@ chrome-cdp itself under 1 core and 500 MB. Results go to
 `target/bench/load.json`.
 
 <!-- bench:load -->
-Not run yet.
+Last run: 2026-10-19 on macos-aarch64 (16 CPUs), Google Chrome for Testing 155.0.8059.84. `testdata/load/scenarios/shop.cdp`, 60 s per run after a 10 s ramp-up.
+
+**Users per machine: 50** (the most users of a run that held).
+
+| Users | Per Chrome | Chromes | Iterations | Failed | Step p50 | Step p95 | Chrome RSS / user | Chrome CPU / user | chrome-cdp CPU | chrome-cdp RSS | All CPUs | Held |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|
+| 25 | 10 | 3 | 255 | 0% | 70.2 ms | 201 ms | 490 MB | 8.38% | 0.02 | 24 MB | 2.12 | yes |
+| 50 | 10 | 5 | 507 | 0% | 103 ms | 201 ms | 467 MB | 8.58% | 0.05 | 26 MB | 4.34 | yes |
+| 100 | 10 | 10 | 806 | 0% | 121 ms | 991 ms | 403 MB | 8.11% | 0.08 | 32 MB | 8.18 | no |
+| 200 | 10 | 20 | 625 | 0% | 290 ms | 7434 ms | 336 MB | 4.06% | 0.07 | 44 MB | 8.18 | no |
+| 400 | 10 | 40 | 1096 | 96.5% | 145 ms | 32015 ms | 265 MB | 1.95% | 0.03 | 44 MB | 7.84 | no |
+| 25 | 25 | 1 | 244 | 0% | 103 ms | 285 ms | 400 MB | 7.67% | 0.02 | 22 MB | 1.94 | yes |
+| 50 | 25 | 2 | 471 | 0% | 104 ms | 448 ms | 399 MB | 7.67% | 0.05 | 27 MB | 3.89 | yes |
+| 100 | 25 | 4 | 715 | 0% | 171 ms | 1362 ms | 397 MB | 6.73% | 0.08 | 34 MB | 6.82 | no |
+| 200 | 25 | 8 | 718 | 0% | 608 ms | 5061 ms | 336 MB | 3.85% | 0.08 | 45 MB | 7.78 | no |
+| 400 | 25 | 16 | 1047 | 95.4% | 173 ms | 35209 ms | 242 MB | 2.01% | 0.04 | 46 MB | 8.06 | no |
+| 25 | 50 | 1 | 239 | 0% | 103 ms | 353 ms | 399 MB | 7.70% | 0.02 | 23 MB | 1.95 | yes |
+| 50 | 50 | 1 | 352 | 0% | 200 ms | 1354 ms | 377 MB | 5.89% | 0.05 | 28 MB | 3.00 | no |
+| 100 | 50 | 2 | 496 | 0% | 418 ms | 2779 ms | 375 MB | 4.60% | 0.09 | 36 MB | 4.69 | no |
+| 200 | 50 | 4 | 549 | 0.18% | 809 ms | 7926 ms | 331 MB | 2.78% | 0.10 | 50 MB | 5.66 | no |
+| 400 | 50 | 8 | 896 | 93.2% | 4486 ms | 47897 ms | 245 MB | 1.94% | 0.05 | 54 MB | 7.80 | no |
 <!-- /bench:load -->
+
+On the macOS run above, chrome-cdp itself stayed under 0.1 cores and
+60 MB at every size. From 100 users on, the limit was the machine: the
+Chromes held at about 8 of 16 CPUs while macOS's own services
+(WindowServer, kernel_task, WindowManager, fontd) took several cores for
+them and free memory ran out, which "All CPUs" does not count. More
+users per Chrome made steps slower at every size (plan 23's decisions
+log), so `load` defaults to 10.
 
 ## Agent task benchmark
 

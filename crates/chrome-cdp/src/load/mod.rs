@@ -38,9 +38,13 @@ use pool::Pool;
 use record::Records;
 use user::Shared;
 
-/// How many users share a Chrome by default (`--users-per-browser`),
-/// until plan 23.2 measures it.
-pub(crate) const USERS_PER_BROWSER: u32 = 25;
+/// How many users share a Chrome by default (`--users-per-browser`):
+/// `bench load` found steps slower with 25 (plan 23.1's decisions log).
+pub(crate) const USERS_PER_BROWSER: u32 = 10;
+
+/// Above this many users in one Chrome, its one browser process and CDP
+/// connection slow every step of theirs down; the run warns.
+const CROWDED_BROWSER: u32 = 25;
 
 /// The error kind of a step whose Chrome crashed.
 pub(crate) const BROWSER_CRASH: &str = "browser_crash";
@@ -88,6 +92,13 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
         return Err(crate::lint::failed(&linted, "lint"));
     }
     let browsers = browsers(args)?;
+    let crowded = args.users.div_ceil(browsers);
+    if crowded > CROWDED_BROWSER && mode == Mode::Text {
+        output::stderr(&format!(
+            "warning: {crowded} users in one Chrome slow each other down past {CROWDED_BROWSER}; \
+             give it more Chromes (--users-per-browser {USERS_PER_BROWSER})\n"
+        ));
+    }
     let timeout = global.timeout_or(DEFAULT_TIMEOUT).max(DEFAULT_TIMEOUT);
     let chrome = crate::install::find_chrome(None, false, timeout)?;
     if mode == Mode::Text {

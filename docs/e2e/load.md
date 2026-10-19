@@ -74,7 +74,10 @@ marked `@safe`, and `http` writes only in their hooks, unless
 ## Browsers
 
 The users share `--browsers` Chromes, each user in a browser context of
-its own, at most `--users-per-browser` (25 by default) in one Chrome.
+its own, at most `--users-per-browser` (10 by default) in one Chrome.
+Past 25, users in one Chrome slow each other down: every call of theirs
+goes through its one browser process and CDP connection, and the run
+warns.
 Without `--browsers`, the run starts as many as that takes. All of a
 Chrome's contexts share its one CDP connection.
 

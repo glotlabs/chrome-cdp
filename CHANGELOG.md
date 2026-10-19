@@ -65,11 +65,21 @@ the top of the GitHub release notes.
   and `mock serve` answering WebSocket upgrades; `mock serve --upstream`
   for a hybrid backend; `mock gen --openapi` and the spec check in
   `test` (`[e2e] mock_check`).
+- Load testing with real browsers (plan 23.1): `chrome-cdp load` runs
+  many users at once through the scenario tests against a real backend,
+  each in a browser context of one of several Chromes driven in-process;
+  `think` pauses a load run's user (a no-op elsewhere); failed iterations
+  keep their page, console and requests, and `--raw` writes every
+  step's timing. `testdata/load/server` is a load server with latency
+  and errors per endpoint, and `cargo xtask bench load` measures users
+  per machine.
 
 ### Changed
 
 - A mocked CORS preflight names no mock when the mock matches on headers
   or a body, which a preflight does not show.
+- `console` and `network` with `--context` and no `--tab` read the
+  context's active tab, not the browser's.
 
 ### Removed
 

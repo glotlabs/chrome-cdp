@@ -21,7 +21,7 @@ Options:
 - `--iterations <N>`: Stop each user after this many iterations, e.g. 5 (the run still ends at --duration)
 - `--ramp-up <TIME>`: Start the users evenly over this long instead of at once, e.g. 1m (default `0s`)
 - `--browsers <N>`: How many Chromes the users share, e.g. 4. Default: enough for --users-per-browser each
-- `--users-per-browser <M>`: The most users in one Chrome, each in a browser context of its own, e.g. 10 (default `25`)
+- `--users-per-browser <M>`: The most users in one Chrome, each in a browser context of its own, e.g. 10 (default `10`)
 - `--think <TIME>`: What a `think` step without a time waits, e.g. 3s or 2s..8s (default `2s..8s`)
 - `--keep-failures <N>`: Keep the page, console and requests of the first N failed iterations, e.g. 5; later failures are only counted (default `20`)
 - `--raw`: Write every step's start, end and result to steps.jsonl in the run's folder
@@ -35,7 +35,7 @@ context with one tab in one of the run's Chromes, driven in-process (no
 daemon), and runs the selected tests (its journeys) in turn, from a
 fresh context each time, until --duration is up (or --iterations are
 done); the iterations that are running then finish. Each journey runs as
-`test` runs it ($test.id is unique per iteration, @before and @after run
+`test` runs it (${test.id} is unique per iteration, @before and @after run
 around it, @before-all and @after-all once), but leanly: a step runs its
 action or check and waits for the page to settle as a test step does,
 with no action report, mock check or log collection. `think 2s..8s`
@@ -48,8 +48,9 @@ Commands for one interactive user (snapshot without a file, screenshot,
 debug, refs like e12) are an error before any browser starts.
 
 The run uses --browsers Chromes with up to --users-per-browser users
-each (25 by default); a Chrome that crashes is started again, and its
-users record a browser_crash error and go on in the new one. The first
+each (10 by default; past 25, users in one Chrome slow each other
+down). A Chrome that crashes is started again, and its users record a
+browser_crash error and go on in the new one. The first
 --keep-failures failed iterations keep failure.png, snapshot.txt,
 console.txt and requests.txt in
 e2e/.results/load/<run>/failures/<n>-vu<V>-i<I>/; later ones are only

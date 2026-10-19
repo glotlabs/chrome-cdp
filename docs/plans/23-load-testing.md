@@ -1,6 +1,6 @@
 # Plan 23 — Load testing with real browsers
 
-Status: NOT STARTED
+Status: IN PROGRESS (23.1 done)
 Depends on: 03 §3.4 (the wait engine and settle), 06 §6.2 (each tab's
 network log), 07 §7.3 (init scripts), 11 (scenarios, the runner,
 `--jobs`, real backends, `${…}` variables), 22 (the test settle, one
@@ -433,3 +433,64 @@ server is wrong. This milestone makes chrome-cdp notice and say so.
 - Saturated seconds are left out of thresholds rather than failing
   them: a saturated generator measures itself, and blaming the site
   for it would make the gate untrustworthy.
+- 23.1: until 23.3's profiles, `load PATH… [--grep] [--tags]` takes its
+  journeys as `test` takes tests, and runs a closed model: `--users N`
+  users, each taking the journeys in turn, until `--duration` (after
+  `--ramp-up`) or `--iterations`. 23.3 keeps these flags for a run
+  without a profile.
+- 23.1: the engine needed no daemon-free constructor: `Engine::new`
+  holds no session state of the daemon's, and the history hook lives
+  in the daemon's dispatch, not the engine. What a load step must not do
+  is a task-local, `engine::in_lean`, like plan 22's `in_settle`: an
+  action under it waits as usual and builds no report (no focus marks,
+  no console errors, issues or failed requests).
+- 23.1: a load step's engine request is built by the same functions the
+  CLI commands use (`session::*_request`, `http::request`, `action`),
+  split out of the commands, so `load` and the CLI cannot drift. A step
+  whose words do not change between iterations (no `${test.id}` or
+  `${saved.…}`) gets its request once, before the run; the others are
+  parsed again in each iteration.
+- 23.1: the commands a load step can be are a list (navigation, the
+  input actions, plain `expect`, `wait`, `http`, `eval`, `cookies`,
+  `storage`, `think`); everything else is an error at plan time, with
+  a reason for the interactive ones. `expect --layout` and `--audit`
+  are not load steps either.
+- 23.1: think time does not count towards an iteration's `@timeout`, so
+  a journey's timeout is the same under `test` and `load`.
+- 23.1: a load run exits 0 when it ran, whatever failed (23.4's
+  thresholds are the gate), except when every iteration failed: then
+  the journey is broken, and the numbers mean nothing.
+- 23.1: `${test.id}` of an iteration is `<run.id>-u<user>-<iteration>`;
+  `@before-all` and `@after-all` run once in a context of their own in
+  the first Chrome, before the users start and after they end.
+- 23.1: the runtime's threads get 8 MB stacks: page commands nest deep
+  futures, which the daemon runs on its main thread's stack, and a debug
+  build overflowed tokio's 2 MB.
+- 23.1: building this found that `console` and `network` with
+  `--context` and no `--tab` read the browser's active tab, not the
+  context's; fixed (`Engine::log_tab`).
+- 23.1: `bench load` sums Chrome's memory as PSS on Linux and RSS
+  elsewhere; RSS counts Chrome's shared framework once per process and
+  reads several times too high on macOS. Users per machine is the most
+  users of a run that held (under 1% failed, under 90% of the CPUs,
+  step p95 within twice the smallest run's) until 23.5's capacity check.
+- 23.1: one Chrome's connection (or its one browser process; the bench
+  does not tell them apart) gets in the way past 10 to 25 users. At 50
+  users, the step p95 was 201 ms with 10 users per Chrome, 448 ms with
+  25 and 1354 ms with 50 (`bench load`, macOS, 16 CPUs). The default
+  `--users-per-browser` is 10, and a run with more than 25 users in a
+  Chrome warns. It is not an error: `bench load` keeps measuring 50.
+- 23.1: on that Mac, chrome-cdp itself used at most 0.1 cores and 54 MB
+  (400 users), far inside the target, and users per machine (the
+  stand-in rule) was 50. From 100 users on, the Chromes held at about 8
+  of 16 CPUs while steps slowed: macOS's own services (WindowServer,
+  kernel_task, WindowManager, fontd) took several cores for the headless
+  Chromes, and free memory ran out and the machine swapped. `bench load`'s
+  "All CPUs" counts only chrome-cdp and its Chromes, so 23.5 must watch
+  the whole machine's CPU and memory, as it plans. The 200-user target is
+  for a Linux runner, which was not at hand.
+- 23.1: 10 users in one Chrome ran 24 renderer processes, not 10. A
+  likely cause is that a context's tab starts on `about:blank` and the
+  first `goto` moves it to a renderer of the site's; another is the
+  closed contexts' renderers outliving them. 23.2 should find out, and
+  try making the context with its first URL.
