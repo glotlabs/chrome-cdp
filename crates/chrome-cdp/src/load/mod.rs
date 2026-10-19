@@ -214,7 +214,22 @@ fn find_browser(args: &LoadArgs, timeout: Duration) -> Result<browser::Chrome, E
         Pick::Shell => shell.ok_or_else(|| {
             ErrorInfo::new(ErrorKind::ChromeNotFound, "chrome-headless-shell went away")
         }),
-        Pick::Chrome => crate::install::find_chrome(None, false, timeout),
+        Pick::Chrome => {
+            let mut chrome = crate::install::find_chrome(None, false, timeout)?;
+            let shell_asked = args.browser == Some(LoadBrowser::HeadlessShell);
+            if explicit && shell_asked && !chrome.headless_shell {
+                chrome.warnings.insert(
+                    0,
+                    format!(
+                        "--browser headless-shell, but {} names {}, which is not \
+                         chrome-headless-shell: the users run in it",
+                        browser::CHROME_ENV,
+                        chrome.path.display()
+                    ),
+                );
+            }
+            Ok(chrome)
+        }
         Pick::ChromeInstead => {
             let mut chrome = crate::install::find_chrome(None, false, timeout)?;
             chrome.warnings.insert(

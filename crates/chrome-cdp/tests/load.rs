@@ -373,3 +373,37 @@ fn a_page_above_renderer_memory_is_a_memory_error() {
         "{line}"
     );
 }
+
+#[test]
+fn a_chrome_cdp_chrome_that_is_no_shell_is_said() {
+    let Some(chrome) = chrome_path() else { return };
+    if chrome
+        .file_name()
+        .is_some_and(|n| n == "chrome-headless-shell")
+    {
+        return;
+    }
+    let journey = "@test \"browses\"\n  goto /\n";
+    let project = Project::new(&chrome, &[("browse.cdp", journey)]);
+    let out = common::run(project.sandbox.cli().current_dir(&project.root).args([
+        "load",
+        "e2e/browse.cdp",
+        "--users",
+        "1",
+        "--iterations",
+        "1",
+        "--browser",
+        "headless-shell",
+    ]));
+    assert_eq!(common::code(&out), 0, "{}\n{}", stdout(&out), stderr(&out));
+    assert!(
+        stderr(&out).contains("which is not chrome-headless-shell: the users run in it"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(
+        stdout(&out).starts_with("load: 1 user in 1 Chrome (chrome), "),
+        "{}",
+        stdout(&out)
+    );
+}
