@@ -14,7 +14,7 @@
 //! Ctrl-C.
 
 mod all;
-mod artifacts;
+pub(crate) mod artifacts;
 mod backend;
 mod coverage;
 mod determinism;
@@ -29,7 +29,7 @@ mod record;
 mod report;
 mod report_md;
 pub(crate) mod reporters;
-mod vars;
+pub(crate) mod vars;
 mod verify;
 mod watch;
 
@@ -415,7 +415,7 @@ fn runs(plan: &Plan) -> u32 {
 
 /// Runs `work` between the backend's setup and teardown commands; a
 /// failed teardown is a warning on stderr.
-fn with_backend<T>(
+pub(crate) fn with_backend<T>(
     plan: &Plan,
     mode: Mode,
     work: impl FnOnce() -> Result<T, ErrorInfo>,
@@ -920,7 +920,7 @@ fn start_mock_server(
 /// and stops them after. A server that exits, or Ctrl-C, stops the run:
 /// `stop` is set, so the tests not started are not run.
 #[allow(clippy::too_many_arguments)]
-fn with_servers<T: Send>(
+pub(crate) fn with_servers<T: Send>(
     plan: &Plan,
     mock_server: &std::sync::OnceLock<e2e::mock_server::MockServer>,
     stop: &AtomicBool,

@@ -1,0 +1,15 @@
+# The load journeys (plan 23): `chrome-cdp load` runs them against the
+# load server (server/), which the run starts as the backend's web server
+# unless one already answers on its port:
+#
+#   chrome-cdp load scenarios/shop.cdp --users 20 --duration 1m
+
+[e2e]
+tests = ["scenarios/**/*.cdp"]
+default_backend = "load"
+artifacts = ".results"
+
+[e2e.backends.load]
+mode = "real"
+base_url = "http://localhost:4176"
+web_server = { command = "cargo run --quiet --release --manifest-path ../../Cargo.toml -p load-server -- --port 4176", url = "http://localhost:4176/api/products", timeout = "600s" }

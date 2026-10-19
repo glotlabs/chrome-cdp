@@ -1,0 +1,12 @@
+$ chrome-cdp load e2e/cart.cdp
+exit: 2
+--- stderr
+error: load needs a real backend, and mock is the mock one
+  why: load testing the mocks measures chrome-cdp, not the site
+  hint: add --backend <name> of a real backend in [e2e.backends], or e.g. chrome-cdp load e2e/cart.cdp --backend staging
+
+$ chrome-cdp load e2e/cart.cdp --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"load needs a real backend, and mock is the mock one","hint":"add --backend <name> of a real backend in [e2e.backends], or e.g. chrome-cdp load e2e/cart.cdp --backend staging","notes":[{"label":"why","text":"load testing the mocks measures chrome-cdp, not the site"}]}}
+

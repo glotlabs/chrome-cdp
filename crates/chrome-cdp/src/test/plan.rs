@@ -23,104 +23,104 @@ use crate::script::{self as lines, Problem};
 
 /// Where `expect-snapshot` and `expect-screenshot` baselines go, relative
 /// to the project root.
-pub(super) const SNAPSHOTS: &str = "e2e/snapshots";
+pub(crate) const SNAPSHOTS: &str = "e2e/snapshots";
 
 /// The folder whose `audit/` holds `expect --audit` baselines
 /// (`e2e/audit/<name>.json`), relative to the project root.
-pub(super) const AUDITS: &str = "e2e";
+pub(crate) const AUDITS: &str = "e2e";
 
 /// A checked step.
 #[derive(Debug, Clone)]
-pub(super) struct Prepared {
+pub(crate) struct Prepared {
     /// The line; the runner fills its variables in as it runs
     /// ([`super::vars`]), since `${test.id}` and `${saved.…}` change.
-    pub(super) line: Line,
-    pub(super) vars: Arc<Vars>,
-    pub(super) at: Span,
+    pub(crate) line: Line,
+    pub(crate) vars: Arc<Vars>,
+    pub(crate) at: Span,
     /// The line as written.
-    pub(super) text: String,
+    pub(crate) text: String,
     /// The `@include` lines it came through.
-    pub(super) via: Vec<Span>,
+    pub(crate) via: Vec<Span>,
 }
 
 /// A file's hooks, checked.
 #[derive(Debug, Default)]
-pub(super) struct Hooks {
-    pub(super) before_all: Vec<Prepared>,
-    pub(super) after_all: Vec<Prepared>,
-    pub(super) before: Vec<Prepared>,
-    pub(super) after: Vec<Prepared>,
+pub(crate) struct Hooks {
+    pub(crate) before_all: Vec<Prepared>,
+    pub(crate) after_all: Vec<Prepared>,
+    pub(crate) before: Vec<Prepared>,
+    pub(crate) after: Vec<Prepared>,
 }
 
 /// A test of the run.
 #[derive(Debug)]
-pub(super) struct Planned {
+pub(crate) struct Planned {
     /// Index into [`Plan::scenarios`].
-    pub(super) file: usize,
-    pub(super) name: String,
-    pub(super) line: u32,
+    pub(crate) file: usize,
+    pub(crate) name: String,
+    pub(crate) line: u32,
     /// The file's settings with the test's on top.
-    pub(super) settings: Settings,
-    pub(super) steps: Vec<Prepared>,
+    pub(crate) settings: Settings,
+    pub(crate) steps: Vec<Prepared>,
     /// Its artifacts' directory: `<artifacts>/<file>/<name as a slug>`.
-    pub(super) dir: PathBuf,
+    pub(crate) dir: PathBuf,
 }
 
 impl Planned {
-    pub(super) fn skipped(&self) -> Option<&str> {
+    pub(crate) fn skipped(&self) -> Option<&str> {
         self.settings.skip.as_deref()
     }
 }
 
 /// Everything a run needs to know.
 #[derive(Debug)]
-pub(super) struct Plan {
-    pub(super) config: Config,
-    pub(super) scenarios: Vec<Scenario>,
+pub(crate) struct Plan {
+    pub(crate) config: Config,
+    pub(crate) scenarios: Vec<Scenario>,
     /// By file, like [`Plan::scenarios`].
-    pub(super) hooks: Vec<Hooks>,
-    pub(super) tests: Vec<Planned>,
+    pub(crate) hooks: Vec<Hooks>,
+    pub(crate) tests: Vec<Planned>,
     /// How many tests run at once.
-    pub(super) jobs: u32,
+    pub(crate) jobs: u32,
     /// Why that many, when the run chose it (`auto`): `16 CPUs, 30 GB
     /// free`.
-    pub(super) jobs_why: Option<String>,
+    pub(crate) jobs_why: Option<String>,
     /// Retries of a test without its own `@retries`.
-    pub(super) retries: u32,
+    pub(crate) retries: u32,
     /// How many times each test runs (`--repeat`; 1 without).
-    pub(super) repeat: u32,
+    pub(crate) repeat: u32,
     /// `--debug`: a failure stops the run, so retries are off.
-    pub(super) debug: bool,
+    pub(crate) debug: bool,
     /// What every test's context gets before its steps (11.6).
-    pub(super) determinism: Fixed,
+    pub(crate) determinism: Fixed,
     /// The backend the run uses (11.11).
-    pub(super) backend: Backend,
+    pub(crate) backend: Backend,
     /// `${var:…}`, `${run.id}` and the backend's name.
-    pub(super) run: RunVars,
+    pub(crate) run: RunVars,
     /// `--allow-writes`: `http` writes on a protected backend.
-    pub(super) allow_writes: bool,
+    pub(crate) allow_writes: bool,
     /// The tests' durations and last statuses (plan 22.5).
     pub(super) durations: Durations,
     /// `--failed-first`: the tests that failed last time start first.
-    pub(super) failed_first: bool,
+    pub(crate) failed_first: bool,
     /// `--shard` split by the durations: each shard's expected time.
-    pub(super) shards: Option<Shards>,
+    pub(crate) shards: Option<Shards>,
 }
 
 /// The shards of a `--shard` split by time.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Shards {
+pub(crate) struct Shards {
     /// The run's, from 1.
-    pub(super) index: usize,
+    pub(crate) index: usize,
     /// Each shard's tests and their expected time, in ms.
-    pub(super) expected: Vec<(usize, u64)>,
+    pub(crate) expected: Vec<(usize, u64)>,
 }
 
 impl Plan {
     /// Reads the config and the scenarios, selects the tests for backend
     /// `backend` (`None`: `--backend`, else the config's default), and
     /// checks them. Every problem of the scenarios comes back at once.
-    pub(super) fn make(
+    pub(crate) fn make(
         args: &TestArgs,
         global: &GlobalArgs,
         backend: Option<&str>,
@@ -323,7 +323,7 @@ impl Plan {
     /// longest first by the durations file, those it has no time for
     /// first of all (they may be long); skipped tests last. Ties keep the
     /// plan's order, so without durations it is the plan's order.
-    pub(super) fn order(&self) -> Vec<usize> {
+    pub(crate) fn order(&self) -> Vec<usize> {
         let root = &self.config.root;
         let tests: Vec<Known> = self
             .tests
@@ -341,18 +341,18 @@ impl Plan {
     }
 
     /// The time limit of a test (or hook) with `settings`.
-    pub(super) fn timeout(&self, settings: &Settings) -> Duration {
+    pub(crate) fn timeout(&self, settings: &Settings) -> Duration {
         settings.timeout.unwrap_or(self.backend.timeout)
     }
 
     /// Whether the run is against a real backend.
-    pub(super) fn real(&self) -> bool {
+    pub(crate) fn real(&self) -> bool {
         self.backend.mode == Mode::Real
     }
 
     /// The mock sets a test with `settings` gets in mock mode: the
     /// defaults, then its `@mocks` (a set named again moves last).
-    pub(super) fn mock_mode_sets(&self, settings: &Settings) -> Vec<String> {
+    pub(crate) fn mock_mode_sets(&self, settings: &Settings) -> Vec<String> {
         let mut sets = self.config.default_mocks.clone();
         for name in &settings.mocks {
             sets.retain(|s| s != name);
@@ -364,7 +364,7 @@ impl Plan {
     /// Test `test`'s retries: none with `--repeat`, whose point is to see
     /// the failures retries would hide, nor with `--debug`, which keeps
     /// the first failure.
-    pub(super) fn retries(&self, test: &Planned) -> u32 {
+    pub(crate) fn retries(&self, test: &Planned) -> u32 {
         if self.repeat > 1 || self.debug {
             return 0;
         }
@@ -448,13 +448,13 @@ fn shard_by_time(
 /// relative to the folder its `tests` glob starts in (`checkout.cdp` for
 /// `e2e/scenarios/checkout.cdp` and the default glob), else to the
 /// project root.
-pub(super) fn file_dir(config: &Config, scenario: &Scenario) -> PathBuf {
+pub(crate) fn file_dir(config: &Config, scenario: &Scenario) -> PathBuf {
     config.artifacts.join(file_rel(config, scenario))
 }
 
 /// A scenario's path relative to the folder its `tests` glob starts in,
 /// else to the project root.
-pub(super) fn file_rel(config: &Config, scenario: &Scenario) -> PathBuf {
+pub(crate) fn file_rel(config: &Config, scenario: &Scenario) -> PathBuf {
     let path = scenario
         .path
         .strip_prefix(&config.root)

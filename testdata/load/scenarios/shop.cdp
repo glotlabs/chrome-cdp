@@ -1,0 +1,15 @@
+# The reference journey of plan 23.1: browse the products, open one, add
+# it to the cart and look at the cart, thinking 2 s on each page.
+
+@test "browse, open a product, add it to the cart"
+  goto /
+  expect 'role=heading[name="Products"]' visible
+  think 2s
+  click 'role=link[name="Wireless mouse"]'
+  expect role=heading text 'Wireless mouse'
+  think 2s
+  click 'role=button[name="Add to cart"]'
+  expect role=status text 'Added to cart'
+  think 2s
+  click 'role=link[name="Cart (1)"]'
+  expect 'role=list[name="Cart items"] >> role=listitem' count 1

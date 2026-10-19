@@ -23,11 +23,11 @@ use protocol::{ErrorInfo, Output};
 use serde::{Deserialize, Serialize};
 
 pub(super) const STEPS: &str = "steps.jsonl";
-pub(super) const REQUESTS: &str = "requests.txt";
-pub(super) const CONSOLE: &str = "console.txt";
-pub(super) const SCREENSHOT: &str = "failure.png";
-pub(super) const SNAPSHOT: &str = "snapshot.txt";
-pub(super) const REPORT: &str = "report.md";
+pub(crate) const REQUESTS: &str = "requests.txt";
+pub(crate) const CONSOLE: &str = "console.txt";
+pub(crate) const SCREENSHOT: &str = "failure.png";
+pub(crate) const SNAPSHOT: &str = "snapshot.txt";
+pub(crate) const REPORT: &str = "report.md";
 /// `--trace`'s screenshots, `001.png` for step 1.
 pub(super) const TRACE: &str = "trace";
 
@@ -369,7 +369,7 @@ pub(super) struct Logs {
 
 /// A request of the journal, with when it was sent and answered.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Timed {
+pub(crate) struct Timed {
     pub(super) method: String,
     pub(super) url: String,
     /// `document`, `fetch`, `xhr`, … (`network --type`).
@@ -474,7 +474,7 @@ fn console_line(tab: &str, e: &protocol::schema::ConsoleEntry) -> String {
 /// `requests.txt`: each tab's requests, each with its times from
 /// `started_ms` and the mock (or route) that answered it; the lines of the
 /// ones that went wrong; and every request with its times, oldest first.
-fn journal(
+pub(crate) fn journal(
     networks: &[NetworkData],
     mut routed: Vec<RoutedRequest>,
     started_ms: u64,
@@ -631,7 +631,7 @@ pub(super) fn point_hint_at_files(error: &mut ErrorInfo, dir: &Path) {
 }
 
 /// Writes `text` to `path`; a failure is only logged.
-pub(super) fn write(path: &Path, text: &str) {
+pub(crate) fn write(path: &Path, text: &str) {
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -641,7 +641,7 @@ pub(super) fn write(path: &Path, text: &str) {
 }
 
 /// A test name as a directory name: `Adds an item!` → `adds-an-item`.
-pub(super) fn slug(name: &str) -> String {
+pub(crate) fn slug(name: &str) -> String {
     let mut out = String::new();
     for c in name.chars().flat_map(char::to_lowercase) {
         if c.is_ascii_alphanumeric() {

@@ -25,19 +25,19 @@ use serde_json::Value;
 
 /// A run's values.
 #[derive(Debug, Clone)]
-pub(super) struct RunVars {
+pub(crate) struct RunVars {
     /// The backend's name.
-    pub(super) backend: String,
+    pub(crate) backend: String,
     /// `${var:…}`.
-    pub(super) values: BTreeMap<String, String>,
+    pub(crate) values: BTreeMap<String, String>,
     /// The vars files, for messages.
-    pub(super) files: String,
+    pub(crate) files: String,
     /// `${run.id}`.
-    pub(super) run_id: String,
+    pub(crate) run_id: String,
 }
 
 impl RunVars {
-    pub(super) fn new(backend: &str, vars: e2e::backend::Vars) -> Self {
+    pub(crate) fn new(backend: &str, vars: e2e::backend::Vars) -> Self {
         Self {
             backend: backend.to_owned(),
             files: vars.describe(),
@@ -64,7 +64,7 @@ fn run_id() -> String {
 
 /// `${test.id}` of a try: `<run.id>-<test number>`, then `-<try>` for a
 /// retry and `-r<run>` for a `--repeat` run after the first.
-pub(super) fn test_id(run: &RunVars, index: usize, attempt: u32, repeat: Option<usize>) -> String {
+pub(crate) fn test_id(run: &RunVars, index: usize, attempt: u32, repeat: Option<usize>) -> String {
     let mut id = format!("{}-{}", run.run_id, index + 1);
     if let Some(r) = repeat.filter(|&r| r > 1) {
         let _ = write!(id, "-r{r}");
@@ -84,7 +84,7 @@ enum Saved<'a> {
 }
 
 /// Fills in a step's variables.
-pub(super) struct Resolver<'a> {
+pub(crate) struct Resolver<'a> {
     base: &'a Vars,
     run: &'a RunVars,
     test_id: &'a str,
@@ -94,7 +94,7 @@ pub(super) struct Resolver<'a> {
 impl<'a> Resolver<'a> {
     /// For checking a step before the run: `names` are the names the
     /// file's `http --save` steps save.
-    pub(super) fn checking(base: &'a Vars, run: &'a RunVars, names: &'a BTreeSet<String>) -> Self {
+    pub(crate) fn checking(base: &'a Vars, run: &'a RunVars, names: &'a BTreeSet<String>) -> Self {
         Self {
             base,
             run,
@@ -104,7 +104,7 @@ impl<'a> Resolver<'a> {
     }
 
     /// For running a step.
-    pub(super) fn running(
+    pub(crate) fn running(
         base: &'a Vars,
         run: &'a RunVars,
         test_id: &'a str,

@@ -225,6 +225,7 @@ dependencies = [
  "clap_complete",
  "fixtures",
  "flate2",
+ "futures-util",
  "regex",
  "reqwest",
  "ring",

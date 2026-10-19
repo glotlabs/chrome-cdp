@@ -451,6 +451,42 @@ Examples:
   chrome-cdp test --list")]
     Test(TestArgs),
 
+    /// Run many users through scenario tests at once, in real browsers, against a real backend.
+    #[command(after_help = "\
+Load testing (docs/e2e/load.md): each virtual user (VU) is a browser
+context with one tab in one of the run's Chromes, driven in-process (no
+daemon), and runs the selected tests (its journeys) in turn, from a
+fresh context each time, until --duration is up (or --iterations are
+done); the iterations that are running then finish. Each journey runs as
+`test` runs it ($test.id is unique per iteration, @before and @after run
+around it, @before-all and @after-all once), but leanly: a step runs its
+action or check and waits for the page to settle as a test step does,
+with no action report, mock check or log collection. `think 2s..8s`
+steps pause the user (a bare `think` waits --think).
+
+A load run needs a real backend (--backend, or the config's
+default_backend); load testing the mocks measures chrome-cdp, not the
+site. A protected backend needs --allow-writes, or journeys marked @safe.
+Commands for one interactive user (snapshot without a file, screenshot,
+debug, refs like e12) are an error before any browser starts.
+
+The run uses --browsers Chromes with up to --users-per-browser users
+each (25 by default); a Chrome that crashes is started again, and its
+users record a browser_crash error and go on in the new one. The first
+--keep-failures failed iterations keep failure.png, snapshot.txt,
+console.txt and requests.txt in
+e2e/.results/load/<run>/failures/<n>-vu<V>-i<I>/; later ones are only
+counted. --raw writes every step's start, end and result to steps.jsonl
+in the run's folder.
+
+Examples:
+  chrome-cdp load e2e/scenarios/shop.cdp:12 --backend staging --users 50 --duration 5m
+  chrome-cdp load e2e/scenarios/shop.cdp --grep browse --users 200 --ramp-up 1m
+  chrome-cdp load e2e/load/journeys.cdp --users 20 --iterations 5 --raw
+  chrome-cdp load e2e/scenarios/shop.cdp --users 100 --browsers 4 --think 1s..3s
+  chrome-cdp load e2e/scenarios/checkout.cdp --backend staging --allow-writes --keep-failures 5")]
+    Load(LoadArgs),
+
     /// The commands the session ran; --as-scenario writes them as a test.
     #[command(after_help = "\
 The session keeps its last 1,000 commands (from any shell, `batch` and
@@ -735,6 +771,20 @@ Examples:
   chrome-cdp expect --no-errors --since before-save
   chrome-cdp network --since before-save")]
     Mark(MarkArgs),
+
+    /// Pause a load run's user here, as a person would (a no-op outside `load`).
+    #[command(after_help = "\
+A step for `load` (docs/e2e/load.md): the virtual user waits that long
+before its next step, `MIN..MAX` a time picked evenly between the two,
+and with no time the load run's --think. Under `test`, `run`, `batch` and
+on the command line it does nothing, so a scenario keeps running at full
+speed as a test.
+
+Examples:
+  chrome-cdp think 3s
+  chrome-cdp think 2s..8s
+  chrome-cdp think")]
+    Think(ThinkArgs),
 
     /// Compare the page's snapshot with a stored text baseline; a diff shows what changed.
     #[command(after_help = "\
@@ -5643,7 +5693,7 @@ pub(crate) struct MockSeedArgs {
     pub(crate) file: Option<String>,
 }
 
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 pub(crate) struct HttpArgs {
     /// The method: GET, POST, PUT, PATCH, DELETE, …
     #[arg(value_name = "METHOD")]
@@ -7619,6 +7669,15 @@ pub(crate) struct MarkArgs {
     pub(crate) name: String,
 }
 
+/// `think`.
+#[derive(Debug, Args)]
+pub(crate) struct ThinkArgs {
+    /// How long, e.g. 3s, or MIN..MAX for a time between, e.g. 2s..8s.
+    /// Default: the load run's --think.
+    #[arg(value_name = "TIME", value_parser = crate::load::think::Think::parse)]
+    pub(crate) time: Option<crate::load::think::Think>,
+}
+
 /// `expect-snapshot`.
 #[derive(Debug, Args)]
 pub(crate) struct ExpectSnapshotArgs {
@@ -7881,6 +7940,84 @@ pub(crate) struct TestArgs {
     /// ui-coverage.json in the artifacts directory and prints a summary.
     #[arg(long)]
     pub(crate) ui_coverage: bool,
+
+    /// Bound the JSON output to this many characters (0 = no limit).
+    #[arg(long, default_value_t = 200_000, value_name = "N")]
+    pub(crate) max_chars: usize,
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct LoadArgs {
+    /// Scenario files, or FILE:LINE for the test at that line: the tests
+    /// they hold (with --grep and --tags) are the users' journeys.
+    #[arg(value_name = "PATH", required = true)]
+    pub(crate) paths: Vec<String>,
+
+    /// Only the tests whose `file > name` matches this regular expression.
+    #[arg(long, value_name = "REGEX")]
+    pub(crate) grep: Option<String>,
+
+    /// Only tests with one of these tags; `!tag` leaves a tag out, e.g.
+    /// smoke,!slow.
+    #[arg(long, value_name = "TAGS", allow_hyphen_values = true)]
+    pub(crate) tags: Option<String>,
+
+    /// The real backend of [e2e.backends.NAME] to load, e.g. staging.
+    /// Default: the config's default_backend (which must be real).
+    #[arg(long, value_name = "NAME")]
+    pub(crate) backend: Option<String>,
+
+    /// How many users run at once, e.g. 50; each runs the journeys over
+    /// and over.
+    #[arg(long, value_name = "N", default_value_t = 10, value_parser = clap::value_parser!(u32).range(1..))]
+    pub(crate) users: u32,
+
+    /// How long users keep starting iterations, e.g. 5m; the ones
+    /// running then finish.
+    #[arg(long, value_name = "TIME", default_value = "1m", value_parser = parse_duration)]
+    pub(crate) duration: Duration,
+
+    /// Stop each user after this many iterations, e.g. 5 (the run still
+    /// ends at --duration).
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
+    pub(crate) iterations: Option<u32>,
+
+    /// Start the users evenly over this long instead of at once, e.g. 1m.
+    #[arg(long, value_name = "TIME", default_value = "0s", value_parser = crate::load::think::duration)]
+    pub(crate) ramp_up: Duration,
+
+    /// How many Chromes the users share, e.g. 4. Default: enough for
+    /// --users-per-browser each.
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
+    pub(crate) browsers: Option<u32>,
+
+    /// The most users in one Chrome, each in a browser context of its
+    /// own, e.g. 10.
+    #[arg(long, value_name = "M", default_value_t = crate::load::USERS_PER_BROWSER, value_parser = clap::value_parser!(u32).range(1..))]
+    pub(crate) users_per_browser: u32,
+
+    /// What a `think` step without a time waits, e.g. 3s or 2s..8s.
+    #[arg(long, value_name = "TIME", default_value = "2s..8s", value_parser = crate::load::think::Think::parse)]
+    pub(crate) think: crate::load::think::Think,
+
+    /// Keep the page, console and requests of the first N failed
+    /// iterations, e.g. 5; later failures are only counted.
+    #[arg(long, value_name = "N", default_value_t = 20)]
+    pub(crate) keep_failures: u32,
+
+    /// Write every step's start, end and result to steps.jsonl in the
+    /// run's folder.
+    #[arg(long)]
+    pub(crate) raw: bool,
+
+    /// Run journeys not marked @safe on a protected backend too; `http`
+    /// writes are then allowed in their steps.
+    #[arg(long)]
+    pub(crate) allow_writes: bool,
+
+    /// Show the browser windows.
+    #[arg(long)]
+    pub(crate) headed: bool,
 
     /// Bound the JSON output to this many characters (0 = no limit).
     #[arg(long, default_value_t = 200_000, value_name = "N")]
@@ -8219,6 +8356,8 @@ mod tests {
     /// paths and counts).
     const FIXED_SIZE: &[&str] = &[
         "mark",
+        // Nothing at all.
+        "think",
         "locator",
         "expect-screenshot",
         "emulate",

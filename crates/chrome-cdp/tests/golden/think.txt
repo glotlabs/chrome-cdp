@@ -1,0 +1,11 @@
+$ chrome-cdp think 2s..8s
+exit: 0
+
+$ chrome-cdp think 2s..8s --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"max_ms":8000,"min_ms":2000,"waited":false}}
+
+$ chrome-cdp think 2s..8s -q
+exit: 0
+

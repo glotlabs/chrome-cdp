@@ -5,3 +5,5 @@
 .DS_Store
 /install-local.sh
 /testdata/scale/
+/testdata/load/.results/
+/testdata/load/.durations.json

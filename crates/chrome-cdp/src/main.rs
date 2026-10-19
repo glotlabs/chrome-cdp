@@ -26,6 +26,7 @@ mod init;
 mod input;
 mod install;
 mod lint;
+mod load;
 mod log;
 mod mock;
 mod output;
@@ -91,6 +92,7 @@ fn main() -> ExitCode {
         Some(Command::Batch(args)) => return ExitCode::from(script::batch(args, &cli.global)),
         Some(Command::Run(args)) => return ExitCode::from(script::run(args, &cli.global)),
         Some(Command::Lint(args)) => return ExitCode::from(lint::run(args, &cli.global)),
+        Some(Command::Load(args)) => return ExitCode::from(load::run(args, &cli.global)),
         Some(Command::Test(args)) => {
             let explicit = matches!(
                 matches.value_source("session"),
@@ -178,6 +180,7 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         Some(Command::Wait(args)) => session::wait(&args, &cli.global),
         Some(Command::Expect(args)) => session::expect(&args, &cli.global),
         Some(Command::Mark(args)) => session::mark(&args, &cli.global),
+        Some(Command::Think(args)) => Ok(load::think::run(&args)),
         Some(Command::History(args)) => history::run(&args, &cli.global),
         Some(Command::Repro(args)) => repro::run(&args, &cli.global),
         Some(Command::Record(args)) => record::run(&args, &cli.global),
@@ -373,10 +376,12 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
         // Handled in `main`; a script cannot hold them (`script` checks).
         Some(Command::Daemon(_)) => Ok(Output::new(serde_json::Value::Null, "")),
         Some(Command::Lint(args)) => lint::output(&args, &cli.global),
-        Some(Command::Batch(_) | Command::Run(_) | Command::Test(_)) => Err(ErrorInfo::new(
-            ErrorKind::BadArgs,
-            "batch, run and test cannot run inside a script",
-        )),
+        Some(Command::Batch(_) | Command::Run(_) | Command::Test(_) | Command::Load(_)) => {
+            Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                "batch, run, test and load cannot run inside a script",
+            ))
+        }
     }
 }
 

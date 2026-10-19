@@ -90,6 +90,8 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`mark`](mark.md) | Name this point in the tab's console, issues and network logs, for expect --no-errors --since |
 | [`init`](init.md) | Set up a project for chrome-cdp: `init e2e` scaffolds E2E tests with mocks |
 | [`test`](test.md) | Run the project's E2E scenarios, each test in a fresh browser context with its mocks |
+| [`load`](load.md) | Run many users through scenario tests at once, in real browsers, against a real backend |
+| [`think`](think.md) | Pause a load run's user here, as a person would (a no-op outside `load`) |
 | [`lint`](lint.md) | Check scenario, mock and audit baseline files for mistakes without running them |
 | [`fmt`](fmt.md) | Format .cdp scenario files and mock files in place; --check only reports |
 | [`history`](history.md) | The commands the session ran; --as-scenario writes them as a test |

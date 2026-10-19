@@ -874,6 +874,16 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<TestRunData>),
     },
     CommandSchema {
+        name: "load",
+        summary: "the load run: its users, Chromes and journeys, iterations and steps by result, errors by kind, and where its files are",
+        schema: || schema_for!(Envelope<LoadData>),
+    },
+    CommandSchema {
+        name: "think",
+        summary: "the think time a load run's user would wait (outside a load run, nothing)",
+        schema: || schema_for!(Envelope<ThinkData>),
+    },
+    CommandSchema {
         name: "history",
         summary: "the commands the session ran, or with --as-scenario the test they make",
         schema: || schema_for!(Envelope<HistoryData>),
@@ -5048,6 +5058,81 @@ pub struct PerfThrottling {
     /// `cpu-throttle`'s slowdown (4 is 4x slower); absent when off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cpu: Option<f64>,
+}
+
+/// `data` of `chrome-cdp think --json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ThinkData {
+    /// The shortest time, in ms; absent for the load run's --think.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_ms: Option<u64>,
+    /// The longest time, in ms (the same as `min_ms` for a fixed time).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_ms: Option<u64>,
+    /// Whether it waited: only a load run's users do.
+    pub waited: bool,
+}
+
+/// `data` of `chrome-cdp load --json` (plan 23.1).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadData {
+    /// The run's id: its folder's name.
+    pub run: String,
+    /// The run's folder: `e2e/.results/load/<run>`.
+    pub dir: String,
+    /// The backend loaded.
+    pub backend: String,
+    /// The tests the users ran, in turn.
+    pub journeys: Vec<LoadJourney>,
+    /// How many users ran at once.
+    pub users: u32,
+    /// How many Chromes they shared.
+    pub browsers: u32,
+    /// The most users in one Chrome.
+    pub users_per_browser: u32,
+    /// How long the run took, from its first user's start to its last
+    /// iteration's end.
+    pub duration_ms: u64,
+    /// Iterations started (whole journeys, hooks included).
+    pub iterations: u64,
+    /// Iterations that failed.
+    pub failed: u64,
+    /// The steps run, by result.
+    pub steps: LoadSteps,
+    /// Failed steps by kind: `ExpectFailed`, `Timeout`, `ElementNotFound`,
+    /// `browser_crash`, ….
+    pub errors: BTreeMap<String, u64>,
+    /// How many times a Chrome crashed and was started again.
+    pub browser_crashes: u64,
+    /// The failed iterations whose page, console and requests were kept
+    /// (`--keep-failures`), and where.
+    pub failures_kept: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failures_dir: Option<String>,
+    /// `--raw`: every step's start, end and result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw: Option<String>,
+}
+
+/// A journey of a load run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadJourney {
+    /// `file:line` of the test.
+    pub place: String,
+    pub name: String,
+    pub iterations: u64,
+    pub failed: u64,
+}
+
+/// A load run's steps by result.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadSteps {
+    pub ok: u64,
+    /// A check that did not hold (`expect`, `http --expect-status`).
+    pub failed: u64,
+    pub timeout: u64,
+    /// Any other error (no such element, a crashed browser, …).
+    pub error: u64,
 }
 
 /// `data` of `chrome-cdp mark --json`.

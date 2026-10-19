@@ -22,6 +22,7 @@ small React app.
 | [repro.md](repro.md) | `repro start` and `repro save`: a bug found in a session, as a folder `test` replays offline |
 | [backends.md](backends.md) | the same scenarios against a real backend, hybrid mode, `--verify-mocks` |
 | [beyond-fetch.md](beyond-fetch.md) | WebSockets, Server-Sent Events, `mock serve` for server-side rendering |
+| [load.md](load.md) | `load`: many real-browser users through the scenarios against a real backend, `think`, what a run keeps |
 
 The workflow for an agent (or a person) that just changed the frontend:
 explore the change with the usual commands and `mock use`, save it with

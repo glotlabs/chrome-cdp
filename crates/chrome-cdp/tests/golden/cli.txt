@@ -110,6 +110,23 @@ command chrome-cdp test
   flag --match-bodies
   flag --ui-coverage
   flag --max-chars value=N
+command chrome-cdp load
+  arg PATH required multiple
+  flag --grep value=REGEX
+  flag --tags value=TAGS
+  flag --backend value=NAME
+  flag --users value=N
+  flag --duration value=TIME
+  flag --iterations value=N
+  flag --ramp-up value=TIME
+  flag --browsers value=N
+  flag --users-per-browser value=M
+  flag --think value=TIME
+  flag --keep-failures value=N
+  flag --raw
+  flag --allow-writes
+  flag --headed
+  flag --max-chars value=N
 command chrome-cdp history
   flag --as-scenario value=NAME
   flag --from value=N
@@ -205,6 +222,8 @@ command chrome-cdp expect
   flag --max-chars value=N
 command chrome-cdp mark
   arg NAME required
+command chrome-cdp think
+  arg TIME
 command chrome-cdp expect-snapshot
   arg NAME required
   flag --scope value=LOCATOR

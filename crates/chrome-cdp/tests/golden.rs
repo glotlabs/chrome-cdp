@@ -652,6 +652,36 @@ const CASES: &[Case] = &[
         ]),
     },
     Case {
+        name: "load-mock-backend",
+        args: &["load", "e2e/cart.cdp"],
+        modes: ERR,
+        fixture: Fixture::Project(&[
+            ("chrome-cdp.toml", "[e2e]\ntests = [\"e2e/**/*.cdp\"]\n"),
+            ("e2e/cart.cdp", "@test \"adds an item\"\n  goto /\n"),
+        ]),
+    },
+    Case {
+        name: "load-not-load-steps",
+        args: &["load", "e2e/cart.cdp", "--backend", "local"],
+        modes: ERR,
+        fixture: Fixture::Project(&[
+            (
+                "chrome-cdp.toml",
+                "[e2e]\ntests = [\"e2e/**/*.cdp\"]\n\n[e2e.backends.local]\nmode = \"real\"\nbase_url = \"http://localhost:4176\"\n",
+            ),
+            (
+                "e2e/cart.cdp",
+                "@before\n  goto /\n  screenshot\n\n@test \"adds an item\"\n  click e12\n  snapshot -i\n  think 2s..8s\n  expect text=Added visible\n",
+            ),
+        ]),
+    },
+    Case {
+        name: "think",
+        args: &["think", "2s..8s"],
+        modes: ALL,
+        fixture: Fixture::None,
+    },
+    Case {
         name: "context-new",
         args: &["context", "new", "data:text/html,<title>Own</title>"],
         modes: ALL,

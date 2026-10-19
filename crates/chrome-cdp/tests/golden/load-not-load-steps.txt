@@ -1,0 +1,13 @@
+$ chrome-cdp load e2e/cart.cdp --backend local
+exit: 2
+--- stderr
+error: e2e/cart.cdp:3:3: screenshot is for one interactive user, not a load run's
+  also: e2e/cart.cdp:6:3: e12 is a ref: it names an element of one session's snapshot, which a load run's users do not have
+  also: e2e/cart.cdp:7:3: snapshot is for one interactive user, not a load run's
+  hint: leave it out of the journey; a load step is navigation (goto, back, forward, reload), the input actions, expect, wait, http, eval, cookies, storage and think
+
+$ chrome-cdp load e2e/cart.cdp --backend local --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"e2e/cart.cdp:3:3: screenshot is for one interactive user, not a load run's","hint":"leave it out of the journey; a load step is navigation (goto, back, forward, reload), the input actions, expect, wait, http, eval, cookies, storage and think","notes":[{"label":"also","text":"e2e/cart.cdp:6:3: e12 is a ref: it names an element of one session's snapshot, which a load run's users do not have"},{"label":"also","text":"e2e/cart.cdp:7:3: snapshot is for one interactive user, not a load run's"}],"details":{"problems":[{"at":"e2e/cart.cdp:3:3","message":"screenshot is for one interactive user, not a load run's"},{"at":"e2e/cart.cdp:6:3","message":"e12 is a ref: it names an element of one session's snapshot, which a load run's users do not have"},{"at":"e2e/cart.cdp:7:3","message":"snapshot is for one interactive user, not a load run's"}]}}}
+

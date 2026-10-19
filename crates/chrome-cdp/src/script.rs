@@ -253,11 +253,17 @@ pub(crate) fn step(line: &Line, vars: &dyn Resolve, global: &GlobalArgs) -> Resu
                     .hint(Hint::text("start the line with a command, e.g. goto")),
             ));
         }
-        Some(Command::Batch(_) | Command::Run(_) | Command::Test(_) | Command::Daemon(_)) => {
+        Some(
+            Command::Batch(_)
+            | Command::Run(_)
+            | Command::Test(_)
+            | Command::Load(_)
+            | Command::Daemon(_),
+        ) => {
             return Err(problem(
                 ErrorInfo::new(
                     ErrorKind::BadArgs,
-                    "batch, run and test cannot run inside a script",
+                    "batch, run, test and load cannot run inside a script",
                 )
                 .hint(Hint::text("put the other script's lines in this one")),
             ));
