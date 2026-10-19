@@ -756,17 +756,37 @@ fn run_tests<T>(
 ) -> Result<(T, Option<Kept>), ErrorInfo> {
     let mut opened = Vec::new();
     let mut failed = None;
-    for session in &options.sessions {
-        match open(&options.global, session, headed) {
-            Ok(started) => {
-                if started {
-                    opened.push(session.clone());
+    // The first alone, since it may find or fetch Chrome; then the rest
+    // at once, as each takes about 0.3 s.
+    let (first, rest) = options.sessions.split_at(options.sessions.len().min(1));
+    for batch in [first, rest] {
+        let results: Vec<_> = std::thread::scope(|scope| {
+            let opening: Vec<_> = batch
+                .iter()
+                .map(|session| scope.spawn(|| open(&options.global, session, headed)))
+                .collect();
+            opening
+                .into_iter()
+                .zip(batch)
+                .map(|(handle, session)| {
+                    let result = handle
+                        .join()
+                        .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+                    (session, result)
+                })
+                .collect()
+        });
+        for (session, result) in results {
+            match result {
+                Ok(true) => opened.push(session.clone()),
+                Ok(false) => {}
+                Err(info) => {
+                    failed.get_or_insert(info);
                 }
             }
-            Err(info) => {
-                failed = Some(info);
-                break;
-            }
+        }
+        if failed.is_some() {
+            break;
         }
     }
     let result = failed.map_or_else(|| Ok(work()), Err);
@@ -775,12 +795,14 @@ fn run_tests<T>(
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
     });
-    for session in &opened {
-        if kept.as_ref().is_some_and(|k| &k.session == session) {
-            continue;
+    std::thread::scope(|scope| {
+        for session in &opened {
+            if kept.as_ref().is_some_and(|k| &k.session == session) {
+                continue;
+            }
+            scope.spawn(|| close(&options.global, session, options.own_sessions));
         }
-        close(&options.global, session, options.own_sessions);
-    }
+    });
     result.map(|done| (done, kept))
 }
 
