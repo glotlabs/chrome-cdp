@@ -942,6 +942,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "browsers_started": {
+          "default": 0,
+          "description": "How many of them were started (with `--plan`: start before the\nusers; an open model's others start when first needed).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
         "cache": {
           "default": "",
           "description": "`[load] cache`: `new` (a fresh browser context each iteration) or\n`returning` (a context per user, kept).",

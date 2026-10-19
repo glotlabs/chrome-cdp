@@ -1,0 +1,13 @@
+$ chrome-cdp load broken
+exit: 2
+--- stderr
+error: e2e/load/broken.toml:4:8: test = "e2e/scenarios/shop.cdp:browse": no test named "browse" in e2e/scenarios/shop.cdp
+  also: e2e/load/broken.toml:7:8: cannot read data e2e/load/nope.csv: No such file or directory (os error 2)
+  also: e2e/load/broken.toml:9:8: test = "e2e/scenarios/cart.cdp:adds": no such scenario file <tmp>/app/e2e/scenarios/cart.cdp
+  hint: did you mean "browses"?
+
+$ chrome-cdp load broken --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"e2e/load/broken.toml:4:8: test = \"e2e/scenarios/shop.cdp:browse\": no test named \"browse\" in e2e/scenarios/shop.cdp","hint":"did you mean \"browses\"?","notes":[{"label":"also","text":"e2e/load/broken.toml:7:8: cannot read data e2e/load/nope.csv: No such file or directory (os error 2)"},{"label":"also","text":"e2e/load/broken.toml:9:8: test = \"e2e/scenarios/cart.cdp:adds\": no such scenario file <tmp>/app/e2e/scenarios/cart.cdp"}],"details":{"problems":[{"at":"e2e/load/broken.toml:4:8","message":"test = \"e2e/scenarios/shop.cdp:browse\": no test named \"browse\" in e2e/scenarios/shop.cdp"},{"at":"e2e/load/broken.toml:7:8","message":"cannot read data e2e/load/nope.csv: No such file or directory (os error 2)"},{"at":"e2e/load/broken.toml:9:8","message":"test = \"e2e/scenarios/cart.cdp:adds\": no such scenario file <tmp>/app/e2e/scenarios/cart.cdp"}]}}}
+

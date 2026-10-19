@@ -19,6 +19,7 @@
 
 mod data;
 mod halt;
+pub(crate) mod init;
 mod lengths;
 mod model;
 mod plan;
@@ -211,13 +212,21 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
         ));
     }
     let timeout = global.timeout_or(DEFAULT_TIMEOUT).max(DEFAULT_TIMEOUT);
-    let chrome = find_browser(args, timeout)?;
+    // `--plan` starts nothing, so it needs no Chrome: only which one.
+    let chrome = if args.plan {
+        None
+    } else {
+        Some(find_browser(args, timeout)?)
+    };
     if mode == Mode::Text {
-        for warning in &chrome.warnings {
+        for warning in chrome.iter().flat_map(|c| &c.warnings) {
             output::stderr(&format!("warning: {warning}\n"));
         }
     }
-    let kind = browser_kind(&chrome);
+    let kind = match &chrome {
+        Some(chrome) => browser_kind(chrome),
+        None => planned_kind(args)?,
+    };
     let run_id = plan.plan.run.run_id.clone();
     let dir = runs.join(&run_id);
     let mut data = LoadData {
@@ -256,6 +265,7 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
         iteration_ms: LoadTimes::default(),
         stopped: None,
         browsers: shape.browsers,
+        browsers_started: shape.eager,
         browser: kind.to_owned(),
         users_per_browser: shape.per_browser,
         duration_ms: 0,
@@ -278,7 +288,7 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
         return Ok(data);
     }
     let open = OpenRequest {
-        chrome: Some(chrome),
+        chrome,
         headed: Some(args.headed),
         load: true,
         console_buffer: Some(LOGGED),
@@ -367,6 +377,7 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
     data.steps = counts.steps;
     data.errors = counts.errors;
     data.browser_crashes = ran.restarts;
+    data.browsers_started = ran.started;
     data.contexts = counts.contexts;
     data.context_setup_ms = mean_ms(counts.context_setup, counts.contexts);
     data.failures_kept = records.kept();
@@ -542,6 +553,17 @@ fn browsers(users: u32, args: &LoadArgs) -> Result<u32, ErrorInfo> {
     }
 }
 
+/// The browser kind a run would start, without looking for full Chrome.
+fn planned_kind(args: &LoadArgs) -> Result<&'static str, ErrorInfo> {
+    let host = browser::Host::current();
+    let explicit = host.var(browser::CHROME_ENV).is_some();
+    let shell = !explicit && browser::locate_headless_shell(&host).is_some();
+    Ok(match pick(args.browser, args.headed, explicit, shell)? {
+        Pick::Shell => "chrome-headless-shell",
+        Pick::Chrome | Pick::ChromeInstead => "chrome",
+    })
+}
+
 /// `chrome-headless-shell` or `chrome`.
 fn browser_kind(chrome: &browser::Chrome) -> &'static str {
     if chrome.headless_shell {
@@ -630,6 +652,8 @@ struct Ran {
     records: Records,
     /// Chromes started again.
     restarts: u64,
+    /// Chromes started at all.
+    started: u32,
     /// From the first user's start to the last iteration's end.
     took: Duration,
     peak: u32,
@@ -734,6 +758,7 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
     });
     Ok(Ran {
         restarts: shared.pool.restarts(),
+        started: shared.pool.started(),
         took,
         peak: shared.peak.load(Ordering::Relaxed),
         arrivals: shared.arrivals.load(Ordering::Relaxed),
@@ -779,8 +804,13 @@ async fn run_users(shared: Arc<Shared>, grace: Duration) -> Result<(Duration, u6
     let cut_short = finish(&shared, &mut users, grace).await?;
     let took = shared.started.elapsed();
     let mut warnings = Vec::new();
+    let after_all = files
+        .iter()
+        .any(|&f| !shared.plan.hooks[f].after_all.is_empty());
     if shared.halt.cut() {
-        warnings.push("@after-all did not run: the run stopped at once".to_owned());
+        if after_all {
+            warnings.push("@after-all did not run: the run stopped at once".to_owned());
+        }
     } else {
         for &file in &files {
             let hooks = &shared.plan.hooks[file];
@@ -989,6 +1019,13 @@ fn plan_text(data: &LoadData) -> String {
         "Chromes: {} ({}), up to {} users each",
         data.browsers, data.browser, data.users_per_browser
     );
+    if data.browsers_started < data.browsers {
+        let _ = write!(
+            text,
+            "; {} start before the users, the others when first needed",
+            data.browsers_started
+        );
+    }
     text
 }
 
@@ -1013,7 +1050,7 @@ fn text(data: &LoadData) -> String {
     if data.max_users.is_some() {
         let _ = writeln!(
             text,
-            "arrivals: {}, {} dropped (max_users {} running); at most {} at once",
+            "arrivals: {}, {} dropped at max_users ({}); at most {} at once",
             data.arrivals,
             data.dropped,
             data.max_users.unwrap_or(0),

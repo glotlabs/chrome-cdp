@@ -262,7 +262,17 @@ pub(crate) fn parse(text: &str, name: &str, root: &Path) -> Result<Profile, Erro
         let place = e
             .span()
             .map_or_else(|| name.to_owned(), |r| at(r).to_string());
-        ErrorInfo::new(ErrorKind::BadArgs, format!("{place}: {message}")).hint(Hint::text(HELP))
+        let top = TOP_KEYS
+            .iter()
+            .find(|key| message.starts_with(&format!("unknown field `{key}`")));
+        let hint = match top {
+            Some(key) => format!(
+                "{key} belongs at the top of the profile, before the first [[journeys]] or \
+                 [table]: in TOML, a key after a table's header is that table's"
+            ),
+            None => HELP.to_owned(),
+        };
+        ErrorInfo::new(ErrorKind::BadArgs, format!("{place}: {message}")).hint(Hint::text(hint))
     })?;
     let mut problems = Problems {
         list: Vec::new(),
@@ -371,6 +381,15 @@ pub(crate) fn parse(text: &str, name: &str, root: &Path) -> Result<Profile, Erro
         )),
     }
 }
+
+/// The keys at the top of a profile, outside its tables.
+const TOP_KEYS: [&str; 5] = [
+    "backend",
+    "think",
+    "think_between_steps",
+    "on_failure",
+    "max_failures",
+];
 
 /// The hint of every profile problem.
 const HELP: &str =

@@ -17,7 +17,7 @@ use protocol::script::{Line, ScriptError, Span};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 
 use super::durations::{self, Durations};
-use super::vars::{Resolver, RunVars};
+use super::vars::{LoadVars, Resolver, Rows, RunVars};
 use crate::cli::{GlobalArgs, TestArgs};
 use crate::script::{self as lines, Problem};
 
@@ -124,6 +124,17 @@ impl Plan {
         args: &TestArgs,
         global: &GlobalArgs,
         backend: Option<&str>,
+    ) -> Result<Self, ErrorInfo> {
+        Self::make_for(args, global, backend, false)
+    }
+
+    /// [`Plan::make`]; `load` for a load run's plan, which checks the
+    /// steps' `${row.…}` against the journeys' data itself.
+    pub(crate) fn make_for(
+        args: &TestArgs,
+        global: &GlobalArgs,
+        backend: Option<&str>,
+        load: bool,
     ) -> Result<Self, ErrorInfo> {
         let cwd = std::env::current_dir().map_err(|e| {
             ErrorInfo::new(
@@ -245,7 +256,7 @@ impl Plan {
                 settings.skip = settings.skipped_on(&backend.name, backend.mode.as_str());
             }
             let check = |steps: &[Step], problems: &mut Vec<Problem>| {
-                prepare(steps, global, problems, &run, &saved[file])
+                prepare(steps, global, problems, &run, &saved[file], load)
             };
             if let Some(device) = &settings.device
                 && let Err(info) = engine::find_device(device, &global.session)
@@ -543,10 +554,18 @@ fn prepare(
     problems: &mut Vec<Problem>,
     run: &RunVars,
     saved: &BTreeSet<String>,
+    load: bool,
 ) -> Vec<Prepared> {
     let mut prepared = Vec::new();
     for step in steps {
-        let resolver = Resolver::checking(&step.vars, run, saved);
+        let mut resolver = Resolver::checking(&step.vars, run, saved);
+        if load {
+            resolver = resolver.in_load(LoadVars {
+                vu: "vu",
+                iteration: "iteration",
+                rows: Rows::Any,
+            });
+        }
         match lines::step(&step.line, &resolver, global) {
             Ok(checked) => prepared.push(Prepared {
                 line: step.line.clone(),

@@ -91,6 +91,16 @@ impl Pool {
         self.browsers.len()
     }
 
+    /// How many Chromes were started.
+    pub(super) fn started(&self) -> u32 {
+        let started = self
+            .browsers
+            .iter()
+            .filter(|b| b.started.load(Ordering::Relaxed))
+            .count();
+        u32::try_from(started).unwrap_or(u32::MAX)
+    }
+
     /// Chrome `index`'s engine, started first if it was not yet, or again
     /// if it crashed.
     pub(super) async fn engine(&self, index: usize) -> Result<Arc<Engine>, ErrorInfo> {

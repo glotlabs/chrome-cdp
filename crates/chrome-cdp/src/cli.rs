@@ -2472,14 +2472,15 @@ Examples:
   chrome-cdp lint --json")]
     Lint(LintArgs),
 
-    /// Set up a project for chrome-cdp: `init e2e` scaffolds E2E tests with mocks.
+    /// Set up a project for chrome-cdp: `init e2e` scaffolds E2E tests with mocks, `init load` a load profile.
     #[command(
         subcommand_required = true,
         arg_required_else_help = true,
         after_help = "\
 Examples:
   chrome-cdp init e2e
-  chrome-cdp init e2e --framework vite --dir web"
+  chrome-cdp init e2e --framework vite --dir web
+  chrome-cdp init load"
     )]
     Init(InitArgs),
 
@@ -2605,6 +2606,32 @@ Examples:
   chrome-cdp init e2e --framework next      # instead of reading package.json
   chrome-cdp init e2e --json                # each file and what was done")]
     E2e(InitE2eArgs),
+
+    /// Write an example load profile: e2e/load/example.toml.
+    #[command(after_help = "\
+Writes e2e/load/<--name>.toml in the project (the current directory's, or
+--dir's): a load profile for `chrome-cdp load` (docs/e2e/load.md) with
+the config's real backend, up to three of the project's tests as
+journeys by weight, an open model (users arriving at a rate) and every
+other key in comments. An existing file is never overwritten.
+
+Examples:
+  chrome-cdp init load
+  chrome-cdp init load --name checkout
+  chrome-cdp load example --plan      # what the profile would run")]
+    Load(InitLoadArgs),
+}
+
+#[derive(Debug, Args)]
+pub(crate) struct InitLoadArgs {
+    /// The project's directory (default: the current one).
+    #[arg(long, value_name = "DIR")]
+    pub(crate) dir: Option<PathBuf>,
+
+    /// The profile's name: e2e/load/<NAME>.toml, run as `chrome-cdp load
+    /// NAME`, e.g. checkout.
+    #[arg(long, value_name = "NAME", default_value = "example")]
+    pub(crate) name: String,
 }
 
 #[derive(Debug, Args)]
@@ -8472,6 +8499,7 @@ mod tests {
         "state load",
         // A line per file of the layout.
         "init e2e",
+        "init load",
         // Fixed texts: the help, the skill file, completion scripts.
         "help",
         "skill",

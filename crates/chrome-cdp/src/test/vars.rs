@@ -94,6 +94,9 @@ pub(crate) enum Rows<'a> {
     None,
     /// While checking: the columns of the journey's data, and its file.
     Columns(&'a [String], &'a str),
+    /// While checking a load run's files, before the journeys' data is
+    /// known: any column.
+    Any,
     /// While running: the iteration's row.
     Row(&'a BTreeMap<String, String>),
 }
@@ -208,6 +211,7 @@ impl Resolver<'_> {
             .hint(
                 "give the journey data = \"e2e/load/users.csv\" in its load profile; a test has no row",
             )),
+            Rows::Any => Ok("row".to_owned()),
             Rows::Columns(columns, _) if columns.iter().any(|c| c == column) => {
                 Ok("row".to_owned())
             }

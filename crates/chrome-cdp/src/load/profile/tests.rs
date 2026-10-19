@@ -193,6 +193,25 @@ fn a_model_is_needed_and_keys_are_known() {
         "{}",
         e.message
     );
+    // A top-level key after [[journeys]] is the journey's in TOML.
+    let e = parse(
+        &format!("{JOURNEY}think = \"1s\"\n[users]\ncount = 5\nduration = \"1m\"\n"),
+        "p.toml",
+        Path::new("/p"),
+    )
+    .unwrap_err();
+    assert!(
+        e.message.starts_with("p.toml:3:1: unknown field `think`"),
+        "{}",
+        e.message
+    );
+    assert!(
+        e.hint
+            .as_deref()
+            .unwrap()
+            .starts_with("think belongs at the top of the profile"),
+        "{e:?}"
+    );
     let all = problems("[users]\ncount = 5\nduration = \"1m\"\n");
     assert!(all[0].contains("the profile has no journeys"), "{all:?}");
     let all = problems(

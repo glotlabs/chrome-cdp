@@ -1,0 +1,11 @@
+$ chrome-cdp load shap
+exit: 1
+--- stderr
+error: no load profile shap: e2e/load/shap.toml is not there
+  hint: chrome-cdp load shop   (did you mean it?)
+
+$ chrome-cdp load shap --json
+exit: 1
+--- stdout
+{"ok":false,"error":{"kind":"NotFound","message":"no load profile shap: e2e/load/shap.toml is not there","hint":"chrome-cdp load shop   (did you mean it?)"}}
+

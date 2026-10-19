@@ -1,7 +1,7 @@
 <!-- Generated from the CLI by `cargo xtask docs`; do not edit. -->
 # `chrome-cdp init`
 
-Set up a project for chrome-cdp: `init e2e` scaffolds E2E tests with mocks
+Set up a project for chrome-cdp: `init e2e` scaffolds E2E tests with mocks, `init load` a load profile
 
 ```text
 chrome-cdp init [OPTIONS] <COMMAND>
@@ -11,6 +11,7 @@ chrome-cdp init [OPTIONS] <COMMAND>
 Examples:
   chrome-cdp init e2e
   chrome-cdp init e2e --framework vite --dir web
+  chrome-cdp init load
 ```
 
 ## `chrome-cdp init e2e`
@@ -48,5 +49,31 @@ Examples:
   chrome-cdp init e2e --dir frontend
   chrome-cdp init e2e --framework next      # instead of reading package.json
   chrome-cdp init e2e --json                # each file and what was done
+```
+
+## `chrome-cdp init load`
+
+Write an example load profile: e2e/load/example.toml
+
+```text
+chrome-cdp init load [OPTIONS]
+```
+
+Options:
+
+- `--dir <DIR>`: The project's directory (default: the current one)
+- `--name <NAME>`: The profile's name: e2e/load/&lt;NAME&gt;.toml, run as `chrome-cdp load NAME`, e.g. checkout (default `example`)
+
+```text
+Writes e2e/load/<--name>.toml in the project (the current directory's, or
+--dir's): a load profile for `chrome-cdp load` (docs/e2e/load.md) with
+the config's real backend, up to three of the project's tests as
+journeys by weight, an open model (users arriving at a rate) and every
+other key in comments. An existing file is never overwritten.
+
+Examples:
+  chrome-cdp init load
+  chrome-cdp init load --name checkout
+  chrome-cdp load example --plan      # what the profile would run
 ```
 

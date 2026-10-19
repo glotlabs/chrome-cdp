@@ -889,6 +889,9 @@ command chrome-cdp init
 command chrome-cdp init e2e
   flag --dir value=DIR
   flag --framework value=NAME values=vite|next|cra|astro|sveltekit|none
+command chrome-cdp init load
+  flag --dir value=DIR
+  flag --name value=NAME
 command chrome-cdp help
   arg TOPIC multiple
 command chrome-cdp skill

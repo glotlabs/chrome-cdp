@@ -1,0 +1,19 @@
+$ chrome-cdp load shop --plan --browser chrome
+exit: 0
+--- stdout
+load plan: open model of e2e/load/shop.toml against backend staging
+stages:
+  1. 0..10/s over 1m
+  2. 10/s for 5m
+  about 3,300 arrivals over 6m, each one iteration; at most 200 users at once
+journeys (by weight):
+     9  e2e/scenarios/shop.cdp:1 browses
+     1  e2e/scenarios/shop.cdp:6 signs in (data e2e/load/users.csv)
+users: unknown until a run of these journeys on backend staging has its iterations' length; at most 200
+Chromes: 20 (chrome), up to 10 users each
+
+$ chrome-cdp load shop --plan --browser chrome --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"arrivals":3300,"backend":"staging","browser":"chrome","browser_crashes":0,"browsers":20,"browsers_started":20,"cache":"new","context_setup_ms":0.0,"contexts":0,"dir":"<tmp>/app/e2e/.results/load/<rand>","dropped":0,"duration_ms":0,"errors":{},"failed":0,"failures_kept":0,"iteration_ms":{"max":0.0,"p50":0.0,"p95":0.0},"iterations":0,"journeys":[{"failed":0,"iteration_ms":{"max":0.0,"p50":0.0,"p95":0.0},"iterations":0,"name":"browses","place":"e2e/scenarios/shop.cdp:1","weight":9},{"data":"e2e/load/users.csv","failed":0,"iteration_ms":{"max":0.0,"p50":0.0,"p95":0.0},"iterations":0,"name":"signs in","place":"e2e/scenarios/shop.cdp:6","weight":1}],"max_users":200,"model":"open","planned":true,"profile":"e2e/load/shop.toml","run":"<rand>","stages":[{"duration_ms":60000,"from":0.0,"kind":"arrivals","to":10.0},{"duration_ms":300000,"from":10.0,"kind":"arrivals","to":10.0}],"steps":{"error":0,"failed":0,"ok":0,"timeout":0},"users":200,"users_per_browser":10}}
+

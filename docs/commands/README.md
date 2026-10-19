@@ -88,7 +88,7 @@ same text as `chrome-cdp help <command>`. The guides in
 | [`expect-screenshot`](expect-screenshot.md) | Compare a screenshot with a stored PNG baseline, pixel by pixel (experimental) |
 | [`audit`](audit.md) | Audit the page in one report: Chrome's issues, accessibility, layout, errors, failed requests, security and metadata |
 | [`mark`](mark.md) | Name this point in the tab's console, issues and network logs, for expect --no-errors --since |
-| [`init`](init.md) | Set up a project for chrome-cdp: `init e2e` scaffolds E2E tests with mocks |
+| [`init`](init.md) | Set up a project for chrome-cdp: `init e2e` scaffolds E2E tests with mocks, `init load` a load profile |
 | [`test`](test.md) | Run the project's E2E scenarios, each test in a fresh browser context with its mocks |
 | [`load`](load.md) | Run many users through scenario tests at once, in real browsers, against a real backend |
 | [`think`](think.md) | Pause a load run's user here, as a person would (a no-op outside `load`) |

@@ -706,7 +706,9 @@ impl Linter {
             Var::Env(_) | Var::Secret(_) => false,
             Var::Name(name) if name == "backend" => false,
             Var::Path(path) => match path.iter().map(String::as_str).collect::<Vec<_>>()[..] {
-                ["run" | "test", "id"] => false,
+                // `${vu.id}`, `${iteration.id}` and `${row.…}`: a load
+                // run's, which checks the rows against its journeys' data.
+                ["run" | "test" | "vu" | "iteration", "id"] | ["row", _] => false,
                 ["saved", name, ..] if saved.contains(name) => false,
                 ["saved", name, ..] => {
                     self.error(
@@ -722,7 +724,8 @@ impl Linter {
                         span,
                         "undefined-var",
                         format!("unknown variable {var}"),
-                        "the dotted variables are ${run.id}, ${test.id} and ${saved.NAME.field}",
+                        "the dotted variables are ${run.id}, ${test.id}, ${saved.NAME.field}, and in a \
+                         load run ${vu.id}, ${iteration.id} and ${row.COLUMN}",
                     );
                     true
                 }

@@ -69,6 +69,11 @@ pub const COMMANDS: &[CommandSchema] = &[
         schema: || schema_for!(Envelope<InitData>),
     },
     CommandSchema {
+        name: "init load",
+        summary: "the example load profile written or kept",
+        schema: || schema_for!(Envelope<InitData>),
+    },
+    CommandSchema {
         name: "completions",
         summary: "the shell completion script",
         schema: || schema_for!(Envelope<CompletionsData>),
@@ -875,7 +880,7 @@ pub const COMMANDS: &[CommandSchema] = &[
     },
     CommandSchema {
         name: "load",
-        summary: "the load run: its users, Chromes and journeys, iterations and steps by result, errors by kind, and where its files are",
+        summary: "the load run: its profile, model and stages, users, Chromes and journeys, arrivals and dropped ones, iterations and steps by result, errors by kind, why it stopped early, and where its files are; with --plan what it would run",
         schema: || schema_for!(Envelope<LoadData>),
     },
     CommandSchema {
@@ -5123,6 +5128,10 @@ pub struct LoadData {
     pub stopped: Option<LoadStopped>,
     /// How many Chromes they shared.
     pub browsers: u32,
+    /// How many of them were started (with `--plan`: start before the
+    /// users; an open model's others start when first needed).
+    #[serde(default)]
+    pub browsers_started: u32,
     /// Which browser the Chromes were: `chrome-headless-shell` or
     /// `chrome` (`--browser`).
     #[serde(default)]

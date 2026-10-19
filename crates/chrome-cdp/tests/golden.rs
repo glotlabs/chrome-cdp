@@ -93,6 +93,43 @@ const FMT_PROJECT: &[(&str, &str)] = &[
 
 const ALL: &[&str] = &["", "--json", "-q"];
 
+/// A project with load profiles (plan 23.3) against a real backend.
+const LOAD_PROJECT: &[(&str, &str)] = &[
+    (
+        "chrome-cdp.toml",
+        "[e2e]\ntests = [\"e2e/**/*.cdp\"]\n\n[e2e.backends.staging]\nmode = \"real\"\nbase_url = \"http://localhost:4176\"\n",
+    ),
+    (
+        "e2e/scenarios/shop.cdp",
+        "@test \"browses\"\n  goto /\n  think\n  click 'role=link[name=\"Mouse\"]'\n\n\
+         @test \"signs in\"\n  goto /login\n  fill label=Email ${row.email}\n  \
+         fill label=Password ${row.password}\n",
+    ),
+    (
+        "e2e/load/users.csv",
+        "email,password\na@example.com,secret\nb@example.com,secret\n",
+    ),
+    (
+        "e2e/load/shop.toml",
+        "backend = \"staging\"\nthink = \"exp(3s)\"\n\n[[journeys]]\ntest = \"e2e/scenarios/shop.cdp:browses\"\n\
+         weight = 9\n[[journeys]]\ntest = \"e2e/scenarios/shop.cdp:signs in\"\nweight = 1\n\
+         data = \"e2e/load/users.csv\"\ndata_exhausted = \"stop\"\n\n[arrivals]\n\
+         stages = [{ rate = \"0..10/s\", duration = \"1m\" }, { rate = \"10/s\", duration = \"5m\" }]\n\
+         max_users = 200\n",
+    ),
+    (
+        "e2e/load/steady.toml",
+        "backend = \"staging\"\n\n[[journeys]]\ntest = \"e2e/scenarios/shop.cdp:2\"\n\n\
+         [users]\ncount = 30\nramp_up = \"30s\"\nduration = \"2m\"\n",
+    ),
+    (
+        "e2e/load/broken.toml",
+        "backend = \"staging\"\n\n[[journeys]]\ntest = \"e2e/scenarios/shop.cdp:browse\"\n\
+         [[journeys]]\ntest = \"e2e/scenarios/shop.cdp:signs in\"\ndata = \"e2e/load/nope.csv\"\n\
+         [[journeys]]\ntest = \"e2e/scenarios/cart.cdp:adds\"\n\n[users]\ncount = 5\nduration = \"1m\"\n",
+    ),
+];
+
 /// `locators/filters.html` with refs: e5 is row 3's Delete button.
 const FILTERS: &[&[&str]] = &[
     &["open", "{site}/locators/filters.html"],
@@ -672,6 +709,51 @@ const CASES: &[Case] = &[
             (
                 "e2e/cart.cdp",
                 "@before\n  goto /\n  screenshot\n\n@test \"adds an item\"\n  click e12\n  snapshot -i\n  think 2s..8s\n  expect text=Added visible\n",
+            ),
+        ]),
+    },
+    Case {
+        name: "load-plan",
+        args: &["load", "shop", "--plan", "--browser", "chrome"],
+        modes: &["", "--json"],
+        fixture: Fixture::Project(LOAD_PROJECT),
+    },
+    Case {
+        name: "load-plan-closed",
+        args: &[
+            "load",
+            "e2e/load/steady.toml",
+            "--plan",
+            "--browser",
+            "chrome",
+        ],
+        modes: &[""],
+        fixture: Fixture::Project(LOAD_PROJECT),
+    },
+    Case {
+        name: "load-profile-problems",
+        args: &["load", "broken"],
+        modes: ERR,
+        fixture: Fixture::Project(LOAD_PROJECT),
+    },
+    Case {
+        name: "load-no-such-profile",
+        args: &["load", "shap"],
+        modes: ERR,
+        fixture: Fixture::Project(LOAD_PROJECT),
+    },
+    Case {
+        name: "init-load",
+        args: &["init", "load"],
+        modes: ALL,
+        fixture: Fixture::Project(&[
+            (
+                "chrome-cdp.toml",
+                "[e2e]\ntests = [\"e2e/**/*.cdp\"]\n\n[e2e.backends.staging]\nmode = \"real\"\nbase_url = \"http://localhost:4176\"\n",
+            ),
+            (
+                "e2e/scenarios/shop.cdp",
+                "@test \"browses\"\n  goto /\n\n@test \"searches\"\n  goto /search\n",
             ),
         ]),
     },
@@ -3899,6 +3981,9 @@ impl Normalizer {
                 "<ms>",
             ),
             ("up ", &uptime, "<uptime>"),
+            // A load run's id, and its folder.
+            ("\"run\":\"", &|c: char| c.is_ascii_alphanumeric(), "<rand>"),
+            (".results/load/", &|c: char| c.is_ascii_alphanumeric(), "<rand>"),
             (
                 "/chrome-cdp-",
                 &|c: char| c.is_ascii_alphanumeric(),

@@ -147,7 +147,7 @@ impl LoadPlan {
         if test_args.paths.is_empty() {
             return Err(lines::invalid(problems));
         }
-        let plan = Plan::make(&test_args, global, None)?;
+        let plan = Plan::make_for(&test_args, global, None, true)?;
         if !plan.real() {
             return Err(ErrorInfo::new(
                 ErrorKind::BadArgs,

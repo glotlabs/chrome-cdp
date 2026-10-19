@@ -8,7 +8,10 @@ use protocol::{Cmd, ErrorInfo, Output, format};
 use crate::cli::{FrameworkArg, InitArgs, InitCommand};
 
 pub(crate) fn run(args: &InitArgs) -> Result<Output, ErrorInfo> {
-    let InitCommand::E2e(e2e) = &args.command;
+    let e2e = match &args.command {
+        InitCommand::E2e(e2e) => e2e,
+        InitCommand::Load(load) => return crate::load::init::run(load),
+    };
     let choice = match e2e.framework {
         None => FrameworkChoice::Detect,
         Some(FrameworkArg::None) => FrameworkChoice::None,

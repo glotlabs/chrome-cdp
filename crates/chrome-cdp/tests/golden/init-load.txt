@@ -1,0 +1,16 @@
+$ chrome-cdp init load
+exit: 0
+--- stdout
+created  <tmp>/app/e2e/load/example.toml  2 journeys, backend staging
+next: chrome-cdp load example --plan says what it would run; chrome-cdp load example runs it
+
+$ chrome-cdp init load --json
+exit: 0
+--- stdout
+{"ok":true,"data":{"dir":"<tmp>/app","files":[{"action":"created","path":"<tmp>/app/e2e/load/example.toml","reason":"2 journeys, backend staging"}]}}
+
+$ chrome-cdp init load -q
+exit: 0
+--- stdout
+<tmp>/app/e2e/load/example.toml
+

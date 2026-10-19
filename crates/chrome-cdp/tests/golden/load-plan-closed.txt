@@ -1,0 +1,13 @@
+$ chrome-cdp load e2e/load/steady.toml --plan --browser chrome
+exit: 0
+--- stdout
+load plan: closed model of e2e/load/steady.toml against backend staging
+stages:
+  1. 0..30 users over 30s
+  2. 30 users for 2m
+  2m30s in all; each user loops its journeys
+journeys (by weight):
+     1  e2e/scenarios/shop.cdp:1 browses
+users: 30 users at once
+Chromes: 3 (chrome), up to 10 users each
+
