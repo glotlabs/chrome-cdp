@@ -47,6 +47,7 @@ tracing-subscriber.workspace = true
 [dev-dependencies]
 browser = { workspace = true, features = ["test-support"] }
 fixtures.workspace = true
+load-server.workspace = true
 regex.workspace = true
 tempfile.workspace = true
 tokio-tungstenite.workspace = true

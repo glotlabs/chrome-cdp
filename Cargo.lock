@@ -226,6 +226,7 @@ dependencies = [
  "fixtures",
  "flate2",
  "futures-util",
+ "load-server",
  "regex",
  "reqwest",
  "ring",
