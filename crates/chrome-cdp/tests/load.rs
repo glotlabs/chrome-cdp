@@ -256,3 +256,15 @@ fn a_crashed_chrome_is_started_again() {
     let raw = std::fs::read_to_string(data["raw"].as_str().unwrap()).unwrap();
     assert!(raw.contains("\"kind\":\"browser_crash\""), "{raw}");
 }
+
+#[test]
+fn a_journeys_viewport_is_its_users() {
+    let Some(chrome) = chrome_path() else { return };
+    let journey = "@test \"on a phone\" @viewport 390x844\n  goto /\n  eval 'if (innerWidth !== 390) throw new Error(\"width \" + innerWidth)'\n";
+    let project = Project::new(&chrome, &[("phone.cdp", journey)]);
+    let out = project.load(&["e2e/phone.cdp", "--users", "2", "--iterations", "1"]);
+    assert_eq!(common::code(&out), 0, "{}\n{}", stdout(&out), stderr(&out));
+    let data = data(&out);
+    assert_eq!(data["iterations"], 2, "{data}");
+    assert_eq!(data["failed"], 0, "{data}");
+}

@@ -25,8 +25,9 @@ iterations that are running then finish. `--ramp-up 1m` starts the users
 evenly over a minute instead of all at once.
 
 Each iteration runs as `test` runs the test: in a fresh browser context
-with one tab, the file's `@before` steps, the test's own and its `@after`
-steps (after a failure too). `@before-all` and `@after-all` run once,
+with one tab, with the test's `@device` or `@viewport` if it has one, the
+file's `@before` steps, the test's own and its `@after` steps (after a
+failure too). `@before-all` and `@after-all` run once,
 before the first user starts and after the last one ends. `${test.id}` is
 unique per iteration (`<run>-u<user>-<iteration>`), so journeys that
 create accounts or orders do not collide, and `${saved.…}` reads what the

@@ -113,6 +113,16 @@ impl User<'_> {
             Ok(context) => context,
             Err(error) => return setup(crashed(&engine, error)),
         };
+        if let Some(emulate) = &journey.emulate {
+            let made = engine::in_context(
+                Some(context.clone()),
+                Box::pin(engine.emulate(emulate.clone())),
+            )
+            .await;
+            if let Err(error) = made {
+                return setup(crashed(&engine, error));
+            }
+        }
         let hooks = &shared.plan.hooks[journey.file];
         let mut deadline = started + journey.timeout;
         let mut saved = shared

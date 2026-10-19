@@ -59,6 +59,9 @@ pub(super) struct Journey {
     /// How long one iteration may take (the test's `@timeout`, else the
     /// config's).
     pub(super) timeout: std::time::Duration,
+    /// The test's `@device` or `@viewport`, made in each iteration's
+    /// context before its steps.
+    pub(super) emulate: Option<engine::EmulateRequest>,
 }
 
 /// Everything a load run needs to know.
@@ -135,12 +138,15 @@ impl LoadPlan {
                     after: ready(&file.after, true, &mut problems),
                 };
             }
+            // The test runner's plan checked the device's name already.
+            let emulate = emulation(&test.settings, &global)?;
             journeys.push(Journey {
                 file: test.file,
                 name: test.name.clone(),
                 place: format!("{}:{}", scenario.name, test.line),
                 steps: ready(&test.steps, false, &mut problems),
                 timeout: plan.timeout(&test.settings),
+                emulate,
             });
         }
         if !problems.is_empty() {
@@ -179,6 +185,28 @@ impl LoadPlan {
             global,
         })
     }
+}
+
+/// The `emulate` request of a test's `@device` or `@viewport`, as `test`
+/// makes it; `None` without either (Chrome's own viewport).
+fn emulation(
+    settings: &e2e::scenario::Settings,
+    global: &GlobalArgs,
+) -> Result<Option<engine::EmulateRequest>, ErrorInfo> {
+    let words: Vec<String> = match (&settings.device, settings.viewport) {
+        (Some(device), _) => vec!["emulate".into(), device.clone()],
+        (None, Some(size)) => vec![
+            "viewport".into(),
+            size.to_string(),
+            "--dpr".into(),
+            "1".into(),
+        ],
+        (None, None) => return Ok(None),
+    };
+    let call = crate::session::setup_call(&lines::command(&words, global)?)?;
+    serde_json::from_value(call.params)
+        .map(Some)
+        .map_err(|e| ErrorInfo::new(ErrorKind::ProtocolError, format!("bad emulation: {e}")))
 }
 
 /// `load`'s arguments as the test runner's, for its plan.
