@@ -178,7 +178,20 @@ fn scaffolds_a_vite_project() {
         "{workflow}"
     );
     assert!(workflow.contains("path: e2e/.results/"));
-    assert_eq!(read(dir.path(), ".gitignore"), "e2e/.results/\n");
+    // The durations file is restored before the tests and saved after,
+    // also when they fail (plan 22.5).
+    let restore = workflow
+        .find("actions/cache/restore@v4\n        with:\n          path: e2e/.durations.json");
+    let save = workflow.find("actions/cache/save@v4\n        if: always()");
+    let tests = workflow.find("chrome-cdp test --reporter");
+    assert!(
+        restore < tests && tests < save && restore.is_some(),
+        "{workflow}"
+    );
+    assert_eq!(
+        read(dir.path(), ".gitignore"),
+        "e2e/.results/\ne2e/.durations.json\n"
+    );
 }
 
 #[test]
@@ -208,7 +221,7 @@ fn never_overwrites_and_a_second_run_keeps_everything() {
     );
     assert_eq!(
         second.files[5].reason.as_deref(),
-        Some("ignores e2e/.results/ already")
+        Some("ignores e2e/.results/ and e2e/.durations.json already")
     );
     assert_eq!(second.base_url, None);
     let after: Vec<String> = second
@@ -243,6 +256,18 @@ fn ssr_frameworks_get_a_mock_server_suggested() {
 }
 
 #[test]
+fn a_gitignore_with_the_artifacts_gets_the_durations_file() {
+    let dir = project(&[(".gitignore", "/e2e/.results\n")]);
+    let data = run(dir.path(), FrameworkChoice::Detect).unwrap();
+    assert_eq!(data.files[5].action, InitAction::Appended);
+    assert_eq!(data.files[5].reason.as_deref(), Some("e2e/.durations.json"));
+    assert_eq!(
+        read(dir.path(), ".gitignore"),
+        "/e2e/.results\ne2e/.durations.json\n"
+    );
+}
+
+#[test]
 fn appends_to_an_existing_config_and_gitignore() {
     let dir = project(&[
         (".chrome-cdp.toml", "session = \"shop\" # mine"),
@@ -263,7 +288,7 @@ fn appends_to_an_existing_config_and_gitignore() {
     assert_eq!(config.web_servers[0].env["PORT"], "3000");
     assert_eq!(
         read(dir.path(), ".gitignore"),
-        "node_modules/\ndist\ne2e/.results/\n"
+        "node_modules/\ndist\ne2e/.results/\ne2e/.durations.json\n"
     );
     assert_eq!(data.files[5].action, InitAction::Appended);
 }

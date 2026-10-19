@@ -8,7 +8,7 @@
 //! - It writes the `[e2e]` section (a new `chrome-cdp.toml`, or appended
 //!   to the project config that has none), an example scenario, the mock
 //!   set "base" with a data file, and a GitHub Actions workflow, and adds
-//!   the artifacts directory to `.gitignore`.
+//!   the artifacts directory and the durations file to `.gitignore`.
 //! - It never overwrites a file: one that exists is kept, and the config
 //!   and `.gitignore` only get lines added at their end.
 
@@ -20,7 +20,7 @@ use protocol::schema::{InitAction, InitData, InitFile, InitWebServer};
 use protocol::{ErrorInfo, ErrorKind};
 use serde::Deserialize;
 
-use crate::config::{DEFAULT_ARTIFACTS, PROJECT_FILES};
+use crate::config::{DEFAULT_ARTIFACTS, DEFAULT_DURATIONS, PROJECT_FILES};
 
 /// The example scenario.
 pub const SCENARIO: &str = include_str!("init/example.cdp");
@@ -500,24 +500,31 @@ fn config_file(dir: &Path, server: Option<&Server>) -> Result<InitFile, ErrorInf
     ))
 }
 
-/// Adds the artifacts directory to `.gitignore`.
+/// Adds the artifacts directory and the durations file to `.gitignore`.
 fn gitignore(dir: &Path) -> Result<InitFile, ErrorInfo> {
     let path = dir.join(".gitignore");
-    let entry = format!("{DEFAULT_ARTIFACTS}/");
+    let entries = [
+        format!("{DEFAULT_ARTIFACTS}/"),
+        DEFAULT_DURATIONS.to_owned(),
+    ];
     if !path.exists() {
-        write_new(&path, &format!("{entry}\n"))?;
-        return Ok(file(&path, InitAction::Created, Some(&entry)));
+        write_new(&path, &format!("{}\n", entries.join("\n")))?;
+        return Ok(file(&path, InitAction::Created, Some(&entries.join(", "))));
     }
     let text = read(&path)?;
-    let listed = text.lines().any(|line| {
-        let line = line.trim().trim_start_matches('/').trim_end_matches('/');
-        line == DEFAULT_ARTIFACTS
-    });
-    if listed {
+    let listed = |entry: &str| {
+        let entry = entry.trim_end_matches('/');
+        text.lines().any(|line| {
+            let line = line.trim().trim_start_matches('/').trim_end_matches('/');
+            line == entry
+        })
+    };
+    let missing: Vec<&String> = entries.iter().filter(|e| !listed(e)).collect();
+    if missing.is_empty() {
         return Ok(file(
             &path,
             InitAction::Kept,
-            Some(&format!("ignores {entry} already")),
+            Some(&format!("ignores {} already", entries.join(" and "))),
         ));
     }
     let separator = if text.is_empty() || text.ends_with('\n') {
@@ -525,8 +532,9 @@ fn gitignore(dir: &Path) -> Result<InitFile, ErrorInfo> {
     } else {
         "\n"
     };
-    append(&path, &format!("{separator}{entry}\n"))?;
-    Ok(file(&path, InitAction::Appended, Some(&entry)))
+    let lines: Vec<&str> = missing.iter().map(|e| e.as_str()).collect();
+    append(&path, &format!("{separator}{}\n", lines.join("\n")))?;
+    Ok(file(&path, InitAction::Appended, Some(&lines.join(", "))))
 }
 
 /// The GitHub Actions workflow; `node` sets up Node and the dependencies
@@ -568,8 +576,20 @@ jobs:
         run: |
           chrome-cdp fmt --check
           chrome-cdp lint --format github
+      # The tests' durations: the longest start first, and the shards split
+      # by time. Every shard restores the same latest file, so they agree.
+      - uses: actions/cache/restore@v4
+        with:
+          path: {DEFAULT_DURATIONS}
+          key: e2e-durations-${{{{ github.run_id }}}}-${{{{ github.run_attempt }}}}-${{{{ strategy.job-index }}}}
+          restore-keys: e2e-durations-
       - name: E2E tests
         run: chrome-cdp test --reporter text,junit --shard ${{{{ matrix.shard }}}}
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: {DEFAULT_DURATIONS}
+          key: e2e-durations-${{{{ github.run_id }}}}-${{{{ github.run_attempt }}}}-${{{{ strategy.job-index }}}}
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

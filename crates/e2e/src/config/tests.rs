@@ -74,7 +74,7 @@ fn parses_the_plan_example() {
     assert_eq!(c.jobs.count(), 4);
     assert_eq!(c.timeout, Duration::from_secs(30));
     assert_eq!(c.artifacts, Path::new("/p/e2e/.results"));
-    assert_eq!(c.durations, Path::new("/p/e2e/.durations.json"));
+    assert_eq!(c.durations, Path::new("/p").join(super::DEFAULT_DURATIONS));
     assert_eq!(
         c.viewport,
         Viewport {

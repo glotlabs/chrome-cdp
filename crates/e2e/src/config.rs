@@ -40,6 +40,8 @@ pub const DEFAULT_ARTIFACTS: &str = "e2e/.results";
 /// The durations file's name beside the artifacts directory when
 /// `durations` is not set.
 pub const DURATIONS_FILE: &str = ".durations.json";
+/// The durations file with neither `durations` nor `artifacts` set.
+pub const DEFAULT_DURATIONS: &str = "e2e/.durations.json";
 /// A test's time limit when `timeout` is not set.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long a web server may take to answer when its `timeout` is not set.
