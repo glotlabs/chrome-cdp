@@ -415,4 +415,8 @@ baseline, with no new flakes.
   does not. A request's time is now Chrome's `wallTime` (when within
   10 s of when the daemon heard of it). A debug test also counted a
   logpoint's hits before its console entry arrived; it now waits for
-  the hit.
+  the hit.  With both fixed, `cargo xtask e2e --repeat 20` passed with no
+  failure (20 runs of 1,447 tests). Interactive commands kept their
+  times: the micro suite's `click` 326 ms before 22.3 and 325 ms after,
+  and 20 `goto`s of a page that fetches after load 846 ms (median) with
+  both builds.
