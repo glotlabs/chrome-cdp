@@ -180,6 +180,13 @@ pub(crate) struct Settings {
     pub(crate) recorder: crate::record::Recorder,
     /// The browser contexts made with `context new` (plan 11).
     pub(crate) contexts: crate::context::Contexts,
+    /// What Chrome fails at once in every page, frame and worker
+    /// (`Network.setBlockedURLs`): a load run's `[load] block` (plan
+    /// 23.2). Empty blocks nothing.
+    blocked_urls: Mutex<Vec<crate::request::BlockedUrl>>,
+    /// A load run's Chrome (plan 23.2), whose users read no response
+    /// bodies: Chrome keeps few per page (see `features::network_enable`).
+    load_run: AtomicBool,
 }
 
 impl Settings {
@@ -265,6 +272,22 @@ impl Settings {
 
     pub(crate) fn http_credentials(&self) -> Option<HttpCredentials> {
         lock(&self.http_credentials).clone()
+    }
+
+    pub(crate) fn set_load_run(&self) {
+        self.load_run.store(true, Ordering::Relaxed);
+    }
+
+    pub(crate) fn load_run(&self) -> bool {
+        self.load_run.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn set_blocked_urls(&self, patterns: Vec<crate::request::BlockedUrl>) {
+        *lock(&self.blocked_urls) = patterns;
+    }
+
+    pub(crate) fn blocked_urls(&self) -> Vec<crate::request::BlockedUrl> {
+        lock(&self.blocked_urls).clone()
     }
 
     pub(crate) fn set_bypass_service_worker(&self, bypass: bool) {
@@ -670,6 +693,19 @@ impl Tabs {
     /// (the credentials may be new).
     pub(crate) async fn apply_interception(&self, timeout: Duration, force: bool) {
         fetch::apply(&self.shared, timeout, force).await;
+    }
+
+    /// Sends the session's blocked URLs to every page, frame and worker
+    /// there is (new ones get them in their setup); Chrome's first error
+    /// (a pattern it cannot read), if any.
+    pub(crate) async fn apply_blocked_urls(&self, timeout: Duration) -> cdp::Result<()> {
+        let sessions: Vec<Session> = lock(&self.shared.state)
+            .applies(Feature::Network)
+            .map(|(_, t)| t.session.with_timeout(timeout))
+            .collect();
+        let params = features::blocked_urls(&self.shared.settings.blocked_urls());
+        let sent = join_all(sessions.iter().map(|s| s.call(params.clone()))).await;
+        sent.into_iter().find_map(Result::err).map_or(Ok(()), Err)
     }
 
     /// The value of `expression` in each worker of `scope` (that has

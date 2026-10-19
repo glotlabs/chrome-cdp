@@ -212,20 +212,54 @@ impl State {
 }
 
 fn network_steps(shared: &Arc<Shared>, session: &Session, steps: &mut Vec<(&'static str, Step)>) {
+    let few_bodies = shared.settings.load_run();
     // Response bodies kept in the browser process, so `network show
     // --body` still has them after the page navigates. Sent before
     // `Network.enable`, but not waited for with the other steps: in a new
     // popup Chrome answers it only much later, and the tab must not wait
-    // for that to be ready.
-    let durable = session.call(durable_messages());
-    shared.spawn(async move {
-        if let Err(e) = durable.await {
-            tracing::debug!("cannot keep response bodies durably: {e}");
-        }
-    });
+    // for that to be ready. A load run's users read no bodies.
+    if !few_bodies {
+        let durable = session.call(durable_messages());
+        shared.spawn(async move {
+            if let Err(e) = durable.await {
+                tracing::debug!("cannot keep response bodies durably: {e}");
+            }
+        });
+    }
     // Requests, for network idle, `wait --request/--response` and the
     // network log.
-    steps.push(("Network.enable", step(session.call(network_enable()))));
+    steps.push((
+        "Network.enable",
+        step(session.call(network_enable(few_bodies))),
+    ));
+    // A load run's `[load] block`, failed by Chrome itself: no request
+    // is paused for it.
+    let blocked = shared.settings.blocked_urls();
+    if !blocked.is_empty() {
+        steps.push((
+            "Network.setBlockedURLs",
+            step(session.call(blocked_urls(&blocked))),
+        ));
+    }
+}
+
+/// `Network.setBlockedURLs` for `patterns`: the first that matches a URL
+/// decides whether Chrome fails it.
+pub(super) fn blocked_urls(
+    patterns: &[crate::request::BlockedUrl],
+) -> network::SetBlockedUrLsParams {
+    network::SetBlockedUrLsParams {
+        url_patterns: Some(
+            patterns
+                .iter()
+                .map(|p| network::BlockPattern {
+                    url_pattern: p.pattern.clone(),
+                    block: p.block,
+                })
+                .collect(),
+        ),
+        urls: None,
+    }
 }
 
 fn world_steps(shared: &Arc<Shared>, target: NewTarget<'_>, steps: &mut Vec<(&'static str, Step)>) {
@@ -261,11 +295,18 @@ fn world_steps(shared: &Arc<Shared>, target: NewTarget<'_>, steps: &mut Vec<(&'s
 
 /// How much of the page's traffic Chrome keeps for `network show`: the
 /// bodies of its responses (evicted oldest first past the total), and
-/// request bodies up to 64KB in the request events.
-fn network_enable() -> network::EnableParams {
+/// request bodies up to 64KB in the request events. With `few_bodies` (a
+/// load run's Chrome, whose users may keep a page for the whole run),
+/// [`FEW_BODIES`] at most.
+fn network_enable(few_bodies: bool) -> network::EnableParams {
+    let (total, one) = if few_bodies {
+        (FEW_BODIES, FEW_BODIES)
+    } else {
+        (BODIES, BODY)
+    };
     network::EnableParams {
-        max_total_buffer_size: Some(BODIES),
-        max_resource_buffer_size: Some(BODY),
+        max_total_buffer_size: Some(total),
+        max_resource_buffer_size: Some(one),
         max_post_data_size: Some(64 * 1024),
         ..network::EnableParams::default()
     }
@@ -284,6 +325,8 @@ fn durable_messages() -> network::ConfigureDurableMessagesParams {
 /// session, and for one response.
 const BODIES: i64 = 64 * 1024 * 1024;
 const BODY: i64 = 10 * 1024 * 1024;
+/// … and for a load run's page.
+const FEW_BODIES: i64 = 1024 * 1024;
 
 #[cfg(test)]
 mod tests {

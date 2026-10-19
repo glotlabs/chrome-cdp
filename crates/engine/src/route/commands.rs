@@ -19,6 +19,38 @@ use crate::{Engine, State};
 const SHOWN_URL: usize = 150;
 
 impl Engine {
+    /// Has Chrome fail the requests `patterns` block at once, in every
+    /// page, frame and worker of the session, now and from now on: a load
+    /// run's `[load] block` (plan 23.2). Unlike `block`, nothing is
+    /// paused, so the requests that go on cost nothing more and the HTTP
+    /// cache stays on. A pattern Chrome cannot read is a `BadArgs` error.
+    pub async fn block_urls(
+        &self,
+        patterns: Vec<crate::request::BlockedUrl>,
+        timeout_ms: u64,
+    ) -> Result<(), ErrorInfo> {
+        self.settings.set_blocked_urls(patterns.clone());
+        let running = match &*self.lock_state() {
+            State::Running(running) => running.clone(),
+            _ => return Ok(()),
+        };
+        running
+            .tabs
+            .apply_blocked_urls(millis(timeout_ms))
+            .await
+            .map_err(|e| {
+                let shown: Vec<&str> = patterns.iter().map(|p| p.pattern.as_str()).collect();
+                ErrorInfo::new(
+                    ErrorKind::BadArgs,
+                    format!("Chrome cannot block {}: {e}", shown.join(", ")),
+                )
+                .hint(Hint::text(
+                    "write URL patterns as absolute URLs with * for any part, e.g. \
+                     *://*.doubleclick.net/* or *://*:*/*.woff2",
+                ))
+            })
+    }
+
     /// `route` and `block`: adds rules after the existing ones and turns
     /// interception on in the running browser.
     pub async fn route(&self, req: RouteRequest) -> Result<Output, ErrorInfo> {

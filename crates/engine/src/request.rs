@@ -116,6 +116,16 @@ pub struct OpenRequest {
     pub timeout_ms: u64,
 }
 
+/// A URL pattern Chrome checks every request against (a load run's
+/// `[load] block`, plan 23.2): the URL Pattern standard's absolute form,
+/// e.g. `*://*.doubleclick.net/*`. The first pattern that matches a
+/// request decides: `block` fails it at once, else it goes on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlockedUrl {
+    pub pattern: String,
+    pub block: bool,
+}
+
 /// An init script `open` adds: `--init-script FILE` (with the file, read
 /// by the CLI) or `--init-script-code JS`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

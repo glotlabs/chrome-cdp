@@ -116,27 +116,27 @@ pub use places::in_root;
 pub use raw::check_cdp;
 pub use read::check_read;
 pub use request::{
-    A11yLevel, Action, ActionRequest, AuditBaseline, AuditRequest, Button, CdpRequest, ClipboardOp,
-    ClipboardRequest, CompareCapture, CompareCaptureRequest, CompareNameRequest, CompareRequest,
-    CompareSide, ComponentsRequest, ConnectRequest, ConsoleRequest, ContextCloseRequest,
-    ContextListRequest, ContextNewRequest, CookieFilter, CookieSpec, CookiesOp, CookiesRequest,
-    CoverageStartRequest, CoverageStopRequest, DebugClearRequest, DebugListRequest,
-    DebugLocalsRequest, DebugLogRequest, DialogPolicy, DialogRequest, DownloadsRequest,
-    ElementState, EmulateRequest, EmulationChange, EvalRequest, EvalWorld, ExpectRequest,
-    ExpectScreenshotRequest, ExpectSnapshotRequest, Expectation, ExploreRequest, ExposeRequest,
-    ExtensionStorageArea, ExtensionStorageOp, ExtensionsOp, ExtensionsRequest, FillFormRequest,
-    FindRequest, FormsRequest, FramesRequest, HarContent, HarExportRequest, HarStartRequest,
-    HarStopRequest, HealMatchRequest, HighlightRequest, HttpCredentials, HttpRequest, ImageFormat,
-    InitScriptAddRequest, InitScriptListRequest, InitScriptRemoveRequest, InspectRequest,
-    IssuesRequest, KeyboardOp, LayoutBaseline, LayoutRequest, LocalsMode, LocatorRequest, Margins,
-    MarkRequest, Matcher, MockExplainRequest, MockListRequest, MockLogRequest, MockOffRequest,
-    MockSeedRequest, MockSseSendRequest, MockStateCheck, MockStateRequest, MockTestTag,
-    MockUseRequest, MockWsSendRequest, Modifier, MouseOp, NavigateRequest, Navigation,
-    NetworkClearRequest, NetworkFramesRequest, NetworkRequest, NetworkShowRequest, NodeStacks,
-    OpenInitScript, OpenRequest, PaperFormat, PdfRequest, PerfRequest, PermissionsOp,
-    PermissionsRequest, Read, ReadRequest, RecordStartRequest, RecordStopRequest,
-    ReproStartRequest, RequestCheck, RouteAction, RouteBody, RouteRequest, RouteSpec,
-    RoutesRequest, ScreenshotRequest, ScrollTo, SetupCall, SetupDone, ShotScale, Since,
+    A11yLevel, Action, ActionRequest, AuditBaseline, AuditRequest, BlockedUrl, Button, CdpRequest,
+    ClipboardOp, ClipboardRequest, CompareCapture, CompareCaptureRequest, CompareNameRequest,
+    CompareRequest, CompareSide, ComponentsRequest, ConnectRequest, ConsoleRequest,
+    ContextCloseRequest, ContextListRequest, ContextNewRequest, CookieFilter, CookieSpec,
+    CookiesOp, CookiesRequest, CoverageStartRequest, CoverageStopRequest, DebugClearRequest,
+    DebugListRequest, DebugLocalsRequest, DebugLogRequest, DialogPolicy, DialogRequest,
+    DownloadsRequest, ElementState, EmulateRequest, EmulationChange, EvalRequest, EvalWorld,
+    ExpectRequest, ExpectScreenshotRequest, ExpectSnapshotRequest, Expectation, ExploreRequest,
+    ExposeRequest, ExtensionStorageArea, ExtensionStorageOp, ExtensionsOp, ExtensionsRequest,
+    FillFormRequest, FindRequest, FormsRequest, FramesRequest, HarContent, HarExportRequest,
+    HarStartRequest, HarStopRequest, HealMatchRequest, HighlightRequest, HttpCredentials,
+    HttpRequest, ImageFormat, InitScriptAddRequest, InitScriptListRequest, InitScriptRemoveRequest,
+    InspectRequest, IssuesRequest, KeyboardOp, LayoutBaseline, LayoutRequest, LocalsMode,
+    LocatorRequest, Margins, MarkRequest, Matcher, MockExplainRequest, MockListRequest,
+    MockLogRequest, MockOffRequest, MockSeedRequest, MockSseSendRequest, MockStateCheck,
+    MockStateRequest, MockTestTag, MockUseRequest, MockWsSendRequest, Modifier, MouseOp,
+    NavigateRequest, Navigation, NetworkClearRequest, NetworkFramesRequest, NetworkRequest,
+    NetworkShowRequest, NodeStacks, OpenInitScript, OpenRequest, PaperFormat, PdfRequest,
+    PerfRequest, PermissionsOp, PermissionsRequest, Read, ReadRequest, RecordStartRequest,
+    RecordStopRequest, ReproStartRequest, RequestCheck, RouteAction, RouteBody, RouteRequest,
+    RouteSpec, RoutesRequest, ScreenshotRequest, ScrollTo, SetupCall, SetupDone, ShotScale, Since,
     SnapshotEngine, SnapshotRequest, SourceRequest, StateLoadRequest, StateSaveRequest,
     StatusRange, StorageArea, StorageOp, StorageRequest, TabCloseRequest, TabNewRequest,
     TabSelectRequest, TabsRequest, Target, TraceStartRequest, TraceStopRequest, UnrouteRequest,
@@ -401,6 +401,9 @@ impl Engine {
         }
         if let Some(requests) = req.network_buffer {
             self.settings.set_network_buffer(requests);
+        }
+        if req.load {
+            self.settings.set_load_run();
         }
         if let Some(bypass) = req.bypass_service_worker {
             self.settings.set_bypass_service_worker(bypass);
