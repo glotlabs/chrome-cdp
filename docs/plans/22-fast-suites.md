@@ -1,6 +1,6 @@
 # Plan 22 — Fast suites
 
-Status: IN PROGRESS (22.1, 22.2 and 22.3 done)
+Status: IN PROGRESS (22.1 to 22.4 done)
 Depends on: 05 §5.5 (the post-action report and its settle), 08 §8.2
 (`batch`), 10 §10.4 (the benchmarks), 11 (the runner, `--jobs`,
 `--shard`), 18 §18.3 (flake diagnosis)
@@ -420,3 +420,60 @@ baseline, with no new flakes.
   times: the micro suite's `click` 326 ms before 22.3 and 325 ms after,
   and 20 `goto`s of a page that fetches after load 846 ms (median) with
   both builds.
+- 22.4: only one machine was available for the curve: macOS on an
+  Apple M3 Max (16 CPUs, 48 GB), with Chrome for Testing 155. The Linux
+  runners (2, 4 and 16 cores) were not measured, so the defaults below
+  rest on this machine's numbers alone; the constants say where they
+  came from, and a Linux curve may move them.
+- 22.4: the daemon does not serialize the workers. With 16 jobs in one
+  Chrome it used 6% of a CPU, and `status` (the daemon alone) answered
+  in 14 ms as when idle; a lock held across an await or one CDP
+  connection would have shown there. What serializes them is Chrome's
+  browser process, which every call of every context goes through: with
+  16 jobs it ran at 110% CPU while the machine was 56% idle, a trivial
+  `Browser.getVersion` took 15 to 60 ms instead of 11, and setup calls
+  that take under 1 ms with one job (`time freeze`) took 90 to 180 ms. So
+  the fix is not in the daemon but in how many Chromes a run uses. This
+  also answers 22.2's and 22.3's question about the contexts made ahead:
+  they ran out above 8 jobs because Chrome made them slowly, not because
+  too few were asked for; their number is unchanged.
+- 22.4: `--jobs-isolation auto`, the new default, runs a Chrome per 3
+  jobs. A browser per K jobs was measured with K = 2, 3, 4 and 8 on the
+  scale suite: with 8 jobs 99.5, 103, 120 and 162 s, with 16 jobs 87.8,
+  84.3, 89.1 and 105 s. 3 is as fast as 2 at 8 jobs and the fastest at
+  16, for less memory than 2. With `--session` or `--debug` it is one
+  Chrome, the one the user named or watches. A run with fewer tests than
+  jobs opens only the Chromes it uses (also with `browser`), and the
+  sessions open at once after the first (0.3 s each; the first alone,
+  since it may find or fetch Chrome) and close at once.
+- 22.4: `jobs = "auto"` (the default) is one job per CPU, one per GB of
+  free memory, at most 16. With a Chrome per 3 jobs, wall time drops up
+  to one job per CPU (16: 82.4 s; 12: 86.6 s) and rises past it (24:
+  85.5 s, 32: 88.7 s). Chrome's memory is about 1.1 GB per job (RSS,
+  which counts shared pages more than once), so a GB of free memory per
+  job keeps a small machine out of swap. 16 is the most this machine
+  could show a gain to; a bigger one can say `--jobs`. "Free" is
+  `MemAvailable` on Linux and free, inactive and speculative pages on
+  macOS. The run says what it picked and why (`16 at once in 6 browsers:
+  16 CPUs, 31 GB free`), with "CPUs" rather than "cores", since that is
+  what the count is (`available_parallelism`); `test --json` gives the
+  same in `data.jobs`, which the bench reads.
+- 22.4: the numbers. The scale suite with the new defaults takes 82.4 s
+  (22.3's best, 8 jobs in one Chrome: 162 s; 22.1's: 175 s with 32), and
+  the setup per test with 16 jobs is 76 ms (in one Chrome: 762 ms). A
+  Chrome per job is as fast at 16 (81.7 s) for 11 GB more memory, and
+  slower at 32 (103 s). The gates: e2e-shop `--repeat 20` (360 runs) and
+  the scale suite `--repeat 5` with the defaults (5,000 runs) passed with
+  no failure.
+- 22.4: what the `cargo xtask e2e --repeat 20` gate found, one failure in
+  each of three tries, none in this milestone's code but each likelier
+  with more Chromes running on the machine. `network --follow`'s test
+  expected a request answered in a few ms to show as pending first, which
+  is up to timing; it now checks that on the fixture's 1.5 s request. On
+  macOS, signalling a process group whose processes have all exited
+  gives EPERM, so stopping a web server that had just exited warned on
+  stderr; that is now the group being gone. And the runner opened its
+  Chromes with the run's `--timeout`, which is its steps': with
+  `--timeout 2s`, a loaded machine's Chrome did not answer in time; `open`
+  now waits at least its own 30 s. With the three fixed, the gate passed
+  with no failure (20 runs of 1,451 tests).
