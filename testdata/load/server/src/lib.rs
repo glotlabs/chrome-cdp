@@ -18,6 +18,11 @@
 //! (`POST /__load/reset` starts the counts over); [`LoadServer::stats`]
 //! reads the same in-process.
 //!
+//! The app's hashed files (`/assets/…`) are sent with `Cache-Control:
+//! public, max-age=31536000, immutable`, as a production deploy sends
+//! them, so a browser that keeps its cache (`[load] cache = "returning"`)
+//! fetches them once; everything else is `no-store`.
+//!
 //! The shop's state (carts, sessions, orders) lives as long as the
 //! server. It runs on a multi-threaded runtime of its own, and stops with
 //! the process.
@@ -372,9 +377,19 @@ impl Server {
                 &json!({ "error": INJECTED }),
             );
         }
-        self.routes.respond(req).await
+        let mut response = self.routes.respond(req).await;
+        if path.starts_with("/assets/") && response.status() == StatusCode::OK {
+            response.headers_mut().insert(
+                hyper::header::CACHE_CONTROL,
+                hyper::header::HeaderValue::from_static(IMMUTABLE),
+            );
+        }
+        response
     }
 }
+
+/// How the app's hashed files may be cached.
+const IMMUTABLE: &str = "public, max-age=31536000, immutable";
 
 fn answer(status: StatusCode, body: &Value) -> Response<Full<Bytes>> {
     let mut response = Response::new(Full::new(Bytes::from(body.to_string())));

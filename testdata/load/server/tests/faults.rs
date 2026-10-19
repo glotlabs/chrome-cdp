@@ -12,6 +12,17 @@ use load_server::{Fault, LoadServer, Options};
 
 /// Sends one request and returns its status and body.
 fn request(url: &str, method: &str, path: &str, body: &str) -> (u16, String) {
+    let answer = exchange(url, method, path, body);
+    let status = answer[9..12].parse().unwrap();
+    let body = answer
+        .split_once("\r\n\r\n")
+        .map(|(_, b)| b.to_owned())
+        .unwrap_or_default();
+    (status, body)
+}
+
+/// Sends one request and returns the whole answer, headers and all.
+fn exchange(url: &str, method: &str, path: &str, body: &str) -> String {
     let addr = url
         .trim_start_matches("http://")
         .replace("localhost", "127.0.0.1");
@@ -25,12 +36,7 @@ fn request(url: &str, method: &str, path: &str, body: &str) -> (u16, String) {
     .unwrap();
     let mut answer = String::new();
     stream.read_to_string(&mut answer).unwrap();
-    let status = answer[9..12].parse().unwrap();
-    let body = answer
-        .split_once("\r\n\r\n")
-        .map(|(_, b)| b.to_owned())
-        .unwrap_or_default();
-    (status, body)
+    answer
 }
 
 #[test]
@@ -106,4 +112,27 @@ fn serves_the_shop() {
     assert!(body.contains("Laptop stand"), "{body}");
     assert_eq!(request(server.url(), "POST", "/__load/reset", "").0, 200);
     assert!(server.stats().is_empty());
+}
+
+#[test]
+fn hashed_assets_may_be_cached() {
+    let server = LoadServer::start(Options::default()).unwrap();
+    let page = exchange(server.url(), "GET", "/", "").to_ascii_lowercase();
+    assert!(page.contains("cache-control: no-store"), "{page}");
+    let script = page
+        .split('"')
+        .find(|part| {
+            part.starts_with("/assets/")
+                && std::path::Path::new(part)
+                    .extension()
+                    .is_some_and(|e| e == "js")
+        })
+        .unwrap_or_else(|| panic!("no script in {page}"))
+        .to_owned();
+    let asset = exchange(server.url(), "GET", &script, "").to_ascii_lowercase();
+    assert!(asset.starts_with("http/1.1 200"), "{asset}");
+    assert!(
+        asset.contains("cache-control: public, max-age=31536000, immutable"),
+        "{asset}"
+    );
 }
