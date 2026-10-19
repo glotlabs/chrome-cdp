@@ -1083,6 +1083,15 @@
             "null"
           ]
         },
+        "mean_ms": {
+          "description": "The mean of an exponential time (`exp(4s)`), in ms; `max_ms` is\nwhere it is cut, at 10 times the mean.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "min_ms": {
           "description": "The shortest time, in ms; absent for the load run's --think.",
           "format": "uint64",

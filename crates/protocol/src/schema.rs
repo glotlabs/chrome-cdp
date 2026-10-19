@@ -5069,6 +5069,10 @@ pub struct ThinkData {
     /// The longest time, in ms (the same as `min_ms` for a fixed time).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_ms: Option<u64>,
+    /// The mean of an exponential time (`exp(4s)`), in ms; `max_ms` is
+    /// where it is cut, at 10 times the mean.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mean_ms: Option<u64>,
     /// Whether it waited: only a load run's users do.
     pub waited: bool,
 }
