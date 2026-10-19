@@ -14,6 +14,7 @@ small React app.
 | [recipes.md](recipes.md) | authentication, pagination, file upload, optimistic UI, polling, feature flags, error states |
 | [authoring.md](authoring.md) | `history --as-scenario`, `mock record`, `mock import`, `mock gen`, `mock check`, `fmt`, `lint` |
 | [debugging.md](debugging.md) | artifacts, `report.md`, reporters, `--debug`, `--watch` |
+| [durations.md](durations.md) | the durations file: the longest tests first, `--shard` by time, `--failed-first`, caching it in CI |
 | [determinism.md](determinism.md) | frozen time, seeded random values, no animations, `--repeat`, fonts |
 | [healing.md](healing.md) | fingerprints, the likely element of a broken locator, `--heal`, `heal.patch` and `--write` |
 | [coverage.md](coverage.md) | `--ui-coverage`: per page, the controls no test acted on, and the mocks no test used |

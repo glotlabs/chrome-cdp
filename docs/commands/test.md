@@ -53,7 +53,11 @@ same time (2026-01-01T10:00:00Z), random values, locale (en-US), time
 zone (UTC) and no animations; [e2e.determinism] changes that, and `time
 advance 5m` moves the time on and runs the timers due by then. `--jobs N`
 runs N tests at once (by default one per CPU, fewer when free memory is
-short, at most 16), in a Chrome per 3 of them; a test that fails, then
+short, at most 16), in a Chrome per 3 of them, the longest first: each
+run keeps the tests' times in e2e/.durations.json (cache it in CI;
+docs/e2e/durations.md), by which --shard splits the suite into parts of
+equal time and --failed-first starts last time's failures first. A line
+prints as its test ends. A test that fails, then
 passes on a retry, is reported as flaky; `--repeat 20` runs each test 20 times to
 find flaky ones. A flaky test's line names the likely cause (acted
 before the page settled, requests raced, a moving target, different
@@ -124,6 +128,8 @@ Examples:
   chrome-cdp test e2e/scenarios/checkout.cdp:12     # the test at line 12
   chrome-cdp test --grep cart --tags smoke,!slow
   chrome-cdp test --jobs 4 --shard 2/4 --retries 1
+  chrome-cdp test --list --shard 2/4   # each shard's expected time
+  chrome-cdp test --failed-first --bail   # a red build's failure, at once
   chrome-cdp test e2e/scenarios/cart.cdp --repeat 20   # flaky before a commit?
   chrome-cdp test --debug      # keep the first failed test's page open
   chrome-cdp test --watch      # run the affected tests again on each change

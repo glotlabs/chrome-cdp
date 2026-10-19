@@ -152,15 +152,19 @@ same scenario working everywhere; see [backends](backends.md).
 ```
 chrome-cdp test [PATH…] [--grep RE] [--tags smoke,!slow] [--jobs N]
                 [--jobs-isolation auto|context|browser] [--shard 2/4]
-                [--retries N | --repeat N] [--bail] [--headed]
+                [--retries N | --repeat N] [--bail] [--failed-first] [--headed]
                 [--update-snapshots] [--list] [--json]
 ```
 
 - Without paths, the `tests` globs of `[e2e]` find the files (default
   `e2e/scenarios/**/*.cdp`). A path is a file, a folder, or `file.cdp:12`
   for the test at line 12.
-- The order is fixed: files by path, tests as written. `--shard 2/4` runs
-  the second of four near-equal parts of that list.
+- The plan's order is files by path, tests as written. Once a run has
+  kept the tests' durations (`e2e/.durations.json`), the longest start
+  first, `--shard 2/4` runs the second of four parts equal in time, and
+  `--failed-first` starts last time's failures first; without it, the
+  tests start in the plan's order and `--shard 2/4` runs the second of
+  four near-equal parts of it. See [durations.md](durations.md).
 - Every file is read and every step checked against the commands before
   anything starts; a problem fails the run with its `file:line:col`
   (exit code 2).
@@ -197,7 +201,8 @@ chrome-cdp test [PATH…] [--grep RE] [--tags smoke,!slow] [--jobs N]
   failed; 2: a scenario or argument is wrong; 4: a web server or the
   browser failed.
 
-The output is a line per test as it ends:
+The output is a line per test as it ends (in the order they finish; the
+summary and `--json` keep the plan's order):
 
 ```
 running 4 tests from 2 files, 2 at once

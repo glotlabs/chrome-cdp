@@ -11,8 +11,10 @@ For a project with scenario files, `chrome-cdp init e2e` writes
 `.github/workflows/e2e.yml`. It installs chrome-cdp, checks the scenario
 and mock files (`fmt --check`, and `lint --format github`, which shows
 problems inline on the pull request), runs `chrome-cdp test` in two shards
-with JUnit output, and uploads `e2e/.results/` (the failed tests'
-`report.md`, screenshots and logs) when a test fails. It also has a
+with JUnit output, keeps the tests' durations in the cache (so the next
+run starts the longest first and splits the shards by time, see
+[e2e/durations.md](e2e/durations.md)), and uploads `e2e/.results/` (the
+failed tests' `report.md`, screenshots and logs) when a test fails. It also has a
 commented-out nightly job that runs the same scenarios against a real
 backend with `--verify-mocks`. [e2e/quickstart.md](e2e/quickstart.md#5-run-it-in-ci)
 walks through it.

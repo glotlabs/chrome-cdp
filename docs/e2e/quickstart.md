@@ -140,7 +140,9 @@ check the scenario and mock files.
 caches the browser, checks the files with `chrome-cdp fmt --check` and
 `chrome-cdp lint --format github` (problems show up inline on the pull
 request), runs `chrome-cdp test --reporter text,junit --shard N/M` on two
-shards, and uploads `e2e/.results/` when a test fails. A commented-out
+shards, caches `e2e/.durations.json` (the tests' times, which split the
+shards and start the longest tests first: [durations.md](durations.md)),
+and uploads `e2e/.results/` when a test fails. A commented-out
 nightly job runs the scenarios against a real backend with
 `--verify-mocks` to catch mocks that no longer match the API.
 
@@ -152,6 +154,7 @@ nightly job runs the scenarios against a real backend with
 - [authoring.md](authoring.md): `history --as-scenario`, `mock record`,
   `mock import`, `mock gen`, `mock check`, `fmt`, `lint`;
 - [determinism.md](determinism.md): frozen time, seeded random values;
+- [durations.md](durations.md): the longest tests first, shards by time;
 - [backends.md](backends.md): the same scenarios against a real backend;
 - [beyond-fetch.md](beyond-fetch.md): WebSockets, Server-Sent Events,
   `mock serve` for server-side rendering.
