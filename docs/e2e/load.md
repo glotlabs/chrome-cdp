@@ -119,4 +119,4 @@ cargo run --release -p load-server -- --port 4176 --latency /api/cart=200ms±50 
 `testdata/load` is a project whose backend is that server, with the
 reference journey (browse, open a product, add it to the cart).
 `cargo xtask bench load` runs it at several user counts; see
-[benchmarks.md](../benchmarks.md).
+[benchmarks.md](../benchmarks.md#load-suite).

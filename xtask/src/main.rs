@@ -36,7 +36,7 @@ tasks:
                       or a session dir still holds a socket file
   soak                run the ignored soak tests (release build; needs CHROME_PATH),
                       then check for leaks
-  bench <micro|tokens|agent|scale> [--no-tests] [-- <args>]
+  bench <micro|tokens|agent|scale|load> [--no-tests] [-- <args>]
                       build the release binaries and run a benchmark suite
                       (crates/bench; needs CHROME_PATH, and tokens needs
                       bench/tokens' node_modules); see docs/benchmarks.md.
@@ -44,6 +44,8 @@ tasks:
                       skips them); `-- --help` lists the suite's own options.
                       scale [--tests N] writes the scale suite first (as
                       scale-suite does), e.g. `cargo xtask bench scale -- --jobs 1,4`
+                      load runs `chrome-cdp load` on testdata/load's journey at
+                      25 to 400 users, e.g. `cargo xtask bench load -- --users 25,50`
   scale-suite [--tests N]
                       write the scale suite (plan 22.1) to testdata/scale/: N tests
                       (default 1000) against e2e-shop's built app and mocks, the same
@@ -459,7 +461,7 @@ const TIMING_TESTS: [(&str, &str, &str); 4] = [
 /// runs [`TIMING_TESTS`], after the suite, and fails if one does.
 fn bench(args: &[String]) -> Result {
     let usage = || {
-        "usage: cargo xtask bench <micro|tokens|agent> [--no-tests] [-- <args>]\n       \
+        "usage: cargo xtask bench <micro|tokens|agent|load> [--no-tests] [-- <args>]\n       \
          cargo xtask bench scale [--tests N] [-- <args>]"
             .to_owned()
     };
@@ -473,7 +475,7 @@ fn bench(args: &[String]) -> Result {
         [suite, flag, _] if flag == "--tests" && suite == "scale" => (suite.as_str(), false),
         _ => return Err(usage()),
     };
-    if !matches!(suite, "micro" | "tokens" | "agent" | "scale") {
+    if !matches!(suite, "micro" | "tokens" | "agent" | "scale" | "load") {
         return Err(usage());
     }
     if suite == "scale" {

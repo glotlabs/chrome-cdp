@@ -1,7 +1,8 @@
-//! The benchmark harness behind `cargo xtask bench` (plan 10.4). Four
+//! The benchmark harness behind `cargo xtask bench` (plan 10.4). Five
 //! suites: `micro` (per-command timings), `tokens` (snapshot sizes),
-//! `agent` (Claude Code on scripted tasks with chrome-cdp) and `scale`
-//! (the test runner on a suite of 1,000 tests, plan 22.1).
+//! `agent` (Claude Code on scripted tasks with chrome-cdp), `scale`
+//! (the test runner on a suite of 1,000 tests, plan 22.1) and `load`
+//! (`chrome-cdp load` at hundreds of users, plan 23.1).
 //! docs/benchmarks.md says how to run each, and what they measure.
 
 // The results table goes to stdout.
@@ -10,7 +11,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use bench::{agent, micro, note, report, scale, tokens};
+use bench::{agent, load, micro, note, report, scale, tokens};
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -101,6 +102,25 @@ enum Suite {
         /// compare with (the `scale-baseline` section)
         #[arg(long)]
         baseline: bool,
+    },
+    /// `chrome-cdp load` on the reference journey against the load server
+    /// at several user counts and Chromes per user: users per machine,
+    /// Chrome's RSS and CPU per user, chrome-cdp's own CPU and RSS
+    Load {
+        #[command(flatten)]
+        common: Common,
+        /// The users of each run, e.g. `--users 25,50`
+        #[arg(long, value_delimiter = ',', default_values_t = load::USERS)]
+        users: Vec<u32>,
+        /// The users per Chrome of each run, e.g. `--per-browser 25`
+        #[arg(long, value_delimiter = ',', default_values_t = load::PER_BROWSER)]
+        per_browser: Vec<u32>,
+        /// Seconds each run's users start iterations, after the ramp-up
+        #[arg(long, default_value_t = 60)]
+        duration: u64,
+        /// Seconds over which each run's users start
+        #[arg(long, default_value_t = 10)]
+        ramp_up: u64,
     },
 }
 
@@ -269,6 +289,32 @@ fn run(suite: Suite) -> Result<(), String> {
                     failed.join("; ")
                 ))
             }
+        }
+        Suite::Load {
+            common,
+            users,
+            per_browser,
+            duration,
+            ramp_up,
+        } => {
+            let bin = binary(&common.bin_dir, "chrome-cdp")?;
+            let r = load::run(&load::Options {
+                bin: &bin,
+                chrome: &common.chrome,
+                users,
+                per_browser,
+                duration: std::time::Duration::from_secs(duration),
+                ramp_up: std::time::Duration::from_secs(ramp_up),
+            })?;
+            let path = report::results_dir().join("load.json");
+            report::write_json(&path, &r)?;
+            let md = load::markdown(&r);
+            print!("{md}");
+            note(&format!("wrote {}", path.display()));
+            if !common.no_publish {
+                report::publish("load", &md)?;
+            }
+            Ok(())
         }
         Suite::Agent {
             common,

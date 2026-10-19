@@ -1,8 +1,9 @@
 # Benchmarks
 
-Four suites measure how fast chrome-cdp is, how few tokens its output
-costs, how well an agent does with it (plan 10, milestone 10.4), and how
-fast its test runner gets through a large suite (plan 22).
+Five suites measure how fast chrome-cdp is, how few tokens its output
+costs, how well an agent does with it (plan 10, milestone 10.4), how
+fast its test runner gets through a large suite (plan 22), and how many
+real-browser users one machine can load a site with (plan 23).
 `cargo xtask bench` runs them; this page says what each measures, how to run it, and what it
 found last time. The results sections are rewritten by the suites
 themselves (between the `<!-- bench:… -->` markers); edit the rest by hand.
@@ -13,6 +14,7 @@ themselves (between the `<!-- bench:… -->` markers); edit the rest by hand.
 | `tokens` | Snapshot size in tokens | Chrome, Node | a minute; deterministic |
 | `agent` | Claude Code's success, tokens, turns, files read and time on ~30 tasks with chrome-cdp | Chrome, Node, `claude` logged in | hours and API spend |
 | `scale` | `chrome-cdp test` on 1,000 generated tests at several `--jobs` | Chrome | about two hours |
+| `load` | `chrome-cdp load` at 25 to 400 users, a Chrome per 10, 25 or 50 | Chrome, a big machine | about half an hour |
 
 ## Setup
 
@@ -315,6 +317,52 @@ The slowest shard: by count 48.3 s, 6.1% above the mean; by time 45.6 s, 0.8% ab
 had them after runs with 16 and 4 jobs (`cargo xtask bench scale -- --jobs
 16,16,4 --shards 4`); a test takes longer when more run beside it, so it
 is the proportions that matter.
+
+## Load suite
+
+```sh
+cargo xtask bench load                        # 15 runs of 60 s, publish here
+cargo xtask bench load -- --users 25,50 --per-browser 25 --duration 30 --no-publish
+```
+
+bench: load. Plan 23 load-tests sites with hundreds of real browsers on
+one machine, and its headline number is **users per machine**: the most
+users at once on a fixed journey before the machine running them (not
+the site) is the limit. `cargo xtask bench load` runs `chrome-cdp load`
+on the reference journey, `testdata/load/scenarios/shop.cdp` (browse the
+products, open one, add it to the cart, look at the cart; 2 s of `think`
+on each page), against the load server (`testdata/load/server`, started
+in the harness's process with no latency or errors set), at 25, 50, 100,
+200 and 400 users, each with a Chrome per 10, 25 and 50 users
+(`--users-per-browser`), for 60 s after a 10 s ramp-up. Each run starts
+from a fresh sandbox. For each, the table has:
+
+- **iterations** and the share that **failed**;
+- **step p50 and p95**: the steps' own times from `steps.jsonl`
+  (`--raw`), `think` steps left out;
+- **Chrome's memory per user**: the peak of all its processes' memory
+  added up, over the users; PSS on Linux (shared pages split between the
+  processes that share them), RSS elsewhere, which counts Chrome's shared
+  framework once per process and so reads several times too high on
+  macOS;
+- **Chrome's CPU per user**, in % of a core, and **chrome-cdp's own CPU**
+  (in cores) and peak **RSS**: CPU time from `ps` every 500 ms, each
+  process's growth added up (a process that exits between two reads
+  loses at most its last half second); **all CPUs** is the two together;
+- whether the run **held**: under 1% of its iterations failed, chrome-cdp
+  and its Chromes used under 90% of the machine's CPUs, and its step p95
+  stayed within twice the smallest run's with the same Chromes per user.
+  Users per machine is the most users of a run that held. This stands in
+  for plan 23.5's capacity check (CPU, memory and scheduling lag watched
+  every second), which will replace it.
+
+Plan 23.1's target is 200 users on a 16-core, 32 GB Linux runner, with
+chrome-cdp itself under 1 core and 500 MB. Results go to
+`target/bench/load.json`.
+
+<!-- bench:load -->
+Not run yet.
+<!-- /bench:load -->
 
 ## Agent task benchmark
 
