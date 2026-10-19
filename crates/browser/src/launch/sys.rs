@@ -36,11 +36,12 @@ fn signal_group(pgid: u32, signal: libc::c_int) -> io::Result<()> {
         return Ok(());
     }
     let err = io::Error::last_os_error();
-    if err.raw_os_error() == Some(libc::ESRCH) {
-        Ok(())
-    } else {
-        Err(err)
-    }
+    // macOS answers EPERM for a group whose processes have all exited and
+    // wait to be reaped; our groups are our own user's, so that is the
+    // only reason it can give.
+    let gone = err.raw_os_error() == Some(libc::ESRCH)
+        || (cfg!(target_os = "macos") && err.raw_os_error() == Some(libc::EPERM));
+    if gone { Ok(()) } else { Err(err) }
 }
 
 /// Whether any process in the group `pgid` is still alive (zombies count
