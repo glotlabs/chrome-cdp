@@ -70,6 +70,34 @@ In headless mode pages get a 1280x800 viewport (`Emulation.setDeviceMetricsOverr
 not the odd size of headless Chrome's window, unless a `--window-size` of yours
 sets it; `viewport` and `emulate` change it.
 
+## Load runs
+
+`chrome-cdp load` runs many users in each Chrome, so its Chromes get a
+few flags more (`Only::Load` in `flags.rs`), each kept because it saved
+memory or CPU per user in plan 23.2's measurements (`bench load`, 50
+users, 10 per Chrome; docs/plans/23-load-testing.md has the numbers):
+
+| Flag | Why |
+|---|---|
+| `--window-size=1280,720` | The window is each page's viewport (1280x720), so a new context's tab needs no `Emulation.setDeviceMetricsOverride`; a test's `@device` or `@viewport` still sets its own. |
+| `--disable-component-extensions-with-background-pages` | Chrome's built-in extensions with background pages do not start: about 20 MB less per user in full Chrome. |
+
+and `--disable-features` also turns off:
+
+- `SpareRendererForSitePerProcess`: Chrome keeps no spare renderer
+  process warm for the next navigation; about 10 MB less per user.
+
+Measured and left out, since they saved nothing (or cost): `--disable-gpu`
+(about 100 MB and 4% of a core more per user in full Chrome: compositing
+moved to the renderers), `--disable-software-rasterizer`, `--mute-audio`,
+`--disable-extensions`, `--disable-domain-reliability`, and the
+`BackForwardCache` feature (which also changes what a back navigation
+asks the server for).
+
+A load run uses chrome-headless-shell when it is installed (`chrome-cdp
+install --headless-shell`): about a third of full Chrome's memory and a
+quarter of its CPU per user. The flags above make no difference to it.
+
 ## The sandbox
 
 Chrome's sandbox stays on. chrome-cdp adds `--no-sandbox` only when:

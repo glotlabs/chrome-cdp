@@ -18,6 +18,9 @@ pub enum Only {
     MacOs,
     /// Unless `--headed`.
     Headless,
+    /// In `chrome-cdp load`'s Chromes only (plan 23.2): many users at
+    /// once, so less of each Chrome per user.
+    Load,
 }
 
 /// The flags every launch gets (besides `--user-data-dir`,
@@ -47,6 +50,13 @@ pub const FLAGS: &[(&str, Only)] = &[
     ("--password-store=basic", Only::Linux),
     ("--use-mock-keychain", Only::MacOs),
     ("--export-tagged-pdf", Only::Always),
+    // Plan 23.2 measured each flag of a load run's (docs/chrome-flags.md
+    // has why each is here, and the ones dropped).
+    ("--window-size=1280,720", Only::Load),
+    (
+        "--disable-component-extensions-with-background-pages",
+        Only::Load,
+    ),
 ];
 
 /// Features turned off with one `--disable-features=` flag.
@@ -63,13 +73,17 @@ pub const DISABLED_FEATURES: &[&str] = &[
     "PaintHolding",
 ];
 
+/// Features a load run's Chromes also turn off (plan 23.2).
+pub const LOAD_DISABLED_FEATURES: &[&str] = &["SpareRendererForSitePerProcess"];
+
 /// Added when `open --extension` asks for extensions: it lets
 /// `Extensions.loadUnpacked` load them over the pipe, which branded Chrome
 /// allows where it ignores `--load-extension`.
 pub const EXTENSIONS_FLAG: &str = "--enable-unsafe-extension-debugging";
 
-/// The flags for `os`, in [`FLAGS`] order, plus `--disable-features`.
-pub fn default_flags(os: Os, headed: bool) -> Vec<String> {
+/// The flags for `os`, in [`FLAGS`] order, plus `--disable-features`;
+/// `load` adds [`Only::Load`]'s.
+pub fn default_flags(os: Os, headed: bool, load: bool) -> Vec<String> {
     let mut flags: Vec<String> = FLAGS
         .iter()
         .filter(|(_, only)| match only {
@@ -77,14 +91,24 @@ pub fn default_flags(os: Os, headed: bool) -> Vec<String> {
             Only::Linux => os == Os::Linux,
             Only::MacOs => os == Os::MacOs,
             Only::Headless => !headed,
+            Only::Load => load,
         })
         .map(|(flag, _)| (*flag).to_owned())
         .collect();
     flags.push(format!(
         "--disable-features={}",
-        DISABLED_FEATURES.join(",")
+        disabled_features(load).join(",")
     ));
     flags
+}
+
+/// [`DISABLED_FEATURES`], and with `load` [`LOAD_DISABLED_FEATURES`].
+fn disabled_features(load: bool) -> Vec<&'static str> {
+    let mut features = DISABLED_FEATURES.to_vec();
+    if load {
+        features.extend(LOAD_DISABLED_FEATURES);
+    }
+    features
 }
 
 /// The warning for `--chrome-arg`s that open a DevTools port, which
@@ -135,19 +159,26 @@ pub fn check_extra(extra: &[String]) -> Result<(), ErrorInfo> {
     Ok(())
 }
 
-/// The full argument list after the program name: the defaults for `os`,
-/// `--no-sandbox` if asked, [`EXTENSIONS_FLAG`] for extensions, the
-/// profile, the user's extra flags, and the first page. A user `--disable-features` / `--enable-features` is merged
-/// with ours, since Chrome only honours the last of each.
+/// The full argument list after the program name: the defaults for `os`
+/// (and a load run's, with `load`), `--no-sandbox` if asked,
+/// [`EXTENSIONS_FLAG`] for extensions, the profile, the user's extra
+/// flags, and the first page. A user `--disable-features` /
+/// `--enable-features` is merged with ours, since Chrome only honours the
+/// last of each.
+#[allow(clippy::fn_params_excessive_bools)]
 pub(crate) fn command_line(
     os: Os,
     headed: bool,
+    load: bool,
     no_sandbox: bool,
     extensions: bool,
     profile: &Path,
     extra: &[String],
 ) -> Vec<String> {
-    let mut disabled: Vec<String> = DISABLED_FEATURES.iter().map(|f| (*f).to_owned()).collect();
+    let mut disabled: Vec<String> = disabled_features(load)
+        .iter()
+        .map(|f| (*f).to_owned())
+        .collect();
     let mut enabled: Vec<String> = Vec::new();
     let mut rest = Vec::new();
     for arg in extra {
@@ -166,7 +197,7 @@ pub(crate) fn command_line(
     let mut seen = std::collections::HashSet::new();
     disabled.retain(|f| seen.insert(f.clone()));
 
-    let mut args: Vec<String> = default_flags(os, headed)
+    let mut args: Vec<String> = default_flags(os, headed, load)
         .into_iter()
         .filter(|f| !f.starts_with("--disable-features="))
         .collect();
@@ -193,8 +224,8 @@ mod tests {
     use std::path::Path;
 
     use super::{
-        DISABLED_FEATURES, EXTENSIONS_FLAG, FLAGS, check_extra, command_line, debug_port_warning,
-        default_flags,
+        DISABLED_FEATURES, EXTENSIONS_FLAG, FLAGS, LOAD_DISABLED_FEATURES, Only, check_extra,
+        command_line, debug_port_warning, default_flags,
     };
     use crate::host::Os;
 
@@ -204,7 +235,7 @@ mod tests {
 
     #[test]
     fn flags_depend_on_the_os_and_headed() {
-        let linux = default_flags(Os::Linux, false);
+        let linux = default_flags(Os::Linux, false, false);
         assert!(linux.contains(&"--headless".to_owned()));
         assert!(linux.contains(&"--disable-dev-shm-usage".to_owned()));
         assert!(linux.contains(&"--password-store=basic".to_owned()));
@@ -217,16 +248,58 @@ mod tests {
                 .starts_with("--disable-features=Translate,MediaRouter,")
         );
 
-        let mac = default_flags(Os::MacOs, true);
+        let mac = default_flags(Os::MacOs, true, false);
         assert!(!mac.contains(&"--headless".to_owned()));
         assert!(!mac.contains(&"--disable-dev-shm-usage".to_owned()));
         assert!(mac.contains(&"--use-mock-keychain".to_owned()));
     }
 
     #[test]
+    fn load_runs_get_their_flags_and_features() {
+        let load_flags: Vec<&str> = FLAGS
+            .iter()
+            .filter(|(_, only)| *only == Only::Load)
+            .map(|(flag, _)| *flag)
+            .collect();
+        assert!(load_flags.contains(&"--window-size=1280,720"));
+        let plain = default_flags(Os::Linux, false, false);
+        let load = default_flags(Os::Linux, false, true);
+        for flag in &load_flags {
+            assert!(!plain.contains(&(*flag).to_owned()), "{flag}");
+            assert!(load.contains(&(*flag).to_owned()), "{flag}");
+        }
+        let features = |flags: &[String]| flags.last().unwrap().clone();
+        for feature in LOAD_DISABLED_FEATURES {
+            assert!(!features(&plain).contains(feature), "{feature}");
+            assert!(features(&load).contains(feature), "{feature}");
+        }
+        // A user's --disable-features merges with a load run's list.
+        let args = command_line(
+            Os::Linux,
+            false,
+            true,
+            false,
+            false,
+            Path::new("/p"),
+            &strings(&["--disable-features=Foo"]),
+        );
+        let disabled: Vec<&String> = args
+            .iter()
+            .filter(|a| a.starts_with("--disable-features="))
+            .collect();
+        assert_eq!(disabled.len(), 1);
+        assert!(
+            disabled[0].ends_with(",SpareRendererForSitePerProcess,Foo"),
+            "{}",
+            disabled[0]
+        );
+    }
+
+    #[test]
     fn command_line_puts_profile_extra_flags_and_the_page_last() {
         let args = command_line(
             Os::Linux,
+            false,
             false,
             false,
             false,
@@ -243,6 +316,7 @@ mod tests {
         let args = command_line(
             Os::Linux,
             false,
+            false,
             true,
             true,
             Path::new("/p"),
@@ -256,6 +330,7 @@ mod tests {
     fn user_features_are_merged_with_ours() {
         let args = command_line(
             Os::Linux,
+            false,
             false,
             false,
             false,
@@ -303,7 +378,7 @@ mod tests {
             );
         }
         assert!(doc.contains(&format!("`{EXTENSIONS_FLAG}`")));
-        for feature in DISABLED_FEATURES {
+        for feature in DISABLED_FEATURES.iter().chain(LOAD_DISABLED_FEATURES) {
             assert!(
                 doc.contains(&format!("`{feature}`")),
                 "{feature} is not in docs/chrome-flags.md"

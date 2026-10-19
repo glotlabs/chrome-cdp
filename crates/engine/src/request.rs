@@ -43,6 +43,11 @@ pub struct OpenRequest {
     /// Close a running browser first, so the given options apply.
     #[serde(default)]
     pub restart: bool,
+    /// A `chrome-cdp load` Chrome (plan 23.2): launched with the lean
+    /// flags, its window sized for its pages (1280x720, no viewport
+    /// emulated).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub load: bool,
     /// A URL to load in the active tab (see [`crate::normalize_url`]).
     #[serde(default)]
     pub url: Option<String>,

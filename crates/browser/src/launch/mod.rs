@@ -59,6 +59,8 @@ pub struct LaunchOptions {
     pub args: Vec<String>,
     /// Let `Extensions.loadUnpacked` load extensions (`open --extension`).
     pub extensions: bool,
+    /// A `chrome-cdp load` Chrome: add the lean flags (`Only::Load`).
+    pub load: bool,
     /// Where to keep Chrome's stderr (the session's `chrome.log`).
     pub log_file: Option<PathBuf>,
     /// Bounds the startup handshake and every later CDP call.
@@ -72,6 +74,7 @@ impl Default for LaunchOptions {
             profile: ProfileChoice::Ephemeral,
             args: Vec::new(),
             extensions: false,
+            load: false,
             log_file: None,
             timeout: Duration::from_secs(30),
         }
@@ -199,6 +202,7 @@ async fn launch_once(
     let args = flags::command_line(
         host.os,
         opts.headed,
+        opts.load,
         no_sandbox_reason.is_some(),
         opts.extensions,
         &profile.dir,

@@ -223,6 +223,8 @@ enum Spec {
         profile: ProfileChoice,
         args: Vec<String>,
         extensions: Vec<PathBuf>,
+        /// With the lean flags of a `chrome-cdp load` Chrome.
+        load: bool,
     },
     Connected {
         endpoint: String,
@@ -522,6 +524,7 @@ impl Engine {
             profile: profile.clone(),
             args: req.chrome_args.clone(),
             extensions: !req.extensions.is_empty(),
+            load: req.load,
             log_file: self.chrome_log.clone(),
             timeout: millis(req.timeout_ms),
         };
@@ -557,6 +560,7 @@ impl Engine {
             profile,
             args: req.chrome_args.clone(),
             extensions: req.extensions.clone(),
+            load: req.load,
         };
         let running = self.install(conn, info, spec, Some(launched));
         self.init_tabs(running, millis(req.timeout_ms)).await
@@ -792,6 +796,7 @@ impl Engine {
                 profile,
                 args,
                 extensions,
+                ..
             } => {
                 let asked_chrome = req
                     .chrome
@@ -952,12 +957,14 @@ impl Engine {
 
 /// The viewport pages of a browser started with `spec` get without their
 /// own: 1280x800 in headless mode (unless `--window-size` sets it), none
-/// when a window sets it (headed, or a browser chrome-cdp connected to).
+/// when a window sets it (headed, a load run's Chrome, or a browser
+/// chrome-cdp connected to).
 fn default_viewport_for(spec: &Spec) -> Option<protocol::schema::Viewport> {
     match spec {
         Spec::Launched {
             headed: false,
             args,
+            load: false,
             ..
         } if !args.iter().any(|a| a.starts_with("--window-size")) => {
             Some(emulate::default_viewport())
