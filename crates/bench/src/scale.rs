@@ -5,6 +5,12 @@
 //! the time per test, the runner's overhead per test by phase (from the
 //! `setup`, `check` and `teardown` records of each test's `steps.jsonl`)
 //! and the peak RSS of Chrome and the daemon.
+//!
+//! The suite's durations file (plan 22.5) is removed first, so the first
+//! run starts the tests in the plan's order and the later ones longest
+//! first, by what the earlier runs kept. With `shards`, each shard of the
+//! suite then runs on its own (as on a CI machine of its own), split by
+//! count and by time, each from the same durations file.
 
 use std::collections::BTreeSet;
 use std::fmt::{self, Write as _};
@@ -21,6 +27,8 @@ use crate::sandbox::Sandbox;
 
 /// The `--jobs` values run by default.
 pub const JOBS: [usize; 6] = [1, 2, 4, 8, 16, 32];
+/// The durations file of the suite, relative to it.
+const DURATIONS: &str = "e2e/.durations.json";
 /// How often the memory of Chrome and the daemon is read.
 const SAMPLE_EVERY: Duration = Duration::from_millis(250);
 
@@ -31,6 +39,8 @@ pub struct Options<'a> {
     /// The generated suite: `testdata/scale`.
     pub suite: PathBuf,
     pub jobs: Vec<Jobs>,
+    /// Also run each of this many shards, with the last `jobs`.
+    pub shards: Option<usize>,
 }
 
 /// A `--jobs` value to run, and its `--jobs-isolation` (`None` for the
@@ -86,6 +96,27 @@ pub struct ScaleReport {
     /// How many tests the suite has.
     pub tests: usize,
     pub runs: Vec<ScaleRun>,
+    /// With `shards`: each shard's run, split by count and by time.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shards: Vec<ShardRun>,
+}
+
+/// One shard of the suite, `chrome-cdp test --shard i/n`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ShardRun {
+    /// Split by the durations file rather than by count.
+    pub by_time: bool,
+    /// From 1.
+    pub index: usize,
+    pub total: usize,
+    pub jobs: usize,
+    pub tests: usize,
+    /// What `test --list --shard` expected, when split by time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_ms: Option<u64>,
+    pub wall_ms: u64,
+    pub failed: usize,
+    pub flaky: usize,
 }
 
 /// One `chrome-cdp test --jobs N` of the suite.
@@ -109,6 +140,10 @@ pub struct ScaleRun {
     pub overhead: Phases,
     pub chrome_rss_peak: u64,
     pub daemon_rss_peak: u64,
+    /// Whether it ran with the durations of earlier runs: the longest
+    /// tests first.
+    #[serde(default)]
+    pub by_time: bool,
 }
 
 impl ScaleRun {
@@ -121,6 +156,9 @@ impl ScaleRun {
         }
         if self.browsers > 1 {
             let _ = write!(label, " ({} Chromes)", self.browsers);
+        }
+        if self.by_time {
+            label.push_str(", longest first");
         }
         label
     }
@@ -158,11 +196,13 @@ pub fn run(opts: &Options<'_>) -> Result<ScaleReport, String> {
             opts.suite.display()
         ));
     }
+    let durations = opts.suite.join(DURATIONS);
+    remove(&durations)?;
     let mut runs = Vec::new();
     let mut tests = 0;
     for jobs in &opts.jobs {
         crate::note(&format!("scale: --jobs {jobs}"));
-        let (run, n) = one_run(opts, jobs)?;
+        let (run, n) = one_run(opts, jobs, &[])?;
         crate::note(&format!(
             "scale: --jobs {}: {} s, {} passed, {} failed, {} flaky",
             run.label(),
@@ -174,6 +214,10 @@ pub fn run(opts: &Options<'_>) -> Result<ScaleReport, String> {
         tests = n;
         runs.push(run);
     }
+    let shards = match (opts.shards, opts.jobs.last()) {
+        (Some(total), Some(jobs)) => shard_runs(opts, jobs, total)?,
+        _ => Vec::new(),
+    };
     Ok(ScaleReport {
         suite: "scale".to_owned(),
         created: report::now(),
@@ -181,17 +225,101 @@ pub fn run(opts: &Options<'_>) -> Result<ScaleReport, String> {
         chrome: crate::micro::chrome_version(opts.chrome),
         tests,
         runs,
+        shards,
     })
 }
 
-/// The suite with `--jobs jobs` (and its `--jobs-isolation`), in a fresh
-/// sandbox (new daemons and Chromes); also returns how many tests ran.
-fn one_run(opts: &Options<'_>, jobs: &Jobs) -> Result<(ScaleRun, usize), String> {
+/// Each of `total` shards with `jobs`, split by count (no durations file)
+/// and by time (the file the runs before left), each shard from the same
+/// file, as CI machines restore the same cache; the file is as it was
+/// after.
+fn shard_runs(opts: &Options<'_>, jobs: &Jobs, total: usize) -> Result<Vec<ShardRun>, String> {
+    let path = opts.suite.join(DURATIONS);
+    let kept = std::fs::read_to_string(&path)
+        .map_err(|e| format!("no durations to shard by ({}): {e}", path.display()))?;
+    let restore =
+        || std::fs::write(&path, &kept).map_err(|e| format!("write {}: {e}", path.display()));
+    let mut shards = Vec::new();
+    for by_time in [false, true] {
+        for index in 1..=total {
+            let shard = format!("{index}/{total}");
+            if by_time {
+                restore()?;
+            } else {
+                remove(&path)?;
+            }
+            let expected_ms = if by_time {
+                expected(opts, &shard)?
+            } else {
+                None
+            };
+            let how = if by_time { "by time" } else { "by count" };
+            crate::note(&format!("scale: --shard {shard} {how}, --jobs {jobs}"));
+            let (run, tests) = one_run(opts, jobs, &["--shard".to_owned(), shard.clone()])?;
+            crate::note(&format!(
+                "scale: --shard {shard} {how}: {tests} tests, {} s",
+                report::fmt_num(ms_f64(run.wall_ms) / 1000.0)
+            ));
+            shards.push(ShardRun {
+                by_time,
+                index,
+                total,
+                jobs: jobs.count,
+                tests,
+                expected_ms,
+                wall_ms: run.wall_ms,
+                failed: run.failed,
+                flaky: run.flaky,
+            });
+        }
+    }
+    restore()?;
+    Ok(shards)
+}
+
+/// What `test --list --shard` expects of `shard`.
+fn expected(opts: &Options<'_>, shard: &str) -> Result<Option<u64>, String> {
+    let out = Command::new(opts.bin)
+        .current_dir(&opts.suite)
+        .args([
+            "test",
+            "--list",
+            "--json",
+            "--max-chars",
+            "0",
+            "--shard",
+            shard,
+        ])
+        .output()
+        .map_err(|e| format!("run chrome-cdp test --list: {e}"))?;
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout)
+        .map_err(|e| format!("chrome-cdp test --list --json gave no JSON: {e}"))?;
+    Ok(value["data"]["shards"]
+        .as_array()
+        .and_then(|shards| shards.iter().find(|s| s["listed"] == true))
+        .and_then(|s| s["expected_ms"].as_u64()))
+}
+
+fn remove(path: &Path) -> Result<(), String> {
+    match std::fs::remove_file(path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            Err(format!("remove {}: {e}", path.display()))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// The suite with `--jobs jobs` (and its `--jobs-isolation`) and `more`
+/// arguments, in a fresh sandbox (new daemons and Chromes); also returns
+/// how many tests ran.
+fn one_run(opts: &Options<'_>, jobs: &Jobs, more: &[String]) -> Result<(ScaleRun, usize), String> {
+    let by_time = opts.suite.join(DURATIONS).is_file();
     let mut args = vec![
         "test".to_owned(),
         "--jobs".to_owned(),
         jobs.count.to_string(),
     ];
+    args.extend_from_slice(more);
     if let Some(how) = &jobs.isolation {
         args.extend(["--jobs-isolation".to_owned(), how.clone()]);
     }
@@ -278,6 +406,7 @@ fn one_run(opts: &Options<'_>, jobs: &Jobs) -> Result<(ScaleRun, usize), String>
         },
         chrome_rss_peak,
         daemon_rss_peak,
+        by_time,
     };
     Ok((run, tests.len()))
 }
@@ -438,6 +567,57 @@ pub fn markdown(r: &ScaleReport) -> String {
     md
 }
 
+/// With shards: each shard's tests and wall time, split by count and by
+/// time, and how much longer than the mean the slowest shard took.
+pub fn shards_markdown(r: &ScaleReport) -> String {
+    let Some(first) = r.shards.first() else {
+        return String::new();
+    };
+    let mut md = format!(
+        "Each of {} shards on its own with `--jobs {}`, by count (no durations file) and by time (the file the runs above left):\n\n\
+         | Shard | By count: tests | Wall time | By time: tests | Expected | Wall time |\n\
+         |---:|---:|---:|---:|---:|---:|\n",
+        first.total, first.jobs
+    );
+    let secs = |ms: u64| format!("{} s", report::fmt_num(ms_f64(ms) / 1000.0));
+    let split = |by_time: bool| -> Vec<&ShardRun> {
+        r.shards.iter().filter(|s| s.by_time == by_time).collect()
+    };
+    let (count, time) = (split(false), split(true));
+    for (c, t) in count.iter().zip(&time) {
+        let _ = writeln!(
+            md,
+            "| {}/{} | {} | {} | {} | {} | {} |",
+            c.index,
+            c.total,
+            c.tests,
+            secs(c.wall_ms),
+            t.tests,
+            t.expected_ms.map_or_else(|| "-".to_owned(), secs),
+            secs(t.wall_ms)
+        );
+    }
+    let spread = |shards: &[&ShardRun]| {
+        let walls: Vec<f64> = shards.iter().map(|s| ms_f64(s.wall_ms)).collect();
+        #[allow(clippy::cast_precision_loss)]
+        let mean = walls.iter().sum::<f64>() / walls.len().max(1) as f64;
+        let max = walls.iter().copied().fold(0.0, f64::max);
+        (max, (max / mean - 1.0) * 100.0)
+    };
+    let ((cmax, cpct), (tmax, tpct)) = (spread(&count), spread(&time));
+    let _ = writeln!(
+        md,
+        "\nThe slowest shard: by count {} s, {cpct:.1}% above the mean; by time {} s, {tpct:.1}% above the mean.",
+        report::fmt_num(cmax / 1000.0),
+        report::fmt_num(tmax / 1000.0),
+    );
+    let unclean: usize = r.shards.iter().map(|s| s.failed + s.flaky).sum();
+    if unclean > 0 {
+        let _ = writeln!(md, "\n{unclean} tests failed or were flaky in the shards.");
+    }
+    md
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -507,6 +687,7 @@ mod tests {
             },
             chrome_rss_peak: 512 * 1024 * 1024,
             daemon_rss_peak: 40 * 1024 * 1024,
+            by_time: false,
         };
         let r = ScaleReport {
             suite: "scale".to_owned(),
@@ -519,6 +700,7 @@ mod tests {
             chrome: "Chrome 155".to_owned(),
             tests: 10,
             runs: vec![run(1, 15_000), run(4, 4_000)],
+            shards: Vec::new(),
         };
         let md = markdown(&r);
         assert!(md.starts_with("Last run: 2026-09-29 on linux-x86_64 (4 CPUs)"));
@@ -533,6 +715,39 @@ mod tests {
         r.runs[1].isolation = Some("browser".to_owned());
         r.runs[1].browsers = 4;
         assert!(markdown(&r).contains("| 4 browser (4 Chromes) | 4 s | 400 ms |"));
+        r.runs[1].by_time = true;
+        assert!(markdown(&r).contains("| 4 browser (4 Chromes), longest first | 4 s |"));
+        assert_eq!(shards_markdown(&r), "");
+
+        // Shards: by count, then by time, side by side.
+        let shard = |by_time, index, tests, wall_ms| ShardRun {
+            by_time,
+            index,
+            total: 2,
+            jobs: 4,
+            tests,
+            expected_ms: by_time.then_some(wall_ms - 500),
+            wall_ms,
+            failed: 0,
+            flaky: 0,
+        };
+        r.shards = vec![
+            shard(false, 1, 5, 12_000),
+            shard(false, 2, 5, 8_000),
+            shard(true, 1, 4, 10_500),
+            shard(true, 2, 6, 9_500),
+        ];
+        let md = shards_markdown(&r);
+        assert!(
+            md.contains("| 1/2 | 5 | 12 s | 4 | 10 s | 10.5 s |"),
+            "{md}"
+        );
+        assert!(
+            md.contains(
+                "by count 12 s, 20.0% above the mean; by time 10.5 s, 5.0% above the mean."
+            ),
+            "{md}"
+        );
     }
 
     #[test]

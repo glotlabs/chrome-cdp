@@ -93,6 +93,10 @@ enum Suite {
         /// 1,4,16,16:context`
         #[arg(long, value_delimiter = ',', default_values_t = scale::JOBS.map(scale::Jobs::from))]
         jobs: Vec<scale::Jobs>,
+        /// Then run each of N shards with the last --jobs, split by count
+        /// and by the durations file, e.g. `--shards 4`
+        #[arg(long, value_name = "N", value_parser = clap::value_parser!(u64).range(1..))]
+        shards: Option<u64>,
         /// Also publish the results as the baseline later milestones
         /// compare with (the `scale-baseline` section)
         #[arg(long)]
@@ -211,6 +215,7 @@ fn run(suite: Suite) -> Result<(), String> {
             common,
             suite,
             jobs,
+            shards,
             baseline,
         } => {
             let bin = binary(&common.bin_dir, "chrome-cdp")?;
@@ -224,14 +229,20 @@ fn run(suite: Suite) -> Result<(), String> {
                 chrome: &common.chrome,
                 suite,
                 jobs,
+                shards: shards.and_then(|n| usize::try_from(n).ok()),
             })?;
             let path = report::results_dir().join("scale.json");
             report::write_json(&path, &r)?;
             let md = scale::markdown(&r);
+            let shards_md = scale::shards_markdown(&r);
             print!("{md}");
+            print!("{shards_md}");
             note(&format!("wrote {}", path.display()));
             if !common.no_publish {
                 report::publish("scale", &md)?;
+                if !shards_md.is_empty() {
+                    report::publish("scale-shards", &shards_md)?;
+                }
                 if baseline {
                     report::publish("scale-baseline", &md)?;
                 }
