@@ -173,7 +173,7 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
             with_backend(&plan, mode, || {
                 run_tests(&options, args.headed, || {
                     let started = Instant::now();
-                    starting(&plan, mode);
+                    starting(&plan, options.sessions.len(), mode);
                     let outcomes = execute(&plan, &options, &stop, mode);
                     if !args.watch {
                         return Ran::Once(outcomes, started.elapsed());
@@ -192,7 +192,7 @@ pub(crate) fn run(args: &TestArgs, global: &GlobalArgs, explicit_session: bool) 
                     );
                     let rerun = |plan: &Plan| {
                         let started = Instant::now();
-                        starting(plan, mode);
+                        starting(plan, options.sessions.len(), mode);
                         let outcomes = execute(plan, &options, &stop, mode);
                         conclude(
                             plan,
@@ -325,9 +325,15 @@ fn options(plan: &Plan, args: &TestArgs, global: &GlobalArgs, explicit_session: 
     } else {
         format!("test-{}", std::process::id())
     };
-    let sessions: Vec<String> = match args.jobs_isolation {
-        JobsIsolation::Context => vec![base],
-        JobsIsolation::Browser => (1..=plan.jobs).map(|i| format!("{base}-{i}")).collect(),
+    let browsers = browsers(
+        args.jobs_isolation,
+        plan.jobs.min(runs(plan)),
+        explicit_session || args.debug,
+    );
+    let sessions: Vec<String> = if browsers == 1 && args.jobs_isolation != JobsIsolation::Browser {
+        vec![base]
+    } else {
+        (1..=browsers).map(|i| format!("{base}-{i}")).collect()
     };
     if args.debug && !explicit_session {
         // What an earlier --debug run left open.
@@ -373,6 +379,32 @@ fn options(plan: &Plan, args: &TestArgs, global: &GlobalArgs, explicit_session: 
     }
 }
 
+/// How many tests share a Chrome with `--jobs-isolation auto`. One
+/// Chrome's browser process handles every call of its tests on one
+/// thread, and on the scale suite it was what they waited on past 2 to 4
+/// jobs (plan 22.4).
+const JOBS_PER_BROWSER: u32 = 3;
+
+/// How many Chromes `jobs` tests at once run in. `auto` takes one per
+/// [`JOBS_PER_BROWSER`] jobs, but one when the user names the session
+/// (`one_session`: `--session`, `--debug`), since they watch it.
+fn browsers(isolation: JobsIsolation, jobs: u32, one_session: bool) -> u32 {
+    match isolation {
+        JobsIsolation::Context => 1,
+        JobsIsolation::Auto if one_session => 1,
+        JobsIsolation::Auto => jobs.div_ceil(JOBS_PER_BROWSER),
+        JobsIsolation::Browser => jobs,
+    }
+    .max(1)
+}
+
+/// How many test runs the run has: its tests times `--repeat`.
+fn runs(plan: &Plan) -> u32 {
+    u32::try_from(plan.tests.len())
+        .unwrap_or(u32::MAX)
+        .saturating_mul(plan.repeat.max(1))
+}
+
 /// Runs `work` between the backend's setup and teardown commands; a
 /// failed teardown is a warning on stderr.
 fn with_backend<T>(
@@ -404,9 +436,10 @@ enum Ran {
     Watched(u8),
 }
 
-/// `running N tests from M files, J at once`, after what a real
-/// backend changes.
-fn starting(plan: &Plan, mode: Mode) {
+/// `running N tests from M files, J at once` (`in B browsers` when more
+/// than one; why J when the run chose it), after what a real backend
+/// changes.
+fn starting(plan: &Plan, browsers: usize, mode: Mode) {
     if mode != Mode::Text {
         return;
     }
@@ -434,9 +467,9 @@ fn starting(plan: &Plan, mode: Mode) {
         .map(|t| t.file)
         .collect::<std::collections::BTreeSet<_>>()
         .len();
-    let runs = plan.tests.len() * usize::try_from(plan.repeat).unwrap_or(1);
-    output::stdout(&format!(
-        "running {} test{}{} from {files} file{}, {} at once\n",
+    let jobs = plan.jobs.min(runs(plan)).max(1);
+    let mut line = format!(
+        "running {} test{}{} from {files} file{}, {jobs} at once",
         plan.tests.len(),
         if plan.tests.len() == 1 { "" } else { "s" },
         if plan.repeat > 1 {
@@ -445,10 +478,16 @@ fn starting(plan: &Plan, mode: Mode) {
             String::new()
         },
         if files == 1 { "" } else { "s" },
-        plan.jobs
-            .min(u32::try_from(runs).unwrap_or(u32::MAX))
-            .max(1)
-    ));
+    );
+    if browsers > 1 {
+        let _ = write!(line, " in {browsers} browsers");
+    }
+    // Why that many, unless there are fewer tests.
+    if let Some(why) = plan.jobs_why.as_ref().filter(|_| jobs == plan.jobs) {
+        let _ = write!(line, ": {why}");
+    }
+    line.push('\n');
+    output::stdout(&line);
 }
 
 /// Runs `plan`'s tests, printing each line as it ends.
@@ -474,7 +513,13 @@ fn conclude(
     options: &Options,
     mode: Mode,
 ) -> u8 {
-    let mut data = report::data(plan, outcomes, duration, args.shard.as_deref());
+    let mut data = report::data(
+        plan,
+        outcomes,
+        duration,
+        args.shard.as_deref(),
+        options.sessions.len(),
+    );
     let (heal_data, heal_text, mut heal_warnings) =
         healing(plan, args, outcomes, options, &mut data);
     data.heal = heal_data;
@@ -933,4 +978,20 @@ fn with_servers<T: Send>(
         runtime.block_on(servers.stop());
         result
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{JobsIsolation, browsers};
+
+    #[test]
+    fn auto_takes_a_browser_per_three_jobs() {
+        let auto = |jobs| browsers(JobsIsolation::Auto, jobs, false);
+        assert_eq!([1, 3, 4, 8, 9, 16].map(auto), [1, 1, 2, 3, 3, 6]);
+        // One when the user names the session.
+        assert_eq!(browsers(JobsIsolation::Auto, 16, true), 1);
+        assert_eq!(browsers(JobsIsolation::Context, 16, false), 1);
+        assert_eq!(browsers(JobsIsolation::Browser, 16, true), 16);
+        assert_eq!(browsers(JobsIsolation::Browser, 0, false), 1);
+    }
 }

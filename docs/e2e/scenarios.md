@@ -151,7 +151,7 @@ same scenario working everywhere; see [backends](backends.md).
 
 ```
 chrome-cdp test [PATH…] [--grep RE] [--tags smoke,!slow] [--jobs N]
-                [--jobs-isolation context|browser] [--shard 2/4]
+                [--jobs-isolation auto|context|browser] [--shard 2/4]
                 [--retries N | --repeat N] [--bail] [--headed]
                 [--update-snapshots] [--list] [--json]
 ```
@@ -171,8 +171,15 @@ chrome-cdp test [PATH…] [--grep RE] [--tags smoke,!slow] [--jobs N]
   at the end.
 - Each test gets a new browser context: its own cookies, storage, cache,
   routes, mock sets (and their state), init scripts and emulation. Mock
-  state starts over in every test. `--jobs N` runs N tests at once in one
-  Chrome; `--jobs-isolation browser` gives each job its own Chrome.
+  state starts over in every test. `--jobs N` runs N tests at once; by
+  default (`jobs = "auto"`) one per CPU, fewer when free memory is short
+  (about a GB each), at most 16, and the first line says why
+  (`16 at once in 6 browsers: 16 CPUs, 30 GB free`). They run in a
+  Chrome per 3 jobs (`--jobs-isolation auto`): one Chrome's browser
+  process handles every call of its tests, and past 2 to 4 jobs it is
+  what they wait on. `--jobs-isolation context` keeps them all in one
+  Chrome (as `--session` and `--debug` do), and `browser` gives each job
+  its own.
 - Every test sees the same time (frozen at 2026-01-01T10:00:00Z), the
   same random values, `en-US`, `UTC`, a pixel ratio of 1 and no
   animations; `time advance 5m` moves the time on and runs the timers due

@@ -465,6 +465,7 @@ mod tests {
             shard: None,
             listed: false,
             repeat: None,
+            jobs: None,
             reporters: std::collections::BTreeMap::new(),
             debug: None,
             backend: None,

@@ -1,4 +1,4 @@
-running 1 test 20 times each from 1 file, 4 at once
+running 1 test 20 times each from 1 file, 4 at once in 2 browsers
 ✗ scenarios/flaky/settle.cdp:5 pays the price (failed 3 of 20 runs, slowest <t>)
     flaky: 3 of 20 runs failed at scenarios/flaky/settle.cdp:9:3 (`expect role=status text 'Paid $5' --timeout <t>`)
     likely cause: acted before the page settled (confidence 0.90)

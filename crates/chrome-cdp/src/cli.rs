@@ -360,8 +360,9 @@ test's @mocks), so tests cannot leak into each other. Each also sees the
 same time (2026-01-01T10:00:00Z), random values, locale (en-US), time
 zone (UTC) and no animations; [e2e.determinism] changes that, and `time
 advance 5m` moves the time on and runs the timers due by then. `--jobs N`
-runs N tests at once in one Chrome; a test that fails, then passes on a
-retry, is reported as flaky; `--repeat 20` runs each test 20 times to
+runs N tests at once (by default one per CPU, fewer when free memory is
+short, at most 16), in a Chrome per 3 of them; a test that fails, then
+passes on a retry, is reported as flaky; `--repeat 20` runs each test 20 times to
 find flaky ones. A flaky test's line names the likely cause (acted
 before the page settled, requests raced, a moving target, different
 requests, time or randomness, shared state), with the request or element
@@ -7747,13 +7748,16 @@ pub(crate) struct TestArgs {
     #[arg(long, value_name = "TAGS", allow_hyphen_values = true)]
     pub(crate) tags: Option<String>,
 
-    /// How many tests run at once. Default: `jobs` in the config, else 1.
+    /// How many tests run at once, e.g. 8. Default: `jobs` in the config,
+    /// else one per CPU, fewer when free memory is short (a GB each), at
+    /// most 16.
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
     pub(crate) jobs: Option<u32>,
 
-    /// Where the tests run at once: in browser contexts of one Chrome
-    /// (the default), or in a Chrome each.
-    #[arg(long, value_enum, value_name = "HOW", default_value_t = JobsIsolation::Context)]
+    /// Where the tests run at once: in browser contexts of a Chrome per 3
+    /// jobs (`auto`, the default), of one Chrome, or in a Chrome each,
+    /// e.g. `--jobs-isolation context`.
+    #[arg(long, value_enum, value_name = "HOW", default_value_t = JobsIsolation::Auto)]
     pub(crate) jobs_isolation: JobsIsolation,
 
     /// Run only part INDEX of TOTAL near-equal parts, e.g. 2/4 (for CI
@@ -7883,6 +7887,9 @@ pub(crate) enum HealLevelArg {
 /// `test --jobs-isolation`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum JobsIsolation {
+    /// A browser context each, in a Chrome per 3 jobs (one Chrome with
+    /// `--session` or `--debug`).
+    Auto,
     /// A browser context each, in one Chrome.
     Context,
     /// A Chrome (a session) each.

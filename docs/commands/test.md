@@ -15,8 +15,8 @@ Options:
 
 - `--grep <REGEX>`: Only the tests whose `file > name` matches this regular expression
 - `--tags <TAGS>`: Only tests with one of these tags; `!tag` leaves a tag out, e.g. smoke,!slow
-- `--jobs <N>`: How many tests run at once. Default: `jobs` in the config, else 1
-- `--jobs-isolation <HOW>`: Where the tests run at once: in browser contexts of one Chrome (the default), or in a Chrome each (one of `context`, `browser`; default `context`)
+- `--jobs <N>`: How many tests run at once, e.g. 8. Default: `jobs` in the config, else one per CPU, fewer when free memory is short (a GB each), at most 16
+- `--jobs-isolation <HOW>`: Where the tests run at once: in browser contexts of a Chrome per 3 jobs (`auto`, the default), of one Chrome, or in a Chrome each, e.g. `--jobs-isolation context` (one of `auto`, `context`, `browser`; default `auto`)
 - `--shard <INDEX/TOTAL>`: Run only part INDEX of TOTAL near-equal parts, e.g. 2/4 (for CI machines that split a suite)
 - `--retries <N>`: Run a failed test again up to N times. Default: `retries` in the config, else 0; a test's @retries wins
 - `--repeat <N>`: Run each test N times, without retries, to find flaky tests: a test fails if any of its runs does, and the likely cause of its failures is named
@@ -51,8 +51,9 @@ test's @mocks), so tests cannot leak into each other. Each also sees the
 same time (2026-01-01T10:00:00Z), random values, locale (en-US), time
 zone (UTC) and no animations; [e2e.determinism] changes that, and `time
 advance 5m` moves the time on and runs the timers due by then. `--jobs N`
-runs N tests at once in one Chrome; a test that fails, then passes on a
-retry, is reported as flaky; `--repeat 20` runs each test 20 times to
+runs N tests at once (by default one per CPU, fewer when free memory is
+short, at most 16), in a Chrome per 3 of them; a test that fails, then
+passes on a retry, is reported as flaky; `--repeat 20` runs each test 20 times to
 find flaky ones. A flaky test's line names the likely cause (acted
 before the page settled, requests raced, a moving target, different
 requests, time or randomness, shared state), with the request or element

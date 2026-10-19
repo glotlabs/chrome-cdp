@@ -6179,6 +6179,10 @@ pub struct TestRunData {
     /// `--repeat`: how many times each test ran.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repeat: Option<u32>,
+    /// How many tests ran at once, and in how many browsers (not with
+    /// `--list`, nor for `--backend all`, whose runs each have theirs).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jobs: Option<TestJobs>,
     /// The files `--reporter` wrote (absolute), by reporter: `json`,
     /// `junit`, `html`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -6207,6 +6211,19 @@ pub struct TestRunData {
     /// acted on and checked, and the mocks they used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui_coverage: Option<UiCoverageData>,
+}
+
+/// How many tests of a `chrome-cdp test` run ran at once.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TestJobs {
+    /// Tests at once: `--jobs`, or fewer when the run has fewer tests.
+    pub at_once: u32,
+    /// The Chromes they ran in (`--jobs-isolation`).
+    pub browsers: u32,
+    /// Why that many, when the run chose it (`jobs = "auto"`): the CPUs
+    /// and free memory, e.g. `16 CPUs, 30 GB free`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<String>,
 }
 
 /// What `chrome-cdp test --verify-mocks` found: every real answer to a

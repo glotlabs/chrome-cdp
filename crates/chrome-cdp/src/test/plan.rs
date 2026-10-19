@@ -81,6 +81,9 @@ pub(super) struct Plan {
     pub(super) tests: Vec<Planned>,
     /// How many tests run at once.
     pub(super) jobs: u32,
+    /// Why that many, when the run chose it (`auto`): `16 CPUs, 30 GB
+    /// free`.
+    pub(super) jobs_why: Option<String>,
     /// Retries of a test without its own `@retries`.
     pub(super) retries: u32,
     /// How many times each test runs (`--repeat`; 1 without).
@@ -265,7 +268,11 @@ impl Plan {
         if backend.protected && !args.allow_writes {
             protect(&backend.name, &scenarios, &tests)?;
         }
-        let jobs = args.jobs.unwrap_or_else(|| backend.jobs.count()).max(1);
+        let picked = args.jobs.map_or_else(
+            || backend.jobs.pick(),
+            |count| e2e::config::Picked { count, why: None },
+        );
+        let jobs = picked.count.max(1);
         let retries = args.retries.unwrap_or(backend.retries);
         let repeat = args.repeat.unwrap_or(1);
         let determinism = backend.determinism.resolve();
@@ -275,6 +282,7 @@ impl Plan {
             hooks,
             tests,
             jobs,
+            jobs_why: picked.why,
             retries,
             repeat,
             debug: args.debug,

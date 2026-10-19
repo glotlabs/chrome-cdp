@@ -1566,6 +1566,35 @@
       ],
       "type": "object"
     },
+    "TestJobs": {
+      "description": "How many tests of a `chrome-cdp test` run ran at once.",
+      "properties": {
+        "at_once": {
+          "description": "Tests at once: `--jobs`, or fewer when the run has fewer tests.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "browsers": {
+          "description": "The Chromes they ran in (`--jobs-isolation`).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "why": {
+          "description": "Why that many, when the run chose it (`jobs = \"auto\"`): the CPUs\nand free memory, e.g. `16 CPUs, 30 GB free`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "at_once",
+        "browsers"
+      ],
+      "type": "object"
+    },
     "TestResult": {
       "description": "One test of `chrome-cdp test`.",
       "properties": {
@@ -1736,6 +1765,17 @@
             }
           ],
           "description": "`--heal`: the patch of the healed locators."
+        },
+        "jobs": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TestJobs"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How many tests ran at once, and in how many browsers (not with\n`--list`, nor for `--backend all`, whose runs each have theirs)."
         },
         "listed": {
           "description": "`--list`: the tests were listed, not run.",

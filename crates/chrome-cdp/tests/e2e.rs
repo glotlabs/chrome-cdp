@@ -123,7 +123,7 @@ fn the_passing_suite_passes_in_parallel_contexts() {
     assert_eq!(out.status.code(), Some(0));
     let text = stdout(&out);
     assert!(
-        text.starts_with("running 7 tests from 2 files, 4 at once\n"),
+        text.starts_with("running 7 tests from 2 files, 4 at once in 2 browsers\n"),
         "{text}"
     );
     assert!(
@@ -545,6 +545,10 @@ fn a_chrome_per_job_and_snapshot_baselines_in_the_project() {
     ]);
     assert_eq!(out.status.code(), Some(0), "{value}");
     assert_eq!(value["data"]["passed"], 4);
+    assert_eq!(
+        value["data"]["jobs"],
+        serde_json::json!({"at_once": 2, "browsers": 2})
+    );
     assert!(project.sandbox.daemons().is_empty());
 
     // expect-snapshot baselines go to e2e/snapshots of the project.
@@ -729,7 +733,7 @@ fn repeat_runs_each_test_and_fails_a_flaky_one() {
     let text = stdout(&out);
     assert_eq!(out.status.code(), Some(0), "{text}{}", stderr(&out));
     assert!(
-        text.starts_with("running 6 tests 3 times each from 1 file, 4 at once\n"),
+        text.starts_with("running 6 tests 3 times each from 1 file, 4 at once in 2 browsers\n"),
         "{text}"
     );
     assert!(

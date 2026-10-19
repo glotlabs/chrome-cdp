@@ -5,7 +5,7 @@
 use std::fmt::Write as _;
 use std::time::Duration;
 
-use protocol::schema::{TestDebug, TestFailure, TestResult, TestRunData};
+use protocol::schema::{TestDebug, TestFailure, TestJobs, TestResult, TestRunData};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output, Style, format};
 use serde_json::json;
 
@@ -109,8 +109,10 @@ pub(super) fn data(
     outcomes: &[Outcome],
     duration: Duration,
     shard: Option<&str>,
+    browsers: usize,
 ) -> TestRunData {
     let count = |status: Status| outcomes.iter().filter(|o| o.status == status).count();
+    let at_once = plan.jobs.min(super::runs(plan)).max(1);
     TestRunData {
         tests: plan
             .tests
@@ -127,6 +129,11 @@ pub(super) fn data(
         shard: shard.map(str::to_owned),
         listed: false,
         repeat: (plan.repeat > 1).then_some(plan.repeat),
+        jobs: Some(TestJobs {
+            at_once,
+            browsers: u32::try_from(browsers).unwrap_or(u32::MAX),
+            why: plan.jobs_why.clone().filter(|_| at_once == plan.jobs),
+        }),
         reporters: std::collections::BTreeMap::new(),
         debug: None,
         backend: plan.real().then(|| plan.backend.name.clone()),
@@ -361,6 +368,7 @@ pub(super) fn listed(plan: &Plan, shard: Option<&str>, max_chars: usize) -> Outp
         shard: shard.map(str::to_owned),
         listed: true,
         repeat: None,
+        jobs: None,
         reporters: std::collections::BTreeMap::new(),
         debug: None,
         backend: plan.real().then(|| plan.backend.name.clone()),

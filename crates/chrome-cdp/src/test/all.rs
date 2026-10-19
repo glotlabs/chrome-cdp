@@ -122,14 +122,20 @@ fn once(
         || {
             with_backend(plan, mode, || {
                 run_tests(&options, args.headed, || {
-                    starting(plan, mode);
+                    starting(plan, options.sessions.len(), mode);
                     execute(plan, &options, &stop, mode)
                 })
             })
         },
     );
     let (outcomes, _) = ran.and_then(|r| r)?;
-    let mut data = report::data(plan, &outcomes, started.elapsed(), args.shard.as_deref());
+    let mut data = report::data(
+        plan,
+        &outcomes,
+        started.elapsed(),
+        args.shard.as_deref(),
+        options.sessions.len(),
+    );
     for test in &mut data.tests {
         test.backend = Some(plan.backend.name.clone());
     }
@@ -159,6 +165,7 @@ fn combine(runs: &[(Plan, TestRunData)], duration: Duration, args: &TestArgs) ->
         shard: args.shard.clone(),
         listed: args.list,
         repeat: args.repeat.filter(|&r| r > 1),
+        jobs: None,
         reporters: std::collections::BTreeMap::new(),
         debug: None,
         backend: Some(e2e::backend::ALL.to_owned()),

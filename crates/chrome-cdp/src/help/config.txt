@@ -33,7 +33,8 @@ writes one). Paths are relative to the file; its base_url is also the
   openapi = "api/openapi.yaml"         `mock check` checks mocks against it
   default_backend = "mock"             or a name from [e2e.backends]
   vars = "e2e/vars/mock.toml"          ${var:…} of every backend
-  jobs = 4                             tests at once; "auto" = CPUs / 2
+  jobs = 4                             tests at once; "auto" (the default):
+                                       one per CPU and GB free, 16 at most
   retries = 0
   timeout = "30s"                      per test
   keep_logs = false                    true: passing tests keep their

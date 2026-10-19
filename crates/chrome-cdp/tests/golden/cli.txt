@@ -87,7 +87,7 @@ command chrome-cdp test
   flag --grep value=REGEX
   flag --tags value=TAGS
   flag --jobs value=N
-  flag --jobs-isolation value=HOW values=context|browser
+  flag --jobs-isolation value=HOW values=auto|context|browser
   flag --shard value=INDEX/TOTAL
   flag --retries value=N
   flag --repeat value=N
