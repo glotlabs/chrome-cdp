@@ -70,6 +70,12 @@ restores the same file computes the same shards. Without the file (or
 with no time for any selected test), the shards are near-equal parts of
 the list, as before.
 
+Every shard of a suite must start from the same file. A run updates it,
+so on one machine, `--shard 1/2` then `--shard 2/2` with the file the
+first left would split differently, and some tests would run twice and
+others not at all: give each shard a copy of the same file (as CI
+machines that restore the same cache have), or run them without one.
+
 `test --list --shard 2/4` shows every shard's expected time:
 
 ```

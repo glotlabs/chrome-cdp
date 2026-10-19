@@ -1,0 +1,6 @@
+console.txt
+failure.png
+report.md
+requests.txt
+snapshot.txt
+steps.jsonl

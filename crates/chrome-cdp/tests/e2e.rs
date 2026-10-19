@@ -95,6 +95,18 @@ fn copy_dir(from: &Path, to: &Path) {
     }
 }
 
+/// The files below `dir`, relative to `root`, into `out`.
+fn list_files(root: &Path, dir: &Path, out: &mut Vec<String>) {
+    for entry in std::fs::read_dir(dir).unwrap().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            list_files(root, &path, out);
+        } else {
+            out.push(path.strip_prefix(root).unwrap().display().to_string());
+        }
+    }
+}
+
 /// `[(status, name)]` of a `--json` run's tests.
 fn statuses(value: &Value) -> Vec<(String, String)> {
     let data = if value["ok"] == Value::Bool(true) {
@@ -139,9 +151,14 @@ fn the_passing_suite_passes_in_parallel_contexts() {
         .unwrap_or_default();
     assert!(left.is_empty(), "{left:?}");
 
-    // Two shards run every test, each once.
+    // Two shards run every test, each once, split by the times the run
+    // above kept; each starts from the same durations file, as CI
+    // machines restore the same cache (a shard's run updates it).
+    let durations = project.root.join("e2e/.durations.json");
+    let kept = std::fs::read_to_string(&durations).unwrap();
     let mut ran = Vec::new();
     for shard in ["1/2", "2/2"] {
+        std::fs::write(&durations, &kept).unwrap();
         let (out, value) = project.json(&["--shard", shard]);
         assert_eq!(out.status.code(), Some(0), "{value}");
         for t in value["data"]["tests"].as_array().unwrap() {
@@ -266,10 +283,13 @@ fn failures_skips_and_flaky_tests_are_reported() {
         }
     }
 
-    // --bail stops after the first failure.
+    // --bail stops after the first failure. The failed test has no time
+    // yet (it never passed), so it starts first (plan 22.5), and the test
+    // that passes is not run.
     let (_, value) = project.json(&["scenarios/fail/fails.cdp", "--bail", "--jobs", "1"]);
     let details = &value["error"]["details"];
-    assert_eq!(details["not_run"], 0, "{value}");
+    assert_eq!(details["not_run"], 1, "{value}");
+    assert_eq!(statuses(&value)[0].0, "not-run");
     assert_eq!(statuses(&value)[2].0, "skipped");
 }
 
@@ -1240,6 +1260,13 @@ fn every_test_leaves_artifacts_and_a_failure_a_report() {
         md.ends_with("Run it again: `chrome-cdp test scenarios/fail/fails.cdp:8`\n"),
         "{md}"
     );
+    // The files and the report, whole: plan 22 made passing tests do less,
+    // and a failure's artifacts read the same as before it.
+    let mut files: Vec<String> = Vec::new();
+    list_files(&failed, &failed, &mut files);
+    files.sort();
+    golden_in("artifacts", "failed-files.txt", &(files.join("\n") + "\n"));
+    golden_in("artifacts", "failed-report.md", &steady(&md, &project.root));
 
     // A flaky test: the failed first try's report, the second try below.
     let flaky = results.join("fail/flaky.cdp/passes-on-the-second-try");
