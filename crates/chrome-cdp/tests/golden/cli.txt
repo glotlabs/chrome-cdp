@@ -111,7 +111,8 @@ command chrome-cdp test
   flag --ui-coverage
   flag --max-chars value=N
 command chrome-cdp load
-  arg PATH required multiple
+  arg PROFILE|PATH required multiple
+  flag --plan
   flag --grep value=REGEX
   flag --tags value=TAGS
   flag --backend value=NAME

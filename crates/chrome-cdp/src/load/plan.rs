@@ -1,22 +1,35 @@
-//! What a load run does, worked out before a browser starts (plan 23.1):
-//! the test runner's plan of the journeys (config, backend, scenarios,
-//! variables), a real backend, and every step of every journey and hook
-//! checked as a load step, all problems at once.
+//! What a load run does, worked out before a browser starts (plans 23.1
+//! and 23.3): the profile (or the flags of a run without one), the test
+//! runner's plan of the journeys (config, backend, scenarios, variables),
+//! a real backend, the journeys' data, and every step of every journey and
+//! hook checked as a load step with its variables, all problems at once.
 //!
 //! A step whose words do not change between iterations (no `${test.id}`,
-//! no `${saved.…}`) gets its engine request once, here; the others are
-//! filled in again for each iteration.
+//! `${saved.…}`, `${vu.id}`, `${iteration.id}` or `${row.…}`) gets its
+//! engine request once, here; the others are filled in again for each
+//! iteration.
 
 use std::collections::BTreeMap;
+use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
 
-use protocol::script::{Resolve, Unresolved, Var};
+use protocol::script::{Resolve, Span, Unresolved, Var};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 
+use super::data::Data;
+use super::profile::{self, Model, OnFailure, Profile, TestPick, UserStage, Users};
 use super::step::{self, Call};
+use super::think::Think;
 use crate::cli::{Cli, Command, GlobalArgs, JobsIsolation, LoadArgs, TestArgs};
 use crate::script::{self as lines, Problem};
-use crate::test::plan::{Plan, Prepared};
-use crate::test::vars::Resolver;
+use crate::test::plan::{Plan, Planned, Prepared};
+use crate::test::vars::{LoadVars, Resolver, Rows};
+
+/// A run without a profile: `--users`' default.
+pub(crate) const USERS: u32 = 10;
+/// A run without a profile: `--duration`'s default.
+pub(crate) const DURATION: Duration = Duration::from_secs(60);
 
 /// A step of a journey or hook, ready to run.
 #[derive(Debug)]
@@ -26,6 +39,17 @@ pub(super) struct Step {
     /// The line as written.
     pub(super) text: String,
     pub(super) how: How,
+    /// What kind of step it is, for `think_between_steps`.
+    pub(super) kind: Kind,
+}
+
+/// What kind of step a step is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Kind {
+    /// A navigation or an input action: what a person pauses after.
+    Action,
+    Think,
+    Other,
 }
 
 /// How a step gets its call.
@@ -34,7 +58,7 @@ pub(super) enum How {
     /// Made once: its words are the same in every iteration.
     Fixed(Call),
     /// Made in each iteration, from its words with that iteration's
-    /// `${test.id}` and `${saved.…}`.
+    /// variables.
     Each(Prepared),
 }
 
@@ -58,10 +82,14 @@ pub(super) struct Journey {
     pub(super) steps: Vec<Step>,
     /// How long one iteration may take (the test's `@timeout`, else the
     /// config's).
-    pub(super) timeout: std::time::Duration,
+    pub(super) timeout: Duration,
     /// The test's `@device` or `@viewport`, made in each iteration's
     /// context before its steps.
     pub(super) emulate: Option<engine::EmulateRequest>,
+    /// How often it is picked, against the other journeys' weights.
+    pub(super) weight: u32,
+    /// Its rows, one per iteration (`data`).
+    pub(super) data: Option<Arc<Data>>,
 }
 
 /// Everything a load run needs to know.
@@ -77,11 +105,49 @@ pub(super) struct LoadPlan {
     pub(super) global: GlobalArgs,
     /// What Chrome fails at once in every user's context (`[load] block`).
     pub(super) blocked: Vec<engine::BlockedUrl>,
+    /// The profile's name (`e2e/load/shop.toml`), if the run has one.
+    pub(super) profile: Option<String>,
+    pub(super) model: Model,
+    /// A bare `think`'s time.
+    pub(super) think: Think,
+    /// Without a profile, each user takes the journeys in turn instead of
+    /// by weight (plan 23.1).
+    pub(super) in_turn: bool,
+    pub(super) on_failure: OnFailure,
+    pub(super) max_failures: u64,
 }
 
 impl LoadPlan {
     pub(super) fn make(args: &LoadArgs, global: &GlobalArgs) -> Result<Self, ErrorInfo> {
-        let plan = Plan::make(&test_args(args), global, None)?;
+        let cwd = std::env::current_dir().map_err(|e| {
+            ErrorInfo::new(
+                ErrorKind::BadArgs,
+                format!("cannot read the current directory: {e}"),
+            )
+        })?;
+        let root = crate::test::plan::project(&cwd)?.root;
+        let profile = match args.paths.as_slice() {
+            [one] => match profile::find(one, &root, &cwd) {
+                Some(path) => Some(profile::read(&path, &root)?),
+                None if !one.contains(['.', '/', '\\', ':']) && !cwd.join(one).exists() => {
+                    return Err(no_profile(one, &root));
+                }
+                None => None,
+            },
+            _ => None,
+        };
+        let mut problems = Vec::new();
+        let test_args = match &profile {
+            Some(p) => {
+                flags_without_profile(args, p)?;
+                profile_args(args, p, &mut problems)
+            }
+            None => test_args(args),
+        };
+        if test_args.paths.is_empty() {
+            return Err(lines::invalid(problems));
+        }
+        let plan = Plan::make(&test_args, global, None)?;
         if !plan.real() {
             return Err(ErrorInfo::new(
                 ErrorKind::BadArgs,
@@ -113,33 +179,63 @@ impl LoadPlan {
         global.context = None;
         global.json = false;
         global.quiet = false;
-        let mut problems = Vec::new();
-        let mut journeys = Vec::new();
-        let mut hooks: Vec<Hooks> = plan.scenarios.iter().map(|_| Hooks::default()).collect();
-        let mut hooked = vec![false; plan.scenarios.len()];
+        // The journeys' tests and data.
+        let picked: Vec<Picked<'_>> = match &profile {
+            Some(p) => pick_journeys(&plan, p, &mut problems),
+            None => plan
+                .tests
+                .iter()
+                .filter(|t| t.skipped().is_none())
+                .map(|test| Picked {
+                    test,
+                    weight: 1,
+                    data: None,
+                })
+                .collect(),
+        };
         let checker = Checker {
             plan: &plan,
             global: &global,
             writes: !plan.backend.protected || args.allow_writes,
         };
-        for test in plan.tests.iter().filter(|t| t.skipped().is_none()) {
+        let mut hooks: Vec<Hooks> = plan.scenarios.iter().map(|_| Hooks::default()).collect();
+        let mut hooked = vec![false; plan.scenarios.len()];
+        let mut journeys = Vec::new();
+        for (i, p) in picked.iter().enumerate() {
+            let test = p.test;
             let scenario = &plan.scenarios[test.file];
             let saved = crate::test::vars::saved_names(scenario);
-            let ready = |steps: &[Prepared], hook: bool, problems: &mut Vec<Problem>| {
-                steps
-                    .iter()
-                    .filter_map(|s| checker.step(s, &saved, hook, problems))
-                    .collect::<Vec<_>>()
-            };
+            let ready =
+                |steps: &[Prepared], hook: bool, rows: Rows<'_>, problems: &mut Vec<Problem>| {
+                    steps
+                        .iter()
+                        .filter_map(|s| checker.step(s, &saved, hook, rows, problems))
+                        .collect::<Vec<_>>()
+                };
             if !hooked[test.file] {
                 hooked[test.file] = true;
                 let file = &plan.hooks[test.file];
-                hooks[test.file] = Hooks {
-                    before_all: ready(&file.before_all, true, &mut problems),
-                    after_all: ready(&file.after_all, true, &mut problems),
-                    before: ready(&file.before, true, &mut problems),
-                    after: ready(&file.after, true, &mut problems),
+                // `@before` and `@after` run in each journey's iterations
+                // of the file, with its row: the columns they all have.
+                let (columns, files) = shared_columns(&picked, test.file);
+                let rows = match &columns {
+                    Some(columns) => Rows::Columns(columns, &files),
+                    None => Rows::None,
                 };
+                hooks[test.file] = Hooks {
+                    before_all: ready(&file.before_all, true, Rows::None, &mut problems),
+                    after_all: ready(&file.after_all, true, Rows::None, &mut problems),
+                    before: ready(&file.before, true, rows, &mut problems),
+                    after: ready(&file.after, true, rows, &mut problems),
+                };
+            }
+            let rows = match &p.data {
+                Some((data, written)) => Rows::Columns(&data.columns, written),
+                None => Rows::None,
+            };
+            let mut steps = ready(&test.steps, false, rows, &mut problems);
+            if profile.as_ref().is_some_and(|p| p.think_between_steps) {
+                steps = think_between(steps);
             }
             // The test runner's plan checked the device's name already.
             let emulate = emulation(&test.settings, &global)?;
@@ -147,9 +243,11 @@ impl LoadPlan {
                 file: test.file,
                 name: test.name.clone(),
                 place: format!("{}:{}", scenario.name, test.line),
-                steps: ready(&test.steps, false, &mut problems),
+                steps,
                 timeout: plan.timeout(&test.settings),
                 emulate,
+                weight: p.weight,
+                data: picked[i].data.as_ref().map(|(data, _)| data.clone()),
             });
         }
         if !problems.is_empty() {
@@ -181,13 +279,318 @@ impl LoadPlan {
                 .hint("pick tests without @skip or @backend mock")
             });
         }
+        let (model, think, on_failure, max_failures) = match &profile {
+            Some(p) => (p.model.clone(), p.think, p.on_failure, p.max_failures),
+            None => (
+                Model::Closed(closed(args)),
+                args.think.unwrap_or_else(default_think),
+                OnFailure::Continue,
+                profile::MAX_FAILURES,
+            ),
+        };
         Ok(Self {
             plan,
             journeys,
             hooks,
             global,
             blocked,
+            in_turn: profile.is_none(),
+            profile: profile.map(|p| p.name),
+            model,
+            think,
+            on_failure,
+            max_failures,
         })
+    }
+}
+
+/// The error of `load NAME` when NAME is no profile, file or folder.
+fn no_profile(name: &str, root: &Path) -> ErrorInfo {
+    let names = profile::names(root);
+    let info = ErrorInfo::new(
+        ErrorKind::NotFound,
+        format!(
+            "no load profile {name}: {} is not there",
+            Path::new(profile::DIR)
+                .join(format!("{name}.toml"))
+                .display()
+        ),
+    );
+    let close = protocol::suggest::similar(name, names.iter().map(String::as_str), 3);
+    if let Some(first) = close.first() {
+        return info.hint(Hint::run(Cmd::new("load").arg(*first)).why("did you mean it?"));
+    }
+    if names.is_empty() {
+        info.hint(Hint::run(Cmd::new("init").arg("load")).why("writes an example profile"))
+    } else {
+        info.hint(Hint::text(format!("the profiles are {}", names.join(", "))))
+    }
+}
+
+/// The think time of a run without a profile and `--think`.
+fn default_think() -> Think {
+    Think::Between {
+        min: Duration::from_secs(2),
+        max: Duration::from_secs(8),
+    }
+}
+
+/// A run without a profile: `--users` loop from the start (or over
+/// `--ramp-up`) for `--duration`.
+fn closed(args: &LoadArgs) -> Users {
+    let users = args.users.unwrap_or(USERS);
+    let ramp_up = args.ramp_up.unwrap_or_default();
+    let mut stages = Vec::new();
+    if !ramp_up.is_zero() {
+        stages.push(UserStage {
+            from: 0,
+            to: users,
+            duration: ramp_up,
+        });
+    }
+    stages.push(UserStage {
+        from: users,
+        to: users,
+        duration: args.duration.unwrap_or(DURATION),
+    });
+    Users {
+        stages,
+        iterations: args.iterations,
+    }
+}
+
+/// With a profile, the flags that say what a run without one does are
+/// errors: the profile says it.
+fn flags_without_profile(args: &LoadArgs, profile: &Profile) -> Result<(), ErrorInfo> {
+    let given = [
+        ("--users", args.users.is_some()),
+        ("--duration", args.duration.is_some()),
+        ("--ramp-up", args.ramp_up.is_some()),
+        ("--iterations", args.iterations.is_some()),
+        ("--think", args.think.is_some()),
+        ("--grep", args.grep.is_some()),
+        ("--tags", args.tags.is_some()),
+    ];
+    match given.iter().find(|(_, given)| *given) {
+        Some((flag, _)) => Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!(
+                "{flag} is for a run without a profile; {} sets the run",
+                profile.name
+            ),
+        )
+        .hint(Hint::text(format!(
+            "change it in {}: [arrivals] or [users], think, [[journeys]]",
+            profile.name
+        )))),
+        None => Ok(()),
+    }
+}
+
+/// The test runner's arguments for `profile`'s journeys: their files, and
+/// the profile's backend unless `--backend`. A file that is not there is
+/// a problem.
+fn profile_args(args: &LoadArgs, profile: &Profile, problems: &mut Vec<Problem>) -> TestArgs {
+    let mut files: Vec<String> = Vec::new();
+    for journey in &profile.journeys {
+        if !journey.file.is_file() {
+            problems.push(problem(
+                &journey.at,
+                format!(
+                    "test = \"{}\": no such scenario file {}",
+                    journey.test,
+                    journey.file.display()
+                ),
+                "name a .cdp file relative to the project root, e.g. e2e/scenarios/shop.cdp:search",
+            ));
+            continue;
+        }
+        let file = journey.file.display().to_string();
+        if !files.contains(&file) {
+            files.push(file);
+        }
+    }
+    TestArgs {
+        paths: files,
+        backend: args.backend.clone().or_else(|| profile.backend.clone()),
+        grep: None,
+        tags: None,
+        ..test_args(args)
+    }
+}
+
+/// A journey of the run: its test, weight and data (with the file as
+/// written).
+struct Picked<'a> {
+    test: &'a Planned,
+    weight: u32,
+    data: Option<(Arc<Data>, String)>,
+}
+
+/// `profile`'s journeys in `plan`, their data read; what is missing is a
+/// problem.
+fn pick_journeys<'a>(
+    plan: &'a Plan,
+    profile: &Profile,
+    problems: &mut Vec<Problem>,
+) -> Vec<Picked<'a>> {
+    let seed = super::seed(&plan.run.run_id);
+    let mut picked = Vec::new();
+    for (index, journey) in profile.journeys.iter().enumerate() {
+        let Some(file) = plan
+            .scenarios
+            .iter()
+            .position(|s| same_file(&s.path, &journey.file))
+        else {
+            // A file that is not there is a problem already.
+            continue;
+        };
+        let scenario = &plan.scenarios[file];
+        let found = match &journey.pick {
+            TestPick::Name(name) => scenario.tests.iter().find(|t| &t.name == name),
+            TestPick::Line(line) => scenario
+                .tests
+                .iter()
+                .find(|t| (t.span.line..=t.end_line).contains(line)),
+        };
+        let Some(found) = found else {
+            let names: Vec<&str> = scenario.tests.iter().map(|t| t.name.as_str()).collect();
+            let hint = match &journey.pick {
+                TestPick::Name(name) => {
+                    let close = protocol::suggest::similar(name, names.iter().copied(), 3);
+                    if close.is_empty() {
+                        format!("its tests are {}", quoted(&names))
+                    } else {
+                        format!("did you mean {}?", quoted(&close))
+                    }
+                }
+                TestPick::Line(_) => format!(
+                    "its tests start at lines {}",
+                    scenario
+                        .tests
+                        .iter()
+                        .map(|t| t.span.line.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            };
+            let what = match &journey.pick {
+                TestPick::Name(name) => format!("no test named \"{name}\""),
+                TestPick::Line(line) => format!("line {line} is not in a test"),
+            };
+            problems.push(problem(
+                &journey.at,
+                format!("test = \"{}\": {what} in {}", journey.test, scenario.name),
+                hint,
+            ));
+            continue;
+        };
+        let Some(test) = plan
+            .tests
+            .iter()
+            .find(|t| t.file == file && t.line == found.span.line)
+        else {
+            continue;
+        };
+        if let Some(why) = test.skipped() {
+            problems.push(problem(
+                &journey.at,
+                format!(
+                    "test = \"{}\" is skipped on backend {}: {why}",
+                    journey.test, plan.backend.name
+                ),
+                "a journey runs on the profile's backend; drop @skip or its @backend",
+            ));
+            continue;
+        }
+        let data = match &journey.data {
+            None => None,
+            Some(spec) => match Data::load(spec, seed ^ u64::try_from(index).unwrap_or(0)) {
+                Ok(data) => Some((Arc::new(data), spec.written.clone())),
+                Err(e) => {
+                    problems.push(problem(
+                        &spec.at,
+                        e,
+                        "data is a CSV file with a header line, or a JSON array of objects",
+                    ));
+                    continue;
+                }
+            },
+        };
+        picked.push(Picked {
+            test,
+            weight: journey.weight,
+            data,
+        });
+    }
+    picked
+}
+
+/// The columns every journey of file `file` has in its data, and their
+/// files; `None` when one of them has no data.
+fn shared_columns(picked: &[Picked<'_>], file: usize) -> (Option<Vec<String>>, String) {
+    let mut columns: Option<Vec<String>> = None;
+    let mut files: Vec<&str> = Vec::new();
+    for p in picked.iter().filter(|p| p.test.file == file) {
+        let Some((data, written)) = &p.data else {
+            return (None, String::new());
+        };
+        if !files.contains(&written.as_str()) {
+            files.push(written);
+        }
+        columns = Some(match columns {
+            None => data.columns.clone(),
+            Some(c) => c.into_iter().filter(|c| data.columns.contains(c)).collect(),
+        });
+    }
+    (columns, files.join(" and "))
+}
+
+/// `steps` with a bare `think` after each navigation and action that is
+/// not followed by one.
+fn think_between(steps: Vec<Step>) -> Vec<Step> {
+    let mut out: Vec<Step> = Vec::with_capacity(steps.len() * 2);
+    let mut steps = steps.into_iter().peekable();
+    while let Some(step) = steps.next() {
+        let pause =
+            step.kind == Kind::Action && steps.peek().is_none_or(|next| next.kind != Kind::Think);
+        let at = step.at.clone();
+        out.push(step);
+        if pause {
+            out.push(Step {
+                at,
+                text: "think (think_between_steps)".into(),
+                how: How::Fixed(Call::Think(None)),
+                kind: Kind::Think,
+            });
+        }
+    }
+    out
+}
+
+/// Whether `a` and `b` are the same file.
+fn same_file(a: &Path, b: &Path) -> bool {
+    a == b
+        || matches!(
+            (a.canonicalize(), b.canonicalize()),
+            (Ok(a), Ok(b)) if a == b
+        )
+}
+
+/// `"a", "b"`.
+fn quoted(names: &[&str]) -> String {
+    names
+        .iter()
+        .map(|n| format!("\"{n}\""))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// A problem of the profile at `at`.
+fn problem(at: &Span, message: impl Into<String>, hint: impl Into<String>) -> Problem {
+    Problem {
+        span: at.clone(),
+        info: ErrorInfo::new(ErrorKind::BadArgs, message).hint(Hint::text(hint.into())),
     }
 }
 
@@ -327,13 +730,18 @@ impl Checker<'_> {
         step: &Prepared,
         saved: &std::collections::BTreeSet<String>,
         hook: bool,
+        rows: Rows<'_>,
         problems: &mut Vec<Problem>,
     ) -> Option<Step> {
         let problem = |info: ErrorInfo| Problem {
             span: step.at.clone(),
             info,
         };
-        let checking = Resolver::checking(&step.vars, &self.plan.run, saved);
+        let checking = Resolver::checking(&step.vars, &self.plan.run, saved).in_load(LoadVars {
+            vu: "vu",
+            iteration: "iteration",
+            rows,
+        });
         let words = match expand(step, &checking) {
             Ok(words) => words,
             Err(info) => {
@@ -363,10 +771,19 @@ impl Checker<'_> {
             },
             Err(_) => How::Each(step.clone()),
         };
+        let kind = match &cli.command {
+            Some(Command::Think(_)) => Kind::Think,
+            Some(
+                Command::Goto(_) | Command::Back(_) | Command::Forward(_) | Command::Reload(_),
+            ) => Kind::Action,
+            Some(command) if matches!(crate::action(command), Ok(Some(_))) => Kind::Action,
+            _ => Kind::Other,
+        };
         Some(Step {
             at: step.at.to_string(),
             text: step.text.clone(),
             how,
+            kind,
         })
     }
 
@@ -416,15 +833,18 @@ pub(super) fn expand(step: &Prepared, vars: &dyn Resolve) -> Result<Vec<String>,
         })
 }
 
-/// The variables that are the same in every iteration: `${test.id}` and
-/// `${saved.…}` are not.
+/// The variables that are the same in every iteration: `${test.id}`,
+/// `${saved.…}`, `${vu.id}`, `${iteration.id}` and `${row.…}` are not.
 struct Fixed<'a>(Resolver<'a>);
 
 impl Resolve for Fixed<'_> {
     fn resolve(&self, var: &Var) -> Result<String, Unresolved> {
         match var {
             Var::Path(path)
-                if matches!(path.first().map(String::as_str), Some("test" | "saved")) =>
+                if matches!(
+                    path.first().map(String::as_str),
+                    Some("test" | "saved" | "vu" | "iteration" | "row")
+                ) =>
             {
                 Err(Unresolved::new("changes with each iteration"))
             }

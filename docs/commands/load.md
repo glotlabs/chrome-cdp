@@ -4,25 +4,26 @@
 Run many users through scenario tests at once, in real browsers, against a real backend
 
 ```text
-chrome-cdp load [OPTIONS] <PATH>...
+chrome-cdp load [OPTIONS] <PROFILE|PATH>...
 ```
 
 Arguments:
 
-- `<PATH>`: Scenario files, or FILE:LINE for the test at that line: the tests they hold (with --grep and --tags) are the users' journeys
+- `<PROFILE|PATH>`: A load profile: its name in e2e/load (shop for e2e/load/shop.toml) or a .toml file. Or, for a run without one, scenario files, or FILE:LINE for the test at that line: the tests they hold (with --grep and --tags) are the users' journeys
 
 Options:
 
-- `--grep <REGEX>`: Only the tests whose `file > name` matches this regular expression
-- `--tags <TAGS>`: Only tests with one of these tags; `!tag` leaves a tag out, e.g. smoke,!slow
-- `--backend <NAME>`: The real backend of [e2e.backends.NAME] to load, e.g. staging. Default: the config's default_backend (which must be real)
-- `--users <N>`: How many users run at once, e.g. 50; each runs the journeys over and over (default `10`)
-- `--duration <TIME>`: How long users keep starting iterations, e.g. 5m; the ones running then finish (default `1m`)
-- `--iterations <N>`: Stop each user after this many iterations, e.g. 5 (the run still ends at --duration)
-- `--ramp-up <TIME>`: Start the users evenly over this long instead of at once, e.g. 1m (default `0s`)
+- `--plan`: Print what the run would do (its stages, the users it is expected to reach, the Chromes it would start), and start nothing
+- `--grep <REGEX>`: Only the tests whose `file > name` matches this regular expression (a run without a profile)
+- `--tags <TAGS>`: Only tests with one of these tags; `!tag` leaves a tag out, e.g. smoke,!slow (a run without a profile)
+- `--backend <NAME>`: The real backend of [e2e.backends.NAME] to load, e.g. staging. Default: the profile's backend, else the config's default_backend (which must be real)
+- `--users <N>`: How many users run at once, e.g. 50; each runs the journeys over and over. A run without a profile; default 10
+- `--duration <TIME>`: How long users keep starting iterations, e.g. 5m; the ones running then finish. A run without a profile; default 1m
+- `--iterations <N>`: Stop each user after this many iterations, e.g. 5 (the run still ends at --duration). A run without a profile
+- `--ramp-up <TIME>`: Start the users evenly over this long instead of at once, e.g. 1m. A run without a profile
 - `--browsers <N>`: How many Chromes the users share, e.g. 4. Default: enough for --users-per-browser each
 - `--users-per-browser <M>`: The most users in one Chrome, each in a browser context of its own, e.g. 10 (default `10`)
-- `--think <TIME>`: What a `think` step without a time waits, e.g. 3s or 2s..8s (default `2s..8s`)
+- `--think <TIME>`: What a `think` step without a time waits, e.g. 3s, 2s..8s or exp(4s). A run without a profile; default 2s..8s
 - `--keep-failures <N>`: Keep the page, console and requests of the first N failed iterations, e.g. 5; later failures are only counted (default `20`)
 - `--raw`: Write every step's start, end and result to steps.jsonl in the run's folder
 - `--allow-writes`: Run journeys not marked @safe on a protected backend too; `http` writes are then allowed in their steps

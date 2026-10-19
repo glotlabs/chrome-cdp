@@ -233,7 +233,7 @@ fn update(
 
 /// A scenario file's key: its path relative to the project `root`, with
 /// `/` between folders, so a file cached on one OS reads on another.
-pub(super) fn key(root: &Path, path: &Path) -> String {
+pub(crate) fn key(root: &Path, path: &Path) -> String {
     let Ok(relative) = path.strip_prefix(root) else {
         return path.display().to_string();
     };

@@ -540,7 +540,7 @@ fn the_load_section_is_read() {
     let c = parse(
         "[e2e]\n[load]\nblock = [\"third-party\", \"*://*:*/*.woff2\"]\n\
          allow_hosts = [\"cdn.example.com\", \"*.stripe.com\"]\n\
-         cache = \"returning\"\nrenderer_memory = \"512MB\"\n",
+         cache = \"returning\"\nrenderer_memory = \"512MB\"\ngrace = \"10s\"\n",
     );
     assert_eq!(
         c.load.block,
@@ -549,6 +549,12 @@ fn the_load_section_is_read() {
     assert_eq!(c.load.allow_hosts, ["cdn.example.com", "*.stripe.com"]);
     assert_eq!(c.load.cache, Cache::Returning);
     assert_eq!(c.load.renderer_memory, Some(512 * 1024 * 1024));
+    assert_eq!(c.load.grace(), std::time::Duration::from_secs(10));
+    assert_eq!(parse("[e2e]\n").load.grace(), super::GRACE);
+    assert_eq!(
+        parse("[e2e]\n[load]\ngrace = \"0s\"\n").load.grace(),
+        std::time::Duration::ZERO
+    );
 }
 
 #[test]
@@ -566,6 +572,8 @@ fn load_section_mistakes_point_at_the_line() {
     assert!(e.contains("less than a page needs"), "{e}");
     let e = error("[e2e]\n[load]\nallow_hosts = [\"https://cdn.example.com\"]\n");
     assert!(e.contains("is not a host"), "{e}");
+    let e = error("[e2e]\n[load]\ngrace = \"soon\"\n");
+    assert!(e.contains("load.grace:"), "{e}");
     let e = error("[e2e]\n[load]\nusers = 10\n");
     assert!(e.contains("unknown field `users`"), "{e}");
 }

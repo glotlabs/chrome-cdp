@@ -7946,43 +7946,53 @@ pub(crate) struct TestArgs {
 
 #[derive(Debug, Args)]
 pub(crate) struct LoadArgs {
-    /// Scenario files, or FILE:LINE for the test at that line: the tests
+    /// A load profile: its name in e2e/load (shop for
+    /// e2e/load/shop.toml) or a .toml file. Or, for a run without one,
+    /// scenario files, or FILE:LINE for the test at that line: the tests
     /// they hold (with --grep and --tags) are the users' journeys.
-    #[arg(value_name = "PATH", required = true)]
+    #[arg(value_name = "PROFILE|PATH", required = true)]
     pub(crate) paths: Vec<String>,
 
-    /// Only the tests whose `file > name` matches this regular expression.
+    /// Print what the run would do (its stages, the users it is expected
+    /// to reach, the Chromes it would start), and start nothing.
+    #[arg(long)]
+    pub(crate) plan: bool,
+
+    /// Only the tests whose `file > name` matches this regular expression
+    /// (a run without a profile).
     #[arg(long, value_name = "REGEX")]
     pub(crate) grep: Option<String>,
 
     /// Only tests with one of these tags; `!tag` leaves a tag out, e.g.
-    /// smoke,!slow.
+    /// smoke,!slow (a run without a profile).
     #[arg(long, value_name = "TAGS", allow_hyphen_values = true)]
     pub(crate) tags: Option<String>,
 
     /// The real backend of [e2e.backends.NAME] to load, e.g. staging.
-    /// Default: the config's default_backend (which must be real).
+    /// Default: the profile's backend, else the config's default_backend
+    /// (which must be real).
     #[arg(long, value_name = "NAME")]
     pub(crate) backend: Option<String>,
 
     /// How many users run at once, e.g. 50; each runs the journeys over
-    /// and over.
-    #[arg(long, value_name = "N", default_value_t = 10, value_parser = clap::value_parser!(u32).range(1..))]
-    pub(crate) users: u32,
+    /// and over. A run without a profile; default 10.
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
+    pub(crate) users: Option<u32>,
 
     /// How long users keep starting iterations, e.g. 5m; the ones
-    /// running then finish.
-    #[arg(long, value_name = "TIME", default_value = "1m", value_parser = parse_duration)]
-    pub(crate) duration: Duration,
+    /// running then finish. A run without a profile; default 1m.
+    #[arg(long, value_name = "TIME", value_parser = parse_duration)]
+    pub(crate) duration: Option<Duration>,
 
     /// Stop each user after this many iterations, e.g. 5 (the run still
-    /// ends at --duration).
+    /// ends at --duration). A run without a profile.
     #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
     pub(crate) iterations: Option<u32>,
 
     /// Start the users evenly over this long instead of at once, e.g. 1m.
-    #[arg(long, value_name = "TIME", default_value = "0s", value_parser = crate::load::think::duration)]
-    pub(crate) ramp_up: Duration,
+    /// A run without a profile.
+    #[arg(long, value_name = "TIME", value_parser = crate::load::think::duration)]
+    pub(crate) ramp_up: Option<Duration>,
 
     /// How many Chromes the users share, e.g. 4. Default: enough for
     /// --users-per-browser each.
@@ -7994,9 +8004,10 @@ pub(crate) struct LoadArgs {
     #[arg(long, value_name = "M", default_value_t = crate::load::USERS_PER_BROWSER, value_parser = clap::value_parser!(u32).range(1..))]
     pub(crate) users_per_browser: u32,
 
-    /// What a `think` step without a time waits, e.g. 3s or 2s..8s.
-    #[arg(long, value_name = "TIME", default_value = "2s..8s", value_parser = crate::load::think::Think::parse)]
-    pub(crate) think: crate::load::think::Think,
+    /// What a `think` step without a time waits, e.g. 3s, 2s..8s or
+    /// exp(4s). A run without a profile; default 2s..8s.
+    #[arg(long, value_name = "TIME", value_parser = crate::load::think::Think::parse)]
+    pub(crate) think: Option<crate::load::think::Think>,
 
     /// Keep the page, console and requests of the first N failed
     /// iterations, e.g. 5; later failures are only counted.

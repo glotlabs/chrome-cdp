@@ -5077,7 +5077,7 @@ pub struct ThinkData {
     pub waited: bool,
 }
 
-/// `data` of `chrome-cdp load --json` (plan 23.1).
+/// `data` of `chrome-cdp load --json` (plans 23.1 and 23.3).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LoadData {
     /// The run's id: its folder's name.
@@ -5086,10 +5086,41 @@ pub struct LoadData {
     pub dir: String,
     /// The backend loaded.
     pub backend: String,
-    /// The tests the users ran, in turn.
+    /// `--plan`: what the run would do; nothing ran.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub planned: bool,
+    /// The load profile (`e2e/load/shop.toml`); absent for a run without
+    /// one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    /// `open` (`[arrivals]`: users arrive at a rate) or `closed`
+    /// (`[users]`, and a run without a profile: users loop).
+    #[serde(default)]
+    pub model: String,
+    /// The model's stages, in order.
+    #[serde(default)]
+    pub stages: Vec<LoadStage>,
+    /// The tests the users ran: by weight, or in turn without a profile.
     pub journeys: Vec<LoadJourney>,
-    /// How many users ran at once.
+    /// How many users ran at once, at most (with `--plan`: the users it
+    /// is expected to reach).
     pub users: u32,
+    /// An open model's most users at once (`max_users`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_users: Option<u32>,
+    /// An open model's arrivals, and those dropped because `max_users`
+    /// users were running (never queued).
+    #[serde(default)]
+    pub arrivals: u64,
+    #[serde(default)]
+    pub dropped: u64,
+    /// How long an iteration took, from when it was due to start (an open
+    /// model's arrival) to its end.
+    #[serde(default)]
+    pub iteration_ms: LoadTimes,
+    /// Why the run ended early, if it did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopped: Option<LoadStopped>,
     /// How many Chromes they shared.
     pub browsers: u32,
     /// Which browser the Chromes were: `chrome-headless-shell` or
@@ -5133,13 +5164,62 @@ pub struct LoadData {
 }
 
 /// A journey of a load run.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LoadJourney {
     /// `file:line` of the test.
     pub place: String,
     pub name: String,
+    /// Its weight in the profile (1 without one).
+    #[serde(default = "weight_one")]
+    pub weight: u32,
+    /// The data file its iterations take rows from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
     pub iterations: u64,
     pub failed: u64,
+    /// How long its iterations took, from when they were due.
+    #[serde(default)]
+    pub iteration_ms: LoadTimes,
+    /// With `--plan`: how long one took in an earlier run, from start to
+    /// end, if one ran.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_ms: Option<f64>,
+}
+
+fn weight_one() -> u32 {
+    1
+}
+
+/// A stage of a load run's model: users arriving a second (`arrivals`)
+/// or users at once (`users`), from `from` to `to` over its duration.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadStage {
+    /// `arrivals` (a second) or `users`.
+    pub kind: String,
+    pub from: f64,
+    pub to: f64,
+    pub duration_ms: u64,
+}
+
+/// Durations of a load run, in ms.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadTimes {
+    pub p50: f64,
+    pub p95: f64,
+    pub max: f64,
+}
+
+/// Why a load run ended early.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadStopped {
+    /// `interrupted` (Ctrl-C or SIGTERM), `max_failures` (`on_failure =
+    /// "stop-run"`), `data_exhausted` (`data_exhausted = "stop"`) or
+    /// `web_server` (the backend's web server exited).
+    pub reason: String,
+    pub message: String,
+    /// Iterations that were running and were cut short (a second Ctrl-C,
+    /// or `[load] grace` over); they are not counted.
+    pub cut_short: u64,
 }
 
 /// A load run's steps by result.

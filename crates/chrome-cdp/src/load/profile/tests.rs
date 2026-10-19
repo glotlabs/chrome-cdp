@@ -76,7 +76,7 @@ think = "3s..9s"
             duration: Duration::from_secs(120)
         }
     );
-    assert_eq!(p.model.duration(), Duration::from_secs(13 * 60));
+    assert_eq!(p.model.duration(), Duration::from_mins(13));
     // `think` after [arrivals] belongs to it in TOML; it is the profile's.
     assert_eq!(p.think.to_string(), "3s..9s");
     assert_eq!(p.on_failure, OnFailure::Continue);
@@ -195,10 +195,10 @@ fn a_model_is_needed_and_keys_are_known() {
     );
     let all = problems("[users]\ncount = 5\nduration = \"1m\"\n");
     assert!(all[0].contains("the profile has no journeys"), "{all:?}");
-    let all = problems(&format!(
+    let all = problems(
         "[[journeys]]\ntest = \"e2e/a.cdp:x\"\ndata_order = \"random\"\n\
-         [users]\ncount = 5\nduration = \"1m\"\n"
-    ));
+         [users]\ncount = 5\nduration = \"1m\"\n",
+    );
     assert!(all[0].contains("which it has not"), "{all:?}");
 }
 

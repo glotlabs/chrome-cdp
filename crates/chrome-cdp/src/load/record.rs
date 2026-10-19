@@ -2,7 +2,9 @@
 //! by result, every step's start, end and result in `steps.jsonl` with
 //! `--raw` (23.4 aggregates them), and the page, console and requests of
 //! the first `--keep-failures` failed iterations, as `test` keeps a
-//! failed test's.
+//! failed test's. Plan 23.3 adds each iteration's time from when it was
+//! due to start (`iterations.jsonl` with `--raw`), which an open model's
+//! latency counts from.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -23,6 +25,8 @@ use crate::test::artifacts;
 
 /// `steps.jsonl`'s name in the run's folder.
 pub(super) const STEPS: &str = "steps.jsonl";
+/// `iterations.jsonl`'s name in the run's folder.
+pub(super) const ITERATIONS: &str = "iterations.jsonl";
 /// The kept failures' folder in the run's folder.
 pub(super) const FAILURES: &str = "failures";
 
@@ -62,6 +66,45 @@ pub(super) struct StepLine<'a> {
     pub(super) error: Option<&'a str>,
 }
 
+/// One line of `iterations.jsonl`.
+#[derive(Debug, Serialize)]
+pub(super) struct IterationLine<'a> {
+    pub(super) vu: u32,
+    pub(super) iteration: u64,
+    /// The journey's `file:line`.
+    pub(super) journey: &'a str,
+    /// When it was due to start, when it started and when it ended, in ms
+    /// since the run started. Under `[arrivals]` an iteration is due when
+    /// its user arrives; its latency counts from then.
+    pub(super) due_ms: f64,
+    pub(super) start_ms: f64,
+    pub(super) end_ms: f64,
+    /// `ok` or `failed`.
+    pub(super) result: &'static str,
+}
+
+/// An iteration as the counts take it.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Ended {
+    pub(super) journey: usize,
+    pub(super) failed: bool,
+    /// When it was due, started and ended.
+    pub(super) due: Instant,
+    pub(super) start: Instant,
+    pub(super) end: Instant,
+}
+
+/// A journey's counts.
+#[derive(Debug, Clone, Default)]
+pub(super) struct JourneyTally {
+    pub(super) iterations: u64,
+    pub(super) failed: u64,
+    /// Each iteration's time from when it was due, in ms.
+    pub(super) latencies: Vec<f64>,
+    /// The time its iterations ran, from start to end, in all.
+    pub(super) ran: std::time::Duration,
+}
+
 /// The run's counts.
 #[derive(Debug, Default)]
 pub(super) struct Tally {
@@ -69,8 +112,7 @@ pub(super) struct Tally {
     pub(super) failed: u64,
     pub(super) steps: LoadSteps,
     pub(super) errors: BTreeMap<String, u64>,
-    /// Per journey: iterations and failed ones.
-    pub(super) journeys: Vec<(u64, u64)>,
+    pub(super) journeys: Vec<JourneyTally>,
     /// Browser contexts made for the users, and how long making them took
     /// in all.
     pub(super) contexts: u64,
@@ -84,6 +126,7 @@ pub(super) struct Records {
     pub(super) started: Instant,
     raw: Option<Mutex<BufWriter<File>>>,
     pub(super) raw_path: Option<PathBuf>,
+    raw_iterations: Option<Mutex<BufWriter<File>>>,
     tally: Mutex<Tally>,
     /// Failed iterations so far.
     failures: AtomicU64,
@@ -97,17 +140,19 @@ impl Records {
     pub(super) fn new(dir: &Path, journeys: usize, raw: bool, keep: u32) -> std::io::Result<Self> {
         std::fs::create_dir_all(dir)?;
         let raw_path = raw.then(|| dir.join(STEPS));
-        let raw = raw_path
-            .as_deref()
-            .map(File::create)
-            .transpose()?
-            .map(|f| Mutex::new(BufWriter::new(f)));
+        let iterations_path = raw_path.as_ref().map(|_| dir.join(ITERATIONS));
+        let create = |path: Option<&Path>| {
+            path.map(File::create)
+                .transpose()
+                .map(|f| f.map(|f| Mutex::new(BufWriter::new(f))))
+        };
         Ok(Self {
             started: Instant::now(),
-            raw,
+            raw: create(raw_path.as_deref())?,
             raw_path,
+            raw_iterations: create(iterations_path.as_deref())?,
             tally: Mutex::new(Tally {
-                journeys: vec![(0, 0); journeys],
+                journeys: vec![JourneyTally::default(); journeys],
                 ..Tally::default()
             }),
             failures: AtomicU64::new(0),
@@ -153,15 +198,38 @@ impl Records {
         }
     }
 
-    /// Counts an iteration of journey `journey`.
-    pub(super) fn iteration(&self, journey: usize, failed: bool) {
-        let mut tally = self.tally();
-        tally.iterations += 1;
-        tally.failed += u64::from(failed);
-        if let Some(counts) = tally.journeys.get_mut(journey) {
-            counts.0 += 1;
-            counts.1 += u64::from(failed);
+    /// Counts an iteration, and writes its line with `--raw`; how many
+    /// iterations failed so far.
+    pub(super) fn iteration(&self, ended: &Ended, vu: u32, iteration: u64, place: &str) -> u64 {
+        let failed = {
+            let mut tally = self.tally();
+            tally.iterations += 1;
+            tally.failed += u64::from(ended.failed);
+            if let Some(counts) = tally.journeys.get_mut(ended.journey) {
+                counts.iterations += 1;
+                counts.failed += u64::from(ended.failed);
+                let latency = ended.end.saturating_duration_since(ended.due);
+                counts.latencies.push(latency.as_secs_f64() * 1000.0);
+                counts.ran += ended.end.saturating_duration_since(ended.start);
+            }
+            tally.failed
+        };
+        if let Some(raw) = &self.raw_iterations {
+            let line = IterationLine {
+                vu,
+                iteration,
+                journey: place,
+                due_ms: self.since(ended.due),
+                start_ms: self.since(ended.start),
+                end_ms: self.since(ended.end),
+                result: if ended.failed { "failed" } else { "ok" },
+            };
+            if let Ok(text) = serde_json::to_string(&line) {
+                let mut raw = raw.lock().unwrap_or_else(PoisonError::into_inner);
+                let _ = writeln!(raw, "{text}");
+            }
         }
+        failed
     }
 
     /// Counts a browser context made for a user, in `took`.
@@ -197,9 +265,9 @@ impl Records {
         }
     }
 
-    /// Writes what `steps.jsonl` holds so far.
+    /// Writes what `steps.jsonl` and `iterations.jsonl` hold so far.
     pub(super) fn flush(&self) {
-        if let Some(raw) = &self.raw {
+        for raw in [&self.raw, &self.raw_iterations].into_iter().flatten() {
             let _ = raw.lock().unwrap_or_else(PoisonError::into_inner).flush();
         }
     }

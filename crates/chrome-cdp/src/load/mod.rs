@@ -1,19 +1,25 @@
-//! `chrome-cdp load` (plan 23, milestone 23.1): many users at once,
-//! each a real browser running the app's own JavaScript, through the
-//! project's scenario tests against a real backend.
+//! `chrome-cdp load` (plan 23): many users at once, each a real browser
+//! running the app's own JavaScript, through the project's scenario tests
+//! against a real backend.
 //!
-//! The run works out its plan as `test` does ([`plan`]: the config, the
+//! A run is described by a [`profile`] (`e2e/load/<name>.toml`: the
+//! journeys by weight with their [`data`], an open or closed [`model`],
+//! think times and what a failure does), or by flags for a run without
+//! one. It works out its plan as `test` does ([`plan`]: the config, the
 //! backend, the scenarios and their variables), checks every step as a
-//! load step before any browser starts, and refuses the mock backend.
-//! Then it drives its Chromes in-process, without the daemon: a [`pool`]
-//! of `--browsers` Chromes, each an [`engine::Engine`] of its own over
-//! one CDP connection, and one tokio task per virtual user ([`user`]) on
-//! a multi-threaded runtime sized to the CPUs. Each user's iterations run
-//! in fresh browser contexts of its Chrome, their steps call the engine
-//! directly ([`step`]), leanly, and every step's timing and result goes
-//! to the [`record`]s.
+//! load step before any browser starts, and refuses the mock backend;
+//! `--plan` stops there and says what would run. Then it drives its
+//! Chromes in-process, without the daemon: a [`pool`] of Chromes, each an
+//! [`engine::Engine`] of its own over one CDP connection, and one tokio
+//! task per virtual user ([`user`]) on a multi-threaded runtime sized to
+//! the CPUs. Each user's iterations run in fresh browser contexts of its
+//! Chrome, their steps call the engine directly ([`step`]), leanly, and
+//! every step's timing and result goes to the [`record`]s. Ctrl-C stops
+//! the run, giving the running iterations `[load] grace` ([`halt`]).
 
 mod data;
+mod halt;
+mod lengths;
 mod model;
 mod plan;
 mod pool;
@@ -25,19 +31,22 @@ mod user;
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use engine::OpenRequest;
-use protocol::schema::{LoadData, LoadJourney};
+use protocol::schema::{LoadData, LoadJourney, LoadStage, LoadStopped, LoadTimes};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
-use tokio::time::Instant;
+use tokio::task::JoinSet;
 
 use crate::cli::{DEFAULT_TIMEOUT, GlobalArgs, LoadArgs, LoadBrowser};
 use crate::output;
+use halt::Halt;
+use lengths::Lengths;
 use plan::LoadPlan;
 use pool::Pool;
+use profile::{Arrivals, Model};
 use record::Records;
 use user::Shared;
 
@@ -67,10 +76,30 @@ const STACK_SIZE: usize = 8 * 1024 * 1024;
 /// Where load runs keep their files, in the artifacts directory.
 const RUNS_DIR: &str = "load";
 
+/// An open model starts the Chromes for this much more than the users it
+/// expects at once, the rest when needed.
+const EXPECTED_MARGIN: f64 = 1.25;
+
 pub(crate) fn run(args: &LoadArgs, global: &GlobalArgs) -> u8 {
     let mode = global.mode();
     let result = load(args, global, mode).and_then(|data| {
         let text = text(&data);
+        if data.planned {
+            return Ok(Output::typed(&data, text));
+        }
+        if let Some(stopped) = data.stopped.as_ref().filter(|s| s.reason == "max_failures") {
+            return Err(ErrorInfo::new(
+                ErrorKind::ExpectFailed,
+                format!("the run stopped: {}", stopped.message),
+            )
+            .note("errors", errors_line(&data.errors))
+            .hint(Hint::text(match &data.failures_dir {
+                Some(dir) => format!("the site looks down; see what the users saw in {dir}"),
+                None => "the site looks down; run a journey as a test: chrome-cdp test <path>"
+                    .to_owned(),
+            }))
+            .details(serde_json::to_value(&data).unwrap_or_default()));
+        }
         if data.iterations > 0 && data.failed == data.iterations {
             return Err(ErrorInfo::new(
                 ErrorKind::ExpectFailed,
@@ -91,6 +120,74 @@ pub(crate) fn run(args: &LoadArgs, global: &GlobalArgs) -> u8 {
     output::print(mode, result)
 }
 
+/// How a run uses its Chromes.
+#[derive(Debug, Clone, Copy)]
+struct Shape {
+    /// The most users at once: a closed model's peak, an open model's
+    /// `max_users`.
+    capacity: u32,
+    /// The Chromes, and the most users in each.
+    browsers: u32,
+    per_browser: u32,
+    /// How many Chromes start before the users; the others start when
+    /// first needed.
+    eager: u32,
+    /// The users an open model is expected to reach at once, from the
+    /// journeys' lengths in an earlier run; a closed model's peak.
+    expected: Option<u32>,
+}
+
+impl Shape {
+    fn of(plan: &LoadPlan, args: &LoadArgs, lengths: &Lengths) -> Result<Self, ErrorInfo> {
+        let (capacity, expected) = match &plan.model {
+            Model::Closed(users) => (users.peak(), Some(users.peak())),
+            Model::Open(arrivals) => (
+                arrivals.max_users,
+                mean_length(plan, lengths).map(|mean| model::expected_users(arrivals, mean)),
+            ),
+        };
+        let browsers = browsers(capacity, args)?;
+        let per_browser = capacity.div_ceil(browsers);
+        let eager = match (&plan.model, expected) {
+            (Model::Open(_), Some(users)) => {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let users = (f64::from(users) * EXPECTED_MARGIN).ceil() as u32;
+                users.div_ceil(per_browser).clamp(1, browsers)
+            }
+            _ => browsers,
+        };
+        Ok(Self {
+            capacity,
+            browsers,
+            per_browser,
+            eager,
+            expected,
+        })
+    }
+}
+
+/// The mean length of an iteration, by the journeys' weights, from an
+/// earlier run on the same backend; `None` when a journey has none.
+fn mean_length(plan: &LoadPlan, lengths: &Lengths) -> Option<Duration> {
+    let mut total = 0.0;
+    let mut weights = 0.0;
+    for journey in &plan.journeys {
+        let length = lengths.get(&plan.plan.backend.name, &journey_key(plan, journey))?;
+        total += length.mean_ms * f64::from(journey.weight);
+        weights += f64::from(journey.weight);
+    }
+    (weights > 0.0).then(|| Duration::from_secs_f64(total / weights / 1000.0))
+}
+
+/// A journey's key in the lengths file.
+fn journey_key(plan: &LoadPlan, journey: &plan::Journey) -> String {
+    let file = crate::test::durations::key(
+        &plan.plan.config.root,
+        &plan.plan.scenarios[journey.file].path,
+    );
+    lengths::key(&file, &journey.name)
+}
+
 /// The run, from its plan to its counts.
 fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, ErrorInfo> {
     let plan = Arc::new(LoadPlan::make(args, global)?);
@@ -103,12 +200,14 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
     if linted.errors > 0 {
         return Err(crate::lint::failed(&linted, "lint"));
     }
-    let browsers = browsers(args)?;
-    let crowded = args.users.div_ceil(browsers);
-    if crowded > CROWDED_BROWSER && mode == Mode::Text {
+    let runs = plan.plan.config.artifacts.join(RUNS_DIR);
+    let mut lengths = Lengths::read(&runs);
+    let shape = Shape::of(&plan, args, &lengths)?;
+    if shape.per_browser > CROWDED_BROWSER && mode == Mode::Text {
         output::stderr(&format!(
-            "warning: {crowded} users in one Chrome slow each other down past {CROWDED_BROWSER}; \
-             give it more Chromes (--users-per-browser {USERS_PER_BROWSER})\n"
+            "warning: {} users in one Chrome slow each other down past {CROWDED_BROWSER}; \
+             give it more Chromes (--users-per-browser {USERS_PER_BROWSER})\n",
+            shape.per_browser
         ));
     }
     let timeout = global.timeout_or(DEFAULT_TIMEOUT).max(DEFAULT_TIMEOUT);
@@ -119,6 +218,65 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
         }
     }
     let kind = browser_kind(&chrome);
+    let run_id = plan.plan.run.run_id.clone();
+    let dir = runs.join(&run_id);
+    let mut data = LoadData {
+        run: run_id.clone(),
+        dir: dir.display().to_string(),
+        backend: plan.plan.backend.name.clone(),
+        planned: args.plan,
+        profile: plan.profile.clone(),
+        model: plan.model.name().to_owned(),
+        stages: stages(&plan.model),
+        journeys: plan
+            .journeys
+            .iter()
+            .map(|j| LoadJourney {
+                place: j.place.clone(),
+                name: j.name.clone(),
+                weight: j.weight,
+                data: j.data.as_ref().map(|d| d.file.clone()),
+                iterations: 0,
+                failed: 0,
+                iteration_ms: LoadTimes::default(),
+                previous_ms: args
+                    .plan
+                    .then(|| lengths.get(&plan.plan.backend.name, &journey_key(&plan, j)))
+                    .flatten()
+                    .map(|l| (l.mean_ms * 10.0).round() / 10.0),
+            })
+            .collect(),
+        users: shape.expected.unwrap_or(shape.capacity),
+        max_users: match &plan.model {
+            Model::Open(a) => Some(a.max_users),
+            Model::Closed(_) => None,
+        },
+        arrivals: 0,
+        dropped: 0,
+        iteration_ms: LoadTimes::default(),
+        stopped: None,
+        browsers: shape.browsers,
+        browser: kind.to_owned(),
+        users_per_browser: shape.per_browser,
+        duration_ms: 0,
+        iterations: 0,
+        failed: 0,
+        steps: protocol::schema::LoadSteps::default(),
+        errors: BTreeMap::new(),
+        browser_crashes: 0,
+        cache: plan.plan.config.load.cache.as_str().to_owned(),
+        contexts: 0,
+        context_setup_ms: 0.0,
+        failures_kept: 0,
+        failures_dir: None,
+        raw: None,
+    };
+    if args.plan {
+        if let Model::Open(arrivals) = &plan.model {
+            data.arrivals = model::total_arrivals(arrivals);
+        }
+        return Ok(data);
+    }
     let open = OpenRequest {
         chrome: Some(chrome),
         headed: Some(args.headed),
@@ -128,8 +286,6 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
         timeout_ms: millis(timeout),
         ..OpenRequest::default()
     };
-    let run_id = plan.plan.run.run_id.clone();
-    let dir = plan.plan.config.artifacts.join(RUNS_DIR).join(&run_id);
     let records =
         Records::new(&dir, plan.journeys.len(), args.raw, args.keep_failures).map_err(|e| {
             ErrorInfo::new(
@@ -138,67 +294,133 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
             )
         })?;
     if mode == Mode::Text {
-        output::stdout(&starting(&plan, args, browsers, kind));
+        output::stdout(&starting(&plan, args, shape, kind));
     }
     let stop = Arc::new(AtomicBool::new(false));
     let servers = std::sync::OnceLock::new();
     let servers_started = AtomicBool::new(false);
     let test_plan = &plan.plan;
+    // `watch`: Ctrl-C is the run's to take; the web servers stay up until
+    // its report is written.
     let ran = crate::test::with_servers(
         test_plan,
         &servers,
         &stop,
         mode,
         &servers_started,
-        false,
+        true,
         || {
             crate::test::with_backend(test_plan, mode, || {
                 drive(Drive {
                     plan: plan.clone(),
                     args,
-                    browsers,
+                    shape,
                     open: open.clone(),
                     records,
                     stop: stop.clone(),
+                    mode,
                 })
             })
         },
     );
-    let (records, pool_restarts, took) = ran??;
+    let ran = ran??;
+    let records = &ran.records;
     records.flush();
     let counts = records.counts();
-    Ok(LoadData {
-        run: run_id,
-        dir: dir.display().to_string(),
-        backend: plan.plan.backend.name.clone(),
-        journeys: plan
-            .journeys
+    let mut all = Vec::new();
+    for ((journey, tally), out) in plan
+        .journeys
+        .iter()
+        .zip(&counts.journeys)
+        .zip(&mut data.journeys)
+    {
+        out.iterations = tally.iterations;
+        out.failed = tally.failed;
+        out.iteration_ms = times(&mut tally.latencies.clone());
+        all.extend_from_slice(&tally.latencies);
+        if tally.iterations > 0 {
+            #[allow(clippy::cast_precision_loss)]
+            let mean_ms = tally.ran.as_secs_f64() * 1000.0 / tally.iterations as f64;
+            lengths.set(
+                &plan.plan.backend.name,
+                &journey_key(&plan, journey),
+                lengths::Length {
+                    mean_ms: (mean_ms * 10.0).round() / 10.0,
+                    iterations: tally.iterations,
+                    run: run_id.clone(),
+                },
+            );
+        }
+    }
+    lengths.write();
+    data.users = match &plan.model {
+        Model::Closed(users) => users.peak(),
+        Model::Open(_) => ran.peak,
+    };
+    data.arrivals = ran.arrivals;
+    data.dropped = ran.dropped;
+    data.iteration_ms = times(&mut all);
+    data.stopped = ran.stopped;
+    data.duration_ms = millis(ran.took);
+    data.iterations = counts.iterations;
+    data.failed = counts.failed;
+    data.steps = counts.steps;
+    data.errors = counts.errors;
+    data.browser_crashes = ran.restarts;
+    data.contexts = counts.contexts;
+    data.context_setup_ms = mean_ms(counts.context_setup, counts.contexts);
+    data.failures_kept = records.kept();
+    data.failures_dir = (records.kept() > 0).then(|| records.failures_dir.display().to_string());
+    data.raw = records.raw_path.as_ref().map(|p| p.display().to_string());
+    Ok(data)
+}
+
+/// The model's stages, for the data.
+fn stages(model: &Model) -> Vec<LoadStage> {
+    match model {
+        Model::Open(a) => a
+            .stages
             .iter()
-            .zip(&counts.journeys)
-            .map(|(j, (iterations, failed))| LoadJourney {
-                place: j.place.clone(),
-                name: j.name.clone(),
-                iterations: *iterations,
-                failed: *failed,
+            .map(|s| LoadStage {
+                kind: "arrivals".into(),
+                from: s.from,
+                to: s.to,
+                duration_ms: millis(s.duration),
             })
             .collect(),
-        users: args.users,
-        browsers,
-        browser: kind.to_owned(),
-        users_per_browser: args.users.div_ceil(browsers),
-        duration_ms: millis(took),
-        iterations: counts.iterations,
-        failed: counts.failed,
-        steps: counts.steps,
-        errors: counts.errors,
-        browser_crashes: pool_restarts,
-        cache: plan.plan.config.load.cache.as_str().to_owned(),
-        contexts: counts.contexts,
-        context_setup_ms: mean_ms(counts.context_setup, counts.contexts),
-        failures_kept: records.kept(),
-        failures_dir: (records.kept() > 0).then(|| records.failures_dir.display().to_string()),
-        raw: records.raw_path.as_ref().map(|p| p.display().to_string()),
-    })
+        Model::Closed(u) => u
+            .stages
+            .iter()
+            .map(|s| LoadStage {
+                kind: "users".into(),
+                from: f64::from(s.from),
+                to: f64::from(s.to),
+                duration_ms: millis(s.duration),
+            })
+            .collect(),
+    }
+}
+
+/// The p50, p95 and max of `ms`.
+fn times(ms: &mut [f64]) -> LoadTimes {
+    if ms.is_empty() {
+        return LoadTimes::default();
+    }
+    ms.sort_by(f64::total_cmp);
+    let at = |p: f64| {
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            clippy::cast_precision_loss
+        )]
+        let rank = ((p * ms.len() as f64).ceil() as usize).clamp(1, ms.len());
+        (ms[rank - 1] * 10.0).round() / 10.0
+    };
+    LoadTimes {
+        p50: at(0.5),
+        p95: at(0.95),
+        max: at(1.0),
+    }
 }
 
 /// The Chrome the users run (`--browser`): chrome-headless-shell unless
@@ -297,25 +519,26 @@ fn pick(
     })
 }
 
-/// How many Chromes the run uses: `--browsers`, else enough for
-/// `--users-per-browser` each, never more than there are users.
-fn browsers(args: &LoadArgs) -> Result<u32, ErrorInfo> {
-    let needed = args.users.div_ceil(args.users_per_browser);
+/// How many Chromes the run uses for `users` at once: `--browsers`, else
+/// enough for `--users-per-browser` each, never more than there are
+/// users.
+fn browsers(users: u32, args: &LoadArgs) -> Result<u32, ErrorInfo> {
+    let users = users.max(1);
+    let needed = users.div_ceil(args.users_per_browser);
     match args.browsers {
         None => Ok(needed),
-        Some(n) if n.saturating_mul(args.users_per_browser) < args.users => Err(ErrorInfo::new(
+        Some(n) if n.saturating_mul(args.users_per_browser) < users => Err(ErrorInfo::new(
             ErrorKind::BadArgs,
             format!(
-                "--browsers {n} with --users-per-browser {} hold {} users, not {}",
+                "--browsers {n} with --users-per-browser {} hold {} users, not {users}",
                 args.users_per_browser,
                 n * args.users_per_browser,
-                args.users
             ),
         )
         .hint(Hint::text(format!(
             "use --browsers {needed}, or a larger --users-per-browser"
         )))),
-        Some(n) => Ok(n.min(args.users)),
+        Some(n) => Ok(n.min(users)),
     }
 }
 
@@ -328,28 +551,61 @@ fn browser_kind(chrome: &browser::Chrome) -> &'static str {
     }
 }
 
+/// `1 Chrome`, `2 users`.
+fn count(n: impl Into<u64>, one: &str, many: &str) -> String {
+    let n = n.into();
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
 /// What the run is about to do: `load: 50 users in 2 Chromes
 /// (chrome-headless-shell), 1 journey, 1m against backend local
-/// (http://localhost:4174)`.
-fn starting(plan: &LoadPlan, args: &LoadArgs, browsers: u32, kind: &str) -> String {
+/// (http://localhost:4174)`, or with a profile `load: e2e/load/shop.toml,
+/// open, 3 stages over 13m, at most 400 users in up to 40 Chromes …`.
+fn starting(plan: &LoadPlan, args: &LoadArgs, shape: Shape, kind: &str) -> String {
     let backend = &plan.plan.backend;
-    let mut text = format!(
-        "load: {} {} in {} {} ({kind}), {} {}, {}",
-        args.users,
-        if args.users == 1 { "user" } else { "users" },
-        browsers,
-        if browsers == 1 { "Chrome" } else { "Chromes" },
-        plan.journeys.len(),
-        if plan.journeys.len() == 1 {
-            "journey"
-        } else {
-            "journeys"
-        },
-        protocol::format::duration(args.duration)
+    let journeys = count(
+        u64::try_from(plan.journeys.len()).unwrap_or(0),
+        "journey",
+        "journeys",
     );
-    if let Some(n) = args.iterations {
-        let _ = write!(text, " (at most {n} iterations each)");
-    }
+    let mut text = match &plan.profile {
+        None => {
+            let mut text = format!(
+                "load: {} in {} ({kind}), {journeys}, {}",
+                count(shape.capacity, "user", "users"),
+                count(shape.browsers, "Chrome", "Chromes"),
+                protocol::format::duration(args.duration.unwrap_or(plan::DURATION))
+            );
+            if let Some(n) = args.iterations {
+                let _ = write!(text, " (at most {n} iterations each)");
+            }
+            text
+        }
+        Some(profile) => {
+            let stages = match &plan.model {
+                Model::Open(a) => a.stages.len(),
+                Model::Closed(u) => u.stages.len(),
+            };
+            let users = match &plan.model {
+                Model::Open(_) => format!(
+                    "at most {} in up to {}",
+                    count(shape.capacity, "user", "users"),
+                    count(shape.browsers, "Chrome", "Chromes")
+                ),
+                Model::Closed(_) => format!(
+                    "up to {} in {}",
+                    count(shape.capacity, "user", "users"),
+                    count(shape.browsers, "Chrome", "Chromes")
+                ),
+            };
+            format!(
+                "load: {profile}, {} model, {} over {}, {users} ({kind}), {journeys}",
+                plan.model.name(),
+                count(u64::try_from(stages).unwrap_or(0), "stage", "stages"),
+                protocol::format::duration(plan.model.duration()),
+            )
+        }
+    };
     let _ = write!(text, " against backend {}", backend.name);
     if let Some(url) = &backend.base_url {
         let _ = write!(text, " ({url})");
@@ -362,16 +618,29 @@ fn starting(plan: &LoadPlan, args: &LoadArgs, browsers: u32, kind: &str) -> Stri
 struct Drive<'a> {
     plan: Arc<LoadPlan>,
     args: &'a LoadArgs,
-    browsers: u32,
+    shape: Shape,
     open: OpenRequest,
     records: Records,
     stop: Arc<AtomicBool>,
+    mode: Mode,
+}
+
+/// What the users did.
+struct Ran {
+    records: Records,
+    /// Chromes started again.
+    restarts: u64,
+    /// From the first user's start to the last iteration's end.
+    took: Duration,
+    peak: u32,
+    arrivals: u64,
+    dropped: u64,
+    stopped: Option<LoadStopped>,
 }
 
 /// Runs the users on a runtime of the run's own: starts the Chromes,
 /// runs the `@before-all` hooks, the users, then the `@after-all` hooks.
-/// The records, the Chromes started again, and how long the users ran.
-fn drive(drive: Drive<'_>) -> Result<(Records, u64, Duration), ErrorInfo> {
+fn drive(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
     let threads = std::thread::available_parallelism().map_or(2, std::num::NonZero::get);
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(threads)
@@ -390,42 +659,66 @@ fn drive(drive: Drive<'_>) -> Result<(Records, u64, Duration), ErrorInfo> {
     runtime.block_on(users(drive))
 }
 
-async fn users(drive: Drive<'_>) -> Result<(Records, u64, Duration), ErrorInfo> {
+async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
     let Drive {
         plan,
         args,
-        browsers,
+        shape,
         open,
         records,
         stop,
+        mode,
     } = drive;
-    // Ctrl-C stops new iterations; the running ones finish.
-    let interrupted = stop.clone();
-    let listener = tokio::spawn(async move {
-        if tokio::signal::ctrl_c().await.is_ok() {
-            interrupted.store(true, Ordering::SeqCst);
+    let halt = Arc::new(Halt::new(stop));
+    let grace = plan.plan.config.load.grace();
+    let listener = tokio::spawn(halt.clone().listen(move |n| {
+        if mode != Mode::Text {
+            return;
         }
-    });
+        output::stderr(&if n == 1 {
+            format!(
+                "stopping: no new users; the running iterations have {} to finish \
+                 (Ctrl-C again stops them at once)\n",
+                protocol::format::duration(grace)
+            )
+        } else {
+            "stopping now\n".to_owned()
+        });
+    }));
     let name = format!("load-{}", plan.plan.run.run_id);
-    let pool = Pool::start(&name, browsers, open, &plan.blocked).await?;
+    let pool = match Pool::start(&name, shape.browsers, shape.eager, open, &plan.blocked).await {
+        Ok(pool) => pool,
+        Err(error) => {
+            listener.abort();
+            return Err(error);
+        }
+    };
     let mut records = records;
     records.start();
-    let started = records.started;
+    let browsers = pool.len();
     let shared = Arc::new(Shared {
         plan: plan.clone(),
         pool,
+        started: records.started,
         records,
-        think: args.think,
-        stop: stop.clone(),
-        ends: started + args.ramp_up + args.duration,
-        iterations: args.iterations,
+        halt: halt.clone(),
         file_saved: std::sync::OnceLock::new(),
         seed: seed(&plan.plan.run.run_id),
         cache: plan.plan.config.load.cache,
         renderer_memory: plan.plan.config.load.renderer_memory,
+        weights: plan.journeys.iter().map(|j| j.weight).collect(),
+        per_browser: shape.per_browser,
+        places: (0..browsers).map(|_| AtomicU32::new(0)).collect(),
+        parked: (0..browsers).map(|_| Mutex::new(Vec::new())).collect(),
+        active: AtomicU32::new(0),
+        peak: AtomicU32::new(0),
+        arrivals: AtomicU64::new(0),
+        dropped: AtomicU64::new(0),
     });
-    let result = run_users(shared.clone(), args, started).await;
+    let _ = args;
+    let result = run_users(shared.clone(), grace).await;
     listener.abort();
+    shared.close_parked().await;
     let Ok(shared) = Arc::try_unwrap(shared) else {
         return Err(ErrorInfo::new(
             ErrorKind::ProtocolError,
@@ -433,19 +726,28 @@ async fn users(drive: Drive<'_>) -> Result<(Records, u64, Duration), ErrorInfo> 
         ));
     };
     shared.pool.close().await;
-    let took = result?;
-    Ok((shared.records, shared.pool.restarts(), took))
+    let (took, cut_short) = result?;
+    let stopped = halt.reason().map(|(reason, message)| LoadStopped {
+        reason: reason.as_str().to_owned(),
+        message,
+        cut_short,
+    });
+    Ok(Ran {
+        restarts: shared.pool.restarts(),
+        took,
+        peak: shared.peak.load(Ordering::Relaxed),
+        arrivals: shared.arrivals.load(Ordering::Relaxed),
+        dropped: shared.dropped.load(Ordering::Relaxed),
+        stopped,
+        records: shared.records,
+    })
 }
 
-/// The hooks and the users; how long the users ran.
-async fn run_users(
-    shared: Arc<Shared>,
-    args: &LoadArgs,
-    started: Instant,
-) -> Result<Duration, ErrorInfo> {
+/// The hooks and the users; how long the users ran, and how many
+/// iterations were cut short.
+async fn run_users(shared: Arc<Shared>, grace: Duration) -> Result<(Duration, u64), ErrorInfo> {
     let files: Vec<usize> = {
         let mut files: Vec<usize> = shared.plan.journeys.iter().map(|j| j.file).collect();
-        files.dedup();
         files.sort_unstable();
         files.dedup();
         files
@@ -463,52 +765,128 @@ async fn run_users(
         .await?;
     }
     let _ = shared.file_saved.set(saved.clone());
-    let browsers = shared.pool.len();
-    let users: Vec<_> = (1..=args.users)
-        .map(|vu| {
-            let start = started + user::start_offset(args.ramp_up, vu, args.users);
-            let browser = usize::try_from(vu - 1).unwrap_or(0) % browsers;
-            tokio::spawn(user::run(shared.clone(), vu, browser, start))
-        })
-        .collect();
-    let mut panicked = None;
-    for user in users {
-        if let Err(e) = user.await
-            && e.is_panic()
-        {
-            panicked = Some(e);
+    let mut users = JoinSet::new();
+    match &shared.plan.model {
+        Model::Closed(model) => {
+            let browsers = shared.pool.len();
+            for vu in 1..=model.peak() {
+                let browser = usize::try_from(vu - 1).unwrap_or(0) % browsers;
+                users.spawn(user::closed(shared.clone(), model.clone(), vu, browser));
+            }
         }
+        Model::Open(arrivals) => arrive(&shared, arrivals, &mut users).await?,
     }
-    if let Some(e) = panicked {
-        return Err(ErrorInfo::new(
-            ErrorKind::ProtocolError,
-            format!("a load run's user stopped unexpectedly: {e}"),
-        ));
-    }
-    let took = started.elapsed();
+    let cut_short = finish(&shared, &mut users, grace).await?;
+    let took = shared.started.elapsed();
     let mut warnings = Vec::new();
-    for &file in &files {
-        let hooks = &shared.plan.hooks[file];
-        if let Err(e) = user::hook_once(
-            &shared,
-            file,
-            &hooks.after_all,
-            "after-all",
-            saved[file].clone(),
-        )
-        .await
-        {
-            warnings.push(e.message);
+    if shared.halt.cut() {
+        warnings.push("@after-all did not run: the run stopped at once".to_owned());
+    } else {
+        for &file in &files {
+            let hooks = &shared.plan.hooks[file];
+            if let Err(e) = user::hook_once(
+                &shared,
+                file,
+                &hooks.after_all,
+                "after-all",
+                saved[file].clone(),
+            )
+            .await
+            {
+                warnings.push(e.message);
+            }
         }
     }
     for warning in warnings {
         output::stderr(&format!("warning: {warning}\n"));
     }
-    Ok(took)
+    Ok((took, cut_short))
+}
+
+/// An open model's arrivals, each when due, until the stages end or the
+/// run stops: a user with a free place starts its iteration; with none
+/// (`max_users` running), the arrival is dropped and counted.
+async fn arrive(
+    shared: &Arc<Shared>,
+    arrivals: &Arrivals,
+    users: &mut JoinSet<()>,
+) -> Result<(), ErrorInfo> {
+    let mut schedule = model::Schedule::new(arrivals);
+    let mut next = schedule.next();
+    let mut vu = 0u32;
+    while let Some(at) = next {
+        let due = shared.started + at;
+        tokio::select! {
+            biased;
+            () = shared.halt.stopping() => break,
+            Some(done) = users.join_next(), if !users.is_empty() => {
+                ended(done)?;
+                continue;
+            }
+            () = tokio::time::sleep_until(due) => {}
+        }
+        next = schedule.next();
+        shared.arrivals.fetch_add(1, Ordering::Relaxed);
+        if shared.active.load(Ordering::Relaxed) >= arrivals.max_users {
+            shared.dropped.fetch_add(1, Ordering::Relaxed);
+            continue;
+        }
+        let Some(browser) = shared.take_place() else {
+            shared.dropped.fetch_add(1, Ordering::Relaxed);
+            continue;
+        };
+        let now = shared.active.fetch_add(1, Ordering::Relaxed) + 1;
+        shared.peak.fetch_max(now, Ordering::Relaxed);
+        vu += 1;
+        users.spawn(user::arrival(shared.clone(), vu, browser, due));
+    }
+    Ok(())
+}
+
+/// Waits for the users to end; once the run stops, for `grace` at most
+/// (or until a second Ctrl-C), then cuts the running iterations short.
+/// How many were.
+async fn finish(
+    shared: &Shared,
+    users: &mut JoinSet<()>,
+    grace: Duration,
+) -> Result<u64, ErrorInfo> {
+    let cut = shared.halt.cut_after(grace);
+    tokio::pin!(cut);
+    let mut result = Ok(());
+    loop {
+        tokio::select! {
+            done = users.join_next() => match done {
+                None => return result.map(|()| 0),
+                Some(done) => {
+                    if result.is_ok() {
+                        result = ended(done);
+                    }
+                }
+            },
+            () = &mut cut => {
+                let running = shared.active.load(Ordering::Relaxed);
+                users.abort_all();
+                while users.join_next().await.is_some() {}
+                return result.map(|()| u64::from(running));
+            }
+        }
+    }
+}
+
+/// A user's task's end: an error if it panicked.
+fn ended(done: Result<(), tokio::task::JoinError>) -> Result<(), ErrorInfo> {
+    match done {
+        Err(e) if e.is_panic() => Err(ErrorInfo::new(
+            ErrorKind::ProtocolError,
+            format!("a load run's user stopped unexpectedly: {e}"),
+        )),
+        _ => Ok(()),
+    }
 }
 
 /// A seed for the users' random numbers from the run's id.
-fn seed(run_id: &str) -> u64 {
+pub(super) fn seed(run_id: &str) -> u64 {
     run_id.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
         (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
     }) ^ SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| {
@@ -516,16 +894,112 @@ fn seed(run_id: &str) -> u64 {
     })
 }
 
+/// `20/s`, `0.5/s`.
+fn rate(r: f64) -> String {
+    let text = format!("{r:.3}");
+    let text = text.trim_end_matches('0').trim_end_matches('.');
+    format!("{text}/s")
+}
+
+/// A stage in words: `0..20/s for 2m`, `50 users for 5m`.
+fn stage_text(stage: &LoadStage) -> String {
+    let over = protocol::format::duration(Duration::from_millis(stage.duration_ms));
+    if stage.kind == "arrivals" {
+        if (stage.from - stage.to).abs() < f64::EPSILON {
+            format!("{} for {over}", rate(stage.from))
+        } else {
+            let to = rate(stage.to);
+            format!(
+                "{}..{to} over {over}",
+                rate(stage.from).trim_end_matches("/s")
+            )
+        }
+    } else if (stage.from - stage.to).abs() < f64::EPSILON {
+        format!("{} users for {over}", stage.from)
+    } else {
+        format!("{}..{} users over {over}", stage.from, stage.to)
+    }
+}
+
+/// What `--plan` says.
+fn plan_text(data: &LoadData) -> String {
+    let mut text = format!("load plan: {} model", data.model);
+    if let Some(profile) = &data.profile {
+        let _ = write!(text, " of {profile}");
+    }
+    let _ = writeln!(text, " against backend {}", data.backend);
+    let _ = writeln!(text, "stages:");
+    for (i, stage) in data.stages.iter().enumerate() {
+        let _ = writeln!(text, "  {}. {}", i + 1, stage_text(stage));
+    }
+    let total: u64 = data.stages.iter().map(|s| s.duration_ms).sum();
+    let total = protocol::format::duration(Duration::from_millis(total));
+    if let Some(max) = data.max_users {
+        let _ = writeln!(
+            text,
+            "  about {} arrivals over {total}, each one iteration; at most {max} users at once",
+            protocol::format::thousands(usize::try_from(data.arrivals).unwrap_or(usize::MAX))
+        );
+    } else {
+        let _ = writeln!(text, "  {total} in all; each user loops its journeys");
+    }
+    let by_weight = data.profile.is_some();
+    let _ = writeln!(
+        text,
+        "journeys{}:",
+        if by_weight {
+            " (by weight)"
+        } else {
+            " (in turn)"
+        }
+    );
+    for journey in &data.journeys {
+        let mut line = String::from("  ");
+        if by_weight {
+            let _ = write!(line, "{:>4}  ", journey.weight);
+        }
+        let _ = write!(line, "{} {}", journey.place, journey.name);
+        if let Some(file) = &journey.data {
+            let _ = write!(line, " (data {file})");
+        }
+        if let Some(ms) = journey.previous_ms {
+            let _ = write!(
+                line,
+                ", {} an iteration last time",
+                protocol::format::duration(Duration::from_secs_f64(ms / 1000.0))
+            );
+        }
+        let _ = writeln!(text, "{line}");
+    }
+    let peak = match data.max_users {
+        Some(max) if data.journeys.iter().all(|j| j.previous_ms.is_some()) => format!(
+            "about {} at once (the peak rate × an iteration's length last time), at most {max}",
+            count(data.users, "user", "users")
+        ),
+        Some(max) => format!(
+            "unknown until a run of these journeys on backend {} has its iterations' length; \
+             at most {max}",
+            data.backend
+        ),
+        None => format!("{} at once", count(data.users, "user", "users")),
+    };
+    let _ = writeln!(text, "users: {peak}");
+    let _ = write!(
+        text,
+        "Chromes: {} ({}), up to {} users each",
+        data.browsers, data.browser, data.users_per_browser
+    );
+    text
+}
+
 /// The run in a few lines.
 fn text(data: &LoadData) -> String {
+    if data.planned {
+        return plan_text(data);
+    }
     let mut text = format!(
-        "{} {} in {}: {} failed\n",
-        data.iterations,
-        if data.iterations == 1 {
-            "iteration"
-        } else {
-            "iterations"
-        },
+        "{} in {}: {} failed\n",
+        count(data.iterations, "iteration", "iterations"),
         protocol::format::duration(Duration::from_millis(data.duration_ms)),
         data.failed
     );
@@ -534,6 +1008,32 @@ fn text(data: &LoadData) -> String {
             text,
             "  {} {}: {} iterations, {} failed",
             journey.place, journey.name, journey.iterations, journey.failed
+        );
+    }
+    if data.max_users.is_some() {
+        let _ = writeln!(
+            text,
+            "arrivals: {}, {} dropped (max_users {} running); at most {} at once",
+            data.arrivals,
+            data.dropped,
+            data.max_users.unwrap_or(0),
+            count(data.users, "user", "users")
+        );
+    }
+    if data.iterations > 0 && data.profile.is_some() {
+        let t = data.iteration_ms;
+        let ms = |ms: f64| protocol::format::duration(Duration::from_secs_f64(ms / 1000.0));
+        let _ = writeln!(
+            text,
+            "iterations took {} at p50, {} at p95, {} at most{}",
+            ms(t.p50),
+            ms(t.p95),
+            ms(t.max),
+            if data.max_users.is_some() {
+                " (from when they were due)"
+            } else {
+                ""
+            }
         );
     }
     let s = &data.steps;
@@ -563,6 +1063,17 @@ fn text(data: &LoadData) -> String {
                 "times"
             }
         );
+    }
+    if let Some(stopped) = &data.stopped {
+        let _ = write!(text, "stopped early: {}", stopped.message);
+        if stopped.cut_short > 0 {
+            let _ = write!(
+                text,
+                "; {} cut short, not counted",
+                count(stopped.cut_short, "iteration", "iterations")
+            );
+        }
+        text.push('\n');
     }
     if let Some(dir) = &data.failures_dir {
         let _ = writeln!(text, "failures kept: {} in {dir}", data.failures_kept);

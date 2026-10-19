@@ -162,6 +162,19 @@ pub struct Load {
     /// A page whose heap grows past this many bytes is a `memory` error
     /// for its user; `None`: no limit.
     pub renderer_memory: Option<u64>,
+    /// How long running iterations may take to finish after Ctrl-C (plan
+    /// 23.3); `None`: [`GRACE`].
+    pub grace: Option<Duration>,
+}
+
+/// `[load] grace` when not set.
+pub const GRACE: Duration = Duration::from_secs(30);
+
+impl Load {
+    /// How long running iterations may take to finish after Ctrl-C.
+    pub fn grace(&self) -> Duration {
+        self.grace.unwrap_or(GRACE)
+    }
 }
 
 /// An entry of `[load] block`.
@@ -1105,11 +1118,22 @@ fn load(raw: RawLoad) -> Result<Load, Problem> {
             Ok(bytes)
         })
         .transpose()?;
+    let grace = raw
+        .grace
+        .map(|g| {
+            let text = g.get_ref().trim();
+            if text == "0" || text == "0s" {
+                return Ok(Duration::ZERO);
+            }
+            parse_duration(text).map_err(|e| (g.span(), format!("load.grace: {e}")))
+        })
+        .transpose()?;
     Ok(Load {
         block,
         allow_hosts,
         cache: raw.cache.unwrap_or_default(),
         renderer_memory,
+        grace,
     })
 }
 
@@ -1172,6 +1196,7 @@ struct RawLoad {
     allow_hosts: Option<Spanned<Vec<String>>>,
     cache: Option<Cache>,
     renderer_memory: Option<Spanned<String>>,
+    grace: Option<Spanned<String>>,
 }
 
 #[derive(Deserialize)]

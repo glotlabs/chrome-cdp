@@ -912,8 +912,15 @@
       "type": "object"
     },
     "LoadData": {
-      "description": "`data` of `chrome-cdp load --json` (plan 23.1).",
+      "description": "`data` of `chrome-cdp load --json` (plans 23.1 and 23.3).",
       "properties": {
+        "arrivals": {
+          "default": 0,
+          "description": "An open model's arrivals, and those dropped because `max_users`\nusers were running (never queued).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "backend": {
           "description": "The backend loaded.",
           "type": "string"
@@ -957,6 +964,12 @@
           "description": "The run's folder: `e2e/.results/load/<run>`.",
           "type": "string"
         },
+        "dropped": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
         "duration_ms": {
           "description": "How long the run took, from its first user's start to its last\niteration's end.",
           "format": "uint64",
@@ -990,6 +1003,15 @@
           "minimum": 0,
           "type": "integer"
         },
+        "iteration_ms": {
+          "$ref": "#/$defs/LoadTimes",
+          "default": {
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0
+          },
+          "description": "How long an iteration took, from when it was due to start (an open\nmodel's arrival) to its end."
+        },
         "iterations": {
           "description": "Iterations started (whole journeys, hooks included).",
           "format": "uint64",
@@ -997,11 +1019,36 @@
           "type": "integer"
         },
         "journeys": {
-          "description": "The tests the users ran, in turn.",
+          "description": "The tests the users ran: by weight, or in turn without a profile.",
           "items": {
             "$ref": "#/$defs/LoadJourney"
           },
           "type": "array"
+        },
+        "max_users": {
+          "description": "An open model's most users at once (`max_users`).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model": {
+          "default": "",
+          "description": "`open` (`[arrivals]`: users arrive at a rate) or `closed`\n(`[users]`, and a run without a profile: users loop).",
+          "type": "string"
+        },
+        "planned": {
+          "description": "`--plan`: what the run would do; nothing ran.",
+          "type": "boolean"
+        },
+        "profile": {
+          "description": "The load profile (`e2e/load/shop.toml`); absent for a run without\none.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "raw": {
           "description": "`--raw`: every step's start, end and result.",
@@ -1014,12 +1061,31 @@
           "description": "The run's id: its folder's name.",
           "type": "string"
         },
+        "stages": {
+          "default": [],
+          "description": "The model's stages, in order.",
+          "items": {
+            "$ref": "#/$defs/LoadStage"
+          },
+          "type": "array"
+        },
         "steps": {
           "$ref": "#/$defs/LoadSteps",
           "description": "The steps run, by result."
         },
+        "stopped": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoadStopped"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why the run ended early, if it did."
+        },
         "users": {
-          "description": "How many users ran at once.",
+          "description": "How many users ran at once, at most (with `--plan`: the users it\nis expected to reach).",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
@@ -1052,10 +1118,26 @@
     "LoadJourney": {
       "description": "A journey of a load run.",
       "properties": {
+        "data": {
+          "description": "The data file its iterations take rows from.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "failed": {
           "format": "uint64",
           "minimum": 0,
           "type": "integer"
+        },
+        "iteration_ms": {
+          "$ref": "#/$defs/LoadTimes",
+          "default": {
+            "max": 0.0,
+            "p50": 0.0,
+            "p95": 0.0
+          },
+          "description": "How long its iterations took, from when they were due."
         },
         "iterations": {
           "format": "uint64",
@@ -1068,6 +1150,21 @@
         "place": {
           "description": "`file:line` of the test.",
           "type": "string"
+        },
+        "previous_ms": {
+          "description": "With `--plan`: how long one took in an earlier run, from start to\nend, if one ran.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "weight": {
+          "default": 1,
+          "description": "Its weight in the profile (1 without one).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
         }
       },
       "required": [
@@ -1075,6 +1172,35 @@
         "name",
         "iterations",
         "failed"
+      ],
+      "type": "object"
+    },
+    "LoadStage": {
+      "description": "A stage of a load run's model: users arriving a second (`arrivals`)\nor users at once (`users`), from `from` to `to` over its duration.",
+      "properties": {
+        "duration_ms": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "from": {
+          "format": "double",
+          "type": "number"
+        },
+        "kind": {
+          "description": "`arrivals` (a second) or `users`.",
+          "type": "string"
+        },
+        "to": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "kind",
+        "from",
+        "to",
+        "duration_ms"
       ],
       "type": "object"
     },
@@ -1109,6 +1235,53 @@
         "failed",
         "timeout",
         "error"
+      ],
+      "type": "object"
+    },
+    "LoadStopped": {
+      "description": "Why a load run ended early.",
+      "properties": {
+        "cut_short": {
+          "description": "Iterations that were running and were cut short (a second Ctrl-C,\nor `[load] grace` over); they are not counted.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "reason": {
+          "description": "`interrupted` (Ctrl-C or SIGTERM), `max_failures` (`on_failure =\n\"stop-run\"`), `data_exhausted` (`data_exhausted = \"stop\"`) or\n`web_server` (the backend's web server exited).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason",
+        "message",
+        "cut_short"
+      ],
+      "type": "object"
+    },
+    "LoadTimes": {
+      "description": "Durations of a load run, in ms.",
+      "properties": {
+        "max": {
+          "format": "double",
+          "type": "number"
+        },
+        "p50": {
+          "format": "double",
+          "type": "number"
+        },
+        "p95": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "p50",
+        "p95",
+        "max"
       ],
       "type": "object"
     },

@@ -18,7 +18,7 @@ pub(crate) mod artifacts;
 mod backend;
 mod coverage;
 mod determinism;
-mod durations;
+pub(crate) mod durations;
 mod exec;
 mod fingerprints;
 mod flake;

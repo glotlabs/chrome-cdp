@@ -50,7 +50,7 @@ impl Iterator for Schedule<'_> {
                 self.next += 1;
                 return Some(Duration::from_secs_f64(self.start + t));
             }
-            self.before += (stage.from + stage.to) / 2.0 * length;
+            self.before += f64::midpoint(stage.from, stage.to) * length;
             self.start += length;
             self.stage += 1;
         }
@@ -91,7 +91,7 @@ pub(crate) fn total_arrivals(arrivals: &Arrivals) -> u64 {
     let total: f64 = arrivals
         .stages
         .iter()
-        .map(|s| (s.from + s.to) / 2.0 * s.duration.as_secs_f64())
+        .map(|s| f64::midpoint(s.from, s.to) * s.duration.as_secs_f64())
         .sum();
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let n = total.round().max(0.0) as u64;

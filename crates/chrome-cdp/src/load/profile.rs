@@ -36,7 +36,7 @@ pub(crate) const MAX_FAILURES: u64 = 100;
 
 /// How long a `[users]` profile with `iterations` and no `duration` may
 /// run at most.
-pub(crate) const UNTIL_DONE: Duration = Duration::from_secs(24 * 60 * 60);
+pub(crate) const UNTIL_DONE: Duration = Duration::from_hours(24);
 
 /// A load profile.
 #[derive(Debug, Clone, PartialEq)]
@@ -197,15 +197,6 @@ pub(crate) enum OnFailure {
     StopRun,
 }
 
-impl OnFailure {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Continue => "continue",
-            Self::StopRun => "stop-run",
-        }
-    }
-}
-
 /// The profile `arg` names: a path to a `.toml` file, or a name in
 /// [`DIR`] of the project at `root`. `None` when it names neither (then
 /// it is a scenario path).
@@ -216,7 +207,11 @@ pub(crate) fn find(arg: &str, root: &Path, cwd: &Path) -> Option<PathBuf> {
     {
         return Some(cwd.join(arg));
     }
-    if arg.contains(['/', '\\', ':']) || arg.ends_with(".cdp") {
+    if arg.contains(['/', '\\', ':'])
+        || Path::new(arg)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("cdp"))
+    {
         return None;
     }
     let path = root.join(DIR).join(format!("{arg}.toml"));
@@ -464,29 +459,28 @@ fn journeys(
                 DataExhausted::Wrap
             }
         };
-        let data = match entry.data {
-            Some(data) => Some(DataSpec {
+        let data = if let Some(data) = entry.data {
+            Some(DataSpec {
                 path: root.join(data.get_ref()),
                 at: (problems.at)(data.span()),
                 written: data.into_inner(),
                 order,
                 exhausted,
-            }),
-            None => {
-                if let Some(s) = entry
-                    .data_order
-                    .as_ref()
-                    .map(Spanned::span)
-                    .or_else(|| entry.data_exhausted.as_ref().map(Spanned::span))
-                {
-                    problems.push(
-                        s,
-                        "data_order and data_exhausted are about a journey's data, which it has not",
-                        "add data = \"e2e/load/users.csv\" to the journey",
-                    );
-                }
-                None
+            })
+        } else {
+            if let Some(s) = entry
+                .data_order
+                .as_ref()
+                .map(Spanned::span)
+                .or_else(|| entry.data_exhausted.as_ref().map(Spanned::span))
+            {
+                problems.push(
+                    s,
+                    "data_order and data_exhausted are about a journey's data, which it has not",
+                    "add data = \"e2e/load/users.csv\" to the journey",
+                );
             }
+            None
         };
         journeys.push(JourneySpec {
             file: root.join(file),

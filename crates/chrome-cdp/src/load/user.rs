@@ -1,19 +1,28 @@
-//! A load run's virtual users (plan 23.1): one tokio task each. A user
-//! keeps one Chrome of the pool; each iteration it takes the next of the
-//! journeys in turn, in a fresh browser context with one tab: the file's
-//! `@before` steps, the test's own and its `@after` steps (after a
-//! failure too), then the context closes. Users loop until the run's
-//! duration is up, their iterations are done, or the run stops; all
-//! waiting is on the runtime's timers.
+//! A load run's virtual users (plans 23.1 and 23.3): one tokio task each.
 //!
-//! With `[load] cache = "returning"` (plan 23.2) a user keeps its context,
-//! cookies, storage and HTTP cache from one iteration to the next, until
-//! its Chrome crashes or its page outgrows `[load] renderer_memory`. That
-//! limit is checked between steps, at most once a second per user.
+//! Under `[users]` (closed), user `vu` keeps one Chrome of the pool and
+//! loops while the stages' count is above `vu − 1`, until its iterations
+//! are done or the run stops. Under `[arrivals]` (open), a user arrives
+//! when its arrival is due, takes a free place in a Chrome, does one
+//! iteration and leaves; an arrival with no free place (`max_users`) is
+//! dropped and counted, never queued, and its iteration's time counts from
+//! when it was due. All waiting is on the runtime's timers.
+//!
+//! An iteration takes a journey (by weight, or in turn for a run without
+//! a profile) and the next row of its data, then runs in a fresh browser
+//! context with one tab: the file's `@before` steps, the test's own and its
+//! `@after` steps (after a failure too), then the context closes.
+//!
+//! With `[load] cache = "returning"` (plan 23.2) a closed user keeps its
+//! context, cookies, storage and HTTP cache from one iteration to the
+//! next, and an open model's users take over the contexts earlier users
+//! of their Chrome left, as returning visitors, until the Chrome crashes
+//! or a page outgrows `[load] renderer_memory`. That limit is checked
+//! between steps, at most once a second per user.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use e2e::config::Cache;
@@ -23,12 +32,14 @@ use protocol::{ErrorInfo, ErrorKind, Hint, Output};
 use serde_json::{Value, json};
 use tokio::time::Instant;
 
+use super::data::Row;
+use super::halt::{Halt, Reason};
 use super::plan::{self, How, Journey, LoadPlan, Step};
 use super::pool::Pool;
-use super::record::{self, Failed, Records, StepLine};
+use super::profile::{OnFailure, Users};
+use super::record::{self, Ended, Failed, Records, StepLine};
 use super::step::{self, Call};
-use super::think::Think;
-use crate::test::vars::Resolver;
+use crate::test::vars::{LoadVars, Resolver, Rows};
 
 /// What every user of the run shares.
 #[derive(Debug)]
@@ -36,61 +47,171 @@ pub(super) struct Shared {
     pub(super) plan: Arc<LoadPlan>,
     pub(super) pool: Pool,
     pub(super) records: Records,
-    /// A bare `think`'s time.
-    pub(super) think: Think,
-    /// Set to stop starting iterations (Ctrl-C, a web server that exits).
-    pub(super) stop: Arc<AtomicBool>,
-    /// When users stop starting iterations.
-    pub(super) ends: Instant,
-    /// Each user's most iterations.
-    pub(super) iterations: Option<u32>,
+    /// The run's stop.
+    pub(super) halt: Arc<Halt>,
+    /// When the users started: the stages' zero.
+    pub(super) started: Instant,
     /// What each file's `@before-all` saved (`http --save`), by file;
     /// set once they ran, before the users start.
     pub(super) file_saved: std::sync::OnceLock<Vec<BTreeMap<String, Value>>>,
-    /// The seed of the users' think times.
+    /// The seed of the users' random numbers.
     pub(super) seed: u64,
     /// `[load] cache`: whether a user keeps its context.
     pub(super) cache: Cache,
     /// `[load] renderer_memory`, in bytes.
     pub(super) renderer_memory: Option<u64>,
+    /// The journeys' weights.
+    pub(super) weights: Vec<u32>,
+    /// The most users in one Chrome.
+    pub(super) per_browser: u32,
+    /// The users in each Chrome now (an open model's).
+    pub(super) places: Vec<AtomicU32>,
+    /// The contexts returning users left in each Chrome (an open model's).
+    pub(super) parked: Vec<Mutex<Vec<Kept>>>,
+    /// Users running now, and the most at once.
+    pub(super) active: AtomicU32,
+    pub(super) peak: AtomicU32,
+    /// An open model's arrivals, and those dropped at `max_users`.
+    pub(super) arrivals: AtomicU64,
+    pub(super) dropped: AtomicU64,
 }
 
 impl Shared {
     fn stopped(&self) -> bool {
-        self.stop.load(Ordering::Relaxed)
+        self.halt.stopped()
+    }
+
+    /// A user starts running.
+    fn arrived(&self) {
+        let now = self.active.fetch_add(1, Ordering::Relaxed) + 1;
+        self.peak.fetch_max(now, Ordering::Relaxed);
+    }
+
+    /// A free place in a Chrome for an arriving user, the lowest Chrome
+    /// first (the ones started at once come first); `None` when every
+    /// Chrome is full.
+    pub(super) fn take_place(&self) -> Option<usize> {
+        self.places.iter().position(|users| {
+            users
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                    (n < self.per_browser).then_some(n + 1)
+                })
+                .is_ok()
+        })
+    }
+
+    /// Closes the contexts returning users left.
+    pub(super) async fn close_parked(&self) {
+        for parked in &self.parked {
+            let contexts: Vec<Kept> =
+                std::mem::take(&mut *parked.lock().unwrap_or_else(PoisonError::into_inner));
+            for kept in contexts {
+                close_context(&kept.engine, kept.context).await;
+            }
+        }
     }
 }
 
-/// User `vu` (from 1): starts at `start`, in Chrome `browser`, and runs
-/// iterations until the run is over for it.
-pub(super) async fn run(shared: Arc<Shared>, vu: u32, browser: usize, start: Instant) {
-    tokio::time::sleep_until(start).await;
+/// Closed-model user `vu` (from 1), in Chrome `browser`: loops while the
+/// stages' count is above `vu − 1`, until its iterations are done or the
+/// run stops.
+pub(super) async fn closed(shared: Arc<Shared>, users: Users, vu: u32, browser: usize) {
     let mut random = Random::new(shared.seed ^ u64::from(vu).wrapping_mul(0x9e37_79b9));
-    let journeys = shared.plan.journeys.len();
     let mut n: u64 = 0;
     let mut kept = None;
-    while !shared.stopped()
-        && Instant::now() < shared.ends
-        && shared.iterations.is_none_or(|most| n < u64::from(most))
-    {
+    let mut running = false;
+    loop {
+        if shared.stopped() || users.iterations.is_some_and(|most| n >= u64::from(most)) {
+            break;
+        }
+        let now = Instant::now();
+        let Some(at) = users.next_start(vu, now.saturating_duration_since(shared.started)) else {
+            break;
+        };
+        let due = shared.started + at;
+        if due > now {
+            if running {
+                // Below the count for now: not a user at once.
+                running = false;
+                shared.active.fetch_sub(1, Ordering::Relaxed);
+            }
+            tokio::select! {
+                () = tokio::time::sleep_until(due) => {}
+                () = shared.halt.stopping() => break,
+            }
+        }
+        if !running {
+            running = true;
+            shared.arrived();
+        }
         n += 1;
-        let first = usize::try_from(vu - 1).unwrap_or(0);
-        let journey = (first + usize::try_from(n - 1).unwrap_or(0)) % journeys;
+        let journey = if shared.plan.in_turn {
+            let first = usize::try_from(vu - 1).unwrap_or(0);
+            (first + usize::try_from(n - 1).unwrap_or(0)) % shared.plan.journeys.len()
+        } else {
+            super::model::pick(&shared.weights, random.unit())
+        };
         let user = User {
             shared: &shared,
             vu,
             iteration: n,
             journey,
         };
-        Box::pin(user.iteration(browser, &mut random, &mut kept)).await;
+        Box::pin(user.iteration(browser, &mut random, &mut kept, Instant::now())).await;
+    }
+    if running {
+        shared.active.fetch_sub(1, Ordering::Relaxed);
     }
     if let Some(kept) = kept {
         close_context(&kept.engine, kept.context).await;
     }
 }
 
+/// Open-model user `vu` (from 1), arrived at `due` with a place in Chrome
+/// `browser`: one iteration, then it leaves.
+pub(super) async fn arrival(shared: Arc<Shared>, vu: u32, browser: usize, due: Instant) {
+    // Leaves its place even when the run cuts it short.
+    let _place = Place {
+        shared: &shared,
+        browser,
+    };
+    let mut random = Random::new(shared.seed ^ u64::from(vu).wrapping_mul(0x9e37_79b9));
+    let journey = super::model::pick(&shared.weights, random.unit());
+    let mut kept = shared.parked[browser]
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .pop();
+    let user = User {
+        shared: &shared,
+        vu,
+        iteration: 1,
+        journey,
+    };
+    Box::pin(user.iteration(browser, &mut random, &mut kept, due)).await;
+    if let Some(kept) = kept {
+        shared.parked[browser]
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(kept);
+    }
+}
+
+/// An open model's user's place in its Chrome, given back when it leaves.
+struct Place<'a> {
+    shared: &'a Shared,
+    browser: usize,
+}
+
+impl Drop for Place<'_> {
+    fn drop(&mut self) {
+        self.shared.places[self.browser].fetch_sub(1, Ordering::AcqRel);
+        self.shared.active.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 /// A returning user's context, kept from one iteration to the next.
-struct Kept {
+#[derive(Debug)]
+pub(super) struct Kept {
     engine: Arc<Engine>,
     /// Its Chrome's start ([`Pool::generation`]): a Chrome started again
     /// has none of the contexts of the one before.
@@ -109,6 +230,16 @@ struct User<'a> {
     journey: usize,
 }
 
+/// An iteration's own variables.
+struct IterationVars {
+    /// `${vu.id}`: `<run>-u<vu>`.
+    vu_id: String,
+    /// `${test.id}` and `${iteration.id}`: `<run>-u<vu>-<iteration>`.
+    test_id: String,
+    /// The row of the journey's data it took.
+    row: Option<Arc<Row>>,
+}
+
 /// A step's error, and which step it was.
 struct StepFailure {
     at: String,
@@ -121,14 +252,39 @@ impl User<'_> {
         &self.shared.plan.journeys[self.journey]
     }
 
-    async fn iteration(&self, browser: usize, random: &mut Random, kept: &mut Option<Kept>) {
+    /// Runs the iteration, due to start at `due` (its latency counts
+    /// from then).
+    async fn iteration(
+        &self,
+        browser: usize,
+        random: &mut Random,
+        kept: &mut Option<Kept>,
+        due: Instant,
+    ) {
         let shared = self.shared;
         let journey = self.journey();
+        let row = match &journey.data {
+            Some(data) => {
+                let Some(row) = data.take(random) else {
+                    shared.halt.stop(
+                        Reason::DataExhausted,
+                        format!(
+                            "every row of {}'s data was used ({} rows, data_exhausted = \"stop\")",
+                            journey.name,
+                            data.len()
+                        ),
+                    );
+                    return;
+                };
+                Some(row)
+            }
+            None => None,
+        };
         let started = Instant::now();
         let started_ms = epoch_ms();
         let setup = |error: ErrorInfo| {
             self.record_runner_step(started, &error, "setup", "context new");
-            shared.records.iteration(self.journey, true);
+            self.ended(true, due, started);
         };
         let engine = match shared.pool.engine(browser).await {
             Ok(engine) => engine,
@@ -188,10 +344,12 @@ impl User<'_> {
             .and_then(|files| files.get(journey.file))
             .cloned()
             .unwrap_or_default();
-        let test_id = format!(
-            "{}-u{}-{}",
-            shared.plan.plan.run.run_id, self.vu, self.iteration
-        );
+        let vu_id = format!("{}-u{}", shared.plan.plan.run.run_id, self.vu);
+        let vars = IterationVars {
+            test_id: format!("{vu_id}-{}", self.iteration),
+            vu_id,
+            row,
+        };
         let mut failure = None;
         let mut memory_checked = Instant::now();
         let parts: [(&[Step], Option<&str>); 2] =
@@ -204,7 +362,7 @@ impl User<'_> {
                         &context,
                         step,
                         hook,
-                        &test_id,
+                        &vars,
                         &mut saved,
                         random,
                         &mut deadline,
@@ -238,7 +396,7 @@ impl User<'_> {
                     &context,
                     step,
                     Some("after"),
-                    &test_id,
+                    &vars,
                     &mut saved,
                     random,
                     &mut deadline,
@@ -288,7 +446,35 @@ impl User<'_> {
                 close_context(&engine, context).await;
             }
         }
-        shared.records.iteration(self.journey, failure.is_some());
+        self.ended(failure.is_some(), due, started);
+    }
+
+    /// Counts the iteration, due at `due` and started at `start`, as it
+    /// ends; with `on_failure = "stop-run"`, a failure past
+    /// `max_failures` stops the run.
+    fn ended(&self, failed: bool, due: Instant, start: Instant) {
+        let shared = self.shared;
+        let ended = Ended {
+            journey: self.journey,
+            failed,
+            due,
+            start,
+            end: Instant::now(),
+        };
+        let failures =
+            shared
+                .records
+                .iteration(&ended, self.vu, self.iteration, &self.journey().place);
+        let plan = &shared.plan;
+        if failed && plan.on_failure == OnFailure::StopRun && failures >= plan.max_failures {
+            shared.halt.stop(
+                Reason::MaxFailures,
+                format!(
+                    "{failures} iterations failed (max_failures = {}, on_failure = \"stop-run\")",
+                    plan.max_failures
+                ),
+            );
+        }
     }
 
     /// With `[load] renderer_memory`, at most once a [`MEMORY_EVERY`]: the
@@ -330,17 +516,17 @@ impl User<'_> {
         context: &str,
         step: &Step,
         hook: Option<&str>,
-        test_id: &str,
+        vars: &IterationVars,
         saved: &mut BTreeMap<String, Value>,
         random: &mut Random,
         deadline: &mut Instant,
     ) -> Result<(), ErrorInfo> {
         let start = Instant::now();
-        let result = match self.call(step, test_id, saved) {
+        let result = match self.call(step, vars, saved) {
             Err(error) => Err(error),
             Ok(_) if start >= *deadline => Err(out_of_time()),
             Ok(Call::Think(time)) => {
-                let waited = time.unwrap_or(self.shared.think).pick(random.unit());
+                let waited = time.unwrap_or(self.shared.plan.think).pick(random.unit());
                 tokio::time::sleep(waited).await;
                 *deadline += waited;
                 Ok(())
@@ -386,14 +572,23 @@ impl User<'_> {
     fn call(
         &self,
         step: &Step,
-        test_id: &str,
+        vars: &IterationVars,
         saved: &BTreeMap<String, Value>,
     ) -> Result<Call, ErrorInfo> {
         match &step.how {
             How::Fixed(call) => Ok(call.clone()),
             How::Each(prepared) => {
-                let resolver =
-                    Resolver::running(&prepared.vars, &self.shared.plan.plan.run, test_id, saved);
+                let resolver = Resolver::running(
+                    &prepared.vars,
+                    &self.shared.plan.plan.run,
+                    &vars.test_id,
+                    saved,
+                )
+                .in_load(LoadVars {
+                    vu: &vars.vu_id,
+                    iteration: &vars.test_id,
+                    rows: vars.row.as_deref().map_or(Rows::None, Rows::Row),
+                });
                 let words = plan::expand(prepared, &resolver)?;
                 let cli = crate::script::command(&words, &self.shared.plan.global)?;
                 step::call(&cli)
@@ -529,6 +724,11 @@ pub(super) async fn hook_once(
     let engine = shared.pool.engine(0).await?;
     let context = new_context(&engine, &shared.plan).await?;
     let test_id = format!("{}-f{}", shared.plan.plan.run.run_id, file + 1);
+    let vars = IterationVars {
+        vu_id: test_id.clone(),
+        test_id,
+        row: None,
+    };
     let mut deadline = Instant::now() + user.journey().timeout;
     let mut random = Random::new(shared.seed);
     let mut result = Ok(());
@@ -539,7 +739,7 @@ pub(super) async fn hook_once(
                 &context,
                 step,
                 Some(name),
-                &test_id,
+                &vars,
                 &mut saved,
                 &mut random,
                 &mut deadline,
@@ -595,7 +795,8 @@ fn epoch_ms() -> u64 {
         .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
-/// A user's random numbers (SplitMix64): its think times.
+/// A user's random numbers (SplitMix64): its journeys, rows and think
+/// times.
 #[derive(Debug)]
 pub(super) struct Random(u64);
 
@@ -617,29 +818,9 @@ impl Random {
     }
 }
 
-/// How long the users take to start: user `vu` of `users` starts
-/// `ramp_up × (vu - 1) / users` after the first.
-pub(super) fn start_offset(ramp_up: Duration, vu: u32, users: u32) -> Duration {
-    if users <= 1 {
-        return Duration::ZERO;
-    }
-    ramp_up.mul_f64(f64::from(vu - 1) / f64::from(users))
-}
-
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
-    use super::{Random, start_offset};
-
-    #[test]
-    fn users_start_evenly_over_the_ramp_up() {
-        let ramp = Duration::from_secs(10);
-        assert_eq!(start_offset(ramp, 1, 10), Duration::ZERO);
-        assert_eq!(start_offset(ramp, 6, 10), Duration::from_secs(5));
-        assert_eq!(start_offset(ramp, 1, 1), Duration::ZERO);
-        assert_eq!(start_offset(Duration::ZERO, 7, 10), Duration::ZERO);
-    }
+    use super::Random;
 
     #[test]
     fn random_units_spread_from_0_to_1() {

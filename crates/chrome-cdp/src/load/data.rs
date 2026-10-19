@@ -19,6 +19,8 @@ pub(crate) type Row = BTreeMap<String, String>;
 /// A journey's rows, and where the users are in them.
 #[derive(Debug)]
 pub(crate) struct Data {
+    /// The file, as the profile names it.
+    pub(crate) file: String,
     /// The columns, in the file's order.
     pub(crate) columns: Vec<String>,
     rows: Vec<Arc<Row>>,
@@ -60,6 +62,7 @@ impl Data {
             shuffled.swap(i, j);
         }
         Ok(Self {
+            file: spec.written.clone(),
             columns,
             rows: rows.into_iter().map(Arc::new).collect(),
             order: spec.order,
