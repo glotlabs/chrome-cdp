@@ -6,7 +6,13 @@
 //! 23.2's `[load]` settings: `block = ["third-party"]` stops a
 //! third-party request and nothing else, `cache = "returning"` fetches
 //! the app's files once per user, and `renderer_memory` stops a page that
-//! grows past it.
+//! grows past it. Plan 23.3's profiles: an open model's arrivals keep
+//! their rate against a slow server, which shows in the iterations' time
+//! from when they were due and in dropped arrivals; a closed model's users
+//! take rows of a journey's data until it runs out; `on_failure =
+//! "stop-run"` ends a run against a broken site; Ctrl-C lets the running
+//! iterations finish and writes the report; `think_between_steps` pauses
+//! after each action.
 //!
 //! Needs a real Chrome (`CHROME_PATH`; skipped without it).
 
@@ -50,8 +56,18 @@ impl Project {
 
     /// A project whose config ends with `load`, its `[load]` section.
     fn with_load(chrome: &Path, scenarios: &[(&str, &str)], load: &str) -> Self {
+        Self::with_server(chrome, scenarios, load, Options::default())
+    }
+
+    /// A project against a load server started with `options`.
+    fn with_server(
+        chrome: &Path,
+        scenarios: &[(&str, &str)],
+        load: &str,
+        options: Options,
+    ) -> Self {
         let sandbox = Sandbox::with_chrome(chrome);
-        let server = LoadServer::start(Options::default()).unwrap();
+        let server = LoadServer::start(options).unwrap();
         let root = sandbox.dir.path().join("project");
         std::fs::create_dir_all(root.join("e2e")).unwrap();
         std::fs::write(
@@ -71,6 +87,13 @@ impl Project {
             root,
             server,
         }
+    }
+
+    /// Writes `e2e/load/<name>.toml`.
+    fn profile(&self, name: &str, text: &str) {
+        let dir = self.root.join("e2e/load");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(format!("{name}.toml")), text).unwrap();
     }
 
     fn load(&self, args: &[&str]) -> Output {
@@ -405,5 +428,233 @@ fn a_chrome_cdp_chrome_that_is_no_shell_is_said() {
         stdout(&out).starts_with("load: 1 user in 1 Chrome (chrome), "),
         "{}",
         stdout(&out)
+    );
+}
+
+/// The browse journey: the products page, whose `GET /api/products` the
+/// server can slow down.
+const BROWSE: &str =
+    "@test \"browses\"\n  goto /\n  expect 'role=heading[name=\"Products\"]' visible\n";
+
+#[test]
+fn arrivals_keep_their_rate_when_the_server_is_slow() {
+    let Some(chrome) = chrome_path() else { return };
+    let options = Options {
+        faults: vec![load_server::Fault::latency("/api/products=2s").unwrap()],
+        ..Options::default()
+    };
+    let project = Project::with_server(&chrome, &[("shop.cdp", BROWSE)], "", options);
+    // 5 a second for 4 s: 20 arrivals, each taking over 2 s, so about 10
+    // would run at once; only 3 may.
+    project.profile(
+        "slow",
+        "[[journeys]]\ntest = \"e2e/shop.cdp:browses\"\n\n\
+         [arrivals]\nrate = \"5/s\"\nduration = \"4s\"\nmax_users = 3\n",
+    );
+    let started = Instant::now();
+    let out = project.load(&["slow", "--raw"]);
+    assert_eq!(common::code(&out), 0, "{}\n{}", stdout(&out), stderr(&out));
+    let data = data(&out);
+    assert_eq!(data["model"], "open");
+    assert_eq!(data["profile"], "e2e/load/slow.toml");
+    // The rate held: every arrival came, those past max_users dropped.
+    assert_eq!(data["arrivals"], 20, "{data}");
+    let dropped = data["dropped"].as_u64().unwrap();
+    let iterations = data["iterations"].as_u64().unwrap();
+    assert_eq!(iterations + dropped, 20, "{data}");
+    assert!(dropped >= 10, "{data}");
+    assert_eq!(data["failed"], 0, "{data}");
+    assert!(data["users"].as_u64() <= Some(3), "{data}");
+    // The slowdown is in the iterations' time.
+    let p50 = data["iteration_ms"]["p50"].as_f64().unwrap();
+    assert!(p50 >= 2000.0, "{data}");
+    // Each iteration's time counts from when its arrival was due: 5 a
+    // second, from 0.1 s.
+    let raw =
+        std::fs::read_to_string(Path::new(data["dir"].as_str().unwrap()).join("iterations.jsonl"))
+            .unwrap();
+    let mut due: Vec<f64> = raw
+        .lines()
+        .map(|l| {
+            serde_json::from_str::<Value>(l).unwrap()["due_ms"]
+                .as_f64()
+                .unwrap()
+        })
+        .collect();
+    due.sort_by(f64::total_cmp);
+    assert_eq!(due.len() as u64, iterations);
+    assert!((due[0] - 100.0).abs() < 1.0, "{due:?}");
+    for d in &due {
+        let slot = (d - 100.0) / 200.0;
+        assert!((slot - slot.round()).abs() < 0.01, "{due:?}");
+    }
+    // The arrivals did not wait for the slow iterations.
+    assert!(started.elapsed() < Duration::from_secs(30));
+}
+
+#[test]
+fn a_closed_models_users_take_rows_until_they_run_out() {
+    let Some(chrome) = chrome_path() else { return };
+    let journey = "@test \"signs in\"\n  goto /\n  \
+                   eval \"if (!'${row.email}'.endsWith('@example.com')) throw new Error('row')\"\n  \
+                   eval \"if (!'${vu.id}'.startsWith('${run.id}-u')) throw new Error('vu')\"\n  \
+                   eval \"if ('${iteration.id}' !== '${test.id}') throw new Error('iteration')\"\n";
+    let project = Project::new(&chrome, &[("signin.cdp", journey), ("shop.cdp", BROWSE)]);
+    std::fs::write(
+        project.root.join("e2e/users.csv"),
+        "email,password\n1@example.com,a\n2@example.com,b\n3@example.com,c\n4@example.com,d\n5@example.com,e\n",
+    )
+    .unwrap();
+    project.profile(
+        "accounts",
+        "[[journeys]]\ntest = \"e2e/signin.cdp:signs in\"\ndata = \"e2e/users.csv\"\n\
+         data_exhausted = \"stop\"\n\n[users]\ncount = 2\nduration = \"1m\"\n",
+    );
+    let out = project.load(&["accounts"]);
+    assert_eq!(common::code(&out), 0, "{}\n{}", stdout(&out), stderr(&out));
+    let data = data(&out);
+    assert_eq!(data["model"], "closed");
+    assert_eq!(data["iterations"], 5, "{data}");
+    assert_eq!(data["failed"], 0, "{data}");
+    assert_eq!(data["stopped"]["reason"], "data_exhausted", "{data}");
+    assert_eq!(data["journeys"][0]["data"], "e2e/users.csv");
+    // A column the data has not is a problem before any browser starts.
+    project.profile(
+        "typo",
+        "[[journeys]]\ntest = \"e2e/signin.cdp:signs in\"\ndata = \"e2e/shop.csv\"\n\n\
+         [users]\ncount = 2\nduration = \"1m\"\n",
+    );
+    std::fs::write(project.root.join("e2e/shop.csv"), "mail\nx\n").unwrap();
+    let out = project.load(&["typo"]);
+    assert_eq!(common::code(&out), 2, "{}\n{}", stdout(&out), stderr(&out));
+    let error: Value = serde_json::from_str(&stdout(&out)).unwrap();
+    assert_eq!(
+        error["error"]["message"],
+        "e2e/signin.cdp:3:3: ${row.email}: data e2e/shop.csv has no column email",
+        "{error}"
+    );
+    assert_eq!(error["error"]["hint"], "its columns are mail");
+}
+
+#[test]
+fn stop_run_ends_a_run_against_a_broken_site() {
+    let Some(chrome) = chrome_path() else { return };
+    let failing = "@test \"looks for what is not there\"\n  goto /\n  \
+                   expect 'role=heading[name=\"Nope\"]' visible --timeout 200ms\n";
+    let project = Project::new(&chrome, &[("fails.cdp", failing)]);
+    project.profile(
+        "down",
+        "on_failure = \"stop-run\"\nmax_failures = 3\n\n\
+         [[journeys]]\ntest = \"e2e/fails.cdp:1\"\n\n[users]\ncount = 2\nduration = \"1m\"\n",
+    );
+    let started = Instant::now();
+    let out = project.load(&["down", "--keep-failures", "0"]);
+    assert_eq!(common::code(&out), 1, "{}\n{}", stdout(&out), stderr(&out));
+    assert!(started.elapsed() < Duration::from_secs(40));
+    let envelope: Value = serde_json::from_str(&stdout(&out)).unwrap();
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("the run stopped: 3 iterations failed (max_failures = 3"),
+        "{envelope}"
+    );
+    let data = &envelope["error"]["details"];
+    assert_eq!(data["stopped"]["reason"], "max_failures");
+    // The two users' iterations running when the third failed finish.
+    let failed = data["failed"].as_u64().unwrap();
+    assert!((3..=4).contains(&failed), "{data}");
+}
+
+#[test]
+fn ctrl_c_lets_the_running_iterations_finish_and_writes_the_report() {
+    let Some(chrome) = chrome_path() else { return };
+    let journey = "@test \"browses slowly\"\n  goto /\n  think 3s\n  \
+                   expect 'role=heading[name=\"Products\"]' visible\n";
+    let project = Project::new(&chrome, &[("slow.cdp", journey)]);
+    project.profile(
+        "long",
+        "[[journeys]]\ntest = \"e2e/slow.cdp:browses slowly\"\n\n[users]\ncount = 3\nduration = \"5m\"\n",
+    );
+    let child = project
+        .sandbox
+        .cli()
+        .current_dir(&project.root)
+        .args(["load", "long", "--json"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    // Once the users are on their pages, Ctrl-C.
+    let started = Instant::now();
+    while project
+        .server
+        .stats()
+        .get("GET /api/products")
+        .map_or(0, |s| s.requests)
+        < 3
+    {
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "no user started"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let pid = child.id().to_string();
+    assert!(
+        std::process::Command::new("kill")
+            .args(["-INT", &pid])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(common::code(&out), 0, "{}\n{}", stdout(&out), stderr(&out));
+    let data = data(&out);
+    assert_eq!(data["stopped"]["reason"], "interrupted", "{data}");
+    assert_eq!(data["stopped"]["cut_short"], 0, "{data}");
+    // The three iterations that were running finished, and none started.
+    assert_eq!(data["iterations"], 3, "{data}");
+    assert_eq!(data["failed"], 0, "{data}");
+}
+
+#[test]
+fn think_between_steps_pauses_after_each_action() {
+    let Some(chrome) = chrome_path() else { return };
+    let journey = "@test \"browses\"\n  goto /\n  \
+                   expect 'role=heading[name=\"Products\"]' visible\n  \
+                   click 'role=link[name=\"Wireless mouse\"]'\n  think 50ms\n  \
+                   expect role=heading text 'Wireless mouse'\n";
+    let project = Project::new(&chrome, &[("shop.cdp", journey)]);
+    project.profile(
+        "paced",
+        "think = \"300ms\"\nthink_between_steps = true\n\n\
+         [[journeys]]\ntest = \"e2e/shop.cdp:browses\"\n\n[users]\ncount = 1\niterations = 1\n",
+    );
+    let out = project.load(&["paced", "--raw"]);
+    assert_eq!(common::code(&out), 0, "{}\n{}", stdout(&out), stderr(&out));
+    let data = data(&out);
+    assert_eq!(data["failed"], 0, "{data}");
+    let raw = std::fs::read_to_string(data["raw"].as_str().unwrap()).unwrap();
+    let commands: Vec<String> = raw
+        .lines()
+        .map(|l| {
+            serde_json::from_str::<Value>(l).unwrap()["command"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    // After `goto` the profile's think; after `click` the journey's own.
+    assert_eq!(
+        commands,
+        [
+            "goto /",
+            "think (think_between_steps)",
+            "expect 'role=heading[name=\"Products\"]' visible",
+            "click 'role=link[name=\"Wireless mouse\"]'",
+            "think 50ms",
+            "expect role=heading text 'Wireless mouse'",
+        ]
     );
 }
