@@ -1,0 +1,12 @@
+$ chrome-cdp load reads --plan --browser chrome
+exit: 0
+--- stdout
+load plan: closed model of e2e/load/reads.toml against backend prod
+stages:
+  1. 5 users for 1m
+  1m in all; each user loops its journeys
+journeys (by weight):
+     1  e2e/shop.cdp:1 browses
+users: 5 users at once
+Chromes: 1 (chrome), up to 5 users each
+

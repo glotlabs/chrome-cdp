@@ -731,6 +731,27 @@ const CASES: &[Case] = &[
         fixture: Fixture::Project(LOAD_PROJECT),
     },
     Case {
+        name: "load-plan-protected",
+        args: &["load", "reads", "--plan", "--browser", "chrome"],
+        modes: &[""],
+        fixture: Fixture::Project(&[
+            (
+                "chrome-cdp.toml",
+                "[e2e]\ntests = [\"e2e/**/*.cdp\"]\n\n[e2e.backends.prod]\nmode = \"real\"\n\
+                 base_url = \"http://localhost:4176\"\nprotected = true\n",
+            ),
+            (
+                "e2e/shop.cdp",
+                "@test \"browses\"\n  @safe\n  goto /\n\n@test \"buys\"\n  goto /checkout\n",
+            ),
+            (
+                "e2e/load/reads.toml",
+                "backend = \"prod\"\n\n[[journeys]]\ntest = \"e2e/shop.cdp:browses\"\n\n\
+                 [users]\ncount = 5\nduration = \"1m\"\n",
+            ),
+        ]),
+    },
+    Case {
         name: "load-profile-problems",
         args: &["load", "broken"],
         modes: ERR,

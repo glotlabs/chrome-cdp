@@ -298,7 +298,8 @@ impl Plan {
             });
             return Err(lines::invalid(problems));
         }
-        if backend.protected && !args.allow_writes {
+        // A load run checks its journeys only, not every test of their files.
+        if backend.protected && !args.allow_writes && !load {
             protect(&backend.name, &scenarios, &tests)?;
         }
         let picked = args.jobs.map_or_else(
@@ -581,9 +582,13 @@ fn prepare(
 }
 
 /// A protected backend runs only `@safe` tests, unless `--allow-writes`.
-fn protect(name: &str, scenarios: &[Scenario], tests: &[Planned]) -> Result<(), ErrorInfo> {
+pub(crate) fn protect<'a>(
+    name: &str,
+    scenarios: &[Scenario],
+    tests: impl IntoIterator<Item = &'a Planned>,
+) -> Result<(), ErrorInfo> {
     let unsafe_tests: Vec<String> = tests
-        .iter()
+        .into_iter()
         .filter(|t| t.skipped().is_none() && !t.settings.safe)
         .map(|t| format!("{}:{} {}", scenarios[t.file].name, t.line, t.name))
         .collect();

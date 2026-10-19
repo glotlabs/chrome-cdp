@@ -193,6 +193,13 @@ impl LoadPlan {
                 })
                 .collect(),
         };
+        if plan.backend.protected && !args.allow_writes {
+            crate::test::plan::protect(
+                &plan.backend.name,
+                &plan.scenarios,
+                picked.iter().map(|p| p.test),
+            )?;
+        }
         let checker = Checker {
             plan: &plan,
             global: &global,
