@@ -7761,7 +7761,8 @@ pub(crate) struct TestArgs {
     pub(crate) jobs_isolation: JobsIsolation,
 
     /// Run only part INDEX of TOTAL near-equal parts, e.g. 2/4 (for CI
-    /// machines that split a suite).
+    /// machines that split a suite); equal in time once the durations
+    /// file knows the tests'.
     #[arg(long, value_name = "INDEX/TOTAL")]
     pub(crate) shard: Option<String>,
 
@@ -7779,6 +7780,11 @@ pub(crate) struct TestArgs {
     /// Stop after the first failed test.
     #[arg(long)]
     pub(crate) bail: bool,
+
+    /// Start the tests that failed in the last run first (from the
+    /// durations file), e.g. `test --failed-first --bail`.
+    #[arg(long)]
+    pub(crate) failed_first: bool,
 
     /// Show a browser window.
     #[arg(long)]

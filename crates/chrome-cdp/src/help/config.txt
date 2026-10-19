@@ -42,6 +42,9 @@ writes one). Paths are relative to the file; its base_url is also the
   settle = "test"                      how long steps wait for the page;
                                        "full": as on the command line
   artifacts = "e2e/.results"           reports, screenshots, logs
+  durations = "e2e/.durations.json"    each test's time and last status,
+                                       for the order and --shard (default:
+                                       beside artifacts); cache it in CI
   viewport = "1280x800"
 
   [e2e.web_server]                     [[e2e.web_server]] for several

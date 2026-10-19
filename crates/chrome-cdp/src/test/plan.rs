@@ -16,6 +16,7 @@ use e2e::scenario::{self, Scenario, Settings, Step, Vars};
 use protocol::script::{Line, ScriptError, Span};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint};
 
+use super::durations::{self, Durations};
 use super::vars::{Resolver, RunVars};
 use crate::cli::{GlobalArgs, TestArgs};
 use crate::script::{self as lines, Problem};
@@ -98,6 +99,21 @@ pub(super) struct Plan {
     pub(super) run: RunVars,
     /// `--allow-writes`: `http` writes on a protected backend.
     pub(super) allow_writes: bool,
+    /// The tests' durations and last statuses (plan 22.5).
+    pub(super) durations: Durations,
+    /// `--failed-first`: the tests that failed last time start first.
+    pub(super) failed_first: bool,
+    /// `--shard` split by the durations: each shard's expected time.
+    pub(super) shards: Option<Shards>,
+}
+
+/// The shards of a `--shard` split by time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Shards {
+    /// The run's, from 1.
+    pub(super) index: usize,
+    /// Each shard's tests and their expected time, in ms.
+    pub(super) expected: Vec<(usize, u64)>,
 }
 
 impl Plan {
@@ -185,9 +201,15 @@ impl Plan {
             filter.set_tags(tags);
         }
         let mut selected = select::select(&scenarios, &lines_asked, &filter)?;
+        let durations = Durations::load(&config.durations, &backend.name);
+        let mut shards = None;
         if let Some(shard) = &args.shard {
             let (index, total) = select::parse_shard(shard)?;
-            selected = select::shard(selected, index, total);
+            (selected, shards) = shard_by_time(selected, index, total, |s| {
+                let scenario = &scenarios[s.file];
+                let file = durations::key(&config.root, &scenario.path);
+                durations.ms(&file, &scenario.tests[s.test].name)
+            });
         }
         let mut hooks: Vec<Hooks> = scenarios.iter().map(|_| Hooks::default()).collect();
         let mut hooked = vec![false; scenarios.len()];
@@ -290,7 +312,37 @@ impl Plan {
             backend,
             run,
             allow_writes: args.allow_writes,
+            durations,
+            failed_first: args.failed_first,
+            shards,
         })
+    }
+
+    /// The order the tests start in, as indexes into [`Plan::tests`]: with
+    /// `--failed-first` those that failed last time first, then the
+    /// longest first by the durations file, those it has no time for
+    /// first of all (they may be long); skipped tests last. Ties keep the
+    /// plan's order, so without durations it is the plan's order.
+    pub(super) fn order(&self) -> Vec<usize> {
+        let root = &self.config.root;
+        let keys: Vec<_> = self
+            .tests
+            .iter()
+            .map(|test| {
+                let file = durations::key(root, &self.scenarios[test.file].path);
+                let failed = self.failed_first && self.durations.failed(&file, &test.name);
+                let ms = self.durations.ms(&file, &test.name);
+                (
+                    test.skipped().is_some(),
+                    !failed,
+                    ms.is_some(),
+                    std::cmp::Reverse(ms.unwrap_or(0)),
+                )
+            })
+            .collect();
+        let mut order: Vec<usize> = (0..self.tests.len()).collect();
+        order.sort_by_key(|&i| keys[i]);
+        order
     }
 
     /// The time limit of a test (or hook) with `settings`.
@@ -323,6 +375,53 @@ impl Plan {
         }
         test.settings.retries.unwrap_or(self.retries)
     }
+}
+
+/// Shard `index` (from 1) of `total` of `selected`, split by time when
+/// `ms` knows how long one of them takes ([`select::pack`]), else by
+/// count as without durations. A test it has no time for counts as the
+/// mean of those it has, a skipped one as nothing. The tests keep their
+/// order.
+fn shard_by_time(
+    selected: Vec<Selected>,
+    index: usize,
+    total: usize,
+    ms: impl Fn(&Selected) -> Option<u64>,
+) -> (Vec<Selected>, Option<Shards>) {
+    let known: Vec<Option<u64>> = selected
+        .iter()
+        .map(|s| {
+            if s.skipped().is_some() {
+                Some(0)
+            } else {
+                ms(s)
+            }
+        })
+        .collect();
+    let times: Vec<u64> = selected
+        .iter()
+        .zip(&known)
+        .filter(|(s, _)| s.skipped().is_none())
+        .filter_map(|(_, ms)| *ms)
+        .collect();
+    if times.is_empty() {
+        return (select::shard(selected, index, total), None);
+    }
+    let mean = times.iter().sum::<u64>() / times.len() as u64;
+    let weights: Vec<u64> = known.iter().map(|ms| ms.unwrap_or(mean)).collect();
+    let packed = select::pack(&weights, total);
+    let mut expected = vec![(0, 0u64); total];
+    for (&shard, &weight) in packed.iter().zip(&weights) {
+        expected[shard].0 += 1;
+        expected[shard].1 += weight;
+    }
+    let mine = selected
+        .into_iter()
+        .zip(packed)
+        .filter(|(_, shard)| *shard == index - 1)
+        .map(|(s, _)| s)
+        .collect();
+    (mine, Some(Shards { index, expected }))
 }
 
 /// A scenario's artifacts directory: `<artifacts>/<file>`, the file

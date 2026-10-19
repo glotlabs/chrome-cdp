@@ -6173,6 +6173,10 @@ pub struct TestRunData {
     /// `--shard`, as given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard: Option<String>,
+    /// `--list --shard` split by the durations file: every shard's tests
+    /// and expected time, in shard order (empty when split by count).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shards: Vec<TestShard>,
     /// `--list`: the tests were listed, not run.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub listed: bool,
@@ -6211,6 +6215,22 @@ pub struct TestRunData {
     /// acted on and checked, and the mocks they used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui_coverage: Option<UiCoverageData>,
+}
+
+/// A shard of `chrome-cdp test --list --shard`, split by the tests'
+/// durations (plan 22.5).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TestShard {
+    /// `2/4`.
+    pub shard: String,
+    /// How many tests it has.
+    pub tests: usize,
+    /// The sum of its tests' average durations; a test the file has no
+    /// time for counts as the mean of the others.
+    pub expected_ms: u64,
+    /// Whether it is the shard listed.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub listed: bool,
 }
 
 /// How many tests of a `chrome-cdp test` run ran at once.

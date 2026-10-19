@@ -463,6 +463,7 @@ mod tests {
             not_run: 0,
             duration_ms: 4200,
             shard: None,
+            shards: Vec::new(),
             listed: false,
             repeat: None,
             jobs: None,

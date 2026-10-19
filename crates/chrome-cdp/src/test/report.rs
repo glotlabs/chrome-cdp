@@ -5,7 +5,7 @@
 use std::fmt::Write as _;
 use std::time::Duration;
 
-use protocol::schema::{TestDebug, TestFailure, TestJobs, TestResult, TestRunData};
+use protocol::schema::{TestDebug, TestFailure, TestJobs, TestResult, TestRunData, TestShard};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output, Style, format};
 use serde_json::json;
 
@@ -127,6 +127,7 @@ pub(super) fn data(
         not_run: count(Status::NotRun),
         duration_ms: u64::try_from(duration.as_millis()).unwrap_or(u64::MAX),
         shard: shard.map(str::to_owned),
+        shards: Vec::new(),
         listed: false,
         repeat: (plan.repeat > 1).then_some(plan.repeat),
         jobs: Some(TestJobs {
@@ -356,6 +357,25 @@ pub(super) fn listed(plan: &Plan, shard: Option<&str>, max_chars: usize) -> Outp
             String::new()
         }
     );
+    let shards = shards(plan);
+    if !shards.is_empty() {
+        let _ = write!(
+            text,
+            "\nexpected time by shard (from {}):",
+            super::durations::key(&plan.config.root, &plan.config.durations)
+        );
+        for s in &shards {
+            let _ = write!(
+                text,
+                "\n  {}: {} test{}, {}{}",
+                s.shard,
+                s.tests,
+                if s.tests == 1 { "" } else { "s" },
+                format::duration(Duration::from_millis(s.expected_ms)),
+                if s.listed { " (listed)" } else { "" }
+            );
+        }
+    }
     let quiet: Vec<String> = plan.tests.iter().map(|t| place(plan, t)).collect();
     let data = TestRunData {
         tests,
@@ -366,6 +386,7 @@ pub(super) fn listed(plan: &Plan, shard: Option<&str>, max_chars: usize) -> Outp
         not_run: 0,
         duration_ms: 0,
         shard: shard.map(str::to_owned),
+        shards,
         listed: true,
         repeat: None,
         jobs: None,
@@ -378,7 +399,30 @@ pub(super) fn listed(plan: &Plan, shard: Option<&str>, max_chars: usize) -> Outp
         heal: None,
         ui_coverage: None,
     };
-    Output::typed(&data, text)
+    let mut out = Output::typed(&data, text)
         .quiet(quiet.join("\n"))
-        .limit(max_chars, "--max-chars 0 for all of it")
+        .limit(max_chars, "--max-chars 0 for all of it");
+    if let Some(warning) = &plan.durations.warning {
+        out = out.warning(warning.clone());
+    }
+    out
+}
+
+/// `--shard` split by time: every shard's tests and expected time.
+fn shards(plan: &Plan) -> Vec<TestShard> {
+    let Some(shards) = &plan.shards else {
+        return Vec::new();
+    };
+    let total = shards.expected.len();
+    shards
+        .expected
+        .iter()
+        .enumerate()
+        .map(|(i, &(tests, expected_ms))| TestShard {
+            shard: format!("{}/{total}", i + 1),
+            tests,
+            expected_ms,
+            listed: i + 1 == shards.index,
+        })
+        .collect()
 }

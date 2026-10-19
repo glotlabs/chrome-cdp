@@ -1,6 +1,7 @@
 //! Running the tests of a [`Plan`] (plan 11, milestone 11.4).
 //!
-//! `jobs` worker threads take the tests in order. Each test runs in a
+//! `jobs` worker threads take the tests in order: the longest first, by
+//! the durations of earlier runs (plan 22.5). Each test runs in a
 //! fresh browser context of the worker's session (`context new`), which
 //! gets the test's mock sets, its viewport and the settings that make it
 //! behave the same in every run ([`super::determinism`], 11.6), all in
@@ -14,7 +15,8 @@
 //! next `expect` retries (plan 22.3). A failed test
 //! runs again up to its retries; one that then passes is flaky.
 //!
-//! A file's `@before-all` runs once, before its first test (a worker that
+//! A file's `@before-all` runs once, before the first of its tests to
+//! start, wherever that is in the order (a worker that
 //! needs it meanwhile waits), in a context of its own; its `@after-all`
 //! runs after its last test. A failed `@before-all` fails every test of
 //! the file.
@@ -159,10 +161,14 @@ enum Once {
     Failed(Box<TestFailure>),
 }
 
-/// Runs `plan`'s tests, each `plan.repeat` times; `report` gets each
-/// test's result in the plan's order as soon as it and those before it
-/// are known. `stop` ends the run early (the tests not started are not
-/// run).
+/// Outcomes as they come in, some not yet.
+type Outcomes = Vec<Option<Outcome>>;
+
+/// Runs `plan`'s tests, each `plan.repeat` times, in [`Plan::order`]
+/// (longest first, plan 22.5); `report` gets each test's result (by its
+/// index in the plan) as soon as its runs are done, and the results come
+/// back in the plan's order. `stop` ends the run early (the tests not
+/// started are not run).
 pub(super) fn execute(
     plan: &Plan,
     options: &Options,
@@ -174,11 +180,11 @@ pub(super) fn execute(
     // A run of a test is an item; the runs of a test are next to each
     // other, so they spread over the workers.
     let items = count * repeat;
+    let order = plan.order();
     let next = AtomicUsize::new(0);
-    // Each run's outcome until its test's runs are all in, then each
-    // test's, merged.
-    let results: Mutex<(Vec<Option<Outcome>>, Vec<Outcome>)> =
-        Mutex::new((vec![None; items], Vec::new()));
+    // Each run's outcome (by the plan's test, then run) until its test's
+    // runs are all in, then each test's, merged.
+    let results: Mutex<(Outcomes, Outcomes)> = Mutex::new((vec![None; items], vec![None; count]));
     let before_all: Vec<Mutex<Once>> = plan
         .scenarios
         .iter()
@@ -211,7 +217,8 @@ pub(super) fn execute(
     std::thread::scope(|scope| {
         for worker in 0..workers {
             let session = &options.sessions[worker % options.sessions.len()];
-            let (next, results, before_all, left) = (&next, &results, &before_all, &left);
+            let (next, results, before_all, left, order) =
+                (&next, &results, &before_all, &left, &order);
             scope.spawn(move || {
                 // One runtime and daemon connection for all its calls.
                 let _worker = crate::session::Worker::start();
@@ -222,7 +229,8 @@ pub(super) fn execute(
                     if item >= items {
                         break;
                     }
-                    let test = &plan.tests[item / repeat];
+                    let index = order[item / repeat];
+                    let test = &plan.tests[index];
                     let mut outcome = if stop.load(Ordering::SeqCst) {
                         not_run(options)
                     } else if let Some(reason) = test.skipped() {
@@ -263,7 +271,6 @@ pub(super) fn execute(
                             coverage: RefCell::new(Coverage::default()),
                             covered: RefCell::new((String::new(), false)),
                         };
-                        let index = item / repeat;
                         let outcome = match runner.before_all(test, &before_all[test.file]) {
                             Err(failure) => Outcome {
                                 status: Status::Failed,
@@ -301,32 +308,33 @@ pub(super) fn execute(
                     }
                     let mut guard = results.lock().unwrap_or_else(PoisonError::into_inner);
                     let (done, merged) = &mut *guard;
-                    done[item] = Some(outcome);
-                    while merged.len() < count {
-                        let at = merged.len();
-                        let runs = &mut done[at * repeat..(at + 1) * repeat];
-                        if runs.iter().any(Option::is_none) {
-                            break;
-                        }
+                    let runs = &mut done[index * repeat..(index + 1) * repeat];
+                    runs[item % repeat] = Some(outcome);
+                    if runs.iter().all(Option::is_some) {
                         let runs = runs.iter_mut().filter_map(Option::take).collect();
                         let outcome = diagnosed(plan, merge(runs, repeat));
-                        report(at, &outcome);
-                        merged.push(outcome);
+                        report(index, &outcome);
+                        merged[index] = Some(outcome);
                     }
                 }
             });
         }
     });
-    let (done, mut merged) = results.into_inner().unwrap_or_else(PoisonError::into_inner);
+    let (done, merged) = results.into_inner().unwrap_or_else(PoisonError::into_inner);
     // The tests whose runs did not all end (the run was stopped).
-    for runs in done.chunks(repeat).skip(merged.len()) {
-        let runs = runs
-            .iter()
-            .map(|o| o.clone().unwrap_or_else(|| not_run(options)))
-            .collect();
-        merged.push(diagnosed(plan, merge(runs, repeat)));
-    }
     merged
+        .into_iter()
+        .zip(done.chunks(repeat))
+        .map(|(merged, runs)| {
+            merged.unwrap_or_else(|| {
+                let runs = runs
+                    .iter()
+                    .map(|o| o.clone().unwrap_or_else(|| not_run(options)))
+                    .collect();
+                diagnosed(plan, merge(runs, repeat))
+            })
+        })
+        .collect()
 }
 
 /// `outcome` with why its runs disagreed, if they did: the diagnosis goes

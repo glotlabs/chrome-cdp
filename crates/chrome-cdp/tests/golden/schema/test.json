@@ -1822,6 +1822,13 @@
             "null"
           ]
         },
+        "shards": {
+          "description": "`--list --shard` split by the durations file: every shard's tests\nand expected time, in shard order (empty when split by count).",
+          "items": {
+            "$ref": "#/$defs/TestShard"
+          },
+          "type": "array"
+        },
         "skipped": {
           "format": "uint",
           "minimum": 0,
@@ -1865,6 +1872,37 @@
         "skipped",
         "not_run",
         "duration_ms"
+      ],
+      "type": "object"
+    },
+    "TestShard": {
+      "description": "A shard of `chrome-cdp test --list --shard`, split by the tests'\ndurations (plan 22.5).",
+      "properties": {
+        "expected_ms": {
+          "description": "The sum of its tests' average durations; a test the file has no\ntime for counts as the mean of the others.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "listed": {
+          "description": "Whether it is the shard listed.",
+          "type": "boolean"
+        },
+        "shard": {
+          "description": "`2/4`.",
+          "type": "string"
+        },
+        "tests": {
+          "description": "How many tests it has.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "shard",
+        "tests",
+        "expected_ms"
       ],
       "type": "object"
     },

@@ -92,6 +92,7 @@ command chrome-cdp test
   flag --retries value=N
   flag --repeat value=N
   flag --bail
+  flag --failed-first
   flag --headed
   flag --update-snapshots
   flag --list

@@ -7,8 +7,9 @@
 //! config's web servers (unless something answers on their URLs already),
 //! opens a browser session of its own (`test-<pid>`, or `--session`), and
 //! [`exec`] runs the tests in `jobs` workers, each test in a fresh browser
-//! context. [`report`] prints a line per test as it ends (in the plan's
-//! order), and the closing summary. The sessions it started are closed at
+//! context, the longest first ([`durations`], plan 22.5). [`report`]
+//! prints a line per test as it ends, and the closing summary (in the
+//! plan's order). The sessions it started are closed at
 //! the end, and the web servers stopped, also when one exits early or on
 //! Ctrl-C.
 
@@ -17,6 +18,7 @@ mod artifacts;
 mod backend;
 mod coverage;
 mod determinism;
+mod durations;
 mod exec;
 mod fingerprints;
 mod flake;
@@ -562,6 +564,8 @@ fn conclude(
         *info = report::debugging(info.clone(), debug, servers_started);
     }
     heal_warnings.extend(options.fingerprint_warnings.iter().cloned());
+    heal_warnings.extend(plan.durations.warning.clone());
+    heal_warnings.extend(plan.durations.record(plan, outcomes).err());
     heal_warnings.extend(coverage_warnings);
     for warning in record_warnings.into_iter().chain(heal_warnings) {
         result = match result {

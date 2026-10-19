@@ -129,6 +129,12 @@ fn once(
         },
     );
     let (outcomes, _) = ran.and_then(|r| r)?;
+    let durations = plan.durations.record(plan, &outcomes).err();
+    if mode != Mode::Json {
+        for warning in plan.durations.warning.iter().chain(&durations) {
+            output::stderr(&format!("warning: {warning}\n"));
+        }
+    }
     let mut data = report::data(
         plan,
         &outcomes,
@@ -163,6 +169,7 @@ fn combine(runs: &[(Plan, TestRunData)], duration: Duration, args: &TestArgs) ->
         not_run: sum(|d| d.not_run),
         duration_ms: u64::try_from(duration.as_millis()).unwrap_or(u64::MAX),
         shard: args.shard.clone(),
+        shards: Vec::new(),
         listed: args.list,
         repeat: args.repeat.filter(|&r| r > 1),
         jobs: None,

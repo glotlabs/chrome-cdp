@@ -17,10 +17,11 @@ Options:
 - `--tags <TAGS>`: Only tests with one of these tags; `!tag` leaves a tag out, e.g. smoke,!slow
 - `--jobs <N>`: How many tests run at once, e.g. 8. Default: `jobs` in the config, else one per CPU, fewer when free memory is short (a GB each), at most 16
 - `--jobs-isolation <HOW>`: Where the tests run at once: in browser contexts of a Chrome per 3 jobs (`auto`, the default), of one Chrome, or in a Chrome each, e.g. `--jobs-isolation context` (one of `auto`, `context`, `browser`; default `auto`)
-- `--shard <INDEX/TOTAL>`: Run only part INDEX of TOTAL near-equal parts, e.g. 2/4 (for CI machines that split a suite)
+- `--shard <INDEX/TOTAL>`: Run only part INDEX of TOTAL near-equal parts, e.g. 2/4 (for CI machines that split a suite); equal in time once the durations file knows the tests'
 - `--retries <N>`: Run a failed test again up to N times. Default: `retries` in the config, else 0; a test's @retries wins
 - `--repeat <N>`: Run each test N times, without retries, to find flaky tests: a test fails if any of its runs does, and the likely cause of its failures is named
 - `--bail`: Stop after the first failed test
+- `--failed-first`: Start the tests that failed in the last run first (from the durations file), e.g. `test --failed-first --bail`
 - `--headed`: Show a browser window
 - `--update-snapshots`: Write the baselines of expect-snapshot and expect-screenshot steps (in e2e/snapshots) instead of comparing with them
 - `--list`: List the tests the run would have, without running them
