@@ -13,8 +13,11 @@
 //! directly ([`step`]), leanly, and every step's timing and result goes
 //! to the [`record`]s.
 
+mod data;
+mod model;
 mod plan;
 mod pool;
+pub(crate) mod profile;
 mod record;
 mod step;
 pub(crate) mod think;
