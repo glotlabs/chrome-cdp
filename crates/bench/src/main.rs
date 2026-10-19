@@ -121,6 +121,9 @@ enum Suite {
         /// Seconds over which each run's users start
         #[arg(long, default_value_t = 10)]
         ramp_up: u64,
+        /// `[load] cache` of the runs: `new` or `returning`
+        #[arg(long, default_value = "new", value_parser = ["new", "returning"])]
+        cache: String,
     },
 }
 
@@ -296,6 +299,7 @@ fn run(suite: Suite) -> Result<(), String> {
             per_browser,
             duration,
             ramp_up,
+            cache,
         } => {
             let bin = binary(&common.bin_dir, "chrome-cdp")?;
             let r = load::run(&load::Options {
@@ -305,6 +309,7 @@ fn run(suite: Suite) -> Result<(), String> {
                 per_browser,
                 duration: std::time::Duration::from_secs(duration),
                 ramp_up: std::time::Duration::from_secs(ramp_up),
+                cache: &cache,
             })?;
             let path = report::results_dir().join("load.json");
             report::write_json(&path, &r)?;

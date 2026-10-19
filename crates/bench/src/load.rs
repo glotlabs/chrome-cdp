@@ -14,6 +14,12 @@
 //! elsewhere, which counts Chrome's shared framework once per process and
 //! so reads several times too high on macOS.
 //!
+//! `--cache returning` runs the users with `[load] cache = "returning"`
+//! (plan 23.2), with an `@before` that clears the user's cookies, as the
+//! journey expects an empty cart: only the HTTP cache (and the context)
+//! carries over. Each run also reports the browser contexts made and the
+//! mean time one took, which context reuse saves.
+//!
 //! **Users per machine** is the most users of a run that held: under 1%
 //! of its iterations failed, chrome-cdp and its Chromes used under 90% of
 //! the machine's CPUs, and its step p95 stayed within twice the smallest
@@ -57,6 +63,8 @@ pub struct Options<'a> {
     /// How long users start iterations, after the ramp-up.
     pub duration: Duration,
     pub ramp_up: Duration,
+    /// `[load] cache`: `new` or `returning`.
+    pub cache: &'a str,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -64,6 +72,12 @@ pub struct LoadReport {
     pub created: u64,
     pub host: Host,
     pub chrome: String,
+    /// `chrome-headless-shell` or `chrome`, as `load` reported it.
+    #[serde(default)]
+    pub browser: String,
+    /// `[load] cache`.
+    #[serde(default)]
+    pub cache: String,
     pub journey: String,
     pub duration_s: u64,
     pub ramp_up_s: u64,
@@ -94,6 +108,14 @@ pub struct LoadRun {
     pub chrome_cpu_s: f64,
     pub cdp_rss_peak: u64,
     pub cdp_cpu_s: f64,
+    /// The browser contexts made, and the mean time one took, in ms.
+    #[serde(default)]
+    pub contexts: u64,
+    #[serde(default)]
+    pub context_setup_ms: f64,
+    /// `chrome-headless-shell` or `chrome`.
+    #[serde(default)]
+    pub browser: String,
     /// Whether the run held (see the module's docs).
     #[serde(default)]
     pub held: bool,
@@ -166,6 +188,8 @@ pub fn run(opts: &Options<'_>) -> Result<LoadReport, String> {
         created: report::now(),
         host: Host::this(),
         chrome: crate::micro::chrome_version(opts.chrome),
+        browser: runs.first().map(|r| r.browser.clone()).unwrap_or_default(),
+        cache: opts.cache.to_owned(),
         journey: JOURNEY.to_owned(),
         duration_s: opts.duration.as_secs(),
         ramp_up_s: opts.ramp_up.as_secs(),
@@ -211,10 +235,20 @@ fn one_run(
         project.join("chrome-cdp.toml"),
         format!(
             "[e2e]\ntests = [\"scenarios/*.cdp\"]\ndefault_backend = \"load\"\n\n\
-             [e2e.backends.load]\nmode = \"real\"\nbase_url = \"{url}\"\n"
+             [e2e.backends.load]\nmode = \"real\"\nbase_url = \"{url}\"\n\n\
+             [load]\ncache = \"{}\"\n",
+            opts.cache
         ),
     )
     .map_err(|e| format!("write the project: {e}"))?;
+    // A returning user keeps the shop's cart cookie, and the journey
+    // expects an empty cart: the user clears its cookies (a new session)
+    // and keeps its HTTP cache.
+    let journey = if opts.cache == "returning" {
+        format!("@before\n  cookies clear\n\n{journey}")
+    } else {
+        journey.to_owned()
+    };
     std::fs::write(project.join("scenarios/shop.cdp"), journey)
         .map_err(|e| format!("write the journey: {e}"))?;
     let child = sandbox
@@ -294,18 +328,22 @@ fn one_run(
         chrome_cpu_s: usage.chrome_cpu_s,
         cdp_rss_peak: usage.cdp_rss_peak,
         cdp_cpu_s: usage.cdp_cpu_s,
+        contexts: data["contexts"].as_u64().unwrap_or(0),
+        context_setup_ms: data["context_setup_ms"].as_f64().unwrap_or(0.0),
+        browser: data["browser"].as_str().unwrap_or_default().to_owned(),
         held: false,
     })
 }
 
 /// The durations of the steps of `steps.jsonl` that are not `think`
-/// steps or the runner's own, in ms.
+/// steps or the runner's own (`setup`, `memory`), in ms.
 pub fn step_times(steps: &str) -> Vec<f64> {
     steps
         .lines()
         .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
         .filter(|s| {
             s["hook"] != "setup"
+                && s["hook"] != "memory"
                 && !s["command"]
                     .as_str()
                     .is_some_and(|c| c == "think" || c.starts_with("think "))
@@ -465,14 +503,21 @@ fn bytes(n: u64) -> String {
 
 pub fn markdown(r: &LoadReport) -> String {
     let mut md = format!(
-        "Last run: {} on {} ({} CPUs), {}. `{}`, {} s per run after a {} s ramp-up.\n\n",
+        "Last run: {} on {} ({} CPUs), {}{}. `{}`, {} s per run after a {} s ramp-up, \
+         `cache = \"{}\"`.\n\n",
         report::date(r.created),
         r.host.key(),
         r.host.cpus,
         r.chrome,
+        if r.browser.is_empty() {
+            String::new()
+        } else {
+            format!(" as {}", r.browser)
+        },
         r.journey,
         r.duration_s,
-        r.ramp_up_s
+        r.ramp_up_s,
+        if r.cache.is_empty() { "new" } else { &r.cache }
     );
     let _ = writeln!(
         md,
@@ -486,13 +531,13 @@ pub fn markdown(r: &LoadReport) -> String {
         .map_or("RSS", |run| if run.memory == "pss" { "PSS" } else { "RSS" });
     let _ = writeln!(
         md,
-        "| Users | Per Chrome | Chromes | Iterations | Failed | Step p50 | Step p95 | Chrome {memory} / user | Chrome CPU / user | chrome-cdp CPU | chrome-cdp RSS | All CPUs | Held |",
+        "| Users | Per Chrome | Chromes | Iterations | Failed | Step p50 | Step p95 | Chrome {memory} / user | Chrome CPU / user | chrome-cdp CPU | chrome-cdp RSS | All CPUs | Contexts | Context setup | Held |",
     );
-    md.push_str("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|\n");
+    md.push_str("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|\n");
     for run in &r.runs {
         let _ = writeln!(
             md,
-            "| {} | {} | {} | {} | {}% | {} ms | {} ms | {} | {}% | {} | {} | {} | {} |",
+            "| {} | {} | {} | {} | {}% | {} ms | {} ms | {} | {}% | {} | {} | {} | {} | {} ms | {} |",
             run.users,
             run.per_browser,
             run.browsers,
@@ -505,6 +550,8 @@ pub fn markdown(r: &LoadReport) -> String {
             report::fmt_num(run.cdp_cores()),
             bytes(run.cdp_rss_peak),
             report::fmt_num(run.cores()),
+            run.contexts,
+            report::fmt_num(run.context_setup_ms),
             if run.held { "yes" } else { "no" }
         );
     }
@@ -554,6 +601,7 @@ mod tests {
         let steps = r#"{"command":"goto /","start_ms":0.0,"end_ms":120.0,"result":"ok"}
 {"command":"think 2s","start_ms":120.0,"end_ms":2120.0,"result":"ok"}
 {"command":"context new","hook":"setup","start_ms":0.0,"end_ms":5.0,"result":"error"}
+{"command":"renderer memory","hook":"memory","start_ms":0.0,"end_ms":5.0,"result":"error"}
 {"command":"click x","start_ms":2120.0,"end_ms":2150.0,"result":"ok"}"#;
         assert_eq!(step_times(steps), vec![120.0, 30.0]);
     }
@@ -573,6 +621,9 @@ mod tests {
             chrome_cpu_s: cpu_s,
             cdp_rss_peak: 0,
             cdp_cpu_s: 0.0,
+            contexts: 0,
+            context_setup_ms: 0.0,
+            browser: "chrome".to_owned(),
             held: false,
         }
     }
