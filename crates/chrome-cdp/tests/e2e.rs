@@ -457,7 +457,16 @@ fn durations_order_the_tests_and_their_lines() {
     let Some(chrome) = chrome_path() else { return };
     let project = Project::new(&chrome);
     let file = project.root.join("e2e/.durations.json");
-    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    // Without a file, --failed-first says it has nothing to go by.
+    let out = project.test(&["scenarios/pass/todos.cdp:19", "--failed-first"]);
+    assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("warning: --failed-first: ")
+            && stderr(&out).contains("has no runs yet"),
+        "{}",
+        stderr(&out)
+    );
+    assert!(file.is_file());
     std::fs::write(&file, DURATIONS).unwrap();
     // Last time's failure first, then the unknown test, then the longest
     // first; the files interleave, and layers.cdp's @before-all still

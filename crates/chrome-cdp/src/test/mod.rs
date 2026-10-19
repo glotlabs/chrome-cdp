@@ -298,6 +298,12 @@ fn ready(plan: &Plan, args: &TestArgs, global: &GlobalArgs, mode: Mode) -> Resul
             }
         ));
     }
+    if args.failed_first && !plan.durations.known() && mode == Mode::Text {
+        output::stderr(&format!(
+            "warning: --failed-first: {} has no runs yet, so the tests run in the usual order\n",
+            plan.durations.path().display()
+        ));
+    }
     let warnings = crate::mock::check_for_run(&plan.config, &sets)?;
     if mode == Mode::Text {
         const SHOWN: usize = 5;

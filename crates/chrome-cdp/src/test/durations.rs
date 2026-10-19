@@ -107,6 +107,16 @@ impl Durations {
         self.file.backends.get(&self.backend)
     }
 
+    /// Whether the file has any test of the backend.
+    pub(super) fn known(&self) -> bool {
+        self.tests().is_some_and(|tests| !tests.is_empty())
+    }
+
+    /// The file's path.
+    pub(super) fn path(&self) -> &Path {
+        &self.path
+    }
+
     /// What the file has of test `name` of `file` (a [`key`]).
     pub(super) fn get(&self, file: &str, name: &str) -> Option<&Entry> {
         self.tests()?.get(file)?.get(name)
