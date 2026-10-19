@@ -76,7 +76,13 @@ mod hmr;
 mod payments;
 mod shop;
 
-pub use shop::Shop;
+pub use shop::{Shop, ShopRoutes};
+
+/// Starts the shop's payment provider on `http://127.0.0.1:<port>` (0 =
+/// any free port) and returns its URL; it stops with the process.
+pub fn start_payments(port: u16) -> std::io::Result<String> {
+    payments::start(port)
+}
 
 use std::convert::Infallible;
 use std::future::Future;

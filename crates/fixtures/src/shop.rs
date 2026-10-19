@@ -72,10 +72,7 @@ impl Shop {
         let listener = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))?;
         listener.set_nonblocking(true)?;
         let url = format!("http://localhost:{}", listener.local_addr()?.port());
-        let site = Arc::new(Site {
-            dist,
-            state: Mutex::new(State::default()),
-        });
+        let routes = ShopRoutes::new(dist);
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?;
@@ -90,7 +87,7 @@ impl Shop {
                         let Ok((stream, _)) = listener.accept().await else {
                             continue;
                         };
-                        tokio::spawn(serve_connection(stream, site.clone()));
+                        tokio::spawn(serve_connection(stream, routes.clone()));
                     }
                 });
             })?;
@@ -147,39 +144,60 @@ fn summary(product: &Value) -> Value {
     json!({ "id": product["id"], "name": product["name"], "price": product["price"] })
 }
 
-async fn serve_connection(stream: tokio::net::TcpStream, site: Arc<Site>) {
-    let service = service_fn(move |mut req: Request<Incoming>| {
-        let site = site.clone();
-        async move {
-            let path = req.uri().path().to_owned();
-            if path == "/api/live" {
-                return Ok::<_, Infallible>(live(&mut req));
-            }
-            if path.starts_with("/api/") {
-                let query = req.uri().query().unwrap_or_default().to_owned();
-                let (parts, body) = req.into_parts();
-                let body = body
-                    .collect()
-                    .await
-                    .map(http_body_util::Collected::to_bytes)
-                    .unwrap_or_default();
-                let cookies = parts
-                    .headers
-                    .get(COOKIE)
-                    .and_then(|v| v.to_str().ok())
-                    .unwrap_or_default();
-                let mut state = site.state.lock().unwrap_or_else(PoisonError::into_inner);
-                return Ok(api(
-                    &mut state,
-                    &parts.method,
-                    &path,
-                    &query,
-                    cookies,
-                    &body,
-                ));
-            }
-            Ok(file(&site.dist, &path))
+/// The shop's app and API, without a server of their own: the load
+/// server (`testdata/load/server`) answers with them behind its faults.
+/// Clones share the state.
+#[derive(Debug, Clone)]
+pub struct ShopRoutes {
+    site: Arc<Site>,
+}
+
+impl ShopRoutes {
+    /// The routes of a fresh shop serving the built app in `dist`.
+    pub fn new(dist: PathBuf) -> Self {
+        Self {
+            site: Arc::new(Site {
+                dist,
+                state: Mutex::new(State::default()),
+            }),
         }
+    }
+
+    /// Answers a request as the shop does: `/api/live`, the API, else a
+    /// file of the app.
+    pub async fn respond(&self, mut req: Request<Incoming>) -> Response<Full<Bytes>> {
+        let path = req.uri().path().to_owned();
+        if path == "/api/live" {
+            return live(&mut req);
+        }
+        if path.starts_with("/api/") {
+            let query = req.uri().query().unwrap_or_default().to_owned();
+            let (parts, body) = req.into_parts();
+            let body = body
+                .collect()
+                .await
+                .map(http_body_util::Collected::to_bytes)
+                .unwrap_or_default();
+            let cookies = parts
+                .headers
+                .get(COOKIE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default();
+            let mut state = self
+                .site
+                .state
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            return api(&mut state, &parts.method, &path, &query, cookies, &body);
+        }
+        file(&self.site.dist, &path)
+    }
+}
+
+async fn serve_connection(stream: tokio::net::TcpStream, routes: ShopRoutes) {
+    let service = service_fn(move |req: Request<Incoming>| {
+        let routes = routes.clone();
+        async move { Ok::<_, Infallible>(routes.respond(req).await) }
     });
     let _ = http1::Builder::new()
         .serve_connection(TokioIo::new(stream), service)
