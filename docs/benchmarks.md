@@ -132,6 +132,7 @@ cargo xtask scale-suite                     # write testdata/scale/ (1,000 tests
 cargo xtask bench scale                     # write it, run it, publish here
 cargo xtask bench scale --tests 200 -- --jobs 1,4,16 --no-publish
 cargo xtask bench scale -- --jobs 8,8:context,8:browser
+cargo xtask bench scale -- --jobs 16,16,4 --shards 4
 ```
 
 Plan 22 tunes the test runner, and tuning needs a suite of realistic
@@ -167,6 +168,16 @@ For each run, the table has:
   and of the daemon, read with `ps` every 250 ms;
 - how many tests failed (or were flaky). A run that was not clean fails
   the suite, after the table is written.
+
+The bench removes the suite's durations file (plan 22.5) first, so the
+first run starts the tests in the plan's order; each run writes the file,
+so the runs after it start the longest first, and their rows say
+`longest first`. `--shards N` then runs each of N shards on its own, as
+on a CI machine of its own, with the last `--jobs` value: split by count
+(without the durations file) and by time (each shard from the same file,
+the one the runs before it left), and writes a second table of each
+shard's tests, expected time and wall time, and how far above the mean
+the slowest shard took.
 
 `--baseline` also writes the table into the baseline section, which
 plan 22's later milestones compare with. Results go to
@@ -274,6 +285,36 @@ per CPU it rises again (32: 88.7 s). A Chrome per job is as fast at 16
 (81.7 s) for 11 GB more; a Chrome per 2 or 4 jobs was measured too
 (16 jobs: 87.8 s and 89.1 s). Chrome's memory is about 1.1 GB per job.
 Only this machine was measured.
+
+What 22.5 changed. Each run keeps its tests' durations, and the next
+one starts the longest first, so a long test no longer starts last. On
+this suite the gain is small, since its longest test (a checkout, about
+1.5 s alone) is short next to the run: with 16 jobs 82.2 s against
+82.8 s in the plan's order, run the same day. Starting the checkouts
+together loads Chrome early, so a test's median and setup are higher
+(1113 ms and 92 ms against 842 ms and 76 ms) for a slightly shorter run.
+With 4 jobs, 163 s (22.4: 165 s). Shards split by time are within 1% of
+each other, where shards by count were within 6% (the generated suite
+spreads its long tests evenly over its files; a suite whose slow tests
+sit together in a few files gains more):
+
+<!-- bench:scale-shards -->
+Each of 4 shards on its own with `--jobs 4`, by count (no durations file) and by time (the file the runs above left):
+
+| Shard | By count: tests | Wall time | By time: tests | Expected | Wall time |
+|---:|---:|---:|---:|---:|---:|
+| 1/4 | 250 | 48.3 s | 250 | 247 s | 45.1 s |
+| 2/4 | 250 | 45.9 s | 250 | 247 s | 44.9 s |
+| 3/4 | 250 | 43.1 s | 250 | 247 s | 45.5 s |
+| 4/4 | 250 | 44.8 s | 250 | 247 s | 45.6 s |
+
+The slowest shard: by count 48.3 s, 6.1% above the mean; by time 45.6 s, 0.8% above the mean.
+<!-- /bench:scale-shards -->
+
+"Expected" is the shard's tests' times added up, as the durations file
+had them after runs with 16 and 4 jobs (`cargo xtask bench scale -- --jobs
+16,16,4 --shards 4`); a test takes longer when more run beside it, so it
+is the proportions that matter.
 
 ## Agent task benchmark
 
