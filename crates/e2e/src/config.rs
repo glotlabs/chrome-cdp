@@ -15,7 +15,7 @@
 //! ones here.
 
 use std::collections::BTreeMap;
-use std::fmt;
+use std::fmt::{self, Write as _};
 use std::marker::PhantomData;
 use std::num::NonZeroU32;
 use std::ops::Range;
@@ -224,21 +224,117 @@ pub enum MockCheck {
 /// How many tests run at once.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Jobs {
-    /// Half the CPUs, at least one.
+    /// One per CPU, fewer when free memory is short, at most
+    /// [`MOST_AUTO_JOBS`] ([`Jobs::pick`]).
     Auto,
     Count(NonZeroU32),
+}
+
+/// What a test running at once costs in memory, about: Chrome's resident
+/// memory grew by about 1.1 GB per job on the scale suite with a Chrome
+/// per 3 jobs, which counts the pages its processes share more than once
+/// (plan 22.4).
+pub const MEMORY_PER_JOB: u64 = 1 << 30;
+/// The most tests `auto` runs at once: the most the scale suite was
+/// measured to gain from (plan 22.4); a bigger machine can say `--jobs`.
+pub const MOST_AUTO_JOBS: u32 = 16;
+
+/// How many tests run at once, and why when the run chose it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Picked {
+    pub count: u32,
+    /// For `auto`: what it went by, e.g. `16 CPUs, 30 GB free`.
+    pub why: Option<String>,
 }
 
 impl Jobs {
     /// The number of tests to run at once.
     pub fn count(self) -> u32 {
+        self.pick().count
+    }
+
+    /// The number of tests to run at once, and for `auto` why: this
+    /// machine's CPUs and free memory.
+    pub fn pick(self) -> Picked {
         match self {
-            Self::Count(n) => n.get(),
-            Self::Auto => std::thread::available_parallelism()
-                .map_or(1, |n| u32::try_from(n.get() / 2).unwrap_or(u32::MAX))
-                .max(1),
+            Self::Count(n) => Picked {
+                count: n.get(),
+                why: None,
+            },
+            Self::Auto => auto_jobs(
+                std::thread::available_parallelism()
+                    .map_or(1, |n| u32::try_from(n.get()).unwrap_or(u32::MAX)),
+                free_memory(),
+            ),
         }
     }
+}
+
+/// `auto`'s number of jobs on a machine with `cpus` CPUs and `free`
+/// bytes of memory free (`None` when unknown): one per CPU, one per
+/// [`MEMORY_PER_JOB`] free, at most [`MOST_AUTO_JOBS`], at least one.
+pub fn auto_jobs(cpus: u32, free: Option<u64>) -> Picked {
+    let mut count = cpus.min(MOST_AUTO_JOBS);
+    let mut why = format!("{cpus} CPU{}", if cpus == 1 { "" } else { "s" });
+    if let Some(free) = free {
+        count = count.min(u32::try_from(free / MEMORY_PER_JOB).unwrap_or(u32::MAX));
+        let _ = write!(why, ", {} GB free", free >> 30);
+    }
+    if cpus > MOST_AUTO_JOBS && count == MOST_AUTO_JOBS {
+        let _ = write!(why, ", {MOST_AUTO_JOBS} at most");
+    }
+    Picked {
+        count: count.max(1),
+        why: Some(why),
+    }
+}
+
+/// The memory free for new processes, in bytes, if the system says:
+/// `MemAvailable` on Linux; free, inactive and speculative pages on
+/// macOS (`vm_stat`).
+fn free_memory() -> Option<u64> {
+    if cfg!(target_os = "linux") {
+        meminfo_available(&std::fs::read_to_string("/proc/meminfo").ok()?)
+    } else if cfg!(target_os = "macos") {
+        let out = std::process::Command::new("vm_stat")
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+            .ok()?;
+        vm_stat_available(&String::from_utf8_lossy(&out.stdout))
+    } else {
+        None
+    }
+}
+
+/// `MemAvailable` of `/proc/meminfo`, in bytes.
+fn meminfo_available(text: &str) -> Option<u64> {
+    let line = text.lines().find(|l| l.starts_with("MemAvailable:"))?;
+    let kib: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
+    Some(kib * 1024)
+}
+
+/// The free, inactive and speculative pages of `vm_stat`'s output, in
+/// bytes: what macOS gives a new process without swapping.
+fn vm_stat_available(text: &str) -> Option<u64> {
+    let page: u64 = text
+        .split("page size of ")
+        .nth(1)?
+        .split_whitespace()
+        .next()?
+        .parse()
+        .ok()?;
+    let pages = |name: &str| -> Option<u64> {
+        let line = text.lines().find(|l| l.starts_with(name))?;
+        line.rsplit(':')
+            .next()?
+            .trim()
+            .trim_end_matches('.')
+            .parse()
+            .ok()
+    };
+    let total = pages("Pages free:")? + pages("Pages inactive:")? + pages("Pages speculative:")?;
+    Some(total * page)
 }
 
 /// A viewport size in CSS pixels.

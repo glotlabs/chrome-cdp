@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use super::{
     Config, DEFAULT_TIMEOUT, DEFAULT_VIEWPORT, FreezeTime, Jobs, PROJECT_FILES, RandomSeed,
-    Viewport, find_project_file, line_col,
+    Viewport, auto_jobs, find_project_file, line_col, meminfo_available, vm_stat_available,
 };
 
 fn file() -> PathBuf {
@@ -109,6 +109,47 @@ fn parses_the_plan_example() {
     assert_eq!(staging.jobs, Some(Jobs::Count(2.try_into().unwrap())));
     assert_eq!(staging.determinism.freeze_time, Some(FreezeTime::Off));
     assert!(!staging.protected);
+}
+
+#[test]
+fn auto_jobs_go_by_cpus_and_free_memory() {
+    const GB: u64 = 1 << 30;
+    let pick = |cpus, free| {
+        let p = auto_jobs(cpus, free);
+        (p.count, p.why.unwrap())
+    };
+    assert_eq!(pick(4, Some(12 * GB)), (4, "4 CPUs, 12 GB free".to_owned()));
+    // Memory short: a job per GB free.
+    assert_eq!(
+        pick(8, Some(3 * GB + GB / 2)),
+        (3, "8 CPUs, 3 GB free".to_owned())
+    );
+    // Capped, and the reason says so.
+    assert_eq!(
+        pick(64, Some(200 * GB)),
+        (16, "64 CPUs, 200 GB free, 16 at most".to_owned())
+    );
+    assert_eq!(pick(32, Some(10 * GB)).0, 10);
+    // Never none, and the memory left out when unknown.
+    assert_eq!(pick(1, Some(GB / 2)), (1, "1 CPU, 0 GB free".to_owned()));
+    assert_eq!(pick(2, None), (2, "2 CPUs".to_owned()));
+}
+
+#[test]
+fn free_memory_is_read_from_the_systems_text() {
+    let meminfo =
+        "MemTotal:       16303428 kB\nMemFree:          812344 kB\nMemAvailable:   12582912 kB\n";
+    assert_eq!(meminfo_available(meminfo), Some(12 * (1 << 30)));
+    assert_eq!(meminfo_available("MemTotal: 1 kB\n"), None);
+    let vm_stat = "Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                                  1000.
+Pages active:                                 440062.
+Pages inactive:                               2000.
+Pages speculative:                              500.
+Pages wired down:                             215960.
+";
+    assert_eq!(vm_stat_available(vm_stat), Some(3500 * 16384));
+    assert_eq!(vm_stat_available("Pages free: 1."), None);
 }
 
 #[test]
