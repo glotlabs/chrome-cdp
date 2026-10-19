@@ -88,9 +88,11 @@ enum Suite {
         /// The suite's directory (cargo xtask bench scale writes it first)
         #[arg(long, default_value = "testdata/scale")]
         suite: PathBuf,
-        /// The --jobs values to run, e.g. `--jobs 1,4,16`
-        #[arg(long, value_delimiter = ',', default_values_t = scale::JOBS)]
-        jobs: Vec<usize>,
+        /// The --jobs values to run, each with the runner's default
+        /// --jobs-isolation or the one after a colon, e.g. `--jobs
+        /// 1,4,16,16:context`
+        #[arg(long, value_delimiter = ',', default_values_t = scale::JOBS.map(scale::Jobs::from))]
+        jobs: Vec<scale::Jobs>,
         /// Also publish the results as the baseline later milestones
         /// compare with (the `scale-baseline` section)
         #[arg(long)]
@@ -242,7 +244,9 @@ fn run(suite: Suite) -> Result<(), String> {
                 .map(|run| {
                     format!(
                         "--jobs {}: {} failed, {} flaky",
-                        run.jobs, run.failed, run.flaky
+                        run.label(),
+                        run.failed,
+                        run.flaky
                     )
                 })
                 .collect();

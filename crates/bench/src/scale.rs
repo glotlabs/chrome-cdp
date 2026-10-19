@@ -1,12 +1,13 @@
 //! The scale suite (plan 22.1): `chrome-cdp test` on the generated suite
 //! of `testdata/scale/` (`cargo xtask scale-suite`, 1,000 tests by
-//! default) with `--jobs` 1, 2, 4, 8, 16 and 32. For each: the wall time,
+//! default) with `--jobs` 1, 2, 4, 8, 16 and 32 (each with the runner's
+//! default `--jobs-isolation`, or one asked for). For each: the wall time,
 //! the time per test, the runner's overhead per test by phase (from the
 //! `setup`, `check` and `teardown` records of each test's `steps.jsonl`)
 //! and the peak RSS of Chrome and the daemon.
 
 use std::collections::BTreeSet;
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -29,7 +30,51 @@ pub struct Options<'a> {
     pub chrome: &'a Path,
     /// The generated suite: `testdata/scale`.
     pub suite: PathBuf,
-    pub jobs: Vec<usize>,
+    pub jobs: Vec<Jobs>,
+}
+
+/// A `--jobs` value to run, and its `--jobs-isolation` (`None` for the
+/// runner's default): `16`, `16:context`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Jobs {
+    pub count: usize,
+    pub isolation: Option<String>,
+}
+
+impl From<usize> for Jobs {
+    fn from(count: usize) -> Self {
+        Self {
+            count,
+            isolation: None,
+        }
+    }
+}
+
+impl std::str::FromStr for Jobs {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, String> {
+        let (count, isolation) = match s.split_once(':') {
+            Some((count, how)) if !how.is_empty() => (count, Some(how.to_owned())),
+            Some(_) => return Err(format!("`{s}` has no --jobs-isolation after its colon")),
+            None => (s, None),
+        };
+        let count = count
+            .parse()
+            .ok()
+            .filter(|&n| n > 0)
+            .ok_or_else(|| format!("`{s}` is not a number of jobs (or N:isolation)"))?;
+        Ok(Self { count, isolation })
+    }
+}
+
+impl fmt::Display for Jobs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.isolation {
+            Some(how) => write!(f, "{}:{how}", self.count),
+            None => write!(f, "{}", self.count),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -47,6 +92,12 @@ pub struct ScaleReport {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScaleRun {
     pub jobs: usize,
+    /// The `--jobs-isolation` it ran with; `None` for the default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub isolation: Option<String>,
+    /// How many Chromes the tests ran in (0 when the runner did not say).
+    #[serde(default)]
+    pub browsers: usize,
     pub wall_ms: u64,
     pub passed: usize,
     /// Failed or flaky: either makes the run's numbers suspect.
@@ -61,6 +112,19 @@ pub struct ScaleRun {
 }
 
 impl ScaleRun {
+    /// `16`, `16 context`, with the Chromes when more than one: `16 (4
+    /// Chromes)`.
+    pub fn label(&self) -> String {
+        let mut label = self.jobs.to_string();
+        if let Some(how) = &self.isolation {
+            let _ = write!(label, " {how}");
+        }
+        if self.browsers > 1 {
+            let _ = write!(label, " ({} Chromes)", self.browsers);
+        }
+        label
+    }
+
     /// The wall time per test: what a test costs the suite.
     #[allow(clippy::cast_precision_loss)]
     pub fn per_test_ms(&self, tests: usize) -> f64 {
@@ -96,11 +160,12 @@ pub fn run(opts: &Options<'_>) -> Result<ScaleReport, String> {
     }
     let mut runs = Vec::new();
     let mut tests = 0;
-    for &jobs in &opts.jobs {
+    for jobs in &opts.jobs {
         crate::note(&format!("scale: --jobs {jobs}"));
         let (run, n) = one_run(opts, jobs)?;
         crate::note(&format!(
-            "scale: --jobs {jobs}: {} s, {} passed, {} failed, {} flaky",
+            "scale: --jobs {}: {} s, {} passed, {} failed, {} flaky",
+            run.label(),
             report::fmt_num(ms_f64(run.wall_ms) / 1000.0),
             run.passed,
             run.failed,
@@ -119,9 +184,17 @@ pub fn run(opts: &Options<'_>) -> Result<ScaleReport, String> {
     })
 }
 
-/// The suite with `--jobs jobs`, in a fresh sandbox (a new daemon and
-/// Chrome); also returns how many tests ran.
-fn one_run(opts: &Options<'_>, jobs: usize) -> Result<(ScaleRun, usize), String> {
+/// The suite with `--jobs jobs` (and its `--jobs-isolation`), in a fresh
+/// sandbox (new daemons and Chromes); also returns how many tests ran.
+fn one_run(opts: &Options<'_>, jobs: &Jobs) -> Result<(ScaleRun, usize), String> {
+    let mut args = vec![
+        "test".to_owned(),
+        "--jobs".to_owned(),
+        jobs.count.to_string(),
+    ];
+    if let Some(how) = &jobs.isolation {
+        args.extend(["--jobs-isolation".to_owned(), how.clone()]);
+    }
     let sandbox = Sandbox::new(opts.bin, opts.chrome)?;
     let before: BTreeSet<u32> = processes().iter().map(|p| p.pid).collect();
     let stop = Arc::new(AtomicBool::new(false));
@@ -144,7 +217,8 @@ fn one_run(opts: &Options<'_>, jobs: usize) -> Result<(ScaleRun, usize), String>
         .cli()
         .current_dir(&opts.suite)
         // Every test in the JSON: by default it is cut to fit --max-chars.
-        .args(["test", "--jobs", &jobs.to_string(), "--json", "--max-chars", "0"])
+        .args(&args)
+        .args(["--json", "--max-chars", "0"])
         .output()
         .map_err(|e| format!("run chrome-cdp test: {e}"));
     let wall = start.elapsed();
@@ -187,7 +261,10 @@ fn one_run(opts: &Options<'_>, jobs: usize) -> Result<(ScaleRun, usize), String>
     let count =
         |key: &str| usize::try_from(value["data"][key].as_u64().unwrap_or(0)).unwrap_or(usize::MAX);
     let run = ScaleRun {
-        jobs,
+        jobs: jobs.count,
+        isolation: jobs.isolation.clone(),
+        browsers: usize::try_from(value["data"]["jobs"]["browsers"].as_u64().unwrap_or(0))
+            .unwrap_or(0),
         wall_ms: u64::try_from(wall.as_millis()).unwrap_or(u64::MAX),
         passed: count("passed"),
         failed: count("failed"),
@@ -340,7 +417,7 @@ pub fn markdown(r: &ScaleReport) -> String {
         let _ = writeln!(
             md,
             "| {} | {} s | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
-            run.jobs,
+            run.label(),
             report::fmt_num(ms_f64(run.wall_ms) / 1000.0),
             ms(run.per_test_ms(r.tests)),
             ms(run.test_p50_ms),
@@ -415,6 +492,8 @@ mod tests {
     fn the_table_has_a_row_per_run() {
         let run = |jobs, wall_ms| ScaleRun {
             jobs,
+            isolation: None,
+            browsers: 1,
             wall_ms,
             passed: 10,
             failed: 0,
@@ -450,5 +529,24 @@ mod tests {
             "{md}"
         );
         assert!(md.contains("| 4 | 4 s | 400 ms |"), "{md}");
+        let mut r = r;
+        r.runs[1].isolation = Some("browser".to_owned());
+        r.runs[1].browsers = 4;
+        assert!(markdown(&r).contains("| 4 browser (4 Chromes) | 4 s | 400 ms |"));
+    }
+
+    #[test]
+    fn jobs_name_an_isolation_after_a_colon() {
+        let jobs = |s: &str| s.parse::<Jobs>();
+        assert_eq!(jobs("16"), Ok(Jobs::from(16)));
+        let context = jobs("16:context").unwrap();
+        assert_eq!(
+            (context.count, context.isolation.as_deref()),
+            (16, Some("context"))
+        );
+        assert_eq!(context.to_string(), "16:context");
+        for bad in ["0", "x", "16:", ":context"] {
+            assert!(jobs(bad).is_err(), "{bad}");
+        }
     }
 }
