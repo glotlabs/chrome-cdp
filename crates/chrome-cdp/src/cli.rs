@@ -5001,24 +5001,7 @@ pub(crate) struct ReproSaveArgs {
 
 /// `5MB`, `200KB`, `1.5MB`, `1024`: a size in bytes (K and M are 1024s).
 fn parse_bytes(text: &str) -> Result<u64, String> {
-    let t = text.trim();
-    let upper = t.to_ascii_uppercase();
-    let (number, scale) = if let Some(n) = upper.strip_suffix("MB").or(upper.strip_suffix('M')) {
-        (n, 1024.0 * 1024.0)
-    } else if let Some(n) = upper.strip_suffix("KB").or(upper.strip_suffix('K')) {
-        (n, 1024.0)
-    } else {
-        (upper.strip_suffix('B').unwrap_or(&upper), 1.0)
-    };
-    let number: f64 = number
-        .trim()
-        .parse()
-        .map_err(|_| format!("`{text}` is no size; write 5MB, 200KB or a number of bytes"))?;
-    if !(number.is_finite() && number >= 0.0) {
-        return Err(format!("`{text}` is no size"));
-    }
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    Ok((number * scale).round() as u64)
+    protocol::format::parse_size(text)
 }
 
 #[derive(Debug, Args)]

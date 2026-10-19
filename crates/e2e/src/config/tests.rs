@@ -2,8 +2,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use super::{
-    Config, DEFAULT_TIMEOUT, DEFAULT_VIEWPORT, FreezeTime, Jobs, PROJECT_FILES, RandomSeed,
-    Viewport, auto_jobs, find_project_file, line_col, meminfo_available, vm_stat_available,
+    Block, Cache, Config, DEFAULT_TIMEOUT, DEFAULT_VIEWPORT, FreezeTime, Jobs, PROJECT_FILES,
+    RandomSeed, Viewport, auto_jobs, find_project_file, line_col, meminfo_available,
+    vm_stat_available,
 };
 
 fn file() -> PathBuf {
@@ -528,4 +529,43 @@ fn a_mock_server_may_have_an_upstream() {
         error("[e2e]\n[e2e.web_server]\ncommand = \"x\"\nurl = \"http://l:1\"\nmock_server = { port = 1, upstream_timeout = \"2s\" }\n")
             .contains("upstream_timeout: set without upstream")
     );
+}
+
+#[test]
+fn the_load_section_is_read() {
+    let c = parse("[e2e]\n");
+    assert_eq!(c.load, super::Load::default());
+    assert_eq!(c.load.cache, Cache::New);
+
+    let c = parse(
+        "[e2e]\n[load]\nblock = [\"third-party\", \"*://*:*/*.woff2\"]\n\
+         allow_hosts = [\"cdn.example.com\", \"*.stripe.com\"]\n\
+         cache = \"returning\"\nrenderer_memory = \"512MB\"\n",
+    );
+    assert_eq!(
+        c.load.block,
+        [Block::ThirdParty, Block::Pattern("*://*:*/*.woff2".into())]
+    );
+    assert_eq!(c.load.allow_hosts, ["cdn.example.com", "*.stripe.com"]);
+    assert_eq!(c.load.cache, Cache::Returning);
+    assert_eq!(c.load.renderer_memory, Some(512 * 1024 * 1024));
+}
+
+#[test]
+fn load_section_mistakes_point_at_the_line() {
+    let e = error("[e2e]\n[load]\nblock = [\"/analytics\"]\n");
+    assert!(
+        e.starts_with("/p/chrome-cdp.toml:3:9: load.block: `/analytics` is not \"third-party\""),
+        "{e}"
+    );
+    let e = error("[e2e]\n[load]\ncache = \"warm\"\n");
+    assert!(e.contains("unknown variant `warm`"), "{e}");
+    let e = error("[e2e]\n[load]\nrenderer_memory = \"lots\"\n");
+    assert!(e.contains("load.renderer_memory: `lots` is no size"), "{e}");
+    let e = error("[e2e]\n[load]\nrenderer_memory = \"10KB\"\n");
+    assert!(e.contains("less than a page needs"), "{e}");
+    let e = error("[e2e]\n[load]\nallow_hosts = [\"https://cdn.example.com\"]\n");
+    assert!(e.contains("is not a host"), "{e}");
+    let e = error("[e2e]\n[load]\nusers = 10\n");
+    assert!(e.contains("unknown field `users`"), "{e}");
 }

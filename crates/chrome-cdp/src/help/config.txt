@@ -74,6 +74,20 @@ writes one). Paths are relative to the file; its base_url is also the
   protected = false                    true: only @safe tests (--allow-writes)
   jobs, timeout, retries, determinism  override [e2e]'s
 
+The [load] section sets how `chrome-cdp load` runs its users
+(docs/e2e/load.md):
+
+  [load]
+  block = ["third-party"]              requests that fail at once: URL
+                                       patterns (*://*.ads.com/*), or
+                                       "third-party": any host but the
+                                       backend's and allow_hosts
+  allow_hosts = ["cdn.example.com"]    or "*.example.com"
+  cache = "new"                        "returning": a user keeps its
+                                       cookies, storage and HTTP cache
+  renderer_memory = "512MB"            a page's heap above it is a
+                                       memory error (default: no limit)
+
 A web server runs in its own process group with its output in
 <artifacts>/web-server.log, and is stopped when the tests end. A static
 one serves its folder on url's port (http://localhost:PORT), and answers

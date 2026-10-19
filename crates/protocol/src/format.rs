@@ -91,6 +91,30 @@ pub fn duration(d: Duration) -> String {
     }
 }
 
+/// `5MB`, `200KB`, `1.5MB`, `2GB`, `1024`: a size in bytes (K, M and G
+/// are 1024s).
+pub fn parse_size(text: &str) -> Result<u64, String> {
+    let upper = text.trim().to_ascii_uppercase();
+    let (number, scale) = if let Some(n) = upper.strip_suffix("GB").or(upper.strip_suffix('G')) {
+        (n, 1024.0 * 1024.0 * 1024.0)
+    } else if let Some(n) = upper.strip_suffix("MB").or(upper.strip_suffix('M')) {
+        (n, 1024.0 * 1024.0)
+    } else if let Some(n) = upper.strip_suffix("KB").or(upper.strip_suffix('K')) {
+        (n, 1024.0)
+    } else {
+        (upper.strip_suffix('B').unwrap_or(&upper), 1.0)
+    };
+    let number: f64 = number
+        .trim()
+        .parse()
+        .map_err(|_| format!("`{text}` is no size; write 5MB, 200KB or a number of bytes"))?;
+    if !(number.is_finite() && number >= 0.0) {
+        return Err(format!("`{text}` is no size"));
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    Ok((number * scale).round() as u64)
+}
+
 /// Byte sizes in 1024 steps: `512B`, `1.5KB`, `12KB`, `3.4MB`, `2GB`. One
 /// decimal below 10 units, none above.
 pub fn size(bytes: u64) -> String {
@@ -305,7 +329,9 @@ pub fn printable(text: &str) -> Cow<'_, str> {
 mod tests {
     use std::time::Duration;
 
-    use super::{MAX_WIDTH, duration, parse_time, printable, shell_quote, size, table, thousands};
+    use super::{
+        MAX_WIDTH, duration, parse_size, parse_time, printable, shell_quote, size, table, thousands,
+    };
 
     #[test]
     fn tables_align_and_stay_narrow() {
@@ -341,6 +367,12 @@ mod tests {
         assert_eq!(size(1536), "1.5KB");
         assert_eq!(size(12 * 1024 + 300), "12KB");
         assert_eq!(size(3_565_158), "3.4MB");
+        assert_eq!(parse_size("5MB"), Ok(5 * 1024 * 1024));
+        assert_eq!(parse_size("1.5g"), Ok(3 * 512 * 1024 * 1024));
+        assert_eq!(parse_size(" 200KB "), Ok(200 * 1024));
+        assert_eq!(parse_size("1024"), Ok(1024));
+        assert!(parse_size("lots").is_err());
+        assert!(parse_size("-1MB").is_err());
         assert_eq!(size(2 * 1024 * 1024 * 1024), "2GB");
         assert_eq!(size(u64::MAX), "16777216TB");
     }

@@ -32,7 +32,8 @@
 //! The project config's `[e2e]` section (plan 11) is read and checked by
 //! the commands that test (`e2e::Config`), not here, so a mistake in it
 //! does not stop `click`. Its `base_url` is also the `goto /path` base
-//! when the file sets no top-level `base_url`.
+//! when the file sets no top-level `base_url`. So is its `[load]` section
+//! (plan 23.2), which only `load` reads.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -62,6 +63,9 @@ struct File {
     snapshot_budget: Option<usize>,
     /// Checked by `e2e::Config`; only its `base_url` is read here.
     e2e: Option<toml::Table>,
+    /// `chrome-cdp load`'s settings, checked and read by `e2e::Config`.
+    #[allow(dead_code)]
+    load: Option<toml::Table>,
 }
 
 /// Validated settings from one or more files.
@@ -299,7 +303,7 @@ fn bad(path: &Path, message: &str) -> ErrorInfo {
         format!("config {}: {message}", path.display()),
     )
     .hint(format!(
-        "fix or remove the key in {}; known keys: {KEYS}, and the [e2e] section",
+        "fix or remove the key in {}; known keys: {KEYS}, and the [e2e] and [load] sections",
         path.display()
     ))
 }

@@ -145,6 +145,59 @@ pub struct Config {
     /// The `${var:…}` file of every backend (the mock backend's); a real
     /// backend's `vars` go on top (plan 11.11).
     pub vars: Option<PathBuf>,
+    /// The `[load]` section: how `chrome-cdp load` runs its users.
+    pub load: Load,
+}
+
+/// The `[load]` section (plan 23.2): what a load run's browsers fetch,
+/// keep and may grow to.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Load {
+    /// What fails fast in every user's context; empty blocks nothing.
+    pub block: Vec<Block>,
+    /// Hosts the `third-party` preset lets through besides the backend's
+    /// own origin: `cdn.example.com`, `*.example.com`.
+    pub allow_hosts: Vec<String>,
+    pub cache: Cache,
+    /// A page whose heap grows past this many bytes is a `memory` error
+    /// for its user; `None`: no limit.
+    pub renderer_memory: Option<u64>,
+}
+
+/// An entry of `[load] block`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Block {
+    /// `third-party`: every request not to the backend's origin or an
+    /// allowed host.
+    ThirdParty,
+    /// A URL pattern, in Chrome's syntax (the URL Pattern standard, an
+    /// absolute URL): `*://*.doubleclick.net/*`.
+    Pattern(String),
+}
+
+/// The preset of `[load] block`.
+pub const THIRD_PARTY: &str = "third-party";
+
+/// `[load] cache`: what a user keeps from one iteration to the next.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Cache {
+    /// A fresh browser context for every iteration: each downloads the
+    /// app like a first visit.
+    #[default]
+    New,
+    /// One context per user for the whole run: cookies, storage and the
+    /// HTTP cache stay, as for someone coming back.
+    Returning,
+}
+
+impl Cache {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::New => "new",
+            Self::Returning => "returning",
+        }
+    }
 }
 
 /// `fingerprints`: what `test` does with `e2e/fingerprints`, the
@@ -590,13 +643,19 @@ impl Config {
                 }
             }
         })?;
-        let Some(raw) = raw.e2e else {
+        let Some(e2e) = raw.e2e else {
             return Ok(None);
         };
         let check = Check { root: &root };
+        let load = raw
+            .load
+            .map(load)
+            .transpose()
+            .map_err(|(span, m)| at(span, m))?
+            .unwrap_or_default();
         check
-            .config(raw, file)
-            .map(Some)
+            .config(e2e, file)
+            .map(|config| Some(Config { load, ..config }))
             .map_err(|(span, m)| at(span, m))
     }
 }
@@ -713,6 +772,7 @@ impl Check<'_> {
             determinism: raw.determinism.map(Determinism::from).unwrap_or_default(),
             backends,
             vars: raw.vars.as_deref().map(|v| self.path(v)),
+            load: Load::default(),
         })
     }
 
@@ -996,6 +1056,81 @@ fn mock_sets(key: &str, raw: Spanned<Vec<String>>) -> Result<Vec<String>, Proble
     Ok(raw.into_inner())
 }
 
+/// `[load]`, checked.
+fn load(raw: RawLoad) -> Result<Load, Problem> {
+    let block = match raw.block {
+        None => Vec::new(),
+        Some(list) => {
+            let span = list.span();
+            list.into_inner()
+                .into_iter()
+                .map(|entry| block(&entry).map_err(|m| (span.clone(), m)))
+                .collect::<Result<_, _>>()?
+        }
+    };
+    let allow_hosts = match raw.allow_hosts {
+        None => Vec::new(),
+        Some(list) => {
+            let span = list.span();
+            let hosts = list.into_inner();
+            if let Some(bad) = hosts
+                .iter()
+                .find(|h| h.is_empty() || h.contains(['/', ' ']) || h.starts_with(['-', '.']))
+            {
+                return Err((
+                    span,
+                    format!(
+                        "load.allow_hosts: `{bad}` is not a host; write hosts such as \
+                         \"cdn.example.com\" or \"*.example.com\""
+                    ),
+                ));
+            }
+            hosts
+        }
+    };
+    let renderer_memory = raw
+        .renderer_memory
+        .map(|size| {
+            let bytes = protocol::format::parse_size(size.get_ref())
+                .map_err(|e| (size.span(), format!("load.renderer_memory: {e}")))?;
+            if bytes < 1024 * 1024 {
+                return Err((
+                    size.span(),
+                    format!(
+                        "load.renderer_memory: `{}` is less than a page needs; e.g. \"512MB\"",
+                        size.get_ref()
+                    ),
+                ));
+            }
+            Ok(bytes)
+        })
+        .transpose()?;
+    Ok(Load {
+        block,
+        allow_hosts,
+        cache: raw.cache.unwrap_or_default(),
+        renderer_memory,
+    })
+}
+
+/// An entry of `[load] block`: the preset, or an absolute URL pattern.
+fn block(entry: &str) -> Result<Block, String> {
+    let entry = entry.trim();
+    if entry == THIRD_PARTY {
+        return Ok(Block::ThirdParty);
+    }
+    let absolute = entry
+        .split_once("://")
+        .is_some_and(|(scheme, rest)| !scheme.is_empty() && !rest.is_empty());
+    if !absolute {
+        return Err(format!(
+            "load.block: `{entry}` is not \"{THIRD_PARTY}\" or an absolute URL pattern; \
+             e.g. \"*://*.doubleclick.net/*\" or \"*://*:*/*.woff2\""
+        ));
+    }
+    Ok(Block::Pattern(entry.to_owned()))
+}
+
 /// `pages`: paths that start with `/`, without a query or fragment.
 fn pages(raw: Spanned<Vec<String>>) -> Result<Vec<String>, Problem> {
     for page in raw.get_ref() {
@@ -1027,6 +1162,16 @@ fn commands(key: &str, raw: Option<Spanned<Vec<String>>>) -> Result<Vec<String>,
 #[derive(Deserialize)]
 struct RawFile {
     e2e: Option<RawE2e>,
+    load: Option<RawLoad>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawLoad {
+    block: Option<Spanned<Vec<String>>>,
+    allow_hosts: Option<Spanned<Vec<String>>>,
+    cache: Option<Cache>,
+    renderer_memory: Option<Spanned<String>>,
 }
 
 #[derive(Deserialize)]
