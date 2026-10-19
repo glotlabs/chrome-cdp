@@ -16,6 +16,16 @@ use crate::{input, route, session};
 const BODY_SHOWN: usize = 300;
 
 pub(crate) fn run(args: &HttpArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let (request, statuses) = request(args, global)?;
+    let output = session::call_running(global, rpc::HTTP, &request)?;
+    check(args, output, &statuses)
+}
+
+/// The request `http` sends, and the statuses `--expect-status` takes.
+pub(crate) fn request(
+    args: &HttpArgs,
+    global: &GlobalArgs,
+) -> Result<(HttpRequest, Statuses), ErrorInfo> {
     let method = args.method.trim().to_ascii_uppercase();
     if method.is_empty() || !method.chars().all(|c| c.is_ascii_alphabetic()) {
         return Err(ErrorInfo::new(
@@ -67,14 +77,23 @@ pub(crate) fn run(args: &HttpArgs, global: &GlobalArgs) -> Result<Output, ErrorI
         headers.push(("Content-Type".into(), "text/plain;charset=UTF-8".into()));
     }
     let request = HttpRequest {
-        method: method.clone(),
+        method,
         url,
         headers,
         body,
         timeout_ms: session::timeout_ms(global),
         max_chars: args.max_chars,
     };
-    let output = session::call_running(global, rpc::HTTP, &request)?;
+    Ok((request, statuses))
+}
+
+/// `output` of the request when `--expect-status` takes its status, else
+/// the error that says what came back.
+pub(crate) fn check(
+    args: &HttpArgs,
+    output: Output,
+    statuses: &Statuses,
+) -> Result<Output, ErrorInfo> {
     let data: HttpData = serde_json::from_value(output.data.clone()).map_err(|e| {
         ErrorInfo::new(
             ErrorKind::ProtocolError,
@@ -84,7 +103,7 @@ pub(crate) fn run(args: &HttpArgs, global: &GlobalArgs) -> Result<Output, ErrorI
     if statuses.accepts(data.status) {
         return Ok(output);
     }
-    Err(unexpected(args, &data, &statuses))
+    Err(unexpected(args, &data, statuses))
 }
 
 /// The error for a status `--expect-status` does not take.
@@ -128,7 +147,8 @@ fn unexpected(args: &HttpArgs, data: &HttpData, statuses: &Statuses) -> ErrorInf
 }
 
 /// `--expect-status`: `201`, `2xx`, `200,204`, `any`.
-struct Statuses {
+#[derive(Debug, Clone)]
+pub(crate) struct Statuses {
     /// As given.
     text: String,
     /// `None` for any; else (low, high) ranges, inclusive.

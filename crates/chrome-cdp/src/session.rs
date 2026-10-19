@@ -556,24 +556,30 @@ pub(crate) fn cdp(args: &CdpArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
 
 /// `eval`: needs a running session.
 pub(crate) fn eval(args: &EvalArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
+    let request = eval_request(args, global)?;
     check_tab(global.tab.as_deref())?;
     let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::EVAL, &request, ctx.timeout + QUICK))
+}
+
+/// `eval`'s request, checked.
+pub(crate) fn eval_request(args: &EvalArgs, global: &GlobalArgs) -> Result<EvalRequest, ErrorInfo> {
     let request = EvalRequest {
         script: input::text_arg(&args.script, "the script")?,
         locator: args.locator.clone(),
         frame: args.frame.clone(),
         world: args.world.to_engine(),
-        tab: ctx.tab.clone(),
+        tab: global.tab.clone(),
         strict_refs: args.refs.strict_refs,
         testid_attribute: global.testid_attribute.clone(),
         sourcemaps: args.sourcemaps,
-        timeout_ms: millis(ctx.timeout),
+        timeout_ms: millis(global.timeout_or(DEFAULT_TIMEOUT)),
         max_chars: args.max_chars,
     };
     engine::check_eval(&request)?;
-    let mut client = running_session(&ctx)?;
-    ctx.runtime
-        .block_on(client.call_output(rpc::EVAL, &request, ctx.timeout + QUICK))
+    Ok(request)
 }
 
 /// The session's daemon, started with a browser (as `open` would) if it
@@ -857,16 +863,24 @@ pub(crate) fn tab(args: &TabArgs, global: &GlobalArgs) -> Result<Output, ErrorIn
 
 /// `goto <url>`: starts the session's browser if it has none, like `cdp`.
 pub(crate) fn goto(args: &GotoArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
-    let url = engine::normalize_url(&input::text_arg(&args.url, "URL")?)?;
+    let navigation = goto_navigation(args, global)?;
     check_tab(global.tab.as_deref())?;
     let ctx = Ctx::new(global)?;
     let (mut session, warnings) = with_browser(&ctx)?;
-    let navigation = Navigation::Goto {
-        url,
-        base_url: ctx.base_url.clone(),
-    };
-    let output = navigate(&ctx, &mut session.client, navigation, &args.wait)?;
+    let output = navigate(&ctx, &mut session.client, navigation, &args.wait, global)?;
     Ok(warnings.into_iter().fold(output, Output::warning))
+}
+
+/// `goto <url>`'s navigation: the URL as given, against `base_url`.
+pub(crate) fn goto_navigation(
+    args: &GotoArgs,
+    global: &GlobalArgs,
+) -> Result<Navigation, ErrorInfo> {
+    let url = engine::normalize_url(&input::text_arg(&args.url, "URL")?)?;
+    Ok(Navigation::Goto {
+        url,
+        base_url: global.base_url.clone(),
+    })
 }
 
 /// `back` and `forward`: need a running session.
@@ -878,7 +892,7 @@ pub(crate) fn history(
     check_tab(global.tab.as_deref())?;
     let ctx = Ctx::new(global)?;
     let mut client = running_session(&ctx)?;
-    navigate(&ctx, &mut client, navigation, &args.wait)
+    navigate(&ctx, &mut client, navigation, &args.wait, global)
 }
 
 /// `reload [--hard]`: needs a running session.
@@ -887,7 +901,7 @@ pub(crate) fn reload(args: &ReloadArgs, global: &GlobalArgs) -> Result<Output, E
     let ctx = Ctx::new(global)?;
     let mut client = running_session(&ctx)?;
     let navigation = Navigation::Reload { hard: args.hard };
-    navigate(&ctx, &mut client, navigation, &args.wait)
+    navigate(&ctx, &mut client, navigation, &args.wait, global)
 }
 
 fn navigate(
@@ -895,13 +909,9 @@ fn navigate(
     client: &mut daemon::client::Client,
     navigation: Navigation,
     wait: &crate::cli::WaitArgs,
+    global: &GlobalArgs,
 ) -> Result<Output, ErrorInfo> {
-    let request = NavigateRequest {
-        navigation,
-        wait: wait.wait.to_engine(),
-        tab: ctx.tab.clone(),
-        timeout_ms: millis(ctx.timeout),
-    };
+    let request = navigate_request(navigation, wait, global);
     let mut call = || {
         ctx.runtime
             .block_on(client.call_output(rpc::NAVIGATE, &request, ctx.long_wait()))
@@ -915,28 +925,50 @@ fn navigate(
     }
 }
 
+/// The request of a navigation in `global`'s tab, waiting as `wait` says.
+pub(crate) fn navigate_request(
+    navigation: Navigation,
+    wait: &crate::cli::WaitArgs,
+    global: &GlobalArgs,
+) -> NavigateRequest {
+    NavigateRequest {
+        navigation,
+        wait: wait.wait.to_engine(),
+        tab: global.tab.clone(),
+        timeout_ms: millis(global.timeout_or(DEFAULT_TIMEOUT)),
+    }
+}
+
 /// `wait`: needs a running session.
 pub(crate) fn wait(args: &WaitCmdArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
-    let condition = wait_condition(args)?;
-    engine::check_condition(&condition)?;
+    let request = wait_request(args, global)?;
     check_tab(global.tab.as_deref())?;
     let ctx = Ctx::with_default(global, WAIT_TIMEOUT)?;
     let mut client = running_session(&ctx)?;
-    let delay = match condition {
+    let delay = match request.condition {
         WaitFor::Delay { ms } => Duration::from_millis(ms),
         _ => Duration::ZERO,
-    };
-    let request = WaitRequest {
-        condition,
-        tab: ctx.tab.clone(),
-        strict_refs: args.strict_refs,
-        testid_attribute: global.testid_attribute.clone(),
-        timeout_ms: millis(ctx.timeout),
-        max_chars: args.max_chars,
     };
     let wait = ctx.timeout + delay + QUICK;
     ctx.runtime
         .block_on(client.call_output(rpc::WAIT, &request, wait))
+}
+
+/// `wait`'s request, checked.
+pub(crate) fn wait_request(
+    args: &WaitCmdArgs,
+    global: &GlobalArgs,
+) -> Result<WaitRequest, ErrorInfo> {
+    let condition = wait_condition(args)?;
+    engine::check_condition(&condition)?;
+    Ok(WaitRequest {
+        condition,
+        tab: global.tab.clone(),
+        strict_refs: args.strict_refs,
+        testid_attribute: global.testid_attribute.clone(),
+        timeout_ms: millis(global.timeout_or(WAIT_TIMEOUT)),
+        max_chars: args.max_chars,
+    })
 }
 
 /// `expect`: needs a running session.
@@ -950,6 +982,19 @@ pub(crate) fn expect(
     if args.audit {
         return expect_audit(args, global);
     }
+    let request = expect_request(args, global)?;
+    check_tab(global.tab.as_deref())?;
+    let ctx = Ctx::with_default(global, crate::expect::EXPECT_TIMEOUT)?;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::EXPECT, &request, ctx.timeout + QUICK))
+}
+
+/// `expect`'s request (not `--layout`'s or `--audit`'s), checked.
+pub(crate) fn expect_request(
+    args: &crate::cli::ExpectArgs,
+    global: &GlobalArgs,
+) -> Result<engine::ExpectRequest, ErrorInfo> {
     let shared = [
         (args.baseline.is_some(), "--baseline"),
         (args.update, "--update"),
@@ -999,21 +1044,17 @@ pub(crate) fn expect(
         )));
     }
     let expectation = crate::expect::expectation(args)?;
-    check_tab(global.tab.as_deref())?;
-    let ctx = Ctx::with_default(global, crate::expect::EXPECT_TIMEOUT)?;
     let request = engine::ExpectRequest {
         expectation,
         not: args.not,
-        tab: ctx.tab.clone(),
+        tab: global.tab.clone(),
         strict_refs: args.strict_refs,
         testid_attribute: global.testid_attribute.clone(),
-        timeout_ms: millis(ctx.timeout),
+        timeout_ms: millis(global.timeout_or(crate::expect::EXPECT_TIMEOUT)),
         max_chars: args.max_chars,
     };
     engine::check_expect(&request)?;
-    let mut client = running_session(&ctx)?;
-    ctx.runtime
-        .block_on(client.call_output(rpc::EXPECT, &request, ctx.timeout + QUICK))
+    Ok(request)
 }
 
 /// `expect-snapshot <name>`: needs a running session.
@@ -1224,22 +1265,33 @@ pub(crate) fn act(
     after: &AfterArgs,
     global: &GlobalArgs,
 ) -> Result<Output, ErrorInfo> {
+    let request = act_request(action, strict_refs, after, global)?;
     check_tab(global.tab.as_deref())?;
     let ctx = Ctx::with_default(global, WAIT_TIMEOUT)?;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::ACT, &request, ctx.timeout + QUICK))
+}
+
+/// An input action's request, checked.
+pub(crate) fn act_request(
+    action: Action,
+    strict_refs: bool,
+    after: &AfterArgs,
+    global: &GlobalArgs,
+) -> Result<ActionRequest, ErrorInfo> {
     let request = ActionRequest {
         action,
-        tab: ctx.tab.clone(),
+        tab: global.tab.clone(),
         strict_refs,
         testid_attribute: global.testid_attribute.clone(),
-        timeout_ms: millis(ctx.timeout),
+        timeout_ms: millis(global.timeout_or(WAIT_TIMEOUT)),
         no_wait_after: after.no_wait_after,
         snap: after.snap(global),
         max_chars: after.max_chars,
     };
     engine::check_action(&request)?;
-    let mut client = running_session(&ctx)?;
-    ctx.runtime
-        .block_on(client.call_output(rpc::ACT, &request, ctx.timeout + QUICK))
+    Ok(request)
 }
 
 /// `clipboard read`: needs a running session. An image needs `-o`; with
@@ -1992,6 +2044,20 @@ fn json_kind(value: &Value) -> &'static str {
 /// `cookies`, `cookies set` and `cookies clear`: need a running session.
 pub(crate) fn cookies(args: &CookiesArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     check_tab(global.tab.as_deref())?;
+    let request = cookies_request(args, global)?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    let output =
+        ctx.runtime
+            .block_on(client.call_output(rpc::COOKIES, &request, ctx.timeout + QUICK))?;
+    Ok(every_tab(output, &ctx, "cookies"))
+}
+
+/// `cookies`' request.
+pub(crate) fn cookies_request(
+    args: &CookiesArgs,
+    global: &GlobalArgs,
+) -> Result<CookiesRequest, ErrorInfo> {
     let op = match &args.command {
         None => CookiesOp::List {
             filter: cookie_filter(&args.filter),
@@ -2003,17 +2069,11 @@ pub(crate) fn cookies(args: &CookiesArgs, global: &GlobalArgs) -> Result<Output,
             filter: cookie_filter(filter),
         },
     };
-    let ctx = Ctx::new(global)?;
-    let mut client = running_session(&ctx)?;
-    let request = CookiesRequest {
+    Ok(CookiesRequest {
         op,
         max_chars: args.max_chars,
-        timeout_ms: millis(ctx.timeout),
-    };
-    let output =
-        ctx.runtime
-            .block_on(client.call_output(rpc::COOKIES, &request, ctx.timeout + QUICK))?;
-    Ok(every_tab(output, &ctx, "cookies"))
+        timeout_ms: millis(global.timeout_or(DEFAULT_TIMEOUT)),
+    })
 }
 
 fn cookie_filter(args: &CookieFilterArgs) -> CookieFilter {
@@ -2054,6 +2114,18 @@ fn cookie_spec(args: &CookieSetArgs) -> Result<CookieSpec, ErrorInfo> {
 /// session.
 pub(crate) fn storage(args: &StorageArgs, global: &GlobalArgs) -> Result<Output, ErrorInfo> {
     check_tab(global.tab.as_deref())?;
+    let request = storage_request(args, global)?;
+    let ctx = Ctx::new(global)?;
+    let mut client = running_session(&ctx)?;
+    ctx.runtime
+        .block_on(client.call_output(rpc::STORAGE, &request, ctx.timeout + QUICK))
+}
+
+/// `storage`'s request, checked.
+pub(crate) fn storage_request(
+    args: &StorageArgs,
+    global: &GlobalArgs,
+) -> Result<StorageRequest, ErrorInfo> {
     let area = match args.area {
         StorageAreaArg::Local => StorageArea::Local,
         StorageAreaArg::Session => StorageArea::Session,
@@ -2090,18 +2162,14 @@ pub(crate) fn storage(args: &StorageArgs, global: &GlobalArgs) -> Result<Output,
             }
         }
     };
-    let ctx = Ctx::new(global)?;
-    let mut client = running_session(&ctx)?;
-    let request = StorageRequest {
+    Ok(StorageRequest {
         area,
         op,
         origin: args.origin.clone(),
-        tab: ctx.tab.clone(),
+        tab: global.tab.clone(),
         max_chars: args.max_chars,
-        timeout_ms: millis(ctx.timeout),
-    };
-    ctx.runtime
-        .block_on(client.call_output(rpc::STORAGE, &request, ctx.timeout + QUICK))
+        timeout_ms: millis(global.timeout_or(DEFAULT_TIMEOUT)),
+    })
 }
 
 /// `state save` and `state load`: need a running session.

@@ -346,7 +346,48 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             args.max_chars,
             &cli.global,
         ),
-        Some(Command::Click(args)) => session::act(
+        Some(
+            command @ (Command::Click(_)
+            | Command::Dblclick(_)
+            | Command::Hover(_)
+            | Command::Tap(_)
+            | Command::Drag(_)
+            | Command::Scroll(_)
+            | Command::Mouse(_)
+            | Command::Keyboard(_)
+            | Command::Press(_)
+            | Command::Type(_)
+            | Command::Fill(_)
+            | Command::Select(_)
+            | Command::Check(_)
+            | Command::Uncheck(_)
+            | Command::Focus(_)
+            | Command::Blur(_)
+            | Command::Upload(_)),
+        ) => match action(&command)? {
+            Some((action, strict_refs, after)) => {
+                session::act(action, strict_refs, after, &cli.global)
+            }
+            None => Err(ErrorInfo::new(ErrorKind::BadArgs, "not an input action")),
+        },
+        // Handled in `main`; a script cannot hold them (`script` checks).
+        Some(Command::Daemon(_)) => Ok(Output::new(serde_json::Value::Null, "")),
+        Some(Command::Lint(args)) => lint::output(&args, &cli.global),
+        Some(Command::Batch(_) | Command::Run(_) | Command::Test(_)) => Err(ErrorInfo::new(
+            ErrorKind::BadArgs,
+            "batch, run and test cannot run inside a script",
+        )),
+    }
+}
+
+/// The input action of an action command (`click`, `fill`, `press`, …),
+/// with its `--strict-refs` and its after-action flags; `None` for any
+/// other command. `load` runs them in-process (plan 23.1).
+pub(crate) fn action(
+    command: &Command,
+) -> Result<Option<(engine::Action, bool, &cli::AfterArgs)>, ErrorInfo> {
+    Ok(Some(match command {
+        Command::Click(args) => (
             pointer_action(&args.pointer, |locator, modifiers, position, force| {
                 engine::Action::Click {
                     locator,
@@ -360,9 +401,8 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             }),
             args.pointer.refs.strict_refs,
             &args.pointer.after,
-            &cli.global,
         ),
-        Some(Command::Dblclick(args)) => session::act(
+        Command::Dblclick(args) => (
             pointer_action(&args.pointer, |locator, modifiers, position, force| {
                 engine::Action::Click {
                     locator,
@@ -376,9 +416,8 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             }),
             args.pointer.refs.strict_refs,
             &args.pointer.after,
-            &cli.global,
         ),
-        Some(Command::Hover(args)) => session::act(
+        Command::Hover(args) => (
             pointer_action(&args.pointer, |locator, modifiers, position, force| {
                 engine::Action::Hover {
                     locator,
@@ -389,9 +428,8 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             }),
             args.pointer.refs.strict_refs,
             &args.pointer.after,
-            &cli.global,
         ),
-        Some(Command::Tap(args)) => session::act(
+        Command::Tap(args) => (
             pointer_action(&args.pointer, |locator, modifiers, position, force| {
                 engine::Action::Tap {
                     locator,
@@ -402,9 +440,8 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             }),
             args.pointer.refs.strict_refs,
             &args.pointer.after,
-            &cli.global,
         ),
-        Some(Command::Drag(args)) => session::act(
+        Command::Drag(args) => (
             engine::Action::Drag {
                 from: args.from.clone(),
                 to: args.to.clone(),
@@ -413,9 +450,8 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             },
             args.refs.strict_refs,
             &args.after,
-            &cli.global,
         ),
-        Some(Command::Scroll(args)) => session::act(
+        Command::Scroll(args) => (
             engine::Action::Scroll {
                 locator: args.locator.clone(),
                 by: args.by,
@@ -424,15 +460,13 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             },
             args.refs.strict_refs,
             &args.after,
-            &cli.global,
         ),
-        Some(Command::Mouse(args)) => session::act(
+        Command::Mouse(args) => (
             engine::Action::Mouse(mouse_op(&args.command)),
             false,
             &args.after,
-            &cli.global,
         ),
-        Some(Command::Keyboard(args)) => session::act(
+        Command::Keyboard(args) => (
             engine::Action::Keyboard(match &args.command {
                 KeyboardCommand::Down(down) => engine::KeyboardOp::Down {
                     key: down.key.clone(),
@@ -443,18 +477,16 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             }),
             false,
             &args.after,
-            &cli.global,
         ),
-        Some(Command::Press(args)) => session::act(
+        Command::Press(args) => (
             engine::Action::Press {
                 keys: args.keys.clone(),
                 locator: args.locator.clone(),
             },
             args.refs.strict_refs,
             &args.after,
-            &cli.global,
         ),
-        Some(Command::Type(args)) => session::act(
+        Command::Type(args) => (
             engine::Action::Type {
                 text: line_arg(&args.text, "TEXT")?,
                 locator: args.locator.clone(),
@@ -465,9 +497,8 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             },
             args.refs.strict_refs,
             &args.after,
-            &cli.global,
         ),
-        Some(Command::Fill(args)) => session::act(
+        Command::Fill(args) => (
             engine::Action::Fill {
                 locator: args.locator.clone(),
                 text: line_arg(&args.text, "TEXT")?,
@@ -475,9 +506,8 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             },
             args.refs.strict_refs,
             &args.after,
-            &cli.global,
         ),
-        Some(Command::Select(args)) => session::act(
+        Command::Select(args) => (
             engine::Action::Select {
                 locator: args.locator.clone(),
                 values: args.values.clone(),
@@ -485,9 +515,8 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             },
             args.refs.strict_refs,
             &args.after,
-            &cli.global,
         ),
-        Some(Command::Check(args)) => session::act(
+        Command::Check(args) => (
             engine::Action::Check {
                 locator: args.locator.clone(),
                 checked: true,
@@ -495,9 +524,8 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             },
             args.refs.strict_refs,
             &args.after,
-            &cli.global,
         ),
-        Some(Command::Uncheck(args)) => session::act(
+        Command::Uncheck(args) => (
             engine::Action::Check {
                 locator: args.locator.clone(),
                 checked: false,
@@ -505,25 +533,22 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             },
             args.refs.strict_refs,
             &args.after,
-            &cli.global,
         ),
-        Some(Command::Focus(args)) => session::act(
+        Command::Focus(args) => (
             engine::Action::Focus {
                 locator: args.locator.clone(),
             },
             args.refs.strict_refs,
             &args.after,
-            &cli.global,
         ),
-        Some(Command::Blur(args)) => session::act(
+        Command::Blur(args) => (
             engine::Action::Blur {
                 locator: args.locator.clone(),
             },
             args.refs.strict_refs,
             &args.after,
-            &cli.global,
         ),
-        Some(Command::Upload(args)) => session::act(
+        Command::Upload(args) => (
             engine::Action::Upload {
                 locator: args.locator.clone(),
                 files: args
@@ -537,16 +562,9 @@ fn run(cli: Cli) -> Result<Output, ErrorInfo> {
             },
             args.refs.strict_refs,
             &args.after,
-            &cli.global,
         ),
-        // Handled in `main`; a script cannot hold them (`script` checks).
-        Some(Command::Daemon(_)) => Ok(Output::new(serde_json::Value::Null, "")),
-        Some(Command::Lint(args)) => lint::output(&args, &cli.global),
-        Some(Command::Batch(_) | Command::Run(_) | Command::Test(_)) => Err(ErrorInfo::new(
-            ErrorKind::BadArgs,
-            "batch, run and test cannot run inside a script",
-        )),
-    }
+        _ => return Ok(None),
+    }))
 }
 
 /// A text argument, or stdin for `-` without the line's end (`echo`
