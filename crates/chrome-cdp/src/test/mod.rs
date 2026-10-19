@@ -817,6 +817,9 @@ fn open(global: &GlobalArgs, session: &str, headed: bool) -> Result<bool, ErrorI
     global.context = None;
     global.json = false;
     global.quiet = false;
+    // The run's --timeout is its steps'; starting Chrome takes what `open`
+    // takes, more on a loaded machine (a few s with tests running beside).
+    global.timeout = global.timeout.map(|t| t.max(crate::cli::DEFAULT_TIMEOUT));
     let out = crate::run(script::command(&words, &global)?)?;
     Ok(out.data["started"].as_bool().unwrap_or(true))
 }
