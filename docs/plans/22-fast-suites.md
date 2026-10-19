@@ -1,6 +1,6 @@
 # Plan 22 — Fast suites
 
-Status: IN PROGRESS (22.1 to 22.4 done)
+Status: DONE (22.1 to 22.5)
 Depends on: 05 §5.5 (the post-action report and its settle), 08 §8.2
 (`batch`), 10 §10.4 (the benchmarks), 11 (the runner, `--jobs`,
 `--shard`), 18 §18.3 (flake diagnosis)
@@ -241,24 +241,24 @@ baseline, with no new flakes.
 
 ## Acceptance criteria
 
-- [ ] `xtask bench scale` exists, runs the 1,000-test suite, and its
+- [x] `xtask bench scale` exists, runs the 1,000-test suite, and its
       table is in
       `docs/benchmarks.md`, with the 22.1 baseline next to the final
       numbers.
-- [ ] Runner overhead < 30 ms per test (`tests/bench.rs`).
-- [ ] e2e-shop with `--jobs 1` is at least 40% faster than the 22.1
+- [x] Runner overhead < 30 ms per test (`tests/bench.rs`).
+- [x] e2e-shop with `--jobs 1` is at least 40% faster than the 22.1
       baseline.
-- [ ] `e2e-shop --repeat 20`, `cargo xtask e2e --repeat 20` and the
+- [x] `e2e-shop --repeat 20`, `cargo xtask e2e --repeat 20` and the
       scale suite `--repeat 5` pass with zero failures.
-- [ ] A failing test's artifacts are the same files with the same
+- [x] A failing test's artifacts are the same files with the same
       content as before this plan (goldens on `report.md` and the file
       list).
-- [ ] Plan 18.3's flake fixtures get the same diagnosis.
-- [ ] With durations known, the slowest shard of `--shard i/4` on the
+- [x] Plan 18.3's flake fixtures get the same diagnosis.
+- [x] With durations known, the slowest shard of `--shard i/4` on the
       scale suite takes at most 10% longer than the average shard.
-- [ ] Interactive `goto` and `click` take the same time as before (the
+- [x] Interactive `goto` and `click` take the same time as before (the
       micro suite).
-- [ ] `cargo xtask release check` passes: the CLI and schemas only grew.
+- [x] `cargo xtask release check` passes: the CLI and schemas only grew.
 
 ## Tests
 
@@ -477,3 +477,67 @@ baseline, with no new flakes.
   `--timeout 2s`, a loaded machine's Chrome did not answer in time; `open`
   now waits at least its own 30 s. With the three fixed, the gate passed
   with no failure (20 runs of 1,451 tests).
+- 22.5: the durations file is keyed by backend, then file (relative to
+  the project root, with `/`), then test name: a real backend's tests take
+  other times than the mocks', and a test's line moves with every edit
+  above it while its name does not. The average is the mean of the first
+  five passing runs, then each new one weighs a fifth, so a test that got
+  slower shows within a few runs. A failed run keeps the average (it may
+  have stopped early or timed out) and only sets the last status; a
+  skipped or stopped test is left as it was; under `--repeat` the slowest
+  run's time is the one recorded. `--list` never writes the file, and
+  each write goes through a temporary file and a rename.
+- 22.5: lines print as tests finish in every run, not only when the
+  durations change the order: with more than one job the plan's order
+  held a line until every test before it was done, which is the same
+  delay on a smaller scale. With one job and no durations the order is
+  the plan's, so the output is unchanged there.
+- 22.5: a test the file has no time for starts first in the run (it may
+  be long), but counts as the mean of the known ones when shards are
+  packed; counting it as long there would put every new test in a shard
+  of its own. A shard split falls back to count only when no selected
+  test has a time.
+- 22.5: shards by time scatter a file's tests over more shards than
+  shards by count, which keep them together, so a file's `@before-all`
+  runs in more shards. Its time is in no test's duration and the packing
+  does not weigh it; on the scale suite (a quarter of its files have one)
+  the shards were still within 1% of each other.
+- 22.5: `test --list --shard` gives each shard's tests' times added up
+  and, divided by the run's jobs, about how long it takes. The times are
+  those of the runs the file kept, which are longer under more jobs (a
+  test's median was 333 ms with 4 jobs and 1113 ms with 16), so the
+  estimate is a guide while the split only needs the proportions.
+- 22.5: the workflow `init e2e` writes restores the file before the tests
+  and saves it after, also on failure (so `--failed-first` knows the
+  failures), under a key per run, attempt and shard; every shard
+  restores the newest saved file, so the shards of a run agree.
+- 22.5: the numbers. On the scale suite with 16 jobs, longest first took
+  82.2 s against 82.8 s in the plan's order: its longest test is short
+  next to the run, so little was left to gain, and starting the
+  checkouts together raised a test's median (1113 against 842 ms) and
+  setup (92 against 76 ms). Kept, not reverted: the run was not slower,
+  and a suite with a few tests of a minute gains that minute. Four
+  shards with 4 jobs each, run one by one: by count the slowest took
+  48.3 s, 6.1% above the mean; by time 45.6 s, 0.8% above (the criterion
+  is 10%). The gates: e2e-shop `--repeat 20` (360 runs) and the scale
+  suite `--repeat 5` with the defaults and durations known (5,000 runs)
+  passed with no failure, and, after the two fixes below, `cargo xtask
+  e2e --repeat 20` did too (20 runs of 1,461 tests). `cargo xtask release
+  check` passes; this repository has no release tag yet to compare the
+  CLI and schemas with, and they only grew (`--failed-first`, `[e2e]
+  durations`, `data.shards`).
+- 22.5: what the first `cargo xtask e2e` gate found: two tests that run
+  `test` several times in one project, which now keeps a durations file
+  between those runs. A `--bail` run started its failed test first (it
+  had never passed, so it had no time, so it may be long), which is the
+  intended order; the test now expects it. And a test that ran `--shard
+  1/2` then `--shard 2/2` lost and repeated tests: the first shard's run
+  updated the file the second split by. CI machines restore the same
+  file, so the design stands (shards must learn times too), the test
+  gives each shard the same file, and docs/e2e/durations.md says that the
+  shards of a suite must start from the same file. Making sequential
+  shards on one machine safe is left for later.
+- 22.5: "Failures look the same" is now a golden: a failed test's file
+  list and its `report.md`, whole. Generated with the build from before
+  plan 22, they differ only in that build's test harness writing the temp
+  directory without resolving `/private`, not in the runner's output.
