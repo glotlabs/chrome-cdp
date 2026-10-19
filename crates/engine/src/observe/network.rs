@@ -496,11 +496,7 @@ impl Engine {
         timeout_ms: u64,
     ) -> Result<Page, ErrorInfo> {
         let id = tab.map(parse_tab_id).transpose()?;
-        running
-            .tabs
-            .page(id, millis(timeout_ms))
-            .await
-            .map_err(|e| self.tab_error(running, e))
+        self.log_tab(running, id, millis(timeout_ms)).await
     }
 
     fn no_such_request(&self, page: &Page, id: u64, oldest: Option<u64>, latest: u64) -> ErrorInfo {

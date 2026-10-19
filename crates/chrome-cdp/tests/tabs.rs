@@ -285,6 +285,40 @@ fn a_context_keeps_its_active_tab_in_front() {
 }
 
 #[test]
+fn a_contexts_logs_are_its_active_tabs() {
+    let Some(chrome) = chrome_path() else { return };
+    let site = Fixtures::shared();
+    let sandbox = Sandbox::with_chrome(&chrome);
+    assert_eq!(
+        code(&sandbox.run(&["open", &site.url("/tabs/popup.html")])),
+        0
+    );
+    let out = sandbox.run(&["context", "new", &site.url("/tabs/popup-target.html"), "-q"]);
+    assert_eq!(stdout(&out), "c1\n", "{}", stderr(&out));
+    eval(&sandbox, "console.log('said in c1')", &["--context", "c1"]);
+    // Without --tab, `console` and `network` read the context's tab, not
+    // the session's.
+    let console = sandbox.run(&["console", "--context", "c1", "--since", "0"]);
+    assert!(
+        stdout(&console).contains("said in c1"),
+        "{}",
+        stdout(&console)
+    );
+    let network = sandbox.run(&["network", "--context", "c1", "--since", "0"]);
+    assert!(
+        stdout(&network).contains("popup-target.html"),
+        "{}",
+        stdout(&network)
+    );
+    let own = sandbox.run(&["network", "--since", "0"]);
+    assert!(
+        !stdout(&own).contains("popup-target.html"),
+        "{}",
+        stdout(&own)
+    );
+}
+
+#[test]
 fn follow_popups_makes_each_popup_active() {
     let Some(chrome) = chrome_path() else { return };
     let site = Fixtures::shared();

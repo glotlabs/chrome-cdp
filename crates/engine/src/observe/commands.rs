@@ -68,11 +68,7 @@ impl Engine {
         let id = req.tab.as_deref().map(parse_tab_id).transpose()?;
         // Not `Engine::page`: reading the console is no page command, so
         // it must not move `wait --request`'s "previous command" mark.
-        let page = running
-            .tabs
-            .page(id, timeout)
-            .await
-            .map_err(|e| self.tab_error(&running, e))?;
+        let page = self.log_tab(&running, id, timeout).await?;
         if let Since::Mark { name } = &req.since {
             let marks = running
                 .tabs

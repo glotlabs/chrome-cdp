@@ -57,6 +57,23 @@ impl Engine {
         Ok(page)
     }
 
+    /// The tab a log command (`console`, `network`, …) reads: tab `id`,
+    /// else the active tab of the call's `--context` (or of the browser).
+    /// Unlike [`Engine::page`], it begins no page command, so it does not
+    /// move `wait --request`'s "previous command" mark.
+    pub(crate) async fn log_tab(
+        &self,
+        running: &Running,
+        id: Option<u32>,
+        timeout: Duration,
+    ) -> Result<Page, ErrorInfo> {
+        match self.current_context()? {
+            Some(scope) => running.tabs.page_in(&scope.browser_id, id, timeout).await,
+            None => running.tabs.page(id, timeout).await,
+        }
+        .map_err(|e| self.tab_error(running, e))
+    }
+
     pub(crate) fn tab_error(&self, running: &Running, err: TabError) -> ErrorInfo {
         match err {
             TabError::NoSuchTab(id) => {
