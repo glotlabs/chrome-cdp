@@ -116,7 +116,7 @@ fn follow_prints_requests_as_they_come() {
     let start = Instant::now();
     let follow = sandbox
         .cli()
-        .args(["network", "--follow", "--type", "fetch", "--timeout", "4s"])
+        .args(["network", "--follow", "--type", "fetch", "--timeout", "6s"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -126,10 +126,12 @@ fn follow_prints_requests_as_they_come() {
     assert_eq!(code(&out), 0, "{}", stderr(&out));
     let out = sandbox.run(&["click", "#missing"]);
     assert_eq!(code(&out), 0, "{}", stderr(&out));
+    let out = sandbox.run(&["click", "#slow"]);
+    assert_eq!(code(&out), 0, "{}", stderr(&out));
     let out = follow.wait_with_output().unwrap();
     assert_eq!(code(&out), 0, "{}", stderr(&out));
     // It ran until --timeout.
-    assert!(start.elapsed() >= Duration::from_secs(4));
+    assert!(start.elapsed() >= Duration::from_secs(6));
     assert_eq!(stderr(&out), "following t1's network; Ctrl-C stops\n");
     let text = stdout(&out);
     let items = text.find(" GET 200 /items?n=300 fetch ").expect(&text);
@@ -138,8 +140,15 @@ fn follow_prints_requests_as_they_come() {
         .find(" GET pending /network/missing.json fetch")
         .expect(&text);
     assert!(items < missing, "{text}");
-    // Pending requests show again when they end.
-    assert!(text.contains(" GET pending /items?n=300 fetch"), "{text}");
+    // Pending requests show again when they end: one that takes 1.5 s
+    // (the 300 items may be done before a batch sees them pending).
+    let slow = text
+        .find(" GET pending /items?n=1&delay=1500 fetch")
+        .expect(&text);
+    let ended = text
+        .find(" GET 200 /items?n=1&delay=1500 fetch")
+        .expect(&text);
+    assert!(slow < ended, "{text}");
     // The hint to `network show` came with the first batch only.
     assert!(!text.contains("shows one in full"), "{text}");
     // The first, empty batch printed nothing.
