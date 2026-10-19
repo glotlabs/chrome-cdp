@@ -455,14 +455,24 @@ Examples:
     #[command(after_help = "\
 Load testing (docs/e2e/load.md): each virtual user (VU) is a browser
 context with one tab in one of the run's Chromes, driven in-process (no
-daemon), and runs the selected tests (its journeys) in turn, from a
-fresh context each time, until --duration is up (or --iterations are
-done); the iterations that are running then finish. Each journey runs as
-`test` runs it (${test.id} is unique per iteration, @before and @after run
-around it, @before-all and @after-all once), but leanly: a step runs its
-action or check and waits for the page to settle as a test step does,
-with no action report, mock check or log collection. `think 2s..8s`
-steps pause the user (a bare `think` waits --think).
+daemon). A run is a profile, e2e/load/<NAME>.toml (`chrome-cdp init
+load` writes one): its journeys (tests by weight, each with data whose
+rows the iterations take as ${row.COLUMN}), and an open model,
+[arrivals] (users arrive at a rate, each does one iteration, those past
+max_users are dropped and counted, and an iteration's time counts from
+when it was due), or a closed one, [users] (a number of users loop the
+journeys). Without a profile, the PATHs' tests are the journeys, and
+--users users take them in turn until --duration is up (or --iterations
+are done). Each journey runs as `test` runs it (${test.id} and
+${iteration.id} are unique per iteration, ${vu.id} per user, @before and
+@after run around it, @before-all and @after-all once), but leanly: a
+step runs its action or check and waits for the page to settle as a
+test step does, with no action report, mock check or log collection.
+`think 2s..8s` steps pause the user (a bare `think` waits the profile's
+think). --plan prints the stages, the users expected at once and the
+Chromes, and starts nothing. Ctrl-C (or SIGTERM) stops new users and
+lets the running iterations finish within [load] grace (30s); a second
+stops them at once. The report is written either way.
 
 A load run needs a real backend (--backend, or the config's
 default_backend); load testing the mocks measures chrome-cdp, not the
@@ -480,7 +490,8 @@ record a browser_crash error and go on in the new one. The first
 console.txt and requests.txt in
 e2e/.results/load/<run>/failures/<n>-vu<V>-i<I>/; later ones are only
 counted. --raw writes every step's start, end and result to steps.jsonl
-in the run's folder.
+in the run's folder, and every iteration's due, start and end time to
+iterations.jsonl.
 
 The config's [load] section sets what the users' browsers fetch and
 keep: block = [\"third-party\"] (or URL patterns like
@@ -491,6 +502,9 @@ renderer_memory = \"512MB\" makes a page whose heap grows past it a
 memory error, and its user goes on in a fresh context.
 
 Examples:
+  chrome-cdp init load && chrome-cdp load example --plan
+  chrome-cdp load shop                      # e2e/load/shop.toml
+  chrome-cdp load shop --backend staging --raw
   chrome-cdp load e2e/scenarios/shop.cdp:12 --backend staging --users 50 --duration 5m
   chrome-cdp load e2e/scenarios/shop.cdp --grep browse --users 200 --ramp-up 1m
   chrome-cdp load e2e/load/journeys.cdp --users 20 --iterations 5 --raw
@@ -8042,7 +8056,7 @@ pub(crate) struct LoadArgs {
     pub(crate) keep_failures: u32,
 
     /// Write every step's start, end and result to steps.jsonl in the
-    /// run's folder.
+    /// run's folder, and every iteration's to iterations.jsonl.
     #[arg(long)]
     pub(crate) raw: bool,
 

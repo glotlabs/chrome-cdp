@@ -145,6 +145,8 @@ inside it are not interpreted.
 | `${saved.x.y}` | field `y` of the JSON answer an earlier `http … --save x` of the test (or of its file's `@before-all`) got; a number picks an item of a list (`${saved.x.items.0.sku}`) | `test` |
 | `${test.id}`, `${run.id}` | unique ids for the test's try and for the run (`k3j9x0qa-4`, `k3j9x0qa`) | `test` |
 | `${backend}` | the run's backend (`mock`, `local`, …), unless an `@include` parameter has the name | `test` |
+| `${vu.id}`, `${iteration.id}` | unique ids for a load run's user and its iteration (`k3j9x0qa-u12`, `k3j9x0qa-u12-3`); under `test`, the one user `${run.id}-u1` and `${test.id}` | `load`, `test` |
+| `${row.COLUMN}` | a column of the row the iteration took from its journey's `data` ([docs/e2e/load.md](e2e/load.md#per-user-data)); checked against the data's columns before the run | `load` |
 
 - `$${` is a literal `${`: `$${x}` is the text `${x}`.
 - A `$` not followed by `{` is text (`a$b`, `$HOME`).

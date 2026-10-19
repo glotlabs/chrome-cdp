@@ -406,6 +406,20 @@ app's hashed files once, and use about half the CPU; their Chrome keeps
 the cache, so memory per user is a little higher, and chrome-cdp's own
 memory grows with each user's long-lived tab (plan 23's decisions log).
 
+Plan 23.3 (the load model), on the same Mac with chrome-headless-shell
+and a Chrome per 10 users. `bench load` runs a closed model without a
+profile, which 23.3 rewrote around stages; its numbers did not move: at
+100 users 1040 iterations, step p95 157 ms, chrome-cdp 0.07 cores and
+36 MB; at 200 users 2074 iterations, step p95 155 ms, chrome-cdp 0.16
+cores and 49 MB (23.2: 1040 and 2076 iterations, 157 and 155 ms, 0.07
+and 0.17 cores, 35 and 49 MB). An open model (`[arrivals]`, 0 to 29
+users a second over 10 s, then 29 a second for 60 s, `max_users = 400`)
+on the same journey had 1885 arrivals, none dropped, at most 193 users at
+once and 0 failures, each iteration 6.6 s from when it was due; an
+iteration started 0.8 ms after its due time at p50, 2.4 ms at p99 and
+3.9 ms at most (`iterations.jsonl`), so the arrivals kept their schedule
+at about the users per machine of 23.2.
+
 On the macOS runs, from 100 full-Chrome users on, the limit was the
 machine: the Chromes held at about 8 of 16 CPUs while macOS's own
 services (WindowServer, kernel_task, WindowManager, fontd) took several

@@ -87,6 +87,11 @@ The [load] section sets how `chrome-cdp load` runs its users
                                        cookies, storage and HTTP cache
   renderer_memory = "512MB"            a page's heap above it is a
                                        memory error (default: no limit)
+  grace = "30s"                        how long running iterations may
+                                       take to finish after Ctrl-C
+
+A load run's journeys, model and think times are a profile,
+e2e/load/<name>.toml (`chrome-cdp init load` writes an example).
 
 A web server runs in its own process group with its output in
 <artifacts>/web-server.log, and is stopped when the tests end. A static

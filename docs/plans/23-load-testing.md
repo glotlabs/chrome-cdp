@@ -1,6 +1,6 @@
 # Plan 23 — Load testing with real browsers
 
-Status: IN PROGRESS (23.1 and 23.2 done)
+Status: IN PROGRESS (23.1, 23.2 and 23.3 done)
 Depends on: 03 §3.4 (the wait engine and settle), 06 §6.2 (each tab's
 network log), 07 §7.3 (init scripts), 11 (scenarios, the runner,
 `--jobs`, real backends, `${…}` variables), 22 (the test settle, one
@@ -564,3 +564,59 @@ server is wrong. This milestone makes chrome-cdp notice and say so.
   more slowly. It is not the console, network or issue logs (capped, and
   turning issues off changed nothing). At 400 returning users for 60 s it
   was 315 MB, inside 23.1's 500 MB, but a long run needs it found.
+- 23.3: TOML puts a key written after a table's header in that table, and
+  the plan's own example has `think` after `[arrivals]`. A `think` in
+  `[arrivals]` or `[users]` is taken as the profile's (an error when the
+  top has one too), and a top-level key inside `[[journeys]]` is an
+  unknown field whose hint says where it belongs.
+- 23.3: an open model's k-th arrival (from 0) is due when the stages'
+  rate, summed from the start, reaches k + ½: at 5/s the arrivals are at
+  0.1 s, 0.3 s, …, a stage at a rate of 0 brings none, and the stages'
+  arrivals add up to their rate × duration. The schedule is even, not
+  random (Poisson): a run is repeatable, and a burst is a stage.
+- 23.3: a closed model's user v runs while the stages' count is above
+  v − 1, and starts when a rising count reaches v − 1: the ramp of a run
+  without a profile starts user v at `ramp_up × (v − 1) / users`, as
+  23.1's did. A user below the count finishes its iteration and waits
+  for the count to rise again, or ends.
+- 23.3: without a profile, users take the journeys in turn, as in 23.1;
+  a profile's are picked by weight, at random from a seed per user.
+- 23.3: `@before-all` and `@after-all` still run before the first user
+  starts and after the last one ends. Every journey of a profile has a
+  weight above 0, so each of their files' hooks is needed; running them
+  lazily, at the first iteration of a file's journey, would only move
+  the setup into the measured time.
+- 23.3: an open model's Chromes are enough for `max_users`; those for the
+  users it expects at once (the peak rate × the journeys' mean length in
+  the last run on the backend, from `e2e/.results/load/journeys.json`,
+  and a quarter more) start before the users, the others when an
+  arrival first needs one; without a last run, all of them. An arrival
+  takes a free place in the first Chrome that has one. Under `cache =
+  "returning"` an arrival takes over a context an earlier user of its
+  Chrome left, so an open model has returning visitors too.
+- 23.3: `[load] grace` is in the config, with the other settings of how
+  the machine runs users; the profile says what load to make. A second
+  Ctrl-C aborts the users' tasks: their iterations are counted as cut
+  short and nothing else, and `@after-all` does not run. With web
+  servers, the test runner's server watch runs as for `test --watch`, so
+  a server outlives Ctrl-C until the report is written.
+- 23.3: a run that `on_failure = "stop-run"` ends exits 1 (`ExpectFailed`,
+  the run's data as details): the site is down. One that Ctrl-C or
+  `data_exhausted = "stop"` ends exits 0, saying why in `stopped`.
+- 23.3: until 23.4's histograms, each iteration's time from its due time
+  is kept in memory as one number (8 bytes an iteration) for the
+  summary's p50, p95 and max.
+- 23.3: under `test`, `${vu.id}` is `<run>-u1` and `${iteration.id}` the
+  test's id, so a journey that names its user runs as a test too;
+  `${row.…}` has no meaning there and is an error. `lint` and a load
+  run's test plan take any `${row.…}`; the load plan checks it against
+  each journey's data (and a file's `@before` and `@after` against the
+  columns all its journeys' data have).
+- 23.3: `think` never reaches the daemon (it runs in the CLI, as a
+  no-op), so `history --as-scenario` never has it.
+- 23.3: `load --plan` does not look for a Chrome, only works out which
+  kind the run would start, so it runs where no browser is installed.
+- 23.3: measured (`docs/benchmarks.md`, the same Mac): `bench load`'s
+  closed runs did not move from 23.2's, and an open model at 29 arrivals
+  a second (193 users at once) started each iteration 0.8 ms after it
+  was due at p50 and 3.9 ms at most, with no arrival dropped.

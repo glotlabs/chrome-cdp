@@ -80,6 +80,17 @@ the top of the GitHub release notes.
   user's cache and cookies across iterations (`cache = "returning"`), and
   stop a page whose heap grows past `renderer_memory` (a `memory` error).
   `load --json` reports the browser, the cache and the contexts made.
+- The load model (plan 23.3): `chrome-cdp load <profile>` runs a load
+  profile, `e2e/load/<name>.toml` (`chrome-cdp init load` writes one),
+  with journeys by weight, an open model (`[arrivals]`: users arrive at
+  a rate, those past `max_users` are dropped and counted, and an
+  iteration's time counts from when it was due) or a closed one
+  (`[users]`), per-user data (`${row.COLUMN}` from a CSV or JSON file,
+  in order or at random, wrapping or stopping), `${vu.id}` and
+  `${iteration.id}`, `think exp(4s)` and `think_between_steps`, and
+  `on_failure = "stop-run"`. `load --plan` says what a run would do.
+  Ctrl-C or SIGTERM lets the running iterations finish within `[load]
+  grace` and writes the report; a second Ctrl-C stops at once.
 
 ### Changed
 
