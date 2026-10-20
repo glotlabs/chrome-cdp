@@ -52,6 +52,7 @@ audit baseline file formats.
 | 3 | timeout (the error says what was observed) |
 | 4 | browser, daemon or environment |
 | 5 | a dialog is blocking the page |
+| 6 | a load run's threshold failed (`chrome-cdp load`) |
 
 [troubleshooting.md](troubleshooting.md) has a section for every error
 kind.

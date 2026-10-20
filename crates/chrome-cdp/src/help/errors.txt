@@ -39,6 +39,9 @@ dir, with a fix for each problem.
 Exit 5:
   DialogOpen        an alert/confirm/prompt blocks the page; answer it
                     with chrome-cdp dialog accept|dismiss
+Exit 6:
+  ThresholdFailed   a load run ran, and a threshold of its profile failed;
+                    the notes list them, report.md has the numbers
 
 The page's own errors are another thing: `chrome-cdp errors` lists its
 uncaught exceptions and failed loads (see chrome-cdp errors --help).

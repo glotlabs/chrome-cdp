@@ -72,11 +72,15 @@ pub enum ErrorKind {
     // Exit 5.
     /// A JavaScript dialog blocks the page.
     DialogOpen,
+
+    // Exit 6.
+    /// A load run's threshold failed (`chrome-cdp load`, plan 23.4).
+    ThresholdFailed,
 }
 
 impl ErrorKind {
     /// Every kind, in exit-code order.
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::NotFound,
         Self::Ambiguous,
         Self::Obscured,
@@ -99,6 +103,7 @@ impl ErrorKind {
         Self::ProtocolError,
         Self::InstallFailed,
         Self::DialogOpen,
+        Self::ThresholdFailed,
     ];
 
     /// The process exit code for this kind (plan 08 §3).
@@ -125,6 +130,7 @@ impl ErrorKind {
             | Self::ProtocolError
             | Self::InstallFailed => 4,
             Self::DialogOpen => 5,
+            Self::ThresholdFailed => 6,
         }
     }
 }
@@ -299,6 +305,7 @@ mod tests {
         assert_eq!(ErrorKind::ProtocolError.exit_code(), 4);
         assert_eq!(ErrorKind::PageCrashed.exit_code(), 4);
         assert_eq!(ErrorKind::DialogOpen.exit_code(), 5);
+        assert_eq!(ErrorKind::ThresholdFailed.exit_code(), 6);
     }
 
     #[test]

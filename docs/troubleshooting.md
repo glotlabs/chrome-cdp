@@ -13,6 +13,7 @@ for when it is not enough. Errors are grouped by exit code, as
 | 3 | something did not happen in time | [Timeout](#timeout) |
 | 4 | the browser, the daemon or the machine | [ChromeNotFound](#chromenotfound), [LaunchFailed](#launchfailed), [BrowserCrashed](#browsercrashed), [PageCrashed](#pagecrashed), [DaemonUnavailable](#daemonunavailable), [ProtocolError](#protocolerror), [InstallFailed](#installfailed) |
 | 5 | a JavaScript dialog blocks the page | [DialogOpen](#dialogopen) |
+| 6 | a load run's threshold failed | [ThresholdFailed](#thresholdfailed) |
 
 With `--json` the kind is `error.kind`, and `error.details` holds what the
 text form only summarises (the candidates, the covering element, what a
@@ -332,6 +333,25 @@ in the page until it gets one. Answer it (`dialog accept [text]` or
 `dialog dismiss`), then go on. Alerts and "leave the page?" dialogs are
 accepted by themselves. `open --dialogs accept|dismiss` answers every
 dialog of the session without asking.
+
+## Exit 6: load thresholds
+
+### ThresholdFailed
+
+```
+error: 1 of 3 thresholds failed
+  failed: p95(GET /api/cart) < 300ms: 412 ms
+  hint: the run's numbers are in e2e/.results/load/<run>/report.md
+```
+
+`chrome-cdp load` ran, and the site missed a `[thresholds]` limit of the
+profile ([e2e/load.md](e2e/load.md#thresholds)). The notes list each
+threshold that failed with what was measured; `report.md` and
+`report.html` in the run's folder have every endpoint, step and Web
+Vital. A threshold whose group never had a value (an endpoint no request
+had, an INP without interactions) fails too, and says the closest groups
+that had one: check its name. `--compare` with an earlier run shows what
+changed.
 
 ## Not an error, but not right either
 
