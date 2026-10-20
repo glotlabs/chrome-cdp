@@ -15,7 +15,10 @@
 //! after each action. Plan 23.4's metrics: the server's latency and error
 //! rate per endpoint as the load server sets them, every page view's Web
 //! Vitals, the reports, a failed threshold's exit code, `--compare` and
-//! `--metrics-listen`.
+//! `--metrics-listen`. Plan 23.5's limits: a generator whose pages burn the
+//! CPU is flagged as saturated within 10 s, its thresholds leave those
+//! seconds out, `on_saturation = "abort"` exits 7, and `--calibrate` stops
+//! at the site's failing.
 //!
 //! Needs a real Chrome (`CHROME_PATH`; skipped without it).
 
@@ -73,11 +76,19 @@ impl Project {
         let server = LoadServer::start(options).unwrap();
         let root = sandbox.dir.path().join("project");
         std::fs::create_dir_all(root.join("e2e")).unwrap();
+        // The tests run beside each other on one machine, which is often
+        // past the generator's limits: only the tests of those limits have
+        // them.
+        let capacity = if load.contains("[load.capacity]") {
+            ""
+        } else {
+            "\n[load.capacity]\ncpu = \"100%\"\nmemory = \"1%\"\nlag = \"1m\"\n"
+        };
         std::fs::write(
             root.join("chrome-cdp.toml"),
             format!(
                 "[e2e]\ntests = [\"e2e/**/*.cdp\"]\ndefault_backend = \"load\"\n\n\
-                 [e2e.backends.load]\nmode = \"real\"\nbase_url = \"{}\"\n\n{load}",
+                 [e2e.backends.load]\nmode = \"real\"\nbase_url = \"{}\"\n\n{load}{capacity}",
                 server.url()
             ),
         )
@@ -882,5 +893,150 @@ fn a_failed_threshold_exits_6_and_runs_compare_and_serve_their_numbers() {
         stdout(&out).contains("--compare: no run nope"),
         "{}",
         stdout(&out)
+    );
+}
+
+/// Each page burns its main thread from its first step on, 200 ms at a
+/// time: the CPU-burning page of plan 23.5's saturation check.
+const BURN: &str = r#"@test "burns the CPU"
+  goto /
+  eval "(() => { const burn = () => { const end = performance.now() + 200; while (performance.now() < end) {} setTimeout(burn, 0); }; burn(); return 1; })()"
+  think 2s
+"#;
+
+/// A profile of burning users, a quarter of the machine's CPUs (at least
+/// two), and the `[load]` sections whose CPU limit is below their share:
+/// they saturate the generator, and leave the CPUs of the tests running
+/// beside them.
+fn burning(chrome: &Path, on_saturation: &str) -> Project {
+    let cpus = std::thread::available_parallelism().map_or(4, std::num::NonZero::get);
+    let users = (cpus / 4).max(2);
+    #[allow(clippy::cast_precision_loss)]
+    let limit = ((users.min(cpus) as f64 / cpus as f64) * 60.0)
+        .floor()
+        .max(1.0);
+    let project = Project::with_load(
+        chrome,
+        &[("burn.cdp", BURN)],
+        &format!(
+            "[load]\ngrace = \"2s\"\n\n[load.capacity]\ncpu = \"{limit}%\"\n\
+             on_saturation = \"{on_saturation}\"\n"
+        ),
+    );
+    project.profile(
+        "burn",
+        &format!(
+            "[[journeys]]\ntest = \"e2e/burn.cdp:1\"\n\n[users]\ncount = {users}\nduration = \"20s\"\n\n\
+             [thresholds]\n\"count(steps)\" = \">= 0\"\n"
+        ),
+    );
+    project
+}
+
+/// The capacity lines of the run's `metrics.jsonl`.
+fn capacity_lines(data: &Value) -> Vec<Value> {
+    let text = std::fs::read_to_string(data["files"]["metrics"].as_str().unwrap()).unwrap();
+    text.lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .filter(|l| l["group"] == "capacity")
+        .collect()
+}
+
+#[test]
+fn a_generator_that_burns_its_cpu_is_saturated_and_its_seconds_left_out() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = burning(&chrome, "warn");
+    let out = project.load(&["burn"]);
+    assert_eq!(common::code(&out), 0, "{}\n{}", stdout(&out), stderr(&out));
+    let data = data(&out);
+    let capacity = &data["capacity"];
+    let first = &capacity["saturations"][0];
+    // Flagged within 10 s: its fifth second in a row is at most the tenth.
+    let flagged = first["from_s"].as_u64().unwrap() + 4;
+    assert!(flagged <= 10, "{capacity}");
+    assert!(capacity["saturated_s"].as_u64().unwrap() >= 5, "{capacity}");
+    assert!(
+        capacity["hint"]
+            .as_str()
+            .unwrap()
+            .contains("bigger machine"),
+        "{capacity}"
+    );
+    assert!(capacity["held_users"].as_u64().unwrap() <= capacity["peak_users"].as_u64().unwrap());
+    // Every second has its capacity line; the one it tripped at says since when.
+    let lines = capacity_lines(&data);
+    assert!(lines.len() >= 15, "{lines:?}");
+    assert!(
+        lines.iter().any(|l| l["saturated_from"] == first["from_s"]),
+        "{lines:?}"
+    );
+    // The thresholds leave the saturated seconds out: fewer steps counted.
+    let counted = data["thresholds"][0]["value"].as_f64().unwrap();
+    let steps = data["steps"]["ok"].as_f64().unwrap();
+    assert!(counted < steps, "{counted} of {steps}");
+}
+
+#[test]
+fn a_saturated_run_with_on_saturation_abort_exits_7() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = burning(&chrome, "abort");
+    let out = project.load(&["burn"]);
+    assert_eq!(common::code(&out), 7, "{}\n{}", stdout(&out), stderr(&out));
+    let envelope: Value = serde_json::from_str(&stdout(&out)).unwrap();
+    assert_eq!(envelope["error"]["kind"], "Saturated", "{envelope}");
+    assert!(
+        envelope["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("the load generator saturated: "),
+        "{envelope}"
+    );
+    let data = &envelope["error"]["details"];
+    assert_eq!(data["stopped"]["reason"], "saturated", "{data}");
+    assert!(data["duration_ms"].as_u64().unwrap() < 18_000, "{data}");
+}
+
+#[test]
+fn calibrate_stops_when_the_site_starts_failing() {
+    let Some(chrome) = chrome_path() else { return };
+    let options = Options {
+        faults: vec![load_server::Fault::errors("GET /api/products=40%").unwrap()],
+        ..Options::default()
+    };
+    let journey = "@test \"lists the products\"\n  goto /\n  \
+                   eval \"Promise.all(Array.from({ length: 20 }, () => fetch('/api/products').then((r) => r.text())))\"\n  \
+                   think 200ms\n";
+    let project = Project::with_server(&chrome, &[("list.cdp", journey)], "", options);
+    project.profile(
+        "list",
+        "[[journeys]]\ntest = \"e2e/list.cdp:1\"\n\n[users]\ncount = 4\nduration = \"1m\"\n\n\
+         [thresholds]\n\"error_rate\" = \"< 1%\"\n",
+    );
+    let out = project.load(&["list", "--calibrate", "--duration", "30s"]);
+    // A calibration measures; it passes or fails nothing.
+    assert_eq!(common::code(&out), 0, "{}\n{}", stdout(&out), stderr(&out));
+    let data = data(&out);
+    let calibration = &data["calibration"];
+    assert_eq!(calibration["first"], "server", "{calibration}");
+    assert_eq!(calibration["ramp_to"], 10, "{calibration}");
+    assert!(
+        calibration["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("the site started failing: "),
+        "{calibration}"
+    );
+    assert_eq!(data["stopped"]["reason"], "calibrated", "{data}");
+    assert!(
+        data["thresholds"].as_array().is_none_or(Vec::is_empty),
+        "{data}"
+    );
+    let saved: Value = serde_json::from_str(
+        &std::fs::read_to_string(calibration["file"].as_str().unwrap()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        saved["e2e/load/list.toml on load"]["first"], "server",
+        "{saved}"
     );
 }

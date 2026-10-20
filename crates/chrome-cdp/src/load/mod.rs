@@ -676,6 +676,10 @@ fn verdicts(plan: &LoadPlan, ran: &Ran, records: &Records) -> Vec<protocol::sche
                         )
                     })
                 }
+                (Some(None), _) if ran.capacity.saturated_s > 0 => Some(format!(
+                    "{} had no value outside the {} saturated seconds",
+                    th.written.group, ran.capacity.saturated_s
+                )),
                 (Some(None), _) => Some(format!("{} had no value to measure", th.written.group)),
                 _ => None,
             };
