@@ -844,7 +844,7 @@ fn initiator_stack(mut stack: &Value) -> Vec<StackFrame> {
 
 /// A request's phases from its `Network.ResourceTiming` (ms after
 /// `request_time`; -1 for a phase that did not happen).
-fn phases(timing: &Value, request_time: f64, started: Option<f64>) -> Timing {
+pub(crate) fn phases(timing: &Value, request_time: f64, started: Option<f64>) -> Timing {
     let at = |name: &str| timing[name].as_f64().filter(|v| *v >= 0.0);
     let span = |start: &str, end: &str| match (at(start), at(end)) {
         (Some(s), Some(e)) => ms((e - s) / 1000.0),

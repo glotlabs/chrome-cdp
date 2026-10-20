@@ -414,6 +414,8 @@ struct Tab {
     console: Console,
     /// Its network log, also that of its OOPIF sessions.
     netlog: NetLog,
+    /// Its requests in flight, for a load run's sink.
+    load_requests: crate::load::Inflight,
     /// Chrome's issues about it, also those of its OOPIF sessions and
     /// workers (see [`crate::observe::issues`]).
     issues: Issues,
@@ -477,6 +479,7 @@ impl Tab {
             frames: FrameTree::new(&info.target_id, session_id),
             network: Network::default(),
             netlog: NetLog::of_page(&info.target_id),
+            load_requests: crate::load::Inflight::default(),
             console: Console::default(),
             issues: Issues::default(),
             command_marks: (0, 0),
@@ -2567,7 +2570,7 @@ fn network_event(
             .event(session_id, method, &event.params, capacity, None);
         let hot = t.hmr.network(session_id, method, &event.params);
         if sink.is_some() {
-            ended = load_request(&t.netlog, session_id, method, &event.params);
+            ended = t.load_requests.event(session_id, method, &event.params);
         }
         if method == "Network.loadingFinished"
             && let Some(request_id) = event.params["requestId"].as_str()
@@ -2593,42 +2596,6 @@ fn network_event(
     if let Some((request_id, url, kind)) = finished {
         keep_body(shared, session, request_id, &url, &kind);
     }
-}
-
-/// The request a `Network.loadingFinished` or `Network.loadingFailed`
-/// ended, for a load run: not one the page canceled, nor one Chrome
-/// blocked for `[load] block`.
-fn load_request(
-    log: &NetLog,
-    session_id: &str,
-    method: &str,
-    params: &serde_json::Value,
-) -> Option<crate::load::LoadRequest> {
-    if method != "Network.loadingFinished" && method != "Network.loadingFailed" {
-        return None;
-    }
-    let record = log.get(log.id_of(session_id, params["requestId"].as_str()?)?)?;
-    let entry = &record.entry;
-    if entry.state == protocol::schema::RequestState::Canceled
-        || entry.blocked.as_deref() == Some("inspector")
-    {
-        return None;
-    }
-    let duration_ms = match (record.started(), params["timestamp"].as_f64()) {
-        (Some(start), Some(end)) => Some(((end - start) * 1000.0).max(0.0)),
-        #[allow(clippy::cast_precision_loss)]
-        _ => entry.duration_ms.map(|ms| ms as f64),
-    };
-    Some(crate::load::LoadRequest {
-        method: entry.method.clone(),
-        url: entry.url.clone(),
-        kind: entry.kind.clone(),
-        status: entry.status,
-        cache: entry.cache.clone(),
-        error: entry.error.clone(),
-        duration_ms,
-        timing: record.timing.clone(),
-    })
 }
 
 /// Asks Chrome for the body of a request that finished loading, and keeps
