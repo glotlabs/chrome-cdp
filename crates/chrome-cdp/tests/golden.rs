@@ -785,6 +785,41 @@ const CASES: &[Case] = &[
         fixture: Fixture::Project(LOAD_PROJECT),
     },
     Case {
+        name: "load-calibrate-no-profile",
+        args: &[
+            "load",
+            "e2e/scenarios/shop.cdp",
+            "--calibrate",
+            "--backend",
+            "staging",
+        ],
+        modes: ERR,
+        fixture: Fixture::Project(LOAD_PROJECT),
+    },
+    Case {
+        name: "load-plan-calibrated",
+        args: &["load", "steady", "--plan", "--browser", "chrome"],
+        modes: &[""],
+        fixture: Fixture::Project(&[
+            (
+                "chrome-cdp.toml",
+                "[e2e]\ntests = [\"e2e/**/*.cdp\"]\n\n[e2e.backends.staging]\nmode = \"real\"\nbase_url = \"http://localhost:4176\"\n",
+            ),
+            ("e2e/scenarios/shop.cdp", "@test \"browses\"\n  goto /\n"),
+            (
+                "e2e/load/steady.toml",
+                "backend = \"staging\"\n\n[[journeys]]\ntest = \"e2e/scenarios/shop.cdp:1\"\n\n\
+                 [users]\ncount = 30\nduration = \"2m\"\n",
+            ),
+            (
+                "e2e/.results/load/calibration.json",
+                "{\"e2e/load/steady.toml on staging\": {\"first\": \"generator\", \"users\": 26, \
+                 \"held_users\": 24, \"held_per_browser\": 8, \"browser\": \"chrome\", \
+                 \"users_per_browser\": 10, \"cpus\": 16, \"run\": \"k3v9q2xa\"}}\n",
+            ),
+        ]),
+    },
+    Case {
         name: "load-no-such-profile",
         args: &["load", "shap"],
         modes: ERR,

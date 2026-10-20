@@ -1,0 +1,11 @@
+$ chrome-cdp load e2e/scenarios/shop.cdp --calibrate --backend staging
+exit: 2
+--- stderr
+error: --calibrate ramps the users of a profile; name one
+  hint: chrome-cdp load broken --calibrate   (the profiles in e2e/load: broken, gated, misgated, shop, steady)
+
+$ chrome-cdp load e2e/scenarios/shop.cdp --calibrate --backend staging --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"--calibrate ramps the users of a profile; name one","hint":"chrome-cdp load broken --calibrate   (the profiles in e2e/load: broken, gated, misgated, shop, steady)"}}
+

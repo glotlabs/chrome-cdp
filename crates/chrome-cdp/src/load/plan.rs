@@ -140,17 +140,21 @@ impl LoadPlan {
             _ => None,
         };
         if args.calibrate && profile.is_none() {
-            return Err(ErrorInfo::new(
+            let names = profile::names(&root);
+            let error = ErrorInfo::new(
                 ErrorKind::BadArgs,
                 "--calibrate ramps the users of a profile; name one",
-            )
-            .hint(Hint::text(format!(
-                "e.g. chrome-cdp load shop --calibrate, for e2e/load/shop.toml{}",
-                match profile::names(&root).first() {
-                    Some(name) => format!("; this project has {name}"),
-                    None => "; chrome-cdp init load writes an example".to_owned(),
-                }
-            ))));
+            );
+            return Err(match names.first() {
+                Some(first) => error.hint(
+                    Hint::run(Cmd::new("load").arg(first).switch("calibrate"))
+                        .why(format!("the profiles in e2e/load: {}", names.join(", "))),
+                ),
+                None => error.hint(
+                    Hint::run(Cmd::new("init").arg("load"))
+                        .why("writes an example profile, e2e/load/example.toml"),
+                ),
+            });
         }
         let mut problems = Vec::new();
         let test_args = match &profile {

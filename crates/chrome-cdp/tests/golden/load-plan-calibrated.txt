@@ -1,0 +1,14 @@
+$ chrome-cdp load steady --plan --browser chrome
+exit: 0
+--- stdout
+load plan: closed model of e2e/load/steady.toml against backend staging
+stages:
+  1. 30 users for 2m
+  2m in all; each user loops its journeys
+journeys (by weight):
+     1  e2e/scenarios/shop.cdp:1 browses
+users: 30 users at once
+Chromes: 3 (chrome), up to 10 users each
+--- stderr
+warning: this run goes up to 30 users, and --calibrate found this machine holds 24 on this profile (run k3v9q2xa): above 80% of it, the generator may saturate
+
