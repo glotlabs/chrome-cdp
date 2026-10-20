@@ -94,7 +94,9 @@ pub(crate) struct Found {
     pub(crate) message: String,
 }
 
-/// Watches a calibration's seconds for the site failing.
+/// Watches a calibration's seconds for the site failing: [`FAILING_FOR`]
+/// failing seconds, not counting those with too little to judge (fewer
+/// than [`FEWEST_REQUESTS`] requests and no iteration) in between.
 #[derive(Debug, Default)]
 pub(crate) struct Watch {
     /// The first of the failing seconds in a row so far.
@@ -106,6 +108,11 @@ impl Watch {
     /// [`FAILING_FOR`] in a row.
     pub(crate) fn second(&self, second: &Second) -> Option<Found> {
         let mut since = self.since.lock().unwrap_or_else(PoisonError::into_inner);
+        // A second with too little to judge (a starved machine has some)
+        // neither ends a run of failing seconds nor adds to it.
+        if second.requests < FEWEST_REQUESTS && second.iterations == 0 {
+            return None;
+        }
         let Some(why) = failing(second) else {
             *since = None;
             return None;
@@ -269,12 +276,14 @@ mod tests {
     #[test]
     fn the_site_fails_for_five_seconds_in_a_row() {
         let watch = Watch::default();
-        // 4% errors: not failing; too few requests: not failing.
+        // 4% errors: not failing; too few requests: not judged.
         assert!(watch.second(&second(1, 10, 100, 4)).is_none());
         assert!(watch.second(&second(2, 10, 5, 5)).is_none());
-        for t in 3..=6 {
+        for t in 3..=5 {
             assert!(watch.second(&second(t, 20, 100, 20)).is_none(), "{t}");
         }
+        // A second with nothing to judge keeps the run of failing seconds.
+        assert!(watch.second(&second(6, 20, 0, 0)).is_none());
         let found = watch.second(&second(7, 30, 100, 20)).unwrap();
         assert_eq!(
             (found.first, found.from, found.users),

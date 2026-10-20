@@ -751,7 +751,8 @@ server is wrong. This milestone makes chrome-cdp notice and say so.
   profile's model, as an open model's users at once depend on the site.
   It stops at the first of the generator saturating and the site failing
   (5 s in a row of more than 5% of at least 10 requests, or 10% of the
-  iterations, failed), checks no thresholds, and exits 0. It is kept by
+  iterations, failed; a second with too little to judge neither ends nor
+  adds to the run, as the full test suite starved some), checks no thresholds, and exits 0. It is kept by
   `<profile> on <backend>`; a later run warns before it starts when its
   users at once go above 80% of what the machine held, only when the
   generator gave first (when the site did, the machine's limit is not

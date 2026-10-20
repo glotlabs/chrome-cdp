@@ -663,7 +663,8 @@ whatever the profile's model) from one, 2 a second, up to twice the
 profile's most users at once (or `--users`; `--duration` sets the ramp's
 length), against the profile's backend. It stops at whichever comes
 first: the generator saturating, or the site failing (5 seconds in a row
-in which more than 5% of the requests or 10% of the iterations failed),
+in which more than 5% of the requests or 10% of the iterations failed; a
+second with fewer than 10 requests and no iteration is not judged),
 and says which and at how many users:
 
 ```text

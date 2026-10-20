@@ -1023,7 +1023,7 @@ fn a_saturated_run_with_on_saturation_abort_exits_7() {
 fn calibrate_stops_when_the_site_starts_failing() {
     let Some(chrome) = chrome_path() else { return };
     let options = Options {
-        faults: vec![load_server::Fault::errors("GET /api/products=40%").unwrap()],
+        faults: vec![load_server::Fault::errors("GET /api/products=60%").unwrap()],
         ..Options::default()
     };
     let journey = "@test \"lists the products\"\n  goto /\n  \
