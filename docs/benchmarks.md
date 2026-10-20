@@ -354,32 +354,44 @@ from a fresh sandbox. For each, the table has:
   (in cores) and peak **RSS**: CPU time from `ps` every 500 ms, each
   process's growth added up (a process that exits between two reads
   loses at most its last half second); **all CPUs** is the two together;
-- whether the run **held**: under 1% of its iterations failed, chrome-cdp
-  and its Chromes used under 90% of the machine's CPUs, and its step p95
-  stayed within twice the smallest run's with the same Chromes per user.
-  Users per machine is the most users of a run that held. This stands in
-  for plan 23.5's capacity check (CPU, memory and scheduling lag watched
-  every second), which will replace it.
+- **machine CPU**: the whole machine's CPU use at most, as `load`'s
+  capacity check read it (plan 23.5), and **saturated**: the seconds that
+  check found the load generator saturated, and the limit that tripped
+  (CPU above 90%, free memory below 10%, or the run's timers 50 ms late
+  at p99, for 5 s in a row);
+- whether the run **held**: under 1% of its iterations failed, and the
+  generator never saturated. Users per machine is the most users of a run
+  that held. (Before 23.5 a run held when chrome-cdp and its Chromes used
+  under 90% of the machine's CPUs and its step p95 stayed within twice
+  the smallest run's.)
 
 Plan 23.1's target is 200 users on a 16-core, 32 GB Linux runner, with
 chrome-cdp itself under 1 core and 500 MB. Results go to
 `target/bench/load.json`.
 
 <!-- bench:load -->
-Last run: 2026-10-19 on macos-aarch64 (16 CPUs), Google Chrome for Testing 155.0.8059.84 as chrome-headless-shell. `testdata/load/scenarios/shop.cdp`, 60 s per run after a 10 s ramp-up, `cache = "new"`.
+Last run: 2026-10-20 on macos-aarch64 (16 CPUs), Google Chrome for Testing 155.0.8059.84 as chrome-headless-shell. `testdata/load/scenarios/shop.cdp`, 60 s per run after a 10 s ramp-up, `cache = "new"`.
 
-**Users per machine: 400** (the most users of a run that held).
+**Users per machine: 200** (the most users of a run that held).
 
-| Users | Per Chrome | Chromes | Iterations | Failed | Step p50 | Step p95 | Chrome RSS / user | Chrome CPU / user | chrome-cdp CPU | chrome-cdp RSS | All CPUs | Contexts | Context setup | Held |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|
-| 25 | 10 | 3 | 260 | 0% | 4.49 ms | 158 ms | 152 MB | 2.26% | 0.02 | 24 MB | 0.59 | 260 | 44.3 ms | yes |
-| 50 | 10 | 5 | 520 | 0% | 3.10 ms | 157 ms | 147 MB | 2.15% | 0.04 | 29 MB | 1.11 | 520 | 46.5 ms | yes |
-| 100 | 10 | 10 | 1040 | 0% | 27.4 ms | 157 ms | 146 MB | 2.08% | 0.07 | 35 MB | 2.15 | 1040 | 57 ms | yes |
-| 200 | 10 | 20 | 2076 | 0% | 8.86 ms | 155 ms | 146 MB | 2.25% | 0.17 | 49 MB | 4.66 | 2076 | 85 ms | yes |
-| 400 | 10 | 40 | 3763 | 0% | 102 ms | 279 ms | 142 MB | 2.30% | 0.23 | 84 MB | 9.44 | 3763 | 485 ms | yes |
+| Users | Per Chrome | Chromes | Iterations | Failed | Step p50 | Step p95 | Chrome RSS / user | Chrome CPU / user | chrome-cdp CPU | chrome-cdp RSS | All CPUs | Machine CPU | Saturated | Contexts | Context setup | Held |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|
+| 25 | 10 | 3 | 260 | 0% | 3.90 ms | 157 ms | 152 MB | 2.24% | 0.02 | 25 MB | 0.58 | 12% | no | 260 | 42.8 ms | yes |
+| 50 | 10 | 5 | 521 | 0% | 3.18 ms | 157 ms | 147 MB | 2.15% | 0.04 | 29 MB | 1.12 | 20% | no | 521 | 45.9 ms | yes |
+| 100 | 10 | 10 | 1040 | 0% | 3.55 ms | 156 ms | 146 MB | 2.10% | 0.08 | 36 MB | 2.18 | 31% | no | 1040 | 55.9 ms | yes |
+| 200 | 10 | 20 | 2074 | 0% | 17.6 ms | 156 ms | 145 MB | 2.27% | 0.18 | 50 MB | 4.73 | 65% | no | 2074 | 84.1 ms | yes |
+| 400 | 10 | 40 | 3662 | 0% | 103 ms | 412 ms | 144 MB | 2.29% | 0.24 | 96 MB | 9.40 | 100% | 61 s (cpu) | 3662 | 492 ms | no |
 <!-- /bench:load -->
 
 The table above is chrome-headless-shell with a Chrome per 10 users.
+With plan 23.5's capacity check it says 200 users per machine where
+23.2's stand-in said 400: at 400 users chrome-cdp and its Chromes used
+9.4 of the 16 CPUs, but the whole machine was at 100% (macOS's own
+services take several cores for the headless Chromes, as 23.1 found),
+and the generator was saturated for 61 s of the run, by its CPU. Watching
+the machine every second cost nothing measurable: at 200 users chrome-cdp
+used 0.18 cores and 50 MB (23.4: 0.18 cores and 50 MB), at 100 users
+0.08 cores and 36 MB (0.08 and 35 MB).
 `--cache returning` adds an `@before` of `cookies clear` to the journey,
 whose cart would otherwise grow from one iteration to the next; "Contexts"
 and "Context setup" are the browser contexts the users made and the mean

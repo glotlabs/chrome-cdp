@@ -21,10 +21,12 @@
 //! mean time one took, which context reuse saves.
 //!
 //! **Users per machine** is the most users of a run that held: under 1%
-//! of its iterations failed, chrome-cdp and its Chromes used under 90% of
-//! the machine's CPUs, and its step p95 stayed within twice the smallest
-//! run's (of the same Chromes per user). Plan 23.5's capacity check will
-//! replace this stand-in.
+//! of its iterations failed, and plan 23.5's capacity check never found
+//! the load generator saturated (`capacity.saturated_s` of its summary:
+//! the machine's CPU, free memory and the run's timer lag, each second).
+//! A report from before 23.5 has no capacity, and its runs held by the
+//! stand-in it had: chrome-cdp and its Chromes under 90% of the machine's
+//! CPUs, and a step p95 within twice the smallest run's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
@@ -116,6 +118,15 @@ pub struct LoadRun {
     /// `chrome-headless-shell` or `chrome`.
     #[serde(default)]
     pub browser: String,
+    /// The seconds `load`'s capacity check found the generator saturated
+    /// (plan 23.5), the limit that tripped first, and the machine's CPU
+    /// use at most, in %; `None` from a `load` without the check.
+    #[serde(default)]
+    pub saturated_s: Option<u64>,
+    #[serde(default)]
+    pub saturated_by: Option<String>,
+    #[serde(default)]
+    pub machine_cpu_max: Option<f64>,
     /// Whether the run held (see the module's docs).
     #[serde(default)]
     pub held: bool,
@@ -198,9 +209,10 @@ pub fn run(opts: &Options<'_>) -> Result<LoadReport, String> {
     })
 }
 
-/// Marks the runs that held: few failures, CPU to spare on a machine of
-/// `cpus`, and steps no slower than twice the smallest run's of the same
-/// users per Chrome.
+/// Marks the runs that held: few failures, and a generator that never
+/// saturated; for a run without the capacity check, CPU to spare on a
+/// machine of `cpus`, and steps no slower than twice the smallest run's of
+/// the same users per Chrome.
 #[allow(clippy::cast_precision_loss)]
 pub fn judge(runs: &mut [LoadRun], cpus: usize) {
     let mut smallest: BTreeMap<u32, f64> = BTreeMap::new();
@@ -212,10 +224,11 @@ pub fn judge(runs: &mut [LoadRun], cpus: usize) {
     }
     for run in runs.iter_mut() {
         let base = smallest.get(&run.per_browser).copied().unwrap_or(f64::MAX);
-        run.held = run.iterations > 0
-            && run.failed_share() < MAX_FAILED
-            && run.cores() < MAX_CPU * cpus as f64
-            && run.step_p95_ms <= base * MAX_SLOWDOWN;
+        let within = match run.saturated_s {
+            Some(seconds) => seconds == 0,
+            None => run.cores() < MAX_CPU * cpus as f64 && run.step_p95_ms <= base * MAX_SLOWDOWN,
+        };
+        run.held = run.iterations > 0 && run.failed_share() < MAX_FAILED && within;
     }
 }
 
@@ -331,6 +344,11 @@ fn one_run(
         contexts: data["contexts"].as_u64().unwrap_or(0),
         context_setup_ms: data["context_setup_ms"].as_f64().unwrap_or(0.0),
         browser: data["browser"].as_str().unwrap_or_default().to_owned(),
+        saturated_s: data["capacity"]["saturated_s"].as_u64(),
+        saturated_by: data["capacity"]["saturations"][0]["limit"]
+            .as_str()
+            .map(str::to_owned),
+        machine_cpu_max: data["capacity"]["cpu_max"].as_f64(),
         held: false,
     })
 }
@@ -531,13 +549,15 @@ pub fn markdown(r: &LoadReport) -> String {
         .map_or("RSS", |run| if run.memory == "pss" { "PSS" } else { "RSS" });
     let _ = writeln!(
         md,
-        "| Users | Per Chrome | Chromes | Iterations | Failed | Step p50 | Step p95 | Chrome {memory} / user | Chrome CPU / user | chrome-cdp CPU | chrome-cdp RSS | All CPUs | Contexts | Context setup | Held |",
+        "| Users | Per Chrome | Chromes | Iterations | Failed | Step p50 | Step p95 | Chrome {memory} / user | Chrome CPU / user | chrome-cdp CPU | chrome-cdp RSS | All CPUs | Machine CPU | Saturated | Contexts | Context setup | Held |",
     );
-    md.push_str("|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|\n");
+    md.push_str(
+        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|\n",
+    );
     for run in &r.runs {
         let _ = writeln!(
             md,
-            "| {} | {} | {} | {} | {}% | {} ms | {} ms | {} | {}% | {} | {} | {} | {} | {} ms | {} |",
+            "| {} | {} | {} | {} | {}% | {} ms | {} ms | {} | {}% | {} | {} | {} | {} | {} | {} | {} ms | {} |",
             run.users,
             run.per_browser,
             run.browsers,
@@ -550,6 +570,14 @@ pub fn markdown(r: &LoadReport) -> String {
             report::fmt_num(run.cdp_cores()),
             bytes(run.cdp_rss_peak),
             report::fmt_num(run.cores()),
+            run.machine_cpu_max
+                .map_or_else(|| "–".to_owned(), |c| format!("{c:.0}%")),
+            match (run.saturated_s, &run.saturated_by) {
+                (None, _) => "–".to_owned(),
+                (Some(0), _) => "no".to_owned(),
+                (Some(s), Some(by)) => format!("{s} s ({by})"),
+                (Some(s), None) => format!("{s} s"),
+            },
             run.contexts,
             report::fmt_num(run.context_setup_ms),
             if run.held { "yes" } else { "no" }
@@ -624,6 +652,9 @@ mod tests {
             contexts: 0,
             context_setup_ms: 0.0,
             browser: "chrome".to_owned(),
+            saturated_s: None,
+            saturated_by: None,
+            machine_cpu_max: None,
             held: false,
         }
     }
@@ -641,5 +672,14 @@ mod tests {
         let held: Vec<bool> = runs.iter().map(|r| r.held).collect();
         // 100: 2% failed; 200: 2.5x slower; 400: 15 of 16 CPUs.
         assert_eq!(held, [true, true, false, false, false]);
+        // With the capacity check, it alone says whether the machine held.
+        let checked = |users, failed, saturated_s| LoadRun {
+            saturated_s: Some(saturated_s),
+            ..run(users, failed, 900.0, 150.0)
+        };
+        let mut runs = vec![checked(25, 0, 0), checked(50, 2, 0), checked(100, 0, 12)];
+        judge(&mut runs, 16);
+        let held: Vec<bool> = runs.iter().map(|r| r.held).collect();
+        assert_eq!(held, [true, false, false]);
     }
 }
