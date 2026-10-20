@@ -696,3 +696,76 @@ server is wrong. This milestone makes chrome-cdp notice and say so.
   chrome-cdp used 0.08 cores and 35 MB at 100 users and 0.18 cores and
   50 MB at 200 (23.3: 0.07 and 0.16 cores, 36 and 49 MB), with the same
   iterations and step p95: users per machine did not move.
+- 23.5: the machine is read from `/proc` on Linux. On macOS it is one
+  `iostat -w 1` for the run (CPU use and load average every second), and
+  each second `sysctl kern.memorystatus_level` (the free memory the
+  system counts) and one `ps` (every process's parent, RSS and CPU time),
+  about 13 ms each: the workspace denies `unsafe` outside two modules, so
+  no mach or sysctl calls. Elsewhere only the timers' lag is watched, and
+  `capacity.machine` says so.
+- 23.5: the reads run in a task of their own, and each second takes the
+  latest. Read inline, with the machine at 100% CPU, starting `ps` took
+  over a second, most seconds went without a CPU reading, and the 5 s in
+  a row never came. A Chrome's CPU in a second is then rough (`ps` itself
+  is starved): it is timed at the middle of the read and capped at the
+  machine's CPUs.
+- 23.5: each Chrome is its browser process's tree (`Engine::status`'s
+  pid), not every process under chrome-cdp, which has the web servers
+  too. `Performance.getMetrics` per target was not used: the process tree
+  has each Chrome's CPU and memory, and a call per page each second would
+  load the CDP connection 23.1 found to be the bottleneck.
+- 23.5: the scheduling lag is how late the run's timers fire: a closed
+  model's user waiting for its start, every `think`, an open model's
+  arrivals, and the run's own second. Each second's p99 is the limit's.
+- 23.5: the lag inside the page is a timer every 100 ms, not a
+  `setTimeout(0)` loop, which Chrome clamps to 4 ms and which would wake
+  250 times a second in every page, spending the CPU it measures. A page
+  view reports its timers' p99 and most with its Web Vitals. It is said,
+  not a limit: a page whose own code is heavy lags on any machine.
+- 23.5: a second turns out to be saturated only when its limit has held
+  for 5 s, 4 s later. Each group keeps the seconds of a run of crossed
+  limits (`over`) and, once it trips, the saturated ones (`left_out`),
+  both made only when a limit is first crossed; a threshold reads the
+  whole run without `left_out` (HDR histograms subtract). `metrics.jsonl`
+  is written as the run goes: its run line says `saturated` from the
+  second it trips, and that second's capacity line has `saturated_from`;
+  the charts mark the earlier seconds too. Saturation ends with the first
+  second within the limits.
+- 23.5: `[load.capacity]` and `on_saturation` are in the config, with the
+  other settings of how the machine runs users; the profile says what
+  load to make. A threshold whose group had no value outside the
+  saturated seconds fails, saying so, like any threshold with no value.
+- 23.5: what the machine held is the most users at once before the first
+  saturated second, and per Chrome over the Chromes started then; a run
+  that never saturated held its peak. The hint lowers an open model's
+  peak rate (or a closed model's users) to 90% of what held, then names
+  chrome-headless-shell (when the run was in full Chrome), `[load] block
+  = ["third-party"]` (when not set) and a bigger machine.
+- 23.5: `--calibrate` needs a profile, and ramps a closed model from one
+  user at 2 users a second up to twice the profile's most users (or
+  `--users`, over `--duration`) on its journeys by weight, whatever the
+  profile's model, as an open model's users at once depend on the site.
+  It stops at the first of the generator saturating and the site failing
+  (5 s in a row of more than 5% of at least 10 requests, or 10% of the
+  iterations, failed), checks no thresholds, and exits 0. It is kept by
+  `<profile> on <backend>`; a later run warns before it starts when its
+  users at once go above 80% of what the machine held, only when the
+  generator gave first (when the site did, the machine's limit is not
+  known).
+- 23.5: the integration tests run beside each other, and the machine is
+  often above 90% CPU while they do, so a test project gets limits that
+  never trip unless the test is about them. The forced saturation is an
+  `eval` that starts a busy loop in each page (a load step cannot add an
+  init script), with users for a quarter of the machine's CPUs and a CPU
+  limit below their share, so the rest of the suite keeps its CPUs.
+- 23.5: `bench load`'s runs hold when under 1% of their iterations failed
+  and the capacity check never found the generator saturated, which
+  replaces 23.1's stand-in rule.
+- 23.5: measured (`docs/benchmarks.md`, the same Mac, chrome-headless-shell,
+  a Chrome per 10 users): users per machine by the capacity check is 200,
+  not the stand-in's 400. At 400 users chrome-cdp and its Chromes used 9.4
+  of 16 CPUs, but the machine was at 100% and the generator saturated for
+  61 s, by its CPU; at 200 the machine peaked at 65%. chrome-cdp used 0.18
+  cores and 50 MB at 200 users and 0.08 cores and 36 MB at 100, as in
+  23.4: the watch costs nothing measurable. A run whose pages burn the CPU
+  was flagged at its 6th second.

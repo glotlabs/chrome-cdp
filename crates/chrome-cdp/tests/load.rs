@@ -507,7 +507,7 @@ fn arrivals_keep_their_rate_when_the_server_is_slow() {
 }
 
 #[test]
-fn think_waits_under_load_and_not_under_test() {
+fn think_does_not_wait_under_test() {
     let Some(chrome) = chrome_path() else { return };
     let journey = "@test \"thinks\"\n  goto /\n  think 10s\n  think 5s..20s\n  think exp(10s)\n  \
                    expect 'role=heading[name=\"Products\"]' visible\n";
