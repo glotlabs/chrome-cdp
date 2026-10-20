@@ -78,6 +78,13 @@ pub struct PageVitals {
     pub lcp: Option<f64>,
     pub cls: Option<f64>,
     pub inp: Option<f64>,
+    /// How late the page's main thread ran a timer due every 100 ms (plan
+    /// 23.5), at p99 and at most: a page that lags while the server
+    /// answers as fast as before has a starved Chrome.
+    #[serde(default)]
+    pub lag: Option<f64>,
+    #[serde(default)]
+    pub lag_max: Option<f64>,
 }
 
 /// Where a load run's engine sends its [`LoadEvent`]s. It is called on
@@ -390,7 +397,7 @@ mod tests {
     fn a_reported_page_view_is_read() {
         let params = json!({
             "name": "__chromeCdpVitals",
-            "payload": r#"{"url":"http://a/","ttfb":12.5,"fcp":null,"load":80,"lcp":90,"cls":0,"inp":null}"#,
+            "payload": r#"{"url":"http://a/","ttfb":12.5,"fcp":null,"load":80,"lcp":90,"cls":0,"inp":null,"lag":4.2,"lag_max":31}"#,
         });
         assert_eq!(
             reported(&params),
@@ -400,6 +407,8 @@ mod tests {
                 load: Some(80.0),
                 lcp: Some(90.0),
                 cls: Some(0.0),
+                lag: Some(4.2),
+                lag_max: Some(31.0),
                 ..PageVitals::default()
             })
         );
