@@ -56,6 +56,7 @@ Humans are the second user; they get colour and progress bars only on a TTY.
 | 4 | browser/daemon/environment | `ChromeNotFound`, `LaunchFailed`, `BrowserCrashed`, `DaemonUnavailable`, `ProtocolError`, `InstallFailed` |
 | 5 | dialog blocking | `DialogOpen` |
 | 6 | a load run's threshold failed (plan 23.4) | `ThresholdFailed` |
+| 7 | a load run's generator saturated (plan 23.5) | `Saturated` |
 
 Every error has:
 

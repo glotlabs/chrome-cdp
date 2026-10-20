@@ -304,6 +304,11 @@
           "const": "ThresholdFailed",
           "description": "A load run's threshold failed (`chrome-cdp load`, plan 23.4).",
           "type": "string"
+        },
+        {
+          "const": "Saturated",
+          "description": "A load run's generator saturated with `on_saturation = \"abort\"`\n(`chrome-cdp load`, plan 23.5): its numbers measure the client.",
+          "type": "string"
         }
       ]
     },

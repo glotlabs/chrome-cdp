@@ -14,6 +14,7 @@ for when it is not enough. Errors are grouped by exit code, as
 | 4 | the browser, the daemon or the machine | [ChromeNotFound](#chromenotfound), [LaunchFailed](#launchfailed), [BrowserCrashed](#browsercrashed), [PageCrashed](#pagecrashed), [DaemonUnavailable](#daemonunavailable), [ProtocolError](#protocolerror), [InstallFailed](#installfailed) |
 | 5 | a JavaScript dialog blocks the page | [DialogOpen](#dialogopen) |
 | 6 | a load run's threshold failed | [ThresholdFailed](#thresholdfailed) |
+| 7 | a load run's own machine was the bottleneck | [Saturated](#saturated) |
 
 With `--json` the kind is `error.kind`, and `error.details` holds what the
 text form only summarises (the candidates, the covering element, what a
@@ -352,6 +353,27 @@ Vital. A threshold whose group never had a value (an endpoint no request
 had, an INP without interactions) fails too, and says the closest groups
 that had one: check its name. `--compare` with an earlier run shows what
 changed.
+
+## Exit 7: the load generator's limits
+
+### Saturated
+
+```
+error: the load generator saturated: cpu 97% (limit 90%) for 5s in a row
+  note: peak: 180 users in 18 Chromes; it held 120 users (12 per Chrome) on this journey without saturating
+  hint: lower the rate, or block third parties ([load] block = ["third-party"]), or run on a bigger machine
+```
+
+`chrome-cdp load` stopped because the machine running the users ran out
+of CPU or memory, or its timers ran late, for 5 seconds in a row, and
+`[load.capacity] on_saturation` is `"abort"`
+([e2e/load.md](e2e/load.md#knowing-its-own-limits)). Its numbers would
+have measured the client, not the site, so the run neither passes nor
+fails its thresholds. Lower the load, make each user cheaper (`[load]
+block`, `cache = "returning"`, chrome-headless-shell), or run on a bigger
+machine; `chrome-cdp load <profile> --calibrate` finds how many users the
+machine holds. With the default `"warn"` the run goes on and leaves the
+saturated seconds out of its thresholds.
 
 ## Not an error, but not right either
 

@@ -76,11 +76,16 @@ pub enum ErrorKind {
     // Exit 6.
     /// A load run's threshold failed (`chrome-cdp load`, plan 23.4).
     ThresholdFailed,
+
+    // Exit 7.
+    /// A load run's generator saturated with `on_saturation = "abort"`
+    /// (`chrome-cdp load`, plan 23.5): its numbers measure the client.
+    Saturated,
 }
 
 impl ErrorKind {
     /// Every kind, in exit-code order.
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 24] = [
         Self::NotFound,
         Self::Ambiguous,
         Self::Obscured,
@@ -104,6 +109,7 @@ impl ErrorKind {
         Self::InstallFailed,
         Self::DialogOpen,
         Self::ThresholdFailed,
+        Self::Saturated,
     ];
 
     /// The process exit code for this kind (plan 08 §3).
@@ -131,6 +137,7 @@ impl ErrorKind {
             | Self::InstallFailed => 4,
             Self::DialogOpen => 5,
             Self::ThresholdFailed => 6,
+            Self::Saturated => 7,
         }
     }
 }
@@ -306,6 +313,7 @@ mod tests {
         assert_eq!(ErrorKind::PageCrashed.exit_code(), 4);
         assert_eq!(ErrorKind::DialogOpen.exit_code(), 5);
         assert_eq!(ErrorKind::ThresholdFailed.exit_code(), 6);
+        assert_eq!(ErrorKind::Saturated.exit_code(), 7);
     }
 
     #[test]

@@ -53,6 +53,7 @@ audit baseline file formats.
 | 4 | browser, daemon or environment |
 | 5 | a dialog is blocking the page |
 | 6 | a load run's threshold failed (`chrome-cdp load`) |
+| 7 | a load run's own machine saturated, with `on_saturation = "abort"` |
 
 [troubleshooting.md](troubleshooting.md) has a section for every error
 kind.

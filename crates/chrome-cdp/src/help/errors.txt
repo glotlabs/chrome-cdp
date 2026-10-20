@@ -42,6 +42,10 @@ Exit 5:
 Exit 6:
   ThresholdFailed   a load run ran, and a threshold of its profile failed;
                     the notes list them, report.md has the numbers
+Exit 7:
+  Saturated         a load run's own machine ran out of CPU, memory or
+                    timing (on_saturation = "abort"); its numbers would
+                    measure the client, not the site
 
 The page's own errors are another thing: `chrome-cdp errors` lists its
 uncaught exceptions and failed loads (see chrome-cdp errors --help).
