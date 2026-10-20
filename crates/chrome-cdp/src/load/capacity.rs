@@ -464,6 +464,10 @@ impl Advice<'_> {
         let mut steps = Vec::new();
         #[allow(clippy::cast_precision_loss)]
         match self.rate {
+            _ if self.held == 0 => {
+                steps
+                    .push("start with far fewer users: it saturated before it held any".to_owned());
+            }
             Some(rate) if self.peak > 0 => {
                 let lower = rate * f64::from(self.held) / f64::from(self.peak);
                 steps.push(format!(
@@ -471,10 +475,14 @@ impl Advice<'_> {
                     trim(((lower * 0.9) * 10.0).floor() / 10.0)
                 ));
             }
-            _ => steps.push(format!(
-                "run at most {} users",
-                (f64::from(self.held) * 0.9).floor().max(1.0)
-            )),
+            _ => {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let most = (f64::from(self.held) * 0.9).floor().max(1.0) as u32;
+                steps.push(format!(
+                    "run at most {most} {}",
+                    if most == 1 { "user" } else { "users" }
+                ));
+            }
         }
         if self.browser == "chrome" {
             steps.push(

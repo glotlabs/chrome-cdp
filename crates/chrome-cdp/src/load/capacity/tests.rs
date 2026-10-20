@@ -190,6 +190,12 @@ fn the_advice_names_the_next_step() {
         browser: "chrome",
         ..open
     };
+    let none = Advice { held: 0, ..closed };
+    assert!(
+        none.text().starts_with("start with far fewer users"),
+        "{}",
+        none.text()
+    );
     assert_eq!(
         closed.text(),
         "run at most 108 users, run the users in chrome-headless-shell (chrome-cdp install \
