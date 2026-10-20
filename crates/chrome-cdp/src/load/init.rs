@@ -147,8 +147,9 @@ fn weights(n: usize) -> &'static [u32] {
 fn example(backend: &str, has_backend: bool, journeys: &[String]) -> String {
     let mut text = String::from(
         "# A load profile (docs/e2e/load.md#profiles). `chrome-cdp load NAME --plan`\n\
-         # says what it would run; `chrome-cdp load NAME` runs it. Paths are relative\n\
-         # to the project root.\n\n",
+         # says what it would run; `chrome-cdp load NAME` runs it, and\n\
+         # `chrome-cdp load NAME --calibrate` finds how many users this machine holds\n\
+         # on its journeys. Paths are relative to the project root.\n\n",
     );
     let _ = write!(text, "backend = \"{backend}\"");
     text.push_str(if has_backend {
