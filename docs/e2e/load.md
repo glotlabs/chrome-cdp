@@ -14,12 +14,11 @@ chrome-cdp load e2e/scenarios/shop.cdp:4 --backend staging --users 50 --duration
 
 A run is described by a [profile](#profiles), a file next to the
 scenarios that can be reviewed and committed, or, for a quick run, by
-flags ([without a profile](#without-a-profile)). This page covers
-milestones 23.1 to 23.4 of the plan (docs/plans/23-load-testing.md): the
-runtime, a lean browser (`[load]` settings), the load model, and the
-[metrics](#what-is-measured), [reports](#what-a-run-keeps) and
-[thresholds](#thresholds). Watching the load generator's own limits
-comes later.
+flags ([without a profile](#without-a-profile)). This page covers plan
+23 (docs/plans/23-load-testing.md): the runtime, a lean browser
+(`[load]` settings), the load model, the [metrics](#what-is-measured),
+[reports](#what-a-run-keeps) and [thresholds](#thresholds), and
+[watching the load generator's own limits](#knowing-its-own-limits).
 
 ## Profiles
 
@@ -319,6 +318,12 @@ renderer_memory = "512MB"            # default: no limit
 grace = "30s"                        # how long iterations may finish after Ctrl-C
 endpoints = ["GET /api/search?q=*"]  # how requests group (see Endpoints)
 group_assets = true                  # false: static files by path
+
+[load.capacity]                      # see Knowing its own limits
+cpu = "90%"                          # the machine's CPU use above it
+memory = "10%"                       # its free memory below it
+lag = "50ms"                         # the run's timers late above it, at p99
+on_saturation = "warn"               # or "abort": stop, and exit 7
 ```
 
 ### Blocking
@@ -430,12 +435,15 @@ when stderr is a terminal, and printed every 10 seconds otherwise (in
 CI's log):
 
 ```text
-03:12 stage 2/3 · 412 users · 20.1/s arrivals · req p95 184 ms · errors 0.4%
+03:12 stage 2/3 · 412 users · 20.1/s arrivals · req p95 184 ms · errors 0.4% · cpu 63%
+03:40 stage 2/3 · 450 users · 20.0/s arrivals · req p95 911 ms · errors 0.4% · CLIENT SATURATED (cpu 97%)
 ```
 
-The rates, p95 and error rate are the last 10 seconds'. A closed model
-shows iterations a second instead of arrivals. A threshold that starts
-failing is said on a line of its own when it does.
+The rates, p95 and error rate are the last 10 seconds'; the CPU is the
+machine's, the last second's. A closed model shows iterations a second
+instead of arrivals. A threshold that starts failing is said on a line
+of its own when it does, and so is the load generator saturating
+([Knowing its own limits](#knowing-its-own-limits)).
 
 ## What a run keeps
 
@@ -448,13 +456,22 @@ Each run has a folder, `e2e/.results/load/<run>/` (under the config's
   mean, the thresholds and their results, and the comparison with
   `--compare`.
 - `metrics.jsonl`: one line per second for the run (`"group": "run"`:
-  users, arrivals, dropped, iterations, failed, requests, errors and the
-  request p95), and one per group that had something that second (its
-  kind, count, errors, cached, p50, p90, p95, p99 and max), for plotting.
+  users, arrivals, dropped, iterations, failed, requests, errors, the
+  request p95, the machine's CPU, and `"saturated": true` once the
+  generator is saturated), one per group that had something that second
+  (its kind, count, errors, cached, p50, p90, p95, p99 and max), and one
+  for the load generator (`"group": "capacity"`: the users and Chromes,
+  the machine's `cpu` and `load` average, `memory_free`, the Chromes' and
+  chrome-cdp's CPU in cores and RSS in bytes, `lag_p99` and `lag_max`
+  of the run's timers and `page_lag` of the page views, in ms, the limit
+  crossed as `over`, and `saturated`; the second it turns out to be
+  saturated has `saturated_from`, the first of its seconds in a row), for
+  plotting.
 - `report.md`: the run in tables, for a pull request or an agent.
 - `report.html`: the same with charts over time (users, arrivals or
-  iterations, request p95 and error rate) and every second in a table.
-  It is one file and opens offline.
+  iterations, request p95, error rate and the machine's CPU, with the
+  saturated seconds shaded) and every second in a table. It is one file
+  and opens offline.
 - `failures/<n>-vu<user>-i<iteration>/`: the first `--keep-failures`
   (20) failed iterations keep the files a failed test keeps:
   `failure.png`, `snapshot.txt` (the page's controls), `console.txt`,
@@ -476,15 +493,19 @@ journey and how long they took, the arrivals and dropped ones, the steps
 by result, the errors by kind, the requests with the busiest endpoints,
 the page views' Web Vitals at p75, the browser contexts made, how many
 times a Chrome was started again, why the run stopped early if it did,
-and the thresholds.
+what the load generator used and whether it saturated, and the
+thresholds.
 
 The run exits 0 when it ran and its thresholds passed. It exits 6
-(`ThresholdFailed`) when a threshold failed, with the summary first. It
-fails with an error when every iteration failed (the journey is broken,
-not slow) or `on_failure = "stop-run"` ended it.
+(`ThresholdFailed`) when a threshold failed, with the summary first, and
+7 (`Saturated`) when the load generator saturated with `on_saturation =
+"abort"`, also with the summary first. It fails with an error when every
+iteration failed (the journey is broken, not slow) or `on_failure =
+"stop-run"` ended it.
 
 Each run also keeps its journeys' mean iteration length, by backend, in
-`e2e/.results/load/journeys.json`, for the next `--plan`.
+`e2e/.results/load/journeys.json`, for the next `--plan`, and
+`--calibrate` keeps what it found in `e2e/.results/load/calibration.json`.
 
 ## Thresholds
 
@@ -539,7 +560,10 @@ not pass.
 Each second the thresholds are checked over the run so far, and one
 that starts failing is said. At the end each is checked over the whole
 run: the summary lists them with what was measured, and when one
-failed the run exits 6, `ThresholdFailed`, and says which.
+failed the run exits 6, `ThresholdFailed`, and says which. The
+seconds the load generator was saturated are left out of both, and the
+summary says how many; a threshold whose group had no value outside them
+fails, saying so.
 
 ## Comparing runs
 
@@ -567,7 +591,8 @@ Prometheus' text format, for teams that already graph their servers
 there: the users, arrivals, dropped arrivals and exceptions, and per
 endpoint, journey and step the counts, errors and a summary of the times
 (p50, p90, p95 and p99 over the run so far, in seconds), and the Web
-Vitals. It listens only on the address given, and only while the run
+Vitals, and the load generator's CPU, free memory, timer lag and whether
+it is saturated (`chrome_cdp_load_client_*`). It listens only on the address given, and only while the run
 lasts, and says where on stderr as it starts (port 0 picks a free one);
 point a scrape job at it:
 
@@ -578,6 +603,79 @@ scrape_configs:
     static_configs:
       - targets: ["127.0.0.1:9464"]
 ```
+
+## Knowing its own limits
+
+Each user is a real browser running the app's JavaScript, so a load
+generator usually runs out of CPU before the site does. Then every
+number goes up, and a report that blamed the server would be wrong. So a
+run watches its own machine, every second:
+
+- the machine's CPU use and 1-minute load average, and its free memory
+  (from `/proc` on Linux; `iostat`, `sysctl` and `ps` on macOS; elsewhere
+  only the timers below);
+- each Chrome's processes' CPU and resident memory, and chrome-cdp's own;
+- the **scheduling lag**: how late the run's own timers fire against when
+  they were due (each user's waits and think times, an open model's
+  planned arrivals, the run's second);
+- the **lag inside the page**: every page runs a timer every 100 ms and
+  measures how late its main thread runs it. A page that lags while the
+  server's TTFB stays flat has a starved Chrome, not a slow server.
+
+The generator counts as **saturated** when, for 5 seconds in a row, the
+CPU is above `[load.capacity] cpu` (90%), the free memory below `memory`
+(10%), or the timers' lag above `lag` (50 ms) at p99. While it is:
+
+- the status line says `CLIENT SATURATED (cpu 97%)`, and a line says when
+  it started;
+- `metrics.jsonl` marks those seconds, and `report.html` shades them in
+  every chart;
+- the thresholds leave those seconds out (every group's numbers, counts
+  and rates), and the summary says how many were left out: a saturated
+  generator measures itself, and blaming the site for it would make the
+  gate untrustworthy;
+- with `on_saturation = "abort"` (the default is `"warn"`), the run stops
+  and exits 7, `Saturated`, so CI treats a bad measurement as neither a
+  good nor a bad build.
+
+The summary says what the machine used, when it was saturated and by
+which limit, how many users it held (in all and per Chrome) on these
+journeys before it first saturated, and what to do next:
+
+```text
+client: cpu 96% at p95, 100% at most, free memory 41% at least, timers 230 ms late at p99, pages' main threads 510 ms late at p99
+  Chromes 15.2 cores and 9.1GB at most; chrome-cdp 0.21 cores and 61MB
+CLIENT SATURATED for 23s of 120s, first at 00:41 (cpu 97%), so the thresholds leave those seconds out; it held 120 users (12 per Chrome) before, of 180 at most
+hint: lower the rate to about 10.8/s, make each user cheaper with [load] block = ["third-party"], or run the profile on a bigger machine
+```
+
+### Calibrating
+
+`--calibrate` finds how many users this machine holds on a profile:
+
+```sh
+chrome-cdp load shop --calibrate                  # up to twice the profile's users
+chrome-cdp load shop --calibrate --users 400 --duration 5m
+```
+
+It adds users on the profile's journeys (by weight, each looping them,
+whatever the profile's model) from one, 2 a second, up to twice the
+profile's most users at once (or `--users`; `--duration` sets the ramp's
+length), against the profile's backend. It stops at whichever comes
+first: the generator saturating, or the site failing (5 seconds in a row
+in which more than 5% of the requests or 10% of the iterations failed),
+and says which and at how many users:
+
+```text
+calibration: the load generator saturated: cpu 97% (limit 90%) for 5s in a row, at 168 users; it held 150 users (15 per Chrome) before (the ramp went up to 400, 2/s)
+  saved in e2e/.results/load/calibration.json; later runs of this profile warn above 120 users
+```
+
+A calibration checks no thresholds, and exits 0 when it ran. What it
+found is kept in `e2e/.results/load/calibration.json`, by profile and
+backend; a later run of the profile whose users at once go above 80% of
+what the machine held warns before it starts, and its summary has the
+number (`capacity.calibrated_users`).
 
 ## The load server
 

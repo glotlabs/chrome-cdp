@@ -102,6 +102,17 @@ the top of the GitHub release notes.
   `ThresholdFailed`, and `abort = true` stops it early. `--compare`
   sets an earlier run's numbers beside this one's; `--metrics-listen`
   serves them to Prometheus.
+- Knowing its own limits (plan 23.5): a load run watches the machine
+  running its users (CPU, load average, free memory, its Chromes' and its
+  own CPU and memory, how late its timers fire, and how late each page's
+  main thread runs). When `[load.capacity]`'s limits are crossed for 5 s
+  in a row the generator is saturated: the status line and the reports
+  say so, the thresholds leave those seconds out, and with
+  `on_saturation = "abort"` the run stops with the new exit code 7,
+  `Saturated`. The summary says how many users the machine held and
+  what to do. `load <profile> --calibrate` adds users until the
+  generator saturates or the site fails, says which came first, and
+  later runs warn above 80% of it.
 
 ### Changed
 
