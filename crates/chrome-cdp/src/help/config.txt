@@ -94,6 +94,14 @@ The [load] section sets how `chrome-cdp load` runs its users
   group_assets = true                  false: static files by path, not
                                        as static js, static css, …
 
+  [load.capacity]                      when the machine running the users
+                                       is saturated: a limit crossed 5s
+                                       in a row
+  cpu = "90%"                          the machine's CPU use above it
+  memory = "10%"                       its free memory below it
+  lag = "50ms"                         the run's timers late above it (p99)
+  on_saturation = "warn"               "abort": stop, exit 7 (Saturated)
+
 A load run's journeys, model and think times are a profile,
 e2e/load/<name>.toml (`chrome-cdp init load` writes an example).
 

@@ -171,6 +171,62 @@ pub struct Load {
     /// Whether static files group by type (`static js`, `static css`, …)
     /// rather than by path; `None`: yes.
     pub group_assets: Option<bool>,
+    /// `[load.capacity]`: when the machine running the users counts as
+    /// saturated, and what the run does then (plan 23.5).
+    pub capacity: Capacity,
+}
+
+/// `[load.capacity]` (plan 23.5): the limits of the machine that runs a
+/// load run's users. It counts as saturated when one of them is crossed
+/// for [`SATURATED_AFTER`] in a row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Capacity {
+    /// The machine's CPU use above which it is short of CPU, in percent
+    /// of all its CPUs.
+    pub cpu: u32,
+    /// The free memory below which it is short of memory, in percent of
+    /// its memory.
+    pub memory: u32,
+    /// The p99 of how late the run's timers fire above which the run
+    /// itself cannot keep up.
+    pub lag: Duration,
+    pub on_saturation: OnSaturation,
+}
+
+impl Default for Capacity {
+    fn default() -> Self {
+        Self {
+            cpu: 90,
+            memory: 10,
+            lag: Duration::from_millis(50),
+            on_saturation: OnSaturation::Warn,
+        }
+    }
+}
+
+/// How long a `[load.capacity]` limit must be crossed in a row for the
+/// machine to count as saturated.
+pub const SATURATED_AFTER: Duration = Duration::from_secs(5);
+
+/// `[load.capacity] on_saturation`: what a load run does while its machine
+/// is saturated.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OnSaturation {
+    /// It goes on, says so, and leaves those seconds out of the thresholds.
+    #[default]
+    Warn,
+    /// It stops, and exits with `Saturated`.
+    Abort,
+}
+
+impl OnSaturation {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Warn => "warn",
+            Self::Abort => "abort",
+        }
+    }
 }
 
 /// `[load] grace` when not set.
@@ -1153,6 +1209,55 @@ fn load(raw: RawLoad) -> Result<Load, Problem> {
         grace,
         endpoints,
         group_assets: raw.group_assets,
+        capacity: raw.capacity.map(capacity).transpose()?.unwrap_or_default(),
+    })
+}
+
+/// `[load.capacity]`, checked.
+fn capacity(raw: RawCapacity) -> Result<Capacity, Problem> {
+    let defaults = Capacity::default();
+    let percent = |key: &str, raw: Option<Spanned<String>>, default: u32| {
+        let Some(raw) = raw else {
+            return Ok(default);
+        };
+        let text = raw.get_ref().trim();
+        text.strip_suffix('%')
+            .unwrap_or(text)
+            .trim()
+            .parse::<u32>()
+            .ok()
+            .filter(|n| (1..=100).contains(n))
+            .ok_or_else(|| {
+                (
+                    raw.span(),
+                    format!(
+                        "load.capacity.{key}: `{text}` is not a share from 1% to 100%; e.g. \"90%\""
+                    ),
+                )
+            })
+    };
+    let lag = raw
+        .lag
+        .map(|l| {
+            parse_duration(l.get_ref().trim())
+                .ok()
+                .filter(|d| !d.is_zero())
+                .ok_or_else(|| {
+                    (
+                        l.span(),
+                        format!(
+                            "load.capacity.lag: `{}` is not a time; e.g. \"50ms\"",
+                            l.get_ref()
+                        ),
+                    )
+                })
+        })
+        .transpose()?;
+    Ok(Capacity {
+        cpu: percent("cpu", raw.cpu, defaults.cpu)?,
+        memory: percent("memory", raw.memory, defaults.memory)?,
+        lag: lag.unwrap_or(defaults.lag),
+        on_saturation: raw.on_saturation.unwrap_or_default(),
     })
 }
 
@@ -1240,6 +1345,16 @@ struct RawLoad {
     grace: Option<Spanned<String>>,
     endpoints: Option<Spanned<Vec<String>>>,
     group_assets: Option<bool>,
+    capacity: Option<RawCapacity>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawCapacity {
+    cpu: Option<Spanned<String>>,
+    memory: Option<Spanned<String>>,
+    lag: Option<Spanned<String>>,
+    on_saturation: Option<OnSaturation>,
 }
 
 #[derive(Deserialize)]

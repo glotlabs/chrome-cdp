@@ -564,6 +564,38 @@ fn the_load_section_is_read() {
 }
 
 #[test]
+fn the_capacity_limits_are_read() {
+    let c = parse("[e2e]\n");
+    assert_eq!(c.load.capacity, super::Capacity::default());
+    assert_eq!(c.load.capacity.cpu, 90);
+    assert_eq!(c.load.capacity.on_saturation, super::OnSaturation::Warn);
+    let c = parse(
+        "[e2e]\n[load.capacity]\ncpu = \"80%\"\nmemory = \"5\"\nlag = \"100ms\"\n\
+         on_saturation = \"abort\"\n",
+    );
+    assert_eq!(
+        c.load.capacity,
+        super::Capacity {
+            cpu: 80,
+            memory: 5,
+            lag: std::time::Duration::from_millis(100),
+            on_saturation: super::OnSaturation::Abort,
+        }
+    );
+    let e = error("[e2e]\n[load.capacity]\ncpu = \"190%\"\n");
+    assert!(
+        e.contains("load.capacity.cpu: `190%` is not a share from 1% to 100%"),
+        "{e}"
+    );
+    let e = error("[e2e]\n[load.capacity]\nlag = \"soon\"\n");
+    assert!(e.contains("load.capacity.lag: `soon` is not a time"), "{e}");
+    let e = error("[e2e]\n[load.capacity]\non_saturation = \"stop\"\n");
+    assert!(e.contains("unknown variant `stop`"), "{e}");
+    let e = error("[e2e]\n[load.capacity]\ncpus = \"90%\"\n");
+    assert!(e.contains("unknown field `cpus`"), "{e}");
+}
+
+#[test]
 fn load_section_mistakes_point_at_the_line() {
     let e = error("[e2e]\n[load]\nblock = [\"/analytics\"]\n");
     assert!(
