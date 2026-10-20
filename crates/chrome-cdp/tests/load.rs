@@ -454,11 +454,11 @@ const BROWSE: &str =
 fn arrivals_keep_their_rate_when_the_server_is_slow() {
     let Some(chrome) = chrome_path() else { return };
     let options = Options {
-        faults: vec![load_server::Fault::latency("/api/products=2s").unwrap()],
+        faults: vec![load_server::Fault::latency("/api/products=5s").unwrap()],
         ..Options::default()
     };
     let project = Project::with_server(&chrome, &[("shop.cdp", BROWSE)], "", options);
-    // 5 a second for 4 s: 20 arrivals, each taking over 2 s, so about 10
+    // 5 a second for 4 s: 20 arrivals, each taking over 5 s, so all 20
     // would run at once; only 3 may.
     project.profile(
         "slow",
@@ -481,7 +481,7 @@ fn arrivals_keep_their_rate_when_the_server_is_slow() {
     assert!(data["users"].as_u64() <= Some(3), "{data}");
     // The slowdown is in the iterations' time.
     let p50 = data["iteration_ms"]["p50"].as_f64().unwrap();
-    assert!(p50 >= 2000.0, "{data}");
+    assert!(p50 >= 5000.0, "{data}");
     // Each iteration's time counts from when its arrival was due: 5 a
     // second, from 0.1 s.
     let raw =
@@ -504,6 +504,29 @@ fn arrivals_keep_their_rate_when_the_server_is_slow() {
     }
     // The arrivals did not wait for the slow iterations.
     assert!(started.elapsed() < Duration::from_secs(30));
+}
+
+#[test]
+fn think_waits_under_load_and_not_under_test() {
+    let Some(chrome) = chrome_path() else { return };
+    let journey = "@test \"thinks\"\n  goto /\n  think 10s\n  think 5s..20s\n  think exp(10s)\n  \
+                   expect 'role=heading[name=\"Products\"]' visible\n";
+    let project = Project::new(&chrome, &[("thinks.cdp", journey)]);
+    let started = Instant::now();
+    let out = common::run(project.sandbox.cli().current_dir(&project.root).args([
+        "test",
+        "e2e/thinks.cdp",
+        "--json",
+    ]));
+    assert_eq!(common::code(&out), 0, "{}\n{}", stdout(&out), stderr(&out));
+    // The test passed without waiting the 15 s or more its thinks would.
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "{:?}",
+        started.elapsed()
+    );
+    let envelope: Value = serde_json::from_str(&stdout(&out)).unwrap();
+    assert_eq!(envelope["data"]["passed"], 1, "{envelope}");
 }
 
 #[test]
