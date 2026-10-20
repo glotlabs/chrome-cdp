@@ -361,6 +361,61 @@ impl Capacity {
         }
     }
 
+    /// The generator's numbers of the last second, in Prometheus' text
+    /// format (plan 23.4's `--metrics-listen`).
+    pub(crate) fn prometheus(&self) -> String {
+        use std::fmt::Write as _;
+        let inner = self.inner();
+        let last = inner.samples.last().copied().unwrap_or_default();
+        let saturated_s: u64 = inner
+            .detector
+            .spans()
+            .iter()
+            .map(|s| s.to_s + 1 - s.from_s)
+            .sum();
+        let mut out = String::new();
+        let mut gauge = |name: &str, kind: &str, help: &str, value: Option<f64>| {
+            if let Some(value) = value {
+                let _ = writeln!(
+                    out,
+                    "# HELP {name} {help}\n# TYPE {name} {kind}\n{name} {value}"
+                );
+            }
+        };
+        gauge(
+            "chrome_cdp_load_client_saturated",
+            "gauge",
+            "1 while the load generator is saturated (plan 23.5), else 0.",
+            Some(if inner.detector.saturated() { 1.0 } else { 0.0 }),
+        );
+        #[allow(clippy::cast_precision_loss)]
+        gauge(
+            "chrome_cdp_load_client_saturated_seconds_total",
+            "counter",
+            "Seconds the load generator was saturated, which the thresholds leave out.",
+            Some(saturated_s as f64),
+        );
+        gauge(
+            "chrome_cdp_load_client_cpu_ratio",
+            "gauge",
+            "The machine's CPU use, of all its CPUs, the last second.",
+            last.cpu.map(|c| c / 100.0),
+        );
+        gauge(
+            "chrome_cdp_load_client_memory_free_ratio",
+            "gauge",
+            "The machine's free memory, of all of it.",
+            last.memory_free.map(|m| m / 100.0),
+        );
+        gauge(
+            "chrome_cdp_load_client_lag_seconds",
+            "gauge",
+            "How late the run's timers fired the last second, at p99.",
+            last.lag_p99.map(|l| l / 1000.0),
+        );
+        out
+    }
+
     /// The samples so far.
     #[cfg(test)]
     pub(crate) fn samples(&self) -> Vec<Sample> {

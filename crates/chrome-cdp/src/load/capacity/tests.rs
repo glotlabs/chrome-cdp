@@ -135,6 +135,19 @@ fn the_summary_says_what_the_machine_held() {
         };
         capacity.second(t, users, users.div_ceil(10), system);
     }
+    let text = capacity.prometheus();
+    assert!(
+        text.contains("chrome_cdp_load_client_saturated 1\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("chrome_cdp_load_client_saturated_seconds_total 5\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("chrome_cdp_load_client_cpu_ratio 0.97\n"),
+        "{text}"
+    );
     let summary = capacity.summary(12, 120);
     assert_eq!(summary.saturations.len(), 1);
     assert_eq!((summary.saturations[0].from_s, summary.saturated_s), (8, 5));

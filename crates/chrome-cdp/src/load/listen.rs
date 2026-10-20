@@ -56,7 +56,9 @@ async fn answer(mut stream: TcpStream, shared: &Shared) -> std::io::Result<()> {
     }
     let get = request.starts_with(b"GET ") || request.starts_with(b"HEAD ");
     let (status, body) = if get {
-        ("200 OK", shared.records.metrics.prometheus(shared.gauges()))
+        let mut body = shared.records.metrics.prometheus(shared.gauges());
+        body.push_str(&shared.capacity.prometheus());
+        ("200 OK", body)
     } else {
         ("405 Method Not Allowed", "GET the numbers\n".to_owned())
     };
