@@ -291,6 +291,17 @@ fn world_steps(shared: &Arc<Shared>, target: NewTarget<'_>, steps: &mut Vec<(&'s
         page::AddScriptToEvaluateOnNewDocumentParams::new(observe::PERF_OBSERVER.to_owned());
     perf.world_name = Some(frames::WORLD_NAME.to_owned());
     steps.push(("the perf observer", step(session.call(perf))));
+    // A load run's page views report their Web Vitals as they are left
+    // (plan 23.4), through a binding in the same world.
+    if shared.settings.load_sink.get().is_some() {
+        let mut binding = runtime::AddBindingParams::new(crate::load::VITALS_BINDING.to_owned());
+        binding.execution_context_name = Some(frames::WORLD_NAME.to_owned());
+        steps.push(("the vitals binding", step(session.call(binding))));
+        let mut vitals =
+            page::AddScriptToEvaluateOnNewDocumentParams::new(crate::load::VITALS.to_owned());
+        vitals.world_name = Some(frames::WORLD_NAME.to_owned());
+        steps.push(("the vitals reporter", step(session.call(vitals))));
+    }
 }
 
 /// How much of the page's traffic Chrome keeps for `network show`: the

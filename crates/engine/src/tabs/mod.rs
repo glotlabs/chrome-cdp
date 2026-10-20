@@ -187,6 +187,9 @@ pub(crate) struct Settings {
     /// A load run's Chrome (plan 23.2), whose users read no response
     /// bodies: Chrome keeps few per page (see `features::network_enable`).
     load_run: AtomicBool,
+    /// Where a load run takes its requests, exceptions and Web Vitals
+    /// (plan 23.4).
+    pub(crate) load_sink: crate::load::SinkSlot,
 }
 
 impl Settings {
@@ -2338,6 +2341,13 @@ async fn watch_host(
                     record::reported(&shared, &session_id, tab, &event);
                 }
             }
+            "Runtime.bindingCalled" if event.params["name"] == crate::load::VITALS_BINDING => {
+                if let Some(sink) = shared.settings.load_sink.get()
+                    && let Some(vitals) = crate::load::reported(&event.params)
+                {
+                    sink(crate::load::LoadEvent::Vitals(vitals));
+                }
+            }
             "Runtime.bindingCalled" if debug::is_hit(&shared, &event) => {
                 debug::hit(&shared, &event);
             }
@@ -2548,12 +2558,17 @@ fn network_event(
     let session_id = session.id().unwrap_or_default();
     let capacity = shared.settings.network_buffer();
     let mut finished = None;
+    let sink = shared.settings.load_sink.get();
+    let mut ended = None;
     let followed = shared.lock().tabs.get_mut(&tab).is_some_and(|t| {
         let followed = t.network.event(session_id, method, &event.params);
         let logged = t
             .netlog
             .event(session_id, method, &event.params, capacity, None);
         let hot = t.hmr.network(session_id, method, &event.params);
+        if sink.is_some() {
+            ended = load_request(&t.netlog, session_id, method, &event.params);
+        }
         if method == "Network.loadingFinished"
             && let Some(request_id) = event.params["requestId"].as_str()
             && let Some(record) = t
@@ -2572,9 +2587,48 @@ fn network_event(
     if followed {
         shared.bump();
     }
+    if let (Some(sink), Some(request)) = (sink, ended) {
+        sink(crate::load::LoadEvent::Request(request));
+    }
     if let Some((request_id, url, kind)) = finished {
         keep_body(shared, session, request_id, &url, &kind);
     }
+}
+
+/// The request a `Network.loadingFinished` or `Network.loadingFailed`
+/// ended, for a load run: not one the page canceled, nor one Chrome
+/// blocked for `[load] block`.
+fn load_request(
+    log: &NetLog,
+    session_id: &str,
+    method: &str,
+    params: &serde_json::Value,
+) -> Option<crate::load::LoadRequest> {
+    if method != "Network.loadingFinished" && method != "Network.loadingFailed" {
+        return None;
+    }
+    let record = log.get(log.id_of(session_id, params["requestId"].as_str()?)?)?;
+    let entry = &record.entry;
+    if entry.state == protocol::schema::RequestState::Canceled
+        || entry.blocked.as_deref() == Some("inspector")
+    {
+        return None;
+    }
+    let duration_ms = match (record.started(), params["timestamp"].as_f64()) {
+        (Some(start), Some(end)) => Some(((end - start) * 1000.0).max(0.0)),
+        #[allow(clippy::cast_precision_loss)]
+        _ => entry.duration_ms.map(|ms| ms as f64),
+    };
+    Some(crate::load::LoadRequest {
+        method: entry.method.clone(),
+        url: entry.url.clone(),
+        kind: entry.kind.clone(),
+        status: entry.status,
+        cache: entry.cache.clone(),
+        error: entry.error.clone(),
+        duration_ms,
+        timing: record.timing.clone(),
+    })
 }
 
 /// Asks Chrome for the body of a request that finished loading, and keeps
@@ -2611,6 +2665,13 @@ fn keep_body(shared: &Arc<Shared>, session: &Session, request_id: String, url: &
 /// page or iframe session `session_id` to tab `tab`'s console; an
 /// uncaught exception gets the locals read at its pause.
 fn console_event(shared: &Shared, session_id: &str, tab: u32, event: &RawEvent) {
+    if event.method == runtime::ExceptionThrown::NAME
+        && let Some(sink) = shared.settings.load_sink.get()
+    {
+        sink(crate::load::LoadEvent::Exception(crate::load::exception(
+            &event.params,
+        )));
+    }
     let capacity = shared.settings.console_buffer();
     let mut guard = shared.lock();
     let state = &mut *guard;
