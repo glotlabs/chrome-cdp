@@ -509,6 +509,18 @@ A profile's [thresholds] gate the run: \"p95(GET /api/cart)\" = \"< 300ms\",
 the run exit 6 (ThresholdFailed); with abort = true it stops the run once
 it failed for 30s in a row.
 
+The run watches its own machine: CPU, free memory, its Chromes' and its
+own use, and how late its timers fire. When for 5s in a row the CPU is
+above 90%, free memory below 10%, or the timers late by 50 ms at p99
+([load.capacity]), the generator is saturated: the status line says
+CLIENT SATURATED, the thresholds leave those seconds out, and the summary
+says how many users the machine held and what to do; with on_saturation
+= \"abort\" the run stops and exits 7 (Saturated). --calibrate adds users
+on the profile's journeys until the machine saturates or the site starts
+failing, says which came first and at how many users, and saves it in
+e2e/.results/load/calibration.json; later runs of the profile warn
+before they start when they go above 80% of it.
+
 The config's [load] section sets what the users' browsers fetch and
 keep: block = [\"third-party\"] (or URL patterns like
 \"*://*.ads.example/*\") fails those requests at once; cache =
@@ -521,6 +533,7 @@ Examples:
   chrome-cdp init load && chrome-cdp load example --plan
   chrome-cdp load shop                      # e2e/load/shop.toml
   chrome-cdp load shop --backend staging --raw
+  chrome-cdp load shop --calibrate          # how many users this machine holds
   chrome-cdp load e2e/scenarios/shop.cdp:12 --backend staging --users 50 --duration 5m
   chrome-cdp load e2e/scenarios/shop.cdp --grep browse --users 200 --ramp-up 1m
   chrome-cdp load e2e/load/journeys.cdp --users 20 --iterations 5 --raw
@@ -8016,6 +8029,15 @@ pub(crate) struct LoadArgs {
     /// to reach, the Chromes it would start), and start nothing.
     #[arg(long)]
     pub(crate) plan: bool,
+
+    /// Find how many users this machine holds on the profile's journeys:
+    /// add users (2 a second; --duration sets the ramp's length) up to
+    /// twice the profile's most (or --users N), until the load generator
+    /// saturates or the site starts failing, and say which came first.
+    /// Saved in e2e/.results/load/calibration.json; later runs warn above
+    /// 80% of it.
+    #[arg(long, conflicts_with = "plan")]
+    pub(crate) calibrate: bool,
 
     /// Only the tests whose `file > name` matches this regular expression
     /// (a run without a profile).

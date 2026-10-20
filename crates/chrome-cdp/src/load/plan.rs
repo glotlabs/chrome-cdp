@@ -139,6 +139,19 @@ impl LoadPlan {
             },
             _ => None,
         };
+        if args.calibrate && profile.is_none() {
+            return Err(ErrorInfo::new(
+                ErrorKind::BadArgs,
+                "--calibrate ramps the users of a profile; name one",
+            )
+            .hint(Hint::text(format!(
+                "e.g. chrome-cdp load shop --calibrate, for e2e/load/shop.toml{}",
+                match profile::names(&root).first() {
+                    Some(name) => format!("; this project has {name}"),
+                    None => "; chrome-cdp init load writes an example".to_owned(),
+                }
+            ))));
+        }
         let mut problems = Vec::new();
         let test_args = match &profile {
             Some(p) => {
@@ -261,6 +274,8 @@ impl LoadPlan {
             });
         }
         let thresholds = match &profile {
+            // A calibration measures the machine, not the site.
+            Some(_) if args.calibrate => Vec::new(),
             Some(p) => thresholds(&p.thresholds, &journeys, &hooks, &mut problems),
             None => Vec::new(),
         };
@@ -294,6 +309,19 @@ impl LoadPlan {
             });
         }
         let (model, think, on_failure, max_failures) = match &profile {
+            Some(p) if args.calibrate => {
+                let most = match &p.model {
+                    Model::Open(arrivals) => arrivals.max_users,
+                    Model::Closed(users) => users.peak(),
+                };
+                let (to, over) = super::calibrate::ramp(most, args.users, args.duration);
+                (
+                    super::calibrate::model(to, over),
+                    p.think,
+                    p.on_failure,
+                    p.max_failures,
+                )
+            }
             Some(p) => (p.model.clone(), p.think, p.on_failure, p.max_failures),
             None => (
                 Model::Closed(closed(args)),
@@ -419,9 +447,10 @@ fn closed(args: &LoadArgs) -> Users {
 /// With a profile, the flags that say what a run without one does are
 /// errors: the profile says it.
 fn flags_without_profile(args: &LoadArgs, profile: &Profile) -> Result<(), ErrorInfo> {
+    // `--calibrate` takes how far and how long to ramp.
     let given = [
-        ("--users", args.users.is_some()),
-        ("--duration", args.duration.is_some()),
+        ("--users", args.users.is_some() && !args.calibrate),
+        ("--duration", args.duration.is_some() && !args.calibrate),
         ("--ramp-up", args.ramp_up.is_some()),
         ("--iterations", args.iterations.is_some()),
         ("--think", args.think.is_some()),

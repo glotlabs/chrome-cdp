@@ -78,6 +78,15 @@ pub(super) struct Shared {
     pub(super) watch: super::threshold::Watch,
     /// The load generator's own limits, and how late its timers fire.
     pub(super) capacity: Arc<super::capacity::Capacity>,
+    /// `--calibrate`: what the run watches for, and what it found.
+    pub(super) calibrating: Option<Calibrating>,
+}
+
+/// A `--calibrate` run's watch.
+#[derive(Debug, Default)]
+pub(super) struct Calibrating {
+    pub(super) watch: super::calibrate::Watch,
+    pub(super) found: Mutex<Option<super::calibrate::Found>>,
 }
 
 impl Shared {

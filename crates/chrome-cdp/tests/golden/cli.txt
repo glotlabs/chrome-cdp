@@ -113,6 +113,7 @@ command chrome-cdp test
 command chrome-cdp load
   arg PROFILE|PATH required multiple
   flag --plan
+  flag --calibrate
   flag --grep value=REGEX
   flag --tags value=TAGS
   flag --backend value=NAME

@@ -29,8 +29,11 @@
 //! Chromes' and its own, and how late its timers fire. When the machine is
 //! saturated the status line says so, the thresholds leave those seconds
 //! out, and with `on_saturation = "abort"` the run stops, as its numbers
-//! would measure the client, not the site.
+//! would measure the client, not the site. `--calibrate` ramps the users
+//! until either the machine or the site gives, to find how many it holds
+//! ([`calibrate`]).
 
+mod calibrate;
 mod capacity;
 mod compare;
 mod data;
@@ -295,6 +298,18 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
             shape.per_browser
         ));
     }
+    let mut calibrations = calibrate::Calibrations::read(&runs);
+    let calibrated = plan
+        .profile
+        .as_deref()
+        .and_then(|p| calibrations.get(p, &plan.plan.backend.name))
+        .cloned();
+    if let Some(found) = calibrated.as_ref().filter(|_| !args.calibrate)
+        && let Some(warning) = calibrate::warning(shape.expected.unwrap_or(shape.capacity), found)
+        && mode == Mode::Text
+    {
+        output::stderr(&format!("warning: {warning}\n"));
+    }
     let earlier = match &args.compare {
         Some(arg) => {
             let cwd = std::env::current_dir().unwrap_or_default();
@@ -535,6 +550,32 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
             .text(),
         );
     }
+    if !args.calibrate
+        && let Some(found) = calibrated.as_ref().filter(|c| c.first == "generator")
+    {
+        capacity.calibrated_users = Some(found.held_users);
+    }
+    if args.calibrate {
+        let calibration = calibration(&ran, &capacity, &records.metrics.timeline(), &calibrations);
+        if let Some(profile) = &plan.profile {
+            calibrations.set(
+                profile,
+                &plan.plan.backend.name,
+                calibrate::Calibration {
+                    first: calibration.first.clone(),
+                    users: calibration.users,
+                    held_users: calibration.held_users,
+                    held_per_browser: calibration.held_per_browser,
+                    browser: kind.to_owned(),
+                    users_per_browser: shape.per_browser,
+                    cpus: std::thread::available_parallelism().map_or(1, std::num::NonZero::get),
+                    run: run_id.clone(),
+                },
+            );
+            calibrations.write();
+        }
+        data.calibration = Some(calibration);
+    }
     data.capacity = Some(capacity);
     data.compare = earlier.as_ref().map(|e| compare::compare(e, &data));
     let path = |name: &str| dir.join(name).display().to_string();
@@ -560,6 +601,51 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
         &report::html(&data, &records.metrics.timeline()),
     );
     Ok(data)
+}
+
+/// What a `--calibrate` run found, from what it saw first.
+fn calibration(
+    ran: &Ran,
+    capacity: &protocol::schema::LoadCapacity,
+    timeline: &[metrics::Second],
+    file: &calibrate::Calibrations,
+) -> protocol::schema::LoadCalibration {
+    let (ramp_to, over) = match ran.ramp {
+        Some(ramp) => ramp,
+        None => (ran.peak, Duration::ZERO),
+    };
+    let found = ran.found.clone().unwrap_or(calibrate::Found {
+        first: calibrate::First::Neither,
+        from: 0,
+        users: ran.peak,
+        message: format!(
+            "neither gave: the ramp ended at {} users, within the machine's limits and with the \
+             site answering",
+            ran.peak
+        ),
+    });
+    let (held_users, held_per_browser) = match found.first {
+        calibrate::First::Generator => (capacity.held_users, capacity.held_per_browser),
+        calibrate::First::Server => {
+            let held = calibrate::held_before(timeline, Some(found.from));
+            (held, held.div_ceil(ran.started.max(1)))
+        }
+        calibrate::First::Neither => (ran.peak, ran.peak.div_ceil(ran.started.max(1))),
+    };
+    protocol::schema::LoadCalibration {
+        first: found.first.as_str().to_owned(),
+        message: found.message,
+        users: found.users,
+        held_users,
+        held_per_browser,
+        ramp_to,
+        ramp_rate: if over.is_zero() {
+            0.0
+        } else {
+            (f64::from(ramp_to.saturating_sub(1)) / over.as_secs_f64() * 100.0).round() / 100.0
+        },
+        file: file.path().display().to_string(),
+    }
 }
 
 /// Each threshold over the whole run.
@@ -876,6 +962,9 @@ struct Ran {
     listened: Option<String>,
     /// The load generator's own use and limits.
     capacity: protocol::schema::LoadCapacity,
+    /// `--calibrate`: what it found, and the users and length of its ramp.
+    found: Option<calibrate::Found>,
+    ramp: Option<(u32, Duration)>,
 }
 
 /// Runs the users on a runtime of the run's own: starts the Chromes,
@@ -996,8 +1085,8 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
         dropped: AtomicU64::new(0),
         watch: threshold::Watch::default(),
         capacity: watched,
+        calibrating: args.calibrate.then(user::Calibrating::default),
     });
-    let _ = args;
     let status = (mode == Mode::Text).then(Status::new);
     let ticker = tokio::spawn(tick(shared.clone(), status));
     let listened = scraped
@@ -1042,6 +1131,19 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
         took,
         peak,
         capacity,
+        found: shared.calibrating.as_ref().and_then(|c| {
+            c.found
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone()
+        }),
+        ramp: shared
+            .calibrating
+            .as_ref()
+            .and_then(|_| match &shared.plan.model {
+                Model::Closed(users) => users.stages.first().map(|s| (s.to, s.duration)),
+                Model::Open(_) => None,
+            }),
         arrivals: shared.arrivals.load(Ordering::Relaxed),
         dropped: shared.dropped.load(Ordering::Relaxed),
         stopped,
@@ -1076,7 +1178,10 @@ async fn tick(shared: Arc<Shared>, status: Option<Status>) {
         let metrics = &shared.records.metrics;
         let second = metrics.tick(t, gauges, seen.mark, sample.cpu);
         metrics.line(&capacity_line(&sample, &seen));
-        saturation(&shared, &seen, status.is_some());
+        match &shared.calibrating {
+            Some(calibrating) => calibrated(&shared, calibrating, &second, &seen, status.is_some()),
+            None => saturation(&shared, &seen, status.is_some()),
+        }
         watch(&shared, t, gauges, status.is_some());
         if let Some(status) = status {
             let client = status::Client {
@@ -1118,6 +1223,50 @@ fn capacity_line(sample: &capacity::Sample, seen: &capacity::Seen) -> serde_json
         line["saturated_from"] = serde_json::json!(from);
     }
     line
+}
+
+/// A `--calibrate` run's second: stops the run when the generator
+/// saturated or the site failed for long enough, whichever is first, and
+/// says so (with `say`).
+fn calibrated(
+    shared: &Shared,
+    calibrating: &user::Calibrating,
+    second: &metrics::Second,
+    seen: &capacity::Seen,
+    say: bool,
+) {
+    let generator = match (seen.mark, seen.over) {
+        (metrics::Mark::Began(from), Some(over)) => Some(calibrate::Found {
+            first: calibrate::First::Generator,
+            from,
+            users: second.users,
+            message: format!(
+                "the load generator saturated: {} for {} in a row, at {} users",
+                over.against(shared.capacity.limits()),
+                protocol::format::duration(e2e::config::SATURATED_AFTER),
+                second.users
+            ),
+        }),
+        _ => None,
+    };
+    let server = calibrating.watch.second(second);
+    let Some(found) = generator.or(server) else {
+        return;
+    };
+    let mut kept = calibrating
+        .found
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if kept.is_some() {
+        return;
+    }
+    if say {
+        Status::say(&format!("calibration: {}\n", found.message));
+    }
+    shared
+        .halt
+        .stop(halt::Reason::Calibrated, found.message.clone());
+    *kept = Some(found);
 }
 
 /// Says when the load generator starts being saturated (with `say`), and
@@ -1567,6 +1716,26 @@ fn text(data: &LoadData) -> String {
     }
     if let Some(capacity) = &data.capacity {
         text.push_str(&capacity::text(capacity));
+    }
+    if let Some(c) = &data.calibration {
+        let _ = writeln!(
+            text,
+            "calibration: {}; it held {} users ({} per Chrome) before (the ramp went up to {}, \
+             {}/s)\n  saved in {}{}",
+            c.message,
+            c.held_users,
+            c.held_per_browser,
+            c.ramp_to,
+            c.ramp_rate,
+            c.file,
+            if c.first == "generator" {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let at = (f64::from(c.held_users) * calibrate::WARN_AT).floor() as u32;
+                format!("; later runs of this profile warn above {at} users")
+            } else {
+                String::new()
+            }
+        );
     }
     if let Some(compare) = &data.compare {
         let _ = writeln!(text, "{}", compare::line(compare));
