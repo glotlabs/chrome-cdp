@@ -15,9 +15,11 @@ chrome-cdp load e2e/scenarios/shop.cdp:4 --backend staging --users 50 --duration
 A run is described by a [profile](#profiles), a file next to the
 scenarios that can be reviewed and committed, or, for a quick run, by
 flags ([without a profile](#without-a-profile)). This page covers
-milestones 23.1 to 23.3 of the plan (docs/plans/23-load-testing.md): the
-runtime, a lean browser (`[load]` settings), and the load model. The
-metrics report and thresholds come later.
+milestones 23.1 to 23.4 of the plan (docs/plans/23-load-testing.md): the
+runtime, a lean browser (`[load]` settings), the load model, and the
+[metrics](#what-is-measured), [reports](#what-a-run-keeps) and
+[thresholds](#thresholds). Watching the load generator's own limits
+comes later.
 
 ## Profiles
 
@@ -48,6 +50,10 @@ stages = [
   { rate = "20..0/s", duration = "1m" },    # ramp down
 ]
 max_users = 400                     # the most at once; above it, arrivals are dropped and counted
+
+[thresholds]                        # what the run must hold to pass (exit 6 if not)
+"p95(GET /api/products/:id)" = "< 300ms"
+"error_rate"                 = "< 1%"
 ```
 
 Paths are relative to the project root. In TOML a key after a table's
@@ -64,6 +70,7 @@ of the profile itself come first; a `think` after `[arrivals]` or
 | `think` | what a bare `think` step waits: `"3s"`, `"2s..8s"` (evenly between) or `"exp(4s)"` (exponential, 4 s on average); default `"2s..8s"` |
 | `think_between_steps` | `true`: a `think` after every navigation and action the journey did not follow with one |
 | `on_failure` | `"continue"` (the default) or `"stop-run"`, with `max_failures` (default 100) ([when a step fails](#when-a-step-fails)) |
+| `[thresholds]` | statistics of the run with their limits, which gate it ([thresholds](#thresholds)) |
 
 A rate is a number of arrivals per second, minute or hour: `"20/s"`,
 `"90/m"`, and a ramp from one to another, `"0..20/s"`. A stage's users
@@ -310,6 +317,8 @@ allow_hosts = ["cdn.example.com"]    # what "third-party" lets through
 cache = "new"                        # or "returning"
 renderer_memory = "512MB"            # default: no limit
 grace = "30s"                        # how long iterations may finish after Ctrl-C
+endpoints = ["GET /api/search?q=*"]  # how requests group (see Endpoints)
+group_assets = true                  # false: static files by path
 ```
 
 ### Blocking
@@ -359,11 +368,93 @@ with a `memory` error, and the user goes on in a fresh context. It is
 read between steps, at most once a second per user. It catches an app
 that leaks as the journey loops before the leak takes the machine down.
 
+## What is measured
+
+Every user's page tells the run what it did, and the run keeps it by
+group, a second at a time:
+
+- **Requests**, from each page's network events: method, URL, status,
+  how long it took and its phases (DNS, connect, TLS, time to the first
+  byte, download), whether a cache answered it, and why a failed one
+  failed. A request with a status of 400 or more, or none, is an error.
+  Requests the page canceled, and those `[load] block` failed, are not
+  counted. A cached answer is counted, but not in the times: the server
+  never saw it.
+- **Steps**: each step's time and result, by its line in the scenario
+  (`step e2e/scenarios/shop.cdp:14`).
+- **Iterations**: each journey's, from when it was due (an open model's
+  arrival) to its end, and whether it failed.
+- **What users saw**: per page view, the Web Vitals LCP, CLS and INP,
+  and from the navigation timing TTFB, FCP and the end of the load
+  event. A page view is reported when the page is left, or when the
+  iteration ends on it. INP needs an interaction (a click, a key), so a
+  page view without one has none.
+- **Errors** by kind: failed steps by their error (`ExpectFailed`,
+  `Timeout`, `browser_crash`, `memory`, …), requests as `http_4xx`,
+  `http_5xx` and `request_failed`, and the pages' uncaught exceptions by
+  message.
+
+Every time goes into an HDR histogram per group, for the whole run and
+for the current second, so the memory a run needs depends on its groups
+and its length, not on how many requests it made. Percentiles are
+within 1%.
+
+### Endpoints
+
+Requests are grouped by method and a path pattern, not by URL: numeric,
+UUID and long hex segments become `:id` and the query string goes, so
+`GET /api/products/17?view=full` is `GET /api/products/:id`. A request to
+another host than the backend's keeps its host: `GET
+cdn.example.com/lib.js`. Scripts, stylesheets, images, fonts and media
+group by type, `static js`, `static css`, `static img`, `static font`
+and `static media`, unless `[load] group_assets = false`.
+
+`[load] endpoints` adds patterns, which win over the automatic ones:
+
+```toml
+[load]
+endpoints = [
+  "GET /api/search?q=*",   # requests to /api/search with a q parameter
+  "/blog/:slug",           # any one segment; without a method, each method its own group
+  "/files/*",              # a last * is any rest of the path
+]
+```
+
+A run keeps 500 endpoint groups. Past them, requests go into `other`,
+and the run warns with the pattern they most likely miss.
+
+## While it runs
+
+A status line on stderr says how the run goes, rewritten every second
+when stderr is a terminal, and printed every 10 seconds otherwise (in
+CI's log):
+
+```text
+03:12 stage 2/3 · 412 users · 20.1/s arrivals · req p95 184 ms · errors 0.4%
+```
+
+The rates, p95 and error rate are the last 10 seconds'. A closed model
+shows iterations a second instead of arrivals. A threshold that starts
+failing is said on a line of its own when it does.
+
 ## What a run keeps
 
 Each run has a folder, `e2e/.results/load/<run>/` (under the config's
 `artifacts`):
 
+- `summary.json`: what `--json` prints (`chrome-cdp schema load`): the
+  run's counts, and per endpoint, step, journey and Web Vital the count,
+  rate, error rate, errors by kind, and p50, p75, p90, p95, p99, max and
+  mean, the thresholds and their results, and the comparison with
+  `--compare`.
+- `metrics.jsonl`: one line per second for the run (`"group": "run"`:
+  users, arrivals, dropped, iterations, failed, requests, errors and the
+  request p95), and one per group that had something that second (its
+  kind, count, errors, cached, p50, p90, p95, p99 and max), for plotting.
+- `report.md`: the run in tables, for a pull request or an agent.
+- `report.html`: the same with charts over time (users, arrivals or
+  iterations, request p95 and error rate) and every second in a table.
+  It is one file and opens offline.
 - `failures/<n>-vu<user>-i<iteration>/`: the first `--keep-failures`
   (20) failed iterations keep the files a failed test keeps:
   `failure.png`, `snapshot.txt` (the page's controls), `console.txt`,
@@ -380,17 +471,112 @@ Each run has a folder, `e2e/.results/load/<run>/` (under the config's
   user, the iteration, the journey, when it was due, started and ended,
   and whether it failed.
 
-The summary says how many iterations ran and failed per journey and how
-long they took, the arrivals and dropped ones, the steps by result, the
-errors by kind (`browser_crash` and `memory` among them), the browser
-contexts made and how long one took, how many times a Chrome was started
-again, and why the run stopped early, if it did. `--json` gives the same
-as data (`chrome-cdp schema load`). The run exits 0 when it ran, and with
-an error when every iteration failed (the journey is broken, not slow)
-or `on_failure = "stop-run"` ended it.
+The summary on stdout says how many iterations ran and failed per
+journey and how long they took, the arrivals and dropped ones, the steps
+by result, the errors by kind, the requests with the busiest endpoints,
+the page views' Web Vitals at p75, the browser contexts made, how many
+times a Chrome was started again, why the run stopped early if it did,
+and the thresholds.
+
+The run exits 0 when it ran and its thresholds passed. It exits 6
+(`ThresholdFailed`) when a threshold failed, with the summary first. It
+fails with an error when every iteration failed (the journey is broken,
+not slow) or `on_failure = "stop-run"` ended it.
 
 Each run also keeps its journeys' mean iteration length, by backend, in
 `e2e/.results/load/journeys.json`, for the next `--plan`.
+
+## Thresholds
+
+A profile's `[thresholds]` say what the run must hold, so it can gate a
+deploy:
+
+```toml
+[thresholds]
+"p95(GET /api/products/:id)" = "< 300ms"
+"p99(step checkout.cdp:14)"  = "< 2s"
+"error_rate"                 = "< 1%"
+"p75(lcp)"                   = "< 2.5s"
+"rate(dropped)"              = { limit = "== 0", abort = true }
+```
+
+Each key is a statistic of a group:
+
+| Statistic | What it is |
+| --- | --- |
+| `p50` … `p99`, `p99.9` | a percentile of the group's times (or CLS scores) |
+| `min`, `max`, `mean` | the shortest, longest and mean time |
+| `count` | how many |
+| `rate` | how many a second, over the run |
+| `error_rate` | errors over the count; a bare `error_rate` is every request's |
+
+| Group | What it is |
+| --- | --- |
+| `GET /api/cart`, `static js`, `other` | an [endpoint](#endpoints) |
+| `requests` | every request |
+| `step FILE:LINE` | a step, by its scenario's file (as much of its path as tells it apart) and line |
+| `steps` | every step |
+| `journey NAME` | a journey's iterations, by its test's name or `file:line` |
+| `iterations` | every iteration |
+| `ttfb`, `fcp`, `lcp`, `load`, `cls`, `inp` | a Web Vital or navigation time of the page views |
+| `dropped`, `arrivals` | an open model's arrivals dropped at `max_users`, and all of them (`count` and `rate`) |
+| `exceptions` | the pages' uncaught exceptions (`count` and `rate`) |
+
+The limit is an operator (`<`, `<=`, `>`, `>=`, `==`, `!=`) and a
+number: a time in `ms`, `s` or `m`, a share in `%`, a rate in `/s` or
+`/m`, a CLS score or a count as it is. `{ limit = "…", abort = true }`
+stops the run when the threshold has failed for 30 seconds in a row
+(the run so far), as for a site that is clearly down.
+
+A threshold's group is checked before anything starts: a step, a
+journey or a Web Vital that is not there is an error, with the closest
+names. An endpoint is only known once a request has it, so one that no
+request had fails at the end, saying the closest endpoints that did.
+Likewise a time of a group with no times (an INP when no page view had
+an interaction) fails, as "no value": a gate that cannot measure does
+not pass.
+
+Each second the thresholds are checked over the run so far, and one
+that starts failing is said. At the end each is checked over the whole
+run: the summary lists them with what was measured, and when one
+failed the run exits 6, `ThresholdFailed`, and says which.
+
+## Comparing runs
+
+`--compare` puts an earlier run's numbers next to this one's:
+
+```sh
+chrome-cdp load shop --compare last              # the latest run with a summary
+chrome-cdp load shop --compare 8uiv4smu          # a run's id in e2e/.results/load
+chrome-cdp load shop --compare ci/baseline/summary.json
+```
+
+Every number both runs have is compared: each endpoint's, step's and
+journey's p50, p95 and p99, the requests' error rate and rate, and the
+Web Vitals' p75. A change above 10% is marked (in the reports, a slower
+time or more errors up in red, the other way down in green); a time that
+moved by less than 1 ms is not, whatever the share. The summary line
+names the marked ones, `report.md` lists them, and `report.html` has the
+whole table. The earlier run is read before the users start, so a wrong
+name fails at once.
+
+## Prometheus
+
+`--metrics-listen 127.0.0.1:9464` serves the live numbers in
+Prometheus' text format, for teams that already graph their servers
+there: the users, arrivals, dropped arrivals and exceptions, and per
+endpoint, journey and step the counts, errors and a summary of the times
+(p50, p90, p95 and p99 over the run so far, in seconds), and the Web
+Vitals. It listens only on the address given, and only while the run
+lasts; point a scrape job at it:
+
+```yaml
+scrape_configs:
+  - job_name: chrome-cdp-load
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["127.0.0.1:9464"]
+```
 
 ## The load server
 

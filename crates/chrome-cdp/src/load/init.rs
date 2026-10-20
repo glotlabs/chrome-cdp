@@ -200,7 +200,16 @@ fn example(backend: &str, has_backend: bool, journeys: &[String]) -> String {
          # [users]\n\
          # count = 20\n\
          # ramp_up = \"30s\"\n\
-         # duration = \"5m\"\n",
+         # duration = \"5m\"\n\
+         \n\
+         # What the run must hold to pass; one that fails makes it exit 6. Groups:\n\
+         # an endpoint (\"GET /api/products/:id\"), requests, step FILE:LINE, journey\n\
+         # NAME, a Web Vital (lcp, cls, inp, ttfb), dropped (docs/e2e/load.md#thresholds).\n\
+         [thresholds]\n\
+         \"error_rate\" = \"< 1%\"\n\
+         # \"p95(requests)\" = \"< 500ms\"\n\
+         # \"p75(lcp)\" = \"< 2.5s\"\n\
+         # \"rate(dropped)\" = { limit = \"== 0\", abort = true }   # abort: stop after 30s failing\n",
     );
     text
 }

@@ -91,6 +91,17 @@ the top of the GitHub release notes.
   `on_failure = "stop-run"`. `load --plan` says what a run would do.
   Ctrl-C or SIGTERM lets the running iterations finish within `[load]
   grace` and writes the report; a second Ctrl-C stops at once.
+- Load metrics, reports and thresholds (plan 23.4): a load run measures
+  every request by endpoint (`GET /api/products/:id`, `static js`;
+  `[load] endpoints` adds patterns), every step, iteration and page view
+  (LCP, CLS, INP, TTFB, FCP, the load event) and the pages' uncaught
+  exceptions in HDR histograms, shows a status line while it runs, and
+  writes `summary.json` (what `--json` prints), `metrics.jsonl`,
+  `report.md` and `report.html` (charts; opens offline). A profile's
+  `[thresholds]` gate the run with the new exit code 6,
+  `ThresholdFailed`, and `abort = true` stops it early. `--compare`
+  sets an earlier run's numbers beside this one's; `--metrics-listen`
+  serves them to Prometheus.
 
 ### Changed
 
