@@ -100,6 +100,11 @@ impl Hist {
         let _ = self.hist.add(&other.hist);
     }
 
+    /// Takes `other`'s values out, which it must have.
+    pub(crate) fn subtract(&mut self, other: &Self) {
+        let _ = self.hist.subtract(&other.hist);
+    }
+
     /// Forgets every value, keeping the memory.
     pub(crate) fn reset(&mut self) {
         self.hist.reset();

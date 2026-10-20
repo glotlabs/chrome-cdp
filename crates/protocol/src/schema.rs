@@ -5207,6 +5207,130 @@ pub struct LoadData {
     /// Prometheus' text format, while the run lasted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metrics_listen: Option<String>,
+    /// What the machine running the users used, whether it saturated, and
+    /// how many users it held (plan 23.5); absent with `--plan`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacity: Option<LoadCapacity>,
+    /// `--calibrate`: which came first as the users went up, the load
+    /// generator's limit or the site's failing, and at how many users.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calibration: Option<LoadCalibration>,
+}
+
+/// A load run's own limits (plan 23.5): the machine running the users,
+/// each second. It counts as saturated when, for 5 s in a row, its CPU use
+/// is above `cpu_limit`, its free memory below `memory_limit`, or the p99
+/// of how late the run's timers fire above `lag_limit_ms`; the thresholds
+/// leave those seconds out.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadCapacity {
+    /// `[load.capacity]`: CPU use in % of all the machine's CPUs, free
+    /// memory in % of its memory, the timers' lag in ms.
+    pub cpu_limit: u32,
+    pub memory_limit: u32,
+    pub lag_limit_ms: f64,
+    /// `warn` (go on) or `abort` (stop, exit `Saturated`).
+    pub on_saturation: String,
+    /// Whether the machine's CPU and memory could be read here (Linux
+    /// and macOS); the timers' lag always is.
+    pub machine: bool,
+    /// The seconds the generator was saturated, which the thresholds
+    /// leave out, of the run's.
+    pub saturated_s: u64,
+    pub seconds: u64,
+    /// When it was saturated: each span, the limit that tripped it and its
+    /// worst value then.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub saturations: Vec<LoadSaturation>,
+    /// The most users at once over the run.
+    pub peak_users: u32,
+    /// The most users at once before the generator first saturated (the
+    /// run's peak when it never did), in all and per Chrome: what this
+    /// machine held on these journeys.
+    pub held_users: u32,
+    pub held_per_browser: u32,
+    /// The machine's CPU use in %, at p50, p95 and most.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_p50: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_p95: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_max: Option<f64>,
+    /// Its 1-minute load average, at most.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub load_max: Option<f64>,
+    /// Its free memory in %, at least.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_free_min: Option<f64>,
+    /// How late the run's timers fired (its users' waits, an open model's
+    /// arrivals, its own seconds), at p99 and at most, in ms.
+    pub lag_p99_ms: f64,
+    pub lag_max_ms: f64,
+    /// How late the pages' main threads ran a timer due every 100 ms: the
+    /// p99 of the page views' p99s, in ms. High while the server's TTFB
+    /// is flat: Chrome is starved, not the server.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_lag_p99_ms: Option<f64>,
+    /// The Chromes' CPU use in cores and resident memory in bytes, all of
+    /// them together, at most (RSS counts what their processes share more
+    /// than once).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chrome_cpu_max: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chrome_rss_max: Option<u64>,
+    /// chrome-cdp's own CPU use in cores and resident memory in bytes, at
+    /// most.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub own_cpu_max: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub own_rss_max: Option<u64>,
+    /// The users a `--calibrate` run found this machine holds on this
+    /// profile and backend, if one did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calibrated_users: Option<u32>,
+    /// What to do about a saturated run: lower the load, make each user
+    /// cheaper, or use a bigger machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
+}
+
+/// A span of seconds a load run's generator was saturated.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadSaturation {
+    /// Its first and last second, from the users' start.
+    pub from_s: u64,
+    pub to_s: u64,
+    /// `cpu`, `memory` or `lag`: the limit crossed when it tripped.
+    pub limit: String,
+    /// Its worst value over the span: CPU use and free memory in %, lag
+    /// in ms.
+    pub value: f64,
+}
+
+/// `load --calibrate` (plan 23.5): users went up on the profile's
+/// journeys until the load generator saturated or the site started
+/// failing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadCalibration {
+    /// `generator` (the machine running the users saturated first),
+    /// `server` (the site's requests or iterations started failing first)
+    /// or `neither` (the ramp ended first).
+    pub first: String,
+    /// What happened, in words.
+    pub message: String,
+    /// The users at once when it happened (the ramp's last, for
+    /// `neither`).
+    pub users: u32,
+    /// The most users at once before it, in all and per Chrome: what the
+    /// machine (or the site) held.
+    pub held_users: u32,
+    pub held_per_browser: u32,
+    /// The most users the ramp would have reached, and how fast it added
+    /// them (users a second).
+    pub ramp_to: u32,
+    pub ramp_rate: f64,
+    /// Where the result was saved: `e2e/.results/load/calibration.json`.
+    pub file: String,
 }
 
 /// `load --compare`: an earlier run's numbers next to this one's (plan
@@ -5396,8 +5520,11 @@ pub struct LoadTimes {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct LoadStopped {
     /// `interrupted` (Ctrl-C or SIGTERM), `max_failures` (`on_failure =
-    /// "stop-run"`), `data_exhausted` (`data_exhausted = "stop"`) or
-    /// `web_server` (the backend's web server exited).
+    /// "stop-run"`), `data_exhausted` (`data_exhausted = "stop"`),
+    /// `web_server` (the backend's web server exited), `threshold` (one
+    /// with `abort = true` failed for 30 s), `saturated` (the load generator
+    /// saturated, with `on_saturation = "abort"`) or `calibrated`
+    /// (`--calibrate` found its limit).
     pub reason: String,
     pub message: String,
     /// Iterations that were running and were cut short (a second Ctrl-C,

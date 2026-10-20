@@ -9,6 +9,13 @@
 //! next. Memory stays bounded by the groups (at most [`group::MOST_GROUPS`]
 //! endpoints) and the run's seconds (one small [`Second`] each, for the
 //! report's charts), not by the requests.
+//!
+//! The seconds the load generator was saturated (plan 23.5) are kept apart
+//! as well, as each second's [`Mark`] says, so that thresholds leave them
+//! out ([`Metrics::value`]): while a limit is crossed, the seconds go into
+//! each group's `over` too, and when that lasts long enough to count as
+//! saturated, into its `left_out`. A run that never crosses a limit has
+//! neither.
 
 pub(crate) mod group;
 pub(crate) mod hist;
@@ -103,6 +110,58 @@ impl Stats {
         self.errors = 0;
         self.cached = 0;
     }
+
+    /// Adds `other`'s numbers.
+    fn add(&mut self, other: &Self) {
+        self.hist.add(&other.hist);
+        self.count += other.count;
+        self.errors += other.errors;
+        self.cached += other.cached;
+    }
+
+    /// These numbers without `other`'s, which they hold.
+    fn without(&self, other: &Self) -> Self {
+        let mut stats = self.clone();
+        stats.hist.subtract(&other.hist);
+        stats.count = stats.count.saturating_sub(other.count);
+        stats.errors = stats.errors.saturating_sub(other.errors);
+        stats.cached = stats.cached.saturating_sub(other.cached);
+        stats
+    }
+}
+
+/// What the load generator was in a second (plan 23.5), for the numbers
+/// thresholds leave out.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum Mark {
+    /// Within its limits.
+    #[default]
+    Clean,
+    /// Past a limit, not yet for long enough to count as saturated.
+    Over,
+    /// Saturated from this second on, and since second `from` (the first
+    /// of the limit's seconds in a row).
+    Began(u64),
+    /// Still saturated.
+    Saturated,
+}
+
+/// The counts thresholds take besides the groups', over some seconds.
+#[derive(Debug, Clone, Copy, Default)]
+struct Counted {
+    seconds: u64,
+    arrivals: u64,
+    dropped: u64,
+    exceptions: u64,
+}
+
+impl Counted {
+    fn add(&mut self, other: Self) {
+        self.seconds += other.seconds;
+        self.arrivals += other.arrivals;
+        self.dropped += other.dropped;
+        self.exceptions += other.exceptions;
+    }
 }
 
 /// One group.
@@ -121,6 +180,10 @@ struct Series {
     /// download), and how many requests had them.
     phases: [f64; 5],
     phased: u64,
+    /// The seconds past a capacity limit in a row so far, and the
+    /// saturated ones; made when first needed.
+    over: Option<Stats>,
+    left_out: Option<Stats>,
 }
 
 impl Series {
@@ -139,6 +202,44 @@ impl Series {
             errors_by: BTreeMap::new(),
             phases: [0.0; 5],
             phased: 0,
+            over: None,
+            left_out: None,
+        }
+    }
+
+    /// Ends a second the generator was as `mark` says.
+    fn mark(&mut self, mark: Mark) {
+        match mark {
+            Mark::Clean => {
+                if let Some(over) = &mut self.over {
+                    over.reset();
+                }
+            }
+            Mark::Over => {
+                let unit = self.unit();
+                self.over
+                    .get_or_insert_with(|| Stats::new(unit))
+                    .add(&self.window);
+            }
+            Mark::Began(_) | Mark::Saturated => {
+                let unit = self.unit();
+                let left_out = self.left_out.get_or_insert_with(|| Stats::new(unit));
+                left_out.add(&self.window);
+                if let Some(over) = &mut self.over {
+                    left_out.add(over);
+                    over.reset();
+                }
+            }
+        }
+    }
+
+    /// Its numbers without the saturated seconds.
+    fn kept(&self) -> std::borrow::Cow<'_, Stats> {
+        match &self.left_out {
+            Some(left_out) if left_out.count > 0 => {
+                std::borrow::Cow::Owned(self.total.without(left_out))
+            }
+            _ => std::borrow::Cow::Borrowed(&self.total),
         }
     }
 
@@ -234,6 +335,15 @@ pub(crate) struct Second {
     /// Request p95 in ms; absent with no request that second.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) p95: Option<f64>,
+    /// The machine's CPU use, in percent of all its CPUs (plan 23.5).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) cpu: Option<f64>,
+    /// The load generator was saturated (plan 23.5): the thresholds leave
+    /// this second out. A second turns out to be saturated only once its
+    /// limit was crossed for long enough, so `metrics.jsonl`'s run line
+    /// says so from then on, and its capacity line says since when.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) saturated: bool,
 }
 
 /// The last [`RECENT`] seconds, for the status line.
@@ -274,6 +384,12 @@ struct Inner {
     request_errors: BTreeMap<String, u64>,
     exceptions: BTreeMap<String, u64>,
     exceptions_total: u64,
+    /// This second's exceptions.
+    exceptions_window: u64,
+    /// The counts of the seconds past a capacity limit in a row so far,
+    /// and of the saturated ones.
+    over: Counted,
+    left_out: Counted,
     timeline: Vec<Second>,
     /// The arrivals and dropped ones at the last tick.
     last: Gauges,
@@ -301,6 +417,9 @@ impl Metrics {
                 request_errors: BTreeMap::new(),
                 exceptions: BTreeMap::new(),
                 exceptions_total: 0,
+                exceptions_window: 0,
+                over: Counted::default(),
+                left_out: Counted::default(),
                 timeline: Vec::new(),
                 last: Gauges::default(),
                 out,
@@ -412,14 +531,16 @@ impl Metrics {
     pub(crate) fn exception(&self, message: &str) {
         let mut inner = self.inner();
         inner.exceptions_total += 1;
+        inner.exceptions_window += 1;
         if inner.exceptions.len() < EXCEPTIONS || inner.exceptions.contains_key(message) {
             *inner.exceptions.entry(message.to_owned()).or_default() += 1;
         }
     }
 
-    /// Ends second `t` of the run with the gauges then: writes its lines
-    /// to `metrics.jsonl` and starts the next.
-    pub(crate) fn tick(&self, t: u64, gauges: Gauges) -> Second {
+    /// Ends second `t` of the run with the gauges then, the generator as
+    /// `mark` says and the machine's CPU use: writes its lines to
+    /// `metrics.jsonl` and starts the next.
+    pub(crate) fn tick(&self, t: u64, gauges: Gauges, mark: Mark, cpu: Option<f64>) -> Second {
         let mut inner = self.inner();
         let inner = &mut *inner;
         let window = &inner.requests.window;
@@ -433,7 +554,28 @@ impl Metrics {
             requests: window.count,
             errors: window.errors,
             p95: (window.hist.count() > 0).then(|| window.hist.quantile(0.95)),
+            cpu,
+            saturated: matches!(mark, Mark::Began(_) | Mark::Saturated),
         };
+        let counted = Counted {
+            seconds: 1,
+            arrivals: second.arrivals,
+            dropped: second.dropped,
+            exceptions: inner.exceptions_window,
+        };
+        match mark {
+            Mark::Clean => inner.over = Counted::default(),
+            Mark::Over => inner.over.add(counted),
+            Mark::Began(from) => {
+                inner.left_out.add(counted);
+                inner.left_out.add(std::mem::take(&mut inner.over));
+                for earlier in inner.timeline.iter_mut().filter(|s| s.t >= from) {
+                    earlier.saturated = true;
+                }
+            }
+            Mark::Saturated => inner.left_out.add(counted),
+        }
+        inner.exceptions_window = 0;
         inner.last = gauges;
         if let Some(out) = &mut inner.out {
             let mut line = serde_json::to_value(second).unwrap_or_default();
@@ -469,20 +611,40 @@ impl Metrics {
                 .recent
                 .push_back((inner.requests.window.hist.clone(), second));
         }
-        for series in &mut inner.series {
+        for series in inner.series.iter_mut().chain([
+            &mut inner.requests,
+            &mut inner.steps,
+            &mut inner.iterations,
+        ]) {
+            if mark != Mark::Clean || series.over.is_some() {
+                series.mark(mark);
+            }
             series.window.reset();
         }
-        inner.requests.window.reset();
-        inner.steps.window.reset();
-        inner.iterations.window.reset();
         inner.timeline.push(second);
         second
     }
 
+    /// Writes `line` (a second's capacity line, plan 23.5) to
+    /// `metrics.jsonl`.
+    pub(crate) fn line(&self, line: &serde_json::Value) {
+        if let Some(out) = &mut self.inner().out {
+            let _ = writeln!(out, "{line}");
+            let _ = out.flush();
+        }
+    }
+
+    /// How many seconds were saturated, which the thresholds leave out.
+    #[cfg(test)]
+    pub(crate) fn left_out(&self) -> u64 {
+        self.inner().left_out.seconds
+    }
+
     #[allow(clippy::option_option)]
     /// What statistic `stat` of `target` is after `seconds` of the run,
-    /// with the gauges then: `None` for an endpoint no request had;
-    /// `Some(None)` for a time of a group with no times.
+    /// with the gauges then, without the seconds the load generator was
+    /// saturated: `None` for an endpoint no request had; `Some(None)` for
+    /// a time of a group with no times.
     pub(crate) fn value(
         &self,
         target: &Target,
@@ -491,6 +653,14 @@ impl Metrics {
         gauges: Gauges,
     ) -> Option<Option<f64>> {
         let inner = self.inner();
+        let left_out = inner.left_out;
+        #[allow(clippy::cast_precision_loss)]
+        let seconds = (seconds - left_out.seconds as f64).max(0.0);
+        let gauges = Gauges {
+            users: gauges.users,
+            arrivals: gauges.arrivals.saturating_sub(left_out.arrivals),
+            dropped: gauges.dropped.saturating_sub(left_out.dropped),
+        };
         #[allow(clippy::cast_precision_loss)]
         let counted = |n: u64| match stat {
             Stat::Count => Some(n as f64),
@@ -501,7 +671,11 @@ impl Metrics {
         let series = match target {
             Target::Dropped => return Some(counted(gauges.dropped)),
             Target::Arrivals => return Some(counted(gauges.arrivals)),
-            Target::Exceptions => return Some(counted(inner.exceptions_total)),
+            Target::Exceptions => {
+                return Some(counted(
+                    inner.exceptions_total.saturating_sub(left_out.exceptions),
+                ));
+            }
             Target::Requests => Some(&inner.requests),
             Target::Steps => Some(&inner.steps),
             Target::Iterations => Some(&inner.iterations),
@@ -519,7 +693,7 @@ impl Metrics {
                 _ => None,
             });
         };
-        let total = &series.total;
+        let total = series.kept();
         let hist = &total.hist;
         #[allow(clippy::cast_precision_loss)]
         Some(match stat {
@@ -544,10 +718,16 @@ impl Metrics {
             .collect()
     }
 
-    /// Ends the run's last second, cut short, with the gauges then.
-    pub(crate) fn finish(&self, gauges: Gauges) -> Second {
+    /// Ends the run's last second, cut short, with the gauges then and
+    /// the generator saturated or not.
+    pub(crate) fn finish(&self, gauges: Gauges, saturated: bool) -> Second {
         let t = self.inner().timeline.last().map_or(1, |s| s.t + 1);
-        self.tick(t, gauges)
+        let mark = if saturated {
+            Mark::Saturated
+        } else {
+            Mark::Clean
+        };
+        self.tick(t, gauges, mark, None)
     }
 
     /// The last seconds' numbers.

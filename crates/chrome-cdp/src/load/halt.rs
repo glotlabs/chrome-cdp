@@ -1,8 +1,9 @@
 //! Stopping a load run (plan 23.3). A run stops early when Ctrl-C (or
 //! SIGTERM) comes, when `on_failure = "stop-run"` counts `max_failures`
 //! failed iterations, when a journey's data runs out under
-//! `data_exhausted = "stop"`, when the backend's web server exits, or when
-//! a threshold with `abort = true` fails for 30 seconds in a row.
+//! `data_exhausted = "stop"`, when the backend's web server exits, when
+//! a threshold with `abort = true` fails for 30 seconds in a row, or when
+//! the load generator saturates with `on_saturation = "abort"` (plan 23.5).
 //! Then no user arrives or starts an iteration any more, and the running
 //! iterations get `[load] grace` to finish; a second Ctrl-C stops them at
 //! once. Either way the run's report is written for what ran.
@@ -26,6 +27,8 @@ pub(super) enum Reason {
     WebServer,
     /// A threshold with `abort = true` failed for 30 seconds in a row.
     Threshold,
+    /// The load generator saturated, with `on_saturation = "abort"`.
+    Saturated,
 }
 
 impl Reason {
@@ -36,6 +39,7 @@ impl Reason {
             Self::DataExhausted => "data_exhausted",
             Self::WebServer => "web_server",
             Self::Threshold => "threshold",
+            Self::Saturated => "saturated",
         }
     }
 }

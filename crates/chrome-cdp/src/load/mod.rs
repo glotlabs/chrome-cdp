@@ -24,7 +24,14 @@
 //! (`report.md`, and `report.html` with charts), each beside an earlier
 //! run's numbers with `--compare` ([`compare`]). `--metrics-listen` serves
 //! the live numbers to Prometheus ([`listen`]).
+//!
+//! It also watches itself ([`capacity`]): the machine's CPU and memory, its
+//! Chromes' and its own, and how late its timers fire. When the machine is
+//! saturated the status line says so, the thresholds leave those seconds
+//! out, and with `on_saturation = "abort"` the run stops, as its numbers
+//! would measure the client, not the site.
 
+mod capacity;
 mod compare;
 mod data;
 mod halt;
@@ -109,6 +116,30 @@ pub(crate) fn run(args: &LoadArgs, global: &GlobalArgs) -> u8 {
         let text = text(&data);
         if data.planned {
             return Ok(Output::typed(&data, text));
+        }
+        if let Some(stopped) = data.stopped.as_ref().filter(|s| s.reason == "saturated") {
+            // The run ran: its numbers come first, then why they do not count.
+            if mode == Mode::Text {
+                output::stdout(&format!("{text}\n"));
+            }
+            let mut error = ErrorInfo::new(
+                ErrorKind::Saturated,
+                format!("the load generator saturated: {}", stopped.message),
+            );
+            if let Some(c) = &data.capacity {
+                error = error.note(
+                    "held",
+                    format!(
+                        "{} users ({} per Chrome) on these journeys without saturating, of {} \
+                         at most",
+                        c.held_users, c.held_per_browser, c.peak_users
+                    ),
+                );
+                if let Some(hint) = &c.hint {
+                    error = error.hint(Hint::text(hint.clone()));
+                }
+            }
+            return Err(error.details(serde_json::to_value(&data).unwrap_or_default()));
         }
         if let Some(stopped) = data.stopped.as_ref().filter(|s| s.reason == "max_failures") {
             return Err(ErrorInfo::new(
@@ -355,6 +386,8 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
             .collect(),
         compare: None,
         metrics_listen: args.metrics_listen.map(|a| a.to_string()),
+        capacity: None,
+        calibration: None,
     };
     if args.plan {
         if let Model::Open(arrivals) = &plan.model {
@@ -486,6 +519,23 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
     data.exceptions = summary.exceptions;
     data.exceptions_total = summary.exceptions_total;
     data.thresholds = verdicts(&plan, &ran, records);
+    let mut capacity = ran.capacity.clone();
+    if !capacity.saturations.is_empty() {
+        capacity.hint = Some(
+            capacity::Advice {
+                held: capacity.held_users,
+                peak: capacity.peak_users,
+                rate: match &plan.model {
+                    Model::Open(arrivals) => Some(model::peak_rate(arrivals)),
+                    Model::Closed(_) => None,
+                },
+                third_party_blocked: load_config.block.contains(&e2e::config::Block::ThirdParty),
+                browser: kind,
+            }
+            .text(),
+        );
+    }
+    data.capacity = Some(capacity);
     data.compare = earlier.as_ref().map(|e| compare::compare(e, &data));
     let path = |name: &str| dir.join(name).display().to_string();
     data.files = Some(protocol::schema::LoadFiles {
@@ -824,6 +874,8 @@ struct Ran {
     aborted: Vec<usize>,
     /// Where `--metrics-listen` listened (its port, when 0 was asked).
     listened: Option<String>,
+    /// The load generator's own use and limits.
+    capacity: protocol::schema::LoadCapacity,
 }
 
 /// Runs the users on a runtime of the run's own: starts the Chromes,
@@ -893,10 +945,17 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
     };
     let name = format!("load-{}", plan.plan.run.run_id);
     let metrics = records.metrics.clone();
-    let sink: engine::LoadSink = Arc::new(move |event| match event {
-        engine::LoadEvent::Request(request) => metrics.request(&request),
-        engine::LoadEvent::Vitals(vitals) => metrics.vitals(&vitals),
-        engine::LoadEvent::Exception(message) => metrics.exception(&message),
+    let watched = Arc::new(capacity::Capacity::new(plan.plan.config.load.capacity));
+    let sink: engine::LoadSink = Arc::new({
+        let watched = watched.clone();
+        move |event| match event {
+            engine::LoadEvent::Request(request) => metrics.request(&request),
+            engine::LoadEvent::Vitals(vitals) => {
+                watched.page(vitals.lag);
+                metrics.vitals(&vitals);
+            }
+            engine::LoadEvent::Exception(message) => metrics.exception(&message),
+        }
     });
     let started = Pool::start(
         &name,
@@ -936,6 +995,7 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
         arrivals: AtomicU64::new(0),
         dropped: AtomicU64::new(0),
         watch: threshold::Watch::default(),
+        capacity: watched,
     });
     let _ = args;
     let status = (mode == Mode::Text).then(Status::new);
@@ -952,7 +1012,10 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
         serving.abort();
         let _ = serving.await;
     }
-    shared.records.metrics.finish(shared.gauges());
+    shared
+        .records
+        .metrics
+        .finish(shared.gauges(), shared.capacity.saturated());
     if let Some(status) = status {
         status.end();
     }
@@ -966,6 +1029,8 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
     };
     shared.pool.close().await;
     let (took, cut_short) = result?;
+    let peak = shared.peak.load(Ordering::Relaxed);
+    let capacity = shared.capacity.summary(took.as_secs(), peak);
     let stopped = halt.reason().map(|(reason, message)| LoadStopped {
         reason: reason.as_str().to_owned(),
         message,
@@ -975,7 +1040,8 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
         restarts: shared.pool.restarts(),
         started: shared.pool.started(),
         took,
-        peak: shared.peak.load(Ordering::Relaxed),
+        peak,
+        capacity,
         arrivals: shared.arrivals.load(Ordering::Relaxed),
         dropped: shared.dropped.load(Ordering::Relaxed),
         stopped,
@@ -987,28 +1053,103 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
     })
 }
 
-/// Takes a second of the run's metrics each second, and shows the status
-/// line, until aborted.
+/// Takes a second of the run's metrics each second, with the load
+/// generator's own (and says when it saturates, or stops the run then
+/// with `on_saturation = "abort"`), and shows the status line, until
+/// aborted.
 async fn tick(shared: Arc<Shared>, status: Option<Status>) {
     let mut every = tokio::time::interval_at(shared.started + SECOND, SECOND);
     every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let sampler = capacity::probe::Sampler::start(shared.pool.pids());
     let mut t = 0;
     loop {
-        every.tick().await;
+        let due = every.tick().await;
+        shared
+            .capacity
+            .late(tokio::time::Instant::now().saturating_duration_since(due));
         t += 1;
-        let metrics = &shared.records.metrics;
         let gauges = shared.gauges();
-        let second = metrics.tick(t, gauges);
+        let system = sampler.latest(shared.pool.pids());
+        let (sample, seen) = shared
+            .capacity
+            .second(t, gauges.users, shared.pool.started(), system);
+        let metrics = &shared.records.metrics;
+        let second = metrics.tick(t, gauges, seen.mark, sample.cpu);
+        metrics.line(&capacity_line(&sample, &seen));
+        saturation(&shared, &seen, status.is_some());
         watch(&shared, t, gauges, status.is_some());
         if let Some(status) = status {
+            let client = status::Client {
+                cpu: sample.cpu,
+                saturated: shared
+                    .capacity
+                    .saturated()
+                    .then_some(seen.over)
+                    .flatten()
+                    .map(capacity::Over::text),
+            };
             let line = status::line(
                 shared.started.elapsed(),
                 &shared.plan.model,
                 second.users,
                 &metrics.recent(),
+                &client,
             );
             status.show(t, &line);
         }
+    }
+}
+
+/// A second's capacity line in `metrics.jsonl`: the sample, the limit it
+/// crossed, and whether the generator is saturated (since when, at the
+/// second it turns out to be).
+fn capacity_line(sample: &capacity::Sample, seen: &capacity::Seen) -> serde_json::Value {
+    let mut line = serde_json::to_value(sample).unwrap_or_default();
+    line["group"] = serde_json::json!("capacity");
+    if let Some(over) = seen.over {
+        line["over"] = serde_json::json!(over.limit.as_str());
+    }
+    let saturated = matches!(
+        seen.mark,
+        metrics::Mark::Began(_) | metrics::Mark::Saturated
+    );
+    line["saturated"] = serde_json::json!(saturated);
+    if let metrics::Mark::Began(from) = seen.mark {
+        line["saturated_from"] = serde_json::json!(from);
+    }
+    line
+}
+
+/// Says when the load generator starts being saturated (with `say`), and
+/// stops the run then with `on_saturation = "abort"`.
+fn saturation(shared: &Shared, seen: &capacity::Seen, say: bool) {
+    let metrics::Mark::Began(from) = seen.mark else {
+        return;
+    };
+    let Some(over) = seen.over else {
+        return;
+    };
+    let limits = shared.capacity.limits();
+    let message = format!(
+        "{} for {} in a row",
+        over.against(limits),
+        protocol::format::duration(e2e::config::SATURATED_AFTER)
+    );
+    let abort = limits.on_saturation == e2e::config::OnSaturation::Abort;
+    if say {
+        Status::say(&format!(
+            "warning: CLIENT SATURATED: {message}, since {}: the numbers measure this machine, \
+             not the site{}\n",
+            status::clock(Duration::from_secs(from.saturating_sub(1))),
+            if abort {
+                "; stopping (on_saturation = \"abort\")"
+            } else {
+                "; the thresholds leave these seconds out"
+            }
+        ));
+    }
+    if abort {
+        shared.halt.stop(halt::Reason::Saturated, message);
     }
 }
 
@@ -1424,6 +1565,9 @@ fn text(data: &LoadData) -> String {
     if let Some(raw) = &data.raw {
         let _ = writeln!(text, "step timings: {raw}");
     }
+    if let Some(capacity) = &data.capacity {
+        text.push_str(&capacity::text(capacity));
+    }
     if let Some(compare) = &data.compare {
         let _ = writeln!(text, "{}", compare::line(compare));
     }
@@ -1432,10 +1576,20 @@ fn text(data: &LoadData) -> String {
     }
     if !data.thresholds.is_empty() {
         let passed = data.thresholds.iter().filter(|t| t.passed).count();
+        let left_out = data
+            .capacity
+            .as_ref()
+            .map_or(0, |c| c.saturated_s)
+            .min(data.duration_ms.div_ceil(1000));
         let _ = writeln!(
             text,
-            "thresholds: {passed} of {} passed",
-            data.thresholds.len()
+            "thresholds: {passed} of {} passed{}",
+            data.thresholds.len(),
+            if left_out > 0 {
+                format!(" (without the {left_out} saturated seconds)")
+            } else {
+                String::new()
+            }
         );
         for t in &data.thresholds {
             let mark = if t.passed { "ok  " } else { "FAIL" };

@@ -76,6 +76,8 @@ pub(super) struct Shared {
     pub(super) dropped: AtomicU64,
     /// The thresholds as the run goes.
     pub(super) watch: super::threshold::Watch,
+    /// The load generator's own limits, and how late its timers fire.
+    pub(super) capacity: Arc<super::capacity::Capacity>,
 }
 
 impl Shared {
@@ -147,7 +149,9 @@ pub(super) async fn closed(shared: Arc<Shared>, users: Users, vu: u32, browser: 
                 shared.active.fetch_sub(1, Ordering::Relaxed);
             }
             tokio::select! {
-                () = tokio::time::sleep_until(due) => {}
+                () = tokio::time::sleep_until(due) => {
+                    shared.capacity.late(Instant::now().saturating_duration_since(due));
+                }
                 () = shared.halt.stopping() => break,
             }
         }
@@ -504,6 +508,7 @@ impl User<'_> {
         )
         .await;
         if let Ok(Some(vitals)) = read {
+            self.shared.capacity.page(vitals.lag);
             self.shared.records.metrics.vitals(&vitals);
         }
     }
@@ -558,7 +563,11 @@ impl User<'_> {
             Ok(_) if start >= *deadline => Err(out_of_time()),
             Ok(Call::Think(time)) => {
                 let waited = time.unwrap_or(self.shared.plan.think).pick(random.unit());
-                tokio::time::sleep(waited).await;
+                let until = Instant::now() + waited;
+                tokio::time::sleep_until(until).await;
+                self.shared
+                    .capacity
+                    .late(Instant::now().saturating_duration_since(until));
                 *deadline += waited;
                 Ok(())
             }

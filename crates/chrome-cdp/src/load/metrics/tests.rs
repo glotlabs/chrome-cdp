@@ -4,7 +4,8 @@ use engine::{LoadRequest, PageVitals};
 use protocol::schema::Timing;
 
 use super::group::{Grouper, MOST_GROUPS, OTHER};
-use super::{Gauges, METRICS, Metrics};
+use super::{Gauges, METRICS, Mark, Metrics};
+use crate::load::threshold::{Stat, Target};
 
 fn metrics(dir: Option<&std::path::Path>) -> Metrics {
     Metrics::new(Grouper::new(&[], true, Some("http://shop.test")), dir).unwrap()
@@ -139,6 +140,8 @@ fn each_second_is_a_line_per_group_and_a_run_line() {
             arrivals: 5,
             dropped: 1,
         },
+        Mark::Clean,
+        Some(42.0),
     );
     assert_eq!(
         (first.requests, first.errors, first.iterations, first.failed),
@@ -152,6 +155,8 @@ fn each_second_is_a_line_per_group_and_a_run_line() {
             arrivals: 7,
             dropped: 1,
         },
+        Mark::Clean,
+        None,
     );
     assert_eq!(
         (second.requests, second.arrivals, second.dropped),
@@ -185,4 +190,81 @@ fn each_second_is_a_line_per_group_and_a_run_line() {
     assert_eq!(lines[3]["t"], 2);
     // The run's totals keep what the seconds had.
     assert_eq!(m.summary(Duration::from_secs(2)).endpoints[0].count, 2);
+}
+
+#[test]
+fn thresholds_leave_the_saturated_seconds_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = metrics(Some(dir.path()));
+    let gauges = |arrivals| Gauges {
+        users: 1,
+        arrivals,
+        dropped: 0,
+    };
+    let p95 = |m: &Metrics, seconds: f64| {
+        m.value(&Target::Requests, Stat::Quantile(0.95), seconds, gauges(0))
+            .flatten()
+            .unwrap()
+    };
+    // Seconds 1 and 2 fast; 3 to 7 slow and saturated (from 3, known at
+    // 7); 8 fast again, and 9 past a limit for a second only.
+    let marks = [
+        Mark::Clean,
+        Mark::Clean,
+        Mark::Over,
+        Mark::Over,
+        Mark::Over,
+        Mark::Over,
+        Mark::Began(3),
+        Mark::Clean,
+        Mark::Over,
+    ];
+    for (i, mark) in marks.iter().enumerate() {
+        let t = u64::try_from(i).unwrap() + 1;
+        let ms = if (3..=7).contains(&t) { 900.0 } else { 100.0 };
+        for _ in 0..10 {
+            m.request(&request("GET", "/api/cart", Some(200), ms));
+        }
+        m.exception("TypeError: x");
+        m.tick(t, gauges(t * 2), *mark, None);
+        if t == 6 {
+            // Not saturated yet: the slow seconds count.
+            assert!(p95(&m, 6.0) > 800.0);
+        }
+    }
+    assert_eq!(m.left_out(), 5);
+    assert!((p95(&m, 9.0) - 100.0).abs() <= 1.0, "{}", p95(&m, 9.0));
+    let count = m
+        .value(&Target::Requests, Stat::Count, 9.0, gauges(18))
+        .flatten();
+    assert_eq!(count, Some(40.0));
+    let rate = m
+        .value(&Target::Arrivals, Stat::Rate, 9.0, gauges(18))
+        .flatten()
+        .unwrap();
+    assert!((rate - 2.0).abs() < 1e-9, "{rate}");
+    let exceptions = m.value(&Target::Exceptions, Stat::Count, 9.0, gauges(18));
+    assert_eq!(exceptions.flatten(), Some(4.0));
+    let endpoint = m
+        .value(
+            &Target::Endpoint("GET /api/cart".into()),
+            Stat::Max,
+            9.0,
+            gauges(18),
+        )
+        .flatten()
+        .unwrap();
+    assert!((endpoint - 100.0).abs() <= 1.0, "{endpoint}");
+    // The summary keeps every second; the timeline marks the saturated.
+    assert_eq!(
+        m.summary(Duration::from_secs(9)).requests.unwrap().count,
+        90
+    );
+    let saturated: Vec<u64> = m
+        .timeline()
+        .iter()
+        .filter(|s| s.saturated)
+        .map(|s| s.t)
+        .collect();
+    assert_eq!(saturated, [3, 4, 5, 6, 7]);
 }

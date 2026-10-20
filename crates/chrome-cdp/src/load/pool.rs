@@ -138,6 +138,16 @@ impl Pool {
             .load(Ordering::Relaxed)
     }
 
+    /// The browser process of each running Chrome, for the capacity
+    /// watch.
+    pub(super) fn pids(&self) -> Vec<u32> {
+        self.browsers
+            .iter()
+            .filter(|b| b.started.load(Ordering::Relaxed))
+            .filter_map(|b| b.engine.status().browser.and_then(|info| info.pid))
+            .collect()
+    }
+
     /// How many times a Chrome was started again.
     pub(super) fn restarts(&self) -> u64 {
         self.restarts.load(Ordering::Relaxed)

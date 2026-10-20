@@ -1,7 +1,9 @@
 //! A load run's reports (plan 23.4): `report.md`, in plan 11's report
 //! style, for an agent or a pull request, and `report.html`, one page that
 //! opens offline, with charts over time (users, arrivals or iterations,
-//! request p95 and error rate) and the tables of `summary.json`.
+//! request p95 and error rate, the machine's CPU) and the tables of
+//! `summary.json`. The seconds the load generator was saturated (plan
+//! 23.5) are shaded in every chart, and both say what it used.
 
 use std::fmt::Write as _;
 use std::time::Duration;
@@ -75,6 +77,28 @@ fn facts(data: &LoadData) -> Vec<String> {
     if let Some(stopped) = &data.stopped {
         facts.push(format!("Stopped early: {}", stopped.message));
     }
+    if let Some(c) = &data.capacity {
+        match c.saturations.first() {
+            Some(first) => facts.push(format!(
+                "Client saturated for {}s of {}s ({} first, at {}): the thresholds leave those \
+                 seconds out; it held {} users ({} per Chrome) before",
+                c.saturated_s,
+                c.seconds,
+                first.limit,
+                clock(first.from_s.saturating_sub(1)),
+                c.held_users,
+                c.held_per_browser
+            )),
+            None => facts.push(format!(
+                "Client within its limits: {} users ({} per Chrome) held{}",
+                c.held_users,
+                c.held_per_browser,
+                c.cpu_max
+                    .map(|cpu| format!(", cpu {cpu:.0}% at most"))
+                    .unwrap_or_default()
+            )),
+        }
+    }
     if !data.thresholds.is_empty() {
         let passed = data.thresholds.iter().filter(|t| t.passed).count();
         facts.push(format!(
@@ -83,6 +107,73 @@ fn facts(data: &LoadData) -> Vec<String> {
         ));
     }
     facts
+}
+
+/// What the load generator used, as rows: what, and its value.
+fn client_rows(c: &protocol::schema::LoadCapacity) -> Vec<(&'static str, String)> {
+    let ms = super::status::ms_text;
+    let pct = |v: Option<f64>| v.map(|v| format!("{v:.0}%"));
+    let mut rows = Vec::new();
+    let mut add = |name, value: Option<String>| {
+        if let Some(value) = value {
+            rows.push((name, value));
+        }
+    };
+    add("CPU at p50", pct(c.cpu_p50));
+    add("CPU at p95", pct(c.cpu_p95));
+    add("CPU at most", pct(c.cpu_max));
+    add(
+        "Load average at most",
+        c.load_max.map(|l| format!("{l:.2}")),
+    );
+    add("Free memory at least", pct(c.memory_free_min));
+    add("Timer lag at p99", Some(ms(c.lag_p99_ms)));
+    add("Timer lag at most", Some(ms(c.lag_max_ms)));
+    add("Pages' main-thread lag at p99", c.page_lag_p99_ms.map(ms));
+    add(
+        "Chromes' CPU at most",
+        c.chrome_cpu_max.map(|v| format!("{v:.1} cores")),
+    );
+    add(
+        "Chromes' memory at most",
+        c.chrome_rss_max.map(protocol::format::size),
+    );
+    add(
+        "chrome-cdp's CPU at most",
+        c.own_cpu_max.map(|v| format!("{v:.2} cores")),
+    );
+    add(
+        "chrome-cdp's memory at most",
+        c.own_rss_max.map(protocol::format::size),
+    );
+    rows
+}
+
+/// The limits, as the reports say them.
+fn limits(c: &protocol::schema::LoadCapacity) -> String {
+    format!(
+        "Saturated: for 5s in a row, CPU above {}%, free memory below {}%, or timers late by more \
+         than {} at p99 (`[load.capacity]`, on_saturation = \"{}\").",
+        c.cpu_limit,
+        c.memory_limit,
+        super::status::ms_text(c.lag_limit_ms),
+        c.on_saturation
+    )
+}
+
+/// A saturated span in words: `0:42 to 1:05, cpu 97%`.
+fn span_text(s: &protocol::schema::LoadSaturation) -> String {
+    let value = if s.limit == "lag" {
+        super::status::ms_text(s.value)
+    } else {
+        format!("{:.0}%", s.value)
+    };
+    format!(
+        "{} to {}, {} {value}",
+        clock(s.from_s.saturating_sub(1)),
+        clock(s.to_s),
+        s.limit
+    )
 }
 
 /// What a threshold measured: `412 ms`, `0.4%`, `no value`.
@@ -113,6 +204,23 @@ pub(super) fn markdown(data: &LoadData) -> String {
                 if t.aborted { "stopped the run. " } else { "" },
                 cell(t.note.as_deref().unwrap_or_default())
             );
+        }
+    }
+    if let Some(c) = &data.capacity {
+        md.push_str("\n## Load generator\n\n");
+        let _ = writeln!(md, "{}\n", limits(c));
+        if !c.saturations.is_empty() {
+            for span in &c.saturations {
+                let _ = writeln!(md, "- Saturated {}", span_text(span));
+            }
+            md.push('\n');
+        }
+        if let Some(hint) = &c.hint {
+            let _ = writeln!(md, "To do: {hint}.\n");
+        }
+        md.push_str("| | |\n|---|---|\n");
+        for (name, value) in client_rows(c) {
+            let _ = writeln!(md, "| {name} | {value} |");
         }
     }
     md.push_str("\n## Requests\n\n");
@@ -281,7 +389,8 @@ padding:.2em .5em;border-radius:4px;font-size:12px;visibility:hidden;white-space
 table{border-collapse:collapse;margin:.5em 0}td,th{border-bottom:1px solid var(--grid);\
 padding:.25em .7em;text-align:left;vertical-align:top}th{color:var(--text-secondary);font-weight:600}\
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}.ok{color:var(--good)}.fail{color:var(--bad)}\
-code{font-size:.95em}.up{color:var(--bad)}.down{color:var(--good)}";
+code{font-size:.95em}.up{color:var(--bad)}.down{color:var(--good)}\
+svg .sat{fill:var(--bad);opacity:.14}";
 
 /// Moves each chart's hairline, dot and tooltip to the second under the
 /// pointer.
@@ -325,6 +434,7 @@ fn chart(
     points: &[(u64, Option<f64>)],
     shown: &dyn Fn(f64) -> String,
     whole: bool,
+    saturated: &[(u64, u64)],
 ) -> String {
     let known: Vec<(u64, f64)> = points
         .iter()
@@ -374,6 +484,18 @@ fn chart(
             LEFT - 6.0,
             y(v) + 4.0,
             escape(&shown(v))
+        );
+    }
+    // The seconds the load generator was saturated: second t is from t − 1
+    // to t.
+    for &(from, to) in saturated {
+        let _ = write!(
+            svg,
+            "<rect class=sat x=\"{:.1}\" y=\"{TOP}\" width=\"{:.1}\" height=\"{:.1}\">\
+             <title>client saturated</title></rect>",
+            x(from.saturating_sub(1)),
+            (x(to) - x(from.saturating_sub(1))).max(1.0),
+            HEIGHT - BOTTOM - TOP
         );
     }
     for t in [0, last / 2, last] {
@@ -494,7 +616,16 @@ pub(super) fn html(data: &LoadData, timeline: &[Second]) -> String {
         }
         page.push_str("</table>\n");
     }
-    page.push_str("<h2>Over time</h2><div class=charts>");
+    page.push_str(&client_html(data));
+    page.push_str("<h2>Over time</h2>");
+    let saturated = spans(timeline);
+    if !saturated.is_empty() {
+        page.push_str(
+            "<p>The shaded seconds: the load generator was saturated, and the thresholds \
+             leave them out.</p>",
+        );
+    }
+    page.push_str("<div class=charts>");
     let series = |f: &dyn Fn(&Second) -> Option<f64>| -> Vec<(u64, Option<f64>)> {
         std::iter::once((0, None))
             .chain(timeline.iter().map(|s| (s.t, f(s))))
@@ -502,11 +633,17 @@ pub(super) fn html(data: &LoadData, timeline: &[Second]) -> String {
     };
     #[allow(clippy::cast_precision_loss)]
     let users = series(&|s| Some(f64::from(s.users)));
-    page.push_str(&chart("Users running", &users, &short, true));
+    page.push_str(&chart("Users running", &users, &short, true, &saturated));
     #[allow(clippy::cast_precision_loss)]
     if data.max_users.is_some() {
         let arrivals = series(&|s| Some(s.arrivals as f64));
-        page.push_str(&chart("Arrivals a second", &arrivals, &short, true));
+        page.push_str(&chart(
+            "Arrivals a second",
+            &arrivals,
+            &short,
+            true,
+            &saturated,
+        ));
     } else {
         let iterations = series(&|s| Some(s.iterations as f64));
         page.push_str(&chart(
@@ -514,6 +651,7 @@ pub(super) fn html(data: &LoadData, timeline: &[Second]) -> String {
             &iterations,
             &short,
             true,
+            &saturated,
         ));
     }
     let p95 = series(&|s| s.p95);
@@ -522,6 +660,7 @@ pub(super) fn html(data: &LoadData, timeline: &[Second]) -> String {
         &p95,
         &|v| super::status::ms_text(v),
         false,
+        &saturated,
     ));
     #[allow(clippy::cast_precision_loss)]
     let errors = series(&|s| (s.requests > 0).then(|| s.errors as f64 / s.requests as f64 * 100.0));
@@ -530,12 +669,67 @@ pub(super) fn html(data: &LoadData, timeline: &[Second]) -> String {
         &errors,
         &|v| super::status::percent(v),
         false,
+        &saturated,
     ));
+    if timeline.iter().any(|s| s.cpu.is_some()) {
+        let cpu = series(&|s| s.cpu);
+        page.push_str(&chart(
+            "Client CPU (the machine's)",
+            &cpu,
+            &|v| format!("{v:.0}%"),
+            false,
+            &saturated,
+        ));
+    }
     page.push_str("</div>\n");
     page.push_str(&tables(data));
     page.push_str(&seconds_table(timeline));
     let _ = writeln!(page, "<script>{SCRIPT}</script></div></body></html>");
     page
+}
+
+/// The saturated seconds of `timeline`, as spans (first, last).
+fn spans(timeline: &[Second]) -> Vec<(u64, u64)> {
+    let mut spans: Vec<(u64, u64)> = Vec::new();
+    for s in timeline.iter().filter(|s| s.saturated) {
+        match spans.last_mut() {
+            Some(last) if last.1 + 1 == s.t => last.1 = s.t,
+            _ => spans.push((s.t, s.t)),
+        }
+    }
+    spans
+}
+
+/// The load generator's section of `report.html`.
+fn client_html(data: &LoadData) -> String {
+    let Some(c) = &data.capacity else {
+        return String::new();
+    };
+    let mut html = format!("<h2>Load generator</h2><p>{}</p>", escape(&limits(c)));
+    if !c.saturations.is_empty() {
+        html.push_str("<ul>");
+        for span in &c.saturations {
+            let _ = write!(
+                html,
+                "<li class=fail>Saturated {}</li>",
+                escape(&span_text(span))
+            );
+        }
+        html.push_str("</ul>");
+    }
+    if let Some(hint) = &c.hint {
+        let _ = write!(html, "<p>To do: {}.</p>", escape(hint));
+    }
+    html.push_str("<table>");
+    for (name, value) in client_rows(c) {
+        let _ = write!(
+            html,
+            "<tr><td>{name}</td><td class=n>{}</td></tr>",
+            escape(&value)
+        );
+    }
+    html.push_str("</table>\n");
+    html
 }
 
 /// A group's numbers as a table row: count, /s, errors, percentiles.
@@ -647,13 +841,15 @@ fn seconds_table(timeline: &[Second]) -> String {
     let mut html = String::from(
         "<details><summary>Each second</summary><table><tr><th class=n>At</th><th class=n>Users</th>\
          <th class=n>Arrivals</th><th class=n>Dropped</th><th class=n>Iterations</th><th class=n>Failed</th>\
-         <th class=n>Requests</th><th class=n>Errors</th><th class=n>Request p95</th></tr>",
+         <th class=n>Requests</th><th class=n>Errors</th><th class=n>Request p95</th><th class=n>CPU</th>\
+         <th></th></tr>",
     );
     for s in timeline {
         let _ = write!(
             html,
             "<tr><td class=n>{}</td><td class=n>{}</td><td class=n>{}</td><td class=n>{}</td>\
-             <td class=n>{}</td><td class=n>{}</td><td class=n>{}</td><td class=n>{}</td><td class=n>{}</td></tr>",
+             <td class=n>{}</td><td class=n>{}</td><td class=n>{}</td><td class=n>{}</td><td class=n>{}</td>\
+             <td class=n>{}</td><td>{}</td></tr>",
             clock(s.t),
             s.users,
             s.arrivals,
@@ -662,7 +858,9 @@ fn seconds_table(timeline: &[Second]) -> String {
             s.failed,
             s.requests,
             s.errors,
-            s.p95.map(super::status::ms_text).unwrap_or_default()
+            s.p95.map(super::status::ms_text).unwrap_or_default(),
+            s.cpu.map(|c| format!("{c:.0}%")).unwrap_or_default(),
+            if s.saturated { "saturated" } else { "" }
         );
     }
     html.push_str("</table></details>\n");

@@ -5,6 +5,7 @@
 - 40 iterations in 16s, 1 failed
 - 41 arrivals, 1 dropped at max_users (100); at most 12 users at once
 - 2 Chromes (chrome-headless-shell), up to 10 users each
+- Client saturated for 6s of 16s (cpu first, at 0:08): the thresholds leave those seconds out; it held 8 users (4 per Chrome) before
 - Thresholds: 1 of 2 passed
 
 ## Thresholds
@@ -13,6 +14,29 @@
 |---|---|---|---|
 | ✓ | `p95(GET /api/products/:id) < 300ms` | 60 ms |  |
 | ✗ | `p75(inp) < 200ms` | no value | inp had no value to measure |
+
+## Load generator
+
+Saturated: for 5s in a row, CPU above 90%, free memory below 10%, or timers late by more than 50 ms at p99 (`[load.capacity]`, on_saturation = "warn").
+
+- Saturated 0:08 to 0:14, cpu 97%
+
+To do: lower the rate to about 1.6/s, or run the profile on a bigger machine.
+
+| | |
+|---|---|
+| CPU at p50 | 60% |
+| CPU at p95 | 96% |
+| CPU at most | 97% |
+| Load average at most | 14.20 |
+| Free memory at least | 41% |
+| Timer lag at p99 | 3.2 ms |
+| Timer lag at most | 61 ms |
+| Pages' main-thread lag at p99 | 48 ms |
+| Chromes' CPU at most | 13.4 cores |
+| Chromes' memory at most | 3GB |
+| chrome-cdp's CPU at most | 0.21 cores |
+| chrome-cdp's memory at most | 60MB |
 
 ## Requests
 

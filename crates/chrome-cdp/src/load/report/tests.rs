@@ -57,6 +57,17 @@ fn data() -> LoadData {
                  "change": 0.02, "marked": false},
             ],
         },
+        "capacity": {
+            "cpu_limit": 90, "memory_limit": 10, "lag_limit_ms": 50.0, "on_saturation": "warn",
+            "machine": true, "saturated_s": 6, "seconds": 16,
+            "saturations": [{"from_s": 9, "to_s": 14, "limit": "cpu", "value": 97.0}],
+            "peak_users": 12, "held_users": 8, "held_per_browser": 4,
+            "cpu_p50": 60.0, "cpu_p95": 96.0, "cpu_max": 97.0, "load_max": 14.2,
+            "memory_free_min": 41.0, "lag_p99_ms": 3.2, "lag_max_ms": 61.0,
+            "page_lag_p99_ms": 48.0, "chrome_cpu_max": 13.4, "chrome_rss_max": 3_221_225_472_u64,
+            "own_cpu_max": 0.21, "own_rss_max": 62_914_560,
+            "hint": "lower the rate to about 1.6/s, or run the profile on a bigger machine",
+        },
     });
     let mut all = base;
     for (k, v) in more.as_object().unwrap() {
@@ -86,6 +97,8 @@ fn report_html_stands_alone() {
             requests: 25,
             errors: u64::from(t == 5),
             p95: (t != 7).then_some(40.0 + t as f64),
+            cpu: Some(if (9..=14).contains(&t) { 97.0 } else { 60.0 }),
+            saturated: (9..=14).contains(&t),
             ..Second::default()
         })
         .collect();
@@ -100,6 +113,7 @@ fn report_html_stands_alone() {
         "Arrivals a second",
         "Request p95",
         "Request errors",
+        "Client CPU (the machine's)",
     ] {
         assert!(
             page.contains(&format!("<figcaption>{title}</figcaption>")),
@@ -118,4 +132,8 @@ fn report_html_stands_alone() {
     assert!(page.contains("Compared with 20261019-090000-cd34"));
     assert!(page.contains("✗ failed"));
     assert!(page.contains("<summary>Each second</summary>"));
+    // The saturated seconds are shaded in each chart, once.
+    assert_eq!(page.matches("<rect class=sat").count(), 5);
+    assert!(page.contains("<h2>Load generator</h2>"));
+    assert!(page.contains("Saturated 0:08 to 0:14, cpu 97%"));
 }

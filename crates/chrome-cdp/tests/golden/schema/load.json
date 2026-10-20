@@ -921,6 +921,242 @@
       ],
       "type": "object"
     },
+    "LoadCalibration": {
+      "description": "`load --calibrate` (plan 23.5): users went up on the profile's\njourneys until the load generator saturated or the site started\nfailing.",
+      "properties": {
+        "file": {
+          "description": "Where the result was saved: `e2e/.results/load/calibration.json`.",
+          "type": "string"
+        },
+        "first": {
+          "description": "`generator` (the machine running the users saturated first),\n`server` (the site's requests or iterations started failing first)\nor `neither` (the ramp ended first).",
+          "type": "string"
+        },
+        "held_per_browser": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "held_users": {
+          "description": "The most users at once before it, in all and per Chrome: what the\nmachine (or the site) held.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "message": {
+          "description": "What happened, in words.",
+          "type": "string"
+        },
+        "ramp_rate": {
+          "format": "double",
+          "type": "number"
+        },
+        "ramp_to": {
+          "description": "The most users the ramp would have reached, and how fast it added\nthem (users a second).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "users": {
+          "description": "The users at once when it happened (the ramp's last, for\n`neither`).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "first",
+        "message",
+        "users",
+        "held_users",
+        "held_per_browser",
+        "ramp_to",
+        "ramp_rate",
+        "file"
+      ],
+      "type": "object"
+    },
+    "LoadCapacity": {
+      "description": "A load run's own limits (plan 23.5): the machine running the users,\neach second. It counts as saturated when, for 5 s in a row, its CPU use\nis above `cpu_limit`, its free memory below `memory_limit`, or the p99\nof how late the run's timers fire above `lag_limit_ms`; the thresholds\nleave those seconds out.",
+      "properties": {
+        "calibrated_users": {
+          "description": "The users a `--calibrate` run found this machine holds on this\nprofile and backend, if one did.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "chrome_cpu_max": {
+          "description": "The Chromes' CPU use in cores and resident memory in bytes, all of\nthem together, at most (RSS counts what their processes share more\nthan once).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "chrome_rss_max": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cpu_limit": {
+          "description": "`[load.capacity]`: CPU use in % of all the machine's CPUs, free\nmemory in % of its memory, the timers' lag in ms.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "cpu_max": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cpu_p50": {
+          "description": "The machine's CPU use in %, at p50, p95 and most.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cpu_p95": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "held_per_browser": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "held_users": {
+          "description": "The most users at once before the generator first saturated (the\nrun's peak when it never did), in all and per Chrome: what this\nmachine held on these journeys.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "hint": {
+          "description": "What to do about a saturated run: lower the load, make each user\ncheaper, or use a bigger machine.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lag_limit_ms": {
+          "format": "double",
+          "type": "number"
+        },
+        "lag_max_ms": {
+          "format": "double",
+          "type": "number"
+        },
+        "lag_p99_ms": {
+          "description": "How late the run's timers fired (its users' waits, an open model's\narrivals, its own seconds), at p99 and at most, in ms.",
+          "format": "double",
+          "type": "number"
+        },
+        "load_max": {
+          "description": "Its 1-minute load average, at most.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "machine": {
+          "description": "Whether the machine's CPU and memory could be read here (Linux\nand macOS); the timers' lag always is.",
+          "type": "boolean"
+        },
+        "memory_free_min": {
+          "description": "Its free memory in %, at least.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "memory_limit": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "on_saturation": {
+          "description": "`warn` (go on) or `abort` (stop, exit `Saturated`).",
+          "type": "string"
+        },
+        "own_cpu_max": {
+          "description": "chrome-cdp's own CPU use in cores and resident memory in bytes, at\nmost.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "own_rss_max": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "page_lag_p99_ms": {
+          "description": "How late the pages' main threads ran a timer due every 100 ms: the\np99 of the page views' p99s, in ms. High while the server's TTFB\nis flat: Chrome is starved, not the server.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "peak_users": {
+          "description": "The most users at once over the run.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "saturated_s": {
+          "description": "The seconds the generator was saturated, which the thresholds\nleave out, of the run's.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "saturations": {
+          "description": "When it was saturated: each span, the limit that tripped it and its\nworst value then.",
+          "items": {
+            "$ref": "#/$defs/LoadSaturation"
+          },
+          "type": "array"
+        },
+        "seconds": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cpu_limit",
+        "memory_limit",
+        "lag_limit_ms",
+        "on_saturation",
+        "machine",
+        "saturated_s",
+        "seconds",
+        "peak_users",
+        "held_users",
+        "held_per_browser",
+        "lag_p99_ms",
+        "lag_max_ms"
+      ],
+      "type": "object"
+    },
     "LoadChange": {
       "description": "One number of two load runs.",
       "properties": {
@@ -1036,6 +1272,28 @@
           "default": "",
           "description": "`[load] cache`: `new` (a fresh browser context each iteration) or\n`returning` (a context per user, kept).",
           "type": "string"
+        },
+        "calibration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoadCalibration"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`--calibrate`: which came first as the users went up, the load\ngenerator's limit or the site's failing, and at how many users."
+        },
+        "capacity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoadCapacity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What the machine running the users used, whether it saturated, and\nhow many users it held (plan 23.5); absent with `--plan`."
         },
         "compare": {
           "anyOf": [
@@ -1550,6 +1808,38 @@
       ],
       "type": "object"
     },
+    "LoadSaturation": {
+      "description": "A span of seconds a load run's generator was saturated.",
+      "properties": {
+        "from_s": {
+          "description": "Its first and last second, from the users' start.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "limit": {
+          "description": "`cpu`, `memory` or `lag`: the limit crossed when it tripped.",
+          "type": "string"
+        },
+        "to_s": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "value": {
+          "description": "Its worst value over the span: CPU use and free memory in %, lag\nin ms.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "from_s",
+        "to_s",
+        "limit",
+        "value"
+      ],
+      "type": "object"
+    },
     "LoadStage": {
       "description": "A stage of a load run's model: users arriving a second (`arrivals`)\nor users at once (`users`), from `from` to `to` over its duration.",
       "properties": {
@@ -1626,7 +1916,7 @@
           "type": "string"
         },
         "reason": {
-          "description": "`interrupted` (Ctrl-C or SIGTERM), `max_failures` (`on_failure =\n\"stop-run\"`), `data_exhausted` (`data_exhausted = \"stop\"`) or\n`web_server` (the backend's web server exited).",
+          "description": "`interrupted` (Ctrl-C or SIGTERM), `max_failures` (`on_failure =\n\"stop-run\"`), `data_exhausted` (`data_exhausted = \"stop\"`),\n`web_server` (the backend's web server exited), `threshold` (one\nwith `abort = true` failed for 30 s), `saturated` (the load generator\nsaturated, with `on_saturation = \"abort\"`) or `calibrated`\n(`--calibrate` found its limit).",
           "type": "string"
         }
       },
