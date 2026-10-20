@@ -1,6 +1,7 @@
 # Plan 23 — Load testing with real browsers
 
-Status: IN PROGRESS (23.1 to 23.4 done)
+Status: DONE (23.1 to 23.5), except the 200-user target on a 16-core
+Linux runner, which was not at hand (measured on a 16-core Mac instead)
 Depends on: 03 §3.4 (the wait engine and settle), 06 §6.2 (each tab's
 network log), 07 §7.3 (init scripts), 11 (scenarios, the runner,
 `--jobs`, real backends, `${…}` variables), 22 (the test settle, one
@@ -371,30 +372,33 @@ server is wrong. This milestone makes chrome-cdp notice and say so.
 
 ## Acceptance criteria
 
-- [ ] `chrome-cdp load <profile>` runs open- and closed-model profiles
+- [x] `chrome-cdp load <profile>` runs open- and closed-model profiles
       against a real backend, and refuses `--backend mock`.
 - [ ] 200 concurrent users on the reference journey on a 16-core /
       32 GB Linux runner without saturating (23.1), and at least 1.5×
-      23.1's number after 23.2 (`xtask bench load`).
-- [ ] chrome-cdp's own process stays under 1 core and 500 MB at 23.1's
-      target.
+      23.1's number after 23.2 (`xtask bench load`). Not run on a Linux
+      runner. On the 16-core Mac: 200 users without saturating by 23.5's
+      check, 4× 23.1's 50.
+- [x] chrome-cdp's own process stays under 1 core and 500 MB at 23.1's
+      target (0.18 cores and 50 MB at 200 users, on the Mac).
 - [x] Against the load server with `--latency /api/cart=200ms`, the
       reported p50 for `POST /api/cart` is within 10% of 200 ms, and
       `--errors /api/checkout=2%` is reported as 2% ± 0.5% over
       10,000 requests.
-- [ ] Under `[arrivals]`, a server slowed to 5 s per response shows
+- [x] Under `[arrivals]`, a server slowed to 5 s per response shows
       the slowdown in iteration latency and `dropped` counts, not a
       lower arrival rate.
-- [ ] `think` is a no-op under `test`; every scenario in `testdata/`
+- [x] `think` is a no-op under `test`; every scenario in `testdata/`
       and e2e-shop runs under `test` exactly as before.
-- [ ] A threshold that fails gives exit code `threshold`; a saturated
+- [x] A threshold that fails gives exit code `threshold`; a saturated
       run with `on_saturation = "abort"` gives `saturated`.
-- [ ] A run where the generator is forced to saturate (a CPU-burning
+- [x] A run where the generator is forced to saturate (a CPU-burning
       init script) is flagged within 10 s, and its thresholds leave
       out the saturated seconds.
 - [x] `report.html` opens offline and shows the over-time charts and
       the tables.
-- [ ] `cargo xtask release check` passes: the CLI and schemas only grew.
+- [x] `cargo xtask release check` passes: the CLI and schemas only grew
+      (with no release tag yet, it has no earlier schemas to compare).
 
 ## Tests
 
