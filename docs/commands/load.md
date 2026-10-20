@@ -26,6 +26,8 @@ Options:
 - `--think <TIME>`: What a `think` step without a time waits, e.g. 3s, 2s..8s or exp(4s). A run without a profile; default 2s..8s
 - `--keep-failures <N>`: Keep the page, console and requests of the first N failed iterations, e.g. 5; later failures are only counted (default `20`)
 - `--raw`: Write every step's start, end and result to steps.jsonl in the run's folder, and every iteration's to iterations.jsonl
+- `--compare <RUN|PATH>`: Put an earlier run's numbers next to this one's in the reports, marking changes above 10%: its id in e2e/.results/load, last, or its folder or summary.json
+- `--metrics-listen <ADDR>`: Serve the live numbers in Prometheus' text format on this address while the run lasts, e.g. 127.0.0.1:9464
 - `--allow-writes`: Run journeys not marked @safe on a protected backend too; `http` writes are then allowed in their steps
 - `--browser <BROWSER>`: The browser the users run: headless-shell (chrome-headless-shell, the default when installed; less memory per user) or chrome (full headless Chrome, for apps that need it) (one of `headless-shell`, `chrome`)
 - `--headed`: Show the browser windows (in full Chrome)
@@ -72,6 +74,22 @@ counted. --raw writes every step's start, end and result to steps.jsonl
 in the run's folder, and every iteration's due, start and end time to
 iterations.jsonl.
 
+While it runs, a status line on stderr says the users, the arrival (or
+iteration) rate, the request p95 and the error rate. Requests group by
+endpoint: GET /api/products/17 is GET /api/products/:id, and static
+files group as static js, static css, … ([load] endpoints adds
+patterns). The run's folder gets summary.json (what --json prints: per
+endpoint, step, journey and Web Vital the count, rate, error rate, p50
+to p99), metrics.jsonl (each second of each group), report.md and
+report.html (charts over time; opens offline). --compare puts an earlier
+run's numbers beside these and marks changes above 10%;
+--metrics-listen serves the live numbers to Prometheus.
+
+A profile's [thresholds] gate the run: "p95(GET /api/cart)" = "< 300ms",
+"error_rate" = "< 1%", "p75(lcp)" = "< 2.5s". One that fails makes
+the run exit 6 (ThresholdFailed); with abort = true it stops the run once
+it failed for 30s in a row.
+
 The config's [load] section sets what the users' browsers fetch and
 keep: block = ["third-party"] (or URL patterns like
 "*://*.ads.example/*") fails those requests at once; cache =
@@ -90,5 +108,7 @@ Examples:
   chrome-cdp load e2e/scenarios/shop.cdp --users 100 --browsers 4 --think 1s..3s
   chrome-cdp load e2e/scenarios/checkout.cdp --backend staging --allow-writes --keep-failures 5
   chrome-cdp load e2e/scenarios/shop.cdp --users 50 --browser chrome
+  chrome-cdp load shop --compare last       # beside the previous run's numbers
+  chrome-cdp load shop --metrics-listen 127.0.0.1:9464
 ```
 

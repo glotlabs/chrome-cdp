@@ -70,14 +70,15 @@ impl Hist {
         if self.hist.is_empty() {
             return 0.0;
         }
-        self.read(self.hist.value_at_quantile(q))
+        // The middle of the value's bucket, not its top.
+        self.read(self.hist.median_equivalent(self.hist.value_at_quantile(q)))
     }
 
     pub(crate) fn max(&self) -> f64 {
         if self.hist.is_empty() {
             return 0.0;
         }
-        self.read(self.hist.max())
+        self.read(self.hist.median_equivalent(self.hist.max()))
     }
 
     pub(crate) fn min(&self) -> f64 {

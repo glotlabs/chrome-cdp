@@ -12,6 +12,7 @@
 
 pub(crate) mod group;
 pub(crate) mod hist;
+mod prometheus;
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fs::File;

@@ -20,18 +20,24 @@
 //! The [`metrics`] take every request, step, iteration and page view, by
 //! group, a second at a time; while the run goes a [`status`] line says how
 //! it goes, and at its end it writes `summary.json` (what `--json` prints)
-//! and `metrics.jsonl` (each second of each group).
+//! and `metrics.jsonl` (each second of each group), the [`report`]s
+//! (`report.md`, and `report.html` with charts), each beside an earlier
+//! run's numbers with `--compare` ([`compare`]). `--metrics-listen` serves
+//! the live numbers to Prometheus ([`listen`]).
 
+mod compare;
 mod data;
 mod halt;
 pub(crate) mod init;
 mod lengths;
+mod listen;
 mod metrics;
 mod model;
 mod plan;
 mod pool;
 pub(crate) mod profile;
 mod record;
+mod report;
 mod status;
 mod step;
 pub(crate) mod think;
@@ -135,6 +141,10 @@ pub(crate) fn run(args: &LoadArgs, global: &GlobalArgs) -> u8 {
         let failed: Vec<&protocol::schema::LoadThreshold> =
             data.thresholds.iter().filter(|t| !t.passed).collect();
         if !failed.is_empty() {
+            // The run ran: its numbers come first, then what failed.
+            if mode == Mode::Text {
+                output::stdout(&format!("{text}\n"));
+            }
             let mut error = ErrorInfo::new(
                 ErrorKind::ThresholdFailed,
                 format!(
@@ -254,6 +264,13 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
             shape.per_browser
         ));
     }
+    let earlier = match &args.compare {
+        Some(arg) => {
+            let cwd = std::env::current_dir().unwrap_or_default();
+            Some(compare::read(arg, &runs, &cwd)?)
+        }
+        None => None,
+    };
     let timeout = global.timeout_or(DEFAULT_TIMEOUT).max(DEFAULT_TIMEOUT);
     // `--plan` starts nothing, so it needs no Chrome: only which one.
     let chrome = if args.plan {
@@ -336,6 +353,8 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
             .iter()
             .map(|t| threshold::result(t, None, false, Some("not checked: --plan".to_owned())))
             .collect(),
+        compare: None,
+        metrics_listen: args.metrics_listen.map(|a| a.to_string()),
     };
     if args.plan {
         if let Model::Open(arrivals) = &plan.model {
@@ -396,6 +415,7 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
                     plan: plan.clone(),
                     args,
                     shape,
+                    listen: args.metrics_listen,
                     open: open.clone(),
                     records,
                     stop: stop.clone(),
@@ -463,6 +483,14 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
     data.exceptions = summary.exceptions;
     data.exceptions_total = summary.exceptions_total;
     data.thresholds = verdicts(&plan, &ran, records);
+    data.compare = earlier.as_ref().map(|e| compare::compare(e, &data));
+    let path = |name: &str| dir.join(name).display().to_string();
+    data.files = Some(protocol::schema::LoadFiles {
+        summary: path(SUMMARY),
+        metrics: path(metrics::METRICS),
+        report: path(report::MARKDOWN),
+        html: path(report::HTML),
+    });
     if let Some((pattern, n)) = &summary.overflow
         && mode == Mode::Text
     {
@@ -473,6 +501,11 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
         ));
     }
     write_summary(&dir, &data);
+    crate::test::artifacts::write(&dir.join(report::MARKDOWN), &report::markdown(&data));
+    crate::test::artifacts::write(
+        &dir.join(report::HTML),
+        &report::html(&data, &records.metrics.timeline()),
+    );
     Ok(data)
 }
 
@@ -763,6 +796,8 @@ struct Drive<'a> {
     plan: Arc<LoadPlan>,
     args: &'a LoadArgs,
     shape: Shape,
+    /// `--metrics-listen`.
+    listen: Option<std::net::SocketAddr>,
     open: OpenRequest,
     records: Records,
     stop: Arc<AtomicBool>,
@@ -812,6 +847,7 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
         plan,
         args,
         shape,
+        listen,
         open,
         records,
         stop,
@@ -833,6 +869,16 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
             "stopping now\n".to_owned()
         });
     }));
+    let scraped = match listen {
+        Some(addr) => match listen::bind(addr).await {
+            Ok(l) => Some(l),
+            Err(error) => {
+                listener.abort();
+                return Err(error);
+            }
+        },
+        None => None,
+    };
     let name = format!("load-{}", plan.plan.run.run_id);
     let metrics = records.metrics.clone();
     let sink: engine::LoadSink = Arc::new(move |event| match event {
@@ -882,9 +928,14 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
     let _ = args;
     let status = (mode == Mode::Text).then(Status::new);
     let ticker = tokio::spawn(tick(shared.clone(), status));
+    let serving = scraped.map(|l| tokio::spawn(listen::serve(l, shared.clone())));
     let result = run_users(shared.clone(), grace).await;
     ticker.abort();
     let _ = ticker.await;
+    if let Some(serving) = serving {
+        serving.abort();
+        let _ = serving.await;
+    }
     shared.records.metrics.finish(shared.gauges());
     if let Some(status) = status {
         status.end();
@@ -1355,6 +1406,12 @@ fn text(data: &LoadData) -> String {
     }
     if let Some(raw) = &data.raw {
         let _ = writeln!(text, "step timings: {raw}");
+    }
+    if let Some(compare) = &data.compare {
+        let _ = writeln!(text, "{}", compare::line(compare));
+    }
+    if let Some(files) = &data.files {
+        let _ = writeln!(text, "report: {}", files.html);
     }
     if !data.thresholds.is_empty() {
         let passed = data.thresholds.iter().filter(|t| t.passed).count();

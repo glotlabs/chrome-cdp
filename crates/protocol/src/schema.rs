@@ -5199,6 +5199,43 @@ pub struct LoadData {
     /// `--plan`: as written, not checked).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub thresholds: Vec<LoadThreshold>,
+    /// `--compare`: an earlier run's numbers next to this one's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compare: Option<LoadCompare>,
+    /// `--metrics-listen`: where the live numbers were served, in
+    /// Prometheus' text format, while the run lasted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics_listen: Option<String>,
+}
+
+/// `load --compare`: an earlier run's numbers next to this one's (plan
+/// 23.4).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadCompare {
+    /// The earlier run's id, and its `summary.json`.
+    pub run: String,
+    pub summary: String,
+    /// Every number both runs have: each group's p50, p95 and p99
+    /// (p75 for a Web Vital) and the requests' error rate and rate.
+    pub changes: Vec<LoadChange>,
+    /// How many of them changed by more than 10%.
+    pub marked: u64,
+}
+
+/// One number of two load runs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadChange {
+    /// `p95(GET /api/cart)`, `error_rate(requests)`, `p75(lcp)`.
+    pub name: String,
+    pub before: f64,
+    pub after: f64,
+    /// `ms`, `%`, `/s`, or empty for a score.
+    pub unit: String,
+    /// `(after - before) / before`; absent when `before` is 0.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change: Option<f64>,
+    /// It changed by more than 10% (or from 0 to more).
+    pub marked: bool,
 }
 
 /// A threshold of a load profile (plan 23.4).

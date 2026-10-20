@@ -89,6 +89,10 @@ The [load] section sets how `chrome-cdp load` runs its users
                                        memory error (default: no limit)
   grace = "30s"                        how long running iterations may
                                        take to finish after Ctrl-C
+  endpoints = ["GET /api/search?q=*"]  how requests group, before the
+                                       automatic :id grouping
+  group_assets = true                  false: static files by path, not
+                                       as static js, static css, …
 
 A load run's journeys, model and think times are a profile,
 e2e/load/<name>.toml (`chrome-cdp init load` writes an example).

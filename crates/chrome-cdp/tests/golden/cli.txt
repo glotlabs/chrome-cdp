@@ -125,6 +125,8 @@ command chrome-cdp load
   flag --think value=TIME
   flag --keep-failures value=N
   flag --raw
+  flag --compare value=RUN|PATH
+  flag --metrics-listen value=ADDR
   flag --allow-writes
   flag --browser value=BROWSER values=headless-shell|chrome
   flag --headed

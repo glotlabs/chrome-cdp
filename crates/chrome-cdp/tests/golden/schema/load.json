@@ -916,6 +916,79 @@
       ],
       "type": "object"
     },
+    "LoadChange": {
+      "description": "One number of two load runs.",
+      "properties": {
+        "after": {
+          "format": "double",
+          "type": "number"
+        },
+        "before": {
+          "format": "double",
+          "type": "number"
+        },
+        "change": {
+          "description": "`(after - before) / before`; absent when `before` is 0.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "marked": {
+          "description": "It changed by more than 10% (or from 0 to more).",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "`p95(GET /api/cart)`, `error_rate(requests)`, `p75(lcp)`.",
+          "type": "string"
+        },
+        "unit": {
+          "description": "`ms`, `%`, `/s`, or empty for a score.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "before",
+        "after",
+        "unit",
+        "marked"
+      ],
+      "type": "object"
+    },
+    "LoadCompare": {
+      "description": "`load --compare`: an earlier run's numbers next to this one's (plan\n23.4).",
+      "properties": {
+        "changes": {
+          "description": "Every number both runs have: each group's p50, p95 and p99\n(p75 for a Web Vital) and the requests' error rate and rate.",
+          "items": {
+            "$ref": "#/$defs/LoadChange"
+          },
+          "type": "array"
+        },
+        "marked": {
+          "description": "How many of them changed by more than 10%.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "run": {
+          "description": "The earlier run's id, and its `summary.json`.",
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "run",
+        "summary",
+        "changes",
+        "marked"
+      ],
+      "type": "object"
+    },
     "LoadData": {
       "description": "`data` of `chrome-cdp load --json` (plans 23.1 and 23.3).",
       "properties": {
@@ -958,6 +1031,17 @@
           "default": "",
           "description": "`[load] cache`: `new` (a fresh browser context each iteration) or\n`returning` (a context per user, kept).",
           "type": "string"
+        },
+        "compare": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoadCompare"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`--compare`: an earlier run's numbers next to this one's."
         },
         "context_setup_ms": {
           "default": 0.0,
@@ -1075,6 +1159,13 @@
           "minimum": 0,
           "type": [
             "integer",
+            "null"
+          ]
+        },
+        "metrics_listen": {
+          "description": "`--metrics-listen`: where the live numbers were served, in\nPrometheus' text format, while the run lasted.",
+          "type": [
+            "string",
             "null"
           ]
         },
