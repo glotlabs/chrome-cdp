@@ -1,6 +1,6 @@
 # Plan 23 — Load testing with real browsers
 
-Status: IN PROGRESS (23.1, 23.2 and 23.3 done)
+Status: IN PROGRESS (23.1 to 23.4 done)
 Depends on: 03 §3.4 (the wait engine and settle), 06 §6.2 (each tab's
 network log), 07 §7.3 (init scripts), 11 (scenarios, the runner,
 `--jobs`, real backends, `${…}` variables), 22 (the test settle, one
@@ -378,7 +378,7 @@ server is wrong. This milestone makes chrome-cdp notice and say so.
       23.1's number after 23.2 (`xtask bench load`).
 - [ ] chrome-cdp's own process stays under 1 core and 500 MB at 23.1's
       target.
-- [ ] Against the load server with `--latency /api/cart=200ms`, the
+- [x] Against the load server with `--latency /api/cart=200ms`, the
       reported p50 for `POST /api/cart` is within 10% of 200 ms, and
       `--errors /api/checkout=2%` is reported as 2% ± 0.5% over
       10,000 requests.
@@ -392,7 +392,7 @@ server is wrong. This milestone makes chrome-cdp notice and say so.
 - [ ] A run where the generator is forced to saturate (a CPU-burning
       init script) is flagged within 10 s, and its thresholds leave
       out the saturated seconds.
-- [ ] `report.html` opens offline and shows the over-time charts and
+- [x] `report.html` opens offline and shows the over-time charts and
       the tables.
 - [ ] `cargo xtask release check` passes: the CLI and schemas only grew.
 
@@ -620,3 +620,79 @@ server is wrong. This milestone makes chrome-cdp notice and say so.
   closed runs did not move from 23.2's, and an open model at 29 arrivals
   a second (193 users at once) started each iteration 0.8 ms after it
   was due at p50 and 3.9 ms at most, with no arrival dropped.
+- 23.4: the histograms are `hdrhistogram` 7 without its default features
+  (no serialization, so no new crates past `byteorder` and `num-traits`;
+  MIT or Apache-2.0, which `deny.toml` allows), at 2 significant figures
+  (1%), recording µs and resizing to the largest value seen: about 18 KB
+  a histogram up to 10 s. A percentile reads the middle of its value's
+  bucket, not its top. Merging runs across machines would need the
+  serialization feature, or `summary.json` to carry the histograms.
+- 23.4: a request counts when it ends (`loadingFinished` or
+  `loadingFailed`), with its time from start to end and its phases from
+  `Network.responseReceived`. A status of 400 or more, or no response, is
+  an error; a request the page canceled or `[load] block` failed is not
+  counted; one a cache answered is counted but not timed, as the server
+  never saw it. Chrome ends a `fetch` only once the page reads its body,
+  so a fetch whose body the page never reads is never counted.
+- 23.4: the engine follows a load run's requests for the metrics on its
+  own (`engine::load::Inflight`), not through a tab's network log: that
+  keeps a load run's last 300 requests, and a page with 500 fetches in
+  flight lost the oldest before they ended (the error-rate test found
+  it).
+- 23.4: Web Vitals come from `perf`'s observer, which every top-level
+  document already gets in chrome-cdp's world. `vitals.js`, also there in
+  a load run's pages, reports a page view once: on `pagehide` through a
+  binding in that world, or when the run reads it at the end of an
+  iteration (`Engine::page_vitals`, one evaluate), which covers a page a
+  context closes without a `pagehide`. A page that is not http(s) (the
+  context's first `about:blank`) is no page view. INP needs an
+  interaction, so a page view without one has none.
+- 23.4: an endpoint keeps its host when it is not the backend's origin
+  (`GET cdn.example.com/lib.js`), so third parties do not mix with the
+  site; `[load] endpoints` patterns only match the backend's origin. A
+  long hex segment is 16 hex digits or more with a digit among them, so
+  words like `deadbeef` stay. Past 500 groups, the warning names the most
+  common group of the overflow with its last segment as `:name`.
+- 23.4: `summary.json` is what `--json` prints (`LoadData`, grown with
+  `requests`, `endpoints`, `step_times`, `vitals`, `request_errors`,
+  `exceptions`, `thresholds`, `files`, `compare` and `metrics_listen`;
+  `iteration_ms` gained p90 and p99), so a script reads one schema. 23.3's
+  in-memory list of iteration times is gone: journeys' times come from
+  the histograms.
+- 23.4: the status line is printed in text mode only, from the last 10
+  seconds; it leaves out the CPU, which 23.5 watches.
+- 23.4: a threshold's value is its limit, `"< 300ms"`, or a table `{ limit
+  = "< 300ms", abort = true }`. Every group but an endpoint is checked at
+  plan time; an endpoint can only be known from requests, so one no
+  request had fails at the end with the closest endpoints that some had.
+  A time with no value fails ("no value"): a gate that cannot measure
+  does not pass. Thresholds are checked each second over the run so far
+  (one that starts failing is said), and `abort` stops the run with
+  reason `threshold` after 30 s of failing; that threshold then fails
+  whatever the whole run's value. `ThresholdFailed` is exit code 6, after
+  `DialogOpen`; 23.5's `saturated` takes the next. In text mode the run's
+  summary is printed before the error, as the run did run.
+- 23.4: syntax problems of `[thresholds]` are the profile's, reported with
+  its other problems before the scenarios are read; unknown groups are
+  reported with the journeys' problems, as both need the scenarios.
+- 23.4: `--compare` takes a run's id, `last` (the newest run with a
+  `summary.json`) or a path, and is read before the users start. It
+  compares every number both runs have (each group's p50, p95 and p99,
+  the requests' error rate and rate, the Web Vitals' p75) and marks a
+  change above 10%, but not a time that moved by less than 1 ms: on the
+  load server, 1.2 ms against 0.9 ms is noise.
+- 23.4: `--metrics-listen` is a small HTTP/1.1 responder on the run's
+  runtime (no new dependency): any `GET` gets the numbers, as summaries
+  over the run so far (p50, p90, p95, p99, sum and count) rather than
+  histograms, which Prometheus would need bucket bounds for.
+- 23.4: `report.html` draws its charts as inline SVG with a few lines of
+  script for the hover readout; one series a chart, so no legend and no
+  second axis. A second without requests is a gap in the p95 line.
+- 23.4: the load server has no `/api/checkout` (the shop's checkout posts
+  to its payment provider), so the error-rate criterion is tested with
+  `--errors "GET /api/products=2%"`: 20 iterations of 501 requests, which
+  read 2% ± 0.5%. `POST /api/cart` at 200 ms read a p50 within 10%.
+- 23.4: measured (`docs/benchmarks.md`, the same Mac): with the metrics,
+  chrome-cdp used 0.08 cores and 35 MB at 100 users and 0.18 cores and
+  50 MB at 200 (23.3: 0.07 and 0.16 cores, 36 and 49 MB), with the same
+  iterations and step p95: users per machine did not move.

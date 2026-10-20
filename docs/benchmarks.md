@@ -420,6 +420,17 @@ iteration started 0.8 ms after its due time at p50, 2.4 ms at p99 and
 3.9 ms at most (`iterations.jsonl`), so the arrivals kept their schedule
 at about the users per machine of 23.2.
 
+Plan 23.4 (metrics, reports and thresholds), on the same Mac with
+chrome-headless-shell and a Chrome per 10 users: every request, step,
+iteration and page view now goes into the run's histograms, each page
+reports its Web Vitals, and the run writes `metrics.jsonl` every second
+and its reports at the end. At 100 users: 1040 iterations, step p95
+157 ms, chrome-cdp 0.08 cores and 35 MB; at 200 users: 2074 iterations,
+step p95 156 ms, chrome-cdp 0.18 cores and 50 MB (23.3: 0.07 and 0.16
+cores, 36 and 49 MB). Chrome's CPU per user did not move (2.06% and
+2.23%), so the metrics cost chrome-cdp about a hundredth of a core per
+100 users, and users per machine is unchanged.
+
 On the macOS runs, from 100 full-Chrome users on, the limit was the
 machine: the Chromes held at about 8 of 16 CPUs while macOS's own
 services (WindowServer, kernel_task, WindowManager, fontd) took several
