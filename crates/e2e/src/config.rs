@@ -165,6 +165,12 @@ pub struct Load {
     /// How long running iterations may take to finish after Ctrl-C (plan
     /// 23.3); `None`: [`GRACE`].
     pub grace: Option<Duration>,
+    /// Endpoint patterns that group a run's requests before the automatic
+    /// grouping does (plan 23.4): `GET /api/search?q=*`, `/blog/:slug`.
+    pub endpoints: Vec<String>,
+    /// Whether static files group by type (`static js`, `static css`, …)
+    /// rather than by path; `None`: yes.
+    pub group_assets: Option<bool>,
 }
 
 /// `[load] grace` when not set.
@@ -1128,13 +1134,48 @@ fn load(raw: RawLoad) -> Result<Load, Problem> {
             parse_duration(text).map_err(|e| (g.span(), format!("load.grace: {e}")))
         })
         .transpose()?;
+    let endpoints = match raw.endpoints {
+        None => Vec::new(),
+        Some(list) => {
+            let span = list.span();
+            let patterns = list.into_inner();
+            if let Some(problem) = patterns.iter().find_map(|p| endpoint(p).err()) {
+                return Err((span, problem));
+            }
+            patterns
+        }
+    };
     Ok(Load {
         block,
         allow_hosts,
         cache: raw.cache.unwrap_or_default(),
         renderer_memory,
         grace,
+        endpoints,
+        group_assets: raw.group_assets,
     })
+}
+
+/// An entry of `[load] endpoints`: an optional method, then a path that
+/// starts with `/` (`GET /api/search?q=*`, `/blog/:slug`).
+fn endpoint(pattern: &str) -> Result<(), String> {
+    let pattern = pattern.trim();
+    let path = match pattern.split_once(' ') {
+        Some((method, path))
+            if !method.is_empty() && method.bytes().all(|b| b.is_ascii_uppercase()) =>
+        {
+            path.trim()
+        }
+        _ => pattern,
+    };
+    if path.starts_with('/') && !path.contains([' ', '#']) {
+        return Ok(());
+    }
+    Err(format!(
+        "load.endpoints: `{pattern}` is not an endpoint pattern; write a path, with a \
+         method if it matters: \"GET /api/products/:id\", \"/blog/:slug\", \
+         \"GET /api/search?q=*\""
+    ))
 }
 
 /// An entry of `[load] block`: the preset, or an absolute URL pattern.
@@ -1197,6 +1238,8 @@ struct RawLoad {
     cache: Option<Cache>,
     renderer_memory: Option<Spanned<String>>,
     grace: Option<Spanned<String>>,
+    endpoints: Option<Spanned<Vec<String>>>,
+    group_assets: Option<bool>,
 }
 
 #[derive(Deserialize)]

@@ -555,6 +555,12 @@ fn the_load_section_is_read() {
         parse("[e2e]\n[load]\ngrace = \"0s\"\n").load.grace(),
         std::time::Duration::ZERO
     );
+    let c = parse(
+        "[e2e]\n[load]\nendpoints = [\"GET /api/search?q=*\", \"/blog/:slug\"]\n\
+         group_assets = false\n",
+    );
+    assert_eq!(c.load.endpoints, ["GET /api/search?q=*", "/blog/:slug"]);
+    assert_eq!(c.load.group_assets, Some(false));
 }
 
 #[test]
@@ -574,6 +580,11 @@ fn load_section_mistakes_point_at_the_line() {
     assert!(e.contains("is not a host"), "{e}");
     let e = error("[e2e]\n[load]\ngrace = \"soon\"\n");
     assert!(e.contains("load.grace:"), "{e}");
+    let e = error("[e2e]\n[load]\nendpoints = [\"api/cart\"]\n");
+    assert!(
+        e.contains("load.endpoints: `api/cart` is not an endpoint pattern"),
+        "{e}"
+    );
     let e = error("[e2e]\n[load]\nusers = 10\n");
     assert!(e.contains("unknown field `users`"), "{e}");
 }
