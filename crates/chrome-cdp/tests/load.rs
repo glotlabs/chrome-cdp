@@ -12,7 +12,10 @@
 //! take rows of a journey's data until it runs out; `on_failure =
 //! "stop-run"` ends a run against a broken site; Ctrl-C lets the running
 //! iterations finish and writes the report; `think_between_steps` pauses
-//! after each action.
+//! after each action. Plan 23.4's metrics: the server's latency and error
+//! rate per endpoint as the load server sets them, every page view's Web
+//! Vitals, the reports, a failed threshold's exit code, `--compare` and
+//! `--metrics-listen`.
 //!
 //! Needs a real Chrome (`CHROME_PATH`; skipped without it).
 
@@ -656,5 +659,209 @@ fn think_between_steps_pauses_after_each_action() {
             "think 50ms",
             "expect role=heading text 'Wireless mouse'",
         ]
+    );
+}
+
+/// A server whose `POST /api/cart` takes 200 ms.
+fn slow_cart() -> Options {
+    Options {
+        faults: vec![load_server::Fault::latency("POST /api/cart=200ms").unwrap()],
+        ..Options::default()
+    }
+}
+
+/// The metric named `name` in `list`.
+fn metric<'a>(list: &'a Value, name: &str) -> &'a Value {
+    list.as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["name"] == name)
+        .unwrap_or_else(|| panic!("no {name} in {list}"))
+}
+
+#[test]
+fn requests_are_timed_by_endpoint_and_every_page_view_has_its_vitals() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::with_server(&chrome, &[("shop.cdp", JOURNEY)], "", slow_cart());
+    let out = project.load(&["e2e/shop.cdp", "--users", "4", "--iterations", "2"]);
+    assert_eq!(common::code(&out), 0, "{}\n{}", stdout(&out), stderr(&out));
+    let data = data(&out);
+    assert_eq!(data["iterations"], 8, "{data}");
+    // The server's 200 ms, within 10%.
+    let cart = metric(&data["endpoints"], "POST /api/cart");
+    assert_eq!(cart["count"], 8, "{cart}");
+    let p50 = cart["p50"].as_f64().unwrap();
+    assert!((180.0..=220.0).contains(&p50), "{cart}");
+    assert!(
+        cart["phases"]["ttfb_ms"].as_f64().unwrap() >= 190.0,
+        "{cart}"
+    );
+    assert_eq!(
+        metric(&data["endpoints"], "GET /api/products/:id")["count"],
+        8
+    );
+    assert!(metric(&data["endpoints"], "static js")["count"].as_u64() >= Some(8));
+    assert_eq!(data["requests"]["errors"], 0, "{data}");
+    // Each iteration loads one page (the shop is a single-page app), and
+    // each page view has its Web Vitals.
+    for vital in ["ttfb", "fcp", "lcp", "load", "cls"] {
+        assert_eq!(
+            metric(&data["vitals"], vital)["count"],
+            8,
+            "{vital}: {data}"
+        );
+    }
+    // Clicks are interactions.
+    assert_eq!(metric(&data["vitals"], "inp")["count"], 8, "{data}");
+    let goto = metric(&data["step_times"], "step e2e/shop.cdp:2");
+    assert_eq!(
+        (goto["count"].as_u64(), goto["label"].as_str()),
+        (Some(8), Some("goto /"))
+    );
+    assert_eq!(
+        metric(&data["step_times"], "step e2e/shop.cdp:4")["label"],
+        "think 100ms"
+    );
+    // The files.
+    let files = &data["files"];
+    let summary: Value =
+        serde_json::from_str(&std::fs::read_to_string(files["summary"].as_str().unwrap()).unwrap())
+            .unwrap();
+    assert_eq!(summary["run"], data["run"]);
+    assert_eq!(summary["endpoints"], data["endpoints"]);
+    let jsonl = std::fs::read_to_string(files["metrics"].as_str().unwrap()).unwrap();
+    let lines: Vec<Value> = jsonl
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert!(lines.iter().any(|l| l["group"] == "run"), "{jsonl}");
+    let carts: u64 = lines
+        .iter()
+        .filter(|l| l["group"] == "POST /api/cart")
+        .map(|l| l["count"].as_u64().unwrap())
+        .sum();
+    assert_eq!(carts, 8, "{jsonl}");
+    let md = std::fs::read_to_string(files["report"].as_str().unwrap()).unwrap();
+    assert!(md.contains("| `POST /api/cart` | 8 |"), "{md}");
+    let html = std::fs::read_to_string(files["html"].as_str().unwrap()).unwrap();
+    assert!(html.contains("<figcaption>Request p95</figcaption>"));
+    assert!(!html.contains("src=\"http") && !html.contains("<link"));
+}
+
+#[test]
+fn errors_are_counted_per_endpoint() {
+    let Some(chrome) = chrome_path() else { return };
+    let options = Options {
+        faults: vec![load_server::Fault::errors("GET /api/products=2%").unwrap()],
+        ..Options::default()
+    };
+    // 501 requests to /api/products an iteration (the page's own and 500
+    // more, which read their bodies: Chrome ends a fetch only then), 20
+    // iterations: over 10,000.
+    let journey = "@test \"lists the products\"\n  goto /\n  \
+                   eval \"Promise.all(Array.from({ length: 500 }, () => fetch('/api/products').then((r) => r.text())))\"\n";
+    let project = Project::with_server(&chrome, &[("list.cdp", journey)], "", options);
+    let out = project.load(&["e2e/list.cdp", "--users", "4", "--iterations", "5"]);
+    assert_eq!(common::code(&out), 0, "{}\n{}", stdout(&out), stderr(&out));
+    let data = data(&out);
+    let products = metric(&data["endpoints"], "GET /api/products");
+    let count = products["count"].as_u64().unwrap();
+    assert!(count >= 10_000, "{products}");
+    let rate = products["error_rate"].as_f64().unwrap();
+    assert!((0.015..=0.025).contains(&rate), "{products}");
+    assert_eq!(
+        products["errors"], products["error_kinds"]["500"],
+        "{products}"
+    );
+    assert_eq!(
+        data["request_errors"]["http_5xx"], products["errors"],
+        "{data}"
+    );
+}
+
+/// Waits for the first scrape of `addr` that has the users' gauge.
+fn scrape(addr: &str) -> std::thread::JoinHandle<Option<String>> {
+    let addr = addr.to_owned();
+    std::thread::spawn(move || {
+        use std::io::{Read as _, Write as _};
+        let until = Instant::now() + Duration::from_secs(60);
+        while Instant::now() < until {
+            if let Ok(mut stream) = std::net::TcpStream::connect(&addr) {
+                let _ = stream.write_all(b"GET /metrics HTTP/1.1\r\nHost: x\r\n\r\n");
+                let mut text = String::new();
+                let _ = stream.read_to_string(&mut text);
+                if text.contains("chrome_cdp_load_requests_total{") {
+                    return Some(text);
+                }
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        None
+    })
+}
+
+#[test]
+fn a_failed_threshold_exits_6_and_runs_compare_and_serve_their_numbers() {
+    let Some(chrome) = chrome_path() else { return };
+    let project = Project::with_server(&chrome, &[("shop.cdp", JOURNEY)], "", slow_cart());
+    project.profile(
+        "gated",
+        "[[journeys]]\ntest = \"e2e/shop.cdp:1\"\n\n[users]\ncount = 2\niterations = 2\n\n\
+         [thresholds]\n\"p95(POST /api/cart)\" = \"< 100ms\"\n\"error_rate\" = \"< 1%\"\n\
+         \"p75(lcp)\" = \"< 10s\"\n\"count(dropped)\" = \"== 0\"\n",
+    );
+    // A free port, unless another test's Chrome takes it first: then
+    // another.
+    let (addr, scraped, out) = loop {
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let addr = format!("127.0.0.1:{port}");
+        let scraped = scrape(&addr);
+        let out = project.load(&["gated", "--metrics-listen", &addr]);
+        if !stdout(&out).contains("cannot listen on") {
+            break (addr, scraped, out);
+        }
+    };
+    assert_eq!(common::code(&out), 6, "{}\n{}", stdout(&out), stderr(&out));
+    let envelope: Value = serde_json::from_str(&stdout(&out)).unwrap();
+    assert_eq!(envelope["error"]["kind"], "ThresholdFailed", "{envelope}");
+    assert_eq!(envelope["error"]["message"], "1 of 4 thresholds failed");
+    let first = data(&out);
+    let thresholds = first["thresholds"].as_array().unwrap();
+    assert_eq!(thresholds[0]["passed"], false, "{first}");
+    assert!(thresholds[0]["value"].as_f64().unwrap() >= 190.0, "{first}");
+    assert!(
+        thresholds[1..].iter().all(|t| t["passed"] == true),
+        "{first}"
+    );
+    assert_eq!(first["metrics_listen"], addr);
+    // The numbers were served while it ran, and are no longer.
+    let text = scraped.join().unwrap().expect("no scrape answered");
+    assert!(text.starts_with("HTTP/1.1 200 OK\r\n"), "{text}");
+    assert!(
+        text.contains("# TYPE chrome_cdp_load_users gauge"),
+        "{text}"
+    );
+    assert!(std::net::TcpStream::connect(&addr).is_err());
+    // The next run sets the first one's numbers beside its own.
+    let out = project.load(&["gated", "--compare", "last"]);
+    assert_eq!(common::code(&out), 6, "{}\n{}", stdout(&out), stderr(&out));
+    let second = data(&out);
+    assert_eq!(second["compare"]["run"], first["run"], "{second}");
+    let changes = second["compare"]["changes"].as_array().unwrap();
+    assert!(
+        changes.iter().any(|c| c["name"] == "p95(POST /api/cart)"),
+        "{second}"
+    );
+    // A run that is not there fails before anything starts.
+    let out = project.load(&["gated", "--compare", "nope"]);
+    assert_eq!(common::code(&out), 1, "{}", stdout(&out));
+    assert!(
+        stdout(&out).contains("--compare: no run nope"),
+        "{}",
+        stdout(&out)
     );
 }
