@@ -5202,7 +5202,8 @@ pub struct LoadData {
     /// `--compare`: an earlier run's numbers next to this one's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub compare: Option<LoadCompare>,
-    /// `--metrics-listen`: where the live numbers were served, in
+    /// `--metrics-listen`: where the live numbers were served (the port
+    /// bound, when 0 was asked), in
     /// Prometheus' text format, while the run lasted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metrics_listen: Option<String>,

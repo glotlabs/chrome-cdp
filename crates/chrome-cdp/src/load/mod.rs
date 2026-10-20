@@ -463,6 +463,9 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
     data.dropped = ran.dropped;
     data.iteration_ms = times(&summary.iterations);
     data.stopped.clone_from(&ran.stopped);
+    if ran.listened.is_some() {
+        data.metrics_listen.clone_from(&ran.listened);
+    }
     data.duration_ms = millis(ran.took);
     data.iterations = counts.iterations;
     data.failed = counts.failed;
@@ -819,6 +822,8 @@ struct Ran {
     stopped: Option<LoadStopped>,
     /// The thresholds that stopped the run, by index.
     aborted: Vec<usize>,
+    /// Where `--metrics-listen` listened (its port, when 0 was asked).
+    listened: Option<String>,
 }
 
 /// Runs the users on a runtime of the run's own: starts the Chromes,
@@ -871,7 +876,14 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
     }));
     let scraped = match listen {
         Some(addr) => match listen::bind(addr).await {
-            Ok(l) => Some(l),
+            Ok(l) => {
+                if let Ok(bound) = l.local_addr() {
+                    output::stderr(&format!(
+                        "serving the live numbers on http://{bound}/metrics\n"
+                    ));
+                }
+                Some(l)
+            }
             Err(error) => {
                 listener.abort();
                 return Err(error);
@@ -928,6 +940,10 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
     let _ = args;
     let status = (mode == Mode::Text).then(Status::new);
     let ticker = tokio::spawn(tick(shared.clone(), status));
+    let listened = scraped
+        .as_ref()
+        .and_then(|l| l.local_addr().ok())
+        .map(|a| a.to_string());
     let serving = scraped.map(|l| tokio::spawn(listen::serve(l, shared.clone())));
     let result = run_users(shared.clone(), grace).await;
     ticker.abort();
@@ -963,6 +979,7 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
         arrivals: shared.arrivals.load(Ordering::Relaxed),
         dropped: shared.dropped.load(Ordering::Relaxed),
         stopped,
+        listened,
         aborted: (0..shared.plan.thresholds.len())
             .filter(|&i| shared.watch.aborted(i))
             .collect(),

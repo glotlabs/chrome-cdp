@@ -1163,7 +1163,7 @@
           ]
         },
         "metrics_listen": {
-          "description": "`--metrics-listen`: where the live numbers were served, in\nPrometheus' text format, while the run lasted.",
+          "description": "`--metrics-listen`: where the live numbers were served (the port\nbound, when 0 was asked), in\nPrometheus' text format, while the run lasted.",
           "type": [
             "string",
             "null"

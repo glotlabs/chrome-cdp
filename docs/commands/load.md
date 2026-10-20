@@ -27,7 +27,7 @@ Options:
 - `--keep-failures <N>`: Keep the page, console and requests of the first N failed iterations, e.g. 5; later failures are only counted (default `20`)
 - `--raw`: Write every step's start, end and result to steps.jsonl in the run's folder, and every iteration's to iterations.jsonl
 - `--compare <RUN|PATH>`: Put an earlier run's numbers next to this one's in the reports, marking changes above 10%: its id in e2e/.results/load, last, or its folder or summary.json
-- `--metrics-listen <ADDR>`: Serve the live numbers in Prometheus' text format on this address while the run lasts, e.g. 127.0.0.1:9464
+- `--metrics-listen <ADDR>`: Serve the live numbers in Prometheus' text format on this address while the run lasts, e.g. 127.0.0.1:9464 (port 0: a free one, which it says)
 - `--allow-writes`: Run journeys not marked @safe on a protected backend too; `http` writes are then allowed in their steps
 - `--browser <BROWSER>`: The browser the users run: headless-shell (chrome-headless-shell, the default when installed; less memory per user) or chrome (full headless Chrome, for apps that need it) (one of `headless-shell`, `chrome`)
 - `--headed`: Show the browser windows (in full Chrome)

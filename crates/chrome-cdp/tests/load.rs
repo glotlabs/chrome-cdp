@@ -847,9 +847,28 @@ fn a_failed_threshold_exits_6_and_runs_compare_and_serve_their_numbers() {
     );
     assert!(std::net::TcpStream::connect(&addr).is_err());
     // The next run sets the first one's numbers beside its own.
-    let out = project.load(&["gated", "--compare", "last"]);
+    // Port 0 is a free one, which it says.
+    let out = project.load(&[
+        "gated",
+        "--compare",
+        "last",
+        "--metrics-listen",
+        "127.0.0.1:0",
+    ]);
     assert_eq!(common::code(&out), 6, "{}\n{}", stdout(&out), stderr(&out));
     let second = data(&out);
+    let bound = second["metrics_listen"].as_str().unwrap();
+    assert!(
+        bound.starts_with("127.0.0.1:") && !bound.ends_with(":0"),
+        "{bound}"
+    );
+    assert!(
+        stderr(&out).contains(&format!(
+            "serving the live numbers on http://{bound}/metrics"
+        )),
+        "{}",
+        stderr(&out)
+    );
     assert_eq!(second["compare"]["run"], first["run"], "{second}");
     let changes = second["compare"]["changes"].as_array().unwrap();
     assert!(

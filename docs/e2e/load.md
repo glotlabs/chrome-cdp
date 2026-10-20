@@ -568,7 +568,8 @@ there: the users, arrivals, dropped arrivals and exceptions, and per
 endpoint, journey and step the counts, errors and a summary of the times
 (p50, p90, p95 and p99 over the run so far, in seconds), and the Web
 Vitals. It listens only on the address given, and only while the run
-lasts; point a scrape job at it:
+lasts, and says where on stderr as it starts (port 0 picks a free one);
+point a scrape job at it:
 
 ```yaml
 scrape_configs:

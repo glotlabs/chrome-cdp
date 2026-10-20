@@ -8085,7 +8085,8 @@ pub(crate) struct LoadArgs {
     pub(crate) compare: Option<String>,
 
     /// Serve the live numbers in Prometheus' text format on this address
-    /// while the run lasts, e.g. 127.0.0.1:9464.
+    /// while the run lasts, e.g. 127.0.0.1:9464 (port 0: a free one, which
+    /// it says).
     #[arg(long, value_name = "ADDR")]
     pub(crate) metrics_listen: Option<std::net::SocketAddr>,
 
