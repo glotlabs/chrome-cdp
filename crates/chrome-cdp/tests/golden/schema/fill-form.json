@@ -325,6 +325,11 @@
           "const": "DialogOpen",
           "description": "A JavaScript dialog blocks the page.",
           "type": "string"
+        },
+        {
+          "const": "ThresholdFailed",
+          "description": "A load run's threshold failed (`chrome-cdp load`, plan 23.4).",
+          "type": "string"
         }
       ]
     },

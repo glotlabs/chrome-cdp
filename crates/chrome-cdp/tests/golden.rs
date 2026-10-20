@@ -128,6 +128,21 @@ const LOAD_PROJECT: &[(&str, &str)] = &[
          [[journeys]]\ntest = \"e2e/scenarios/shop.cdp:signs in\"\ndata = \"e2e/load/nope.csv\"\n\
          [[journeys]]\ntest = \"e2e/scenarios/cart.cdp:adds\"\n\n[users]\ncount = 5\nduration = \"1m\"\n",
     ),
+    (
+        "e2e/load/gated.toml",
+        "backend = \"staging\"\n\n[[journeys]]\ntest = \"e2e/scenarios/shop.cdp:browses\"\n\n\
+         [arrivals]\nrate = \"5/s\"\nduration = \"1m\"\n\n[thresholds]\n\
+         \"p95(GET /api/products/:id)\" = \"< 300ms\"\n\"p99(step shop.cdp:4)\" = \"< 2s\"\n\
+         \"error_rate\" = \"< 1%\"\n\"p75(lcp)\" = \"< 2.5s\"\n\
+         \"rate(dropped)\" = { limit = \"== 0\", abort = true }\n",
+    ),
+    (
+        "e2e/load/misgated.toml",
+        "backend = \"staging\"\n\n[[journeys]]\ntest = \"e2e/scenarios/shop.cdp:browses\"\n\n\
+         [arrivals]\nrate = \"5/s\"\nduration = \"1m\"\n\n[thresholds]\n\
+         \"p99(step shop.cdp:5)\" = \"< 2s\"\n\"p75(lpc)\" = \"< 2.5s\"\n\
+         \"p95(journey browse)\" = \"< 10s\"\n",
+    ),
 ];
 
 /// `locators/filters.html` with refs: e5 is row 3's Delete button.
@@ -754,6 +769,18 @@ const CASES: &[Case] = &[
     Case {
         name: "load-profile-problems",
         args: &["load", "broken"],
+        modes: ERR,
+        fixture: Fixture::Project(LOAD_PROJECT),
+    },
+    Case {
+        name: "load-plan-thresholds",
+        args: &["load", "gated", "--plan", "--browser", "chrome"],
+        modes: &[""],
+        fixture: Fixture::Project(LOAD_PROJECT),
+    },
+    Case {
+        name: "load-threshold-problems",
+        args: &["load", "misgated"],
         modes: ERR,
         fixture: Fixture::Project(LOAD_PROJECT),
     },

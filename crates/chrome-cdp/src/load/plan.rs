@@ -21,6 +21,7 @@ use super::data::Data;
 use super::profile::{self, Model, OnFailure, Profile, TestPick, UserStage, Users};
 use super::step::{self, Call};
 use super::think::Think;
+use super::threshold::{self, Threshold};
 use crate::cli::{Cli, Command, GlobalArgs, JobsIsolation, LoadArgs, TestArgs};
 use crate::script::{self as lines, Problem};
 use crate::test::plan::{Plan, Planned, Prepared};
@@ -115,6 +116,8 @@ pub(super) struct LoadPlan {
     pub(super) in_turn: bool,
     pub(super) on_failure: OnFailure,
     pub(super) max_failures: u64,
+    /// The profile's `[thresholds]`, their groups known.
+    pub(super) thresholds: Vec<Threshold>,
 }
 
 impl LoadPlan {
@@ -257,6 +260,10 @@ impl LoadPlan {
                 data: picked[i].data.as_ref().map(|(data, _)| data.clone()),
             });
         }
+        let thresholds = match &profile {
+            Some(p) => thresholds(&p.thresholds, &journeys, &hooks, &mut problems),
+            None => Vec::new(),
+        };
         if !problems.is_empty() {
             problems.sort_by(|a, b| {
                 (a.span.file.as_ref(), a.span.start).cmp(&(b.span.file.as_ref(), b.span.start))
@@ -307,8 +314,51 @@ impl LoadPlan {
             think,
             on_failure,
             max_failures,
+            thresholds,
         })
     }
+}
+
+/// The profile's thresholds with their groups, which must be the
+/// journeys' steps, the journeys, or groups every run has (an endpoint is
+/// only known when a request has it).
+fn thresholds(
+    written: &[(threshold::Written, Span)],
+    journeys: &[Journey],
+    hooks: &[Hooks],
+    problems: &mut Vec<Problem>,
+) -> Vec<Threshold> {
+    let mut known = threshold::Known::default();
+    let hook_steps = hooks
+        .iter()
+        .flat_map(|h| [&h.before_all, &h.before, &h.after, &h.after_all])
+        .flatten();
+    for step in journeys.iter().flat_map(|j| &j.steps).chain(hook_steps) {
+        let group = super::record::step_group(&step.at);
+        if !known.steps.contains(&group) {
+            known.steps.push(group);
+        }
+    }
+    known.journeys = journeys
+        .iter()
+        .map(|j| (j.place.clone(), j.name.clone()))
+        .collect();
+    let mut thresholds = Vec::new();
+    for (w, at) in written {
+        match known.resolve(&w.group) {
+            Ok(target) => thresholds.push(Threshold {
+                written: w.clone(),
+                target,
+            }),
+            Err(e) => problems.push(problem(
+                at,
+                format!("{}: {e}", w.name),
+                "a step is named by its file and line (step checkout.cdp:14), a journey by its \
+                 test's name; docs/e2e/load.md#thresholds",
+            )),
+        }
+    }
+    thresholds
 }
 
 /// The error of `load NAME` when NAME is no profile, file or folder.

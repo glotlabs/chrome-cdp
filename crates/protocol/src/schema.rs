@@ -2500,11 +2500,6 @@ pub struct RouteInfo {
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
-fn is_zero(n: &u64) -> bool {
-    *n == 0
-}
-
-#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_one(n: &u64) -> bool {
     *n == 1
 }
@@ -5170,6 +5165,143 @@ pub struct LoadData {
     /// `--raw`: every step's start, end and result.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub raw: Option<String>,
+    /// Every request the users' pages made (plan 23.4); absent when none
+    /// was.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requests: Option<LoadMetric>,
+    /// The requests by endpoint (`GET /api/products/:id`, `static js`),
+    /// the busiest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub endpoints: Vec<LoadMetric>,
+    /// Each step's times, by its line (`step e2e/shop.cdp:14`), the
+    /// command as its label.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub step_times: Vec<LoadMetric>,
+    /// What users saw, per page view: `ttfb`, `fcp`, `lcp`, `load` (the
+    /// load event's end), `cls` (a score) and `inp`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vitals: Vec<LoadMetric>,
+    /// Failed requests by class: `http_4xx`, `http_5xx` and
+    /// `request_failed` (no response).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub request_errors: BTreeMap<String, u64>,
+    /// The pages' uncaught exceptions, by message, the most common first
+    /// (20 messages at most), and how many there were in all.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub exceptions: Vec<LoadException>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub exceptions_total: u64,
+    /// The run's files: `summary.json`, `metrics.jsonl`, `report.md` and
+    /// `report.html`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files: Option<LoadFiles>,
+    /// The profile's thresholds, each checked over the whole run (with
+    /// `--plan`: as written, not checked).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub thresholds: Vec<LoadThreshold>,
+}
+
+/// A threshold of a load profile (plan 23.4).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadThreshold {
+    /// The statistic of a group, as written: `p95(GET /api/products/:id)`.
+    pub name: String,
+    /// Its limit as written: `< 300ms`.
+    pub condition: String,
+    pub passed: bool,
+    /// What was measured, in `unit`; absent when nothing was (no request
+    /// had the endpoint, no page view had an INP).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<f64>,
+    /// The limit, in `unit`.
+    pub limit: f64,
+    /// `ms`, `%`, `/s`, or empty for a count or a score.
+    pub unit: String,
+    /// `abort = true`: the run stops when it fails for 30 seconds in a row.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub abort: bool,
+    /// It stopped the run.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub aborted: bool,
+    /// Why it has no value, and the closest groups that have one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// One group's numbers in a load run (plan 23.4): an endpoint's requests,
+/// a step, a journey's iterations, or a Web Vital of the page views.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadMetric {
+    /// `GET /api/products/:id`, `static js`, `step e2e/shop.cdp:14`, a
+    /// journey's `file:line`, `lcp`.
+    pub name: String,
+    /// A step's command; a journey's test name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    pub count: u64,
+    /// How many a second, over the run.
+    pub rate: f64,
+    /// Requests that failed or got a status of 400 or more; steps and
+    /// iterations that failed.
+    pub errors: u64,
+    /// `errors` over `count`, from 0 to 1.
+    pub error_rate: f64,
+    /// `ms`, or empty for a score (CLS).
+    pub unit: String,
+    pub p50: f64,
+    pub p75: f64,
+    pub p90: f64,
+    pub p95: f64,
+    pub p99: f64,
+    pub max: f64,
+    pub mean: f64,
+    /// Requests a cache answered: counted, but not in the times.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub cached: u64,
+    /// The errors by kind: a status (`500`), Chrome's error
+    /// (`net::ERR_CONNECTION_RESET`), a step's error kind.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub error_kinds: BTreeMap<String, u64>,
+    /// An endpoint's mean time in each phase of its requests.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phases: Option<LoadPhases>,
+}
+
+/// The mean phases of an endpoint's requests, in ms.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadPhases {
+    pub dns_ms: f64,
+    /// Opening the connection, TLS left out.
+    pub connect_ms: f64,
+    pub tls_ms: f64,
+    /// Waiting for the first byte of the response: the server's time.
+    pub ttfb_ms: f64,
+    pub download_ms: f64,
+}
+
+/// An uncaught exception of a load run's pages.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadException {
+    /// Its first line: `TypeError: x is undefined`.
+    pub message: String,
+    pub count: u64,
+}
+
+/// A load run's files.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LoadFiles {
+    /// What `--json` prints, as a file.
+    pub summary: String,
+    /// One line per second per group.
+    pub metrics: String,
+    pub report: String,
+    /// The report as one page with charts, which opens offline.
+    pub html: String,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 /// A journey of a load run.
@@ -5214,7 +5346,11 @@ pub struct LoadStage {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LoadTimes {
     pub p50: f64,
+    #[serde(default)]
+    pub p90: f64,
     pub p95: f64,
+    #[serde(default)]
+    pub p99: f64,
     pub max: f64,
 }
 

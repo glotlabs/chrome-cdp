@@ -1,0 +1,13 @@
+$ chrome-cdp load misgated
+exit: 2
+--- stderr
+error: e2e/load/misgated.toml:11:1: p99(step shop.cdp:5): no group step shop.cdp:5; the closest: step shop.cdp:2, step shop.cdp:3, step shop.cdp:4
+  also: e2e/load/misgated.toml:12:1: p75(lpc): no group lpc; the closest: lcp
+  also: e2e/load/misgated.toml:13:1: p95(journey browse): no group journey browse; the closest: journey browses
+  hint: a step is named by its file and line (step checkout.cdp:14), a journey by its test's name; docs/e2e/load.md#thresholds
+
+$ chrome-cdp load misgated --json
+exit: 2
+--- stdout
+{"ok":false,"error":{"kind":"BadArgs","message":"e2e/load/misgated.toml:11:1: p99(step shop.cdp:5): no group step shop.cdp:5; the closest: step shop.cdp:2, step shop.cdp:3, step shop.cdp:4","hint":"a step is named by its file and line (step checkout.cdp:14), a journey by its test's name; docs/e2e/load.md#thresholds","notes":[{"label":"also","text":"e2e/load/misgated.toml:12:1: p75(lpc): no group lpc; the closest: lcp"},{"label":"also","text":"e2e/load/misgated.toml:13:1: p95(journey browse): no group journey browse; the closest: journey browses"}],"details":{"problems":[{"at":"e2e/load/misgated.toml:11:1","message":"p99(step shop.cdp:5): no group step shop.cdp:5; the closest: step shop.cdp:2, step shop.cdp:3, step shop.cdp:4"},{"at":"e2e/load/misgated.toml:12:1","message":"p75(lpc): no group lpc; the closest: lcp"},{"at":"e2e/load/misgated.toml:13:1","message":"p95(journey browse): no group journey browse; the closest: journey browses"}]}}}
+

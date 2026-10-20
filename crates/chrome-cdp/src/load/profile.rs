@@ -57,6 +57,9 @@ pub(crate) struct Profile {
     /// With `on_failure = "stop-run"`, the failed iterations that end the
     /// run.
     pub(crate) max_failures: u64,
+    /// `[thresholds]`, in the order written, each with where its key is
+    /// (its group is checked with the scenarios).
+    pub(crate) thresholds: Vec<(super::threshold::Written, Span)>,
 }
 
 /// A `[[journeys]]` entry.
@@ -361,6 +364,7 @@ pub(crate) fn parse(text: &str, name: &str, root: &Path) -> Result<Profile, Erro
         }
         Some(n) => positive(&n, "max_failures", &mut problems).map_or(MAX_FAILURES, u64::from),
     };
+    let thresholds = thresholds(raw.thresholds, &mut problems);
     if !problems.list.is_empty() {
         return Err(crate::script::invalid(problems.list).hint(Hint::text(HELP)));
     }
@@ -374,6 +378,7 @@ pub(crate) fn parse(text: &str, name: &str, root: &Path) -> Result<Profile, Erro
             think_between_steps: raw.think_between_steps.unwrap_or(false),
             on_failure,
             max_failures,
+            thresholds,
         }),
         _ => Err(ErrorInfo::new(
             ErrorKind::BadArgs,
@@ -409,6 +414,47 @@ impl Problems<'_> {
         });
     }
 }
+
+/// `[thresholds]`, in the order written.
+fn thresholds(
+    raw: Option<RawThresholds>,
+    problems: &mut Problems<'_>,
+) -> Vec<(super::threshold::Written, Span)> {
+    let Some(raw) = raw else {
+        return Vec::new();
+    };
+    let mut entries: Vec<_> = raw.into_iter().collect();
+    entries.sort_by_key(|(key, _)| key.span().start);
+    let mut thresholds = Vec::new();
+    for (key, value) in entries {
+        let span = key.span();
+        let name = key.into_inner();
+        if TOP_KEYS.contains(&name.as_str()) {
+            problems.push(
+                span,
+                format!("{name} is not a threshold"),
+                format!(
+                    "{name} belongs at the top of the profile, before the first [table]: in \
+                     TOML, a key after [thresholds] is a threshold"
+                ),
+            );
+            continue;
+        }
+        match super::threshold::parse(&name, value.get_ref()) {
+            Ok(written) => thresholds.push((written, (problems.at)(span))),
+            Err(e) => problems.push(
+                span,
+                e,
+                "e.g. \"p95(GET /api/products/:id)\" = \"< 300ms\", \"error_rate\" = \"< 1%\"; \
+                 docs/e2e/load.md#thresholds",
+            ),
+        }
+    }
+    thresholds
+}
+
+/// `[thresholds]` as written: each key with where it is.
+type RawThresholds = std::collections::BTreeMap<Spanned<String>, Spanned<toml::Value>>;
 
 fn journeys(
     raw: Option<Spanned<Vec<Spanned<RawJourney>>>>,
@@ -836,6 +882,7 @@ struct RawProfile {
     think_between_steps: Option<bool>,
     on_failure: Option<Spanned<String>>,
     max_failures: Option<Spanned<i64>>,
+    thresholds: Option<RawThresholds>,
 }
 
 #[derive(Deserialize)]

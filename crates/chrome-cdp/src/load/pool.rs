@@ -38,22 +38,28 @@ struct Browser {
 
 impl Pool {
     /// A pool of `count` Chromes, started with `open` and each blocking
-    /// `blocked` (which a Chrome started again keeps); the first `now` of
-    /// them start at once, the others when first needed. The engines'
-    /// sessions are `<name>-1`, `<name>-2`, ….
+    /// `blocked` (which a Chrome started again keeps), telling `sink` what
+    /// their pages do; the first `now` of them start at once, the others
+    /// when first needed. The engines' sessions are `<name>-1`, `<name>-2`,
+    /// ….
     pub(super) async fn start(
         name: &str,
         count: u32,
         now: u32,
         open: OpenRequest,
         blocked: &[engine::BlockedUrl],
+        sink: &engine::LoadSink,
     ) -> Result<Self, ErrorInfo> {
         let browsers: Vec<Browser> = (1..=count)
-            .map(|i| Browser {
-                engine: Engine::new(format!("{name}-{i}"), None, None),
-                restart: tokio::sync::Mutex::new(()),
-                generation: AtomicU64::new(0),
-                started: std::sync::atomic::AtomicBool::new(false),
+            .map(|i| {
+                let engine = Engine::new(format!("{name}-{i}"), None, None);
+                engine.set_load_sink(sink.clone());
+                Browser {
+                    engine,
+                    restart: tokio::sync::Mutex::new(()),
+                    generation: AtomicU64::new(0),
+                    started: std::sync::atomic::AtomicBool::new(false),
+                }
             })
             .collect();
         let pool = Self {

@@ -237,3 +237,37 @@ fn profiles_are_found_by_name_or_path() {
     assert_eq!(find("x/p.toml", root, root), Some(root.join("x/p.toml")));
     assert_eq!(names(root), ["shop"]);
 }
+
+#[test]
+fn thresholds_parse_in_the_order_written() {
+    let p = ok(&format!(
+        "{JOURNEY}[arrivals]\nrate = \"5/s\"\nduration = \"1m\"\n\n[thresholds]\n\
+         \"p95(GET /api/products/:id)\" = \"< 300ms\"\n\
+         \"error_rate\" = \"< 1%\"\n\
+         \"rate(dropped)\" = {{ limit = \"== 0\", abort = true }}\n"
+    ));
+    let names: Vec<&str> = p.thresholds.iter().map(|(t, _)| t.name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["p95(GET /api/products/:id)", "error_rate", "rate(dropped)"]
+    );
+    assert!(p.thresholds[2].0.abort);
+    assert_eq!(p.thresholds[0].1.line, 8);
+}
+
+#[test]
+fn threshold_mistakes_point_at_their_key() {
+    let all = problems(&format!(
+        "{JOURNEY}[arrivals]\nrate = \"5/s\"\nduration = \"1m\"\n\n[thresholds]\n\
+         \"p95(steps)\" = \"300ms\"\n\
+         think = \"2s\"\n"
+    ));
+    assert!(
+        all[0].starts_with("e2e/load/shop.toml:8:1: p95(steps) = \"300ms\": start with <"),
+        "{all:?}"
+    );
+    assert!(
+        all[1].starts_with("e2e/load/shop.toml:9:1: think is not a threshold"),
+        "{all:?}"
+    );
+}

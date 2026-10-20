@@ -1,10 +1,10 @@
 //! What a load run keeps (plan 23.1): the counts of iterations and steps
 //! by result, every step's start, end and result in `steps.jsonl` with
-//! `--raw` (23.4 aggregates them), and the page, console and requests of
-//! the first `--keep-failures` failed iterations, as `test` keeps a
-//! failed test's. Plan 23.3 adds each iteration's time from when it was
-//! due to start (`iterations.jsonl` with `--raw`), which an open model's
-//! latency counts from.
+//! `--raw`, and the page, console and requests of the first
+//! `--keep-failures` failed iterations, as `test` keeps a failed test's.
+//! Plan 23.3 adds each iteration's time from when it was due to start
+//! (`iterations.jsonl` with `--raw`), which an open model's latency counts
+//! from. Plan 23.4's [`Metrics`] take each step's and iteration's time.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -12,7 +12,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write as _};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use engine::Engine;
 use protocol::ErrorInfo;
@@ -21,6 +21,7 @@ use serde::Serialize;
 use serde_json::json;
 use tokio::time::Instant;
 
+use super::metrics::Metrics;
 use crate::test::artifacts;
 
 /// `steps.jsonl`'s name in the run's folder.
@@ -99,8 +100,6 @@ pub(super) struct Ended {
 pub(super) struct JourneyTally {
     pub(super) iterations: u64,
     pub(super) failed: u64,
-    /// Each iteration's time from when it was due, in ms.
-    pub(super) latencies: Vec<f64>,
     /// The time its iterations ran, from start to end, in all.
     pub(super) ran: std::time::Duration,
 }
@@ -132,12 +131,20 @@ pub(super) struct Records {
     failures: AtomicU64,
     keep: u64,
     pub(super) failures_dir: PathBuf,
+    /// The run's numbers; its Chromes' sinks share them.
+    pub(super) metrics: Arc<Metrics>,
 }
 
 impl Records {
-    /// Records for a run in `dir` with `journeys` journeys; with `raw`,
-    /// `steps.jsonl` is written as steps end.
-    pub(super) fn new(dir: &Path, journeys: usize, raw: bool, keep: u32) -> std::io::Result<Self> {
+    /// Records for a run in `dir` with `journeys` journeys, timing into
+    /// `metrics`; with `raw`, `steps.jsonl` is written as steps end.
+    pub(super) fn new(
+        dir: &Path,
+        journeys: usize,
+        raw: bool,
+        keep: u32,
+        metrics: Arc<Metrics>,
+    ) -> std::io::Result<Self> {
         std::fs::create_dir_all(dir)?;
         let raw_path = raw.then(|| dir.join(STEPS));
         let iterations_path = raw_path.as_ref().map(|_| dir.join(ITERATIONS));
@@ -158,6 +165,7 @@ impl Records {
             failures: AtomicU64::new(0),
             keep: u64::from(keep),
             failures_dir: dir.join(FAILURES),
+            metrics,
         })
     }
 
@@ -190,6 +198,16 @@ impl Records {
                 *tally.errors.entry(kind.clone()).or_default() += 1;
             }
         }
+        // The runner's own lines (a context it could not make, a page
+        // above renderer_memory) are no step's.
+        if !matches!(line.hook, Some("setup" | "memory")) {
+            self.metrics.step(
+                &step_group(line.at),
+                line.command,
+                line.end_ms - line.start_ms,
+                line.kind.as_deref(),
+            );
+        }
         if let Some(raw) = &self.raw
             && let Ok(text) = serde_json::to_string(line)
         {
@@ -198,9 +216,16 @@ impl Records {
         }
     }
 
-    /// Counts an iteration, and writes its line with `--raw`; how many
-    /// iterations failed so far.
-    pub(super) fn iteration(&self, ended: &Ended, vu: u32, iteration: u64, place: &str) -> u64 {
+    /// Counts an iteration of the journey at `place` (test `name`), and
+    /// writes its line with `--raw`; how many iterations failed so far.
+    pub(super) fn iteration(
+        &self,
+        ended: &Ended,
+        vu: u32,
+        iteration: u64,
+        place: &str,
+        name: &str,
+    ) -> u64 {
         let failed = {
             let mut tally = self.tally();
             tally.iterations += 1;
@@ -208,12 +233,13 @@ impl Records {
             if let Some(counts) = tally.journeys.get_mut(ended.journey) {
                 counts.iterations += 1;
                 counts.failed += u64::from(ended.failed);
-                let latency = ended.end.saturating_duration_since(ended.due);
-                counts.latencies.push(latency.as_secs_f64() * 1000.0);
                 counts.ran += ended.end.saturating_duration_since(ended.start);
             }
             tally.failed
         };
+        let latency = ended.end.saturating_duration_since(ended.due);
+        self.metrics
+            .iteration(place, name, latency.as_secs_f64() * 1000.0, ended.failed);
         if let Some(raw) = &self.raw_iterations {
             let line = IterationLine {
                 vu,
@@ -380,6 +406,23 @@ fn report(failed: &Failed<'_>, shot: Option<&ErrorInfo>) -> String {
         artifacts::REQUESTS
     );
     text
+}
+
+/// The group of the step at `at` (`e2e/shop.cdp:14:3`): `step
+/// e2e/shop.cdp:14`.
+pub(super) fn step_group(at: &str) -> String {
+    let line = match at.rsplit_once(':') {
+        Some((rest, column))
+            if column.bytes().all(|b| b.is_ascii_digit())
+                && rest.rsplit_once(':').is_some_and(|(_, l)| {
+                    !l.is_empty() && l.bytes().all(|b| b.is_ascii_digit())
+                }) =>
+        {
+            rest
+        }
+        _ => at,
+    };
+    format!("step {line}")
 }
 
 /// A kept failure's folder: `<n>-vu<V>-i<I>` in the failures folder.

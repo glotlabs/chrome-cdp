@@ -1,0 +1,18 @@
+$ chrome-cdp load gated --plan --browser chrome
+exit: 0
+--- stdout
+load plan: open model of e2e/load/gated.toml against backend staging
+stages:
+  1. 5/s for 1m
+  about 300 arrivals over 1m, each one iteration; at most 100 users at once
+journeys (by weight):
+     1  e2e/scenarios/shop.cdp:1 browses
+users: unknown until a run of these journeys on backend staging has its iterations' length; at most 100
+thresholds:
+  p95(GET /api/products/:id) < 300ms
+  p99(step shop.cdp:4) < 2s
+  error_rate < 1%
+  p75(lcp) < 2.5s
+  rate(dropped) == 0 (stops the run after failing for 30s)
+Chromes: 10 (chrome), up to 10 users each
+

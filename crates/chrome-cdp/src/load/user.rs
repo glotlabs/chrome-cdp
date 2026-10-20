@@ -74,6 +74,8 @@ pub(super) struct Shared {
     /// An open model's arrivals, and those dropped at `max_users`.
     pub(super) arrivals: AtomicU64,
     pub(super) dropped: AtomicU64,
+    /// The thresholds as the run goes.
+    pub(super) watch: super::threshold::Watch,
 }
 
 impl Shared {
@@ -98,6 +100,15 @@ impl Shared {
                 })
                 .is_ok()
         })
+    }
+
+    /// The users and arrivals now, for the metrics.
+    pub(super) fn gauges(&self) -> super::metrics::Gauges {
+        super::metrics::Gauges {
+            users: self.active.load(Ordering::Relaxed),
+            arrivals: self.arrivals.load(Ordering::Relaxed),
+            dropped: self.dropped.load(Ordering::Relaxed),
+        }
     }
 
     /// Closes the contexts returning users left.
@@ -412,6 +423,9 @@ impl User<'_> {
                 });
             }
         }
+        if engine.state() == SessionState::Running {
+            self.vitals(&engine, &context).await;
+        }
         if let Some(failed) = &failure
             && engine.state() == SessionState::Running
             && let Some(n) = shared.records.failure()
@@ -461,10 +475,14 @@ impl User<'_> {
             start,
             end: Instant::now(),
         };
-        let failures =
-            shared
-                .records
-                .iteration(&ended, self.vu, self.iteration, &self.journey().place);
+        let journey = self.journey();
+        let failures = shared.records.iteration(
+            &ended,
+            self.vu,
+            self.iteration,
+            &journey.place,
+            &journey.name,
+        );
         let plan = &shared.plan;
         if failed && plan.on_failure == OnFailure::StopRun && failures >= plan.max_failures {
             shared.halt.stop(
@@ -474,6 +492,19 @@ impl User<'_> {
                     plan.max_failures
                 ),
             );
+        }
+    }
+
+    /// The Web Vitals of the page the iteration ends on, unless it
+    /// reported them as it was left: an iteration's last page view.
+    async fn vitals(&self, engine: &Engine, context: &str) {
+        let read = engine::in_context(
+            Some(context.to_owned()),
+            Box::pin(engine.page_vitals(CLOSE_TIMEOUT_MS)),
+        )
+        .await;
+        if let Ok(Some(vitals)) = read {
+            self.shared.records.metrics.vitals(&vitals);
         }
     }
 

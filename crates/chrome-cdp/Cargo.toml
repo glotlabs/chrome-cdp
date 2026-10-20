@@ -29,6 +29,7 @@ mock.workspace = true
 engine.workspace = true
 flate2.workspace = true
 futures-util.workspace = true
+hdrhistogram.workspace = true
 protocol.workspace = true
 reqwest.workspace = true
 ring.workspace = true

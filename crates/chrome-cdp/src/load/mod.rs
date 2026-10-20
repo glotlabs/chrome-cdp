@@ -16,18 +16,26 @@
 //! Chrome, their steps call the engine directly ([`step`]), leanly, and
 //! every step's timing and result goes to the [`record`]s. Ctrl-C stops
 //! the run, giving the running iterations `[load] grace` ([`halt`]).
+//!
+//! The [`metrics`] take every request, step, iteration and page view, by
+//! group, a second at a time; while the run goes a [`status`] line says how
+//! it goes, and at its end it writes `summary.json` (what `--json` prints)
+//! and `metrics.jsonl` (each second of each group).
 
 mod data;
 mod halt;
 pub(crate) mod init;
 mod lengths;
+mod metrics;
 mod model;
 mod plan;
 mod pool;
 pub(crate) mod profile;
 mod record;
+mod status;
 mod step;
 pub(crate) mod think;
+mod threshold;
 mod user;
 
 use std::collections::BTreeMap;
@@ -37,7 +45,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use engine::OpenRequest;
-use protocol::schema::{LoadData, LoadJourney, LoadStage, LoadStopped, LoadTimes};
+use protocol::schema::{LoadData, LoadJourney, LoadMetric, LoadStage, LoadStopped, LoadTimes};
 use protocol::{Cmd, ErrorInfo, ErrorKind, Hint, Mode, Output};
 use tokio::task::JoinSet;
 
@@ -45,10 +53,12 @@ use crate::cli::{DEFAULT_TIMEOUT, GlobalArgs, LoadArgs, LoadBrowser};
 use crate::output;
 use halt::Halt;
 use lengths::Lengths;
+use metrics::Metrics;
 use plan::LoadPlan;
 use pool::Pool;
 use profile::{Arrivals, Model};
 use record::Records;
+use status::Status;
 use user::Shared;
 
 /// How many users share a Chrome by default (`--users-per-browser`):
@@ -80,6 +90,12 @@ const RUNS_DIR: &str = "load";
 /// An open model starts the Chromes for this much more than the users it
 /// expects at once, the rest when needed.
 const EXPECTED_MARGIN: f64 = 1.25;
+
+/// `summary.json`'s name in the run's folder.
+const SUMMARY: &str = "summary.json";
+
+/// How often the metrics take a second.
+const SECOND: Duration = Duration::from_secs(1);
 
 pub(crate) fn run(args: &LoadArgs, global: &GlobalArgs) -> u8 {
     let mode = global.mode();
@@ -115,6 +131,33 @@ pub(crate) fn run(args: &LoadArgs, global: &GlobalArgs) -> u8 {
                 None => "run the journey as a test first: chrome-cdp test <path>".to_owned(),
             }))
             .details(serde_json::to_value(&data).unwrap_or_default()));
+        }
+        let failed: Vec<&protocol::schema::LoadThreshold> =
+            data.thresholds.iter().filter(|t| !t.passed).collect();
+        if !failed.is_empty() {
+            let mut error = ErrorInfo::new(
+                ErrorKind::ThresholdFailed,
+                format!(
+                    "{} of {} {} failed",
+                    failed.len(),
+                    data.thresholds.len(),
+                    if data.thresholds.len() == 1 {
+                        "threshold"
+                    } else {
+                        "thresholds"
+                    }
+                ),
+            );
+            for t in failed {
+                error = error.note("failed", threshold_line(t));
+            }
+            let report = data
+                .files
+                .as_ref()
+                .map_or_else(|| data.dir.clone(), |f| f.report.clone());
+            return Err(error
+                .hint(Hint::text(format!("the run's numbers are in {report}")))
+                .details(serde_json::to_value(&data).unwrap_or_default()));
         }
         Ok(Output::typed(&data, text).limit(args.max_chars, "--max-chars 0 for all of it"))
     });
@@ -280,6 +323,19 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
         failures_kept: 0,
         failures_dir: None,
         raw: None,
+        requests: None,
+        endpoints: Vec::new(),
+        step_times: Vec::new(),
+        vitals: Vec::new(),
+        request_errors: BTreeMap::new(),
+        exceptions: Vec::new(),
+        exceptions_total: 0,
+        files: None,
+        thresholds: plan
+            .thresholds
+            .iter()
+            .map(|t| threshold::result(t, None, false, Some("not checked: --plan".to_owned())))
+            .collect(),
     };
     if args.plan {
         if let Model::Open(arrivals) = &plan.model {
@@ -296,13 +352,28 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
         timeout_ms: millis(timeout),
         ..OpenRequest::default()
     };
-    let records =
-        Records::new(&dir, plan.journeys.len(), args.raw, args.keep_failures).map_err(|e| {
-            ErrorInfo::new(
-                ErrorKind::BadArgs,
-                format!("cannot write the run's files in {}: {e}", dir.display()),
-            )
-        })?;
+    let cannot_write = |e: std::io::Error| {
+        ErrorInfo::new(
+            ErrorKind::BadArgs,
+            format!("cannot write the run's files in {}: {e}", dir.display()),
+        )
+    };
+    std::fs::create_dir_all(&dir).map_err(cannot_write)?;
+    let load_config = &plan.plan.config.load;
+    let grouper = metrics::group::Grouper::new(
+        &load_config.endpoints,
+        load_config.group_assets.unwrap_or(true),
+        plan.plan.backend.base_url.as_deref(),
+    );
+    let metrics = Arc::new(Metrics::new(grouper, Some(&dir)).map_err(cannot_write)?);
+    let records = Records::new(
+        &dir,
+        plan.journeys.len(),
+        args.raw,
+        args.keep_failures,
+        metrics,
+    )
+    .map_err(cannot_write)?;
     if mode == Mode::Text {
         output::stdout(&starting(&plan, args, shape, kind));
     }
@@ -337,7 +408,7 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
     let records = &ran.records;
     records.flush();
     let counts = records.counts();
-    let mut all = Vec::new();
+    let summary = records.metrics.summary(ran.took);
     for ((journey, tally), out) in plan
         .journeys
         .iter()
@@ -346,8 +417,9 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
     {
         out.iterations = tally.iterations;
         out.failed = tally.failed;
-        out.iteration_ms = times(&mut tally.latencies.clone());
-        all.extend_from_slice(&tally.latencies);
+        if let Some(metric) = summary.journeys.iter().find(|m| m.name == journey.place) {
+            out.iteration_ms = times(metric);
+        }
         if tally.iterations > 0 {
             #[allow(clippy::cast_precision_loss)]
             let mean_ms = tally.ran.as_secs_f64() * 1000.0 / tally.iterations as f64;
@@ -369,8 +441,8 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
     };
     data.arrivals = ran.arrivals;
     data.dropped = ran.dropped;
-    data.iteration_ms = times(&mut all);
-    data.stopped = ran.stopped;
+    data.iteration_ms = times(&summary.iterations);
+    data.stopped.clone_from(&ran.stopped);
     data.duration_ms = millis(ran.took);
     data.iterations = counts.iterations;
     data.failed = counts.failed;
@@ -383,7 +455,68 @@ fn load(args: &LoadArgs, global: &GlobalArgs, mode: Mode) -> Result<LoadData, Er
     data.failures_kept = records.kept();
     data.failures_dir = (records.kept() > 0).then(|| records.failures_dir.display().to_string());
     data.raw = records.raw_path.as_ref().map(|p| p.display().to_string());
+    data.requests = summary.requests;
+    data.endpoints = summary.endpoints;
+    data.step_times = summary.steps;
+    data.vitals = summary.vitals;
+    data.request_errors = summary.request_errors;
+    data.exceptions = summary.exceptions;
+    data.exceptions_total = summary.exceptions_total;
+    data.thresholds = verdicts(&plan, &ran, records);
+    if let Some((pattern, n)) = &summary.overflow
+        && mode == Mode::Text
+    {
+        output::stderr(&format!(
+            "warning: the requests made more than {} endpoints; {n} more went into `other`, \
+             most like {pattern}: add it to [load] endpoints\n",
+            metrics::group::MOST_GROUPS
+        ));
+    }
+    write_summary(&dir, &data);
     Ok(data)
+}
+
+/// Each threshold over the whole run.
+fn verdicts(plan: &LoadPlan, ran: &Ran, records: &Records) -> Vec<protocol::schema::LoadThreshold> {
+    let gauges = metrics::Gauges {
+        users: 0,
+        arrivals: ran.arrivals,
+        dropped: ran.dropped,
+    };
+    let seconds = ran.took.as_secs_f64();
+    let metrics = &records.metrics;
+    plan.thresholds
+        .iter()
+        .enumerate()
+        .map(|(i, th)| {
+            let measured = metrics.value(&th.target, th.written.stat, seconds, gauges);
+            let note = match (&measured, &th.target) {
+                (None, threshold::Target::Endpoint(name)) => {
+                    let names = metrics.endpoint_names();
+                    let close =
+                        protocol::suggest::similar(name, names.iter().map(String::as_str), 3);
+                    Some(if close.is_empty() {
+                        format!("no request had the endpoint {name}")
+                    } else {
+                        format!(
+                            "no request had the endpoint {name}; the closest that did: {}",
+                            close.join(", ")
+                        )
+                    })
+                }
+                (Some(None), _) => Some(format!("{} had no value to measure", th.written.group)),
+                _ => None,
+            };
+            threshold::result(th, measured.flatten(), ran.aborted.contains(&i), note)
+        })
+        .collect()
+}
+
+/// Writes `summary.json`: the run's data, as `--json` prints it.
+fn write_summary(dir: &std::path::Path, data: &LoadData) {
+    if let Ok(text) = serde_json::to_string_pretty(data) {
+        crate::test::artifacts::write(&dir.join(SUMMARY), &text);
+    }
 }
 
 /// The model's stages, for the data.
@@ -412,25 +545,14 @@ fn stages(model: &Model) -> Vec<LoadStage> {
     }
 }
 
-/// The p50, p95 and max of `ms`.
-fn times(ms: &mut [f64]) -> LoadTimes {
-    if ms.is_empty() {
-        return LoadTimes::default();
-    }
-    ms.sort_by(f64::total_cmp);
-    let at = |p: f64| {
-        #[allow(
-            clippy::cast_possible_truncation,
-            clippy::cast_sign_loss,
-            clippy::cast_precision_loss
-        )]
-        let rank = ((p * ms.len() as f64).ceil() as usize).clamp(1, ms.len());
-        (ms[rank - 1] * 10.0).round() / 10.0
-    };
+/// A group's times, as `iteration_ms` gives them.
+fn times(metric: &LoadMetric) -> LoadTimes {
     LoadTimes {
-        p50: at(0.5),
-        p95: at(0.95),
-        max: at(1.0),
+        p50: metric.p50,
+        p90: metric.p90,
+        p95: metric.p95,
+        p99: metric.p99,
+        max: metric.max,
     }
 }
 
@@ -660,6 +782,8 @@ struct Ran {
     arrivals: u64,
     dropped: u64,
     stopped: Option<LoadStopped>,
+    /// The thresholds that stopped the run, by index.
+    aborted: Vec<usize>,
 }
 
 /// Runs the users on a runtime of the run's own: starts the Chromes,
@@ -699,7 +823,7 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
         if mode != Mode::Text {
             return;
         }
-        output::stderr(&if n == 1 {
+        Status::say(&if n == 1 {
             format!(
                 "stopping: no new users; the running iterations have {} to finish \
                  (Ctrl-C again stops them at once)\n",
@@ -710,7 +834,22 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
         });
     }));
     let name = format!("load-{}", plan.plan.run.run_id);
-    let pool = match Pool::start(&name, shape.browsers, shape.eager, open, &plan.blocked).await {
+    let metrics = records.metrics.clone();
+    let sink: engine::LoadSink = Arc::new(move |event| match event {
+        engine::LoadEvent::Request(request) => metrics.request(&request),
+        engine::LoadEvent::Vitals(vitals) => metrics.vitals(&vitals),
+        engine::LoadEvent::Exception(message) => metrics.exception(&message),
+    });
+    let started = Pool::start(
+        &name,
+        shape.browsers,
+        shape.eager,
+        open,
+        &plan.blocked,
+        &sink,
+    )
+    .await;
+    let pool = match started {
         Ok(pool) => pool,
         Err(error) => {
             listener.abort();
@@ -738,9 +877,18 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
         peak: AtomicU32::new(0),
         arrivals: AtomicU64::new(0),
         dropped: AtomicU64::new(0),
+        watch: threshold::Watch::default(),
     });
     let _ = args;
+    let status = (mode == Mode::Text).then(Status::new);
+    let ticker = tokio::spawn(tick(shared.clone(), status));
     let result = run_users(shared.clone(), grace).await;
+    ticker.abort();
+    let _ = ticker.await;
+    shared.records.metrics.finish(shared.gauges());
+    if let Some(status) = status {
+        status.end();
+    }
     listener.abort();
     shared.close_parked().await;
     let Ok(shared) = Arc::try_unwrap(shared) else {
@@ -764,8 +912,81 @@ async fn users(drive: Drive<'_>) -> Result<Ran, ErrorInfo> {
         arrivals: shared.arrivals.load(Ordering::Relaxed),
         dropped: shared.dropped.load(Ordering::Relaxed),
         stopped,
+        aborted: (0..shared.plan.thresholds.len())
+            .filter(|&i| shared.watch.aborted(i))
+            .collect(),
         records: shared.records,
     })
+}
+
+/// Takes a second of the run's metrics each second, and shows the status
+/// line, until aborted.
+async fn tick(shared: Arc<Shared>, status: Option<Status>) {
+    let mut every = tokio::time::interval_at(shared.started + SECOND, SECOND);
+    every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut t = 0;
+    loop {
+        every.tick().await;
+        t += 1;
+        let metrics = &shared.records.metrics;
+        let gauges = shared.gauges();
+        let second = metrics.tick(t, gauges);
+        watch(&shared, t, gauges, status.is_some());
+        if let Some(status) = status {
+            let line = status::line(
+                shared.started.elapsed(),
+                &shared.plan.model,
+                second.users,
+                &metrics.recent(),
+            );
+            status.show(t, &line);
+        }
+    }
+}
+
+/// Checks the thresholds over the run so far at second `t`: says one that
+/// starts failing (with `say`), and stops the run for one with `abort =
+/// true` that failed for 30 seconds.
+fn watch(shared: &Shared, t: u64, gauges: metrics::Gauges, say: bool) {
+    let thresholds = &shared.plan.thresholds;
+    if thresholds.is_empty() {
+        return;
+    }
+    let seconds = shared.started.elapsed().as_secs_f64();
+    let values: Vec<Option<f64>> = thresholds
+        .iter()
+        .map(|th| {
+            shared
+                .records
+                .metrics
+                .value(&th.target, th.written.stat, seconds, gauges)
+                .flatten()
+        })
+        .collect();
+    for change in shared.watch.check(thresholds, t, &values) {
+        match change {
+            threshold::Change::Failing(i, value) => {
+                if say {
+                    Status::say(&format!(
+                        "threshold failing: {}\n",
+                        threshold::said(&thresholds[i].written, value)
+                    ));
+                }
+            }
+            threshold::Change::Abort(i) => {
+                let w = &thresholds[i].written;
+                shared.halt.stop(
+                    halt::Reason::Threshold,
+                    format!(
+                        "{} {} failed for {} in a row (abort = true)",
+                        w.name,
+                        w.condition,
+                        protocol::format::duration(threshold::ABORT_AFTER)
+                    ),
+                );
+            }
+        }
+    }
 }
 
 /// The hooks and the users; how long the users ran, and how many
@@ -1014,6 +1235,22 @@ fn plan_text(data: &LoadData) -> String {
         None => format!("{} at once", count(data.users, "user", "users")),
     };
     let _ = writeln!(text, "users: {peak}");
+    if !data.thresholds.is_empty() {
+        let _ = writeln!(text, "thresholds:");
+        for t in &data.thresholds {
+            let _ = writeln!(
+                text,
+                "  {} {}{}",
+                t.name,
+                t.condition,
+                if t.abort {
+                    " (stops the run after failing for 30s)"
+                } else {
+                    ""
+                }
+            );
+        }
+    }
     let _ = write!(
         text,
         "Chromes: {} ({}), up to {} users each",
@@ -1082,6 +1319,7 @@ fn text(data: &LoadData) -> String {
     if !data.errors.is_empty() {
         let _ = writeln!(text, "errors: {}", errors_line(&data.errors));
     }
+    text.push_str(&requests_text(data));
     if data.contexts > 0 {
         let _ = writeln!(
             text,
@@ -1118,7 +1356,133 @@ fn text(data: &LoadData) -> String {
     if let Some(raw) = &data.raw {
         let _ = writeln!(text, "step timings: {raw}");
     }
+    if !data.thresholds.is_empty() {
+        let passed = data.thresholds.iter().filter(|t| t.passed).count();
+        let _ = writeln!(
+            text,
+            "thresholds: {passed} of {} passed",
+            data.thresholds.len()
+        );
+        for t in &data.thresholds {
+            let mark = if t.passed { "ok  " } else { "FAIL" };
+            let _ = writeln!(text, "  {mark} {}", threshold_line(t));
+        }
+    }
     text.trim_end().to_owned()
+}
+
+/// How many endpoints the text lists, the busiest first.
+const SHOWN_ENDPOINTS: usize = 10;
+
+/// What the server did and users saw: the requests, the busiest
+/// endpoints, the page views' Web Vitals, the request errors and the
+/// exceptions.
+fn requests_text(data: &LoadData) -> String {
+    let mut text = String::new();
+    let Some(all) = &data.requests else {
+        return text;
+    };
+    let ms = status::ms_text;
+    let _ = writeln!(
+        text,
+        "requests: {} ({}/s), {} errors, p50 {}, p95 {}, p99 {}",
+        protocol::format::thousands(usize::try_from(all.count).unwrap_or(usize::MAX)),
+        all.rate,
+        status::percent(all.error_rate * 100.0),
+        ms(all.p50),
+        ms(all.p95),
+        ms(all.p99)
+    );
+    let shown = data.endpoints.len().min(SHOWN_ENDPOINTS);
+    let width = data.endpoints[..shown]
+        .iter()
+        .map(|e| e.name.chars().count())
+        .max()
+        .unwrap_or(0);
+    for e in &data.endpoints[..shown] {
+        let _ = write!(
+            text,
+            "  {:width$}  {:>7}  {:>6}  p50 {:>7}  p95 {:>7}  p99 {:>7}",
+            e.name,
+            e.count,
+            status::percent(e.error_rate * 100.0),
+            ms(e.p50),
+            ms(e.p95),
+            ms(e.p99)
+        );
+        if e.cached > 0 {
+            let _ = write!(text, "  ({} cached)", e.cached);
+        }
+        text.push('\n');
+    }
+    if data.endpoints.len() > shown {
+        let _ = writeln!(
+            text,
+            "  … {} more endpoints in the report",
+            data.endpoints.len() - shown
+        );
+    }
+    if !data.request_errors.is_empty() {
+        let _ = writeln!(
+            text,
+            "request errors: {}",
+            errors_line(&data.request_errors)
+        );
+    }
+    let views = data.vitals.iter().map(|v| v.count).max().unwrap_or(0);
+    if views > 0 {
+        let vitals: Vec<String> = data
+            .vitals
+            .iter()
+            .map(|v| {
+                let value = if v.unit.is_empty() {
+                    format!("{:.3}", v.p75)
+                } else {
+                    ms(v.p75)
+                };
+                format!("{} {value}", v.name)
+            })
+            .collect();
+        let _ = writeln!(text, "page views: {views}; at p75: {}", vitals.join(", "));
+    }
+    if data.exceptions_total > 0 {
+        let first = data
+            .exceptions
+            .first()
+            .map(|e| format!(", most often {} ({})", e.message, e.count))
+            .unwrap_or_default();
+        let _ = writeln!(
+            text,
+            "uncaught exceptions: {}{first}",
+            data.exceptions_total
+        );
+    }
+    text
+}
+
+/// `p95(GET /api/cart) < 300ms: 412 ms`, `p75(inp) < 200ms: no value
+/// (inp had no value to measure)`.
+fn threshold_line(t: &protocol::schema::LoadThreshold) -> String {
+    let value = match t.value {
+        Some(v) => format!("{v}{}", unit_suffix(&t.unit)),
+        None => "no value".to_owned(),
+    };
+    let mut line = format!("{} {}: {value}", t.name, t.condition);
+    if t.aborted {
+        line.push_str(" (stopped the run)");
+    }
+    if let Some(note) = &t.note {
+        let _ = write!(line, " ({note})");
+    }
+    line
+}
+
+/// ` ms`, `%`, `/s` or nothing, after a number.
+fn unit_suffix(unit: &str) -> String {
+    match unit {
+        "ms" => " ms".to_owned(),
+        other => other.to_owned(),
+    }
 }
 
 /// `ExpectFailed 3, Timeout 1`.

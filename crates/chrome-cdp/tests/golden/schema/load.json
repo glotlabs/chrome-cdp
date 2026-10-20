@@ -264,6 +264,11 @@
           "const": "DialogOpen",
           "description": "A JavaScript dialog blocks the page.",
           "type": "string"
+        },
+        {
+          "const": "ThresholdFailed",
+          "description": "A load run's threshold failed (`chrome-cdp load`, plan 23.4).",
+          "type": "string"
         }
       ]
     },
@@ -983,6 +988,13 @@
           "minimum": 0,
           "type": "integer"
         },
+        "endpoints": {
+          "description": "The requests by endpoint (`GET /api/products/:id`, `static js`),\nthe busiest first.",
+          "items": {
+            "$ref": "#/$defs/LoadMetric"
+          },
+          "type": "array"
+        },
         "errors": {
           "additionalProperties": {
             "format": "uint64",
@@ -991,6 +1003,18 @@
           },
           "description": "Failed steps by kind: `ExpectFailed`, `Timeout`, `ElementNotFound`,\n`browser_crash`, ….",
           "type": "object"
+        },
+        "exceptions": {
+          "description": "The pages' uncaught exceptions, by message, the most common first\n(20 messages at most), and how many there were in all.",
+          "items": {
+            "$ref": "#/$defs/LoadException"
+          },
+          "type": "array"
+        },
+        "exceptions_total": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
         },
         "failed": {
           "description": "Iterations that failed.",
@@ -1010,12 +1034,25 @@
           "minimum": 0,
           "type": "integer"
         },
+        "files": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoadFiles"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The run's files: `summary.json`, `metrics.jsonl`, `report.md` and\n`report.html`."
+        },
         "iteration_ms": {
           "$ref": "#/$defs/LoadTimes",
           "default": {
             "max": 0.0,
             "p50": 0.0,
-            "p95": 0.0
+            "p90": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
           },
           "description": "How long an iteration took, from when it was due to start (an open\nmodel's arrival) to its end."
         },
@@ -1064,6 +1101,26 @@
             "null"
           ]
         },
+        "request_errors": {
+          "additionalProperties": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "description": "Failed requests by class: `http_4xx`, `http_5xx` and\n`request_failed` (no response).",
+          "type": "object"
+        },
+        "requests": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoadMetric"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Every request the users' pages made (plan 23.4); absent when none\nwas."
+        },
         "run": {
           "description": "The run's id: its folder's name.",
           "type": "string"
@@ -1073,6 +1130,13 @@
           "description": "The model's stages, in order.",
           "items": {
             "$ref": "#/$defs/LoadStage"
+          },
+          "type": "array"
+        },
+        "step_times": {
+          "description": "Each step's times, by its line (`step e2e/shop.cdp:14`), the\ncommand as its label.",
+          "items": {
+            "$ref": "#/$defs/LoadMetric"
           },
           "type": "array"
         },
@@ -1091,6 +1155,13 @@
           ],
           "description": "Why the run ended early, if it did."
         },
+        "thresholds": {
+          "description": "The profile's thresholds, each checked over the whole run (with\n`--plan`: as written, not checked).",
+          "items": {
+            "$ref": "#/$defs/LoadThreshold"
+          },
+          "type": "array"
+        },
         "users": {
           "description": "How many users ran at once, at most (with `--plan`: the users it\nis expected to reach).",
           "format": "uint32",
@@ -1102,6 +1173,13 @@
           "format": "uint32",
           "minimum": 0,
           "type": "integer"
+        },
+        "vitals": {
+          "description": "What users saw, per page view: `ttfb`, `fcp`, `lcp`, `load` (the\nload event's end), `cls` (a score) and `inp`.",
+          "items": {
+            "$ref": "#/$defs/LoadMetric"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -1119,6 +1197,52 @@
         "errors",
         "browser_crashes",
         "failures_kept"
+      ],
+      "type": "object"
+    },
+    "LoadException": {
+      "description": "An uncaught exception of a load run's pages.",
+      "properties": {
+        "count": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "message": {
+          "description": "Its first line: `TypeError: x is undefined`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message",
+        "count"
+      ],
+      "type": "object"
+    },
+    "LoadFiles": {
+      "description": "A load run's files.",
+      "properties": {
+        "html": {
+          "description": "The report as one page with charts, which opens offline.",
+          "type": "string"
+        },
+        "metrics": {
+          "description": "One line per second per group.",
+          "type": "string"
+        },
+        "report": {
+          "type": "string"
+        },
+        "summary": {
+          "description": "What `--json` prints, as a file.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "summary",
+        "metrics",
+        "report",
+        "html"
       ],
       "type": "object"
     },
@@ -1142,7 +1266,9 @@
           "default": {
             "max": 0.0,
             "p50": 0.0,
-            "p95": 0.0
+            "p90": 0.0,
+            "p95": 0.0,
+            "p99": 0.0
           },
           "description": "How long its iterations took, from when they were due."
         },
@@ -1179,6 +1305,152 @@
         "name",
         "iterations",
         "failed"
+      ],
+      "type": "object"
+    },
+    "LoadMetric": {
+      "description": "One group's numbers in a load run (plan 23.4): an endpoint's requests,\na step, a journey's iterations, or a Web Vital of the page views.",
+      "properties": {
+        "cached": {
+          "description": "Requests a cache answered: counted, but not in the times.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "count": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "error_kinds": {
+          "additionalProperties": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "description": "The errors by kind: a status (`500`), Chrome's error\n(`net::ERR_CONNECTION_RESET`), a step's error kind.",
+          "type": "object"
+        },
+        "error_rate": {
+          "description": "`errors` over `count`, from 0 to 1.",
+          "format": "double",
+          "type": "number"
+        },
+        "errors": {
+          "description": "Requests that failed or got a status of 400 or more; steps and\niterations that failed.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "label": {
+          "description": "A step's command; a journey's test name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max": {
+          "format": "double",
+          "type": "number"
+        },
+        "mean": {
+          "format": "double",
+          "type": "number"
+        },
+        "name": {
+          "description": "`GET /api/products/:id`, `static js`, `step e2e/shop.cdp:14`, a\njourney's `file:line`, `lcp`.",
+          "type": "string"
+        },
+        "p50": {
+          "format": "double",
+          "type": "number"
+        },
+        "p75": {
+          "format": "double",
+          "type": "number"
+        },
+        "p90": {
+          "format": "double",
+          "type": "number"
+        },
+        "p95": {
+          "format": "double",
+          "type": "number"
+        },
+        "p99": {
+          "format": "double",
+          "type": "number"
+        },
+        "phases": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoadPhases"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "An endpoint's mean time in each phase of its requests."
+        },
+        "rate": {
+          "description": "How many a second, over the run.",
+          "format": "double",
+          "type": "number"
+        },
+        "unit": {
+          "description": "`ms`, or empty for a score (CLS).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "count",
+        "rate",
+        "errors",
+        "error_rate",
+        "unit",
+        "p50",
+        "p75",
+        "p90",
+        "p95",
+        "p99",
+        "max",
+        "mean"
+      ],
+      "type": "object"
+    },
+    "LoadPhases": {
+      "description": "The mean phases of an endpoint's requests, in ms.",
+      "properties": {
+        "connect_ms": {
+          "description": "Opening the connection, TLS left out.",
+          "format": "double",
+          "type": "number"
+        },
+        "dns_ms": {
+          "format": "double",
+          "type": "number"
+        },
+        "download_ms": {
+          "format": "double",
+          "type": "number"
+        },
+        "tls_ms": {
+          "format": "double",
+          "type": "number"
+        },
+        "ttfb_ms": {
+          "description": "Waiting for the first byte of the response: the server's time.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "dns_ms",
+        "connect_ms",
+        "tls_ms",
+        "ttfb_ms",
+        "download_ms"
       ],
       "type": "object"
     },
@@ -1269,6 +1541,62 @@
       ],
       "type": "object"
     },
+    "LoadThreshold": {
+      "description": "A threshold of a load profile (plan 23.4).",
+      "properties": {
+        "abort": {
+          "description": "`abort = true`: the run stops when it fails for 30 seconds in a row.",
+          "type": "boolean"
+        },
+        "aborted": {
+          "description": "It stopped the run.",
+          "type": "boolean"
+        },
+        "condition": {
+          "description": "Its limit as written: `< 300ms`.",
+          "type": "string"
+        },
+        "limit": {
+          "description": "The limit, in `unit`.",
+          "format": "double",
+          "type": "number"
+        },
+        "name": {
+          "description": "The statistic of a group, as written: `p95(GET /api/products/:id)`.",
+          "type": "string"
+        },
+        "note": {
+          "description": "Why it has no value, and the closest groups that have one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "unit": {
+          "description": "`ms`, `%`, `/s`, or empty for a count or a score.",
+          "type": "string"
+        },
+        "value": {
+          "description": "What was measured, in `unit`; absent when nothing was (no request\nhad the endpoint, no page view had an INP).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "condition",
+        "passed",
+        "limit",
+        "unit"
+      ],
+      "type": "object"
+    },
     "LoadTimes": {
       "description": "Durations of a load run, in ms.",
       "properties": {
@@ -1280,7 +1608,17 @@
           "format": "double",
           "type": "number"
         },
+        "p90": {
+          "default": 0.0,
+          "format": "double",
+          "type": "number"
+        },
         "p95": {
+          "format": "double",
+          "type": "number"
+        },
+        "p99": {
+          "default": 0.0,
           "format": "double",
           "type": "number"
         }

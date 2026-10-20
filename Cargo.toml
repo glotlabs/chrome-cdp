@@ -35,6 +35,8 @@ clap = { version = "4.6", features = ["derive", "env"] }
 clap_complete = "4.6"
 dashmap = "6"
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+# Latency histograms of `load` runs (plan 23.4): bounded memory, mergeable.
+hdrhistogram = { version = "7.5", default-features = false }
 heck = "0.5"
 http-body-util = "0.1"
 hyper = { version = "1", default-features = false, features = ["http1", "server"] }
