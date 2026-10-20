@@ -504,8 +504,8 @@ impl Advice<'_> {
 }
 
 /// What the summary says about the load generator: what it used, and
-/// when it was saturated.
-pub(crate) fn text(c: &LoadCapacity) -> String {
+/// when it was saturated (which a run `gated` by thresholds leaves out).
+pub(crate) fn text(c: &LoadCapacity, gated: bool) -> String {
     use std::fmt::Write as _;
     let ms = super::status::ms_text;
     let mut parts = Vec::new();
@@ -544,13 +544,18 @@ pub(crate) fn text(c: &LoadCapacity) -> String {
         let clock = |s: u64| format!("{:02}:{:02}", s / 60, s % 60);
         let _ = writeln!(
             text,
-            "CLIENT SATURATED for {}s of {}s, first at {} ({} {}), so the thresholds leave \
-             those seconds out; it held {} users ({} per Chrome) before, of {} at most",
+            "CLIENT SATURATED for {}s of {}s, first at {} ({} {}){}; it held {} users ({} per \
+             Chrome) before, of {} at most",
             c.saturated_s,
             c.seconds,
             clock(first.from_s.saturating_sub(1)),
             first.limit,
             limit_value(&first.limit, first.value),
+            if gated {
+                ", so the thresholds leave those seconds out"
+            } else {
+                ""
+            },
             c.held_users,
             c.held_per_browser,
             c.peak_users

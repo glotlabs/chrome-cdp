@@ -1296,6 +1296,8 @@ fn saturation(shared: &Shared, seen: &capacity::Seen, say: bool) {
             status::clock(Duration::from_secs(from.saturating_sub(1))),
             if abort {
                 "; stopping (on_saturation = \"abort\")"
+            } else if shared.plan.thresholds.is_empty() {
+                ""
             } else {
                 "; the thresholds leave these seconds out"
             }
@@ -1719,7 +1721,7 @@ fn text(data: &LoadData) -> String {
         let _ = writeln!(text, "step timings: {raw}");
     }
     if let Some(capacity) = &data.capacity {
-        text.push_str(&capacity::text(capacity));
+        text.push_str(&capacity::text(capacity, !data.thresholds.is_empty()));
     }
     if let Some(c) = &data.calibration {
         let _ = writeln!(
